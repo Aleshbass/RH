@@ -23,7 +23,7 @@ interface UseFileUploadOptions {
  * @param options Configuration options including success and error callbacks
  * @returns Functions and state for file uploading
  */
-export function useFileUpload(options: UseFileUploadOptions = {}) {
+export function useFileUpload(options?: UseFileUploadOptions) {
   const convex = useConvex();
   const [result, setResult] = useState<FileUploadResult>({
     storageId: null,
@@ -79,7 +79,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
                     return;
                   }
                   resolve(response.storageId);
-                } catch {
+                } catch (err) {
                   reject(new Error('Invalid response format'));
                 }
               } else {
@@ -148,7 +148,7 @@ export function useFileUpload(options: UseFileUploadOptions = {}) {
   /**
    * Upload a file to Convex storage
    */
-  const uploadFile = async (file: File): Promise<{ storageId: Id<"_storage">; fileName: string }> => {
+  const uploadFile = async (file: File) => {
     try {
       return await generateUploadUrl.mutateAsync({ file });
     } catch (error) {
