@@ -50,8 +50,10 @@ export const cleanupDuplicateNotifications = action({
           
           for (const notification of notifications) {
             // Create a key based on notification properties
-            const entityId = notification.data?.entityId || "";
-            const key = `${notification.type}|${notification.title}|${notification.message}|${entityId}`;
+            const entityId = notification.payload?.data?.entityId || "";
+            const title = notification.payload?.title || "";
+            const body = notification.payload?.body || "";
+            const key = `${notification.type}|${title}|${body}|${entityId}`;
             
             if (!groups[key]) {
               groups[key] = [];

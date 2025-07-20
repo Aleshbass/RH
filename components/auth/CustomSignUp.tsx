@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { SignUp } from "@clerk/clerk-react";
-import { motion } from "framer-motion";
+import { motion, Variants } from "framer-motion";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -15,13 +15,13 @@ import { ChevronRight, Home } from "lucide-react";
 
 export default function CustomSignUp() {
   
-  const fadeIn = {
+  const fadeIn: Variants = {
     hidden: { opacity: 0, y: 20 },
     visible: { 
       opacity: 1, 
       y: 0,
       transition: { 
-        type: "spring",
+        type: "spring" as const,
         stiffness: 100,
         damping: 15
       }

@@ -1,0 +1,710 @@
+import { query, mutation } from "./_generated/server";
+import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
+import { getUserByIdOrThrow } from "./users";
+import { 
+  ChatMessage, 
+  ChatConversation, 
+  ChatFilter, 
+  ChatPaginationResult,
+  TypingStatus 
+} from "../types/chat";
+import { QueryBuilder } from "convex/server";
+
+/**
+ * Real-time chat system for patient-physiotherapist communication
+ * Following PRD: Secure messaging between patients and PTs
+ */
+
+/**
+ * Get or create conversation between patient and physiotherapist
+ */
+export const getOrCreateConversation = mutation({
+  args: {
+    participantId: v.id("users"), // The other participant (patient or PT)
+  },
+  returns: v.object({
+    conversationId: v.id("conversations"),
+    isNew: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!currentUser) {
+      throw new Error("User not found");
+    }
+
+    const otherUser = await ctx.db.get(args.participantId);
+    if (!otherUser) {
+      throw new Error("Participant not found");
+    }
+
+    // Verify relationship (patient-PT or PT-patient)
+    if (currentUser.role === "patient" && otherUser.role !== "physiotherapist") {
+      throw new Error("Patients can only chat with physiotherapists");
+    }
+    if (currentUser.role === "physiotherapist" && otherUser.role !== "patient") {
+      throw new Error("Physiotherapists can only chat with patients");
+    }
+
+    // Check if conversation already exists
+    const existingConversation = await ctx.db
+      .query("conversations")
+      .filter((q: any) => 
+        q.or(
+          q.and(
+            q.eq(q.field("participant1Id"), currentUser._id),
+            q.eq(q.field("participant2Id"), args.participantId)
+          ),
+          q.and(
+            q.eq(q.field("participant1Id"), args.participantId),
+            q.eq(q.field("participant2Id"), currentUser._id)
+          )
+        )
+      )
+      .unique();
+
+    if (existingConversation) {
+      return {
+        conversationId: existingConversation._id,
+        isNew: false,
+      };
+    }
+
+    // Create new conversation
+    const conversationId = await ctx.db.insert("conversations", {
+      participant1Id: currentUser._id,
+      participant2Id: args.participantId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastMessageAt: Date.now(),
+      unreadCount1: 0,
+      unreadCount2: 0,
+    });
+
+    return {
+      conversationId,
+      isNew: true,
+    };
+  },
+});
+
+/**
+ * Send a message in a conversation
+ */
+export const sendMessage = mutation({
+  args: {
+    conversationId: v.id("conversations"),
+    content: v.string(),
+    contentType: v.union(v.literal("text"), v.literal("image"), v.literal("file")),
+    fileUrl: v.optional(v.string()),
+    metadata: v.optional(v.object({
+      originalName: v.optional(v.string()),
+      fileSize: v.optional(v.number()),
+      mimeType: v.optional(v.string()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+
+    // Verify conversation exists and user is participant
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.participant1Id !== user._id && conversation.participant2Id !== user._id) {
+      throw new Error("Not authorized to send messages in this conversation");
+    }
+
+    // Get receiver ID (the participant that's not the sender)
+    const receiverId = conversation.participant1Id === user._id 
+      ? conversation.participant2Id 
+      : conversation.participant1Id;
+
+    const message = {
+      conversationId: args.conversationId,
+      senderId: user._id,
+      receiverId,
+      content: args.content,
+      contentType: args.contentType,
+      timestamp: Date.now(),
+      isReadByReceiver: false,
+      ...(args.metadata && { metadata: args.metadata }),
+    };
+
+    const messageId = await ctx.db.insert("messages", message);
+
+    // Update conversation's unread counts and last message time
+    const isParticipant1 = conversation.participant1Id === user._id;
+    await ctx.db.patch(args.conversationId, {
+      lastMessageAt: Date.now(),
+      updatedAt: Date.now(),
+      unreadCount1: isParticipant1 ? conversation.unreadCount1 : conversation.unreadCount1 + 1,
+      unreadCount2: isParticipant1 ? conversation.unreadCount2 + 1 : conversation.unreadCount2,
+    });
+
+    return messageId;
+  },
+});
+
+/**
+ * Get conversations for the current user
+ */
+export const getMyConversations = query({
+  args: {},
+  returns: v.array(v.object({
+    _id: v.id("conversations"),
+    otherParticipant: v.object({
+      _id: v.id("users"),
+      firstName: v.optional(v.string()),
+      lastName: v.optional(v.string()),
+      role: v.optional(v.string()),
+      imageUrl: v.optional(v.string()),
+      isOnline: v.boolean(),
+    }),
+    lastMessage: v.optional(v.object({
+      content: v.string(),
+      timestamp: v.number(),
+      senderName: v.string(),
+    })),
+    unreadCount: v.number(),
+    updatedAt: v.number(),
+  })),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!currentUser) {
+      throw new Error("User not found");
+    }
+
+    const conversations = await ctx.db
+      .query("conversations")
+      .filter((q: any) => 
+        q.or(
+          q.eq(q.field("participant1Id"), currentUser._id),
+          q.eq(q.field("participant2Id"), currentUser._id)
+        )
+      );
+
+    const conversationsWithDetails = [];
+    for await (const conversation of conversations) {
+        // Get other participant
+        const otherParticipantId = conversation.participant1Id === currentUser._id 
+          ? conversation.participant2Id 
+          : conversation.participant1Id;
+        
+        const otherParticipant = await ctx.db.get(otherParticipantId);
+        if (!otherParticipant) continue;
+
+        // Get last message
+        const lastMessage = await ctx.db
+          .query("messages")
+          .withIndex("by_conversation_id", (q: any) => q.eq("conversationId", conversation._id))
+          .order("desc")
+          .first();
+
+        const unreadCount = currentUser._id === conversation.participant1Id
+          ? conversation.unreadCount1
+          : conversation.unreadCount2;
+
+        conversationsWithDetails.push({
+          _id: conversation._id,
+          otherParticipant: {
+            _id: otherParticipant._id,
+            firstName: otherParticipant.firstName,
+            lastName: otherParticipant.lastName,
+            role: otherParticipant.role,
+            imageUrl: otherParticipant.imageUrl,
+            isOnline: isUserOnline(otherParticipant.lastLoginAt),
+          },
+          lastMessage: lastMessage ? {
+            content: lastMessage.content,
+            timestamp: lastMessage._creationTime,
+            senderName: `${otherParticipant.firstName || ""} ${otherParticipant.lastName || ""}`.trim(),
+          } : undefined,
+          unreadCount,
+          updatedAt: conversation.updatedAt,
+        });
+    }
+
+    // Remove any null entries (shouldn't happen but for type safety)
+    const nonNull = conversationsWithDetails.filter((conv): conv is NonNullable<typeof conv> => conv !== null)
+    // Sort by updatedAt descending
+    const sorted = nonNull.sort((a, b) => b.updatedAt - a.updatedAt)
+    return sorted
+  },
+});
+
+/**
+ * Get messages in a conversation
+ */
+export const getMessages = query({
+  args: {
+    conversationId: v.id("conversations"),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  returns: v.object({
+    items: v.array(v.any()),
+    nextCursor: v.optional(v.string()),
+    hasMore: v.boolean(),
+    total: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+
+    // Verify user is part of conversation
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.participant1Id !== user._id && conversation.participant2Id !== user._id) {
+      throw new Error("Not authorized to view this conversation");
+    }
+
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("messages")
+      .withIndex("by_conversation_id_and_timestamp", (q) =>
+        q.eq("conversationId", args.conversationId)
+      )
+      .order("desc")
+      .paginate({ cursor: args.cursor ?? null, numItems: args.limit || 50 });
+
+    return {
+      items: page,
+      nextCursor: isDone ? undefined : continueCursor,
+      hasMore: !isDone,
+      total: page.length,
+    };
+  },
+});
+
+/**
+ * Mark messages as read
+ */
+export const markMessagesAsRead = mutation({
+  args: {
+    conversationId: v.id("conversations"),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!currentUser) {
+      throw new Error("User not found");
+    }
+
+    // Verify user is part of this conversation
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation || 
+        (conversation.participant1Id !== currentUser._id && 
+         conversation.participant2Id !== currentUser._id)) {
+      throw new Error("Access denied");
+    }
+
+    // Mark unread messages as read
+    const unreadMessages = await ctx.db
+      .query("messages")
+      .withIndex("by_conversation_and_receiver_and_read", (q) =>
+        q
+          .eq("conversationId", args.conversationId)
+          .eq("receiverId", currentUser._id)
+          .eq("isReadByReceiver", false)
+      )
+      .collect();
+
+    for (const message of unreadMessages) {
+      await ctx.db.patch(message._id, {
+        isReadByReceiver: true,
+        readAt: Date.now(),
+      });
+    }
+
+    // Reset unread count for this user
+    const isParticipant1 = conversation.participant1Id === currentUser._id;
+    await ctx.db.patch(conversation._id, {
+      unreadCount1: isParticipant1 ? 0 : conversation.unreadCount1,
+      unreadCount2: isParticipant1 ? conversation.unreadCount2 : 0,
+    });
+
+    return {
+      success: true,
+      message: "Messages marked as read",
+    };
+  },
+});
+
+/**
+ * Helper function to check if user is online
+ */
+function isUserOnline(lastActiveAt?: number): boolean {
+  if (!lastActiveAt) return false;
+  const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+  return lastActiveAt > fiveMinutesAgo;
+}
+
+/**
+ * Get conversation details with participant information
+ */
+export const getConversation = query({
+  args: {
+    conversationId: v.id("conversations"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!currentUser) {
+      throw new Error("User not found");
+    }
+
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+
+    // Verify user is participant
+    if (conversation.participant1Id !== currentUser._id && conversation.participant2Id !== currentUser._id) {
+      throw new Error("Access denied");
+    }
+
+    // Get other participant
+    const otherParticipantId = conversation.participant1Id === currentUser._id 
+      ? conversation.participant2Id 
+      : conversation.participant1Id;
+    
+    const otherParticipant = await ctx.db.get(otherParticipantId);
+
+    return {
+      ...conversation,
+      otherParticipant,
+    };
+  },
+});
+
+/**
+ * Set typing status for a conversation
+ */
+export const setTyping = mutation({
+  args: {
+    conversationId: v.id("conversations"),
+    isTyping: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!currentUser) {
+      throw new Error("User not found");
+    }
+
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+
+    // Verify user is participant
+    if (conversation.participant1Id !== currentUser._id && conversation.participant2Id !== currentUser._id) {
+      throw new Error("Access denied");
+    }
+
+    // Store typing status in a separate table or update user status
+    // For now, we'll store it temporarily with expiration
+    if (args.isTyping) {
+      await ctx.db.insert("typingStatus", {
+        conversationId: args.conversationId,
+        userId: currentUser._id,
+        isTyping: true,
+        timestamp: Date.now(),
+        expiresAt: Date.now() + 5000, // 5 seconds
+      });
+    } else {
+      // Remove typing status
+      const existingStatus = await ctx.db
+        .query("typingStatus")
+        .withIndex("by_conversation_id_and_user", q => q.eq("conversationId", args.conversationId).eq("userId", currentUser._id))
+        .first();
+      
+      if (existingStatus) {
+        await ctx.db.delete(existingStatus._id);
+      }
+    }
+  },
+});
+
+/**
+ * Get typing status for a conversation
+ */
+export const getTypingStatus = query({
+  args: {
+    conversationId: v.id("conversations"),
+  },
+  returns: v.object({
+    isOtherUserTyping: v.boolean(),
+    userId: v.optional(v.id("users")),
+    timestamp: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!currentUser) {
+      throw new Error("User not found");
+    }
+
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+
+    // Get other participant ID
+    const otherParticipantId = conversation.participant1Id === currentUser._id 
+      ? conversation.participant2Id 
+      : conversation.participant1Id;
+
+    // Check if other user is typing (and not expired)
+    const now = Date.now();
+    const typingStatus = await ctx.db
+      .query("typingStatus")
+      .withIndex("by_conversation_user_typing", q => 
+        q.eq("conversationId", args.conversationId)
+         .eq("userId", otherParticipantId)
+         .eq("isTyping", true)
+      )
+      .filter(q => q.gt(q.field("expiresAt"), now))
+      .first();
+
+    return {
+      isOtherUserTyping: !!typingStatus,
+      userId: typingStatus?.userId,
+      timestamp: typingStatus?.timestamp,
+      expiresAt: typingStatus?.expiresAt,
+    };
+  },
+});
+
+/**
+ * Get total unread messages count for current user
+ */
+export const getUnreadCount = query({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!currentUser) {
+      throw new Error("User not found");
+    }
+    // Sum unread counts in conversations where current user is participant1 or 2
+    const conversations = await ctx.db
+      .query("conversations")
+      .filter((q: any) =>
+        q.or(
+          q.eq(q.field("participant1Id"), currentUser._id),
+          q.eq(q.field("participant2Id"), currentUser._id)
+        )
+      )
+      .collect();
+
+    let total = 0;
+    conversations.forEach((conv: any) => {
+      if (conv.participant1Id === currentUser._id) {
+        total += conv.unreadCount1 ?? 0;
+      } else {
+        total += conv.unreadCount2 ?? 0;
+      }
+    });
+    return total;
+  },
+});
+
+interface ConversationWithLastMessage {
+  _id: Id<"conversations">;
+  participant1Id: Id<"users">;
+  participant2Id: Id<"users">;
+  lastMessageAt: number;
+  unreadCount1: number;
+  unreadCount2: number;
+  createdAt: number;
+  updatedAt: number;
+  lastMessage?: {
+    _id: Id<"messages">;
+    content: string;
+    contentType: "text" | "image" | "file";
+    timestamp: number;
+  };
+  otherParticipant: {
+    _id: Id<"users">;
+    firstName?: string;
+    lastName?: string;
+    imageUrl?: string;
+    lastActiveAt?: number;
+    isOnline: boolean;
+  };
+}
+
+/**
+ * Get conversations for a user
+ */
+export const getConversations = query({
+  args: {
+    searchTerm: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("conversations"),
+      participant1Id: v.id("users"),
+      participant2Id: v.id("users"),
+      lastMessageAt: v.number(),
+      unreadCount1: v.number(),
+      unreadCount2: v.number(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+      lastMessage: v.optional(
+        v.object({
+          _id: v.id("messages"),
+          content: v.string(),
+          contentType: v.union(v.literal("text"), v.literal("image"), v.literal("file")),
+          timestamp: v.number(),
+        })
+      ),
+      otherParticipant: v.object({
+        _id: v.id("users"),
+        firstName: v.optional(v.string()),
+        lastName: v.optional(v.string()),
+        imageUrl: v.optional(v.string()),
+        lastActiveAt: v.optional(v.number()),
+        isOnline: v.boolean(),
+      }),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+
+    const baseQuery = ctx.db
+      .query("conversations")
+      .filter((q) => 
+        q.or(
+          q.eq(q.field("participant1Id"), user._id),
+          q.eq(q.field("participant2Id"), user._id)
+        )
+      );
+
+    const conversations = args.limit 
+      ? await baseQuery.take(args.limit)
+      : await baseQuery.collect();
+
+    // Get last message and other participant for each conversation
+    const conversationsWithMessages = await Promise.all(
+      conversations.map(async (conv: any) => {
+        const lastMessage = await ctx.db
+          .query("messages")
+          .withIndex("by_conversation_id_and_timestamp", (q) => 
+            q.eq("conversationId", conv._id)
+          )
+          .order("desc")
+          .first();
+
+        // Get other participant
+        const otherParticipantId = conv.participant1Id === user._id 
+          ? conv.participant2Id 
+          : conv.participant1Id;
+        
+        const otherParticipantUser: any = await ctx.db.get(otherParticipantId);
+        
+        return {
+          ...conv,
+          lastMessage: lastMessage ? {
+            _id: lastMessage._id,
+            content: lastMessage.content,
+            contentType: lastMessage.contentType,
+            timestamp: lastMessage.timestamp,
+          } : undefined,
+          otherParticipant: {
+            _id: otherParticipantId,
+            firstName: otherParticipantUser?.firstName || undefined,
+            lastName: otherParticipantUser?.lastName || undefined,
+            imageUrl: otherParticipantUser?.imageUrl || undefined,
+            lastActiveAt: otherParticipantUser?.lastLoginAt || undefined,
+            isOnline: isUserOnline(otherParticipantUser?.lastLoginAt),
+          },
+        };
+      })
+    );
+
+    return conversationsWithMessages;
+  },
+});

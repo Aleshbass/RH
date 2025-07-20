@@ -1,0 +1,26 @@
+'use client'
+
+import { DashboardSidebar } from '@/components/dashboard/shared/DashboardSidebar'
+import { LayoutDashboard, Calendar, Clock, Users, FileText, Video, MessageSquare, CreditCard, Settings } from 'lucide-react'
+
+// Navigation configuration for physiotherapists
+const navItems = [
+  { title: 'Dashboard', href: '/dashboard/physiotherapist', icon: LayoutDashboard, roles: ['physiotherapist'] },
+  { title: 'Appointments', href: '/dashboard/physiotherapist/appointments', icon: Calendar, roles: ['physiotherapist'] },
+  { title: 'Calendar', href: '/dashboard/physiotherapist/calendar', icon: Clock, roles: ['physiotherapist'] },
+  { title: 'Patients', href: '/dashboard/physiotherapist/patients', icon: Users, roles: ['physiotherapist'] },
+  { title: 'Reports', href: '/dashboard/physiotherapist/reports', icon: FileText, roles: ['physiotherapist'] },
+  { title: 'Templates', href: '/dashboard/physiotherapist/templates', icon: FileText, roles: ['physiotherapist'] },
+  { title: 'Messages', href: '/dashboard/physiotherapist/messages', icon: MessageSquare, roles: ['physiotherapist'] },
+  { title: 'Billing', href: '/dashboard/physiotherapist/billing', icon: CreditCard, roles: ['physiotherapist'] },
+  { title: 'Video Calls', href: '/dashboard/physiotherapist/video-calls', icon: Video, roles: ['physiotherapist'] },
+  { title: 'Settings', href: '/dashboard/physiotherapist/settings', icon: Settings, roles: ['physiotherapist'] },
+]
+
+interface PhysiotherapistSidebarProps {
+  defaultCollapsed?: boolean
+}
+
+export default function PhysiotherapistSidebar({ defaultCollapsed = false }: PhysiotherapistSidebarProps) {
+  return <DashboardSidebar items={navItems} defaultCollapsed={defaultCollapsed} />
+} 

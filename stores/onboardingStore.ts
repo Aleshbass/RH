@@ -82,6 +82,7 @@ export type PatientData = {
   email: string;
   phoneNumber: string;
   dateOfBirth?: string;
+  gender?: "male" | "female" | "other" | "prefer_not_to_say";
   medicalHistory?: string;
   emergencyContact?: string;
 };
@@ -91,7 +92,8 @@ import { Id } from '@/convex/_generated/dataModel'; // Ensure Id is imported
 type OnboardingData = {
   role?: UserRole;
   currentStep: number;
-  currentOnboardingId?: string; // This can remain for temporary/UI purposes if needed
+  currentOnboardingId?: string;
+  invitationCode?: string;
   actualClinicId?: Id<"clinics">; // New field for the real Convex clinic ID
   physiotherapistData: PhysiotherapistData;
   clinicOwnerData: ClinicOwnerData;

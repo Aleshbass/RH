@@ -3,12 +3,11 @@ import localFont from 'next/font/local';
 import "./globals.css";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 import { ClerkProvider } from "@clerk/nextjs";
-import Header from "@/components/common/Header";
 import SyncUserWithConvex from "@/components/auth/SyncUserWithConvex";
 import Providers from "./providers";
 import '@fortawesome/fontawesome-svg-core/styles.css';
-import Footer from '@/components/landing/Footer';
 import NextTopLoader from 'nextjs-toploader';
+import ConditionalLayout from '@/components/layout/ConditionalLayout';
 
 const pallyRegular = localFont({
   src: '../public/logos/fonts/Pally-Regular.otf',
@@ -65,9 +64,9 @@ export default function RootLayout({
           <Providers>
             <ConvexClientProvider>
               <SyncUserWithConvex />
-              <Header />
-              <main className="flex-grow">{children}</main>
-              <Footer />
+              <ConditionalLayout>
+                {children}
+              </ConditionalLayout>
             </ConvexClientProvider>
           </Providers>
         </ClerkProvider>

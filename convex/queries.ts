@@ -24,14 +24,7 @@ export const getCurrentUser = query({
         v.literal("admin")
       )),
       onboarded: v.boolean(),
-      profileData: v.optional(v.object({
-        _id: v.id("physiotherapistProfiles"),
-        specializations: v.optional(v.array(v.string())),
-        bio: v.optional(v.string()),
-        licenseNumber: v.optional(v.string()),
-        yearsOfExperience: v.optional(v.number()),
-        languagesSpoken: v.optional(v.array(v.string())),
-      })),
+      profileData: v.optional(v.any()),
       clinicId: v.optional(v.id("clinics")),
       clinicName: v.optional(v.string()),
     })
@@ -76,6 +69,9 @@ export const getCurrentUser = query({
             specializations: profile.specializations || [],
             bio: profile.bio,
             licenseNumber: profile.licenseNumber,
+            certificationBoard: profile.certificationBoard,
+            certificationYear: profile.certificationYear,
+            licenseExpiryDate: profile.licenseExpiryDate,
             yearsOfExperience: profile.yearsOfExperience || 0,
             languagesSpoken: profile.languagesSpoken || [],
           };
@@ -297,11 +293,14 @@ export const getUserProfile = query({
         if (profile) {
           result.profileData = {
             _id: profile._id,
-            specializations: profile.specializations,
+            specializations: profile.specializations || [],
             bio: profile.bio,
-            yearsOfExperience: profile.yearsOfExperience,
-            languagesSpoken: profile.languagesSpoken,
-            // Note: Not including potentially sensitive info like licenseNumber
+            licenseNumber: profile.licenseNumber,
+            certificationBoard: profile.certificationBoard,
+            certificationYear: profile.certificationYear,
+            licenseExpiryDate: profile.licenseExpiryDate,
+            yearsOfExperience: profile.yearsOfExperience || 0,
+            languagesSpoken: profile.languagesSpoken || [],
           };
         }
       }
@@ -378,5 +377,276 @@ export const getUsers = query({
       users,
       cursor: paginationResult.continueCursor,
     };
+  },
+});
+
+/**
+ * Check if user can access dashboard (based on approval status)
+ */
+export const checkDashboardAccess = query({
+  args: {},
+  returns: v.object({
+    canAccess: v.boolean(),
+    reason: v.optional(v.string()),
+    approvalStatus: v.optional(v.union(
+      v.literal("pending_review"),
+      v.literal("approved"),
+      v.literal("declined")
+    )),
+    user: v.optional(v.object({
+      _id: v.id("users"),
+      role: v.optional(v.union(
+        v.literal("physiotherapist"),
+        v.literal("clinic_owner"),
+        v.literal("patient"),
+        v.literal("family_member"),
+        v.literal("admin")
+      )),
+      onboarded: v.boolean(),
+    })),
+  }),
+  handler: async (ctx) => {
+    try {
+      const identity = await ctx.auth.getUserIdentity();
+      if (!identity) {
+        return {
+          canAccess: false,
+          reason: "Not authenticated",
+        };
+      }
+
+      // Find the user with the matching clerkId
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+        .unique();
+
+      if (!user) {
+        return {
+          canAccess: false,
+          reason: "User not found",
+        };
+      }
+
+      if (!user.onboarded) {
+        return {
+          canAccess: false,
+          reason: "Onboarding not completed",
+          user: {
+            _id: user._id,
+            role: user.role,
+            onboarded: user.onboarded,
+          },
+        };
+      }
+
+      // For patients, family members, and admins - allow immediate access
+      if (user.role === "patient" || user.role === "family_member" || user.role === "admin") {
+        return {
+          canAccess: true,
+          user: {
+            _id: user._id,
+            role: user.role,
+            onboarded: user.onboarded,
+          },
+        };
+      }
+
+      // For physiotherapists and clinic owners - check approval status
+      if (user.role === "physiotherapist" || user.role === "clinic_owner") {
+        const approvalStatus = await ctx.db
+          .query("accountApprovalStatus")
+          .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+          .unique();
+
+        if (!approvalStatus) {
+          return {
+            canAccess: false,
+            reason: "No approval status found",
+            user: {
+              _id: user._id,
+              role: user.role,
+              onboarded: user.onboarded,
+            },
+          };
+        }
+
+        if (approvalStatus.status === "approved") {
+          return {
+            canAccess: true,
+            approvalStatus: approvalStatus.status,
+            user: {
+              _id: user._id,
+              role: user.role,
+              onboarded: user.onboarded,
+            },
+          };
+        }
+
+        if (approvalStatus.status === "declined") {
+          return {
+            canAccess: false,
+            reason: "Application was declined",
+            approvalStatus: approvalStatus.status,
+            user: {
+              _id: user._id,
+              role: user.role,
+              onboarded: user.onboarded,
+            },
+          };
+        }
+
+        // Status is pending_review
+        return {
+          canAccess: false,
+          reason: "Application pending approval",
+          approvalStatus: approvalStatus.status,
+          user: {
+            _id: user._id,
+            role: user.role,
+            onboarded: user.onboarded,
+          },
+        };
+      }
+
+      // Default case
+      return {
+        canAccess: true,
+        user: {
+          _id: user._id,
+          role: user.role,
+          onboarded: user.onboarded,
+        },
+      };
+    } catch (error) {
+      return {
+        canAccess: false,
+        reason: "Error checking access",
+      };
+    }
+  },
+});
+
+/**
+ * Get the current user's physiotherapist profile - simplified version
+ */
+export const getMyPhysiotherapistProfile = query({
+  args: {},
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id("physiotherapistProfiles"),
+      _creationTime: v.number(),
+      userId: v.id("users"),
+      specializations: v.array(v.string()),
+      bio: v.string(),
+      licenseNumber: v.string(),
+      certificationBoard: v.string(),
+      certificationYear: v.float64(),
+      licenseExpiryDate: v.string(),
+      yearsOfExperience: v.float64(),
+      languagesSpoken: v.array(v.string()),
+      clinicId: v.union(v.null(), v.id("clinics")),
+    })
+  ),
+  handler: async (ctx) => {
+    try {
+      // Get the authenticated user
+      const user = await getAuthenticatedUser(ctx);
+      if (!user || user.role !== "physiotherapist") {
+        return null;
+      }
+
+      // Find the physiotherapist profile
+      const profile = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .unique();
+
+      if (!profile) {
+        return null;
+      }
+
+      // Return with default values to avoid optional type complexity
+      return {
+        _id: profile._id,
+        _creationTime: profile._creationTime,
+        userId: profile.userId,
+        specializations: profile.specializations || [],
+        bio: profile.bio || "",
+        licenseNumber: profile.licenseNumber || "",
+        certificationBoard: profile.certificationBoard || "",
+        certificationYear: profile.certificationYear || 0,
+        licenseExpiryDate: profile.licenseExpiryDate || "",
+        yearsOfExperience: profile.yearsOfExperience || 0,
+        languagesSpoken: profile.languagesSpoken || [],
+        clinicId: profile.clinicId || null,
+      };
+    } catch (error) {
+      console.error("Error in getMyPhysiotherapistProfile:", error);
+      return null;
+    }
+  },
+});
+
+/**
+ * Get the current user's physiotherapist profile - dashboard optimized
+ */
+export const getPhysiotherapistDashboardData = query({
+  args: {},
+  returns: v.union(
+    v.null(),
+    v.object({
+      profileId: v.id("physiotherapistProfiles"),
+      userId: v.id("users"),
+      specializations: v.array(v.string()),
+      bio: v.string(),
+      licenseNumber: v.string(),
+      certificationBoard: v.string(),
+      certificationYear: v.float64(),
+      licenseExpiryDate: v.string(),
+      yearsOfExperience: v.float64(),
+      languagesSpoken: v.array(v.string()),
+      hasClinic: v.boolean(),
+      clinicId: v.union(v.null(), v.id("clinics")),
+    })
+  ),
+  handler: async (ctx) => {
+    try {
+      // Get the authenticated user
+      const user = await getAuthenticatedUser(ctx);
+      if (!user || user.role !== "physiotherapist") {
+        return null;
+      }
+
+      // Find the physiotherapist profile
+      const profile = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .unique();
+
+      if (!profile) {
+        return null;
+      }
+
+      // Return simplified data structure
+      return {
+        profileId: profile._id,
+        userId: profile.userId,
+        specializations: profile.specializations || [],
+        bio: profile.bio || "",
+        licenseNumber: profile.licenseNumber || "",
+        certificationBoard: profile.certificationBoard || "",
+        certificationYear: profile.certificationYear || 0,
+        licenseExpiryDate: profile.licenseExpiryDate || "",
+        yearsOfExperience: profile.yearsOfExperience || 0,
+        languagesSpoken: profile.languagesSpoken || [],
+        hasClinic: !!profile.clinicId,
+        clinicId: profile.clinicId || null,
+      };
+    } catch (error) {
+      console.error("Error in getPhysiotherapistDashboardData:", error);
+      return null;
+    }
   },
 });

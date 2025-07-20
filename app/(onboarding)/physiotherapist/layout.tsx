@@ -23,7 +23,7 @@ export default function PhysiotherapistOnboardingLayout({
   ];
   
   // Extract current step from URL
-  const currentStepMatch = pathname.match(/step(\d+)/);
+  const currentStepMatch = pathname ? pathname.match(/step(\d+)/) : null;
   const currentStepFromUrl = currentStepMatch 
     ? parseInt(currentStepMatch[1], 10) 
     : 1;

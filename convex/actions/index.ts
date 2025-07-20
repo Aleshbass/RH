@@ -16,3 +16,12 @@ export { declineAccount } from './accounts/declineAccount';
 
 // Notification actions
 export { sendNotificationWithFallback, sendFormattedNotification } from './notifications/sendNotification';
+
+// Email actions
+export { sendPatientInvitationEmail, sendInvitationReminderEmail } from './emails/sendInvitationEmail';
+
+export * from './accounts';
+export * from './emails';
+export * from './notifications';
+export * from './patients';
+export * from './onboarding';

@@ -8,19 +8,70 @@ import Image from 'next/image';
 import { NavbarButton } from '@/components/ui/resizable-navbar';
 import HeroBackground from './HeroBackground';
 import FeatureTag from './FeatureTag';
+import { useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { useAuth } from '@clerk/nextjs';
 
 // For TanStack Query prefetching
 import { useQueryClient } from '@tanstack/react-query';
 
 export function LandingHero() {
+  const { isSignedIn } = useAuth();
   // Use TanStack Query for prefetching
   const queryClient = useQueryClient();
   
-  // Prefetch the sign-up page on hover
-  const prefetchSignUp = () => {
-    // This would typically prefetch data needed for the sign-up page
+  // Check if user is approved (only if signed in)
+  const currentUser = useQuery(api.users.getMyUser, isSignedIn ? {} : "skip");
+  const approvalStatus = useQuery(
+    api.users.getUserApprovalStatus, 
+    isSignedIn && currentUser ? {} : "skip"
+  );
+  
+  // Determine if user can access dashboard
+  const canAccessDashboard = isSignedIn && currentUser && (
+    currentUser.role === "patient" || 
+    currentUser.role === "family_member" || 
+    currentUser.role === "admin" ||
+    (approvalStatus?.status === "approved")
+  );
+
+  // Determine button text and href
+  const getButtonProps = () => {
+    if (!isSignedIn) {
+      return { href: "/sign-up", text: "Get Started" };
+    }
+    
+    if (canAccessDashboard) {
+      // Determine dashboard URL based on role
+      if (currentUser?.role === "physiotherapist") {
+        return { href: "/dashboard/physiotherapist", text: "Go to Dashboard" };
+      } else if (currentUser?.role === "clinic_owner") {
+        return { href: "/dashboard/clinic", text: "Go to Dashboard" };
+      } else if (currentUser?.role === "admin") {
+        return { href: "/dashboard/admin", text: "Go to Dashboard" };
+      } else {
+        return { href: "/dashboard", text: "Go to Dashboard" };
+      }
+    }
+    
+    // User is signed in but pending approval or not onboarded
+    if (currentUser && !currentUser.onboarded) {
+      return { href: "/role-selection", text: "Complete Setup" };
+    }
+    
+    if (approvalStatus?.status === "pending_review") {
+      return { href: "/dashboard", text: "View Application Status" };
+    }
+    
+    return { href: "/dashboard", text: "Go to Dashboard" };
+  };
+
+  const buttonProps = getButtonProps();
+  
+  // Prefetch the target page on hover
+  const prefetchTarget = () => {
     queryClient.prefetchQuery({
-      queryKey: ['signUpPageData'],
+      queryKey: ['targetPageData', buttonProps.href],
       queryFn: () => Promise.resolve({
         prefetched: true,
         timestamp: Date.now()
@@ -49,14 +100,14 @@ export function LandingHero() {
               connecting clinic owners, physiotherapists, and patients in one 
               powerful platform
             </p>
-            <Link href="/sign-up" passHref>
+            <Link href={buttonProps.href} passHref>
               <NavbarButton 
                 as="span" // Instruct NavbarButton to render as a span
                 variant="primary" 
                 className="group bg-green-500 hover:bg-green-600 text-white font-semibold py-3 sm:py-4 px-6 sm:px-8 rounded-full inline-flex items-center transition-all duration-300 transform hover:scale-105"
-                onMouseEnter={prefetchSignUp}
+                onMouseEnter={prefetchTarget}
               >
-                <span className="mr-2">Get Started</span>
+                <span className="mr-2">{buttonProps.text}</span>
                 <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-300 group-hover:translate-x-1" />
               </NavbarButton>
             </Link>

@@ -1,4 +1,4 @@
-import { mutation, query, action } from "../_generated/server";
+import { mutation, query, action, internalAction } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
@@ -7,7 +7,7 @@ import { Id } from "../_generated/dataModel";
  * Trigger to process notification retry queue
  * This should be called from a cron job or manually when needed
  */
-export const triggerRetryProcessing = action({
+export const triggerRetryProcessing = internalAction({
   args: {},
   handler: async (ctx): Promise<{ success: boolean, message: string }> => {
     try {
@@ -15,8 +15,8 @@ export const triggerRetryProcessing = action({
       const now = Date.now();
       
       // Process pending notification retries
-      await ctx.runMutation(api.notifications.processNotificationRetryQueue, {
-        currentTime: now
+      await ctx.runMutation(api.notifications.processRetryQueuesWithRateLimit, {
+        batchSize: 10
       });
       
       return { success: true, message: "Retry processing completed successfully" };

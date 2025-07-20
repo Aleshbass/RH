@@ -15,7 +15,7 @@ export default function PatientStep2Page() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Get invitation code from URL parameters
-  const invitationCode = searchParams.get('invitationCode');
+  const invitationCode = searchParams ? searchParams.get('invitationCode') : null;
   
   // Redirect if patient data doesn't exist or patient role not set
   if (!data.patientData || data.role !== 'patient') {

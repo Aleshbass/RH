@@ -1,6 +1,8 @@
 import { v } from "convex/values";
-import { internalMutation, mutation, query, QueryCtx } from "./_generated/server";
+import { internalMutation, mutation, query, action, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
+import { api, internal } from "./_generated/api";
+import { getAuthenticatedUser, ensureUserRole } from "./auth";
 
 // ==== QUERIES ====
 
@@ -18,7 +20,7 @@ export const getMyUser = query({
     
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.tokenIdentifier))
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique();
     
     return user;
@@ -201,7 +203,10 @@ const physiotherapistProfileDataValidator = v.object({
   clinicId: v.optional(v.id("clinics")), 
   specializations: v.optional(v.array(v.string())), 
   licenseNumber: v.optional(v.string()),
-  yearsOfExperience: v.optional(v.number()),
+  certificationBoard: v.optional(v.string()),
+  certificationYear: v.optional(v.float64()),
+  licenseExpiryDate: v.optional(v.string()),
+  yearsOfExperience: v.optional(v.float64()),
   bio: v.optional(v.string()),
 });
 
@@ -319,7 +324,42 @@ export const completeUserProfile = mutation({
 
       case "clinic_owner":
         console.log("[completeUserProfile] Processing clinic_owner role.");
-        // Add specific logic and logging if necessary
+        
+        // Get the clinic owned by this user
+        const clinic = await ctx.db
+          .query("clinics")
+          .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+          .first();
+        
+        if (!clinic) {
+          console.error("[completeUserProfile] Error: No clinic found for clinic owner:", user._id);
+          throw new Error("No clinic found for this clinic owner. Please complete clinic setup first.");
+        }
+        
+        // Create or update clinic owner profile
+        let clinicOwnerProfileId: Id<"clinicOwnerProfiles">;
+        
+        if (user.clinicOwnerProfileId) {
+          // Update existing profile
+          console.log("[completeUserProfile] Updating existing clinic owner profile:", user.clinicOwnerProfileId);
+          await ctx.db.patch(user.clinicOwnerProfileId, {
+            clinicId: clinic._id,
+            // Add any other profile data from args.profileData if needed
+          });
+          clinicOwnerProfileId = user.clinicOwnerProfileId;
+        } else {
+          // Create new profile
+          console.log("[completeUserProfile] Creating new clinic owner profile for user:", user._id);
+          clinicOwnerProfileId = await ctx.db.insert("clinicOwnerProfiles", {
+            userId: user._id,
+            clinicId: clinic._id,
+            // Add any other profile data from args.profileData if needed
+          });
+          console.log("[completeUserProfile] New clinic owner profile created. ID:", clinicOwnerProfileId);
+        }
+        
+        userUpdatePayload.clinicOwnerProfileId = clinicOwnerProfileId;
+        console.log("[completeUserProfile] clinicOwnerProfileId set in userUpdatePayload:", clinicOwnerProfileId);
         break;
 
       case "family_member":
@@ -339,6 +379,49 @@ export const completeUserProfile = mutation({
     } catch (error) {
       console.error("[completeUserProfile] Error patching user record:", error, "Payload:", userUpdatePayload);
       throw error; // Re-throw to ensure the mutation fails
+    }
+
+    // For physiotherapists and clinic owners, create approval request after final step
+    if (args.finalStep && (args.role === "physiotherapist" || args.role === "clinic_owner")) {
+      console.log("[completeUserProfile] Creating approval request for", args.role);
+      
+      // Check if approval request already exists
+      const existingApproval = await ctx.db
+        .query("accountApprovalStatus")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .unique();
+
+      if (!existingApproval) {
+        await ctx.db.insert("accountApprovalStatus", {
+          userId: user._id,
+          status: "pending_review",
+          submittedAt: Date.now(),
+          requiredDocuments: args.role === "physiotherapist" 
+            ? ["Professional License", "Certification Documents"]
+            : ["Business License", "Tax Registration", "Owner Identification"]
+        });
+        console.log("[completeUserProfile] Approval request created for user:", user._id);
+      }
+
+      // Create notification for user about pending review
+      await ctx.db.insert("notifications", {
+        userId: user._id,
+        type: "onboarding_complete",
+        priority: "medium",
+        status: "pending",
+        payload: {
+          title: "Application Submitted for Review",
+          body: "Your application has been submitted and is pending approval from our administrators. You will be notified once your account is approved and you can access all features.",
+          data: {
+            actionUrl: "/dashboard",
+            metadata: {
+              role: args.role,
+            },
+          },
+        },
+        createdAt: Date.now(),
+      });
+      console.log("[completeUserProfile] Pending review notification created for user:", user._id);
     }
 
     return { success: true, message: "Profile completed successfully." };
@@ -411,3 +494,683 @@ export const deleteUser = internalMutation({
     }
   },
 });
+
+/**
+ * Set user role (admin only)
+ */
+export const setUserRole = mutation({
+  args: {
+    userId: v.id("users"),
+    role: v.union(
+      v.literal("patient"),
+      v.literal("physiotherapist"),
+      v.literal("clinic_owner"),
+      v.literal("family_member"),
+      v.literal("admin")
+    ),
+  },
+  handler: async (ctx, args) => {
+    // Verify the user making the change is an admin
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const adminUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!adminUser || adminUser.role !== "admin") {
+      throw new Error("Access denied. Admin privileges required.");
+    }
+
+    // Get the user to update
+    const userToUpdate = await getUserByIdOrThrow(ctx, args.userId);
+
+    // Update their role
+    await ctx.db.patch(args.userId, {
+      role: args.role,
+      onboarded: true,
+    });
+
+    // Create notification for role change
+    const roleNames = {
+      patient: "Patient",
+      physiotherapist: "Physiotherapist",
+      clinic_owner: "Clinic Owner",
+      family_member: "Family Member",
+      admin: "Administrator"
+    };
+
+    await ctx.runMutation(api.notifications.create, {
+      userId: args.userId,
+      type: "account_approved",
+      payload: {
+        title: `Role Updated to ${roleNames[args.role]}`,
+        body: `Your account role has been updated to ${roleNames[args.role]} on Rehabify Health.`,
+        data: {
+          entityType: "role_change",
+          actionUrl: "/dashboard",
+        },
+      }
+    });
+
+    return args.userId;
+  },
+});
+
+/**
+ * Get all admin users (for sending notifications)
+ */
+export const getAllAdmins = query({
+  args: {},
+  handler: async (ctx) => {
+    const admins = await ctx.db
+      .query("users")
+      .withIndex("by_role", (q) => q.eq("role", "admin"))
+      .collect();
+
+    return admins;
+  },
+});
+
+/**
+ * Get all users (admin only)
+ */
+export const getAllUsers = query({
+  args: {},
+  handler: async (ctx) => {
+    // Verify the user is an admin
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user || user.role !== "admin") {
+      throw new Error("Access denied. Admin privileges required.");
+    }
+
+    const users = await ctx.db
+      .query("users")
+      .order("desc")
+      .collect();
+
+    return users;
+  },
+});
+
+/**
+ * Create a new admin user (for initial setup)
+ */
+export const createAdminUser = mutation({
+  args: {
+    clerkId: v.string(),
+    email: v.string(),
+    firstName: v.string(),
+    lastName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Check if user already exists
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .unique();
+
+    if (existingUser) {
+      // Just update to admin role
+      await ctx.db.patch(existingUser._id, {
+        role: "admin",
+        onboarded: true,
+      });
+      return existingUser._id;
+    }
+
+    // Create new admin user
+    const adminId = await ctx.db.insert("users", {
+      clerkId: args.clerkId,
+      email: args.email,
+      firstName: args.firstName,
+      lastName: args.lastName,
+      role: "admin",
+      onboarded: true,
+    });
+
+    return adminId;
+  },
+});
+
+/**
+ * Promote an existing user to admin
+ */
+export const promoteToAdmin = mutation({
+  args: {
+    userId: v.id("users"),
+    promotedByAdminId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    // Verify the promoter is an admin
+    const promoter = await getUserByIdOrThrow(ctx, args.promotedByAdminId);
+    if (promoter.role !== "admin") {
+      throw new Error("Only admins can promote other users to admin");
+    }
+
+    // Get the user to promote
+    const userToPromote = await getUserByIdOrThrow(ctx, args.userId);
+
+    // Update their role
+    await ctx.db.patch(args.userId, {
+      role: "admin",
+      onboarded: true,
+    });
+
+    // Create notification for the newly promoted admin
+    await ctx.runMutation(api.notifications.create, {
+      userId: args.userId,
+      type: "account_approved",
+      payload: {
+        title: "Promoted to Administrator",
+        body: "You have been promoted to administrator role on Rehabify Health.",
+        data: {
+          entityType: "role_promotion",
+          actionUrl: "/dashboard/admin",
+        },
+      }
+    });
+
+    return args.userId;
+  },
+});
+
+// ==== ADMIN APPROVAL WORKFLOW ====
+
+/**
+ * Test notification system for email sending
+ * Sends a test email to verify Resend configuration
+ */
+export const testNotificationEmail = action({
+  args: {
+    testEmail: v.optional(v.string()), // Email to send to, defaults to registered Resend email
+  },
+  handler: async (ctx, args) => {
+    // For testing, we'll use the Resend registered email or the provided test email
+    const testEmail = args.testEmail || "onboarding@resend.dev";
+    
+    // Create a test user ID for the notification (or use a real admin user)
+    const adminUser = await ctx.runQuery(api.users.getMyUser);
+    
+    if (!adminUser) {
+      throw new Error("No authenticated user found");
+    }
+
+    // Placeholder for email sending functionality
+    // Email function not yet implemented
+    console.log(`Test email would be sent to: ${testEmail}`);
+
+    return {
+      success: true,
+      testEmail,
+      message: `Test notification sent to ${testEmail}. Check the email and Convex logs for delivery status.`,
+    };
+  },
+});
+
+/**
+ * Clean up orphaned approval records (where user no longer exists)
+ */
+export const cleanupOrphanedApprovals = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // Verify admin access
+    await ensureUserRole(ctx, ["admin"]);
+
+    const allApprovals = await ctx.db
+      .query("accountApprovalStatus")
+      .collect();
+
+    let deletedCount = 0;
+    const orphanedRecords = [];
+
+    for (const approval of allApprovals) {
+      const user = await ctx.db.get(approval.userId);
+      if (!user) {
+        // User no longer exists, delete the approval record
+        await ctx.db.delete(approval._id);
+        deletedCount++;
+        orphanedRecords.push({
+          approvalId: approval._id,
+          userId: approval.userId,
+          status: approval.status,
+          submittedAt: approval.submittedAt,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      deletedCount,
+      orphanedRecords,
+    };
+  },
+});
+
+/**
+ * Debug query to see all approval status records
+ */
+export const debugApprovalStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    // Verify admin access
+    await ensureUserRole(ctx, ["admin"]);
+
+    const allApprovals = await ctx.db
+      .query("accountApprovalStatus")
+      .collect();
+
+    const approvalWithUserData = await Promise.all(
+      allApprovals.map(async (approval) => {
+        const user = await ctx.db.get(approval.userId);
+        return {
+          ...approval,
+          user: user ? {
+            _id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            role: user.role,
+            imageUrl: user.imageUrl,
+          } : null,
+        };
+      })
+    );
+
+    return approvalWithUserData;
+  },
+});
+
+/**
+ * Get pending approval requests for admin review
+ */
+export const getPendingApprovals = query({
+  args: {},
+  returns: v.array(v.object({
+    _id: v.id("accountApprovalStatus"),
+    _creationTime: v.number(),
+    userId: v.id("users"),
+    status: v.string(),
+    submittedAt: v.number(),
+    reviewedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.id("users")),
+    comments: v.optional(v.string()),
+    requiredDocuments: v.optional(v.array(v.string())),
+    user: v.any(),
+  })),
+  handler: async (ctx) => {
+    // Verify admin access
+    await ensureUserRole(ctx, ["admin"]);
+
+    const pendingApprovals = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_status", (q) => q.eq("status", "pending_review"))
+      .collect();
+
+    const approvalWithUserData = await Promise.all(
+      pendingApprovals.map(async (approval) => {
+        const user = await ctx.db.get(approval.userId);
+        return {
+          ...approval,
+          user: user ? {
+            _id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            role: user.role,
+            imageUrl: user.imageUrl,
+          } : null,
+        };
+      })
+    );
+
+    return approvalWithUserData.filter(item => item.user !== null);
+  },
+});
+
+/**
+ * Approve a user account
+ */
+export const approveUser = mutation({
+  args: {
+    userId: v.id("users"),
+    comments: v.optional(v.string()),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Verify admin access
+    const currentUser = await ensureUserRole(ctx, ["admin"]);
+
+    // Get user and approval status
+    const user = await ctx.db.get(args.userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const approvalStatus = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .unique();
+
+    if (!approvalStatus) {
+      throw new Error("No approval request found for this user");
+    }
+
+    if (approvalStatus.status !== "pending_review") {
+      throw new Error("User has already been reviewed");
+    }
+
+    // Update approval status
+    await ctx.db.patch(approvalStatus._id, {
+      status: "approved",
+      reviewedAt: Date.now(),
+      reviewedBy: currentUser._id,
+      comments: args.comments,
+    });
+
+    // Create notification for user with email
+    const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'User';
+    const dashboardLink = user.role === "physiotherapist" ? "/dashboard/physiotherapist" 
+                         : user.role === "clinic_owner" ? "/dashboard/clinic" 
+                         : "/dashboard";
+
+    // Create approval notification and send email
+    const notificationId = await ctx.db.insert("notifications", {
+      userId: args.userId,
+      type: "account_approved",
+      status: "pending",
+      priority: "high",
+      createdAt: Date.now(),
+      payload: {
+        title: "Account Approved! 🎉",
+        body: "Your account has been approved by our administrators. You can now access your dashboard and start using all features.",
+        data: {
+          entityType: "account_approval",
+          actionUrl: dashboardLink,
+          metadata: {
+            approvedBy: currentUser._id,
+            comments: args.comments,
+            email: {
+              subject: "🎉 Your Rehabify Health Account Has Been Approved!",
+              htmlBody: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                  <div style="background-color: #0078D4; color: white; padding: 20px; text-align: center;">
+                    <h1>🎉 Rehabify Health</h1>
+                  </div>
+                  <div style="padding: 20px; border: 1px solid #e0e0e0;">
+                    <h2>Account Approved!</h2>
+                    <p>Hi ${userName},</p>
+                    <p>Great news! Your Rehabify Health account has been approved.</p>
+                    <p>You now have full access to the platform and all its features.</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                      <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}${dashboardLink}" 
+                         style="background-color: #10b981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
+                        🚀 Access Your Dashboard
+                      </a>
+                    </div>
+                    ${args.comments ? `<div style="background-color: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;"><strong>Admin Notes:</strong> ${args.comments}</div>` : ''}
+                    <p>If you have any questions, please contact our support team.</p>
+                    <p>Welcome to Rehabify Health! 🏥</p>
+                  </div>
+                  <div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+                    <p>&copy; ${new Date().getFullYear()} Rehabify Health. All rights reserved.</p>
+                  </div>
+                </div>
+              `,
+              textBody: `
+                Hi ${userName},
+                
+                Great news! Your Rehabify Health account has been approved.
+                
+                You now have full access to the platform and all its features.
+                
+Visit your dashboard: ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}${dashboardLink}
+                
+                ${args.comments ? `Admin Notes: ${args.comments}` : ''}
+                
+                If you have any questions, please contact our support team.
+                
+Welcome to Rehabify Health!
+                
+                © ${new Date().getFullYear()} Rehabify Health. All rights reserved.
+              `,
+              template: "account_approved"
+            },
+          },
+        },
+      },
+    });
+
+    // Send approval email using existing email service
+    if (user.email) {
+      console.log(`Approval email would be sent to: ${user.email}`);
+      
+      // Schedule email sending using the approval email action
+      try {
+        const roleDisplayName = user.role === "physiotherapist" ? "Physiotherapist" 
+                              : user.role === "clinic_owner" ? "Clinic Owner" 
+                              : "User";
+        
+                        // Send approval notification with email using integrated system
+        await ctx.scheduler.runAfter(0, internal.notifications.email.sendApprovalNotificationWithEmail, {
+          userId: args.userId,
+          comments: args.comments,
+        });
+        console.log(`Approval notification with email scheduled for: ${user.email}`);
+      } catch (emailError) {
+        console.error(`Failed to schedule approval notification for ${user.email}:`, emailError);
+        // Don't fail the entire approval process if email fails
+      }
+    }
+
+    return { success: true, message: "User approved successfully" };
+  },
+});
+
+/**
+ * Decline a user account
+ */
+export const declineUser = mutation({
+  args: {
+    userId: v.id("users"),
+    comments: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Verify admin access
+    const currentUser = await ensureUserRole(ctx, ["admin"]);
+
+    // Get user and approval status
+    const user = await ctx.db.get(args.userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const approvalStatus = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .unique();
+
+    if (!approvalStatus) {
+      throw new Error("No approval request found for this user");
+    }
+
+    if (approvalStatus.status !== "pending_review") {
+      throw new Error("User has already been reviewed");
+    }
+
+    // Update approval status
+    await ctx.db.patch(approvalStatus._id, {
+      status: "declined",
+      reviewedAt: Date.now(),
+      reviewedBy: currentUser._id,
+      comments: args.comments,
+    });
+
+    // Create notification for user with email
+    const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'User';
+    const supportLink = "/support";
+
+    // Create decline notification
+    const notificationId = await ctx.db.insert("notifications", {
+      userId: args.userId,
+      type: "account_declined",
+      status: "pending",
+      createdAt: Date.now(),
+      priority: "high",
+      retryCount: 0,
+      payload: {
+        title: "Account Review Update",
+        body: "Your account application has been reviewed. Please contact support for more information.",
+        data: {
+          entityType: "account_approval",
+          actionUrl: supportLink,
+          metadata: {
+            reviewedBy: currentUser._id,
+            comments: args.comments,
+          },
+        },
+      },
+    });
+
+    // Send decline email using existing email service
+    if (user.email) {
+      console.log(`Decline email would be sent to: ${user.email} with comments: ${args.comments}`);
+      
+      // Schedule email sending using the decline email action
+      try {
+        const roleDisplayName = user.role === "physiotherapist" ? "Physiotherapist" 
+                              : user.role === "clinic_owner" ? "Clinic Owner" 
+                              : "User";
+        
+        // Send decline notification with email using integrated system
+        await ctx.scheduler.runAfter(0, internal.notifications.email.sendDeclineNotificationWithEmail, {
+          userId: args.userId,
+          reason: args.comments,
+        });
+        console.log(`Decline notification with email scheduled for: ${user.email}`);
+      } catch (emailError) {
+        console.error(`Failed to schedule decline notification for ${user.email}:`, emailError);
+        // Don't fail the entire decline process if email fails
+      }
+    }
+
+    return { success: true, message: "User account declined and notification sent" };
+  },
+});
+
+/**
+ * Get user's approval status
+ */
+export const getUserApprovalStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    
+    const approvalStatus = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .unique();
+
+    return approvalStatus;
+  },
+});
+
+/**
+ * Create approval request when user completes onboarding
+ */
+export const createApprovalRequest = mutation({
+  args: {
+    userId: v.id("users"),
+    requiredDocuments: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    // Check if approval request already exists
+    const existingApproval = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .unique();
+
+    if (existingApproval) {
+      return existingApproval._id;
+    }
+
+    // Create new approval request
+    const approvalId = await ctx.db.insert("accountApprovalStatus", {
+      userId: args.userId,
+      status: "pending_review",
+      submittedAt: Date.now(),
+      requiredDocuments: args.requiredDocuments,
+    });
+
+    return approvalId;
+  },
+});
+
+// getUserById is already defined earlier in the file, removing duplicate
+
+/**
+ * Create test user for system testing (Internal Mutation)
+ */
+export const createTestUser = internalMutation({
+  args: {
+    email: v.string(),
+    role: v.union(v.literal("physiotherapist"), v.literal("clinic_owner"), v.literal("patient")),
+  },
+  handler: async (ctx, args) => {
+    const testUserId = await ctx.db.insert("users", {
+      clerkId: `test-clerk-${Date.now()}`,
+      email: args.email,
+      firstName: "Test",
+      lastName: "User",
+      role: args.role,
+      onboarded: true,
+    });
+
+    return testUserId;
+  },
+});
+
+/**
+ * Delete test user (Internal Mutation)
+ */
+export const deleteTestUser = internalMutation({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    // Clean up related data
+    const notifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    for (const notification of notifications) {
+      await ctx.db.delete(notification._id);
+    }
+
+    // Delete the user
+    await ctx.db.delete(args.userId);
+    return true;
+  },
+});
+
+

@@ -70,10 +70,12 @@ export const declineAccount = action({
       await client(api.notifications.create, {
         userId: status.userId,
         type: 'account_declined',
-        title: notificationData.title,
-        message: notificationData.message,
-        data: notificationData.data,
-        sendEmail: args.sendEmail ?? true
+        priority: 'high',
+        payload: {
+          title: notificationData.title,
+          body: notificationData.message,
+          data: notificationData.data,
+        },
       });
       
       return { success: true };

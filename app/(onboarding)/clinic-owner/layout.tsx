@@ -12,7 +12,7 @@ export default function ClinicOwnerOnboardingLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const pathname = usePathname();
+  const pathname = usePathname() || '';
   const { user, isLoaded } = useUser();
   const { data, setCurrentStep, setRole } = useOnboardingStore();
   

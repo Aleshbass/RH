@@ -108,6 +108,8 @@ The goal is to build core functionalities iteratively, allowing for testing and 
 - AI-Powered Features (Triage, Exercise Recommendations)
 - Multilingual Support
 
+
+system where physios can share links to patients, patients can come and review them and rate them and each physio has it general average score base on what they are rated even clinic owners admins can track their ratings. when they are rated to some high avaerage they can either request for verification badge or pay for it
 ---
 
 This plan provides a structured approach. We can adjust timelines and priorities as we progress. 

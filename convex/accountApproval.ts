@@ -64,6 +64,94 @@ export const getStatus = query({
 });
 
 /**
+ * Get complete user details for admin review (including documents)
+ * This provides comprehensive information for admins to make approval decisions
+ */
+export const getApprovalDetails = query({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    // Verify user exists
+    const user = await getUserByIdOrThrow(ctx, args.userId);
+
+    // Get approval status
+    const approvalStatus = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .unique();
+
+    let profileDetails = null;
+    let documents: Array<{
+      _id: any;
+      _creationTime: number;
+      storageId: any;
+      downloadUrl?: string | null;
+      [key: string]: any;
+    }> = [];
+
+    // Get role-specific profile and documents
+    if (user.role === "physiotherapist" && user.physiotherapistProfileId) {
+      // Get physiotherapist profile
+      profileDetails = await ctx.db.get(user.physiotherapistProfileId);
+      
+      // Get physiotherapist documents
+      const physioDocuments = await ctx.db
+        .query("physiotherapistDocuments")
+        .withIndex("by_physiotherapist_id", (q) => 
+          q.eq("physiotherapistId", user.physiotherapistProfileId!)
+        )
+        .collect();
+      
+      // Add download URLs for documents
+      documents = await Promise.all(
+        physioDocuments.map(async (doc) => {
+          const downloadUrl = await ctx.storage.getUrl(doc.storageId);
+          return {
+            ...doc,
+            downloadUrl,
+          };
+        })
+      );
+    } else if (user.role === "clinic_owner") {
+      // Get clinic details
+      const clinic = await ctx.db
+        .query("clinics")
+        .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+        .unique();
+      
+      profileDetails = clinic;
+      
+      // Get clinic documents if clinic exists
+      if (clinic) {
+        const clinicDocuments = await ctx.db
+          .query("clinicDocuments")
+          .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+          .collect();
+        
+        // Add download URLs for documents
+        documents = await Promise.all(
+          clinicDocuments.map(async (doc) => {
+            const downloadUrl = await ctx.storage.getUrl(doc.storageId);
+            return {
+              ...doc,
+              downloadUrl,
+            };
+          })
+        );
+      }
+    }
+
+    return {
+      user,
+      approvalStatus,
+      profileDetails,
+      documents,
+    };
+  },
+});
+
+/**
  * List accounts pending approval
  * For admin dashboard
  */
@@ -110,6 +198,11 @@ export const listPendingApprovals = query({
     return usersWithStatus;
   },
 });
+
+/**
+ * Get pending approvals (alias for listPendingApprovals for compatibility)
+ */
+export const getPendingApprovals = listPendingApprovals;
 
 /**
  * Approve an account

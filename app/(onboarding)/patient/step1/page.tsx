@@ -12,7 +12,7 @@ export default function PatientStep1Page() {
   const { data, setRoleAndStep, updatePatientData } = useOnboardingStore();
   
   // Extract invitation code from URL parameters (if any)
-  const invitationCode = searchParams.get('invitationCode');
+  const invitationCode = searchParams ? searchParams.get('invitationCode') : null;
   
   // Use the backend API hook to validate the invitation code
   const { isLoading, isValid, invitation, message } = useValidateInvitationCode(invitationCode);

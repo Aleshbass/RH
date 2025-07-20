@@ -88,18 +88,20 @@ export const createPatientInvitationWithNotification = action({
         await client(api.notifications.create, {
           userId: user._id,
           type: 'invitation_created',
-          title: notificationData.title,
-          message: notificationData.message,
-          data: {
-            entityId: result.invitationCode,
-            entityType: 'invitation',
-            actionUrl: invitationUrl,
-            metadata: {
-              patientEmail: args.patientEmail,
-              patientName: args.patientName
+          payload: {
+            title: notificationData.title,
+            body: notificationData.message,
+            data: {
+              entityId: result.invitationCode,
+              entityType: 'invitation',
+              actionUrl: invitationUrl,
+              metadata: {
+                patientEmail: args.patientEmail,
+                patientName: args.patientName
+              }
             }
           },
-          sendEmail: args.sendEmail ?? false
+          priority: 'medium' as const
         });
       }
       
@@ -133,15 +135,13 @@ export const createPatientInvitation = mutation({
       // Get the authenticated user (must be a physiotherapist)
       const user = await ensureUserRole(ctx, ["physiotherapist"]);
       
-      // Get the physiotherapist profile to access their clinic
+      // Get the physiotherapist profile to access their clinic (optional for independent physiotherapists)
       const physiotherapistProfile = await ctx.db.get(user.physiotherapistProfileId!);
       if (!physiotherapistProfile) {
         return { success: false, message: "Physiotherapist profile not found." };
       }
       
-      if (!physiotherapistProfile.clinicId) {
-        return { success: false, message: "Physiotherapist profile does not have a clinicId." };
-      }
+      // clinicId is optional - null/undefined for independent physiotherapists
       
       // Generate a unique invitation code
       let code = generateInvitationCode();
@@ -168,7 +168,7 @@ export const createPatientInvitation = mutation({
       const invitationId = await ctx.db.insert("patientInvitations", {
         code,
         physiotherapistId: user._id,
-        clinicId: physiotherapistProfile.clinicId,
+        clinicId: physiotherapistProfile.clinicId || undefined, // Use undefined for independent physiotherapists
         patientEmail: args.patientEmail,
         patientName: args.patientName,
         status: "pending",
@@ -258,9 +258,9 @@ export const validateInvitationCode = query({
       
       // Get physiotherapist and clinic information
       const physiotherapist = await ctx.db.get(invitation.physiotherapistId);
-      const clinic = await ctx.db.get(invitation.clinicId);
+      const clinic = invitation.clinicId ? await ctx.db.get(invitation.clinicId) : null;
       
-      if (!physiotherapist || !clinic) {
+      if (!physiotherapist) {
         return { valid: false, message: "Invitation data is incomplete." };
       }
       
@@ -271,10 +271,11 @@ export const validateInvitationCode = query({
           _id: invitation._id,
           code: invitation.code,
           physiotherapistName: `${physiotherapist.firstName || ""} ${physiotherapist.lastName || ""}`.trim(),
-          clinicName: clinic.name,
+          clinicName: clinic?.name || "Independent Practice",
           patientEmail: invitation.patientEmail,
           patientName: invitation.patientName,
           expiresAt: invitation.expiresAt,
+          notes: invitation.notes,
         },
       };
     } catch (error) {
@@ -367,10 +368,12 @@ export const completePatientOnboardingWithNotification = action({
       await client(api.notifications.create, {
         userId: user._id,
         type: 'onboarding_complete',
-        title: patientNotification.title,
-        message: patientNotification.message,
-        data: patientNotification.data,
-        sendEmail: args.sendEmail ?? true
+        payload: {
+          title: patientNotification.title,
+          body: patientNotification.message,
+          data: patientNotification.data || {}
+        },
+        priority: 'medium' as const
       });
       
             // Get the full invitation details directly from the unique code
@@ -390,17 +393,19 @@ export const completePatientOnboardingWithNotification = action({
         await client(api.notifications.create, {
           userId: physiotherapistId,
           type: 'patient_onboarded',
-          title: `${patientName} completed onboarding`,
-          message: `Your patient ${patientName} has completed their account setup and is ready for treatment.`,
-          data: {
-            entityType: 'patient_onboarding',
-            entityId: user._id.toString(), // Convert ID to string
-            actionUrl: `/dashboard/physiotherapist/patients`,
-            metadata: {
-              patientName
+          payload: {
+            title: `${patientName} completed onboarding`,
+            body: `Your patient ${patientName} has completed their account setup and is ready for treatment.`,
+            data: {
+              entityType: 'patient_onboarding',
+              entityId: user._id.toString(), // Convert ID to string
+              actionUrl: `/dashboard/physiotherapist/patients`,
+              metadata: {
+                patientName
+              }
             }
           },
-          sendEmail: args.sendEmail ?? true
+          priority: 'high' as const
         });
       }
       
@@ -747,11 +752,8 @@ export const getMyPhysiotherapists = query({
           return null; // Skip if physiotherapist doesn't exist
         }
         
-        // Get clinic information
-        const clinic = await ctx.db.get(relationship.clinicId);
-        if (!clinic) {
-          return null; // Skip if clinic doesn't exist
-        }
+        // Get clinic information (optional for independent physiotherapists)
+        const clinic = relationship.clinicId ? await ctx.db.get(relationship.clinicId) : null;
         
         // Get physiotherapist profile information
         let profileInfo;
@@ -770,7 +772,7 @@ export const getMyPhysiotherapists = query({
           relationshipId: relationship._id,
           physiotherapistId: physiotherapist._id,
           name: `${physiotherapist.firstName || ""} ${physiotherapist.lastName || ""}`.trim(),
-          clinicName: clinic.name,
+          clinicName: clinic?.name || "Independent Practice",
           isPrimaryPhysiotherapist: relationship.isPrimaryPhysiotherapist,
           status: relationship.status,
           startDate: relationship.startDate,

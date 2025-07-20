@@ -153,187 +153,877 @@ export const getAllClinics = query({
 });
 
 /**
- * Invite a physiotherapist to join a clinic
- * In this initial implementation, we'll just associate an existing user with the clinic
- * Future enhancement: Send actual email invitations and create pending invites
+ * Create an invitation for a physiotherapist to join a clinic
  */
 export const invitePhysiotherapist = mutation({
   args: {
-    clinicId: v.id("clinics"),
-    email: v.string(),
+    inviteeEmail: v.string(),
+    inviteeName: v.optional(v.string()),
+    message: v.optional(v.string()),
   },
-  returns: v.object({ 
-    success: v.boolean(),
-    message: v.string() 
-  }),
   handler: async (ctx, args) => {
-    // Check that the user is the owner of this clinic
-    const { user, clinic } = await ensureClinicOwner(ctx, args.clinicId);
+    // Get authenticated clinic owner
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
 
-    // Find the physiotherapist by email
-    const physiotherapist = await ctx.db
+    const clinicOwner = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique();
 
-    if (!physiotherapist) {
+    if (!clinicOwner || clinicOwner.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can invite physiotherapists");
+    }
+
+    // Get clinic owned by this user
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", clinicOwner._id))
+      .unique();
+
+    if (!clinic) {
+      throw new Error("Clinic not found");
+    }
+
+    // Check if there's already a pending invitation for this email
+    const existingInvitation = await ctx.db
+      .query("clinicStaffInvitations")
+      .filter((q) => 
+        q.and(
+          q.eq(q.field("clinicId"), clinic._id),
+          q.eq(q.field("inviteeEmail"), args.inviteeEmail),
+          q.eq(q.field("status"), "pending")
+        )
+      )
+      .unique();
+
+    if (existingInvitation) {
+      throw new Error("There is already a pending invitation for this email");
+    }
+
+    // Generate unique invitation code
+    const code = generateInvitationCode();
+
+    // Create invitation
+    const invitationId = await ctx.db.insert("clinicStaffInvitations", {
+      code,
+      clinicId: clinic._id,
+      clinicOwnerId: clinicOwner._id,
+      inviteeEmail: args.inviteeEmail,
+      inviteeName: args.inviteeName,
+      role: "physiotherapist",
+      status: "pending",
+      createdAt: Date.now(),
+      expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
+      message: args.message,
+    });
+
+    // TODO: Send email notification to invitee
+
       return {
-        success: false,
-        message: `No user found with email ${args.email}`
-      };
-    }
-
-    if (physiotherapist.role !== "physiotherapist") {
-      return {
-        success: false,
-        message: `User with email ${args.email} is not a physiotherapist`
-      };
-    }
-
-    // Check if this physiotherapist already has a profile
-    if (physiotherapist.physiotherapistProfileId) {
-      // Check if they're already associated with this clinic
-      const profile = await ctx.db.get(physiotherapist.physiotherapistProfileId);
-      if (profile && profile.clinicId === args.clinicId) {
-        return {
-          success: false,
-          message: `Physiotherapist is already associated with this clinic`
-        };
-      }
-
-      // Update their profile to associate with this clinic
-      await ctx.db.patch(physiotherapist.physiotherapistProfileId, {
-        clinicId: args.clinicId
-      });
-    } else {
-      // Create a physiotherapist profile and associate with the clinic
-      const profileId = await ctx.db.insert("physiotherapistProfiles", {
-        userId: physiotherapist._id,
-        clinicId: args.clinicId,
-      });
-
-      // Update the user record to link to this profile
-      await ctx.db.patch(physiotherapist._id, {
-        physiotherapistProfileId: profileId
-      });
-    }
-
-    return {
       success: true,
-      message: `Physiotherapist ${physiotherapist.email} associated with clinic successfully`
+      invitationId,
+      code,
+      message: "Invitation sent successfully",
     };
   },
 });
 
 /**
- * Get all physiotherapists for a clinic
+ * Accept a clinic staff invitation
  */
-export const getClinicPhysiotherapists = query({
+export const acceptClinicInvitation = mutation({
   args: {
-    clinicId: v.id("clinics"),
+    code: v.string(),
   },
-  returns: v.array(v.object({
-    _id: v.id("users"),
-    name: v.string(),
-    email: v.optional(v.string()),
-    imageUrl: v.optional(v.string()),
-    specializations: v.optional(v.array(v.string())),
-    licenseNumber: v.optional(v.string()),
-    yearsOfExperience: v.optional(v.number()),
-  })),
   handler: async (ctx, args) => {
-    // Make sure the user has access to this clinic's data
-    // Either they're the owner or they're a physiotherapist at this clinic
-    const user = await getAuthenticatedUser(ctx);
-    
-    let hasAccess = false;
-    
-    if (user.role === "clinic_owner") {
-      const clinic = await ctx.db.get(args.clinicId);
-      hasAccess = !!(clinic && clinic.ownerId === user._id);
-    } else if (user.role === "physiotherapist" && user.physiotherapistProfileId) {
-      const profile = await ctx.db.get(user.physiotherapistProfileId);
-      if (profile) {
-        hasAccess = profile.clinicId === args.clinicId;
-      } else {
-        hasAccess = false;
-      }
-    }
-    
-    if (!hasAccess) {
-      throw new Error("You don't have permission to view this clinic's physiotherapists");
+    // Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
     }
 
-    // Get all physiotherapist profiles for this clinic
-    const profiles = await ctx.db
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Find the invitation
+    const invitation = await ctx.db
+      .query("clinicStaffInvitations")
+      .withIndex("by_code", (q) => q.eq("code", args.code))
+      .unique();
+
+    if (!invitation) {
+      throw new Error("Invalid invitation code");
+    }
+
+    if (invitation.status !== "pending") {
+      throw new Error("This invitation has already been processed");
+    }
+
+    if (Date.now() > invitation.expiresAt) {
+      // Mark as expired
+      await ctx.db.patch(invitation._id, { status: "expired" });
+      throw new Error("This invitation has expired");
+    }
+
+    // Verify email matches
+    if (user.email !== invitation.inviteeEmail) {
+      throw new Error("This invitation was sent to a different email address");
+    }
+
+    // Update user role and profile
+    await ctx.db.patch(user._id, {
+      role: "physiotherapist",
+      onboarded: true,
+    });
+
+    // Create or update physiotherapist profile
+    let physiotherapistProfile = await ctx.db
       .query("physiotherapistProfiles")
-      .withIndex("by_clinic_id", (q) => q.eq("clinicId", args.clinicId))
-      .collect();
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .unique();
 
-    // Get the user details for each profile
-    const results = [];
-    for (const profile of profiles) {
-      const physioUser = await ctx.db.get(profile.userId);
-      if (physioUser) {
-        results.push({
-          _id: physioUser._id,
-          name: `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim(),
-          email: physioUser.email,
-          imageUrl: physioUser.imageUrl,
-          specializations: profile.specializations,
-          licenseNumber: profile.licenseNumber,
-          yearsOfExperience: profile.yearsOfExperience,
-        });
+    if (physiotherapistProfile) {
+      // Update existing profile with clinic
+      await ctx.db.patch(physiotherapistProfile._id, {
+        clinicId: invitation.clinicId,
+      });
+    } else {
+      // Create new profile
+      await ctx.db.insert("physiotherapistProfiles", {
+        userId: user._id,
+        clinicId: invitation.clinicId,
+      });
+    }
+
+    // Mark invitation as accepted
+    await ctx.db.patch(invitation._id, {
+      status: "accepted",
+      acceptedBy: user._id,
+    });
+
+    // Create notification for clinic owner
+    await ctx.db.insert("notifications", {
+      userId: invitation.clinicOwnerId,
+      type: "invitation_accepted",
+      status: "pending",
+      createdAt: Date.now(),
+      priority: "medium",
+      payload: {
+        title: "Staff Invitation Accepted",
+        body: `${user.firstName} ${user.lastName} has joined your clinic as a physiotherapist`,
+        data: {
+          entityId: invitation._id,
+          entityType: "clinic_staff_invitation",
+        }
       }
-    }
-
-    return results;
-  },
-});
-
-/**
- * Remove a physiotherapist from a clinic
- */
-export const removePhysiotherapist = mutation({
-  args: {
-    clinicId: v.id("clinics"),
-    physiotherapistId: v.id("users"),
-  },
-  returns: v.object({ 
-    success: v.boolean(),
-    message: v.string() 
-  }),
-  handler: async (ctx, args) => {
-    // Check that the user is the owner of this clinic
-    const { user, clinic } = await ensureClinicOwner(ctx, args.clinicId);
-
-    // Get the physiotherapist
-    const physiotherapist = await ctx.db.get(args.physiotherapistId);
-    if (!physiotherapist || !physiotherapist.physiotherapistProfileId) {
-      return {
-        success: false,
-        message: "Physiotherapist not found"
-      };
-    }
-
-    // Get their profile
-    const profile = await ctx.db.get(physiotherapist.physiotherapistProfileId);
-    if (!profile || profile.clinicId !== args.clinicId) {
-      return {
-        success: false,
-        message: "Physiotherapist is not associated with this clinic"
-      };
-    }
-
-    // For now, we'll simply remove the association to the clinic
-    // In a more complex system, you might want to handle appointments, patients, etc.
-    await ctx.db.patch(physiotherapist.physiotherapistProfileId, {
-      clinicId: undefined // Remove association
     });
 
     return {
       success: true,
-      message: "Physiotherapist removed from clinic successfully"
+      message: "Successfully joined the clinic!",
     };
+  },
+});
+
+/**
+ * Get pending invitations for a clinic
+ */
+export const getClinicInvitations = query({
+  args: {},
+  returns: v.array(v.object({
+    _id: v.id("clinicStaffInvitations"),
+    clinicId: v.id("clinics"),
+    clinicOwnerId: v.id("users"),
+    inviteeEmail: v.string(),
+    code: v.string(),
+    status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("declined"), v.literal("expired")),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    acceptedBy: v.optional(v.id("users")),
+    isExpired: v.boolean(),
+  })),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user || user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can view invitations");
+    }
+
+    // Get clinic
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+    
+    if (!clinic) {
+      return [];
+    }
+
+    // Get all invitations for this clinic
+    const invitations = await ctx.db
+      .query("clinicStaffInvitations")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
+      .order("desc")
+      .collect();
+
+    return invitations.map(invitation => ({
+      ...invitation,
+      isExpired: Date.now() > invitation.expiresAt,
+    }));
+  },
+});
+
+/**
+ * Get clinic staff members
+ */
+export const getClinicStaff = query({
+  args: {},
+  returns: v.array(v.object({
+    _id: v.id("physiotherapistProfiles"),
+    userId: v.id("users"),
+    clinicId: v.optional(v.id("clinics")),
+    specialties: v.optional(v.array(v.string())),
+    bio: v.optional(v.string()),
+    licenseNumber: v.optional(v.string()),
+    user: v.any(), // Assuming user can be any object
+  })),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user || user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can view staff");
+    }
+
+    // Get clinic
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      return [];
+    }
+
+    // Get all physiotherapist profiles for this clinic
+    const physiotherapistProfiles = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+      .collect();
+
+    // Get user details for each physiotherapist
+    const staff = await Promise.all(
+      physiotherapistProfiles.map(async (profile) => {
+        const user = await ctx.db.get(profile.userId);
+        return {
+          ...profile,
+          user,
+        };
+      })
+    );
+
+    return staff.filter(s => s.user); // Filter out any null users
+  },
+});
+
+/**
+ * Decline a clinic staff invitation
+ */
+export const declineClinicInvitation = mutation({
+  args: {
+    code: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Find the invitation
+    const invitation = await ctx.db
+      .query("clinicStaffInvitations")
+      .withIndex("by_code", (q) => q.eq("code", args.code))
+      .unique();
+
+    if (!invitation) {
+      throw new Error("Invalid invitation code");
+    }
+
+    if (invitation.status !== "pending") {
+      throw new Error("This invitation has already been processed");
+    }
+
+    // Verify email matches
+    if (user.email !== invitation.inviteeEmail) {
+      throw new Error("This invitation was sent to a different email address");
+    }
+
+    // Mark invitation as declined
+    await ctx.db.patch(invitation._id, {
+      status: "declined",
+    });
+
+    // Create notification for clinic owner
+    await ctx.db.insert("notifications", {
+      userId: invitation.clinicOwnerId,
+      type: "invitation_declined",
+      priority: "medium",
+      status: "pending",
+      payload: {
+        title: "Staff Invitation Declined",
+        body: `${user.firstName} ${user.lastName} has declined your clinic invitation`,
+        data: {
+          entityId: invitation._id,
+          entityType: "clinic_staff_invitation",
+        },
+      },
+      createdAt: Date.now(),
+    });
+
+    return {
+      success: true,
+      message: "Invitation declined",
+    };
+  },
+});
+
+/**
+ * Get invitation details by code (for invitation page)
+ */
+export const getInvitationByCode = query({
+  args: { code: v.string() },
+  handler: async (ctx, args) => {
+    const invitation = await ctx.db
+      .query("clinicStaffInvitations")
+      .withIndex("by_code", (q) => q.eq("code", args.code))
+      .unique();
+
+    if (!invitation) {
+      return null;
+    }
+
+    // Get clinic details
+    const clinic = await ctx.db.get(invitation.clinicId);
+    const clinicOwner = await ctx.db.get(invitation.clinicOwnerId);
+
+    // Get clinic staff count for display
+    const staffCount = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", invitation.clinicId))
+      .collect();
+
+    return {
+      ...invitation,
+      clinic: clinic ? {
+        ...clinic,
+        staffCount: staffCount.length,
+      } : null,
+      clinicOwner,
+      isExpired: Date.now() > invitation.expiresAt,
+    };
+  },
+});
+
+// Helper function to generate invitation codes
+function generateInvitationCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 8; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+/**
+ * Get clinic dashboard statistics for clinic owner
+ */
+export const getClinicDashboardStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user || user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can view clinic statistics");
+    }
+
+    // Get clinic
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      return {
+        totalPatients: 0,
+        activeStaff: 0,
+        appointmentsToday: 0,
+        thisMonthAppointments: 0,
+        completionRate: 0,
+        pendingInvitations: 0,
+      };
+    }
+
+    // Get all physiotherapists in this clinic
+    const physiotherapistProfiles = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+      .collect();
+
+    const physiotherapistIds = physiotherapistProfiles.map(p => p.userId);
+
+    // Get total unique patients across all clinic physiotherapists
+    const patientRelationships = await Promise.all(
+      physiotherapistIds.map(physioId =>
+        ctx.db
+          .query("patientPhysiotherapistRelationships")
+          .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", physioId))
+          .filter((q) => q.eq(q.field("status"), "active"))
+          .collect()
+      )
+    );
+
+    const uniquePatientIds = new Set(
+      patientRelationships.flat().map(rel => rel.patientId)
+    );
+
+    // Get today's appointments across all clinic physiotherapists
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const endOfDay = startOfDay + (24 * 60 * 60 * 1000) - 1;
+
+    const todaysAppointments = await Promise.all(
+      physiotherapistIds.map(physioId =>
+        ctx.db
+          .query("appointments")
+          .withIndex("by_physiotherapist_id_and_time", (q) => 
+            q.eq("physiotherapistId", physioId).gte("startTime", startOfDay)
+          )
+          .filter((q) => q.lte(q.field("startTime"), endOfDay))
+          .collect()
+      )
+    );
+
+    // Get this month's appointments
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+
+    const thisMonthAppointments = await Promise.all(
+      physiotherapistIds.map(physioId =>
+        ctx.db
+          .query("appointments")
+          .withIndex("by_physiotherapist_id_and_time", (q) => 
+            q.eq("physiotherapistId", physioId).gte("startTime", startOfMonth)
+          )
+          .filter((q) => q.lte(q.field("startTime"), endOfMonth))
+          .collect()
+      )
+    );
+
+    const allThisMonthAppointments = thisMonthAppointments.flat();
+    const completedAppointments = allThisMonthAppointments.filter(apt => apt.status === "completed");
+    const completionRate = allThisMonthAppointments.length > 0 
+      ? Math.round((completedAppointments.length / allThisMonthAppointments.length) * 100)
+      : 0;
+
+    // Get pending invitations
+    const pendingInvitations = await ctx.db
+      .query("clinicStaffInvitations")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
+      .filter((q) => q.eq(q.field("status"), "pending"))
+      .collect();
+
+    return {
+      totalPatients: uniquePatientIds.size,
+      activeStaff: physiotherapistProfiles.length,
+      appointmentsToday: todaysAppointments.flat().length,
+      thisMonthAppointments: allThisMonthAppointments.length,
+      completionRate,
+      pendingInvitations: pendingInvitations.length,
+    };
+  },
+});
+
+/**
+ * Get clinic revenue analytics for clinic owner
+ */
+export const getClinicRevenue = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user || user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can view clinic revenue");
+    }
+
+    // Get clinic
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      return {
+        thisMonth: 0,
+        lastMonth: 0,
+        growth: 0,
+        totalRevenue: 0,
+        pendingPayments: 0,
+      };
+    }
+
+    // Get all physiotherapists in this clinic
+    const physiotherapistProfiles = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+      .collect();
+
+    const physiotherapistIds = physiotherapistProfiles.map(p => p.userId);
+
+    // Get this month's invoices
+    const today = new Date();
+    const startOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
+    const endOfThisMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+
+    // Get last month's invoices
+    const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1).getTime();
+    const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0, 23, 59, 59, 999).getTime();
+
+    // Get all invoices for this clinic
+    const allInvoices = await ctx.db
+      .query("invoices")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+      .collect();
+
+    const flatInvoices = allInvoices;
+
+    // Calculate this month's revenue
+    const thisMonthInvoices = flatInvoices.filter(invoice => 
+      invoice._creationTime >= startOfThisMonth && invoice._creationTime <= endOfThisMonth
+    );
+    const thisMonthRevenue = thisMonthInvoices
+      .filter(invoice => invoice.status === "paid")
+      .reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+
+    // Calculate last month's revenue
+    const lastMonthInvoices = flatInvoices.filter(invoice => 
+      invoice._creationTime >= startOfLastMonth && invoice._creationTime <= endOfLastMonth
+    );
+    const lastMonthRevenue = lastMonthInvoices
+      .filter(invoice => invoice.status === "paid")
+      .reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+
+    // Calculate growth percentage
+    const growth = lastMonthRevenue > 0 
+      ? Math.round(((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100)
+      : thisMonthRevenue > 0 ? 100 : 0;
+
+    // Calculate total revenue
+    const totalRevenue = flatInvoices
+      .filter(invoice => invoice.status === "paid")
+      .reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+
+    // Calculate pending payments (only "sent" status exists)
+    const pendingPayments = flatInvoices
+      .filter(invoice => invoice.status === "sent")
+      .reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+
+    return {
+      thisMonth: thisMonthRevenue,
+      lastMonth: lastMonthRevenue,
+      growth,
+      totalRevenue,
+      pendingPayments,
+    };
+  },
+});
+
+/**
+ * Get clinic performance metrics for analytics
+ */
+export const getClinicPerformanceMetrics = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user || user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can view clinic metrics");
+    }
+
+    // Get clinic
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      return {
+        averageRating: 0,
+        totalReviews: 0,
+        patientRetentionRate: 0,
+        averageSessionsPerPatient: 0,
+        staffUtilization: 0,
+      };
+    }
+
+    // Get all physiotherapists in this clinic
+    const physiotherapistProfiles = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+      .collect();
+
+    const physiotherapistIds = physiotherapistProfiles.map(p => p.userId);
+
+    // Reviews system not implemented yet - return mock data
+    const averageRating = 4.5; // Mock average rating
+    const totalReviews = 0;
+
+    // Get patient relationships and session counts
+    const patientRelationships = await Promise.all(
+      physiotherapistIds.map(physioId =>
+        ctx.db
+          .query("patientPhysiotherapistRelationships")
+          .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", physioId))
+          .filter((q) => q.eq(q.field("status"), "active"))
+          .collect()
+      )
+    );
+
+    const flatRelationships = patientRelationships.flat();
+    const uniquePatientIds = new Set(flatRelationships.map(rel => rel.patientId));
+
+    // Get session logs for all patients
+    const allSessionLogs = await Promise.all(
+      physiotherapistIds.map(physioId =>
+        ctx.db
+          .query("sessionLogs")
+          .filter((q) => q.eq(q.field("physiotherapistId"), physioId))
+          .collect()
+      )
+    );
+
+    const flatSessionLogs = allSessionLogs.flat();
+    const averageSessionsPerPatient = uniquePatientIds.size > 0
+      ? Math.round((flatSessionLogs.length / uniquePatientIds.size) * 10) / 10
+      : 0;
+
+    // Calculate patient retention rate (patients with more than 1 session)
+    const patientSessionCounts = new Map();
+    flatSessionLogs.forEach(session => {
+      const count = patientSessionCounts.get(session.patientId) || 0;
+      patientSessionCounts.set(session.patientId, count + 1);
+    });
+
+    const retainedPatients = Array.from(patientSessionCounts.values()).filter(count => count > 1).length;
+    const patientRetentionRate = uniquePatientIds.size > 0
+      ? Math.round((retainedPatients / uniquePatientIds.size) * 100)
+      : 0;
+
+    // Calculate staff utilization (rough estimate based on appointments vs available hours)
+    const today = new Date();
+    const startOfWeek = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay()).getTime();
+    const endOfWeek = startOfWeek + (7 * 24 * 60 * 60 * 1000) - 1;
+
+    const weeklyAppointments = await Promise.all(
+      physiotherapistIds.map(physioId =>
+        ctx.db
+          .query("appointments")
+          .withIndex("by_physiotherapist_id_and_time", (q) => 
+            q.eq("physiotherapistId", physioId).gte("startTime", startOfWeek)
+          )
+          .filter((q) => q.lte(q.field("startTime"), endOfWeek))
+          .collect()
+      )
+    );
+
+    const flatWeeklyAppointments = weeklyAppointments.flat();
+    const totalAppointmentHours = flatWeeklyAppointments.reduce((sum, apt) => 
+      sum + (apt.endTime - apt.startTime) / (60 * 60 * 1000), 0
+    );
+
+    // Assume 40 hours per week per staff member as baseline
+    const totalAvailableHours = physiotherapistIds.length * 40;
+    const staffUtilization = totalAvailableHours > 0
+      ? Math.round((totalAppointmentHours / totalAvailableHours) * 100)
+      : 0;
+
+    return {
+      averageRating,
+      totalReviews,
+      patientRetentionRate,
+      averageSessionsPerPatient,
+      staffUtilization,
+    };
+  },
+});
+
+/**
+ * Get recent clinic activity for dashboard feed
+ */
+export const getClinicRecentActivity = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 10;
+    
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user || user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can view clinic activity");
+    }
+
+    // Get clinic
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      return [];
+    }
+
+    // Get all physiotherapists in this clinic
+    const physiotherapistProfiles = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+      .collect();
+
+    const physiotherapistIds = physiotherapistProfiles.map(p => p.userId);
+
+    // Get recent appointments
+    const recentAppointments = await Promise.all(
+      physiotherapistIds.map(physioId =>
+        ctx.db
+          .query("appointments")
+          .withIndex("by_physiotherapist_id_and_time", (q) => 
+            q.eq("physiotherapistId", physioId)
+          )
+          .order("desc")
+          .take(5)
+      )
+    );
+
+    // Get recent session logs
+    const recentSessions = await Promise.all(
+      physiotherapistIds.map(physioId =>
+        ctx.db
+          .query("sessionLogs")
+          .filter((q) => q.eq(q.field("physiotherapistId"), physioId))
+          .order("desc")
+          .take(5)
+      )
+    );
+
+    // Get recent patient invitations
+    const recentInvitations = await Promise.all(
+      physiotherapistIds.map(physioId =>
+        ctx.db
+          .query("patientInvitations")
+          .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", physioId))
+          .order("desc")
+          .take(3)
+      )
+    );
+
+    // Combine and sort all activities
+    const activities: any[] = [];
+
+    // Add appointments
+    recentAppointments.flat().forEach(apt => {
+      activities.push({
+        type: "appointment",
+        timestamp: apt._creationTime,
+        data: apt,
+      });
+    });
+
+    // Add sessions
+    recentSessions.flat().forEach(session => {
+      activities.push({
+        type: "session",
+        timestamp: session._creationTime,
+        data: session,
+      });
+    });
+
+    // Add invitations
+    recentInvitations.flat().forEach(invitation => {
+      activities.push({
+        type: "invitation",
+        timestamp: invitation._creationTime,
+        data: invitation,
+      });
+    });
+
+    // Sort by timestamp and limit
+    return activities
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, limit);
   },
 });

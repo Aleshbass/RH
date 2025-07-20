@@ -3,23 +3,21 @@
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
 import { api } from "../../_generated/api";
-import { formatInvitationCreatedNotification } from "../../../lib/notifications/notificationService";
 
-/**
- * Create a new patient invitation and send notification
- * This action wraps the base createPatientInvitation mutation and adds notification sending
- */
-// Define the return type to avoid circular references
+// Define the return type for the invitation result
 type InvitationResult = {
   success: boolean;
   invitationCode?: string;
-  invitationId?: string;
   message?: string;
 };
 
+/**
+ * Create a new patient invitation and send notification
+ * This action wraps the base createPatientInvitation mutation and sends email to patient
+ */
 export const createPatientInvitationWithNotification = action({
   args: {
-    patientEmail: v.optional(v.string()),
+    patientEmail: v.string(),
     patientName: v.optional(v.string()),
     notes: v.optional(v.string()),
     expirationDays: v.optional(v.number()),
@@ -27,76 +25,92 @@ export const createPatientInvitationWithNotification = action({
   },
   handler: async (ctx, args): Promise<InvitationResult> => {
     try {
-      // Get Convex clients
-      const client = ctx.runMutation;
-      const query = ctx.runQuery;
-      
       // Create the invitation using the base mutation
-      const result: InvitationResult = await client(api.patientInvitations.createPatientInvitation, args);
+      const result: InvitationResult = await ctx.runMutation(api.patientInvitations.createPatientInvitation, {
+        patientEmail: args.patientEmail,
+        patientName: args.patientName,
+        notes: args.notes,
+        expirationDays: args.expirationDays,
+      });
       
       if (!result.success || !result.invitationCode) {
         return result;
       }
       
       // Get the authenticated user (the physiotherapist)
-      const user = await query(api.users.getMyUser, {});
+      const user = await ctx.runQuery(api.users.getMyUser, {});
       if (!user) {
-        return result;
+        return { success: false, message: "User not found" };
       }
       
-      // Get the invitation details
-      const invitation = await query(api.patientInvitations.validateInvitationCode, {
-        code: result.invitationCode,
-      });
+      // Get Clerk identity for more complete name information
+      const identity = await ctx.auth.getUserIdentity();
       
-      if (!invitation?.valid || !invitation?.invitation) {
-        return result;
+      // Send email to patient if requested
+      if (args.sendEmail !== false) { // Default to true
+        // Try to get name from multiple sources
+        let physiotherapistName = '';
+        
+        // First try database firstName/lastName
+        if (user.firstName || user.lastName) {
+          physiotherapistName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+        }
+        
+        // If not available, try Clerk identity
+        if (!physiotherapistName && identity) {
+          physiotherapistName = identity.name || '';
+        }
+        
+        // Final fallback to email or generic name
+        if (!physiotherapistName) {
+          physiotherapistName = user.email || 'Your Physiotherapist';
+        }
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        const invitationLink = `${baseUrl}/patient-invite/${result.invitationCode}`;
+        const expiresAt = Date.now() + (args.expirationDays || 7) * 24 * 60 * 60 * 1000;
+        
+        // Send email using the dedicated email action
+        try {
+          await ctx.runAction(api.actions.emails.sendInvitationEmail.sendPatientInvitationEmail, {
+            patientEmail: args.patientEmail,
+            patientName: args.patientName,
+            physiotherapistName,
+            invitationCode: result.invitationCode,
+            invitationLink,
+            expiresAt,
+          });
+        } catch (emailError) {
+          console.error('Failed to send invitation email:', emailError);
+          // Continue - invitation was created, just email failed
+        }
       }
       
       // Create notification for the physiotherapist
-      if (user._id) {
-        const invitationUrl = result.invitationCode ? 
-          `/invitation/${result.invitationCode}` : 
-          '/dashboard/physiotherapist/patients';
-          
-        const physiotherapistName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Physiotherapist';
-        const patientName = args.patientName || args.patientEmail || 'Patient';
-        
-        // Format notification data with all required parameters
-        const notificationData = formatInvitationCreatedNotification(
-          patientName,
-          args.patientEmail || '',
-          physiotherapistName,
-          result.invitationCode || '',
-          invitationUrl,
-          // Expiration date (default to 7 days from now if not specified)
-          Date.now() + (args.expirationDays || 7) * 24 * 60 * 60 * 1000
-        );
-        
-        // Send notification to the physiotherapist
-        await client(api.notifications.create, {
+      await ctx.runMutation(api.notifications.create, {
           userId: user._id,
           type: 'invitation_created',
-          title: notificationData.title,
-          message: notificationData.message,
-          data: {
-            entityId: result.invitationCode,
-            entityType: 'invitation',
-            actionUrl: invitationUrl,
-            metadata: {
-              patientEmail: args.patientEmail,
-              patientName: args.patientName
+          priority: 'medium',
+          payload: {
+            title: 'Patient Invitation Sent',
+            body: `Invitation sent to ${args.patientName || args.patientEmail}`,
+            data: {
+              entityId: result.invitationCode,
+              entityType: 'invitation',
+              actionUrl: '/dashboard/physiotherapist/patients',
+              metadata: {
+                patientEmail: args.patientEmail,
+                patientName: args.patientName
+              }
             }
-          },
-          sendEmail: args.sendEmail ?? false
+          }
         });
-      }
       
       return result;
     } catch (error) {
+      console.error('Error in createPatientInvitationWithNotification:', error);
       return {
         success: false,
-        message: error instanceof Error ? error.message : "An error occurred while creating the patient invitation.",
+        message: error instanceof Error ? error.message : "Failed to create patient invitation",
       };
     }
   },

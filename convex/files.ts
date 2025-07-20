@@ -415,3 +415,54 @@ export const getPatientDocuments = query({
     );
   },
 });
+
+/**
+ * Get patient documents for physiotherapist who has an active relationship
+ */
+export const getPatientDocumentsForPhysio = query({
+  args: { patientUserId: v.id("users") },
+  returns: v.array(v.object({
+    _id: v.id("patientDocuments"),
+    patientProfileId: v.id("patientProfiles"),
+    storageId: v.id("_storage"),
+    documentType: v.union(
+      v.literal("referralLetter"),
+      v.literal("medicalRecord"),
+      v.literal("insuranceCard"),
+      v.literal("otherDocument")
+    ),
+    fileName: v.string(),
+    fileSize: v.number(),
+    contentType: v.string(),
+    uploadedAt: v.number(),
+    downloadUrl: v.string(),
+  })),
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (user.role !== "physiotherapist") throw new Error("Access denied");
+
+    // Check active relationship
+    const rel = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient_and_physiotherapist", (q)=>
+        q.eq("patientId", args.patientUserId).eq("physiotherapistId", user._id))
+      .filter((q)=>q.eq(q.field("status"), "active"))
+      .unique();
+
+    if (!rel) throw new Error("No access to this patient");
+
+    // Get patient profile
+    const patient = await ctx.db.get(args.patientUserId);
+    if (!patient?.patientProfileId) return [];
+
+    const docs = await ctx.db
+      .query("patientDocuments")
+      .withIndex("by_patient_profile_id", (q)=>q.eq("patientProfileId", patient.patientProfileId!))
+      .collect();
+
+    return await Promise.all(docs.map(async (d)=>({
+      ...d,
+      downloadUrl: (await ctx.storage.getUrl(d.storageId)) || "",
+    })));
+  },
+});
