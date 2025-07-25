@@ -59,8 +59,18 @@ function DailyCallInterface({
 }) {
   const daily = useDaily()
   const participantIds = useParticipantIds()
-  // Get all participants using the participant IDs
-  const allParticipants = participantIds.map(id => useParticipant(id)).filter(Boolean)
+  
+  // Create a stable list of participants by calling useParticipant for each ID
+  // We need to call hooks unconditionally, so we'll use a fixed number of calls
+  const participant1 = useParticipant(participantIds[0])
+  const participant2 = useParticipant(participantIds[1])
+  const participant3 = useParticipant(participantIds[2])
+  const participant4 = useParticipant(participantIds[3])
+  
+  // Filter out null participants and create the final list
+  const allParticipants = [participant1, participant2, participant3, participant4]
+    .filter(Boolean)
+    .slice(0, participantIds.length)
   const { isSharingScreen, startScreenShare, stopScreenShare } = useScreenShare()
   const meetingState = useMeetingState()
   
@@ -227,54 +237,54 @@ function DailyCallInterface({
       {/* Video Grid */}
         <div className="flex-1 flex">
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-          {participantIds.map((participantId) => {
-            const participant = useParticipant(participantId)
+          {allParticipants.map((participant) => {
             if (!participant) return null
             return (
-            <Card key={participant.session_id} className="bg-gray-800 border-gray-700 relative overflow-hidden">
-              <CardContent className="p-0 aspect-video">
-                {(participant as any).video && (participant as any).videoTrack ? (
-                  <video
-                    ref={(el) => {
-                      if (el && (participant as any).videoTrack) {
-                        el.srcObject = new MediaStream([(participant as any).videoTrack])
-                        el.play()
-                      }
-                    }}
-                    className="w-full h-full object-cover"
-                    autoPlay
-                    muted={participant.local}
-                    playsInline
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-gray-700">
-                    <User className="h-16 w-16 text-gray-400" />
+              <Card key={participant.session_id} className="bg-gray-800 border-gray-700 relative overflow-hidden">
+                <CardContent className="p-0 aspect-video">
+                  {(participant as any).video && (participant as any).videoTrack ? (
+                    <video
+                      ref={(el) => {
+                        if (el && (participant as any).videoTrack) {
+                          el.srcObject = new MediaStream([(participant as any).videoTrack])
+                          el.play()
+                        }
+                      }}
+                      className="w-full h-full object-cover"
+                      autoPlay
+                      muted={participant.local}
+                      playsInline
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gray-700">
+                      <User className="h-16 w-16 text-gray-400" />
+                    </div>
+                  )}
+                  
+                  {/* Participant Info Overlay */}
+                  <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center">
+                    <div className="bg-black bg-opacity-50 px-2 py-1 rounded text-sm">
+                      {participant.user_name || 'Anonymous'}
+                      {participant.local && ' (You)'}
+                    </div>
+                    <div className="flex space-x-1">
+                      {!(participant as any).audio && (
+                        <div className="bg-red-500 p-1 rounded">
+                          <MicOff className="h-3 w-3" />
+                        </div>
+                      )}
+                      {(participant as any).screen && (
+                        <div className="bg-blue-500 p-1 rounded">
+                          <Monitor className="h-3 w-3" />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-                
-                {/* Participant Info Overlay */}
-                <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center">
-                  <div className="bg-black bg-opacity-50 px-2 py-1 rounded text-sm">
-                    {participant.user_name || 'Anonymous'}
-                    {participant.local && ' (You)'}
-                  </div>
-                  <div className="flex space-x-1">
-                    {!(participant as any).audio && (
-                      <div className="bg-red-500 p-1 rounded">
-                        <MicOff className="h-3 w-3" />
-                      </div>
-                    )}
-                    {(participant as any).screen && (
-                      <div className="bg-blue-500 p-1 rounded">
-                        <Monitor className="h-3 w-3" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
 
           {/* Chat Sidebar */}
           {showChat && (
@@ -407,8 +417,12 @@ export default function VideoCall({
       setRoomInfo(roomInfoQuery)
     } else if (!callId && roomInfoByIdQuery) {
       setRoomInfo(roomInfoByIdQuery)
+    } else if (callId && roomInfoQuery === null) {
+      setError('Video call not found or you do not have permission to join this call')
+    } else if (!callId && roomInfoByIdQuery === null) {
+      setError('Video call room not found or you do not have permission to join this call')
     }
-  }, [callId, roomInfoQuery, roomInfoByIdQuery])
+  }, [callId, roomInfoQuery, roomInfoByIdQuery, roomId])
 
   // Create Daily call instance
   useEffect(() => {
@@ -417,8 +431,18 @@ export default function VideoCall({
         try {
           const DailyCall = (await import('@daily-co/daily-js')).default
           
+          // Construct the Daily.co URL properly
+          let dailyUrl = roomInfo.dailyRoomUrl
+          if (!dailyUrl && roomInfo.dailyRoomName) {
+            dailyUrl = `https://rehabifyhealth.daily.co/${roomInfo.dailyRoomName}`
+          }
+          
+          if (!dailyUrl) {
+            throw new Error('No valid Daily.co room URL available')
+          }
+
           const callConfig: any = {
-            url: roomInfo.dailyRoomUrl || `https://${process.env.NEXT_PUBLIC_DAILY_DOMAIN}/${roomInfo.dailyRoomName}`,
+            url: dailyUrl,
             userName: userName,
             userData: {
               userId: userId,
@@ -426,9 +450,15 @@ export default function VideoCall({
             },
           }
 
-          // Add meeting token if available
-          if (meetingToken || roomInfo.meetingToken) {
-            callConfig.token = meetingToken || roomInfo.meetingToken
+          // Add meeting token if available and not expired
+          const token = meetingToken || roomInfo.meetingToken
+          if (token) {
+            // Check if token is expired
+            const tokenExpiration = roomInfo.tokenExpiration
+            if (tokenExpiration && Date.now() / 1000 > tokenExpiration) {
+              throw new Error('Meeting token has expired. Please refresh and try again.')
+            }
+            callConfig.token = token
           }
 
           const call = DailyCall.createCallObject(callConfig)
@@ -449,8 +479,13 @@ export default function VideoCall({
             setError(error.message || 'Call connection failed')
           })
 
-          // Join the call
-          await call.join()
+          // Join the call with timeout
+          const joinPromise = call.join()
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Call join timeout - this may be due to Daily.co account setup. Please ensure your Daily.co account has a credit card added.')), 15000)
+          })
+          
+          await Promise.race([joinPromise, timeoutPromise])
         } catch (error) {
           console.error('Failed to create Daily.co call:', error)
           setError(error instanceof Error ? error.message : 'Failed to initialize video call')
@@ -490,10 +525,19 @@ export default function VideoCall({
           <Loader2 className="h-12 w-12 animate-spin mx-auto text-blue-400" />
           <p className="text-xl">Initializing video call...</p>
           <p className="text-gray-400">Please wait while we set up your call</p>
+          <div className="mt-6">
+            <Button 
+              onClick={onCallEnd} 
+              variant="outline" 
+              className="text-gray-400 border-gray-600 hover:bg-gray-800"
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
       </div>
-    </div>
     )
-}
+  }
 
   return (
     <DailyProvider callObject={dailyCall}>

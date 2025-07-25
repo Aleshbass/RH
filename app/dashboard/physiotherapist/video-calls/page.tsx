@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -42,17 +42,11 @@ export default function VideoCallsPage() {
   const [title, setTitle] = useState('');
   const [activeCall, setActiveCall] = useState<VideoCall | null>(null);
 
-  // @ts-expect-error TS deep instantiation workaround
-  const getMyVideoCallsQuery: any = api.videoCalls.getMyVideoCalls;
-  const videoCalls: any = useQuery(getMyVideoCallsQuery, {});
+  const videoCalls = useQuery(api.videoCalls.getMyVideoCalls, {});
+  const patients = useQuery(api.patients.getMyPatients, {});
+  const currentUser = useQuery(api.users.getMyUser);
 
-  const getMyPatientsQuery: any = api.patients.getMyPatients;
-  const patients: any = useQuery(getMyPatientsQuery, {});
-
-  const getMyUserQuery: any = api.users.getMyUser;
-  const currentUser: any = useQuery(getMyUserQuery);
-
-  const scheduleVideoCall = useMutation(api.videoCalls.scheduleVideoCall);
+  const createVideoCall = useAction(api.videoCalls.createVideoCall);
   const startVideoCall = useMutation(api.videoCalls.startVideoCall);
   const cancelVideoCall = useMutation(api.videoCalls.cancelVideoCall);
 
@@ -78,18 +72,19 @@ export default function VideoCallsPage() {
     }
 
     try {
-      // Generate a unique room ID that will be used in the meeting link
-      const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-      
-      const result = await scheduleVideoCall({
-        patientId: selectedPatient as Id<"users">,
-        scheduledAt: new Date(scheduledAt).getTime(),
+      // Use createVideoCall to integrate with Daily.co
+      const result = await createVideoCall({
+        participants: [selectedPatient as Id<"users">],
+        callType: 'appointment',
         title,
-        notes: meetingNotes,
-        platform: 'internal', // Using internal platform
-        duration: 30, // Default duration
-        meetingLink: `${window.location.origin}/video/${roomId}`, // Use the actual roomId
-        clinicId: currentUser?.clinicId as Id<"clinics">, // Assuming physio has clinicId
+        settings: {
+          recordingEnabled: false,
+          chatEnabled: true,
+          maxParticipants: 2,
+          waitingRoomEnabled: false,
+          screenShareEnabled: true,
+          durationMinutes: 30
+        }
       });
 
       setShowNewCall(false);
@@ -108,23 +103,10 @@ export default function VideoCallsPage() {
     try {
       await startVideoCall({ callId: call._id });
       
-      // Extract room ID from meeting link if needed
-      let roomId = call.roomId;
-      if (call.meetingLink && call.meetingLink.includes('/')) {
-        const urlParts = call.meetingLink.split('/');
-        const extractedRoomId = urlParts[urlParts.length - 1];
-        if (extractedRoomId && extractedRoomId.startsWith('room_')) {
-          roomId = extractedRoomId;
-        }
-      }
+      // For Daily.co calls, use the roomId directly (it should be the Daily room name)
+      console.log('Starting Daily.co call with room ID:', call.roomId);
       
-      console.log('Starting call with room ID:', roomId);
-      
-      // Use the corrected room ID
-      setActiveCall({
-        ...call,
-        roomId: roomId
-      });
+      setActiveCall(call);
       
       toast.success('Video call started');
     } catch (error) {

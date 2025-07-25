@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
-import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole } from "./auth";
+import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
 
 /**
  * Create a new clinic (for clinic owners during onboarding)
@@ -399,7 +399,7 @@ export const getClinicStaff = query({
     _id: v.id("physiotherapistProfiles"),
     userId: v.id("users"),
     clinicId: v.optional(v.id("clinics")),
-    specialties: v.optional(v.array(v.string())),
+    specializations: v.optional(v.array(v.string())),
     bio: v.optional(v.string()),
     licenseNumber: v.optional(v.string()),
     user: v.any(), // Assuming user can be any object
@@ -1025,5 +1025,494 @@ export const getClinicRecentActivity = query({
     return activities
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, limit);
+  },
+});
+
+/**
+ * Get recent clinic activity for dashboard feed
+ */
+export const getClinicActivity = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+
+    if (!clinic) {
+      throw new Error("Clinic not found");
+    }
+
+    const limit = args.limit || 10;
+    const activities = [];
+
+    // Get recent appointments
+    const recentAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
+      .order("desc")
+      .take(limit);
+
+    for (const appointment of recentAppointments) {
+      const patient = appointment.patientId ? await ctx.db.get(appointment.patientId) : null;
+      const physiotherapist = appointment.physiotherapistId ? await ctx.db.get(appointment.physiotherapistId) : null;
+      
+      activities.push({
+        id: appointment._id,
+        type: "appointment",
+        title: `Appointment ${appointment.status}`,
+        description: `${patient?.firstName || "Unknown"} ${patient?.lastName || "Patient"} with ${physiotherapist?.firstName || "Unknown"} ${physiotherapist?.lastName || "Therapist"}`,
+        timestamp: appointment._creationTime,
+        status: appointment.status,
+        metadata: {
+          appointmentId: appointment._id,
+          patientName: `${patient?.firstName || ""} ${patient?.lastName || ""}`.trim(),
+          therapistName: `${physiotherapist?.firstName || ""} ${physiotherapist?.lastName || ""}`.trim(),
+        }
+      });
+    }
+
+    // Get recent staff invitations
+    const recentInvitations = await ctx.db
+      .query("clinicStaffInvitations")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
+      .order("desc")
+      .take(5);
+
+    for (const invitation of recentInvitations) {
+      activities.push({
+        id: invitation._id,
+        type: "invitation",
+        title: `Staff invitation ${invitation.status}`,
+        description: `Invitation sent to ${invitation.inviteeEmail}`,
+        timestamp: invitation._creationTime,
+        status: invitation.status,
+        metadata: {
+          invitationId: invitation._id,
+          email: invitation.inviteeEmail,
+          role: invitation.role,
+        }
+      });
+    }
+
+    // Get recent patient registrations
+    const recentPatients = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
+      .order("desc")
+      .take(5);
+
+    for (const relationship of recentPatients) {
+      const patient = await ctx.db.get(relationship.patientId);
+      
+      activities.push({
+        id: relationship._id,
+        type: "patient_registration",
+        title: "New patient registered",
+        description: `${patient?.firstName || "Unknown"} ${patient?.lastName || "Patient"} joined the clinic`,
+        timestamp: relationship._creationTime,
+        status: "active",
+        metadata: {
+          patientId: relationship.patientId,
+          patientName: `${patient?.firstName || ""} ${patient?.lastName || ""}`.trim(),
+        }
+      });
+    }
+
+    // Sort all activities by timestamp (most recent first)
+    activities.sort((a, b) => b.timestamp - a.timestamp);
+
+    return activities.slice(0, limit);
+  },
+});
+
+/**
+ * Get clinic patients with user details
+ */
+export const getClinicPatients = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+
+    if (!clinic) {
+      return [];
+    }
+
+    const relationships = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
+      .collect();
+
+    const patients = [];
+    for (const relationship of relationships) {
+      const patient = await ctx.db.get(relationship.patientId);
+      if (patient) {
+        const patientProfile = patient.patientProfileId ? await ctx.db.get(patient.patientProfileId) : null;
+        patients.push({
+          ...patient,
+          user: patient,
+          profile: patientProfile,
+          relationshipId: relationship._id,
+          joinedAt: relationship._creationTime,
+          dateOfBirth: patientProfile?.dateOfBirth,
+        });
+      }
+    }
+
+    return patients;
+  },
+});
+
+/**
+ * Get clinic patient statistics
+ */
+export const getClinicPatientStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+
+    if (!clinic) {
+      return {
+        totalPatients: 0,
+        activePatients: 0,
+        newThisMonth: 0,
+        appointmentsToday: 0,
+      };
+    }
+
+    const relationships = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
+      .collect();
+
+    const totalPatients = relationships.length;
+
+    // Count active patients (those with appointments in the last 30 days)
+    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    const recentAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
+      .filter((q) => q.gte(q.field("startTime"), thirtyDaysAgo))
+      .collect();
+
+    const activePatientIds = new Set(recentAppointments.map(apt => apt.patientId));
+    const activePatients = activePatientIds.size;
+
+    // Count new patients this month
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const newThisMonth = relationships.filter(rel => rel._creationTime >= startOfMonth.getTime()).length;
+
+    // Count appointments today
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const endOfDay = startOfDay + (24 * 60 * 60 * 1000);
+    
+    const appointmentsToday = await ctx.db
+      .query("appointments")
+      .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
+      .filter((q) => q.gte(q.field("startTime"), startOfDay))
+      .filter((q) => q.lt(q.field("startTime"), endOfDay))
+      .collect();
+
+    return {
+      totalPatients,
+      activePatients,
+      newThisMonth,
+      appointmentsToday: appointmentsToday.length,
+    };
+  },
+});
+
+/**
+ * Get clinic appointments with patient and therapist details
+ */
+export const getClinicAppointments = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+
+    if (!clinic) {
+      return [];
+    }
+
+    const appointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
+      .order("desc")
+      .collect();
+
+    const enrichedAppointments = [];
+    for (const appointment of appointments) {
+      const patient = appointment.patientId ? await ctx.db.get(appointment.patientId) : null;
+      const physiotherapist = appointment.physiotherapistId ? await ctx.db.get(appointment.physiotherapistId) : null;
+      
+      enrichedAppointments.push({
+        ...appointment,
+        patient: patient ? {
+          ...patient,
+          user: patient,
+        } : null,
+        physiotherapist: physiotherapist ? {
+          ...physiotherapist,
+          user: physiotherapist,
+        } : null,
+      });
+    }
+
+    return enrichedAppointments;
+  },
+});
+
+/**
+ * Get clinic appointment statistics
+ */
+export const getClinicAppointmentStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+
+    if (!clinic) {
+      return {
+        today: 0,
+        thisWeek: 0,
+        completed: 0,
+        noShows: 0,
+      };
+    }
+
+    // Today's appointments
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const endOfDay = startOfDay + (24 * 60 * 60 * 1000);
+    
+    const todayAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
+      .filter((q) => q.gte(q.field("startTime"), startOfDay))
+      .filter((q) => q.lt(q.field("startTime"), endOfDay))
+      .collect();
+
+    // This week's appointments
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const thisWeekAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
+      .filter((q) => q.gte(q.field("startTime"), startOfWeek.getTime()))
+      .collect();
+
+    // This month's completed and no-show appointments
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const thisMonthAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
+      .filter((q) => q.gte(q.field("startTime"), startOfMonth.getTime()))
+      .collect();
+
+    const completed = thisMonthAppointments.filter(apt => apt.status === 'completed').length;
+    const noShows = thisMonthAppointments.filter(apt => apt.status === 'no_show').length;
+
+    return {
+      today: todayAppointments.length,
+      thisWeek: thisWeekAppointments.length,
+      completed,
+      noShows,
+    };
+  },
+});
+
+/**
+ * Get clinic billing data
+ */
+export const getClinicBilling = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+
+    if (!clinic) {
+      return {
+        totalRevenue: 0,
+        pendingAmount: 0,
+        overdueAmount: 0,
+        thisMonthRevenue: 0,
+      };
+    }
+
+    // This is a placeholder - you would implement actual billing logic here
+    return {
+      totalRevenue: 125000,
+      pendingAmount: 15000,
+      overdueAmount: 3500,
+      thisMonthRevenue: 28000,
+    };
+  },
+});
+
+
+
+/**
+ * Get clinic invoices
+ */
+export const getClinicInvoices = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    // Placeholder data - implement actual invoice system
+    return [
+      {
+        _id: "invoice1" as Id<"invoices">,
+        _creationTime: Date.now() - 86400000, // 1 day ago
+        invoiceNumber: "INV-001",
+        amount: 5000,
+        status: "pending",
+        dueDate: Date.now() + 2592000000, // 30 days from now
+        patient: {
+          user: {
+            firstName: "John",
+            lastName: "Doe",
+          }
+        }
+      },
+      {
+        _id: "invoice2" as Id<"invoices">,
+        _creationTime: Date.now() - 172800000, // 2 days ago
+        invoiceNumber: "INV-002",
+        amount: 7500,
+        status: "paid",
+        dueDate: Date.now() - 86400000, // 1 day ago
+        patient: {
+          user: {
+            firstName: "Jane",
+            lastName: "Smith",
+          }
+        }
+      },
+    ];
+  },
+});
+
+/**
+ * Get clinic reports data
+ */
+export const getClinicReports = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    // Placeholder data - implement actual reporting logic
+    return {
+      monthlyPerformance: [],
+      patientDemographics: [],
+      revenueBreakdown: [],
+      treatmentOutcomes: [],
+    };
+  },
+});
+
+/**
+ * Get current clinic for authenticated clinic owner
+ */
+export const getCurrentClinic = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    
+    if (user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can access this function");
+    }
+
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+
+    return clinic;
+  },
+});
+
+/**
+ * Update clinic information
+ */
+export const updateClinic = mutation({
+  args: {
+    name: v.optional(v.string()),
+    description: v.optional(v.string()),
+    address: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    email: v.optional(v.string()),
+    website: v.optional(v.string()),
+    specializations: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+
+    if (!clinic) {
+      throw new Error("Clinic not found");
+    }
+
+    const updateData: Partial<Doc<"clinics">> = {};
+    if (args.name !== undefined) updateData.name = args.name;
+    if (args.description !== undefined) updateData.description = args.description;
+    if (args.address !== undefined) updateData.address = args.address;
+    if (args.phone !== undefined) updateData.contactPhone = args.phone;
+    if (args.email !== undefined) updateData.contactEmail = args.email;
+    if (args.website !== undefined) updateData.website = args.website;
+    if (args.specializations !== undefined) updateData.specializations = args.specializations;
+
+    await ctx.db.patch(clinic._id, updateData);
+    
+    return { success: true };
   },
 });

@@ -63,6 +63,20 @@ export async function ensureClinicOwner(
 }
 
 /**
+ * Ensures the user is a clinic owner (without requiring specific clinic ID)
+ */
+export async function ensureIsClinicOwner(
+  ctx: QueryCtx | MutationCtx,
+  user: any
+) {
+  if (user.role !== "clinic_owner") {
+    throw new ConvexError("Access denied. Only clinic owners can perform this action");
+  }
+  
+  return user;
+}
+
+/**
  * Checks if a user is onboarded
  */
 export async function isUserOnboarded(

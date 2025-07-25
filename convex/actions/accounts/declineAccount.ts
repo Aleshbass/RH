@@ -2,8 +2,10 @@
 
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
-import { api } from "../../_generated/api";
+import { api, internal } from "../../_generated/api";
 import { formatAccountDeclinedNotification } from "../../../lib/notifications/notificationService";
+
+
 
 /**
  * Decline a user account and send notification
@@ -22,8 +24,8 @@ export const declineAccount = action({
       const { statusId, adminUserId, reason, requiredDocuments } = args;
       
       // Get the convex clients
-      const client = ctx.runMutation;
-      const query = ctx.runQuery;
+      const client: any = ctx.runMutation;
+      const query: any = ctx.runQuery;
       
       // Verify admin exists
       const admin = await query(api.users.getUserById, { userId: adminUserId });
@@ -78,7 +80,20 @@ export const declineAccount = action({
         },
       });
       
-      return { success: true };
+      // Send decline email if requested
+      if (args.sendEmail !== false && user.email) {
+        // @ts-expect-error TS deep instantiation workaround
+        await ctx.runAction(internal.actions.emails.sendDeclineEmail, {
+          userEmail: user.email,
+          userName,
+          userRole: user.role,
+          reason,
+          supportLink,
+          requiredDocuments: requiredDocuments || [],
+        });
+      }
+      
+      return { success: true, message: "Account declined successfully" };
     } catch (error) {
       return {
         success: false,

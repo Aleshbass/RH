@@ -58,9 +58,9 @@ export const createVideoCall = action({
     }
 
     // Get user from database
-    const user: any = await ctx.runQuery(internal.videoCalls.getUserByClerkId, {
+    const user = await ctx.runQuery(internal.videoCalls.getUserByClerkId, {
       clerkId: identity.subject
-    })
+    }) as any
     
     if (!user) {
       throw new Error("User not found")
@@ -96,7 +96,10 @@ export const createVideoCall = action({
     }
 
     try {
-      // Create Daily.co room
+      // Create Daily.co room with timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+      
       const dailyResponse = await fetch("https://api.daily.co/v1/rooms", {
         method: "POST",
         headers: {
@@ -104,7 +107,10 @@ export const createVideoCall = action({
           "Authorization": `Bearer ${dailyApiKey}`,
         },
         body: JSON.stringify(roomConfig),
+        signal: controller.signal,
       })
+      
+      clearTimeout(timeoutId)
 
       if (!dailyResponse.ok) {
         const errorData = await dailyResponse.json()
@@ -164,6 +170,9 @@ export const createVideoCall = action({
             },
           }
 
+          const tokenController = new AbortController()
+          const tokenTimeoutId = setTimeout(() => tokenController.abort(), 8000) // 8 second timeout
+          
           const tokenResponse = await fetch("https://api.daily.co/v1/meeting-tokens", {
             method: "POST",
             headers: {
@@ -171,7 +180,10 @@ export const createVideoCall = action({
               "Authorization": `Bearer ${dailyApiKey}`,
             },
             body: JSON.stringify(tokenPayload),
+            signal: tokenController.signal,
           })
+          
+          clearTimeout(tokenTimeoutId)
 
           let meetingToken = null
           if (tokenResponse.ok) {
@@ -213,6 +225,64 @@ export const createVideoCall = action({
       }
     } catch (error) {
       console.error("Failed to create Daily.co room:", error)
+      
+      // Retry logic for network errors
+      if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('fetch'))) {
+        console.log('Retrying Daily.co room creation...')
+        try {
+          // Simple retry without timeout for fallback
+          const retryResponse = await fetch("https://api.daily.co/v1/rooms", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${dailyApiKey}`,
+            },
+            body: JSON.stringify(roomConfig),
+          })
+          
+          if (retryResponse.ok) {
+            const dailyRoom = await retryResponse.json()
+            // Continue with the rest of the room creation logic...
+            const callId: Id<"videoCalls"> = await ctx.runMutation(internal.videoCalls.createVideoCallRecord, {
+              roomId: args.roomId || dailyRoom.name,
+              dailyRoomName: dailyRoom.name,
+              dailyRoomUrl: dailyRoom.url,
+              dailyRoomId: dailyRoom.id,
+              appointmentId: args.appointmentId,
+              initiatorId: user._id,
+              participants: args.participants,
+              callType: args.callType,
+              title: args.title,
+              settings: {
+                recordingEnabled: args.settings?.recordingEnabled ?? false,
+                chatEnabled: args.settings?.chatEnabled ?? true,
+                maxParticipants: args.settings?.maxParticipants || 10,
+                waitingRoomEnabled: args.settings?.waitingRoomEnabled ?? true,
+                screenShareEnabled: args.settings?.screenShareEnabled ?? true,
+                prejoinUiEnabled: true,
+                ejectAtRoomExp: true,
+                language: "en",
+                geo: "us-west",
+              },
+              dailyConfig: {
+                roomExp: roomConfig.properties.exp,
+                roomProperties: dailyRoom.config,
+              },
+            })
+            
+            return { 
+              callId, 
+              roomId: args.roomId || dailyRoom.name,
+              dailyRoomName: dailyRoom.name,
+              dailyRoomUrl: dailyRoom.url,
+              dailyRoomId: dailyRoom.id,
+            }
+          }
+        } catch (retryError) {
+          console.error('Retry also failed:', retryError)
+        }
+      }
+      
       throw new Error(`Failed to create video call: ${error instanceof Error ? error.message : String(error)}`)
     }
   },
@@ -1002,6 +1072,7 @@ export const createVideoCallRecord = internalMutation({
       initiatorId: args.initiatorId,
       participants: args.participants,
       status: "scheduled",
+      scheduledAt: Date.now(), // Add missing scheduledAt field
       startTime: Date.now(),
       callType: args.callType,
       platform: "daily",

@@ -88,18 +88,19 @@ export const createPatientInvitationWithNotification = action({
         await client(api.notifications.create, {
           userId: user._id,
           type: 'invitation_created',
-          title: notificationData.title,
-          message: notificationData.message,
-          data: {
-            entityId: result.invitationCode,
-            entityType: 'invitation',
-            actionUrl: invitationUrl,
-            metadata: {
-              patientEmail: args.patientEmail,
-              patientName: args.patientName
+          payload: {
+            title: notificationData.title,
+            body: notificationData.message,
+            data: {
+              entityId: result.invitationCode,
+              entityType: 'invitation',
+              actionUrl: invitationUrl,
+              metadata: {
+                patientEmail: args.patientEmail,
+                patientName: args.patientName
+              }
             }
-          },
-          sendEmail: args.sendEmail ?? false
+          }
         });
       }
       
@@ -258,7 +259,7 @@ export const validateInvitationCode = query({
       
       // Get physiotherapist and clinic information
       const physiotherapist = await ctx.db.get(invitation.physiotherapistId);
-      const clinic = await ctx.db.get(invitation.clinicId);
+      const clinic = invitation.clinicId ? await ctx.db.get(invitation.clinicId) : null;
       
       if (!physiotherapist || !clinic) {
         return { valid: false, message: "Invitation data is incomplete." };
@@ -367,10 +368,11 @@ export const completePatientOnboardingWithNotification = action({
       await client(api.notifications.create, {
         userId: user._id,
         type: 'onboarding_complete',
-        title: patientNotification.title,
-        message: patientNotification.message,
-        data: patientNotification.data,
-        sendEmail: args.sendEmail ?? true
+        payload: {
+          title: patientNotification.title,
+          body: patientNotification.message,
+          data: patientNotification.data
+        }
       });
       
             // Get the full invitation details directly from the unique code
@@ -390,17 +392,18 @@ export const completePatientOnboardingWithNotification = action({
         await client(api.notifications.create, {
           userId: physiotherapistId,
           type: 'patient_onboarded',
-          title: `${patientName} completed onboarding`,
-          message: `Your patient ${patientName} has completed their account setup and is ready for treatment.`,
-          data: {
-            entityType: 'patient_onboarding',
-            entityId: user._id.toString(), // Convert ID to string
-            actionUrl: `/dashboard/physiotherapist/patients`,
-            metadata: {
-              patientName
+          payload: {
+            title: `${patientName} completed onboarding`,
+            body: `Your patient ${patientName} has completed their account setup and is ready for treatment.`,
+            data: {
+              entityType: 'patient_onboarding',
+              entityId: user._id.toString(), // Convert ID to string
+              actionUrl: `/dashboard/physiotherapist/patients`,
+              metadata: {
+                patientName
+              }
             }
-          },
-          sendEmail: args.sendEmail ?? true
+          }
         });
       }
       
@@ -748,7 +751,7 @@ export const getMyPhysiotherapists = query({
         }
         
         // Get clinic information
-        const clinic = await ctx.db.get(relationship.clinicId);
+        const clinic = relationship.clinicId ? await ctx.db.get(relationship.clinicId) : null;
         if (!clinic) {
           return null; // Skip if clinic doesn't exist
         }

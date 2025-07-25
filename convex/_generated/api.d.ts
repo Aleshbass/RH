@@ -21,6 +21,7 @@ import type * as actions_emails_index from "../actions/emails/index.js";
 import type * as actions_emails_sendApprovalEmail from "../actions/emails/sendApprovalEmail.js";
 import type * as actions_emails_sendDeclineEmail from "../actions/emails/sendDeclineEmail.js";
 import type * as actions_emails_sendInvitationEmail from "../actions/emails/sendInvitationEmail.js";
+import type * as actions_emails_sendOnboardingNotificationEmail from "../actions/emails/sendOnboardingNotificationEmail.js";
 import type * as actions_index from "../actions/index.js";
 import type * as actions_notifications_cleanupDuplicates from "../actions/notifications/cleanupDuplicates.js";
 import type * as actions_notifications_index from "../actions/notifications/index.js";
@@ -78,6 +79,7 @@ declare const fullApi: ApiFromModules<{
   "actions/emails/sendApprovalEmail": typeof actions_emails_sendApprovalEmail;
   "actions/emails/sendDeclineEmail": typeof actions_emails_sendDeclineEmail;
   "actions/emails/sendInvitationEmail": typeof actions_emails_sendInvitationEmail;
+  "actions/emails/sendOnboardingNotificationEmail": typeof actions_emails_sendOnboardingNotificationEmail;
   "actions/index": typeof actions_index;
   "actions/notifications/cleanupDuplicates": typeof actions_notifications_cleanupDuplicates;
   "actions/notifications/index": typeof actions_notifications_index;

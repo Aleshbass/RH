@@ -44,6 +44,9 @@ export default defineSchema({
     contactEmail: v.optional(v.string()),
     contactPhone: v.optional(v.string()),
     logoUrl: v.optional(v.string()),
+    description: v.optional(v.string()), // Brief overview of the clinic
+    website: v.optional(v.string()), // Public website URL
+    specializations: v.optional(v.array(v.string())), // e.g., ['Sports Rehab', 'Pediatrics'],
     workingHours: v.optional(v.any()), // Could be structured e.g., { monday: { start: "09:00", end: "17:00" } }
     settings: v.optional(v.object({ // Clinic-specific settings
       defaultCurrency: v.optional(v.string()), // e.g., "NGN"

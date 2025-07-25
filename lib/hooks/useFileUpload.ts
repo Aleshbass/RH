@@ -74,16 +74,21 @@ export function useFileUpload(options?: UseFileUploadOptions) {
               if (xhr.status === 200) {
                 try {
                   const response = JSON.parse(xhr.responseText);
-                  if (!response.storageId) {
+                  // Convex returns the storageId directly in the response
+                  const storageId = response.storageId || response;
+                  if (!storageId) {
                     reject(new Error('No storageId in response'));
                     return;
                   }
-                  resolve(response.storageId);
+                  resolve(storageId);
                 } catch (err) {
+                  console.error('Error parsing upload response:', err, 'Response text:', xhr.responseText);
                   reject(new Error('Invalid response format'));
                 }
+              } else if (xhr.status === 0) {
+                reject(new Error('Network error: Upload failed to connect to server'));
               } else {
-                reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.statusText}`));
+                reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.statusText || 'Unknown error'}`));
               }
             }
           };

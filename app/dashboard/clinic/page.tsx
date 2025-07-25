@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { 
   Users, 
   Calendar, 
@@ -20,16 +22,28 @@ import {
   DollarSign,
   Stethoscope,
   Settings,
-  Star
+  Star,
+  AlertCircle,
+  Activity,
+  TrendingDown
 } from 'lucide-react'
+import { format } from 'date-fns'
 
 
 export default function ClinicDashboard() {
   const router = useRouter()
   const { isLoaded, isSignedIn } = useAuth()
   
+  // Get user and clinic data
   const currentUser = useQuery(api.users.getMyUser)
   const approvalStatus = useQuery(api.users.getUserApprovalStatus)
+  const clinic = useQuery(api.clinics.getMyClinic)
+  const clinicStats = useQuery(api.clinics.getClinicDashboardStats)
+  const clinicRevenue = useQuery(api.clinics.getClinicRevenue)
+  const clinicPerformance = useQuery(api.clinics.getClinicPerformanceMetrics)
+  const recentActivity = useQuery(api.clinics.getClinicRecentActivity, { limit: 5 })
+  const clinicStaff = useQuery(api.clinics.getClinicStaff)
+  const pendingInvitations = useQuery(api.clinics.getClinicInvitations)
   
   // Redirect if not authenticated
   useEffect(() => {
@@ -45,9 +59,6 @@ export default function ClinicDashboard() {
         router.push('/sign-in')
         return
       }
-      
-      // Note: If not approved, we should show the pending approval page instead of redirecting
-      // The DashboardRouter already handles this, so we can remove this redirect
     }
   }, [currentUser, approvalStatus, router])
 
@@ -63,7 +74,22 @@ export default function ClinicDashboard() {
     )
   }
 
-  // If we get here, user is an approved clinic owner
+  // Show error if no clinic found
+  if (clinic === null) {
+    return (
+      <div className="container mx-auto p-6">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            No clinic found. Please complete your clinic setup first.
+          </AlertDescription>
+        </Alert>
+      </div>
+    )
+  }
+
+  // Loading state for data
+  const isDataLoading = clinic === undefined || clinicStats === undefined || clinicRevenue === undefined
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -71,7 +97,7 @@ export default function ClinicDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            Clinic Management Dashboard
+            {clinic?.name || 'Clinic Management Dashboard'}
           </h1>
           <p className="text-muted-foreground">
             Overview of your clinic operations and performance
@@ -99,22 +125,33 @@ export default function ClinicDashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">157</div>
+            {isDataLoading ? (
+              <Skeleton className="h-8 w-16 mb-2" />
+            ) : (
+              <div className="text-2xl font-bold">{clinicStats?.totalPatients || 0}</div>
+            )}
             <p className="text-xs text-muted-foreground">
-              +12 this month
+              Across all physiotherapists
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Physiotherapists</CardTitle>
+            <CardTitle className="text-sm font-medium">Active Staff</CardTitle>
             <Stethoscope className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">6</div>
+            {isDataLoading ? (
+              <Skeleton className="h-8 w-16 mb-2" />
+            ) : (
+              <div className="text-2xl font-bold">{clinicStats?.activeStaff || 0}</div>
+            )}
             <p className="text-xs text-muted-foreground">
-              All approved and active
+              {pendingInvitations && pendingInvitations.length > 0 
+                ? `+${pendingInvitations.length} pending invites`
+                : 'All approved and active'
+              }
             </p>
           </CardContent>
         </Card>
@@ -125,22 +162,40 @@ export default function ClinicDashboard() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">$24,540</div>
+            {isDataLoading ? (
+              <Skeleton className="h-8 w-20 mb-2" />
+            ) : (
+              <div className="text-2xl font-bold">
+                ₦{clinicRevenue?.thisMonth?.toLocaleString() || '0'}
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
-              +18% from last month
+              {clinicRevenue?.growth !== undefined ? (
+                clinicRevenue.growth >= 0 ? (
+                  <span className="text-green-600">+{clinicRevenue.growth}% from last month</span>
+                ) : (
+                  <span className="text-red-600">{clinicRevenue.growth}% from last month</span>
+                )
+              ) : (
+                'This month'
+              )}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Appointment Rate</CardTitle>
+            <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">94%</div>
+            {isDataLoading ? (
+              <Skeleton className="h-8 w-16 mb-2" />
+            ) : (
+              <div className="text-2xl font-bold">{clinicStats?.completionRate || 0}%</div>
+            )}
             <p className="text-xs text-muted-foreground">
-              Booking efficiency
+              Appointment completion rate
             </p>
           </CardContent>
         </Card>
@@ -152,23 +207,41 @@ export default function ClinicDashboard() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Clinic Overview</CardTitle>
-                          <CardDescription>Your clinic&apos;s daily operations and key metrics</CardDescription>
+            <CardDescription>Your clinic&apos;s daily operations and key metrics</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
               {/* Today's Stats */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="text-center p-4 bg-blue-50 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">32</div>
+                  {isDataLoading ? (
+                    <Skeleton className="h-8 w-8 mx-auto mb-2" />
+                  ) : (
+                    <div className="text-2xl font-bold text-blue-600">
+                      {clinicStats?.appointmentsToday || 0}
+                    </div>
+                  )}
                   <div className="text-sm text-blue-800">Today&apos;s Appointments</div>
                 </div>
                 <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">28</div>
-                  <div className="text-sm text-green-800">Completed Sessions</div>
+                  {isDataLoading ? (
+                    <Skeleton className="h-8 w-8 mx-auto mb-2" />
+                  ) : (
+                    <div className="text-2xl font-bold text-green-600">
+                      {Math.round((clinicStats?.appointmentsToday || 0) * (clinicStats?.completionRate || 0) / 100)}
+                    </div>
+                  )}
+                  <div className="text-sm text-green-800">Completed Today</div>
                 </div>
                 <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                  <div className="text-2xl font-bold text-yellow-600">4</div>
-                  <div className="text-sm text-yellow-800">Pending Reviews</div>
+                  {isDataLoading ? (
+                    <Skeleton className="h-8 w-8 mx-auto mb-2" />
+                  ) : (
+                    <div className="text-2xl font-bold text-yellow-600">
+                      {clinicStats?.pendingInvitations || 0}
+                    </div>
+                  )}
+                  <div className="text-sm text-yellow-800">Pending Invitations</div>
                 </div>
               </div>
 
@@ -176,44 +249,75 @@ export default function ClinicDashboard() {
               <div>
                 <h4 className="font-medium mb-3">Recent Activity</h4>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                        <UserPlus className="h-4 w-4 text-blue-600" />
+                  {recentActivity === undefined ? (
+                    // Loading state
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center space-x-3">
+                          <Skeleton className="w-8 h-8 rounded-full" />
+                          <div className="space-y-1">
+                            <Skeleton className="h-4 w-32" />
+                            <Skeleton className="h-3 w-24" />
+                          </div>
+                        </div>
+                        <Skeleton className="h-3 w-16" />
                       </div>
-                      <div>
-                        <p className="text-sm font-medium">New patient registered</p>
-                        <p className="text-xs text-muted-foreground">Jennifer Smith - Shoulder therapy</p>
-                      </div>
+                    ))
+                  ) : recentActivity.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Activity className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>No recent activity</p>
                     </div>
-                    <div className="text-xs text-muted-foreground">10 min ago</div>
-                  </div>
+                  ) : (
+                    recentActivity.map((activity, index) => {
+                      const getActivityIcon = (type: string) => {
+                        switch (type) {
+                          case 'patient_registered':
+                            return <UserPlus className="h-4 w-4 text-blue-600" />
+                          case 'appointment_completed':
+                            return <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          case 'schedule_updated':
+                            return <Calendar className="h-4 w-4 text-purple-600" />
+                          case 'staff_joined':
+                            return <Stethoscope className="h-4 w-4 text-indigo-600" />
+                          default:
+                            return <Activity className="h-4 w-4 text-gray-600" />
+                        }
+                      }
 
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                        <CheckCircle2 className="h-4 w-4 text-green-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Treatment completed</p>
-                        <p className="text-xs text-muted-foreground">Dr. Johnson finished session with Mark Davis</p>
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">1 hr ago</div>
-                  </div>
+                      const getActivityColor = (type: string) => {
+                        switch (type) {
+                          case 'patient_registered':
+                            return 'bg-blue-100'
+                          case 'appointment_completed':
+                            return 'bg-green-100'
+                          case 'schedule_updated':
+                            return 'bg-purple-100'
+                          case 'staff_joined':
+                            return 'bg-indigo-100'
+                          default:
+                            return 'bg-gray-100'
+                        }
+                      }
 
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                        <Calendar className="h-4 w-4 text-purple-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">Schedule updated</p>
-                        <p className="text-xs text-muted-foreground">Dr. Martinez added 3 new appointment slots</p>
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">2 hrs ago</div>
-                  </div>
+                      return (
+                        <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <div className={`w-8 h-8 ${getActivityColor(activity.type)} rounded-full flex items-center justify-center`}>
+                              {getActivityIcon(activity.type)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">{activity.title}</p>
+                              <p className="text-xs text-muted-foreground">{activity.description}</p>
+                            </div>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {activity.timestamp ? format(new Date(activity.timestamp), 'MMM d, h:mm a') : 'Recently'}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
               </div>
             </div>
@@ -259,95 +363,77 @@ export default function ClinicDashboard() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Staff member cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="p-4 border rounded-lg">
-                <div className="flex items-center space-x-3 mb-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>DR</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="font-medium">Dr. Rodriguez</p>
-                    <p className="text-xs text-muted-foreground">Senior Physiotherapist</p>
-                  </div>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span>Patients this month:</span>
-                    <span className="font-medium">42</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Success rate:</span>
-                    <span className="font-medium text-green-600">96%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Rating:</span>
-                    <div className="flex items-center">
-                      <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                      <span className="font-medium ml-1">4.9</span>
+            {clinicStaff === undefined ? (
+              // Loading state
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="p-4 border rounded-lg">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <Skeleton className="h-8 w-8 rounded-full" />
+                      <div className="space-y-1">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-3 w-20" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-full" />
                     </div>
                   </div>
-                </div>
+                ))}
               </div>
-
-              <div className="p-4 border rounded-lg">
-                <div className="flex items-center space-x-3 mb-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>SM</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="font-medium">Dr. Martinez</p>
-                    <p className="text-xs text-muted-foreground">Sports Physiotherapist</p>
-                  </div>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span>Patients this month:</span>
-                    <span className="font-medium">38</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Success rate:</span>
-                    <span className="font-medium text-green-600">94%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Rating:</span>
-                    <div className="flex items-center">
-                      <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                      <span className="font-medium ml-1">4.8</span>
+            ) : clinicStaff.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Stethoscope className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No staff members yet</p>
+                <p className="text-sm">Invite physiotherapists to join your clinic</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {clinicStaff.map((member) => {
+                  const initials = member.user?.firstName && member.user?.lastName 
+                    ? `${member.user.firstName.charAt(0)}${member.user.lastName.charAt(0)}`
+                    : member.user?.email?.charAt(0).toUpperCase() || 'S'
+                  
+                  return (
+                    <div key={member._id} className="p-4 border rounded-lg">
+                      <div className="flex items-center space-x-3 mb-4">
+                        <Avatar className="h-12 w-12">
+                          <AvatarImage src={member.user?.imageUrl} alt={`${member.user?.firstName} ${member.user?.lastName}`} />
+                          <AvatarFallback>{initials}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <h3 className="font-semibold">{member.user?.firstName} {member.user?.lastName}</h3>
+                          <p className="text-sm text-gray-600">{member.user?.email}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>Specialization:</span>
+                          <span className="font-medium">{member.specializations?.[0] || 'General'}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>License:</span>
+                          <span className="font-medium">{member.licenseNumber || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>Bio:</span>
+                          <span className="font-medium text-xs">{member.bio ? (member.bio.length > 30 ? member.bio.substring(0, 30) + '...' : member.bio) : 'No bio available'}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span>Status:</span>
+                          <div className="flex items-center space-x-1">
+                            <div className="h-2 w-2 bg-green-400 rounded-full"></div>
+                            <span className="font-medium text-green-600">Active</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  )
+                })}
               </div>
-
-              <div className="p-4 border rounded-lg">
-                <div className="flex items-center space-x-3 mb-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>LJ</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="font-medium">Dr. Johnson</p>
-                    <p className="text-xs text-muted-foreground">Rehabilitation Specialist</p>
-                  </div>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span>Patients this month:</span>
-                    <span className="font-medium">35</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Success rate:</span>
-                    <span className="font-medium text-green-600">92%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Rating:</span>
-                    <div className="flex items-center">
-                      <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                      <span className="font-medium ml-1">4.7</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </CardContent>
       </Card>

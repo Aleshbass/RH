@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,7 +12,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import FileUpload from '@/components/ui/FileUpload';
 import { useClinicDocuments, ClinicDocumentType } from '@/lib/hooks/useClinicDocuments';
-import { Id } from '@/convex/_generated/dataModel'; // Ensure Id is imported
+import { Id } from '@/convex/_generated/dataModel';
+import { Loader2 } from 'lucide-react';
 
 // Constants
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -81,6 +82,7 @@ export default function VerificationDocumentsForm({
   onBack,
 }: VerificationDocumentsFormProps) {
   const { data, updateClinicOwnerData } = useOnboardingStore();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   // Use the new actualClinicId field
   const clinicId = data.actualClinicId;
   
@@ -172,43 +174,48 @@ export default function VerificationDocumentsForm({
   };
 
   const onSubmit = async (formData: VerificationDocumentsData) => {
-  // Debug logging
-  console.log('Form data submitted:', {
-    businessLicense: formData.businessLicense?.length || 0,
-    taxRegistration: formData.taxRegistration?.length || 0,
-    insuranceProof: formData.insuranceProof?.length || 0,
-    ownerIdentification: formData.ownerIdentification?.length || 0,
-    additionalDocuments: formData.additionalDocuments?.length || 0,
-  });
-  
-  // Zod validation should handle required fields before onSubmit is called.
-  // The custom check for missingFields has been removed to rely solely on Zod.
-  
-  // Continue with your existing upload logic
-  // First upload all documents to Convex
-  const uploadSuccess = await uploadDocumentsToConvex(formData);
-  
-  if (uploadSuccess) {
-    // Update Zustand store with form data and document references
-    updateClinicOwnerData({
-      ...data.clinicOwnerData,
-      // Store just metadata; actual files are in Convex
-      businessLicense: formData.businessLicense.map((file: File) => file.name),
-      taxRegistration: formData.taxRegistration.map((file: File) => file.name),
-      insuranceProof: formData.insuranceProof.map((file: File) => file.name),
-      ownerIdentification: formData.ownerIdentification.map((file: File) => file.name),
-      additionalDocuments: formData.additionalDocuments?.map((file: File) => file.name) || [],
-      comments: formData.comments,
-      acceptTerms: formData.acceptTerms,
-      onboardingCompleted: true,
-    });
+    setIsSubmitting(true);
     
-    // Move to next step
-    onNext();
-  } else {
-    // Show error - uploads failed
-    alert("Some documents failed to upload. Please try again.");
-  }
+    try {
+      // Debug logging
+      console.log('Form data submitted:', {
+        businessLicense: formData.businessLicense?.length || 0,
+        taxRegistration: formData.taxRegistration?.length || 0,
+        insuranceProof: formData.insuranceProof?.length || 0,
+        ownerIdentification: formData.ownerIdentification?.length || 0,
+        additionalDocuments: formData.additionalDocuments?.length || 0,
+      });
+      
+      // First upload all documents to Convex
+      const uploadSuccess = await uploadDocumentsToConvex(formData);
+      
+      if (uploadSuccess) {
+        // Update Zustand store with form data and document references
+        updateClinicOwnerData({
+          ...data.clinicOwnerData,
+          // Store just metadata; actual files are in Convex
+          businessLicense: formData.businessLicense.map((file: File) => file.name),
+          taxRegistration: formData.taxRegistration.map((file: File) => file.name),
+          insuranceProof: formData.insuranceProof.map((file: File) => file.name),
+          ownerIdentification: formData.ownerIdentification.map((file: File) => file.name),
+          additionalDocuments: formData.additionalDocuments?.map((file: File) => file.name) || [],
+          comments: formData.comments,
+          acceptTerms: formData.acceptTerms,
+          onboardingCompleted: true,
+        });
+        
+        // Move to next step
+        onNext();
+      } else {
+        // Show error - uploads failed
+        alert("Some documents failed to upload. Please try again.");
+      }
+    } catch (error) {
+      console.error('Form submission error:', error);
+      alert("An error occurred while submitting the form. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Animation variants
@@ -228,7 +235,7 @@ export default function VerificationDocumentsForm({
       y: 0,
       opacity: 1,
       transition: {
-        type: 'spring',
+        type: 'spring' as const,
         stiffness: 100,
       },
     },
@@ -468,14 +475,17 @@ export default function VerificationDocumentsForm({
               onClick={onBack}
               variant="outline"
               className="border-[#005b57] text-[#005b57] hover:bg-[#F1FFE9]"
+              disabled={isSubmitting}
             >
               Back
             </Button>
             <Button
               type="submit"
               className="bg-[#005b57] hover:bg-[#002e2c] text-white"
+              disabled={isSubmitting}
             >
-              Complete Registration
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isSubmitting ? 'Submitting...' : 'Complete Registration'}
             </Button>
           </motion.div>
         </form>

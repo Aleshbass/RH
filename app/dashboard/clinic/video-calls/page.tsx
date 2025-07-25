@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -52,11 +52,11 @@ export default function ClinicVideoCallsPage() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
   // Fetch current user and clinic data
-  const currentUser = useQuery(api.users.getMyUser);
-  const clinic = useQuery(api.clinics.getMyClinic);
+  const currentUser: any = useQuery(api.users.getMyUser);
+  const clinic: any = useQuery(api.clinics.getMyClinic);
   
   // Fetch clinic video calls
-  const allVideoCalls = useQuery(api.videoCalls.getClinicVideoCalls, 
+  const allVideoCalls: any = useQuery(api.videoCalls.getClinicVideoCalls, 
     clinic?._id ? { clinicId: clinic._id } : "skip"
   );
 
@@ -64,12 +64,10 @@ export default function ClinicVideoCallsPage() {
   const clinicStaff = useQuery(api.clinics.getClinicStaff, {});
 
   // Fetch clinic patients for new call creation - using correct function
-  const clinicPatients = useQuery(api.clinics.getClinicPatients, 
-    clinic?._id ? { clinicId: clinic._id } : "skip"
-  );
+  const clinicPatients = useQuery(api.clinics.getClinicPatients);
 
   // Actions and Mutations
-  const createVideoCall = useMutation(api.videoCalls.createVideoCallRecord);
+  const createVideoCall = useAction(api.videoCalls.createVideoCall);
   const cancelVideoCall = useMutation(api.videoCalls.cancelVideoCall);
 
   if (!currentUser || !clinic || !clinicStaff) {
@@ -90,7 +88,7 @@ export default function ClinicVideoCallsPage() {
   const videoCalls = allVideoCalls || [];
 
   // Filter video calls based on search and filters
-  const filteredCalls = videoCalls.filter(call => {
+  const filteredCalls = videoCalls.filter((call: any) => {
     const matchesSearch = !searchTerm || 
       call.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       call.patient?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -147,7 +145,6 @@ export default function ClinicVideoCallsPage() {
   if (showVideoManager && selectedCall) {
     return (
       <VideoCallManager
-        roomId={selectedCall.roomId}
         defaultParticipants={selectedCall.participants}
         onCallEnd={() => {
           setShowVideoManager(false);
@@ -249,7 +246,7 @@ export default function ClinicVideoCallsPage() {
               <div>
                 <p className="text-sm text-gray-500">Active Now</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {videoCalls.filter(c => c.status === 'active').length}
+                  {videoCalls.filter((c: any) => c.status === 'active').length}
                 </p>
               </div>
               <Play className="h-8 w-8 text-green-500" />
@@ -262,7 +259,7 @@ export default function ClinicVideoCallsPage() {
               <div>
                 <p className="text-sm text-gray-500">Scheduled</p>
                 <p className="text-2xl font-bold text-blue-600">
-                  {videoCalls.filter(c => c.status === 'scheduled').length}
+                  {videoCalls.filter((c: any) => c.status === 'scheduled').length}
                 </p>
               </div>
               <Calendar className="h-8 w-8 text-blue-500" />
@@ -275,7 +272,7 @@ export default function ClinicVideoCallsPage() {
               <div>
                 <p className="text-sm text-gray-500">This Week</p>
                 <p className="text-2xl font-bold">
-                  {videoCalls.filter(c => {
+                  {videoCalls.filter((c: any) => {
                     const callDate = new Date(c.startTime);
                     const weekAgo = new Date();
                     weekAgo.setDate(weekAgo.getDate() - 7);
@@ -291,7 +288,7 @@ export default function ClinicVideoCallsPage() {
 
       {/* Video Calls Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {filteredCalls.map((call) => (
+        {filteredCalls.map((call: any) => (
           <Card key={call._id}>
             <CardHeader>
               <div className="flex items-center justify-between">

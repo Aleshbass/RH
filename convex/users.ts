@@ -145,15 +145,24 @@ export const storeUserFromClerk = mutation({
     lastName: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity || identity.subject !== args.clerkId) {
-      console.error("Clerk ID mismatch in storeUserFromClerk:", 
-                    { 
-                      authIdentitySubject: identity?.subject, 
-                      argsClerkId: args.clerkId 
-                    });
-      throw new Error("Unauthorized: Clerk ID does not match authenticated user.");
+    
+    // Enhanced debugging for authentication issues
+    if (!identity) {
+      console.error("No authentication identity found in storeUserFromClerk");
+      throw new Error("Unauthorized: No authentication identity found. Please ensure you are logged in.");
+    }
+    
+    if (identity.subject !== args.clerkId) {
+      console.error("Clerk ID mismatch in storeUserFromClerk:", {
+        authIdentitySubject: identity.subject,
+        argsClerkId: args.clerkId,
+        identityIssuer: identity.iss,
+        identityAudience: identity.aud,
+        tokenType: identity.tokenIdentifier
+      });
+      throw new Error(`Unauthorized: Clerk ID mismatch. Expected: ${identity.subject}, Received: ${args.clerkId}`);
     }
 
     const existingUser = await ctx.db
@@ -1154,23 +1163,76 @@ export const createTestUser = internalMutation({
  */
 export const deleteTestUser = internalMutation({
   args: {
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")),
+    clerkId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Clean up related data
-    const notifications = await ctx.db
-      .query("notifications")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .collect();
-
-    for (const notification of notifications) {
-      await ctx.db.delete(notification._id);
+    let user: Doc<"users"> | null = null;
+    if (args.userId) {
+      user = await ctx.db.get(args.userId);
+    } else if (args.clerkId) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId!))
+        .unique();
     }
 
-    // Delete the user
-    await ctx.db.delete(args.userId);
-    return true;
+    if (user) {
+      await ctx.db.delete(user._id);
+      console.log(`[deleteTestUser] Deleted user with clerkId: ${args.clerkId}`);
+    } else {
+      console.log(`[deleteTestUser] No user found with clerkId: ${args.clerkId}`);
+    }
   },
 });
 
-
+/**
+ * Mark clinic owner as onboarded if they have a clinic
+ */
+export const markClinicOwnerOnboarded = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    
+    if (user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can use this function");
+    }
+    
+    if (user.onboarded) {
+      return { success: true, message: "User is already onboarded" };
+    }
+    
+    // Check if user has a clinic
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+    
+    if (!clinic) {
+      throw new Error("No clinic found. Please complete clinic setup first.");
+    }
+    
+    // Create or update clinic owner profile
+    let clinicOwnerProfileId: Id<"clinicOwnerProfiles">;
+    
+    if (user.clinicOwnerProfileId) {
+      await ctx.db.patch(user.clinicOwnerProfileId, {
+        clinicId: clinic._id,
+      });
+      clinicOwnerProfileId = user.clinicOwnerProfileId;
+    } else {
+      clinicOwnerProfileId = await ctx.db.insert("clinicOwnerProfiles", {
+        userId: user._id,
+        clinicId: clinic._id,
+      });
+    }
+    
+    // Mark user as onboarded
+    await ctx.db.patch(user._id, {
+      onboarded: true,
+      clinicOwnerProfileId,
+    });
+    
+    return { success: true, message: "Clinic owner marked as onboarded" };
+  },
+});

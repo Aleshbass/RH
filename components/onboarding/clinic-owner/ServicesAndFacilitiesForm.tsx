@@ -1,7 +1,8 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { useForm } from '@tanstack/react-form';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,7 @@ const servicesAndFacilitiesSchema = z.object({
   additionalNotes: z.string().optional(),
 });
 
-// Removed unused type definition - ServicesAndFacilitiesData
+type ServicesAndFacilitiesData = z.infer<typeof servicesAndFacilitiesSchema>;
 
 interface ServicesAndFacilitiesFormProps {
   onNext: () => void;
@@ -29,7 +30,13 @@ interface ServicesAndFacilitiesFormProps {
 export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAndFacilitiesFormProps) {
   const { data, updateClinicOwnerData } = useOnboardingStore();
   
-  const form = useForm({
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+    watch,
+  } = useForm<ServicesAndFacilitiesData>({
+    resolver: zodResolver(servicesAndFacilitiesSchema),
     defaultValues: {
       services: data.clinicOwnerData?.services || [],
       specialties: data.clinicOwnerData?.specialties || [],
@@ -38,28 +45,23 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
       operatingHours: data.clinicOwnerData?.operatingHours || '',
       additionalNotes: data.clinicOwnerData?.additionalNotes || '',
     },
-    onSubmit: async ({ value }) => {
-      // Validate the form data against the schema
-      const result = servicesAndFacilitiesSchema.safeParse(value);
-      if (!result.success) {
-        // Handle validation errors
-        console.error('Form validation failed:', result.error);
-        return;
-      }
-      
-      // Update store with form values
-      updateClinicOwnerData({
-        ...data.clinicOwnerData,
-        services: result.data.services,
-        specialties: result.data.specialties,
-        facilities: result.data.facilities,
-        equipmentAvailable: result.data.equipmentAvailable,
-        operatingHours: result.data.operatingHours,
-        additionalNotes: result.data.additionalNotes,
-      });
-      onNext();
-    },
   });
+
+  const onSubmit = (formData: ServicesAndFacilitiesData) => {
+    console.log('Form data:', formData);
+    
+    // Update store with form values
+    updateClinicOwnerData({
+      ...data.clinicOwnerData,
+      services: formData.services,
+      specialties: formData.specialties,
+      facilities: formData.facilities,
+      equipmentAvailable: formData.equipmentAvailable,
+      operatingHours: formData.operatingHours,
+      additionalNotes: formData.additionalNotes,
+    });
+    onNext();
+  };
 
   // Available options
   const serviceOptions = [
@@ -119,7 +121,7 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
       y: 0,
       opacity: 1,
       transition: {
-        type: 'spring',
+        type: 'spring' as const,
         stiffness: 100,
       },
     },
@@ -140,125 +142,113 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
           </p>
         </motion.div>
 
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          form.handleSubmit();
-        }} className="space-y-8">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
           {/* Services Section */}
           <motion.div variants={itemVariants} className="space-y-4">
             <h3 className="text-lg font-medium text-[#005b57]">Services Offered</h3>
             <p className="text-sm text-gray-600 mb-2">Select all services that your clinic offers</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <form.Field
-                name="services"
-              >
-                {(field) => (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {serviceOptions.map((service) => (
-                        <div key={service} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`service-${service}`}
-                            checked={field.state.value.includes(service)}
-                            onCheckedChange={(checked) => {
-                              const newServices = checked
-                                ? [...field.state.value, service]
-                                : field.state.value.filter((s: string) => s !== service);
-                              field.handleChange(newServices);
-                            }}
-                            onBlur={field.handleBlur}
-                          />
-                          <Label htmlFor={`service-${service}`}>{service}</Label>
-                        </div>
-                      ))}
-                    </div>
-                    {field.state.meta.errors?.length > 0 && (
-                      <p className="text-red-500 text-sm mt-1">
-                        {field.state.meta.errors[0]}
-                      </p>
-                    )}
-                  </>
-                )}
-              </form.Field>
-            </div>
+            <Controller
+              name="services"
+              control={control}
+              render={({ field }) => (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {serviceOptions.map((service) => (
+                      <div key={service} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`service-${service}`}
+                          checked={field.value.includes(service)}
+                          onCheckedChange={(checked) => {
+                            const newServices = checked
+                              ? [...field.value, service]
+                              : field.value.filter((s: string) => s !== service);
+                            field.onChange(newServices);
+                          }}
+                        />
+                        <Label htmlFor={`service-${service}`}>{service}</Label>
+                      </div>
+                    ))}
+                  </div>
+                  {errors.services && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.services.message}
+                    </p>
+                  )}
+                </>
+              )}
+            />
           </motion.div>
 
           {/* Specialties Section */}
           <motion.div variants={itemVariants} className="space-y-4">
             <h3 className="text-lg font-medium text-[#005b57]">Specialties</h3>
             <p className="text-sm text-gray-600 mb-2">Select all specialties that your clinic focuses on</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <form.Field
-                name="specialties"
-              >
-                {(field) => (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {specialtyOptions.map((specialty) => (
-                        <div key={specialty} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`specialty-${specialty}`}
-                            checked={field.state.value.includes(specialty)}
-                            onCheckedChange={(checked) => {
-                              const newSpecialties = checked
-                                ? [...field.state.value, specialty]
-                                : field.state.value.filter((s: string) => s !== specialty);
-                              field.handleChange(newSpecialties);
-                            }}
-                            onBlur={field.handleBlur}
-                          />
-                          <Label htmlFor={`specialty-${specialty}`}>{specialty}</Label>
-                        </div>
-                      ))}
-                    </div>
-                    {field.state.meta.errors?.length > 0 && (
-                      <p className="text-red-500 text-sm mt-1">
-                        {field.state.meta.errors[0]}
-                      </p>
-                    )}
-                  </>
-                )}
-              </form.Field>
-            </div>
+            <Controller
+              name="specialties"
+              control={control}
+              render={({ field }) => (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {specialtyOptions.map((specialty) => (
+                      <div key={specialty} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`specialty-${specialty}`}
+                          checked={field.value.includes(specialty)}
+                          onCheckedChange={(checked) => {
+                            const newSpecialties = checked
+                              ? [...field.value, specialty]
+                              : field.value.filter((s: string) => s !== specialty);
+                            field.onChange(newSpecialties);
+                          }}
+                        />
+                        <Label htmlFor={`specialty-${specialty}`}>{specialty}</Label>
+                      </div>
+                    ))}
+                  </div>
+                  {errors.specialties && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.specialties.message}
+                    </p>
+                  )}
+                </>
+              )}
+            />
           </motion.div>
 
           {/* Facilities Section */}
           <motion.div variants={itemVariants} className="space-y-4">
             <h3 className="text-lg font-medium text-[#005b57]">Facilities</h3>
             <p className="text-sm text-gray-600 mb-2">Select all facilities available at your clinic</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <form.Field
-                name="facilities"
-              >
-                {(field) => (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {facilityOptions.map((facility) => (
-                        <div key={facility} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`facility-${facility}`}
-                            checked={field.state.value.includes(facility)}
-                            onCheckedChange={(checked) => {
-                              const newFacilities = checked
-                                ? [...field.state.value, facility]
-                                : field.state.value.filter((f: string) => f !== facility);
-                              field.handleChange(newFacilities);
-                            }}
-                            onBlur={field.handleBlur}
-                          />
-                          <Label htmlFor={`facility-${facility}`}>{facility}</Label>
-                        </div>
-                      ))}
-                    </div>
-                    {field.state.meta.errors?.length > 0 && (
-                      <p className="text-red-500 text-sm mt-1">
-                        {field.state.meta.errors[0]}
-                      </p>
-                    )}
-                  </>
-                )}
-              </form.Field>
-            </div>
+            <Controller
+              name="facilities"
+              control={control}
+              render={({ field }) => (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {facilityOptions.map((facility) => (
+                      <div key={facility} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`facility-${facility}`}
+                          checked={field.value.includes(facility)}
+                          onCheckedChange={(checked) => {
+                            const newFacilities = checked
+                              ? [...field.value, facility]
+                              : field.value.filter((f: string) => f !== facility);
+                            field.onChange(newFacilities);
+                          }}
+                        />
+                        <Label htmlFor={`facility-${facility}`}>{facility}</Label>
+                      </div>
+                    ))}
+                  </div>
+                  {errors.facilities && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.facilities.message}
+                    </p>
+                  )}
+                </>
+              )}
+            />
           </motion.div>
 
           {/* Equipment Available */}
@@ -266,19 +256,19 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
             <Label htmlFor="equipmentAvailable">
               Equipment Available <span className="text-sm text-gray-500">(optional)</span>
             </Label>
-            <form.Field
+            <Controller
               name="equipmentAvailable"
-            >
-              {(field) => (
+              control={control}
+              render={({ field }) => (
                 <Textarea
                   id="equipmentAvailable"
                   placeholder="List any specialized equipment available at your clinic"
                   className="min-h-[80px]"
-                  value={field.state.value || ''}
-                  onChange={(e) => field.handleChange(e.target.value)}
+                  value={field.value || ''}
+                  onChange={(e) => field.onChange(e.target.value)}
                 />
               )}
-            </form.Field>
+            />
           </motion.div>
 
           {/* Operating Hours */}
@@ -286,27 +276,27 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
             <Label htmlFor="operatingHours">
               Operating Hours <span className="text-red-500">*</span>
             </Label>
-            <form.Field
+            <Controller
               name="operatingHours"
-            >
-              {(field) => (
+              control={control}
+              render={({ field }) => (
                 <>
                   <Textarea
                     id="operatingHours"
                     placeholder="Specify your clinic's operating hours (e.g., Mon-Fri: 9AM-6PM, Sat: 9AM-2PM, Sun: Closed)"
                     className="min-h-[80px]"
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={field.handleBlur}
+                    value={field.value}
+                    onChange={(e) => field.onChange(e.target.value)}
+                    onBlur={field.onBlur}
                   />
-                  {field.state.meta.errors?.length > 0 && (
+                  {errors.operatingHours && (
                     <p className="text-red-500 text-sm mt-1">
-                      {field.state.meta.errors[0]}
+                      {errors.operatingHours.message}
                     </p>
                   )}
                 </>
               )}
-            </form.Field>
+            />
           </motion.div>
 
           {/* Additional Notes */}
@@ -314,19 +304,19 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
             <Label htmlFor="additionalNotes">
               Additional Notes <span className="text-sm text-gray-500">(optional)</span>
             </Label>
-            <form.Field
+            <Controller
               name="additionalNotes"
-            >
-              {(field) => (
+              control={control}
+              render={({ field }) => (
                 <Textarea
                   id="additionalNotes"
                   placeholder="Any additional information about your services or facilities"
                   className="min-h-[100px]"
-                  value={field.state.value || ''}
-                  onChange={(e) => field.handleChange(e.target.value)}
+                  value={field.value || ''}
+                  onChange={(e) => field.onChange(e.target.value)}
                 />
               )}
-            </form.Field>
+            />
           </motion.div>
 
           {/* Form Navigation */}

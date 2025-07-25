@@ -4,6 +4,7 @@ import "./globals.css";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 import { ClerkProvider } from "@clerk/nextjs";
 import SyncUserWithConvex from "@/components/auth/SyncUserWithConvex";
+import AutoOnboardClinicOwner from "@/components/auth/AutoOnboardClinicOwner";
 import Providers from "./providers";
 import '@fortawesome/fontawesome-svg-core/styles.css';
 import NextTopLoader from 'nextjs-toploader';
@@ -64,6 +65,7 @@ export default function RootLayout({
           <Providers>
             <ConvexClientProvider>
               <SyncUserWithConvex />
+              <AutoOnboardClinicOwner />
               <ConditionalLayout>
                 {children}
               </ConditionalLayout>
