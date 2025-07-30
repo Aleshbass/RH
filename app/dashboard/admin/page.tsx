@@ -1,7 +1,6 @@
-// @ts-nocheck
 'use client'
 
-import { useQueryUntyped } from '@/lib/convexUntyped'
+import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import {
   Card,
@@ -106,13 +105,13 @@ function StatCardSkeleton() {
 
 export default function AdminDashboard() {
   // Get real-time admin data - use direct Convex hooks instead of custom wrapper
-  const adminStats = useQueryUntyped(api.admin.getAdminDashboardStats as any)
-  const systemHealth = useQueryUntyped(api.admin.getSystemHealth as any)
-  const recentActivity = useQueryUntyped(api.admin.getUserActivityLogs as any, { limit: 5 })
-  const pendingApprovals = useQueryUntyped(api.users.getPendingApprovals as any)
+  const adminStats = useQuery(api.admin.getAdminDashboardStats)
+  const systemHealth = useQuery(api.admin.getSystemHealth)
+  const recentActivity = useQuery(api.admin.getUserActivityLogs, { limit: 5 })
+  const pendingApprovals = useQuery(api.users.getPendingApprovals)
   
   // Get current user to verify admin status
-  const currentUser = useQueryUntyped(api.users.getMyUser as any)
+  const currentUser = useQuery(api.users.getMyUser)
 
   // Debug logging
   console.log('Admin Dashboard Debug:', {

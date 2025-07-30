@@ -10,7 +10,6 @@ import {
   BarChart3, 
   TrendingUp, 
   Download,
-  Calendar,
   Users,
   DollarSign,
   Activity,

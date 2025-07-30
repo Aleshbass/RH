@@ -45,7 +45,7 @@ export default function StaffManagementPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Staff Management</h1>
-            <p className="text-gray-600">Manage your clinic's physiotherapists and staff members</p>
+            <p className="text-gray-600">Manage your clinic&apos;s physiotherapists and staff members</p>
           </div>
           <Link href="/dashboard/clinic/staff/invite">
             <Button>
@@ -132,7 +132,7 @@ export default function StaffManagementPage() {
         <Card>
           <CardHeader>
             <CardTitle>Active Staff Members</CardTitle>
-            <CardDescription>Your clinic's physiotherapists and staff</CardDescription>
+            <CardDescription>Your clinic&apos;s physiotherapists and staff</CardDescription>
           </CardHeader>
           <CardContent>
             {clinicStaff && clinicStaff.length > 0 ? (

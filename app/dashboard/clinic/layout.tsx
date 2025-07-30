@@ -117,7 +117,7 @@ export default function ClinicLayout({
           <h2 className="text-xl font-semibold mb-2">Application Under Review</h2>
           <p className="text-gray-600 mb-4">
             Your clinic owner application is currently being reviewed by our team. 
-            You'll receive an email notification once approved.
+            You&apos;ll receive an email notification once approved.
           </p>
         </div>
       </div>

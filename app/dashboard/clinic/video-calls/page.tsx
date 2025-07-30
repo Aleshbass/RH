@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery, useMutation, useAction } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,12 +10,10 @@ import { Label } from '@/components/ui/label';
 import { Video, Calendar, Clock, Plus, Copy, X, Users, Play, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
-import { Id } from '@/convex/_generated/dataModel';
+import { Doc, Id } from '@/convex/_generated/dataModel';
 import VideoCallManager from '@/components/video/VideoCallManager';
 
 // Type definition for video calls
@@ -39,12 +37,11 @@ type VideoCall = {
     maxParticipants: number;
     waitingRoomEnabled: boolean;
   };
-  patient?: any;
-  physiotherapist?: any;
+  patient?: Doc<"users">;
+  physiotherapist?: Doc<"users">;
 };
 
 export default function ClinicVideoCallsPage() {
-  const [showNewCall, setShowNewCall] = useState(false);
   const [showVideoManager, setShowVideoManager] = useState(false);
   const [selectedCall, setSelectedCall] = useState<VideoCall | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,22 +49,18 @@ export default function ClinicVideoCallsPage() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
   // Fetch current user and clinic data
-  const currentUser: any = useQuery(api.users.getMyUser);
-  const clinic: any = useQuery(api.clinics.getMyClinic);
+  const currentUser = useQuery(api.users.getMyUser);
+  const clinic = useQuery(api.clinics.getMyClinic);
   
   // Fetch clinic video calls
-  const allVideoCalls: any = useQuery(api.videoCalls.getClinicVideoCalls, 
+  const allVideoCalls = useQuery(api.videoCalls.getClinicVideoCalls, 
     clinic?._id ? { clinicId: clinic._id } : "skip"
   );
 
   // Fetch clinic staff for new call creation
   const clinicStaff = useQuery(api.clinics.getClinicStaff, {});
 
-  // Fetch clinic patients for new call creation - using correct function
-  const clinicPatients = useQuery(api.clinics.getClinicPatients);
-
   // Actions and Mutations
-  const createVideoCall = useAction(api.videoCalls.createVideoCall);
   const cancelVideoCall = useMutation(api.videoCalls.cancelVideoCall);
 
   if (!currentUser || !clinic || !clinicStaff) {
@@ -88,7 +81,7 @@ export default function ClinicVideoCallsPage() {
   const videoCalls = allVideoCalls || [];
 
   // Filter video calls based on search and filters
-  const filteredCalls = videoCalls.filter((call: any) => {
+  const filteredCalls = videoCalls.filter((call: VideoCall) => {
     const matchesSearch = !searchTerm || 
       call.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       call.patient?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -162,7 +155,7 @@ export default function ClinicVideoCallsPage() {
           <h1 className="text-2xl font-bold">Clinic Video Calls</h1>
           <p className="text-gray-500">Manage and monitor all video calls in your clinic</p>
         </div>
-        <Button onClick={() => setShowNewCall(true)}>
+        <Button>
           <Plus className="h-4 w-4 mr-2" />
           New Call
         </Button>
@@ -246,7 +239,7 @@ export default function ClinicVideoCallsPage() {
               <div>
                 <p className="text-sm text-gray-500">Active Now</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {videoCalls.filter((c: any) => c.status === 'active').length}
+                  {videoCalls.filter((c: VideoCall) => c.status === 'active').length}
                 </p>
               </div>
               <Play className="h-8 w-8 text-green-500" />
@@ -259,7 +252,7 @@ export default function ClinicVideoCallsPage() {
               <div>
                 <p className="text-sm text-gray-500">Scheduled</p>
                 <p className="text-2xl font-bold text-blue-600">
-                  {videoCalls.filter((c: any) => c.status === 'scheduled').length}
+                  {videoCalls.filter((c: VideoCall) => c.status === 'scheduled').length}
                 </p>
               </div>
               <Calendar className="h-8 w-8 text-blue-500" />
@@ -272,7 +265,7 @@ export default function ClinicVideoCallsPage() {
               <div>
                 <p className="text-sm text-gray-500">This Week</p>
                 <p className="text-2xl font-bold">
-                  {videoCalls.filter((c: any) => {
+                  {videoCalls.filter((c: VideoCall) => {
                     const callDate = new Date(c.startTime);
                     const weekAgo = new Date();
                     weekAgo.setDate(weekAgo.getDate() - 7);
@@ -288,7 +281,7 @@ export default function ClinicVideoCallsPage() {
 
       {/* Video Calls Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {filteredCalls.map((call: any) => (
+        {filteredCalls.map((call: VideoCall) => (
           <Card key={call._id}>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -403,7 +396,7 @@ export default function ClinicVideoCallsPage() {
                 ? 'Try adjusting your filters to see more results.' 
                 : 'No video calls have been created yet.'}
             </p>
-            <Button onClick={() => setShowNewCall(true)}>
+            <Button>
               <Plus className="h-4 w-4 mr-2" />
               Create First Call
             </Button>

@@ -74,7 +74,7 @@ export default function VideoCallPage() {
           </CardHeader>
           <CardContent>
             <p className="text-gray-600 mb-4">
-              The video call you're looking for doesn't exist or has ended.
+              The video call you&apos;re looking for doesn&apos;t exist or has ended.
             </p>
             <div className="space-y-2">
               <Link href={`/dashboard/${currentUser.role}`}>
@@ -111,7 +111,7 @@ export default function VideoCallPage() {
           </CardHeader>
           <CardContent>
             <p className="text-gray-600 mb-4">
-              You don't have permission to join this video call.
+              You don&apos;t have permission to join this video call.
             </p>
             <Link href={`/dashboard/${currentUser.role}`}>
               <Button className="w-full">

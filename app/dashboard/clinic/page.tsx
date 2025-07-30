@@ -22,10 +22,8 @@ import {
   DollarSign,
   Stethoscope,
   Settings,
-  Star,
   AlertCircle,
-  Activity,
-  TrendingDown
+  Activity
 } from 'lucide-react'
 import { format } from 'date-fns'
 
@@ -40,7 +38,7 @@ export default function ClinicDashboard() {
   const clinic = useQuery(api.clinics.getMyClinic)
   const clinicStats = useQuery(api.clinics.getClinicDashboardStats)
   const clinicRevenue = useQuery(api.clinics.getClinicRevenue)
-  const clinicPerformance = useQuery(api.clinics.getClinicPerformanceMetrics)
+
   const recentActivity = useQuery(api.clinics.getClinicRecentActivity, { limit: 5 })
   const clinicStaff = useQuery(api.clinics.getClinicStaff)
   const pendingInvitations = useQuery(api.clinics.getClinicInvitations)

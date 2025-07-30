@@ -11,22 +11,36 @@ import {
   Receipt, 
   DollarSign, 
   Plus,
-  FileText,
   Download,
+  Search,
+  AlertTriangle,
+  FileText,
   Eye,
   Send,
-  Search,
-  CreditCard,
-  AlertTriangle
+  CreditCard
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+
 import { Id } from '@/convex/_generated/dataModel';
 
 // Simple type definition to avoid complex inference
+
+// Import SimpleInvoiceModal component
+import { SimpleInvoiceModal } from '@/components/billing/SimpleInvoiceModal';
+
+// Type definitions
+
+
+interface BillingStats {
+  totalRevenue: number;
+  invoicesSent: number;
+  outstandingAmount: number;
+  overdueInvoices: number;
+}
+
 type InvoiceFromQuery = {
   _id: Id<"invoices">;
   invoiceNumber: string;
@@ -40,93 +54,19 @@ type InvoiceFromQuery = {
 };
 
 // Type definitions
-interface Invoice {
-  _id: Id<"invoices">;
-  patientId: string;
-  clinicId: string;
-  invoiceNumber: string;
-  issueDate: number;
-  dueDate: number;
-  items: Array<{
-    description: string;
-    quantity: number;
-    unitPrice: number;
-    totalPrice: number;
-  }>;
-  subtotalAmount: number;
-  taxAmount?: number;
-  discountAmount?: number;
-  totalAmount: number;
-  paidAmount?: number;
-  currency: string;
-  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'void' | 'partial_payment';
-  paymentMethod?: string;
-  paymentDate?: number;
-  notes?: string;
-  relatedAppointmentIds?: string[];
-  patient?: {
-    firstName: string;
-    lastName: string;
-    email: string;
-  } | null;
-}
-
-interface SimpleInvoiceModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSend: () => Promise<void>;
-  onRecordPayment: (amount: number, method: string) => Promise<void>;
-  onDownload: () => Promise<void>;
-  selectedInvoice: InvoiceFromQuery & { patient?: { firstName?: string, lastName?: string } | null, totalAmount: number };
-}
+// Type definitions
 
 // Custom hook for data fetching - optimizations have resolved deep instantiation issues
 function useBillingData() {
-  const getMyUserQuery: any = api.users.getMyUser;
-  const currentUser: any = useQuery(getMyUserQuery);
-  const getMyPatientsQuery: any = api.patients.getMyPatients;
-  const patients: any = useQuery(getMyPatientsQuery, { limit: 100 });
-  const getMyInvoicesQuery: any = api.billing.getMyInvoices;
-  const invoices: any = useQuery(getMyInvoicesQuery, {});
-  const getBillingStatsQuery: any = api.billing.getBillingStats;
-  const billingStats: any = useQuery(getBillingStatsQuery, {});
+  const patients = useQuery(api.patients.getMyPatients, { limit: 100 });
+  const invoices = useQuery(api.billing.getMyInvoices, {});
+  const billingStats = useQuery(api.billing.getBillingStats, {});
 
-  return { currentUser, patients, invoices, billingStats };
-}
-
-// Simple InvoiceModal component for viewing invoice details
-function SimpleInvoiceModal({ 
-  isOpen, 
-  onClose, 
-  onSend, 
-  onRecordPayment, 
-  onDownload, 
-  selectedInvoice 
-}: SimpleInvoiceModalProps) {
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Invoice #{selectedInvoice.invoiceNumber}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <p>Patient: {selectedInvoice.patient?.firstName || 'Unknown'} {selectedInvoice.patient?.lastName || ''}</p>
-          <p>Total: {(selectedInvoice.totalAmount / 100).toLocaleString('en-NG', { style: 'currency', currency: 'NGN' })}</p>
-          <div className="flex gap-2">
-            <Button onClick={onSend}>Send</Button>
-            <Button onClick={() => onRecordPayment(selectedInvoice.totalAmount, 'bank_transfer')}>
-              Record Payment
-            </Button>
-            <Button onClick={onDownload}>Download</Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+  return { patients, invoices, billingStats };
 }
 
 export default function BillingPage() {
-  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceFromQuery | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -137,16 +77,14 @@ export default function BillingPage() {
     dueDate: '',
     items: [{ description: '', quantity: 1, unitPrice: 0 }],
     notes: '',
-    taxRate: 7.5,
     discountAmount: 0
   });
 
-  const {
-    currentUser,
-    patients,
-    invoices,
-    billingStats,
-  } = useBillingData() as any;
+  const { patients, invoices, billingStats } = useBillingData() as {
+    patients: Patient[] | undefined;
+    invoices: InvoiceFromQuery[] | undefined;
+    billingStats: BillingStats | undefined;
+  };
   
   // Mutations
   const createInvoice = useMutation(api.billing.createInvoice);
@@ -155,7 +93,7 @@ export default function BillingPage() {
   const generateInvoicePDF = useMutation(api.billing.generateInvoicePDF);
 
   const filteredInvoices = useMemo(() => {
-    return invoices?.filter((invoice: any) => {
+    return invoices?.filter((invoice: InvoiceFromQuery) => {
       const patientName = invoice.patientName.toLowerCase();
       
       const matchesSearch = 
@@ -194,7 +132,6 @@ export default function BillingPage() {
         dueDate: '',
         items: [{ description: '', quantity: 1, unitPrice: 0 }],
         notes: '',
-        taxRate: 7.5,
         discountAmount: 0
       });
     } catch (error) {
@@ -279,7 +216,7 @@ export default function BillingPage() {
     return (amount / 100).toLocaleString('en-NG', { style: 'currency', currency });
   }, []);
   
-  if (!currentUser || !patients || !invoices || !billingStats) {
+  if (!patients || !invoices || !billingStats) {
     return <div>Loading...</div>; // Or a skeleton loader
   }
 
@@ -329,7 +266,7 @@ export default function BillingPage() {
                       <SelectValue placeholder="Select a patient" />
                     </SelectTrigger>
                     <SelectContent>
-                      {patients?.map((patient: any) => (
+                      {patients?.map((patient: Patient) => (
                         <SelectItem key={patient._id} value={patient._id}>
                           {patient?.firstName || 'Unknown'} {patient?.lastName || 'Patient'}
                         </SelectItem>
@@ -467,7 +404,7 @@ export default function BillingPage() {
 
               <div>
                 <label className="text-sm font-medium">Notes</label>
-                <Textarea
+                <textarea
                   placeholder="Additional notes or payment terms..."
                   value={invoiceForm.notes}
                   onChange={(e) => setInvoiceForm(prev => ({ ...prev, notes: e.target.value }))}
@@ -479,8 +416,8 @@ export default function BillingPage() {
                   Cancel
                 </Button>
                 <Button onClick={handleCreateInvoice}>
-          Create Invoice
-        </Button>
+                  Create Invoice
+                </Button>
               </div>
             </div>
           </DialogContent>
@@ -511,7 +448,7 @@ export default function BillingPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {billingStats ? formatCurrency(billingStats.pendingPayments || 0) : '₦0'}
+              {billingStats ? formatCurrency(billingStats.outstandingAmount || 0) : '₦0'}
             </div>
             <p className="text-xs text-muted-foreground">
               Unpaid invoices
@@ -526,7 +463,7 @@ export default function BillingPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              {billingStats ? formatCurrency(billingStats.pendingPayments || 0) : '₦0'}
+              {billingStats ? formatCurrency(billingStats.overdueInvoices || 0) : '₦0'}
             </div>
             <p className="text-xs text-muted-foreground">
               Past due date
@@ -589,7 +526,7 @@ export default function BillingPage() {
           {/* Invoices List */}
           <div className="space-y-3">
             {filteredInvoices && filteredInvoices.length > 0 ? (
-              filteredInvoices.map((invoice: any) => (
+              filteredInvoices.map((invoice: InvoiceFromQuery) => (
                 <div key={invoice._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
                   <div className="flex items-center gap-4">
                     <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">

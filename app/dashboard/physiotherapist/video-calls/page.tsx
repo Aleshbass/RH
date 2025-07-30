@@ -19,6 +19,12 @@ import VideoCallManager from '@/components/video/VideoCallManager';
 // Removed deprecated InferQueryOutput import
 
 // Simple type definition to avoid complex inference
+type Patient = {
+  _id: Id<"users">;
+  firstName?: string;
+  lastName?: string;
+};
+
 type VideoCall = {
   _id: Id<"videoCalls">;
   roomId: string;
@@ -31,26 +37,25 @@ type VideoCall = {
   meetingLink: string;
   platform: string;
   notes?: string;
-  patient?: any;
+  patient?: Patient;
+  dailyRoomUrl?: string;
 };
 
 export default function VideoCallsPage() {
   const [showNewCall, setShowNewCall] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<string>('');
-  const [meetingNotes, setMeetingNotes] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [title, setTitle] = useState('');
   const [activeCall, setActiveCall] = useState<VideoCall | null>(null);
 
   const videoCalls = useQuery(api.videoCalls.getMyVideoCalls, {});
   const patients = useQuery(api.patients.getMyPatients, {});
-  const currentUser = useQuery(api.users.getMyUser);
 
   const createVideoCall = useAction(api.videoCalls.createVideoCall);
   const startVideoCall = useMutation(api.videoCalls.startVideoCall);
   const cancelVideoCall = useMutation(api.videoCalls.cancelVideoCall);
 
-  if (!videoCalls || !patients || !currentUser) {
+  if (!videoCalls || !patients) {
     return (
       <div className="p-6">
         <div className="space-y-6">
@@ -89,7 +94,6 @@ export default function VideoCallsPage() {
 
       setShowNewCall(false);
       setSelectedPatient('');
-      setMeetingNotes('');
       setTitle('');
       setScheduledAt('');
       toast.success('Video call scheduled successfully');
@@ -161,7 +165,7 @@ export default function VideoCallsPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {videoCalls.map((call: any) => (
+        {videoCalls.map((call: VideoCall) => (
           <Card key={call._id}>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -206,13 +210,40 @@ export default function VideoCallsPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    size="icon"
-                    onClick={() => {
-                      navigator.clipboard.writeText(call.meetingLink);
-                      toast.success('Meeting link copied');
+                    size="sm"
+                    onClick={async () => {
+                      // Fallback to dailyRoomUrl if meetingLink is undefined (for old records)
+                      const linkToCopy = call.meetingLink || call.dailyRoomUrl
+                      
+                      if (!linkToCopy) {
+                        toast.error('No meeting link available to copy')
+                        return
+                      }
+                      
+                      try {
+                        if (navigator.clipboard?.writeText) {
+                          await navigator.clipboard.writeText(linkToCopy)
+                          toast.success('Meeting link copied')
+                        } else {
+                          const textArea = document.createElement('textarea')
+                          textArea.value = linkToCopy
+                          document.body.appendChild(textArea)
+                          textArea.select()
+                          const successful = document.execCommand('copy')
+                          document.body.removeChild(textArea)
+                          if (successful) {
+                            toast.success('Meeting link copied')
+                          } else {
+                            throw new Error('Fallback copy failed')
+                          }
+                        }
+                      } catch (err) {
+                        toast.error('Unable to copy to clipboard. Please copy the link manually.')
+                      }
                     }}
                   >
-                    <Copy className="h-4 w-4" />
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy Link
                   </Button>
                   <Button
                     variant="destructive"
@@ -247,7 +278,7 @@ export default function VideoCallsPage() {
                   <SelectValue placeholder="Select a patient" />
                 </SelectTrigger>
                 <SelectContent>
-                  {patients.map((patient: any) => (
+                  {patients.map((patient: Patient) => (
                     <SelectItem key={patient!._id} value={patient!._id}>
                       {patient!.firstName} {patient!.lastName}
                     </SelectItem>
@@ -260,8 +291,7 @@ export default function VideoCallsPage() {
               <input type="datetime-local" id="scheduledAt" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className="w-full p-2 border rounded-md" />
             </div>
             <div>
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea id="notes" placeholder="Any notes for the call..." value={meetingNotes} onChange={(e) => setMeetingNotes(e.target.value)} />
+              
             </div>
           </div>
           <Button onClick={handleScheduleCall} className="w-full">

@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery, useMutation } from 'convex/react'
+import type { Doc } from '@/convex/_generated/dataModel'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,16 +13,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { 
-  Settings, 
   Building2, 
   Bell,
   Shield,
   CreditCard,
   Users,
-  Clock,
   MapPin,
-  Phone,
-  Mail,
   Save
 } from 'lucide-react'
 import { useState } from 'react'
@@ -47,12 +44,12 @@ export default function ClinicSettingsPage() {
     )
   }
 
-  const handleSaveSettings = async (data: any) => {
+  const handleSaveSettings = async (data: Partial<Doc<'clinics'>>) => {
     setIsLoading(true)
     try {
       await updateClinic(data)
       toast.success('Settings updated successfully')
-    } catch (error) {
+    } catch {
       toast.error('Failed to update settings')
     } finally {
       setIsLoading(false)

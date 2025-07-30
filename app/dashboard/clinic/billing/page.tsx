@@ -66,7 +66,9 @@ export default function ClinicBillingPage() {
     }
   }
 
-  const InvoiceCard = ({ invoice }: { invoice: any }) => (
+  type InvoiceType = NonNullable<ReturnType<typeof useQuery<typeof api.clinics.getClinicInvoices>>>[number];
+
+  const InvoiceCard = ({ invoice }: { invoice: InvoiceType }) => (
     <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
       <div className="flex-1">
         <div className="flex items-center justify-between mb-2">

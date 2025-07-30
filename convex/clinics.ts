@@ -286,7 +286,7 @@ export const acceptClinicInvitation = mutation({
     });
 
     // Create or update physiotherapist profile
-    let physiotherapistProfile = await ctx.db
+    const physiotherapistProfile = await ctx.db
       .query("physiotherapistProfiles")
       .withIndex("by_user_id", (q) => q.eq("userId", user._id))
       .unique();

@@ -157,8 +157,9 @@ export const createVideoCall = action({
         if (participantUser) {
           // Create meeting token for participant
           const tokenPayload = {
-            room_name: dailyRoom.name,
+            
             properties: {
+              room_name: dailyRoom.name,
               user_name: `${participantUser.firstName || ''} ${participantUser.lastName || ''}`.trim() || participantUser.email || 'Anonymous',
               user_id: participantUser._id,
               is_owner: participantId === user._id,
@@ -170,6 +171,8 @@ export const createVideoCall = action({
             },
           }
 
+          console.log('📡 Requesting Daily.co meeting token:', tokenPayload)
+          
           const tokenController = new AbortController()
           const tokenTimeoutId = setTimeout(() => tokenController.abort(), 8000) // 8 second timeout
           
@@ -185,12 +188,22 @@ export const createVideoCall = action({
           
           clearTimeout(tokenTimeoutId)
 
-          let meetingToken = null
+          let meetingToken: string | undefined = undefined
           if (tokenResponse.ok) {
             const tokenData = await tokenResponse.json()
             meetingToken = tokenData.token
+            console.log('✅ Successfully generated meeting token for participant:', participantId)
+          } else {
+            const errorText = await tokenResponse.text()
+            console.error('❌ Failed to generate meeting token:', {
+              status: tokenResponse.status,
+              statusText: tokenResponse.statusText,
+              error: errorText,
+              participantId
+            })
           }
 
+          // Create participant record
           await ctx.runMutation(internal.videoCalls.createParticipantRecord, {
         callId,
         userId: participantId,
@@ -207,8 +220,16 @@ export const createVideoCall = action({
               isOwner: participantId === user._id,
             })
           }
+        } else {
+          console.error('❌ Participant not found in database:', participantId)
         }
       }
+      
+      console.log('📊 Meeting tokens summary:', {
+        totalParticipants: args.participants.length,
+        tokensGenerated: meetingTokens.length,
+        tokens: meetingTokens.map(t => ({ userId: t.userId, isOwner: t.isOwner, hasToken: !!t.token }))
+      })
 
       // Update call with meeting tokens
       await ctx.runMutation(internal.videoCalls.updateCallWithTokens, {
@@ -1075,6 +1096,7 @@ export const createVideoCallRecord = internalMutation({
       scheduledAt: Date.now(), // Add missing scheduledAt field
       startTime: Date.now(),
       callType: args.callType,
+      meetingLink: args.dailyRoomUrl,
       platform: "daily",
       createdAt: Date.now(),
       settings: {
@@ -1184,10 +1206,15 @@ export const getDailyRoomInfo = query({
     callId: v.id("videoCalls"),
   },
   handler: async (ctx, args) => {
+    console.log('🔍 getDailyRoomInfo called with:', args)
+    
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
+      console.error('❌ No user identity found')
       throw new Error("Unauthorized")
     }
+
+    console.log('👤 User identity:', { subject: identity.subject })
 
     const user = await ctx.db
       .query("users")
@@ -1195,17 +1222,42 @@ export const getDailyRoomInfo = query({
       .unique()
     
     if (!user) {
+      console.error('❌ User not found in database for clerkId:', identity.subject)
       throw new Error("User not found")
     }
 
+    console.log('✅ User found:', { userId: user._id, firstName: user.firstName, lastName: user.lastName, email: user.email })
+
+    // Get the video call
     const call = await ctx.db.get(args.callId)
     if (!call) {
+      console.error('❌ Call not found:', args.callId)
       throw new Error("Call not found")
     }
 
-    // Verify user is a participant
-    if (!call.participants.includes(user._id)) {
-      throw new Error("You are not a participant in this call")
+    console.log('📞 Call found:', {
+      callId: call._id,
+      roomName: call.dailyRoomName,
+      roomUrl: call.dailyRoomUrl,
+      initiatorId: call.initiatorId,
+      participants: call.participants,
+      status: call.status
+    })
+
+    // Check if user is authorized to access this call
+    const isParticipant = call.participants.includes(user._id)
+    const isInitiator = call.initiatorId === user._id
+    
+    console.log('🔐 Authorization check:', {
+      userId: user._id,
+      isParticipant,
+      isInitiator,
+      authorized: isParticipant || isInitiator
+    })
+    
+    if (!isParticipant && !isInitiator) {
+      console.error('❌ User not authorized to access call')
+      throw new Error("You are not authorized to access this call")
     }
 
     // Get participant record with meeting token
@@ -1214,17 +1266,25 @@ export const getDailyRoomInfo = query({
       .withIndex("by_call_and_user", (q) => q.eq("callId", args.callId).eq("userId", user._id))
       .unique()
 
-    return {
+    console.log('👥 Participant record:', {
+      found: !!participant,
+      hasToken: !!participant?.dailyMeetingToken,
+      role: participant?.role
+    })
+
+    const result = {
       dailyRoomName: call.dailyRoomName,
       dailyRoomUrl: call.dailyRoomUrl,
       dailyRoomId: call.dailyRoomId,
       meetingToken: participant?.dailyMeetingToken,
-      tokenExpiration: participant?.dailyTokenExpiration,
-      isHost: participant?.role === "host",
+      tokenExpiration: call.dailyConfig?.roomExp,
+      isHost: call.initiatorId === user._id,
       callStatus: call.status,
-      platform: call.platform,
-      settings: call.settings,
+      participants: call.participants,
     }
+    
+    console.log('📊 Returning room info:', result)
+    return result
   },
 })
 
@@ -1234,10 +1294,15 @@ export const getCallByRoomId = query({
     roomId: v.string(),
   },
   handler: async (ctx, args) => {
+    console.log('🔍 getCallByRoomId called with roomId:', args.roomId)
+    
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
-      throw new Error("Unauthorized")
+      console.log('❌ No user identity, returning null')
+      return null // Return null instead of throwing error for unauthorized access
     }
+
+    console.log('👤 User identity:', { subject: identity.subject })
 
     const user = await ctx.db
       .query("users")
@@ -1245,8 +1310,11 @@ export const getCallByRoomId = query({
       .unique()
     
     if (!user) {
-      throw new Error("User not found")
+      console.log('❌ User not found, returning null')
+      return null
     }
+
+    console.log('✅ User found:', { userId: user._id, firstName: user.firstName, lastName: user.lastName })
 
     // Find the call by room ID or Daily room name
     let call = await ctx.db
@@ -1254,21 +1322,46 @@ export const getCallByRoomId = query({
       .withIndex("by_room_id", (q) => q.eq("roomId", args.roomId))
       .unique()
     
+    console.log('🔍 Search by roomId result:', !!call)
+    
     if (!call) {
       // Try to find by Daily room name
       call = await ctx.db
         .query("videoCalls")
         .withIndex("by_daily_room_name", (q) => q.eq("dailyRoomName", args.roomId))
         .unique()
+      
+      console.log('🔍 Search by dailyRoomName result:', !!call)
     }
 
     if (!call) {
-      throw new Error("Call not found")
+      console.log('❌ No call found for roomId:', args.roomId)
+      return null
     }
 
-    // Verify user is a participant
-    if (!call.participants.includes(user._id)) {
-      throw new Error("You are not a participant in this call")
+    console.log('📞 Call found:', {
+      callId: call._id,
+      roomName: call.dailyRoomName,
+      roomUrl: call.dailyRoomUrl,
+      initiatorId: call.initiatorId,
+      participants: call.participants,
+      status: call.status
+    })
+
+    // Check if user is authorized to access this call
+    const isParticipant = call.participants.includes(user._id)
+    const isInitiator = call.initiatorId === user._id
+    
+    console.log('🔐 Authorization check:', {
+      userId: user._id,
+      isParticipant,
+      isInitiator,
+      authorized: isParticipant || isInitiator
+    })
+    
+    if (!isParticipant && !isInitiator) {
+      console.log('❌ User not authorized, returning null')
+      return null
     }
 
     // Get participant record with meeting token
@@ -1277,20 +1370,25 @@ export const getCallByRoomId = query({
       .withIndex("by_call_and_user", (q) => q.eq("callId", call._id).eq("userId", user._id))
       .unique()
 
-    return {
-      callId: call._id,
-      roomId: call.roomId,
+    console.log('👥 Participant record:', {
+      found: !!participant,
+      hasToken: !!participant?.dailyMeetingToken,
+      role: participant?.role
+    })
+
+    const result = {
+      _id: call._id,
       dailyRoomName: call.dailyRoomName,
       dailyRoomUrl: call.dailyRoomUrl,
       dailyRoomId: call.dailyRoomId,
       meetingToken: participant?.dailyMeetingToken,
-      tokenExpiration: participant?.dailyTokenExpiration,
-      isHost: participant?.role === "host",
+      tokenExpiration: call.dailyConfig?.roomExp,
+      isHost: call.initiatorId === user._id,
       callStatus: call.status,
-      platform: call.platform,
-      settings: call.settings,
-      title: call.title,
       participants: call.participants,
     }
+    
+    console.log('📊 Returning call info:', result)
+    return result
   },
 }) 

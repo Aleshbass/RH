@@ -40,6 +40,7 @@ import type * as clerk from "../clerk.js";
 import type * as clinics from "../clinics.js";
 import type * as crons from "../crons.js";
 import type * as debug from "../debug.js";
+import type * as debugTokens from "../debugTokens.js";
 import type * as files from "../files.js";
 import type * as helpers_triggerRetryProcessing from "../helpers/triggerRetryProcessing.js";
 import type * as notesTemplates from "../notesTemplates.js";
@@ -98,6 +99,7 @@ declare const fullApi: ApiFromModules<{
   clinics: typeof clinics;
   crons: typeof crons;
   debug: typeof debug;
+  debugTokens: typeof debugTokens;
   files: typeof files;
   "helpers/triggerRetryProcessing": typeof helpers_triggerRetryProcessing;
   notesTemplates: typeof notesTemplates;

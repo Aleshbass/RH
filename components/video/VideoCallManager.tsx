@@ -11,29 +11,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
+
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
+import { 
   Video,
   Plus,
   Clock,
   Users,
-  Calendar,
   Phone,
-  MessageSquare,
-  Settings,
   History,
   Search,
   Copy,
-  Share,
-  Maximize
+  Share
 } from 'lucide-react'
-import { format } from 'date-fns'
-import { v4 as uuidv4 } from 'uuid'
 
 interface VideoCallManagerProps {
   appointmentId?: Id<"appointments">
@@ -101,7 +95,7 @@ export default function VideoCallManager({
         }
       })()
     }
-  }, [])
+  }, [activeCall, joinCall])
 
   // Form state for creating new call
   const [newCallForm, setNewCallForm] = useState({
@@ -278,7 +272,7 @@ export default function VideoCallManager({
                     <Label htmlFor="callType">Call Type</Label>
                     <Select
                       value={newCallForm.callType}
-                      onValueChange={(value: any) =>
+                      onValueChange={(value: 'appointment' | 'consultation' | 'emergency') =>
                         setNewCallForm(prev => ({ ...prev, callType: value }))
                       }
                     >

@@ -14,6 +14,9 @@ module.exports = {
         'cream': '#FAF6E7',
       },
       colors: {
+        'call-bg': '#FAF6E7',
+        'call-control': '#FFFFFF',
+        'call-accent': '#002e2c',
         'teal-dark': '#002e2c',
       },
       animation: {

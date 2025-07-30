@@ -28,7 +28,7 @@ type VideoCall = {
   callType: "appointment" | "consultation" | "emergency";
   duration?: number;
   participants: Id<"users">[];
-  physiotherapist?: any;
+  physiotherapist?: unknown;
   appointmentId?: Id<"appointments">;
 };
 

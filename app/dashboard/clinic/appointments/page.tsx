@@ -5,6 +5,7 @@ import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -18,7 +19,7 @@ import {
   AlertCircle,
   Users
 } from 'lucide-react'
-import { format, isToday, isTomorrow, isThisWeek } from 'date-fns'
+import { format, isToday } from 'date-fns'
 
 export default function ClinicAppointmentsPage() {
   const appointments = useQuery(api.clinics.getClinicAppointments)
@@ -70,7 +71,9 @@ export default function ClinicAppointmentsPage() {
     }
   }
 
-  const AppointmentCard = ({ appointment }: { appointment: any }) => (
+    type AppointmentType = NonNullable<ReturnType<typeof useQuery<typeof api.clinics.getClinicAppointments>>>[number];
+
+  const AppointmentCard = ({ appointment }: { appointment: AppointmentType }) => (
     <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
       <div className="flex items-center space-x-4">
         <Avatar>
@@ -188,7 +191,7 @@ export default function ClinicAppointmentsPage() {
           <TabsContent value="today">
             <Card>
               <CardHeader>
-                <CardTitle>Today's Appointments</CardTitle>
+                <CardTitle>Today&apos;s Appointments</CardTitle>
                 <CardDescription>
                   {todayAppointments.length} appointments scheduled for today
                 </CardDescription>

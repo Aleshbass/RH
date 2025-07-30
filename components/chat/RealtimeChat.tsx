@@ -23,11 +23,7 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/components/ui/use-toast'
 import { useFileUpload } from '@/lib/hooks/useFileUpload'
 import { Id } from '@/convex/_generated/dataModel'
-import { ChatPaginationResult, TypingStatus, ChatMessage } from '@/types/chat'
-
-type Message = Omit<ChatMessage, 'isRead' | 'createdAt' | 'updatedAt'> & {
-  senderName: string;
-};
+import { TypingStatus, ChatMessage } from '@/types/chat'
 
 type ChatProps = {
   recipientId: Id<"users">;
@@ -39,10 +35,10 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   const currentUser = useQuery(api.users.getMyUser)
   const { toast } = useToast()
   const [newMessage, setNewMessage] = useState('')
-  const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Using this ref in a useEffect for typing indicators
   const typingTimeoutRef = useRef<NodeJS.Timeout>()
 
   const { uploadFile, isUploading } = useFileUpload({
@@ -73,7 +69,7 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
       try {
         const result = await getOrCreateConversation({ participantId: recipientId })
         setConversationId(result.conversationId)
-      } catch (error) {
+      } catch (error: unknown) {
         console.error('Failed to get/create conversation:', error)
         toast({
           title: "Error",
@@ -106,11 +102,9 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
     }
     
     // Transform messages to include senderName
-    const transformedItems = messages.items.map((message: any) => ({
+    const transformedItems = messages.items.map((message: ChatMessage) => ({
       ...message,
-      senderName: message.senderId === currentUser?._id ? 
-        `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim() || 'You' :
-        `${recipientUser?.firstName || ''} ${recipientUser?.lastName || ''}`.trim() || 'Other User'
+      senderName: message.senderId === currentUser?._id ? 'You' : recipientUser?.firstName || 'User'
     }));
     
     return {
@@ -226,7 +220,7 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
     if (!conversationId || !paginatedMessages.items.length) return;
 
     const unreadMessages = paginatedMessages.items.filter(
-      (msg: any) => !msg.isReadByReceiver && msg.senderId === recipientId
+      (msg) => !msg.isReadByReceiver && msg.senderId === recipientId
     );
 
     if (unreadMessages.length > 0) {
@@ -281,7 +275,7 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-4 p-4">
         <ScrollArea ref={scrollAreaRef} className="flex-1">
-          {paginatedMessages.items.map((message: any) => (
+          {paginatedMessages.items.map((message: ChatMessage & { senderName: string }) => (
             <div
               key={message._id}
               className={cn(

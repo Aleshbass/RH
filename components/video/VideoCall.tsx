@@ -1,15 +1,17 @@
 'use client'
 
-import React, { useEffect, useCallback, useState } from 'react'
+import React, { useEffect, useCallback, useState, useRef } from 'react'
 
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
 import { DailyProvider, useDaily, useParticipantIds, useParticipant, useScreenShare, useMeetingState } from '@daily-co/daily-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import ParticipantTile from '@/components/video/ParticipantTile'
+import CallControls from '@/components/video/CallControls'
 
 import {
   Video,
@@ -26,13 +28,14 @@ import {
   Send,
   Copy,
   Phone,
-  User,
+
   Volume2,
   VolumeX,
   Loader2,
 } from 'lucide-react'
 
 import { toast } from 'sonner'
+import TokenDebug from "@/components/debug/TokenDebug";
 
 interface VideoCallProps {
   roomId: string
@@ -69,13 +72,21 @@ function DailyCallInterface({
   
   // Filter out null participants and create the final list
   const allParticipants = [participant1, participant2, participant3, participant4]
-    .filter(Boolean)
+    .filter((p): p is NonNullable<typeof p> => Boolean(p))
     .slice(0, participantIds.length)
   const { isSharingScreen, startScreenShare, stopScreenShare } = useScreenShare()
   const meetingState = useMeetingState()
   
   const [showChat, setShowChat] = useState(false)
   const [chatMessage, setChatMessage] = useState('')
+  const [chatMessages, setChatMessages] = useState<Array<{
+    id: string
+    message: string
+    sender: string
+    timestamp: number
+    isLocal: boolean
+  }>>([])
+  const chatScrollRef = useRef<HTMLDivElement>(null)
   const [isVideoEnabled, setIsVideoEnabled] = useState(true)
   const [isAudioEnabled, setIsAudioEnabled] = useState(true)
   const [isAudioOutputEnabled, setIsAudioOutputEnabled] = useState(true)
@@ -94,6 +105,45 @@ function DailyCallInterface({
       onCallEnd()
     }
   }, [meetingState, onCallEnd])
+
+  // Handle Daily.co app messages (chat)
+  useEffect(() => {
+    if (!daily) return
+
+    const handleAppMessage = (event: any) => {
+      const { data, fromId } = event
+      const localParticipant = allParticipants.find((p: any) => p.local)
+      const isLocal = fromId === localParticipant?.session_id
+      
+      const newMessage = {
+        id: `${Date.now()}-${Math.random()}`,
+        message: data.message,
+        sender: data.sender || 'Anonymous',
+        timestamp: data.timestamp || Date.now(),
+        isLocal
+      }
+      
+      setChatMessages(prev => [...prev, newMessage])
+      
+      // Show toast for new messages from others
+      if (!isLocal) {
+        toast.info(`${data.sender}: ${data.message}`)
+      }
+      
+      // Auto-scroll to bottom
+      setTimeout(() => {
+        if (chatScrollRef.current) {
+          chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+        }
+      }, 100)
+    }
+
+    daily.on('app-message', handleAppMessage)
+    
+    return () => {
+      daily.off('app-message', handleAppMessage)
+    }
+  }, [daily, allParticipants])
 
   // Handle video toggle
   const toggleVideo = useCallback(() => {
@@ -139,12 +189,33 @@ function DailyCallInterface({
   // Send chat message
   const sendChatMessage = useCallback(() => {
     if (daily && chatMessage.trim()) {
-      daily.sendAppMessage({
+      const localParticipant = allParticipants.find((p: any) => p.local)
+      const messageData = {
         message: chatMessage.trim(),
-        sender: allParticipants.find((p: any) => p.local)?.user_name || 'Anonymous',
+        sender: localParticipant?.user_name || 'Anonymous',
         timestamp: Date.now(),
-      })
+      }
+      
+      // Send via Daily.co
+      daily.sendAppMessage(messageData)
+      
+      // Add to local state immediately for better UX
+      const newMessage = {
+        id: `${Date.now()}-${Math.random()}`,
+        message: messageData.message,
+        sender: messageData.sender,
+        timestamp: messageData.timestamp,
+        isLocal: true
+      }
+      setChatMessages(prev => [...prev, newMessage])
       setChatMessage('')
+      
+      // Auto-scroll to bottom
+      setTimeout(() => {
+        if (chatScrollRef.current) {
+          chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+        }
+      }, 100)
     }
   }, [daily, chatMessage, allParticipants])
 
@@ -200,17 +271,17 @@ function DailyCallInterface({
   }
 
   return (
-    <div className={`${isFullscreen ? 'fixed inset-0 z-50' : ''} bg-gray-900 text-white flex flex-col`}>
+    <div className={`${isFullscreen ? 'fixed inset-0 z-50' : ''} bg-call-bg text-gray-800 flex flex-col`}>
         {/* Header */}
-      <div className="bg-gray-800 p-4 flex justify-between items-center">
+      <div className="bg-call-control p-4 flex justify-between items-center border-b border-gray-200">
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
             <div className={`w-3 h-3 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'}`} />
-            <span className="text-sm font-medium">
+            <span className="text-sm font-medium text-call-accent">
               {connectionStatus === 'connected' ? 'Connected' : 'Disconnected'}
             </span>
           </div>
-          <div className="text-sm text-gray-300">
+          <div className="text-sm text-gray-600">
             {participantIds.length} participant{participantIds.length !== 1 ? 's' : ''}
           </div>
         </div>
@@ -219,15 +290,15 @@ function DailyCallInterface({
                 variant="ghost"
             size="sm"
             onClick={copyRoomUrl}
-            className="text-gray-300 hover:text-white"
+            className="text-call-accent hover:text-call-accent/80"
               >
-                <Copy className="h-4 w-4" />
+                <Copy className="h-4 w-4 text-call-accent" />
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onToggleFullscreen}
-            className="text-gray-300 hover:text-white"
+            className="text-call-accent hover:text-call-accent/80"
               >
                 {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
               </Button>
@@ -237,80 +308,61 @@ function DailyCallInterface({
       {/* Video Grid */}
         <div className="flex-1 flex">
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-          {allParticipants.map((participant) => {
-            if (!participant) return null
-            return (
-              <Card key={participant.session_id} className="bg-gray-800 border-gray-700 relative overflow-hidden">
-                <CardContent className="p-0 aspect-video">
-                  {(participant as any).video && (participant as any).videoTrack ? (
-                    <video
-                      ref={(el) => {
-                        if (el && (participant as any).videoTrack) {
-                          el.srcObject = new MediaStream([(participant as any).videoTrack])
-                          el.play()
-                        }
-                      }}
-                      className="w-full h-full object-cover"
-                      autoPlay
-                      muted={participant.local}
-                      playsInline
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gray-700">
-                      <User className="h-16 w-16 text-gray-400" />
-                    </div>
-                  )}
-                  
-                  {/* Participant Info Overlay */}
-                  <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center">
-                    <div className="bg-black bg-opacity-50 px-2 py-1 rounded text-sm">
-                      {participant.user_name || 'Anonymous'}
-                      {participant.local && ' (You)'}
-                    </div>
-                    <div className="flex space-x-1">
-                      {!(participant as any).audio && (
-                        <div className="bg-red-500 p-1 rounded">
-                          <MicOff className="h-3 w-3" />
-                        </div>
-                      )}
-                      {(participant as any).screen && (
-                        <div className="bg-blue-500 p-1 rounded">
-                          <Monitor className="h-3 w-3" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+          {allParticipants.map((participant) => (
+            <ParticipantTile key={participant.session_id} participant={participant} />
+          ))}
+
         </div>
 
           {/* Chat Sidebar */}
           {showChat && (
-            <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
-            <div className="p-4 border-b border-gray-700">
-              <h3 className="text-lg font-semibold flex items-center">
-                <MessageSquare className="h-5 w-5 mr-2" />
+            <div className="w-80 bg-call-control border-l border-gray-300 flex flex-col">
+            <div className="p-4 border-b border-gray-300">
+              <h3 className="text-lg font-semibold flex items-center text-call-accent">
+                <MessageSquare className="h-5 w-5 mr-2 text-call-accent" />
                 Chat
               </h3>
             </div>
-            <ScrollArea className="flex-1 p-4">
-              {/* Chat messages would go here */}
-              <div className="text-gray-400 text-sm text-center py-8">
-                No messages yet. Start the conversation!
+            <ScrollArea className="flex-1 p-4 space-y-3" ref={chatScrollRef}>
+              {chatMessages.length === 0 ? (
+                <div className="text-gray-500 text-sm text-center py-8">
+                  No messages yet. Start the conversation!
                 </div>
-              </ScrollArea>
-            <div className="p-4 border-t border-gray-700">
+              ) : (
+                chatMessages.map((msg) => (
+                  <div key={msg.id} className={`flex ${msg.isLocal ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                      msg.isLocal 
+                        ? 'bg-call-accent text-white' 
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      <div className="text-sm font-medium mb-1">
+                        {msg.sender}
+                      </div>
+                      <div className="text-sm">
+                        {msg.message}
+                      </div>
+                      <div className={`text-xs mt-1 opacity-70`}>
+                        {new Date(msg.timestamp).toLocaleTimeString([], { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </ScrollArea>
+            <div className="p-4 border-t border-gray-300">
                 <div className="flex space-x-2">
                   <Input
                     placeholder="Type a message..."
                   value={chatMessage}
                   onChange={(e) => setChatMessage(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && sendChatMessage()}
-                  className="bg-gray-700 border-gray-600 text-white"
+                  className="bg-white border-gray-300 text-gray-800 focus:border-call-accent"
                   />
-                <Button onClick={sendChatMessage} size="sm">
+                <Button onClick={sendChatMessage} size="sm" className="bg-call-accent hover:bg-call-accent/80 text-white">
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
@@ -320,64 +372,22 @@ function DailyCallInterface({
         </div>
 
         {/* Controls */}
-      <div className="bg-gray-800 p-4 flex justify-center items-center space-x-4">
-        <Button
-          variant={isVideoEnabled ? "default" : "destructive"}
-          size="lg"
-          onClick={toggleVideo}
-          className="rounded-full p-4"
-        >
-          {isVideoEnabled ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
-        </Button>
-        
-            <Button
-          variant={isAudioEnabled ? "default" : "destructive"}
-              size="lg"
-              onClick={toggleAudio}
-          className="rounded-full p-4"
-            >
-          {isAudioEnabled ? <Mic className="h-6 w-6" /> : <MicOff className="h-6 w-6" />}
-        </Button>
-        
-        <Button
-          variant={isAudioOutputEnabled ? "default" : "destructive"}
-          size="lg"
-          onClick={toggleAudioOutput}
-          className="rounded-full p-4"
-        >
-          {isAudioOutputEnabled ? <Volume2 className="h-6 w-6" /> : <VolumeX className="h-6 w-6" />}
-            </Button>
-
-            <Button
-          variant={isSharingScreen ? "secondary" : "outline"}
-              size="lg"
-          onClick={toggleScreenShare}
-          className="rounded-full p-4"
-            >
-          {isSharingScreen ? <MonitorOff className="h-6 w-6" /> : <Monitor className="h-6 w-6" />}
-            </Button>
-
-            <Button
-          variant="outline"
-              size="lg"
-          onClick={() => setShowChat(!showChat)}
-          className="rounded-full p-4"
-            >
-          <MessageSquare className="h-6 w-6" />
-            </Button>
-
-            <Button
-              variant="destructive"
-              size="lg"
-              onClick={handleEndCall}
-          className="rounded-full p-4"
-            >
-          <PhoneOff className="h-6 w-6" />
-            </Button>
-          </div>
+        <CallControls
+          isVideoEnabled={isVideoEnabled}
+          isAudioEnabled={isAudioEnabled}
+          isAudioOutputEnabled={isAudioOutputEnabled}
+          isSharingScreen={isSharingScreen}
+          showChat={showChat}
+          onToggleVideo={toggleVideo}
+          onToggleAudio={toggleAudio}
+          onToggleAudioOutput={toggleAudioOutput}
+          onToggleScreenShare={toggleScreenShare}
+          onToggleChat={() => setShowChat(!showChat)}
+          onEndCall={handleEndCall}
+        />
 
       {/* Keyboard Shortcuts Help */}
-      <div className="absolute top-4 right-4 text-xs text-gray-400">
+      <div className="absolute top-4 right-4 text-xs text-gray-500">
         <div>Shortcuts: Ctrl+D (video), Ctrl+M (audio), Ctrl+E (end call)</div>
       </div>
     </div>
@@ -398,6 +408,7 @@ export default function VideoCall({
   const [dailyCall, setDailyCall] = useState<any>(null)
   const [roomInfo, setRoomInfo] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
+  const isCreatingCall = React.useRef(false)
 
   // Get room info from Convex if callId is provided
   const roomInfoQuery = useQuery(
@@ -413,23 +424,50 @@ export default function VideoCall({
 
   // Use the appropriate room info
   useEffect(() => {
+    console.log('🔍 Room info debug:', {
+      callId,
+      roomId,
+      roomInfoQuery,
+      roomInfoByIdQuery,
+      userId,
+      userName
+    })
+    
     if (callId && roomInfoQuery) {
+      console.log('✅ Using roomInfoQuery:', roomInfoQuery)
       setRoomInfo(roomInfoQuery)
     } else if (!callId && roomInfoByIdQuery) {
+      console.log('✅ Using roomInfoByIdQuery:', roomInfoByIdQuery)
       setRoomInfo(roomInfoByIdQuery)
     } else if (callId && roomInfoQuery === null) {
+      console.error('❌ Room info query returned null for callId:', callId)
       setError('Video call not found or you do not have permission to join this call')
     } else if (!callId && roomInfoByIdQuery === null) {
+      console.error('❌ Room info by ID query returned null for roomId:', roomId)
       setError('Video call room not found or you do not have permission to join this call')
     }
-  }, [callId, roomInfoQuery, roomInfoByIdQuery, roomId])
+  }, [callId, roomInfoQuery, roomInfoByIdQuery, roomId, userId, userName])
 
   // Create Daily call instance
   useEffect(() => {
-    if (roomInfo && (roomInfo.dailyRoomUrl || roomInfo.dailyRoomName)) {
-      const createCall = async () => {
-        try {
-          const DailyCall = (await import('@daily-co/daily-js')).default
+    let callInstance: any = null;
+    let timeoutId: NodeJS.Timeout | undefined;
+    
+    const createCall = async () => {
+      if (!roomInfo || !(roomInfo.dailyRoomUrl || roomInfo.dailyRoomName)) {
+        return;
+      }
+      
+      // Prevent duplicate DailyIframe instances
+      if (isCreatingCall.current || dailyCall) {
+        console.warn('Daily call creation already in progress or call object already exists, skipping creation');
+        return;
+      }
+      
+      isCreatingCall.current = true;
+      
+      try {
+        const { default: DailyCall } = await import('@daily-co/daily-js')
           
           // Construct the Daily.co URL properly
           let dailyUrl = roomInfo.dailyRoomUrl
@@ -437,8 +475,24 @@ export default function VideoCall({
             dailyUrl = `https://rehabifyhealth.daily.co/${roomInfo.dailyRoomName}`
           }
           
-          if (!dailyUrl) {
-            throw new Error('No valid Daily.co room URL available')
+          if (!roomInfo) {
+            throw new Error('Failed to get room information')
+          }
+
+          // Check for secure context and device access
+          if (typeof window === 'undefined' || !window.navigator) {
+            setError('Window or navigator not available');
+            return;
+          }
+
+          if (!window.isSecureContext) {
+            setError('Camera/mic access requires HTTPS or localhost. Please reload over HTTPS.');
+            return;
+          }
+
+          if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+            setError('Camera/mic access is not supported in this browser. Please use a modern browser over HTTPS.');
+            return;
           }
 
           const callConfig: any = {
@@ -452,43 +506,102 @@ export default function VideoCall({
 
           // Add meeting token if available and not expired
           const token = meetingToken || roomInfo.meetingToken
+          console.log('🎫 Token debug:', {
+            providedToken: meetingToken,
+            roomInfoToken: roomInfo.meetingToken,
+            finalToken: token,
+            tokenExpiration: roomInfo.tokenExpiration,
+            currentTime: Date.now() / 1000,
+            isExpired: roomInfo.tokenExpiration && Date.now() / 1000 > roomInfo.tokenExpiration
+          })
+          
           if (token) {
             // Check if token is expired
             const tokenExpiration = roomInfo.tokenExpiration
             if (tokenExpiration && Date.now() / 1000 > tokenExpiration) {
+              console.error('❌ Token expired:', { tokenExpiration, currentTime: Date.now() / 1000 })
               throw new Error('Meeting token has expired. Please refresh and try again.')
             }
+            console.log('✅ Adding token to call config')
             callConfig.token = token
+          } else {
+            console.warn('⚠️ No meeting token available - this may cause permission issues')
           }
 
-          const call = DailyCall.createCallObject(callConfig)
-          setDailyCall(call)
+          console.log('🚀 Creating Daily call with config:', callConfig)
+          callInstance = DailyCall.createCallObject(callConfig)
+          setDailyCall(callInstance)
 
           // Set up event listeners
-          call.on('joined-meeting', () => {
-            console.log('Joined Daily.co meeting')
-          })
-
-          call.on('left-meeting', () => {
-            console.log('Left Daily.co meeting')
+          const handleJoinedMeeting = () => {
+            console.log('✅ Joined Daily.co meeting successfully')
+          }
+          
+          const handleLeftMeeting = () => {
+            console.log('👋 Left Daily.co meeting')
             onCallEnd()
-          })
+          }
+          
+          const handleError = (error: any) => {
+            console.error('❌ Daily.co error:', error)
+            console.error('Error details:', {
+              type: error.type,
+              message: error.message || error.errorMsg,
+              action: error.action,
+              details: error.details,
+              callClientId: error.callClientId
+            })
+            setError(error.message || error.errorMsg || 'Call connection failed')
+          }
+          
+          const handleJoiningMeeting = () => {
+            console.log('🔄 Joining Daily.co meeting...')
+          }
+          
+          const handleLoading = () => {
+            console.log('⏳ Daily.co call loading...')
+          }
 
-          call.on('error', (error: any) => {
-            console.error('Daily.co error:', error)
-            setError(error.message || 'Call connection failed')
-          })
+          callInstance.on('joined-meeting', handleJoinedMeeting)
+          callInstance.on('left-meeting', handleLeftMeeting)
+          callInstance.on('error', handleError)
+          callInstance.on('joining-meeting', handleJoiningMeeting)
+          callInstance.on('loading', handleLoading)
 
           // Join the call with timeout
-          const joinPromise = call.join()
+          console.log('🔗 Attempting to join call...')
+          const joinPromise = callInstance.join()
           const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Call join timeout - this may be due to Daily.co account setup. Please ensure your Daily.co account has a credit card added.')), 15000)
+            timeoutId = setTimeout(() => {
+              console.error('⏰ Call join timeout after 15 seconds')
+              reject(new Error('Call join timeout - this may be due to Daily.co account setup. Please ensure your Daily.co account has a credit card added.'))
+            }, 15000)
           })
+
+          const result = await Promise.race([joinPromise, timeoutPromise])
+          // Clear the timeout if the promise resolves before the timeout
+          if (timeoutId) {
+            clearTimeout(timeoutId)
+            timeoutId = undefined
+          }
+          console.log('✅ Call join result:', result)
           
-          await Promise.race([joinPromise, timeoutPromise])
+          return () => {
+            // Cleanup event listeners
+            if (callInstance) {
+              callInstance.off('joined-meeting', handleJoinedMeeting)
+              callInstance.off('left-meeting', handleLeftMeeting)
+              callInstance.off('error', handleError)
+              callInstance.off('joining-meeting', handleJoiningMeeting)
+              callInstance.off('loading', handleLoading)
+            }
+          }
         } catch (error) {
-          console.error('Failed to create Daily.co call:', error)
+          console.error('❌ Failed to create Daily.co call:', error)
+          console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
           setError(error instanceof Error ? error.message : 'Failed to initialize video call')
+        } finally {
+          isCreatingCall.current = false;
         }
       }
 
@@ -500,8 +613,25 @@ export default function VideoCall({
       if (dailyCall) {
         dailyCall.destroy()
       }
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+      if (callInstance) {
+        console.log('🧹 Cleaning up Daily call instance')
+        callInstance.destroy().catch((e: Error) => {
+          console.error('Error cleaning up Daily call:', e)
+        })
+      }
     }
-  }, [roomInfo, userId, userName, meetingToken, onCallEnd])
+  }, [roomInfo, userId, userName, meetingToken, onCallEnd, dailyCall])
+
+  // Only create the call if we have room info and user data
+  useEffect(() => {
+    if (roomInfo && userId && userName) {
+      createCall()
+    }
+    // No cleanup needed here
+  }, [roomInfo, userId, userName])
 
   if (error) {
     return (
@@ -540,13 +670,18 @@ export default function VideoCall({
   }
 
   return (
-    <DailyProvider callObject={dailyCall}>
-      <DailyCallInterface
-        onCallEnd={onCallEnd}
-        isFullscreen={isFullscreen}
-        onToggleFullscreen={onToggleFullscreen || (() => {})}
-        roomInfo={roomInfo}
-      />
-    </DailyProvider>
+    <div>
+      <DailyProvider callObject={dailyCall}>
+        <DailyCallInterface
+          onCallEnd={onCallEnd}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={onToggleFullscreen || (() => {})}
+          roomInfo={roomInfo}
+        />
+      </DailyProvider>
+      
+      {/* Temporary debug component */}
+      {callId && <TokenDebug callId={callId} />}
+    </div>
   )
 } 

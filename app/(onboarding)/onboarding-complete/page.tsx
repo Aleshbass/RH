@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { useRouter } from 'next/navigation';
@@ -16,10 +15,8 @@ export default function OnboardingCompletePage() {
   const { data } = useOnboardingStore();
 
   // Different completion actions for different roles
-  // Fully bypass type inference by casting both hook and function reference to any
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-  const completePatientOnboarding = (useAction as any)(
-    api.patientInvitations.completePatientOnboardingWithNotification as any
+  const completePatientOnboarding = useAction(
+    api.actions.patients.completeOnboarding.completePatientOnboardingWithNotification
   );
   const completeUserProfile = useMutation(api.users.completeUserProfile);
 

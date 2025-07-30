@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Loader2, Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
 import { Badge } from '@/components/ui/badge';
+
+
 import { EnhancedAppointmentCalendar } from '@/components/calendar/EnhancedAppointmentCalendar';
 import { AppointmentModal } from '@/components/calendar/AppointmentModal';
 import { SessionLogModal } from '@/components/dashboard/physiotherapist/SessionLogModal';
@@ -102,18 +103,6 @@ export default function CalendarPage() {
     updateAppointment({ appointmentId: id, updates })
   }
 
-  const mappedAppointments = (appointments || []).map((apt: any) => ({
-    ...apt,
-    patient: apt.patient ? {
-      _id: String(apt.patient._id),
-      firstName: apt.patient.firstName ?? 'Unknown',
-      lastName: apt.patient.lastName ?? '',
-      email: apt.patient.email ?? '',
-      imageUrl: apt.patient.imageUrl,
-      phoneNumber: apt.patient.phoneNumber,
-    } : null,
-  })) as AppointmentWithPatient[]
-
   // Redirect if not authenticated
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -126,7 +115,7 @@ export default function CalendarPage() {
     if (currentUser && currentUser.role !== 'physiotherapist') {
       router.push('/dashboard');
     }
-  }, [currentUser, router]);
+    }, [currentUser, router]);
 
   // Loading state
   if (!isLoaded || userLoading || appointmentsLoading || todaysScheduleLoading) {
@@ -261,10 +250,10 @@ export default function CalendarPage() {
           <div className="flex-1 p-6 min-h-0">
             <div className="h-full bg-white rounded-lg border shadow-sm">
               <EnhancedAppointmentCalendar
-                appointments={mappedAppointments as any}
+                appointments={appointments || []}
                 onCreateAppointment={handleCreateAppointment}
                 onAppointmentClick={handleAppointmentClick}
-                onAppointmentUpdate={handleAppointmentUpdate as any}
+                onAppointmentUpdate={handleAppointmentUpdate}
                 viewMode={viewMode}
                 currentDate={currentWeek}
               />
@@ -394,7 +383,7 @@ export default function CalendarPage() {
           setIsSessionLogModalOpen(false);
           setSelectedAppointment(null);
         }}
-        appointmentId={selectedAppointment?._id as any}
+        appointmentId={selectedAppointment?._id as Id<"appointments"> | undefined}
         patientId={selectedAppointment?.patient?._id}
       />
     </div>

@@ -21,8 +21,7 @@ import {
   AlertCircle,
   Loader2,
   Plus,
-  User,
-  MapPin,
+
   Star,
 } from 'lucide-react'
 import { format } from 'date-fns'
@@ -110,12 +109,14 @@ function AppointmentCard({
   appointment, 
   onCancel, 
   onReschedule, 
-  onConfirm 
+  onConfirm,
+  onRateVisit
 }: { 
   appointment: Appointment
   onCancel: (appointment: Appointment) => void
   onReschedule: (appointment: Appointment) => void
   onConfirm: (appointment: Appointment) => void
+  onRateVisit: (appointment: Appointment) => void
 }) {
   const startDate = new Date(appointment.startTime)
   const endDate = new Date(appointment.endTime)
@@ -218,7 +219,7 @@ function AppointmentCard({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => openFeedbackModal(appointment)}
+              onClick={() => onRateVisit(appointment)}
               className="hover:bg-yellow-50 hover:border-yellow-300"
             >
               <Star className="w-4 h-4 mr-1" />
@@ -308,7 +309,7 @@ export default function PatientAppointmentsPage() {
     if (user && user.role !== 'patient') {
       router.push('/dashboard')
     }
-  }, [isLoaded, isSignedIn, user?.role, router])
+  }, [isLoaded, isSignedIn, user, router])
 
   // Modal handlers
   const handleBookingComplete = () => {
@@ -338,26 +339,20 @@ export default function PatientAppointmentsPage() {
   // Add state for feedback modal
   const [feedbackModal, setFeedbackModal] = useState<{
     isOpen: boolean
-    appointment: any | null
+    appointment: Appointment | null
   }>({
     isOpen: false,
     appointment: null
   })
 
-  // Add function to open feedback modal
-  const openFeedbackModal = (appointment: any) => {
-    setFeedbackModal({
-      isOpen: true,
-      appointment
-    })
-  }
+
 
   if (!isLoaded || user === undefined) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-600">Loading your appointments...</p>
+          <p className="text-gray-500">There&apos;s nothing here yet.</p>
         </div>
       </div>
     )
@@ -417,7 +412,7 @@ export default function PatientAppointmentsPage() {
                 <Calendar className="h-12 w-12 text-gray-400 mb-4" />
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">No upcoming appointments</h3>
                 <p className="text-gray-600 mb-4 text-center">
-                  You don't have any scheduled appointments. Book your next session to continue your therapy.
+                  You don&apos;t have any scheduled appointments. Book your next session to continue your therapy.
                 </p>
                 <Button onClick={() => setIsBookingModalOpen(true)} className="bg-blue-600 hover:bg-blue-700">
                   <Plus className="h-4 w-4 mr-2" />

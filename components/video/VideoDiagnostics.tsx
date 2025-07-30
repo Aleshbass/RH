@@ -10,9 +10,6 @@ import {
   XCircle, 
   AlertCircle, 
   Camera, 
-  Mic, 
-  Monitor,
-  Wifi,
   Settings,
   RefreshCw
 } from 'lucide-react'
@@ -76,7 +73,7 @@ export default function VideoDiagnostics() {
         try {
           const permission = await navigator.permissions.query({ name: 'camera' as PermissionName })
           console.log('Camera permission state:', permission.state)
-        } catch (e) {
+        } catch (error) {
           console.log('Could not check camera permissions')
         }
       }
@@ -170,7 +167,7 @@ export default function VideoDiagnostics() {
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       })
 
-      const datachannel = pc.createDataChannel('test')
+      pc.createDataChannel('test')
       
       await pc.createOffer()
       
@@ -188,7 +185,7 @@ export default function VideoDiagnostics() {
     
     try {
       // Test Daily.co availability
-      const response = await fetch('https://api.daily.co/v1/', {
+      await fetch('https://api.daily.co/v1/', {
         method: 'HEAD',
         mode: 'no-cors'
       })

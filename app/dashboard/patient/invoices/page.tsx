@@ -13,7 +13,6 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Receipt, 
-  Calendar, 
   DollarSign, 
   AlertTriangle,
   Eye,
@@ -21,8 +20,6 @@ import {
   Download,
   CreditCard,
   Clock,
-  CheckCircle,
-  X,
   Copy,
   ExternalLink
 } from 'lucide-react'
@@ -133,7 +130,7 @@ export default function PatientInvoicesPage() {
     setShareModalOpen(false)
   }
   
-  const downloadInvoice = (invoice: Invoice) => {
+  const downloadInvoice = () => {
     // This would integrate with a PDF generation service
     toast.info('PDF download feature coming soon')
   }
@@ -286,7 +283,7 @@ export default function PatientInvoicesPage() {
               <div className="text-center py-12">
                 <Receipt className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No invoices yet</h3>
-                <p className="text-gray-600">You don't have any invoices at the moment.</p>
+                <p className="text-gray-600">You don&apos;t have any invoices at the moment.</p>
               </div>
             )}
           </div>
