@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 import { Id } from '@/convex/_generated/dataModel';
+import { Patient } from '@/app/types';
 
 // Simple type definition to avoid complex inference
 
@@ -46,6 +47,7 @@ type InvoiceFromQuery = {
   invoiceNumber: string;
   patientName: string;
   totalAmount: number;
+  currency: string;
   status: "draft" | "sent" | "paid" | "overdue" | "void" | "partial_payment";
   issueDate: number;
   dueDate: number;
@@ -77,7 +79,8 @@ export default function BillingPage() {
     dueDate: '',
     items: [{ description: '', quantity: 1, unitPrice: 0 }],
     notes: '',
-    discountAmount: 0
+    discountAmount: 0,
+    taxRate: 0
   });
 
   const { patients, invoices, billingStats } = useBillingData() as {
@@ -132,7 +135,8 @@ export default function BillingPage() {
         dueDate: '',
         items: [{ description: '', quantity: 1, unitPrice: 0 }],
         notes: '',
-        discountAmount: 0
+        discountAmount: 0,
+        taxRate: 0
       });
     } catch (error) {
       toast.error('Failed to create invoice');
@@ -538,7 +542,7 @@ export default function BillingPage() {
                         {getStatusBadge(invoice.status)}
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {invoice.patient?.firstName || 'Unknown'} {invoice.patient?.lastName || 'Patient'}
+                        {invoice.patientName || 'Unknown Patient'}
                       </p>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <span>Issued: {format(new Date(invoice.issueDate), 'MMM d, yyyy')}</span>

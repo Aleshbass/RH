@@ -38,8 +38,9 @@ interface UserData {
 interface ClinicData {
   _id: string;
   name: string;
-  address?: string;
-  _creationTime: number;
+  ownerName?: string;
+  city?: string;
+  country?: string;
 }
 
 export function AdminDashboard() {
@@ -122,7 +123,10 @@ export function AdminDashboard() {
       cell: ({ row }: { row: Row<ClinicData> }) => (
         <div>
           <div className="font-medium">{row.original.name}</div>
-          <div className="text-sm text-muted-foreground">{row.original.address}</div>
+          <div className="text-sm text-muted-foreground">
+            {row.original.ownerName && `Owner: ${row.original.ownerName}`}
+            {row.original.city && row.original.country && ` • ${row.original.city}, ${row.original.country}`}
+          </div>
         </div>
       ),
     },
@@ -133,15 +137,7 @@ export function AdminDashboard() {
         <Badge variant="default">active</Badge>
       ),
     },
-    {
-      accessorKey: 'createdAt',
-      header: 'Created',
-      cell: ({ row }: { row: Row<ClinicData> }) => (
-        <div className="text-sm">
-          {format(new Date(row.original._creationTime), 'MMM dd, yyyy')}
-        </div>
-      ),
-    },
+
     {
       id: 'actions',
       header: 'Actions',

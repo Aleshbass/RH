@@ -16,7 +16,7 @@ interface UseFormWithZodOptions<TFieldValues extends FieldValues, TContext = Rec
  * @returns Form methods and state for React Hook Form with Zod
  */
 export function useFormWithZod<TFieldValues extends FieldValues, TContext = Record<string, unknown>>(
-  schema: z.ZodType<TFieldValues>,
+  schema: z.ZodType<TFieldValues, z.ZodTypeDef, TFieldValues>,
   options?: UseFormWithZodOptions<TFieldValues, TContext>
 ) {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -25,7 +25,8 @@ export function useFormWithZod<TFieldValues extends FieldValues, TContext = Reco
   // Initialize form with Zod resolver
   const form = useForm<TFieldValues, TContext>({
     ...options,
-    resolver: zodResolver(schema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(schema as any),
   });
 
   // Custom submit handler

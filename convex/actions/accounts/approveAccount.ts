@@ -6,7 +6,6 @@ import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 
 // Alias Convex mutation functions to prevent deep type instantiation
-// @ts-expect-error TS deep instantiation workaround
 const updateAccountStatus: any = api.accountApproval.updateStatus;
 const createNotification: any = api.notifications.create;
 const getAccountStatus: any = api.accountApproval.getStatusById;

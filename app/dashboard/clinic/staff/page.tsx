@@ -19,9 +19,14 @@ import {
 import Link from 'next/link'
 import { format } from 'date-fns'
 
+
+
 export default function StaffManagementPage() {
-  const clinicStaff = useQuery(api.clinics.getClinicStaff)
-  const pendingInvitations = useQuery(api.clinics.getClinicInvitations)
+  const clinicStaffQuery = useQuery(api.clinics.getClinicStaff)
+  const pendingInvitationsQuery = useQuery(api.clinics.getClinicInvitations)
+  
+  const clinicStaff = clinicStaffQuery
+  const pendingInvitations = pendingInvitationsQuery
 
   if (clinicStaff === undefined || pendingInvitations === undefined) {
     return (
@@ -86,7 +91,7 @@ export default function StaffManagementPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {clinicStaff?.filter(staff => staff.user?.isActive)?.length || 0}
+                {clinicStaff?.filter((staff) => staff.user?.onboarded)?.length || 0}
               </div>
               <p className="text-xs text-muted-foreground">Currently online</p>
             </CardContent>
@@ -107,12 +112,12 @@ export default function StaffManagementPage() {
                     <div className="flex items-center space-x-4">
                       <Avatar>
                         <AvatarFallback>
-                          {invitation.patientName?.split(' ').map(n => n[0]).join('') || '?'}
+                          {invitation.inviteeName?.split(' ').map((n: string) => n[0]).join('') || '?'}
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="font-medium">{invitation.patientName}</p>
-                        <p className="text-sm text-gray-600">{invitation.patientEmail}</p>
+                        <p className="font-medium">{invitation.inviteeName}</p>
+                        <p className="text-sm text-gray-600">{invitation.inviteeEmail}</p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -151,7 +156,7 @@ export default function StaffManagementPage() {
                           <h3 className="font-semibold">
                             {staff.user?.firstName} {staff.user?.lastName}
                           </h3>
-                          <p className="text-sm text-gray-600 capitalize">{staff.role}</p>
+                          <p className="text-sm text-gray-600 capitalize">Physiotherapist</p>
                         </div>
                         <Button variant="ghost" size="sm">
                           <MoreHorizontal className="h-4 w-4" />
@@ -164,10 +169,10 @@ export default function StaffManagementPage() {
                           <Mail className="h-3 w-3 mr-2" />
                           {staff.user?.email}
                         </div>
-                        {staff.user?.phone && (
+                        {staff.user?.phoneNumber && (
                           <div className="flex items-center text-sm text-gray-600">
                             <Phone className="h-3 w-3 mr-2" />
-                            {staff.user.phone}
+                            {staff.user.phoneNumber}
                           </div>
                         )}
                         <div className="flex items-center text-sm text-gray-600">
@@ -175,8 +180,8 @@ export default function StaffManagementPage() {
                           Joined {format(new Date(staff._creationTime), 'MMM yyyy')}
                         </div>
                         <div className="flex items-center justify-between pt-2">
-                          <Badge variant={staff.user?.isActive ? "default" : "secondary"}>
-                            {staff.user?.isActive ? "Active" : "Inactive"}
+                          <Badge variant={staff.user?.onboarded ? 'default' : 'secondary'}>
+                            {staff.user?.onboarded ? 'Active' : 'Inactive'}
                           </Badge>
                           <div className="flex space-x-1">
                             <Button variant="outline" size="sm">View</Button>

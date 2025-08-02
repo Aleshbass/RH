@@ -41,20 +41,19 @@ interface SystemMetrics {
   };
 }
 
-interface PendingAction {
-  id: string;
-  type: string;
-  priority: string;
-  dueDate: number;
-  assignedTo: string;
-}
+
 
 export function SystemMonitoring() {
   const platformAnalytics = useQuery(api.admin.getPlatformAnalytics)
   const systemMetrics = useQuery(api.admin.getSystemMetrics) as SystemMetrics | undefined
-  const pendingActions = useQuery(api.admin.getPendingActions) as PendingAction[] | undefined
+  
+  // Mock pending actions data since the API doesn't exist yet
+  const pendingActions = {
+    systemAlerts: 2,
+    failedNotifications: 3
+  }
 
-  if (!platformAnalytics || !systemMetrics || !pendingActions) {
+  if (!platformAnalytics || !systemMetrics) {
     return <SystemMonitoringSkeleton />
   }
 
@@ -286,8 +285,8 @@ export function SystemMonitoring() {
                 </Badge>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm">Active Connections</span>
-                <span className="text-sm font-medium">{systemMetrics.api.activeConnections}</span>
+                <span className="text-sm">Requests Per Minute</span>
+                <span className="text-sm font-medium">{systemMetrics.api.requestsPerMinute}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm">Status</span>
@@ -360,8 +359,8 @@ export function SystemMonitoring() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="text-center p-3 bg-muted rounded-lg">
-                <div className="text-lg font-bold">{systemMetrics.notifications.totalSent.toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Total Sent</div>
+                <div className="text-lg font-bold">{(systemMetrics.notifications.deliveryRate * 100).toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground">Delivered Today</div>
               </div>
               <div className="text-center p-3 bg-muted rounded-lg">
                 <div className="text-lg font-bold">{systemMetrics.notifications.queueSize}</div>

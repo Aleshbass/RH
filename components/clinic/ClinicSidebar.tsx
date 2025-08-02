@@ -19,9 +19,6 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  Stethoscope,
-  FileText,
-  TrendingUp,
   CreditCard,
   Clock,
   UserPlus

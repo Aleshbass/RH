@@ -27,7 +27,7 @@ const FeatureTag: React.FC<FeatureTagProps> = ({ text, position, delay, size = '
         duration: 4,
         repeat: Infinity,
         repeatType: "reverse" as const,
-        ease: "easeInOut",
+
         delay: parseFloat(delay) / 1000,
       }
     }

@@ -71,7 +71,12 @@ export function AppointmentFeedbackModal({
         appointmentId,
         rating: overallRating,
         feedback: feedback.trim(),
-        categoryRatings: ratings
+        categoryRatings: ratings as {
+          overall_experience: number;
+          communication: number;
+          treatment_effectiveness: number;
+          professionalism: number;
+        }
       })
       
       toast.success('Thank you for your feedback!')

@@ -19,10 +19,22 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { format } from 'date-fns'
+import type { Id } from '@/convex/_generated/dataModel'
+import type { User } from '@/app/types'
 
 export default function ClinicPatientsPage() {
   const [searchTerm, setSearchTerm] = useState('')
-  const clinicPatients = useQuery(api.clinics.getClinicPatients)
+  interface ClinicPatient {
+  _id: Id<'users'>;
+  user: User;
+  profile?: Record<string, unknown> | null;
+  relationshipId: Id<'patientPhysiotherapistRelationships'>;
+  joinedAt: number;
+  _creationTime: number;
+  dateOfBirth?: number;
+}
+
+const clinicPatients = useQuery(api.clinics.getClinicPatients) as ClinicPatient[] | undefined
   const patientStats = useQuery(api.clinics.getClinicPatientStats)
 
   if (clinicPatients === undefined || patientStats === undefined) {
@@ -164,8 +176,8 @@ export default function ClinicPatientsPage() {
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Badge variant={patient.user?.isActive ? "default" : "secondary"}>
-                        {patient.user?.isActive ? "Active" : "Inactive"}
+                      <Badge variant={patient.user?.isActive ? 'default' : 'secondary'}>
+                        {patient.user?.isActive ? 'Active' : 'Inactive'}
                       </Badge>
                       <Button variant="outline" size="sm">View</Button>
                       <Button variant="outline" size="sm">Edit</Button>

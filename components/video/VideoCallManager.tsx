@@ -5,7 +5,9 @@ import { useUser } from '@clerk/nextjs'
 import { useMutation, useQuery, useAction } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
-import type { CreateVideoCallInput, CreateVideoCallOutput } from '@/convex/videoCalls'
+
+import { v4 as uuidv4 } from 'uuid'
+import { format } from 'date-fns'
 import VideoCall from './VideoCall'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -72,6 +74,20 @@ export default function VideoCallManager({
   const [roomIdToJoin, setRoomIdToJoin] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
 
+  // Convex mutations and queries - declared early to avoid hoisting issues
+  /**
+   * Workaround for TS2589 "Type instantiation is excessively deep…"
+   * Cast the generated action to a simpler typed function so the compiler
+   * doesn't try to fully evaluate the huge Convex-generated type.
+   */
+  const createCall = useAction(api.videoCalls.createVideoCall)
+  const joinCall = useMutation(api.videoCalls.joinVideoCall)
+  const endCall = useMutation(api.videoCalls.endVideoCall)
+  const callHistory = useQuery(api.videoCalls.getUserCallHistory, { limit: 20 })
+
+  // Get current user ID from Convex
+  const currentUser = useQuery(api.users.getMyUser)
+
   // Persist active call across page refreshes
   useEffect(() => {
     if (activeCall) {
@@ -108,22 +124,6 @@ export default function VideoCallManager({
       waitingRoomEnabled: false,
     }
   })
-
-  // Convex mutations and queries
-  /**
-   * Workaround for TS2589 "Type instantiation is excessively deep…"
-   * Cast the generated action to a simpler typed function so the compiler
-   * doesn't try to fully evaluate the huge Convex-generated type.
-   */
-  const createCall = useAction(api.videoCalls.createVideoCall) as (
-    input: CreateVideoCallInput
-  ) => Promise<CreateVideoCallOutput>
-  const joinCall = useMutation(api.videoCalls.joinVideoCall)
-  const endCall = useMutation(api.videoCalls.endVideoCall)
-  const callHistory = useQuery(api.videoCalls.getUserCallHistory, { limit: 20 }) as CallHistoryItem[] | undefined
-
-  // Get current user ID from Convex
-  const currentUser = useQuery(api.users.getMyUser)
 
   const handleCreateCall = async () => {
     if (!currentUser) {
@@ -206,11 +206,11 @@ export default function VideoCallManager({
     alert('Call link copied to clipboard!')
   }
 
-  const filteredCallHistory = callHistory?.filter(call => {
+  const filteredCallHistory = callHistory?.filter((call: CallHistoryItem) => {
     if (!searchTerm) return true
     return (
       call.roomId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      call.participants.some(p => 
+      call.participants.some((p: CallHistoryItem['participants'][0]) => 
         p.user?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.user?.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.user?.email?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -465,7 +465,7 @@ export default function VideoCallManager({
               </div>
               <div>
                 <div className="text-2xl font-bold">
-                  {callHistory?.filter(c => c.status === 'ended').length || 0}
+                  {callHistory?.filter((c) => c.status === 'ended').length || 0}
                 </div>
                 <div className="text-sm text-gray-500">Total Calls</div>
               </div>
@@ -482,7 +482,7 @@ export default function VideoCallManager({
               <div>
                 <div className="text-2xl font-bold">
                   {Math.round(
-                    (callHistory?.reduce((acc, call) => acc + (call.duration || 0), 0) || 0) / 60
+                    (callHistory?.reduce((acc: number, call) => acc + (call.duration || 0), 0) || 0) / 60
                   )}m
                 </div>
                 <div className="text-sm text-gray-500">Total Time</div>
@@ -499,7 +499,7 @@ export default function VideoCallManager({
               </div>
               <div>
                 <div className="text-2xl font-bold">
-                  {callHistory?.filter(c => c.status === 'active').length || 0}
+                  {callHistory?.filter((c) => c.status === 'active').length || 0}
                 </div>
                 <div className="text-sm text-gray-500">Active Calls</div>
               </div>
@@ -519,7 +519,7 @@ export default function VideoCallManager({
               <span className="text-blue-600 text-sm font-bold px-1">1</span>
             </div>
             <div>
-              <strong>Create a new call</strong> - Click "Create New Call" to start a video consultation
+              <strong>Create a new call</strong> - Click &quot;Create New Call&quot; to start a video consultation
             </div>
           </div>
           <div className="flex items-start gap-3">
@@ -527,7 +527,7 @@ export default function VideoCallManager({
               <span className="text-blue-600 text-sm font-bold px-1">2</span>
             </div>
             <div>
-              <strong>Join an existing call</strong> - Enter a Room ID to join someone else's call
+              <strong>Join an existing call</strong> - Enter a Room ID to join someone else&apos;s call
             </div>
           </div>
           <div className="flex items-start gap-3">

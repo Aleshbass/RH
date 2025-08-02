@@ -14,65 +14,95 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 import { Id } from '@/convex/_generated/dataModel';
 
-// Simple type definition to avoid complex inference
-type PatientDoc = any;
-
-interface PatientDetails {
+// Type definitions for patient data structures
+interface User {
   _id: string;
   firstName: string;
   lastName: string;
   email: string;
   imageUrl?: string;
   phoneNumber?: string;
-  relationship: {
-    _id: string;
-    patientId: string;
-    physiotherapistId: string;
-    clinicId: string;
-    status: 'active' | 'inactive' | 'archived';
-    isPrimaryPhysiotherapist: boolean;
-    startDate: number;
-    endDate?: number;
-    notes?: string;
-  };
-  patientProfile?: {
-    dateOfBirth?: string;
-    gender?: string;
-    emergencyContact?: {
-      name: string;
-      phone: string;
-      relationship: string;
-    };
-    medicalHistory?: string[];
-    currentMedications?: string[];
-    allergies?: string[];
-  };
-  appointments: Array<{
-    _id: string;
-    startTime: number;
-    endTime: number;
-    serviceType: string;
-    status: string;
-    notesForPatient?: string;
-    notesForTherapist?: string;
-  }>;
-  sessionLogs: Array<{
-    _id: string;
-    sessionDate: number;
-    subjectiveAssessment?: string;
-    objectiveAssessment?: string;
-    treatmentAdministered?: string;
-    planForNextSession?: string;
-  }>;
-  treatmentPlans: Array<{
-    _id: string;
-    title: string;
-    description?: string;
-    startDate: number;
-    endDate?: number;
-    goals: string[];
-    status: string;
-  }>;
+  role: 'patient' | 'physiotherapist' | 'admin';
+}
+
+interface PatientRelationship {
+  _id: string;
+  patientId: string;
+  physiotherapistId: string;
+  clinicId: string;
+  status: 'active' | 'inactive' | 'archived';
+  isPrimaryPhysiotherapist: boolean;
+  startDate: number;
+  endDate?: number;
+  notes?: string;
+}
+
+interface EmergencyContact {
+  name: string;
+  phone: string;
+  relationship: string;
+}
+
+interface PatientProfile {
+  dateOfBirth?: string;
+  gender?: string;
+  emergencyContact?: EmergencyContact;
+  medicalHistory?: string[];
+  currentMedications?: string[];
+  allergies?: string[];
+}
+
+interface Appointment {
+  _id: string;
+  startTime: number;
+  endTime: number;
+  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled' | 'cancelled_by_patient' | 'cancelled_by_therapist' | 'no-show';
+  serviceType: string;
+  type: string;
+  notes?: string;
+  notesForTherapist?: string;
+}
+
+interface SessionLog {
+  _id: string;
+  sessionDate: number;
+  subjectiveAssessment?: string;
+  objectiveAssessment?: string;
+  treatmentAdministered?: string;
+  planForNextSession?: string;
+}
+
+interface TreatmentPlan {
+  _id: string;
+  title: string;
+  description?: string;
+  startDate: number;
+  endDate?: number;
+  goals: string[];
+  status: 'active' | 'completed' | 'paused';
+}
+
+interface PatientDocument {
+  _id: string;
+  fileName: string;
+  documentType: string;
+  uploadDate: number;
+  fileSize: number;
+  downloadUrl: string;
+}
+
+interface PatientDetailsData {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  imageUrl?: string;
+  phoneNumber?: string;
+  relationship: PatientRelationship;
+  patientProfile?: PatientProfile;
+  appointments: Appointment[];
+  sessionLogs: SessionLog[];
+  treatmentPlans: TreatmentPlan[];
 }
 
 export default function PatientDetailsPage() {
@@ -81,22 +111,20 @@ export default function PatientDetailsPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const patientId = params.patientId as string;
 
-  // Get current user - use explicit any to avoid deep type instantiation
-  const currentUser: any = useQuery(api.users.getMyUser);
+  // Get current user
+  const currentUser = useQuery(api.users.getMyUser) as User | undefined;
   
-  // Get patient details - use function aliasing to avoid deep type instantiation
-  const getPatientDetailsQuery = api.patients.getPatientDetails;
-  const patientDetails: any = useQuery(
-    getPatientDetailsQuery,
+  // Get patient details
+  const patientDetails = useQuery(
+    api.patients.getPatientDetails,
     patientId ? { patientId: patientId as Id<'users'> } : 'skip'
-  );
+  ) as PatientDetailsData | undefined;
 
-  // Patient documents for physio - use function aliasing to avoid deep type instantiation
-  const getPatientDocsQuery = api.files.getPatientDocumentsForPhysio;
-  const patientDocs: any = useQuery(
-    getPatientDocsQuery,
+  // Patient documents for physio
+  const patientDocs = useQuery(
+    api.files.getPatientDocumentsForPhysio,
     patientId ? { patientUserId: patientId as Id<'users'> } : 'skip'
-  );
+  ) as PatientDocument[] | undefined;
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -277,7 +305,7 @@ export default function PatientDetailsPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {patientDetails.sessionLogs.slice(0, 3).map((session: any) => (
+                {patientDetails.sessionLogs.slice(0, 3).map((session: SessionLog) => (
                   <div key={session._id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
                     <div className="p-2 bg-blue-100 rounded-lg">
                       <FileText className="h-4 w-4 text-blue-600" />
@@ -308,7 +336,7 @@ export default function PatientDetailsPage() {
             </Button>
           </div>
           <div className="space-y-3">
-            {patientDetails.appointments.map((appointment: any) => (
+            {patientDetails.appointments.map((appointment: Appointment) => (
               <Card key={appointment._id}>
                 <CardContent className="pt-4">
                   <div className="flex justify-between items-start">
@@ -352,7 +380,7 @@ export default function PatientDetailsPage() {
             </Button>
           </div>
           <div className="space-y-3">
-            {patientDetails.sessionLogs.map((session: any) => (
+            {patientDetails.sessionLogs.map((session: SessionLog) => (
               <Card key={session._id}>
                 <CardContent className="pt-4">
                   <div className="space-y-3">
@@ -408,7 +436,7 @@ export default function PatientDetailsPage() {
             </Button>
           </div>
           <div className="space-y-3">
-            {patientDetails.treatmentPlans.map((plan: any) => (
+            {patientDetails.treatmentPlans.map((plan: TreatmentPlan) => (
               <Card key={plan._id}>
                 <CardContent className="pt-4">
                   <div className="space-y-3">
@@ -431,7 +459,7 @@ export default function PatientDetailsPage() {
                       <div>
                         <p className="text-sm font-medium text-gray-700 mb-2">Goals:</p>
                         <ul className="text-sm text-gray-600 space-y-1">
-                          {plan.goals.map((goal: any, index: any) => (
+                          {plan.goals.map((goal: string, index: number) => (
                             <li key={index} className="flex items-start gap-2">
                               <span className="text-blue-500">•</span>
                               {goal}
@@ -458,7 +486,7 @@ export default function PatientDetailsPage() {
               <CardContent>
                 {patientDetails.patientProfile?.medicalHistory && patientDetails.patientProfile.medicalHistory.length > 0 ? (
                   <ul className="space-y-2">
-                    {patientDetails.patientProfile.medicalHistory.map((condition: any, index: any) => (
+                    {patientDetails.patientProfile?.medicalHistory.map((condition: string, index: number) => (
                       <li key={index} className="text-sm text-gray-600 flex items-start gap-2">
                         <span className="text-red-500">•</span>
                         {condition}
@@ -480,7 +508,7 @@ export default function PatientDetailsPage() {
               <CardContent>
                 {patientDetails.patientProfile?.currentMedications && patientDetails.patientProfile.currentMedications.length > 0 ? (
                   <ul className="space-y-2">
-                    {patientDetails.patientProfile.currentMedications.map((medication: any, index: any) => (
+                    {patientDetails.patientProfile.currentMedications.map((medication: string, index: number) => (
                       <li key={index} className="text-sm text-gray-600 flex items-start gap-2">
                         <span className="text-blue-500">•</span>
                         {medication}
@@ -502,7 +530,7 @@ export default function PatientDetailsPage() {
               <CardContent>
                 {patientDetails.patientProfile?.allergies && patientDetails.patientProfile.allergies.length > 0 ? (
                   <ul className="space-y-2">
-                    {patientDetails.patientProfile.allergies.map((allergy: any, index: any) => (
+                    {patientDetails.patientProfile.allergies.map((allergy: string, index: number) => (
                       <li key={index} className="text-sm text-gray-600 flex items-start gap-2">
                         <span className="text-orange-500">•</span>
                         {allergy}
@@ -551,7 +579,7 @@ export default function PatientDetailsPage() {
             <CardContent>
               {patientDocs && patientDocs.length > 0 ? (
                 <ul className="space-y-2">
-                  {patientDocs.map((doc: PatientDoc) => (
+                  {patientDocs.map((doc: PatientDocument) => (
                     <li key={doc._id} className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50">
                       <div className="flex items-center gap-3">
                         <FileText className="h-5 w-5 text-gray-500" />

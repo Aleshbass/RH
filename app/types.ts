@@ -9,6 +9,10 @@ export interface User {
   email?: string;
   imageUrl?: string;
   phoneNumber?: string;
+  /** Optional plain phone field used in some components */
+  phone?: string;
+  /** Indicates if the user is currently active (online) */
+  isActive?: boolean;
   role?: "physiotherapist" | "clinic_owner" | "patient" | "family_member" | "admin";
   onboarded: boolean;
   physiotherapistProfileId?: Id<"physiotherapistProfiles">;
@@ -41,7 +45,7 @@ export interface Notification {
   payload: {
     title: string;
     body: string;
-    data?: any;
+    data?: Record<string, unknown>;
     link?: string;
   };
   createdAt: number;
@@ -130,7 +134,7 @@ export interface SessionLog {
     firstName: string;
     lastName: string;
   };
-  appointment?: any;
+  appointment?: Appointment | null;
 }
 
 export interface Session {
@@ -140,7 +144,7 @@ export interface Session {
     firstName: string;
     lastName: string;
   };
-  appointment?: any;
+  appointment?: Appointment | null;
   patientId: Id<"users">;
   physiotherapistId: Id<"users">;
   clinicId?: Id<"clinics">;

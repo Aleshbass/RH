@@ -22,9 +22,12 @@ import { TemplateSelector } from './TemplateSelector'
 // import { useToast } from '@/components/ui/use-toast'
 
 interface SessionLogModalProps {
+  /** Whether modal is open */
   isOpen: boolean
   onClose: () => void
-  appointmentId: Id<'appointments'>
+  /** Optional patient ID for convenience */
+  patientId?: string | Id<'users'>
+  appointmentId?: Id<'appointments'>
   appointmentDetails?: {
     patient: {
       firstName: string
@@ -213,7 +216,7 @@ export function SessionLogModal({
                 }
               }}
               patientName={appointmentDetails?.patient.firstName}
-              clinicId={appointmentDetails?.serviceType}
+              clinicId={appointmentDetails?.serviceType as Id<"clinics"> | undefined}
             />
           </div>
 

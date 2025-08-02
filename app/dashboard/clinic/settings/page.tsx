@@ -143,15 +143,15 @@ export default function ClinicSettingsPage() {
                       <Label htmlFor="phone">Phone</Label>
                       <Input 
                         id="phone" 
-                        defaultValue={clinic?.phone || ''} 
-                        placeholder="+1 (555) 123-4567"
+                        defaultValue={clinic?.contactPhone || ''} 
+                        placeholder="+234 123-4564567"
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="email">Email</Label>
                       <Input 
                         id="email" 
-                        defaultValue={clinic?.email || ''} 
+                        defaultValue={clinic?.contactEmail || ''} 
                         placeholder="contact@clinic.com"
                       />
                     </div>

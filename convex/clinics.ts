@@ -820,6 +820,13 @@ export const getClinicPerformanceMetrics = query({
         patientRetentionRate: 0,
         averageSessionsPerPatient: 0,
         staffUtilization: 0,
+        patientSatisfaction: 0,
+        treatmentSuccess: 0,
+        avgSessionDuration: 0,
+        revenueGrowth: 0,
+        patientAcquisitionCost: 0,
+        patientLifetimeValue: 0,
+        netPromoterScore: 0,
       };
     }
 
@@ -904,12 +911,22 @@ export const getClinicPerformanceMetrics = query({
       ? Math.round((totalAppointmentHours / totalAvailableHours) * 100)
       : 0;
 
+    // Derive or placeholder values for additional metrics
+    const patientSatisfaction = Math.round((averageRating / 5) * 100); // Convert 0-5 rating to %
+    const treatmentSuccess = 0; // Placeholder until implemented
+    const avgSessionDuration = 0; // Placeholder until we track duration
+    const revenueGrowth = 0; // Placeholder until revenue growth calc
+
     return {
       averageRating,
       totalReviews,
       patientRetentionRate,
       averageSessionsPerPatient,
       staffUtilization,
+      patientSatisfaction,
+      treatmentSuccess,
+      avgSessionDuration,
+      revenueGrowth,
     };
   },
 });

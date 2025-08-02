@@ -2,7 +2,6 @@
 // Handles creation and delivery of both in-app notifications and emails
 
 import { ConvexClient } from 'convex/browser';
-import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 
 export type NotificationType = 

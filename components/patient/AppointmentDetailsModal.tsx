@@ -1,13 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { 
   Calendar, 
@@ -26,6 +24,7 @@ import {
   CheckCircle,
   AlertCircle
 } from 'lucide-react'
+import Image from 'next/image'
 import { format } from 'date-fns'
 import { Id } from '@/convex/_generated/dataModel'
 
@@ -194,9 +193,12 @@ export function AppointmentDetailsModal({
                   <div className="flex items-start gap-4">
                     <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
                       {physiotherapist.imageUrl ? (
-                        <img 
-                          src={physiotherapist.imageUrl} 
+                        <Image
+                          src={physiotherapist.imageUrl}
                           alt={`${physiotherapist.firstName} ${physiotherapist.lastName}`}
+                          width={64}
+                          height={64}
+                          unoptimized
                           className="w-16 h-16 rounded-full object-cover"
                         />
                       ) : (
@@ -248,10 +250,10 @@ export function AppointmentDetailsModal({
                         </div>
                       )}
                       
-                      {clinic.phoneNumber && (
+                      {clinic.contactPhone && (
                         <div className="flex items-center gap-2">
                           <Phone className="h-4 w-4 text-gray-500" />
-                          <span>{clinic.phoneNumber}</span>
+                          <span>{clinic.contactPhone}</span>
                         </div>
                       )}
                     </div>

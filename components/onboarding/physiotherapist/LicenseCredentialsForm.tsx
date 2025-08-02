@@ -6,7 +6,7 @@ import { useOnboardingStore } from '@/stores/onboardingStore';
 import FileUpload from '@/components/ui/FileUpload';
 import { useFormWithZod } from '@/lib/hooks/useFormWithZod';
 import { usePhysiotherapistDocuments } from '@/lib/hooks/usePhysiotherapistDocuments';
-import { springConfig } from '@/lib/animations/animations';
+
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 
@@ -279,7 +279,9 @@ export default function LicenseCredentialsForm({ onComplete, onPrev }: LicenseCr
       y: 0,
       transition: {
         delay: i * 0.1,
-        ...springConfig
+        stiffness: 260,
+        damping: 20,
+        mass: 1
       }
     })
   };

@@ -233,7 +233,7 @@ export function AnnouncementSystem() {
                       >
                         <Checkbox
                           checked={isChecked}
-                          onChange={(checked) => handleRoleToggle(role.value, checked)}
+                          onCheckedChange={(checked) => handleRoleToggle(role.value, checked === true)}
                         />
                         <Icon className="h-4 w-4" />
                         <span className="text-sm font-medium">{role.label}</span>

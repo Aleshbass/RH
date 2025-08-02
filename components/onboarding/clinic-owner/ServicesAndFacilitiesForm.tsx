@@ -34,7 +34,6 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
     control,
     handleSubmit,
     formState: { errors },
-    watch,
   } = useForm<ServicesAndFacilitiesData>({
     resolver: zodResolver(servicesAndFacilitiesSchema),
     defaultValues: {

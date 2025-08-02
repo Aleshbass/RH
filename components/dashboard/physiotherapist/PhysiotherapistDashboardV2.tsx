@@ -73,7 +73,17 @@ export function PhysiotherapistDashboardV2() {
   })
 
   // Recent session logs
-  const recentSessions = useQuery(api.sessionLogs.getMySessionLogs, { limit: 5 })
+  const recentSessionsData = useQuery(api.sessionLogs.getMySessionLogs, { limit: 5 })
+  
+  // Transform the data to match the expected interface
+  const recentSessions = recentSessionsData?.map(session => ({
+    _id: session._id,
+    sessionDate: session.sessionDate,
+    patient: session.patient ? {
+      firstName: session.patient.firstName || '',
+      lastName: session.patient.lastName || ''
+    } : undefined
+  }))
 
   // Router for navigation in quick actions
   const router = useRouter()
@@ -281,7 +291,7 @@ export function PhysiotherapistDashboardV2() {
                 <div className="text-center py-6">
                   <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                   <p className="text-gray-600 mb-2">No appointments scheduled for today</p>
-                  <p className="text-sm text-muted-foreground mb-4">You're all caught up! Ready to help your patients.</p>
+                  <p className="text-sm text-muted-foreground mb-4">You&apos;re all caught up! Ready to help your patients.</p>
                   <Button variant="outline" size="sm" onClick={handleScheduleAppointment}>
                     Schedule Appointment
                   </Button>

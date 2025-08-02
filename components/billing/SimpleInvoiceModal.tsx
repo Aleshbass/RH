@@ -17,9 +17,36 @@ import {
   Phone
 } from 'lucide-react';
 
+// Types used in this modal
+interface InvoiceItem {
+  description?: string;
+  name?: string;
+  quantity: number;
+  unitPrice?: number;
+  amount?: number;
+  total?: number;
+}
+
+interface Invoice {
+  _id?: string;
+  patient?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phoneNumber?: string;
+  } | null;
+  dueDate?: number | string;
+  status: 'paid' | 'sent' | 'overdue' | 'draft' | string;
+  totalAmount?: number;
+  subtotal?: number;
+  platformFee?: number;
+  discountAmount?: number;
+  items?: InvoiceItem[];
+}
+
 interface SimpleInvoiceModalProps {
   isOpen: boolean;
-  selectedInvoice: any; // Will improve typing later
+  selectedInvoice: Invoice | null;
   onClose: () => void;
   onSend: () => void;
   onRecordPayment: (amount: number, method: string) => void;
@@ -107,16 +134,16 @@ export function SimpleInvoiceModal({
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {selectedInvoice.items?.map((item: any, index: number) => (
+                {selectedInvoice.items?.map((item: InvoiceItem, index: number) => (
                   <div key={index} className="flex justify-between items-center border-b pb-3">
                     <div>
                       <p className="font-medium">{item.description || item.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {item.quantity} × {formatCurrency(item.unitPrice || item.amount)}
+                        {item.quantity} × {formatCurrency((item.unitPrice ?? item.amount ?? 0))}
                       </p>
                     </div>
                     <div className="font-medium">
-                      {formatCurrency(item.total || (item.quantity * (item.unitPrice || item.amount)))}
+                      {formatCurrency(item.total ?? (item.quantity * (item.unitPrice ?? item.amount ?? 0)))}
                     </div>
                   </div>
                 ))}
@@ -124,17 +151,17 @@ export function SimpleInvoiceModal({
                 <div className="pt-4 space-y-2">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
-                    <span>{formatCurrency(selectedInvoice.subtotal || (selectedInvoice.totalAmount - (selectedInvoice.platformFee || 1000)))}</span>
+                    <span>{formatCurrency(selectedInvoice.subtotal ?? ((selectedInvoice.totalAmount ?? 0) - (selectedInvoice.platformFee ?? 1000)))}</span>
                   </div>
-                  {selectedInvoice.discountAmount > 0 && (
+                  {(selectedInvoice.discountAmount ?? 0) > 0 && (
                     <div className="flex justify-between text-green-600">
                       <span>Discount:</span>
-                      <span>-{formatCurrency(selectedInvoice.discountAmount)}</span>
+                      <span>-{formatCurrency(selectedInvoice.discountAmount ?? 0)}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
                     <span>Platform Fee:</span>
-                    <span>{formatCurrency(selectedInvoice.platformFee || 1000)}</span>
+                    <span>{formatCurrency(selectedInvoice.platformFee ?? 1000)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-lg pt-2 border-t">
                     <span>Total:</span>
@@ -160,7 +187,7 @@ export function SimpleInvoiceModal({
             )}
             
             {(selectedInvoice.status === 'sent' || selectedInvoice.status === 'overdue') && (
-              <Button onClick={() => onRecordPayment(selectedInvoice.totalAmount / 100, 'bank_transfer')}>
+              <Button onClick={() => onRecordPayment((selectedInvoice.totalAmount || 0) / 100, 'bank_transfer')}>
                 <CreditCard className="h-4 w-4 mr-2" />
                 Record Payment
               </Button>

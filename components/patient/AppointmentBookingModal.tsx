@@ -5,14 +5,13 @@ import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Calendar, Clock, User, MapPin, Loader2 } from 'lucide-react'
-import { format, addDays, startOfDay } from 'date-fns'
+import { Calendar, Clock, User, Loader2 } from 'lucide-react'
+import { format, addDays } from 'date-fns'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
 
@@ -20,6 +19,15 @@ interface AppointmentBookingModalProps {
   isOpen: boolean
   onClose: () => void
   onAppointmentBooked: () => void
+}
+
+// Time slot returned by getAvailableTimeSlots query
+interface TimeSlot {
+  startTime: number;
+  endTime: number;
+  startTimeFormatted: string;
+  endTimeFormatted: string;
+  available: boolean;
 }
 
 const serviceTypes = [
@@ -40,7 +48,7 @@ export function AppointmentBookingModal({
 }: AppointmentBookingModalProps) {
   const [selectedPhysiotherapist, setSelectedPhysiotherapist] = useState<string>('')
   const [selectedDate, setSelectedDate] = useState('')
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<any>(null)
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null)
   const [serviceType, setServiceType] = useState('')
   const [notes, setNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -146,12 +154,12 @@ export function AppointmentBookingModal({
                 <SelectValue placeholder="Choose your physiotherapist" />
               </SelectTrigger>
               <SelectContent>
-                {physiotherapists?.map((physio) => (
+                {physiotherapists?.map((physio) => physio && (
                   <SelectItem key={physio._id} value={physio._id}>
                     <div className="flex items-center gap-2">
                       <User className="h-4 w-4" />
-                      {physio.firstName} {physio.lastName}
-                      {physio.isPrimary && (
+                      {physio?.firstName} {physio?.lastName}
+                      {physio?.isPrimary && (
                         <Badge variant="secondary" className="text-xs">Primary</Badge>
                       )}
                     </div>
@@ -254,8 +262,8 @@ export function AppointmentBookingModal({
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-blue-600" />
                   <span>
-                    {physiotherapists?.find(p => p._id === selectedPhysiotherapist)?.firstName}{' '}
-                    {physiotherapists?.find(p => p._id === selectedPhysiotherapist)?.lastName}
+                    {physiotherapists?.find(p => p?._id === selectedPhysiotherapist)?.firstName}{' '}
+                    {physiotherapists?.find(p => p?._id === selectedPhysiotherapist)?.lastName}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">

@@ -39,6 +39,9 @@ export function useSystemHealth() {
   }
 
   return {
-    data: result as SystemHealth
+    data: {
+      ...result,
+      timestamp: Date.now()
+    } as SystemHealth
   };
 } 

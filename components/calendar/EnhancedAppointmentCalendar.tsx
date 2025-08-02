@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useCalendarUIStore, type PriorityLevel } from '@/stores/calendarUIStore';
 
-interface AppointmentData {
+export interface AppointmentData {
   _id: string;
   patientId: string;
   physiotherapistId: string;

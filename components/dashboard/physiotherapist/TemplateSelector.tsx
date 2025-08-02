@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Search, FileText } from 'lucide-react'
 import { useNotesTemplates } from '@/hooks/useNotesTemplates'
+import type { Id } from '@/convex/_generated/dataModel'
 
 interface Template {
   _id: string
@@ -21,7 +22,7 @@ interface Template {
 interface TemplateSelectorProps {
   onSelect: (content: string) => void
   patientName?: string
-  clinicId?: string
+  clinicId?: Id<"clinics">
   scope?: 'system' | 'clinic' | 'user_physio'
 }
 
@@ -75,12 +76,15 @@ export function TemplateSelector({
           </DialogHeader>
           
           <div className="space-y-4">
-            <Input
-              placeholder="Search templates..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              icon={<Search className="h-4 w-4" />}
-            />
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search templates..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
             
             <ScrollArea className="h-[400px] pr-4">
               <div className="space-y-4">

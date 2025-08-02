@@ -33,6 +33,7 @@ import {
   RescheduleAppointmentModal 
 } from '@/components/patient/AppointmentActionModals'
 import { AppointmentFeedbackModal } from '@/components/patient/AppointmentFeedbackModal'
+import { Id } from '@/convex/_generated/dataModel'
 
 interface Appointment {
   _id: string
@@ -116,7 +117,7 @@ function AppointmentCard({
   onCancel: (appointment: Appointment) => void
   onReschedule: (appointment: Appointment) => void
   onConfirm: (appointment: Appointment) => void
-  onRateVisit: (appointment: Appointment) => void
+  onRateVisit?: (appointment: Appointment) => void
 }) {
   const startDate = new Date(appointment.startTime)
   const endDate = new Date(appointment.endTime)
@@ -215,11 +216,11 @@ function AppointmentCard({
               Cancel
             </Button>
           )}
-          {appointment.status === 'completed' && !appointment.feedbackSubmitted && (
+          {appointment.status === 'completed' && !appointment.feedbackSubmitted && onRateVisit && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onRateVisit(appointment)}
+              onClick={() => onRateVisit && onRateVisit(appointment)}
               className="hover:bg-yellow-50 hover:border-yellow-300"
             >
               <Star className="w-4 h-4 mr-1" />
@@ -495,9 +496,9 @@ export default function PatientAppointmentsPage() {
         <AppointmentFeedbackModal
           isOpen={feedbackModal.isOpen}
           onClose={() => setFeedbackModal({ isOpen: false, appointment: null })}
-          appointmentId={feedbackModal.appointment._id}
-          physiotherapistName={feedbackModal.appointment.physiotherapistName}
-          appointmentDate={feedbackModal.appointment.startTime}
+          appointmentId={feedbackModal.appointment._id as Id<"appointments">}
+          physiotherapistName={feedbackModal.appointment.physiotherapistName ?? ''}
+          appointmentDate={feedbackModal.appointment.startTime.toString()}
           serviceType={feedbackModal.appointment.serviceType}
         />
       )}

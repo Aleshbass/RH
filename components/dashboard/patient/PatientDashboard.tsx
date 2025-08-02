@@ -2,6 +2,7 @@
 
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
+import { Id } from '@/convex/_generated/dataModel'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -23,7 +24,7 @@ import FileUpload from '@/components/ui/FileUpload'
 import { useState } from 'react'
 import { PatientDashboardHeader } from './PatientDashboardHeader'
 import { PatientStatsCards } from './PatientStatsCards'
-import { User, Appointment, PatientDocument } from '@/app/types'
+
 
 interface Exercise {
   _id: string;
@@ -35,12 +36,6 @@ interface Exercise {
   videoUrl?: string;
 }
 
-interface Message {
-  _id: string;
-  content: string;
-  read: boolean;
-  createdAt: number;
-}
 
 interface ProgressEntry {
   _id: string;
@@ -60,7 +55,6 @@ export function PatientDashboard() {
   
   // Use empty arrays for now since these endpoints don't exist yet
   const exercises: Exercise[] = []
-  const messages: Message[] = []
   const progress: ProgressEntry[] = []
   
   // Get patient profile ID from user
@@ -70,9 +64,8 @@ export function PatientDashboard() {
   const { 
     documents, 
     uploadPatientDocument, 
-    isLoadingDocuments, 
-    isUploadingPatientDocument 
-  } = usePatientDocuments({ patientProfileId: patientProfileId || '' })
+    isLoadingDocuments
+  } = usePatientDocuments({ patientProfileId: patientProfileId as Id<"patientProfiles"> | undefined })
 
   // Loading state
   if (!user) {
@@ -117,7 +110,7 @@ export function PatientDashboard() {
 
   return (
     <div className="flex-1 space-y-6 p-6">
-      <PatientDashboardHeader patientId={user?._id || '' as any} />
+      <PatientDashboardHeader />
       
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>

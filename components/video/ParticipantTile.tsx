@@ -4,8 +4,8 @@ import { User, MicOff, Monitor } from 'lucide-react'
 
 interface Participant {
   session_id: string;
-  videoTrack?: MediaStreamTrack | null;
-  audioTrack?: MediaStreamTrack | null;
+  videoTrack?: MediaStreamTrack | null | false;
+  audioTrack?: MediaStreamTrack | null | false;
   user_name?: string;
   local?: boolean;
   screen?: boolean;

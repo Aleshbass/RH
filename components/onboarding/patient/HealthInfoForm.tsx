@@ -71,7 +71,7 @@ export default function HealthInfoForm({ onSubmit, onBack, isExternallySubmittin
       transition: {
         delay: i * 0.1,
         duration: 0.5,
-        ease: 'easeOut',
+
       },
     }),
   };

@@ -48,6 +48,7 @@ interface InvoiceFormData {
   discountAmount: number
   discountPercentage: number
   notes?: string
+  paymentTerms: string
 }
 
 export function InvoiceModal({ 
@@ -73,7 +74,8 @@ export function InvoiceModal({
     discountType: 'amount',
     discountAmount: 0,
     discountPercentage: 0,
-    notes: ''
+    notes: '',
+    paymentTerms: 'Payment due within 30 days'
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -208,7 +210,8 @@ export function InvoiceModal({
       discountType: 'amount',
       discountAmount: 0,
       discountPercentage: 0,
-      notes: ''
+      notes: '',
+      paymentTerms: 'Payment due within 30 days'
     })
     onClose()
   }
@@ -228,7 +231,7 @@ export function InvoiceModal({
             Create Invoice
           </DialogTitle>
           <DialogDescription>
-            Create an invoice for {appointmentDetails.patient.firstName} {appointmentDetails.patient.lastName}&apos;s appointment
+            Create an invoice for {appointmentDetails.appointment.patient?.firstName} {appointmentDetails.appointment.patient?.lastName}&apos;s appointment
           </DialogDescription>
         </DialogHeader>
 

@@ -4,12 +4,11 @@ import { useQuery } from 'convex/react'
 import { useParams } from 'next/navigation'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { 
   Receipt, 
-  Calendar, 
   MapPin,
   Phone,
   Download,
@@ -19,12 +18,42 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 
+// Types for invoice data
+interface InvoiceItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+}
+interface InvoiceData {
+  _id: string;
+  invoiceNumber: string | number;
+  status: 'paid' | 'sent' | 'overdue' | 'draft' | string;
+  isOverdue: boolean;
+  currency: string;
+  items: InvoiceItem[];
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  total: number;
+  clinicName?: string;
+  clinicAddress?: string;
+  clinicPhone?: string;
+  patientName?: string;
+  issueDate: number;
+  dueDate: number;
+  paymentDate?: number;
+  notes?: string;
+}
+
 function SharedInvoicePageComponent() {
   const params = useParams()
   const invoiceId = params?.invoiceId as Id<"invoices">
   
   // Query the shareable invoice (no authentication required)
-  const invoice: any = useQuery(api.billing.getShareableInvoice, invoiceId ? { invoiceId } : 'skip')
+  const invoice = useQuery(
+    api.billing.getShareableInvoice,
+    invoiceId ? { invoiceId } : 'skip'
+  ) as InvoiceData | null | undefined
 
   if (!params || !params.invoiceId) {
     return (
@@ -55,7 +84,7 @@ function SharedInvoicePageComponent() {
         <div className="text-center">
           <Receipt className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Invoice Not Found</h1>
-          <p className="text-gray-600">The invoice you're looking for doesn't exist or has been removed.</p>
+          <p className="text-gray-600">The invoice you&apos;re looking for doesn&apos;t exist or has been removed.</p>
         </div>
       </div>
     )
@@ -191,7 +220,7 @@ function SharedInvoicePageComponent() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {invoice.items.map((item: any, index: number) => (
+                    {invoice.items.map((item: InvoiceItem, index: number) => (
                       <tr key={index}>
                         <td className="px-4 py-4 text-sm text-gray-900">{item.description}</td>
                         <td className="px-4 py-4 text-sm text-gray-900 text-right">{item.quantity}</td>

@@ -52,6 +52,7 @@ import {
   Palette,
   Globe,
 } from 'lucide-react'
+import { TooltipContent } from '@/components/ui/tooltip'
 import Link from 'next/link'
 import { SignOutButton } from '@clerk/nextjs'
 
@@ -303,7 +304,7 @@ export function AdminSidebar({ className }: AdminSidebarProps) {
                         <SidebarMenuButton
                           asChild
                           isActive={isActive}
-                          tooltip={{ children: tooltipContent } as any}
+                          tooltip={{ children: tooltipContent } as React.ComponentProps<typeof TooltipContent>}
                         >
                           <Link href={item.href}>
                             <Icon className="h-4 w-4" />

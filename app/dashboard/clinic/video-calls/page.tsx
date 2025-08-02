@@ -37,8 +37,8 @@ type VideoCall = {
     maxParticipants: number;
     waitingRoomEnabled: boolean;
   };
-  patient?: Doc<"users">;
-  physiotherapist?: Doc<"users">;
+  patient?: Partial<Doc<"users">> | null;
+  physiotherapist?: Partial<Doc<"users">> | null;
 };
 
 export default function ClinicVideoCallsPage() {
@@ -81,7 +81,7 @@ export default function ClinicVideoCallsPage() {
   const videoCalls = allVideoCalls || [];
 
   // Filter video calls based on search and filters
-  const filteredCalls = videoCalls.filter((call: VideoCall) => {
+  const filteredCalls = videoCalls.filter((call) => {
     const matchesSearch = !searchTerm || 
       call.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       call.patient?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -239,7 +239,7 @@ export default function ClinicVideoCallsPage() {
               <div>
                 <p className="text-sm text-gray-500">Active Now</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {videoCalls.filter((c: VideoCall) => c.status === 'active').length}
+                  {videoCalls.filter((c) => c.status === 'active').length}
                 </p>
               </div>
               <Play className="h-8 w-8 text-green-500" />
@@ -252,7 +252,7 @@ export default function ClinicVideoCallsPage() {
               <div>
                 <p className="text-sm text-gray-500">Scheduled</p>
                 <p className="text-2xl font-bold text-blue-600">
-                  {videoCalls.filter((c: VideoCall) => c.status === 'scheduled').length}
+                  {videoCalls.filter((c) => c.status === 'scheduled').length}
                 </p>
               </div>
               <Calendar className="h-8 w-8 text-blue-500" />
@@ -265,7 +265,7 @@ export default function ClinicVideoCallsPage() {
               <div>
                 <p className="text-sm text-gray-500">This Week</p>
                 <p className="text-2xl font-bold">
-                  {videoCalls.filter((c: VideoCall) => {
+                  {videoCalls.filter((c) => {
                     const callDate = new Date(c.startTime);
                     const weekAgo = new Date();
                     weekAgo.setDate(weekAgo.getDate() - 7);
@@ -281,7 +281,7 @@ export default function ClinicVideoCallsPage() {
 
       {/* Video Calls Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {filteredCalls.map((call: VideoCall) => (
+        {filteredCalls.map((call) => (
           <Card key={call._id}>
             <CardHeader>
               <div className="flex items-center justify-between">

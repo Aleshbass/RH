@@ -110,7 +110,7 @@ export default function ClinicLayout({
   }
 
   // Check approval status
-  if (approvalStatus && approvalStatus.status === 'pending') {
+  if (approvalStatus && approvalStatus.status === 'pending_review') {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center max-w-md">
@@ -124,7 +124,7 @@ export default function ClinicLayout({
     )
   }
 
-  if (approvalStatus && !approvalStatus.isApproved && approvalStatus.status === 'declined') {
+  if (approvalStatus && approvalStatus.status === 'declined') {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Alert className="max-w-md">

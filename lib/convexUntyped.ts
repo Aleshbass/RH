@@ -1,24 +1,23 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Helper wrappers around Convex hooks that bypass deep generic instantiation issues
 // using double casting (unknown as any). Use these when TypeScript reports
 // "Type instantiation is excessively deep and possibly infinite".
 
 import { useQuery, useAction, useMutation } from "convex/react";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useQueryUntyped(fn: any, args?: any) {
+export function useQueryUntyped(fn: unknown, args?: unknown): any {
   // Double-cast the function reference so TS doesn't try to expand its types
    
-  return useQuery(fn as unknown as any, args);
+  // Cast the hook itself to any to fully sidestep its complex generics
+  return (useQuery as any)(fn as any, args) as any;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useMutationUntyped(fn: any) {
+export function useMutationUntyped(fn: unknown): any {
    
-  return useMutation(fn as unknown as any);
+  return (useMutation as any)(fn as any) as any;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useActionUntyped(fn: any) {
+export function useActionUntyped(fn: unknown): any {
    
-  return useAction(fn as unknown as any);
-} 
+  return (useAction as any)(fn as any) as any;
+}

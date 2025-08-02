@@ -7,13 +7,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 
 import { Bell, Settings, User } from 'lucide-react'
-import { Id } from '@/convex/_generated/dataModel'
 
-interface PatientDashboardHeaderProps {
-  patientId: Id<'users'>
-}
-
-export function PatientDashboardHeader({ patientId }: PatientDashboardHeaderProps) {
+export function PatientDashboardHeader() {
   const { user } = useUser()
   const patientData = useQuery(api.users.getMyUser)
 

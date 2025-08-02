@@ -265,6 +265,15 @@ interface RescheduleAppointmentModalProps {
   onAppointmentRescheduled: () => void
 }
 
+// Time slot returned by getAvailableTimeSlots query
+interface TimeSlot {
+  startTime: number;
+  endTime: number;
+  startTimeFormatted: string;
+  endTimeFormatted: string;
+  available: boolean;
+}
+
 export function RescheduleAppointmentModal({
   isOpen,
   onClose,
@@ -272,7 +281,7 @@ export function RescheduleAppointmentModal({
   onAppointmentRescheduled,
 }: RescheduleAppointmentModalProps) {
   const [selectedDate, setSelectedDate] = useState('')
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<any>(null)
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null)
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 

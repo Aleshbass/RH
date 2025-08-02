@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import VideoCallManager from '@/components/video/VideoCallManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,9 +20,6 @@ export default function VideoCallPage() {
   
   // Get video call details
   const videoCall = useQuery(api.videoCalls.getVideoCall, { roomId });
-
-  // Join call mutation
-  const joinCall = useMutation(api.videoCalls.joinVideoCall);
 
   if (!user || !currentUser) {
     return (

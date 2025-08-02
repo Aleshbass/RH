@@ -38,9 +38,9 @@ import { useRouter } from 'next/navigation'
 
 interface Notification {
   _id: string
-  title: string
-  message: string
-  read: boolean
+  title?: string
+  message?: string
+  read?: boolean
   createdAt: number
   data?: {
     actionUrl?: string

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useCallback, useState, useRef } from 'react'
 
-import { useQuery } from 'convex/react'
+import { useQueryUntyped } from '@/lib/convexUntyped'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
 import { DailyProvider, useDaily, useParticipantIds, useParticipant, useScreenShare, useMeetingState } from '@daily-co/daily-react'
@@ -14,13 +14,6 @@ import ParticipantTile from '@/components/video/ParticipantTile'
 import CallControls from '@/components/video/CallControls'
 
 import {
-  Video,
-  VideoOff,
-  Mic,
-  MicOff,
-  PhoneOff,
-  Monitor,
-  MonitorOff,
   MessageSquare,
 
   Maximize,
@@ -28,11 +21,9 @@ import {
   Send,
   Copy,
   Phone,
-
-  Volume2,
-  VolumeX,
   Loader2,
 } from 'lucide-react'
+import type { DailyCall } from '@daily-co/daily-js'
 
 import { toast } from 'sonner'
 import TokenDebug from "@/components/debug/TokenDebug";
@@ -48,6 +39,14 @@ interface VideoCallProps {
   meetingToken?: string
 }
 
+interface RoomInfo {
+  dailyRoomUrl?: string;
+  dailyRoomName?: string;
+  isHost?: boolean;
+  meetingToken?: string;
+  tokenExpiration?: number;
+}
+
 // Daily.co Call Interface Component
 function DailyCallInterface({ 
   onCallEnd,
@@ -58,7 +57,7 @@ function DailyCallInterface({
   onCallEnd: () => void
   isFullscreen: boolean
   onToggleFullscreen: () => void
-  roomInfo: any
+  roomInfo: RoomInfo
 }) {
   const daily = useDaily()
   const participantIds = useParticipantIds()
@@ -110,9 +109,14 @@ function DailyCallInterface({
   useEffect(() => {
     if (!daily) return
 
-    const handleAppMessage = (event: any) => {
+    interface AppMessage {
+  data: { message: string; sender?: string; timestamp?: number };
+  fromId: string;
+}
+
+const handleAppMessage = (event: AppMessage) => {
       const { data, fromId } = event
-      const localParticipant = allParticipants.find((p: any) => p.local)
+      const localParticipant = allParticipants.find(p => (p as { local?: boolean }).local)
       const isLocal = fromId === localParticipant?.session_id
       
       const newMessage = {
@@ -189,7 +193,7 @@ function DailyCallInterface({
   // Send chat message
   const sendChatMessage = useCallback(() => {
     if (daily && chatMessage.trim()) {
-      const localParticipant = allParticipants.find((p: any) => p.local)
+      const localParticipant = allParticipants.find(p => (p as { local?: boolean }).local)
       const messageData = {
         message: chatMessage.trim(),
         sender: localParticipant?.user_name || 'Anonymous',
@@ -403,23 +407,26 @@ export default function VideoCall({
   isFullscreen = false,
   onToggleFullscreen,
   callId,
-  meetingToken
+  meetingToken,
 }: VideoCallProps) {
-  const [dailyCall, setDailyCall] = useState<any>(null)
-  const [roomInfo, setRoomInfo] = useState<any>(null)
+
+  const [dailyCall, setDailyCall] = useState<DailyCall | null>(null)
+
+  // ... (rest of the code remains the same)
+
+  const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const isCreatingCall = React.useRef(false)
 
-  // Get room info from Convex if callId is provided
-  const roomInfoQuery = useQuery(
-    api.videoCalls.getDailyRoomInfo,
-    callId ? { callId } : "skip"
+  const roomInfoQuery = useQueryUntyped(
+    api.videoCalls.getDailyRoomInfo as unknown,
+    callId ? ({ callId } as unknown) : ("skip" as unknown)
   )
 
   // Get room info by roomId if callId is not provided
-  const roomInfoByIdQuery = useQuery(
-    api.videoCalls.getCallByRoomId,
-    !callId ? { roomId } : "skip"
+  const roomInfoByIdQuery = useQueryUntyped(
+    api.videoCalls.getCallByRoomId as unknown,
+    !callId ? ({ roomId } as unknown) : ("skip" as unknown)
   )
 
   // Use the appropriate room info
@@ -450,8 +457,9 @@ export default function VideoCall({
 
   // Create Daily call instance
   useEffect(() => {
-    let callInstance: any = null;
+    let callInstance: DailyCall | null = null;
     let timeoutId: NodeJS.Timeout | undefined;
+    const token = meetingToken || roomInfo?.meetingToken;
     
     const createCall = async () => {
       if (!roomInfo || !(roomInfo.dailyRoomUrl || roomInfo.dailyRoomName)) {
@@ -467,171 +475,160 @@ export default function VideoCall({
       isCreatingCall.current = true;
       
       try {
-        const { default: DailyCall } = await import('@daily-co/daily-js')
+        const { default: DailyCall } = await import('@daily-co/daily-js');
           
-          // Construct the Daily.co URL properly
-          let dailyUrl = roomInfo.dailyRoomUrl
-          if (!dailyUrl && roomInfo.dailyRoomName) {
-            dailyUrl = `https://rehabifyhealth.daily.co/${roomInfo.dailyRoomName}`
-          }
-          
-          if (!roomInfo) {
-            throw new Error('Failed to get room information')
-          }
-
-          // Check for secure context and device access
-          if (typeof window === 'undefined' || !window.navigator) {
-            setError('Window or navigator not available');
-            return;
-          }
-
-          if (!window.isSecureContext) {
-            setError('Camera/mic access requires HTTPS or localhost. Please reload over HTTPS.');
-            return;
-          }
-
-          if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-            setError('Camera/mic access is not supported in this browser. Please use a modern browser over HTTPS.');
-            return;
-          }
-
-          const callConfig: any = {
-            url: dailyUrl,
-            userName: userName,
-            userData: {
-              userId: userId,
-              isHost: roomInfo.isHost,
-            },
-          }
-
-          // Add meeting token if available and not expired
-          const token = meetingToken || roomInfo.meetingToken
-          console.log('🎫 Token debug:', {
-            providedToken: meetingToken,
-            roomInfoToken: roomInfo.meetingToken,
-            finalToken: token,
-            tokenExpiration: roomInfo.tokenExpiration,
-            currentTime: Date.now() / 1000,
-            isExpired: roomInfo.tokenExpiration && Date.now() / 1000 > roomInfo.tokenExpiration
-          })
-          
-          if (token) {
-            // Check if token is expired
-            const tokenExpiration = roomInfo.tokenExpiration
-            if (tokenExpiration && Date.now() / 1000 > tokenExpiration) {
-              console.error('❌ Token expired:', { tokenExpiration, currentTime: Date.now() / 1000 })
-              throw new Error('Meeting token has expired. Please refresh and try again.')
-            }
-            console.log('✅ Adding token to call config')
-            callConfig.token = token
-          } else {
-            console.warn('⚠️ No meeting token available - this may cause permission issues')
-          }
-
-          console.log('🚀 Creating Daily call with config:', callConfig)
-          callInstance = DailyCall.createCallObject(callConfig)
-          setDailyCall(callInstance)
-
-          // Set up event listeners
-          const handleJoinedMeeting = () => {
-            console.log('✅ Joined Daily.co meeting successfully')
-          }
-          
-          const handleLeftMeeting = () => {
-            console.log('👋 Left Daily.co meeting')
-            onCallEnd()
-          }
-          
-          const handleError = (error: any) => {
-            console.error('❌ Daily.co error:', error)
-            console.error('Error details:', {
-              type: error.type,
-              message: error.message || error.errorMsg,
-              action: error.action,
-              details: error.details,
-              callClientId: error.callClientId
-            })
-            setError(error.message || error.errorMsg || 'Call connection failed')
-          }
-          
-          const handleJoiningMeeting = () => {
-            console.log('🔄 Joining Daily.co meeting...')
-          }
-          
-          const handleLoading = () => {
-            console.log('⏳ Daily.co call loading...')
-          }
-
-          callInstance.on('joined-meeting', handleJoinedMeeting)
-          callInstance.on('left-meeting', handleLeftMeeting)
-          callInstance.on('error', handleError)
-          callInstance.on('joining-meeting', handleJoiningMeeting)
-          callInstance.on('loading', handleLoading)
-
-          // Join the call with timeout
-          console.log('🔗 Attempting to join call...')
-          const joinPromise = callInstance.join()
-          const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => {
-              console.error('⏰ Call join timeout after 15 seconds')
-              reject(new Error('Call join timeout - this may be due to Daily.co account setup. Please ensure your Daily.co account has a credit card added.'))
-            }, 15000)
-          })
-
-          const result = await Promise.race([joinPromise, timeoutPromise])
-          // Clear the timeout if the promise resolves before the timeout
-          if (timeoutId) {
-            clearTimeout(timeoutId)
-            timeoutId = undefined
-          }
-          console.log('✅ Call join result:', result)
-          
-          return () => {
-            // Cleanup event listeners
-            if (callInstance) {
-              callInstance.off('joined-meeting', handleJoinedMeeting)
-              callInstance.off('left-meeting', handleLeftMeeting)
-              callInstance.off('error', handleError)
-              callInstance.off('joining-meeting', handleJoiningMeeting)
-              callInstance.off('loading', handleLoading)
-            }
-          }
-        } catch (error) {
-          console.error('❌ Failed to create Daily.co call:', error)
-          console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
-          setError(error instanceof Error ? error.message : 'Failed to initialize video call')
-        } finally {
-          isCreatingCall.current = false;
+        // Construct the Daily.co URL properly
+        let dailyUrl = roomInfo.dailyRoomUrl;
+        if (!dailyUrl && roomInfo.dailyRoomName) {
+          dailyUrl = `https://rehabifyhealth.daily.co/${roomInfo.dailyRoomName}`;
         }
-      }
+        
+        if (!roomInfo) {
+          throw new Error('Failed to get room information');
+        }
 
-      createCall()
+        // Check for secure context and device access
+        if (typeof window === 'undefined' || !window.navigator) {
+          setError('Window or navigator not available');
+          return;
+        }
+
+        if (!window.isSecureContext) {
+          setError('Camera/mic access requires HTTPS or localhost. Please reload over HTTPS.');
+          return;
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+          setError('Camera/mic access is not supported in this browser. Please use a modern browser over HTTPS.');
+          return;
+        }
+
+        interface DailyCallConfig {
+          url: string | undefined;
+          userName: string;
+          userData: {
+            userId: string;
+            isHost: boolean | undefined;
+          };
+          token?: string;
+        }
+
+        const callConfig: DailyCallConfig = {
+          url: dailyUrl,
+          userName: userName,
+          userData: {
+            userId: userId,
+            isHost: roomInfo.isHost,
+          },
+        };
+
+        // Add meeting token if available and not expired
+        
+        if (token) {
+          // Check if token is expired
+          const tokenExpiration = roomInfo.tokenExpiration;
+          if (tokenExpiration && Date.now() / 1000 > tokenExpiration) {
+            console.error('❌ Token expired:', { tokenExpiration, currentTime: Date.now() / 1000 });
+            throw new Error('Meeting token has expired. Please refresh and try again.');
+          }
+          console.log('✅ Adding token to call config');
+          (callConfig as { token?: string }).token = token;
+        } else {
+          console.warn('⚠️ No meeting token available - this may cause permission issues');
+        }
+
+        console.log('🚀 Creating Daily call with config:', callConfig);
+        callInstance = DailyCall.createCallObject(callConfig);
+        setDailyCall(callInstance);
+
+        // Set up event listeners
+        const handleJoinedMeeting = () => {
+          console.log('✅ Joined Daily.co meeting successfully');
+        };
+        
+        const handleLeftMeeting = () => {
+          console.log('👋 Left Daily.co meeting');
+          onCallEnd();
+        };
+        
+        const handleError = (err: unknown) => {
+          console.error('❌ Daily.co error:', err);
+          if (typeof err === 'object' && err !== null) {
+            const e = err as {
+              type?: string;
+              message?: string;
+              errorMsg?: string;
+              action?: string;
+              details?: unknown;
+              callClientId?: string;
+            };
+            console.error('Error details:', e);
+            setError(e.message ?? e.errorMsg ?? 'Call connection failed');
+          } else {
+            setError('Call connection failed');
+          }
+        };
+        
+        const handleJoiningMeeting = () => {
+          console.log('🔄 Joining Daily.co meeting...');
+        };
+        
+        const handleLoading = () => {
+          console.log('⏳ Daily.co call loading...');
+        };
+
+        callInstance.on('joined-meeting', handleJoinedMeeting);
+        callInstance.on('left-meeting', handleLeftMeeting);
+        callInstance.on('error', handleError);
+        callInstance.on('joining-meeting', handleJoiningMeeting);
+        callInstance.on('loading', handleLoading);
+
+        // Join the call with timeout
+        console.log('🔗 Attempting to join call...');
+        const joinPromise = callInstance.join();
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => {
+            console.error('⏰ Call join timeout after 15 seconds');
+            reject(new Error('Call join timeout - this may be due to Daily.co account setup. Please ensure your Daily.co account has a credit card added.'));
+          }, 15000);
+        });
+
+        const result = await Promise.race([joinPromise, timeoutPromise]);
+        // Clear the timeout if the promise resolves before the timeout
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = undefined;
+        }
+        console.log('✅ Call join result:', result);
+      } catch (error) {
+        console.error('❌ Failed to create Daily.co call:', error);
+        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+        setError(error instanceof Error ? error.message : 'Failed to initialize video call');
+      } finally {
+        isCreatingCall.current = false;
+      }
+    };
+
+    if (roomInfo && userId && userName) {
+      createCall();
     }
 
-    // Cleanup
+    // Cleanup function for useEffect
     return () => {
       if (dailyCall) {
-        dailyCall.destroy()
+        dailyCall.destroy();
       }
       if (timeoutId) {
-        clearTimeout(timeoutId)
+        clearTimeout(timeoutId);
       }
       if (callInstance) {
-        console.log('🧹 Cleaning up Daily call instance')
+        console.log('🧹 Cleaning up Daily call instance');
         callInstance.destroy().catch((e: Error) => {
-          console.error('Error cleaning up Daily call:', e)
-        })
+          console.error('Error cleaning up Daily call:', e);
+        });
       }
-    }
+    };
   }, [roomInfo, userId, userName, meetingToken, onCallEnd, dailyCall])
-
-  // Only create the call if we have room info and user data
-  useEffect(() => {
-    if (roomInfo && userId && userName) {
-      createCall()
-    }
-    // No cleanup needed here
-  }, [roomInfo, userId, userName])
 
   if (error) {
     return (

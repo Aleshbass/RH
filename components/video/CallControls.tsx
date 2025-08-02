@@ -32,13 +32,13 @@ export default function CallControls({
   isAudioEnabled,
   isAudioOutputEnabled,
   isSharingScreen,
-  showChat,
   onToggleVideo,
   onToggleAudio,
   onToggleAudioOutput,
   onToggleScreenShare,
   onToggleChat,
   onEndCall,
+  showChat,
 }: CallControlsProps) {
   return (
     <div className="bg-call-control p-4 flex justify-center items-center space-x-4 border-t border-gray-700">
@@ -79,7 +79,7 @@ export default function CallControls({
       </Button>
 
       <Button
-        variant="outline"
+        variant={showChat ? "secondary" : "outline"}
         size="lg"
         onClick={onToggleChat}
         className="rounded-full p-4 bg-call-accent hover:bg-call-accent/80 text-white border-call-accent"

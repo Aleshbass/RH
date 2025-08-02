@@ -1,10 +1,11 @@
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { useState, useCallback } from 'react'
+import type { Id } from '@/convex/_generated/dataModel'
 
 interface UseNotesTemplatesProps {
   scope?: 'system' | 'clinic' | 'user_physio'
-  clinicId?: string
+  clinicId?: Id<"clinics">
 }
 
 export function useNotesTemplates({ scope = 'user_physio', clinicId }: UseNotesTemplatesProps = {}) {

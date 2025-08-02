@@ -1,9 +1,11 @@
 "use client";
 
+
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { useAction, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { usePatientOnboardingAction, useUserProfileMutation } from "@/lib/onboardingHelpers";
+
+
 import { useOnboardingStore } from '@/stores/onboardingStore';
 
 type Status = "loading" | "success" | "error";
@@ -15,10 +17,8 @@ export default function OnboardingCompletePage() {
   const { data } = useOnboardingStore();
 
   // Different completion actions for different roles
-  const completePatientOnboarding = useAction(
-    api.actions.patients.completeOnboarding.completePatientOnboardingWithNotification
-  );
-  const completeUserProfile = useMutation(api.users.completeUserProfile);
+  const completePatientOnboarding = usePatientOnboardingAction();
+  const completeUserProfile = useUserProfileMutation();
 
   useEffect(() => {
     const runOnboarding = async () => {

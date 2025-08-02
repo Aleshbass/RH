@@ -4,10 +4,37 @@ import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 
-export type CalendarProps = 
+export type CalendarProps = {
+  className?: string;
+  classNames?: Partial<{
+    months: string;
+    month: string;
+    caption: string;
+    caption_label: string;
+    nav: string;
+    nav_button: string;
+    nav_button_previous: string;
+    nav_button_next: string;
+    table: string;
+    head_row: string;
+    head_cell: string;
+    row: string;
+    cell: string;
+    day: string;
+    day_range_end: string;
+    day_selected: string;
+    day_today: string;
+    day_outside: string;
+    day_disabled: string;
+    day_range_middle: string;
+    day_hidden: string;
+  }>;
+  showOutsideDays?: boolean;
+} & (
   | DayPickerSingleProps
   | DayPickerMultipleProps  
   | DayPickerRangeProps
+)
 
 function Calendar({
   className,
@@ -54,9 +81,9 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        IconLeft: () => <ChevronLeft className="h-4 w-4" />,
-        IconRight: () => <ChevronRight className="h-4 w-4" />,
-      }}
+        IconLeft: ({ ...props }: React.ComponentProps<'svg'>) => <ChevronLeft className="h-4 w-4" {...props} />,
+        IconRight: ({ ...props }: React.ComponentProps<'svg'>) => <ChevronRight className="h-4 w-4" {...props} />,
+      } as React.ComponentProps<typeof DayPicker>['components']}
       {...props}
     />
   )

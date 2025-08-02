@@ -59,7 +59,7 @@ export default function PatientInvoicesPage() {
   const [shareModalOpen, setShareModalOpen] = useState(false)
   
   // Queries
-  const invoices = useQuery(api.billing.getPatientInvoices, { limit: 50 })
+  const invoices = useQuery(api.billing.getPatientInvoices, { limit: 50 }) as Invoice[] | undefined
   
   // Mutations
   const processPayment = useMutation(api.billing.processPayment)
@@ -391,7 +391,7 @@ export default function PatientInvoicesPage() {
               <div className="flex space-x-3 pt-4">
                 <Button
                   variant="outline"
-                  onClick={() => downloadInvoice(selectedInvoice)}
+                  onClick={() => downloadInvoice()}
                   className="flex-1"
                 >
                   <Download className="w-4 h-4 mr-2" />

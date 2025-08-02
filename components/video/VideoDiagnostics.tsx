@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -73,8 +73,8 @@ export default function VideoDiagnostics() {
         try {
           const permission = await navigator.permissions.query({ name: 'camera' as PermissionName })
           console.log('Camera permission state:', permission.state)
-        } catch (error) {
-          console.log('Could not check camera permissions')
+        } catch (err) {
+          console.log('Could not check camera permissions', err)
         }
       }
 
@@ -105,11 +105,13 @@ export default function VideoDiagnostics() {
         videoRef.current.play().catch(console.warn)
       }
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       let errorMessage = 'Camera access failed'
       let errorDetails = ''
 
-      switch (error.name) {
+      const err = (error && typeof error === 'object' && 'name' in error) ? error as { name: string; message?: string } : { name: 'Unknown', message: String(error) };
+
+      switch (err.name) {
         case 'NotAllowedError':
           errorMessage = 'Camera permission denied'
           errorDetails = 'Please allow camera access and try again'
@@ -123,7 +125,7 @@ export default function VideoDiagnostics() {
           errorDetails = 'Close other video applications and try again'
           break
         default:
-          errorDetails = error.message
+          errorDetails = err.message ?? ''
       }
 
       updateDiagnostic('camera', 'failed', errorMessage, errorDetails)
@@ -153,9 +155,9 @@ export default function VideoDiagnostics() {
       // Clean up audio stream
       audioStream.getTracks().forEach(track => track.stop())
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       updateDiagnostic('microphone', 'warning', 'Microphone access failed', 
-        'Video calls will work without audio: ' + error.message)
+        'Video calls will work without audio: ' + (error instanceof Error ? error.message : String(error)))
     }
 
     // Test 4: Network Connectivity
@@ -199,19 +201,19 @@ export default function VideoDiagnostics() {
     setIsRunning(false)
   }
 
-  const cleanup = () => {
+  const cleanup = useCallback((): void => {
     if (testStream) {
-      testStream.getTracks().forEach(track => track.stop())
-      setTestStream(null)
+      testStream.getTracks().forEach(track => track.stop());
+      setTestStream(null);
     }
     if (videoRef.current) {
-      videoRef.current.srcObject = null
+      videoRef.current.srcObject = null;
     }
-  }
+  }, [testStream]);
 
   useEffect(() => {
-    return cleanup
-  }, [])
+    return () => cleanup();
+  }, [cleanup]);
 
   const getStatusIcon = (status: DiagnosticResult['status']) => {
     switch (status) {

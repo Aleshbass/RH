@@ -28,10 +28,11 @@ type Patient = {
 type VideoCall = {
   _id: Id<"videoCalls">;
   roomId: string;
-  patientId: Id<"users">;
-  physiotherapistId: Id<"users">;
-  scheduledAt: number;
+  patientId?: Id<"users">;
+  physiotherapistId?: Id<"users">;
+  scheduledAt?: number;
   status: "scheduled" | "active" | "completed" | "cancelled";
+  startTime?: number;
   duration?: number;
   recordingUrl?: string;
   meetingLink: string;
@@ -48,8 +49,8 @@ export default function VideoCallsPage() {
   const [title, setTitle] = useState('');
   const [activeCall, setActiveCall] = useState<VideoCall | null>(null);
 
-  const videoCalls = useQuery(api.videoCalls.getMyVideoCalls, {});
-  const patients = useQuery(api.patients.getMyPatients, {});
+  const videoCalls = useQuery(api.videoCalls.getMyVideoCalls, {}) as VideoCall[] | undefined;
+  const patients = useQuery(api.patients.getMyPatients, {}) as Patient[] | undefined;
 
   const createVideoCall = useAction(api.videoCalls.createVideoCall);
   const startVideoCall = useMutation(api.videoCalls.startVideoCall);
@@ -78,7 +79,7 @@ export default function VideoCallsPage() {
 
     try {
       // Use createVideoCall to integrate with Daily.co
-      const result = await createVideoCall({
+      await createVideoCall({
         participants: [selectedPatient as Id<"users">],
         callType: 'appointment',
         title,
@@ -144,7 +145,7 @@ export default function VideoCallsPage() {
     return (
       <VideoCallManager
         appointmentId={undefined}
-        defaultParticipants={[activeCall.patientId]}
+        defaultParticipants={activeCall.patientId ? [activeCall.patientId] : []}
         onCallEnd={handleEndCall}
       />
     );
@@ -237,7 +238,7 @@ export default function VideoCallsPage() {
                             throw new Error('Fallback copy failed')
                           }
                         }
-                      } catch (err) {
+                      } catch {
                         toast.error('Unable to copy to clipboard. Please copy the link manually.')
                       }
                     }}
@@ -278,7 +279,7 @@ export default function VideoCallsPage() {
                   <SelectValue placeholder="Select a patient" />
                 </SelectTrigger>
                 <SelectContent>
-                  {patients.map((patient: Patient) => (
+                  {(patients ?? []).map((patient: Patient) => (
                     <SelectItem key={patient!._id} value={patient!._id}>
                       {patient!.firstName} {patient!.lastName}
                     </SelectItem>

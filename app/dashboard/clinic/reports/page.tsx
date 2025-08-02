@@ -18,9 +18,21 @@ import {
   Award
 } from 'lucide-react'
 
+interface PerformanceMetrics {
+  averageRating: number;
+  totalReviews: number;
+  patientRetentionRate: number;
+  averageSessionsPerPatient: number;
+  staffUtilization: number;
+  patientSatisfaction: number;
+  treatmentSuccess: number;
+  avgSessionDuration: number;
+  revenueGrowth: number;
+}
+
 export default function ClinicReportsPage() {
   const reportsData = useQuery(api.clinics.getClinicReports)
-  const performanceMetrics = useQuery(api.clinics.getClinicPerformanceMetrics)
+  const performanceMetrics = useQuery(api.clinics.getClinicPerformanceMetrics) as PerformanceMetrics | undefined
 
   if (reportsData === undefined || performanceMetrics === undefined) {
     return (

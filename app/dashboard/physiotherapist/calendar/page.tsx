@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
 
-import { EnhancedAppointmentCalendar } from '@/components/calendar/EnhancedAppointmentCalendar';
+import { EnhancedAppointmentCalendar, type AppointmentData } from '@/components/calendar/EnhancedAppointmentCalendar';
 import { AppointmentModal } from '@/components/calendar/AppointmentModal';
 import { SessionLogModal } from '@/components/dashboard/physiotherapist/SessionLogModal';
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, startOfDay, endOfDay } from 'date-fns';
@@ -89,6 +89,21 @@ export default function CalendarPage() {
     limit: 100,
   });
 
+  // Map appointments to match AppointmentData type for calendar
+  const calendarAppointments: AppointmentData[] = (appointments ?? []).map((a) => ({
+    ...a,
+    patient: a.patient
+      ? {
+          _id: String(a.patient._id),
+          firstName: a.patient.firstName ?? '',
+          lastName: a.patient.lastName ?? '',
+          email: a.patient.email ?? '',
+          imageUrl: a.patient.imageUrl,
+          phoneNumber: a.patient.phoneNumber,
+        }
+      : null,
+  } as unknown as AppointmentData));
+
   // Get today's schedule for the sidebar
   const { data: todaysSchedule, isLoading: todaysScheduleLoading } = useMyAppointments({
     startDate: startOfDay(new Date()).getTime(),
@@ -99,8 +114,11 @@ export default function CalendarPage() {
   // Mutation for updates
   const updateAppointment = useMutation(api.appointments.updateAppointmentFields)
 
-  const handleAppointmentUpdate = (id: Id<"appointments">, updates: Partial<AppointmentWithPatient>) => {
-    updateAppointment({ appointmentId: id, updates })
+  const handleAppointmentUpdate = (appointmentId: string, updates: Partial<AppointmentData>) => {
+    updateAppointment({
+      appointmentId: appointmentId as Id<"appointments">,
+      updates: updates as Partial<AppointmentWithPatient>,
+    });
   }
 
   // Redirect if not authenticated
@@ -250,7 +268,7 @@ export default function CalendarPage() {
           <div className="flex-1 p-6 min-h-0">
             <div className="h-full bg-white rounded-lg border shadow-sm">
               <EnhancedAppointmentCalendar
-                appointments={appointments || []}
+                appointments={calendarAppointments}
                 onCreateAppointment={handleCreateAppointment}
                 onAppointmentClick={handleAppointmentClick}
                 onAppointmentUpdate={handleAppointmentUpdate}
@@ -383,7 +401,7 @@ export default function CalendarPage() {
           setIsSessionLogModalOpen(false);
           setSelectedAppointment(null);
         }}
-        appointmentId={selectedAppointment?._id as Id<"appointments"> | undefined}
+        appointmentId={selectedAppointment?._id as Id<"appointments">}
         patientId={selectedAppointment?.patient?._id}
       />
     </div>

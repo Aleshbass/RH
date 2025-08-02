@@ -34,14 +34,7 @@ import {
   Languages
 } from 'lucide-react'
 
-interface Document {
-  _id: string
-  fileName: string
-  documentType: string
-  fileSize: number
-  uploadedAt: number
-  downloadUrl?: string
-}
+
 
 interface PhysiotherapistProfile {
   licenseNumber?: string
@@ -146,7 +139,7 @@ export function UserApprovalDialog({
 
     return (
       <div className="grid gap-4">
-        {documents.map((doc: Document) => (
+        {documents.map((doc) => (
           <Card key={doc._id} className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
@@ -167,7 +160,7 @@ export function UserApprovalDialog({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => window.open(doc.downloadUrl, '_blank')}
+                  onClick={() => doc.downloadUrl && window.open(doc.downloadUrl, '_blank')}
                 >
                   <Download className="h-4 w-4 mr-2" />
                   View

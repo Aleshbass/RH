@@ -1,5 +1,3 @@
-import { DailyCall } from '@daily-co/daily-js';
-
 export interface DailyRoomConfig {
   name?: string;
   privacy?: 'public' | 'private';
@@ -229,7 +227,7 @@ export class DailyService {
   /**
    * Get analytics for a room
    */
-  async getRoomAnalytics(roomName: string): Promise<any> {
+  async getRoomAnalytics(roomName: string): Promise<unknown> {
     if (!this.apiKey) {
       throw new Error('Daily.co API key is required to get room analytics');
     }

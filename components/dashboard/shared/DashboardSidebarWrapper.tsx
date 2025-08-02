@@ -63,7 +63,7 @@ export function DashboardSidebarWrapper({ defaultCollapsed = false }: DashboardS
   }
 
   // Select navigation items based on user role
-  let navItems = []
+  let navItems: typeof physiotherapistNavItems = []
   switch (currentUser.role) {
     case 'physiotherapist':
       navItems = physiotherapistNavItems

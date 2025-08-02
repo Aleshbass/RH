@@ -122,9 +122,10 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
     
     console.log(`[EMAIL SERVICE] Email sent successfully to ${options.to}, messageId: ${resendData?.id}`);
     return { success: true, messageId: resendData?.id };
-  } catch (e: any) {
-    console.error('[EMAIL SERVICE] Exception sending email:', e);
-    return { success: false, error: e.message };
+  } catch (e: unknown) {
+    const errMessage = e instanceof Error ? e.message : String(e);
+    console.error('[EMAIL SERVICE] Exception sending email:', errMessage);
+    return { success: false, error: errMessage };
   }
 }
 

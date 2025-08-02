@@ -71,7 +71,7 @@ export function AppointmentModal({
 
   // Get existing appointment details if editing
   const existingAppointment = useQuery(
-    appointmentId ? api.appointments.getAppointmentDetails : 'skip',
+    api.appointments.getAppointmentDetails,
     appointmentId ? { appointmentId: appointmentId as Id<'appointments'> } : 'skip'
   )
 
