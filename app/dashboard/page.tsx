@@ -15,8 +15,15 @@ type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member'
 export default function DashboardPage() {
   const { isLoaded, isSignedIn } = useAuth()
   const router = useRouter()
-  const user: User | null | undefined = useQuery(api.users.getMyUser)
-  const dashboardAccess = useQuery(api.queries.checkDashboardAccess)
+  // Only fetch Convex data once Clerk auth is ready to avoid null results while still loading
+  const user: User | null | undefined = useQuery(
+    api.users.getMyUser,
+    isLoaded && isSignedIn ? {} : "skip"
+  )
+  const dashboardAccess = useQuery(
+    api.queries.checkDashboardAccess,
+    isLoaded && isSignedIn ? {} : "skip"
+  )
   const [isRedirecting, setIsRedirecting] = useState(false)
 
   // Handle redirects based on user role and approval status

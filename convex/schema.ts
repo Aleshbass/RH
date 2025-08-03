@@ -11,6 +11,9 @@ export default defineSchema({
     imageUrl: v.optional(v.string()), // Renamed from profileImageUrl for consistency
     phoneNumber: v.optional(v.string()),
 
+    // Optional: primary clinic association for users (e.g., clinic owners or staff working in a single clinic)
+    clinicId: v.optional(v.id("clinics")),
+
     role: v.optional(v.union( // Role can be null until onboarding is complete
       v.literal("physiotherapist"),
       v.literal("clinic_owner"),

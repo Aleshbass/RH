@@ -1,7 +1,58 @@
 import { v } from "convex/values";
-import { mutation, query, action } from "./_generated/server";
+import { mutation, query, action, internalQuery } from "./_generated/server";
 import { getUserByIdOrThrow } from "./users";
 import { Id } from "./_generated/dataModel";
+
+/**
+ * Internal query to get account status and user in one call
+ * This reduces deep generic inference chains that cause TS2589
+ */
+export const getStatusAndUser = internalQuery({
+  args: { statusId: v.id("accountApprovalStatus") },
+  returns: v.object({
+    status: v.union(v.null(), v.object({
+      _id: v.id("accountApprovalStatus"),
+      userId: v.id("users"),
+      status: v.union(
+        v.literal("pending_review"),
+        v.literal("approved"),
+        v.literal("declined")
+      ),
+      submittedAt: v.number(),
+      reviewedAt: v.optional(v.number()),
+      reviewedBy: v.optional(v.id("users")),
+      comments: v.optional(v.string()),
+    })),
+    user: v.union(v.null(), v.object({
+      _id: v.id("users"),
+      clerkId: v.string(),
+      email: v.optional(v.string()),
+      firstName: v.optional(v.string()),
+      lastName: v.optional(v.string()),
+      role: v.optional(v.union(
+        v.literal("physiotherapist"),
+        v.literal("clinic_owner"),
+        v.literal("patient"),
+        v.literal("family_member"),
+        v.literal("admin")
+      )),
+      onboarded: v.boolean(),
+    })),
+  }),
+  handler: async (ctx, { statusId }) => {
+    const status = await ctx.db.get(statusId);
+    if (!status) {
+      return { status: null, user: null };
+    }
+    
+    const user = await ctx.db.get(status.userId);
+    if (!user) {
+      return { status, user: null };
+    }
+    
+    return { status, user };
+  },
+});
 
 /**
  * Submit an account for admin review
@@ -353,6 +404,19 @@ export const getStatusById = query({
   args: {
     statusId: v.id("accountApprovalStatus"),
   },
+  returns: v.union(v.null(), v.object({
+    _id: v.id("accountApprovalStatus"),
+    userId: v.id("users"),
+    status: v.union(
+      v.literal("pending_review"),
+      v.literal("approved"),
+      v.literal("declined")
+    ),
+    submittedAt: v.number(),
+    reviewedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.id("users")),
+    comments: v.optional(v.string()),
+  })),
   handler: async (ctx, args) => {
     return await ctx.db.get(args.statusId);
   },
@@ -374,6 +438,7 @@ export const updateStatus = mutation({
     comments: v.optional(v.string()),
     requiredDocuments: v.optional(v.array(v.string())),
   },
+  returns: v.boolean(),
   handler: async (ctx, args) => {
     const { statusId, ...updates } = args;
     

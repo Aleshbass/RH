@@ -63,7 +63,7 @@ export default function PatientInvitePage() {
     }
 
     if (!validateInvitation.valid || !validateInvitation.invitation) {
-      setError(validateInvitation.message || 'Invalid or expired invitation code')
+      setError((validateInvitation as any).message || 'Invalid or expired invitation code')
       setIsLoading(false)
       return
     }
@@ -193,10 +193,11 @@ export default function PatientInvitePage() {
                   <h3 className="text-lg font-medium">
                     You&apos;ve been invited!
                   </h3>
-                  <p className="text-gray-600 mt-1">
-                    {validateInvitation.invitation.physiotherapistName} from{' '}
-                    {validateInvitation.invitation.clinicName} has invited you
-                    to join Rehabify Health.
+                  <p className="text-sm text-muted-foreground">
+                    Invited by {(validateInvitation as any).physiotherapist?.firstName} {(validateInvitation as any).physiotherapist?.lastName}
+                    {(validateInvitation as any).clinic?.name && (
+                      <> from {(validateInvitation as any).clinic.name}</>
+                    )}
                   </p>
                 </div>
               </div>

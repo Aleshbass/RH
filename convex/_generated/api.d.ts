@@ -30,6 +30,7 @@ import type * as actions_onboarding from "../actions/onboarding.js";
 import type * as actions_patients_completeOnboarding from "../actions/patients/completeOnboarding.js";
 import type * as actions_patients_index from "../actions/patients/index.js";
 import type * as actions_patients_invitePatient from "../actions/patients/invitePatient.js";
+import type * as actions_patients_simpleCompleteOnboarding from "../actions/patients/simpleCompleteOnboarding.js";
 import type * as admin from "../admin.js";
 import type * as analytics_service from "../analytics/service.js";
 import type * as appointments from "../appointments.js";
@@ -89,6 +90,7 @@ declare const fullApi: ApiFromModules<{
   "actions/patients/completeOnboarding": typeof actions_patients_completeOnboarding;
   "actions/patients/index": typeof actions_patients_index;
   "actions/patients/invitePatient": typeof actions_patients_invitePatient;
+  "actions/patients/simpleCompleteOnboarding": typeof actions_patients_simpleCompleteOnboarding;
   admin: typeof admin;
   "analytics/service": typeof analytics_service;
   appointments: typeof appointments;

@@ -36,7 +36,7 @@ export default function PatientMessagesPage() {
   const [newConversationPtId, setNewConversationPtId] = useState<Id<"users"> | ''>('')
 
   // Current user
-  const currentUser = useQuery(api.users.getMyUser)
+  const currentUser = useQuery(api.users.getMyUser as any)
 
   // Conversations
   const conversations = useQuery(
@@ -91,9 +91,9 @@ export default function PatientMessagesPage() {
                       <SelectValue placeholder="Select a physiotherapist" />
                     </SelectTrigger>
                     <SelectContent>
-                      {physiotherapists?.map((p: Physiotherapist) => (
-                        <SelectItem key={p.physiotherapistId} value={p.physiotherapistId}>
-                          {p.name}
+                      {physiotherapists?.map((p: any) => (
+                        <SelectItem key={p._id} value={p._id}>
+                          {`${p.firstName || ''} ${p.lastName || ''}`.trim()}
                         </SelectItem>
                       ))}
                     </SelectContent>

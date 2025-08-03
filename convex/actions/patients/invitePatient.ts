@@ -23,6 +23,11 @@ export const createPatientInvitationWithNotification = action({
     expirationDays: v.optional(v.number()),
     sendEmail: v.optional(v.boolean()),
   },
+  returns: v.object({
+    success: v.boolean(),
+    invitationCode: v.optional(v.string()),
+    message: v.optional(v.string()),
+  }),
   handler: async (ctx, args): Promise<InvitationResult> => {
     try {
       // Create the invitation using the base mutation

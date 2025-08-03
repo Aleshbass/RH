@@ -33,6 +33,21 @@ export const getMyUser = query({
  */
 export const getUserById = query({
   args: { userId: v.id("users") },
+  returns: v.union(v.null(), v.object({
+    _id: v.id("users"),
+    clerkId: v.string(),
+    email: v.optional(v.string()),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    role: v.optional(v.union(
+      v.literal("physiotherapist"),
+      v.literal("clinic_owner"),
+      v.literal("patient"),
+      v.literal("family_member"),
+      v.literal("admin")
+    )),
+    onboarded: v.boolean(),
+  })),
   handler: async (ctx, args) => {
     return await ctx.db.get(args.userId);
   },

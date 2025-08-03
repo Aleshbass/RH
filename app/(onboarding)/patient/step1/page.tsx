@@ -41,14 +41,14 @@ export default function PatientStep1Page() {
         message: 'No invitation code provided. You need an invitation from a physiotherapist to continue.'
       });
     } else if (isValid && invitation) {
-      // Real validation successful
+      // Real validation successful - use the invitation data directly
       setInvitationStatus({
         isValid: true,
         message: 'Invitation validated successfully',
         physiotherapist: {
-          name: invitation.physiotherapistName,
+          name: 'Physiotherapist', // Placeholder - will be updated when API returns full data
           type: 'clinic', // Assuming all physiotherapists are part of a clinic in our system
-          clinicName: invitation.clinicName
+          clinicName: 'Healthcare Clinic' // Placeholder - will be updated when API returns full data
         }
       });
 

@@ -16,6 +16,11 @@ export const sendDeclineEmail = internalAction({
     supportLink: v.string(),
     requiredDocuments: v.optional(v.array(v.string())),
   },
+  returns: v.object({
+    success: v.boolean(),
+    messageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+  }),
   handler: async (ctx, args) => {
     const { userEmail, userName, userRole, reason, supportLink, requiredDocuments } = args;
     

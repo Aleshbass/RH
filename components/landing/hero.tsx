@@ -21,10 +21,15 @@ export function LandingHero() {
   const queryClient = useQueryClient();
   
   // Check if user is approved (only if signed in)
-  const currentUser = useQuery(api.users.getMyUser, isSignedIn ? {} : "skip");
+  const { isLoaded } = useAuth();
+  // Fetch current user only when Clerk auth is fully loaded & the user is signed in
+  const currentUser = useQuery(
+    api.users.getMyUser,
+    isLoaded && isSignedIn ? {} : "skip"
+  );
   const approvalStatus = useQuery(
-    api.users.getUserApprovalStatus, 
-    isSignedIn && currentUser ? {} : "skip"
+    api.users.getUserApprovalStatus,
+    isLoaded && isSignedIn && currentUser ? {} : "skip"
   );
   
   // Determine if user can access dashboard

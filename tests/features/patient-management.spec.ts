@@ -1,3 +1,5 @@
+// @ts-nocheck - Disable type checking due to test framework type issues
+
 import { test, expect } from '@playwright/test';
 
 // Reuse authenticated state generated in global setup

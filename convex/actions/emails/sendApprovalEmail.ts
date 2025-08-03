@@ -15,6 +15,11 @@ export const sendApprovalEmail = internalAction({
     dashboardLink: v.string(),
     comments: v.optional(v.string()),
   },
+  returns: v.object({
+    success: v.boolean(),
+    messageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+  }),
   handler: async (ctx, args) => {
     const { userEmail, userName, userRole, dashboardLink, comments } = args;
     

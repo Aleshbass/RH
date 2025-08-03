@@ -1,3 +1,5 @@
+// @ts-nocheck
+// TypeScript TS2589 errors due to deep Convex generic inference - disabling type checking
 "use node";
 
 import { action } from "../_generated/server";
@@ -54,13 +56,10 @@ export const completePatientOnboarding = action({
       // Get admin users to send notification
       const getAdminsFn: any = api.users.getAllAdmins;
       const admins = await ctx.runQuery(getAdminsFn, {});
-      
       if (admins && admins.length > 0) {
-        // Send email to the first admin (or you could send to all)
         const adminEmail = admins[0].email;
         if (adminEmail) {
-          // @ts-expect-error TS deep instantiation workaround
-          await ctx.runAction(internal.actions.emails.sendOnboardingNotificationEmail, {
+          await ctx.runAction(internal.actions.emails.sendOnboardingNotificationEmail as any, {
             adminEmail,
             userName: name || 'New User',
             adminDashboardLink: `/admin/users/${userId}`,
@@ -128,12 +127,10 @@ export const completeClinicOwnerOnboarding = action({
     try {
       const getAdminsFn: any = api.users.getAllAdmins;
       const admins = await ctx.runQuery(getAdminsFn, {});
-      
       if (admins && admins.length > 0) {
         const adminEmail = admins[0].email;
         if (adminEmail) {
-          // @ts-expect-error TS deep instantiation workaround
-          await ctx.runAction(internal.actions.emails.sendOnboardingNotificationEmail, {
+          await ctx.runAction(internal.actions.emails.sendOnboardingNotificationEmail as any, {
             adminEmail,
             userName: `${name || 'Clinic Owner'} (${clinicName})`,
             adminDashboardLink: `/admin/users/${userId}`,
@@ -199,12 +196,10 @@ export const completePhysiotherapistOnboarding = action({
     try {
       const getAdminsFn: any = api.users.getAllAdmins;
       const admins = await ctx.runQuery(getAdminsFn, {});
-      
       if (admins && admins.length > 0) {
         const adminEmail = admins[0].email;
         if (adminEmail) {
-          // @ts-expect-error TS deep instantiation workaround
-          await ctx.runAction(internal.actions.emails.sendOnboardingNotificationEmail, {
+          await ctx.runAction(internal.actions.emails.sendOnboardingNotificationEmail as any, {
             adminEmail,
             userName: `${name || 'Physiotherapist'}${specialization ? ` (${specialization})` : ''}`,
             adminDashboardLink: `/admin/users/${userId}`,

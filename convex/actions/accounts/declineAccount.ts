@@ -1,9 +1,11 @@
-"use node";
+"use node"
 
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
 import { api, internal } from "../../_generated/api";
 import { formatAccountDeclinedNotification } from "../../../lib/notifications/notificationService";
+import type { ActionCtx } from "../../_generated/server";
+import type { Doc, Id } from "../../_generated/dataModel";
 
 
 
@@ -19,34 +21,40 @@ export const declineAccount = action({
     requiredDocuments: v.optional(v.array(v.string())),
     sendEmail: v.optional(v.boolean()),
   },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
   handler: async (ctx, args) => {
     try {
       const { statusId, adminUserId, reason, requiredDocuments } = args;
       
-      // Get the convex clients
-      const client: any = ctx.runMutation;
-      const query: any = ctx.runQuery;
-      
       // Verify admin exists
-      const admin = await query(api.users.getUserById, { userId: adminUserId });
+      const admin = await ctx.runQuery(api.users.getUserById as any, { userId: adminUserId }) as {
+        _id: Id<"users">; clerkId: string; email?: string; firstName?: string; lastName?: string; role?: "physiotherapist" | "clinic_owner" | "patient" | "family_member" | "admin"; onboarded: boolean;
+      } | null;
       if (!admin || admin.role !== "admin") {
         throw new Error("Unauthorized: Only admins can decline accounts");
       }
       
       // Get the status
-      const status = await query(api.accountApproval.getStatusById, { statusId });
+      const status = await ctx.runQuery(api.accountApproval.getStatusById as any, { statusId }) as {
+        _id: Id<"accountApprovalStatus">; userId: Id<"users">; status: "pending_review" | "approved" | "declined"; submittedAt: number; reviewedAt?: number; reviewedBy?: Id<"users">; comments?: string;
+      } | null;
       if (!status) {
         throw new Error(`Account approval status with ID ${statusId} not found`);
       }
       
       // Get the user
-      const user = await query(api.users.getUserById, { userId: status.userId });
+      const user = await ctx.runQuery(api.users.getUserById as any, { userId: status.userId }) as {
+        _id: Id<"users">; clerkId: string; email?: string; firstName?: string; lastName?: string; role?: "physiotherapist" | "clinic_owner" | "patient" | "family_member" | "admin"; onboarded: boolean;
+      } | null;
       if (!user) {
         throw new Error(`User with ID ${status.userId} not found`);
       }
       
       // Update the status
-      await client(api.accountApproval.updateStatus, {
+      await ctx.runMutation(api.accountApproval.updateStatus, {
         statusId,
         status: "declined",
         reviewedBy: adminUserId,
@@ -69,7 +77,7 @@ export const declineAccount = action({
       );
       
       // Send notification
-      await client(api.notifications.create, {
+      await ctx.runMutation(api.notifications.create, {
         userId: status.userId,
         type: 'account_declined',
         priority: 'high',
@@ -82,15 +90,15 @@ export const declineAccount = action({
       
       // Send decline email if requested
       if (args.sendEmail !== false && user.email) {
-        // @ts-expect-error TS deep instantiation workaround
-        await ctx.runAction(internal.actions.emails.sendDeclineEmail, {
-          userEmail: user.email,
+        // Send email
+        await ctx.runAction(internal.actions.emails.sendDeclineEmail as any, {
+          userEmail: user.email!,
           userName,
-          userRole: user.role,
+          userRole: user.role!,
           reason,
           supportLink,
           requiredDocuments: requiredDocuments || [],
-        });
+        }) as { success: boolean; messageId?: string; error?: string };
       }
       
       return { success: true, message: "Account declined successfully" };
