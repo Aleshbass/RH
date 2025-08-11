@@ -182,17 +182,23 @@ export default function VideoDiagnostics() {
       updateDiagnostic('network', 'warning', 'Network test inconclusive', String(error))
     }
 
-    // Test 5: Daily.co Connection
+    // Test 5: Daily.co Connection (via configured subdomain)
     updateDiagnostic('daily', 'checking', 'Testing Daily.co connectivity...')
     
     try {
-      // Test Daily.co availability
-      await fetch('https://api.daily.co/v1/', {
-        method: 'HEAD',
-        mode: 'no-cors'
-      })
+      const dailyDomain = process.env.NEXT_PUBLIC_DAILY_DOMAIN
+      if (!dailyDomain) {
+        updateDiagnostic('daily', 'failed', 'Daily domain not configured', 'Set NEXT_PUBLIC_DAILY_DOMAIN in your environment')
+      } else {
+        // Check reachability of the Daily subdomain used for rooms
+        await fetch(`https://${dailyDomain}/`, {
+          method: 'HEAD',
+          mode: 'no-cors',
+        })
+        updateDiagnostic('daily', 'passed', 'Daily subdomain is accessible')
+      }
       
-      updateDiagnostic('daily', 'passed', 'Daily.co services are accessible')
+      
 
     } catch (error) {
       updateDiagnostic('daily', 'warning', 'Daily.co connectivity test inconclusive', String(error))
@@ -218,7 +224,7 @@ export default function VideoDiagnostics() {
   const getStatusIcon = (status: DiagnosticResult['status']) => {
     switch (status) {
       case 'checking':
-        return <RefreshCw className="h-4 w-4 animate-spin text-blue-500" />
+        return <RefreshCw className="h-4 w-4 animate-spin text-call-accent" />
       case 'passed':
         return <CheckCircle className="h-4 w-4 text-green-500" />
       case 'failed':
@@ -231,7 +237,7 @@ export default function VideoDiagnostics() {
   const getStatusColor = (status: DiagnosticResult['status']) => {
     switch (status) {
       case 'checking':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-call-bg text-call-accent'
       case 'passed':
         return 'bg-green-100 text-green-800'
       case 'failed':

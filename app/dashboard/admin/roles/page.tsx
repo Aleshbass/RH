@@ -141,16 +141,16 @@ export default function AdminRolesPage() {
   const allUsers = useQuery(api.users.getAllUsers);
   const [selectedRole, setSelectedRole] = useState<string>("all");
 
-  const filteredUsers = allUsers?.filter(user => 
+  const filteredUsers = allUsers?.filter((user: any) => 
     selectedRole === "all" || user.role === selectedRole
   ) || [];
 
   const roleStats = allUsers ? {
-    admin: allUsers.filter(u => u.role === 'admin').length,
-    clinic_owner: allUsers.filter(u => u.role === 'clinic_owner').length,
-    physiotherapist: allUsers.filter(u => u.role === 'physiotherapist').length,
-    patient: allUsers.filter(u => u.role === 'patient').length,
-    unassigned: allUsers.filter(u => !u.role).length,
+    admin: allUsers.filter((u: any) => u.role === 'admin').length,
+    clinic_owner: allUsers.filter((u: any) => u.role === 'clinic_owner').length,
+    physiotherapist: allUsers.filter((u: any) => u.role === 'physiotherapist').length,
+    patient: allUsers.filter((u: any) => u.role === 'patient').length,
+    unassigned: allUsers.filter((u: any) => !u.role).length,
   } : null;
 
   return (
@@ -185,7 +185,7 @@ export default function AdminRolesPage() {
                     <SelectValue placeholder="Choose a user" />
                   </SelectTrigger>
                   <SelectContent>
-                    {allUsers?.map(user => (
+                    {allUsers?.map((user: any) => (
                       <SelectItem key={user._id} value={user._id}>
                         {user.firstName} {user.lastName} ({user.email})
                       </SelectItem>

@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 export default function AdminUsersRedirect() {
   const router = useRouter();
+  const didRedirect = useRef(false);
 
   useEffect(() => {
     // Redirect to the new admin users page
+    if (didRedirect.current) return;
+    didRedirect.current = true;
     router.replace("/dashboard/admin/users");
-  }, [router]);
+  }, []);
 
   return (
     <div className="flex items-center justify-center min-h-screen">
@@ -19,4 +22,4 @@ export default function AdminUsersRedirect() {
       </div>
     </div>
   );
-} 
+}

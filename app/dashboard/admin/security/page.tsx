@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useSecurityEvents } from "@/hooks/useDashboardData";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -94,12 +95,20 @@ const securityColumns: ColumnDef<SecurityEvent>[] = [
 export default function AdminSecurityPage() {
   const securityEvents = useSecurityEvents(20);
 
-  const stats = securityEvents?.data ? {
-    total: securityEvents.data.length,
-    critical: securityEvents.data.filter((e: SecurityEvent) => e.severity === 'critical').length,
-    high: securityEvents.data.filter((e: SecurityEvent) => e.severity === 'high').length,
-    lastHour: securityEvents.data.filter((e: SecurityEvent) => Date.now() - e.timestamp < 60 * 60 * 1000).length,
-  } : { total: 0, critical: 0, high: 0, lastHour: 0 };
+  // Memoize stats calculation to prevent infinite re-renders from Date.now()
+  const stats = useMemo(() => {
+    if (!securityEvents?.data) return { total: 0, critical: 0, high: 0, lastHour: 0 };
+    
+    const now = Date.now();
+    const events = securityEvents.data as any[];
+    
+    return {
+      total: events.length || 0,
+      critical: events.filter((e: any) => e.severity === 'critical').length || 0,
+      high: events.filter((e: any) => e.severity === 'high').length || 0,
+      lastHour: events.filter((e: any) => now - e.timestamp < 60 * 60 * 1000).length || 0,
+    };
+  }, [securityEvents?.data]);
 
   return (
     <div className="space-y-6">
@@ -193,7 +202,7 @@ export default function AdminSecurityPage() {
             <CardContent>
               {securityEvents?.data ? (
                 <DataTable 
-                  data={securityEvents.data} 
+                  data={(securityEvents.data as any[]) || []} 
                   columns={securityColumns}
                   searchKey="details"
                 />

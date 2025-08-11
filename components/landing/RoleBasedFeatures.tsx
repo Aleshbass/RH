@@ -82,8 +82,8 @@ const PhysiotherapistCardHeader = () => {
             <Image
               src="https://i.pinimg.com/736x/2a/8f/88/2a8f88505ec66597dd0e7cf79de145bc.jpg"
               alt="Physiotherapist working with a patient"
-              layout="fill"
-              objectFit="cover"
+              fill
+              style={{ objectFit: 'cover' }}
               className="rounded-xl"
             />
           </motion.div>

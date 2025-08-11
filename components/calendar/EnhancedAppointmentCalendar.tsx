@@ -28,6 +28,11 @@ export interface AppointmentData {
   notesForPatient?: string;
   notesForTherapist?: string;
   cancellationReason?: string;
+  // Recurring appointment fields
+  seriesId?: string;
+  isRecurring?: boolean;
+  instanceDate?: string;
+  isException?: boolean;
   patient: {
     _id: string;
     firstName: string;
@@ -43,10 +48,13 @@ interface EnhancedAppointmentCalendarProps {
   onCreateAppointment: (date?: Date) => void;
   onAppointmentClick: (appointment: AppointmentData) => void;
   onAppointmentUpdate?: (appointmentId: string, updates: Partial<AppointmentData>) => void;
+  onCreateRecurring?: (date?: Date) => void;
+  onEditRecurringSeries?: (seriesId: string) => void;
   viewMode?: 'week' | 'day' | 'month';
   currentDate?: Date;
   showColorPicker?: boolean;
   allowPinning?: boolean;
+  showRecurringControls?: boolean;
 }
 
 // Color schemes for different appointment types - Enhanced with pink and modern colors

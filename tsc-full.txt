@@ -1,0 +1,215 @@
+app/api/analytics/custom-metrics/route.ts(28,50): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+app/api/emails/payment-notification/route.ts(14,7): error TS2353: Object literal may only specify known properties, and 'type' does not exist in type 'LogContext'.
+app/api/emails/payment-notification/route.ts(45,7): error TS2353: Object literal may only specify known properties, and 'emailId' does not exist in type 'LogContext'.
+app/api/emails/payment-notification/route.ts(53,62): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+app/api/emails/payment-notification/route.ts(55,7): error TS2353: Object literal may only specify known properties, and 'tags' does not exist in type '{ userId?: string | undefined; action?: string | undefined; extra?: Record<string, any> | undefined; }'.
+app/api/payments/connect-bank/route.ts(12,7): error TS2353: Object literal may only specify known properties, and 'bankCode' does not exist in type 'LogContext'.
+app/api/payments/connect-bank/route.ts(34,7): error TS2353: Object literal may only specify known properties, and 'accountName' does not exist in type 'LogContext'.
+app/api/payments/connect-bank/route.ts(59,7): error TS2353: Object literal may only specify known properties, and 'subaccountCode' does not exist in type 'LogContext'.
+app/api/payments/connect-bank/route.ts(101,51): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+app/api/payments/connect-bank/route.ts(103,7): error TS2353: Object literal may only specify known properties, and 'tags' does not exist in type '{ userId?: string | undefined; action?: string | undefined; extra?: Record<string, any> | undefined; }'.
+app/api/payments/connect-bank/route.ts(134,42): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+app/api/webhooks/paystack/route.ts(22,7): error TS2353: Object literal may only specify known properties, and 'event' does not exist in type 'LogContext'.
+app/api/webhooks/paystack/route.ts(45,47): error TS2353: Object literal may only specify known properties, and 'event' does not exist in type 'LogContext'.
+app/api/webhooks/paystack/route.ts(51,46): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+app/api/webhooks/paystack/route.ts(53,7): error TS2353: Object literal may only specify known properties, and 'tags' does not exist in type '{ userId?: string | undefined; action?: string | undefined; extra?: Record<string, any> | undefined; }'.
+app/api/webhooks/paystack/route.ts(69,7): error TS2353: Object literal may only specify known properties, and 'reference' does not exist in type 'LogContext'.
+app/api/webhooks/paystack/route.ts(95,53): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+app/api/webhooks/paystack/route.ts(106,7): error TS2353: Object literal may only specify known properties, and 'reference' does not exist in type 'LogContext'.
+app/api/webhooks/paystack/route.ts(129,53): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+app/api/webhooks/paystack/route.ts(137,39): error TS2353: Object literal may only specify known properties, and 'data' does not exist in type 'LogContext'.
+app/api/webhooks/paystack/route.ts(140,54): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+app/api/webhooks/paystack/route.ts(147,35): error TS2353: Object literal may only specify known properties, and 'data' does not exist in type 'LogContext'.
+app/api/webhooks/paystack/route.ts(150,54): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+app/api/webhooks/paystack/route.ts(212,52): error TS2353: Object literal may only specify known properties, and 'reference' does not exist in type 'LogContext'.
+app/api/webhooks/paystack/route.ts(215,50): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+components/appointments/RecurringAppointmentModal.tsx(16,10): error TS2305: Module '"@/lib/types/recurring-appointments"' has no exported member 'CreateSeriesParams'.
+components/appointments/RecurringAppointmentModal.tsx(90,19): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+components/appointments/RecurringAppointmentModal.tsx(97,19): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+components/appointments/RecurringAppointmentModal.tsx(99,19): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+components/appointments/RecurringAppointmentModal.tsx(104,17): error TS7006: Parameter 'prev' implicitly has an 'any' type.
+components/appointments/RecurringAppointmentModal.tsx(111,28): error TS7006: Parameter 'd' implicitly has an 'any' type.
+components/appointments/RecurringSeriesManager.tsx(25,27): error TS2724: '"@/lib/types/recurring-appointments"' has no exported member named 'SeriesUpdateMode'. Did you mean 'SeriesEditMode'?
+components/appointments/RecurringSeriesManager.tsx(148,22): error TS2339: Property '_id' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(200,21): error TS2339: Property 'priority' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(201,57): error TS2339: Property 'priority' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(202,25): error TS2339: Property 'priority' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(214,27): error TS2339: Property 'serviceType' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(218,27): error TS2339: Property 'duration' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(227,33): error TS2339: Property 'frequency' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(228,32): error TS2339: Property 'interval' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(229,34): error TS2339: Property 'daysOfWeek' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(230,31): error TS2339: Property 'endDate' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(231,38): error TS2339: Property 'maxOccurrences' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(298,27): error TS2339: Property '_id' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(322,56): error TS2339: Property '_id' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(324,56): error TS2339: Property '_id' does not exist on type 'RecurringSeries'.
+components/appointments/RecurringSeriesManager.tsx(374,17): error TS2739: Type '{ _id: Id<"recurringSeries">; _creationTime: number; clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 16 more ...; isActive: boolean; }' is missing the following properties from type 'RecurringSeries': id, recurrenceRule
+components/appointments/RecurringSeriesManager.tsx(375,48): error TS2345: Argument of type '{ _id: Id<"recurringSeries">; _creationTime: number; clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 16 more ...; isActive: boolean; }' is not assignable to parameter of type 'RecurringSeries'.
+  Type '{ _id: Id<"recurringSeries">; _creationTime: number; clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 16 more ...; isActive: boolean; }' is missing the following properties from type 'RecurringSeries': id, recurrenceRule
+components/appointments/RecurringSeriesManager.tsx(376,52): error TS2345: Argument of type '{ _id: Id<"recurringSeries">; _creationTime: number; clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 16 more ...; isActive: boolean; }' is not assignable to parameter of type 'RecurringSeries'.
+  Type '{ _id: Id<"recurringSeries">; _creationTime: number; clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 16 more ...; isActive: boolean; }' is missing the following properties from type 'RecurringSeries': id, recurrenceRule
+components/appointments/RecurringSeriesManager.tsx(394,17): error TS2739: Type '{ _id: Id<"recurringSeries">; _creationTime: number; clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 16 more ...; isActive: boolean; }' is missing the following properties from type 'RecurringSeries': id, recurrenceRule
+components/appointments/RecurringSeriesManager.tsx(395,48): error TS2345: Argument of type '{ _id: Id<"recurringSeries">; _creationTime: number; clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 16 more ...; isActive: boolean; }' is not assignable to parameter of type 'RecurringSeries'.
+  Type '{ _id: Id<"recurringSeries">; _creationTime: number; clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 16 more ...; isActive: boolean; }' is missing the following properties from type 'RecurringSeries': id, recurrenceRule
+components/appointments/RecurringSeriesManager.tsx(396,52): error TS2345: Argument of type '{ _id: Id<"recurringSeries">; _creationTime: number; clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 16 more ...; isActive: boolean; }' is not assignable to parameter of type 'RecurringSeries'.
+  Type '{ _id: Id<"recurringSeries">; _creationTime: number; clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 16 more ...; isActive: boolean; }' is missing the following properties from type 'RecurringSeries': id, recurrenceRule
+components/billing/BankAccountConnection.tsx(52,44): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+components/billing/BankAccountConnection.tsx(92,50): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+components/billing/BankAccountConnection.tsx(111,9): error TS2353: Object literal may only specify known properties, and 'bankCode' does not exist in type 'LogContext'.
+components/billing/BankAccountConnection.tsx(144,11): error TS2353: Object literal may only specify known properties, and 'accountName' does not exist in type 'LogContext'.
+components/billing/BankAccountConnection.tsx(150,45): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+components/billing/BankAccountConnection.tsx(152,9): error TS2353: Object literal may only specify known properties, and 'tags' does not exist in type '{ userId?: string | undefined; action?: string | undefined; extra?: Record<string, any> | undefined; }'.
+components/calendar/CalendarResourceView.tsx(66,72): error TS2322: Type 'string' is not assignable to type 'Id<"clinics">'.
+  Type 'string' is not assignable to type '{ __tableName: "clinics"; }'.
+components/calendar/CalendarResourceView.tsx(80,60): error TS2339: Property 'getBookings' does not exist on type '{ getResources: FunctionReference<"query", "public", { type?: "equipment" | "room" | "staff" | "vehicle" | undefined; isActive?: boolean | undefined; clinicId: Id<"clinics">; }, { _id: Id<"resources">; ... 15 more ...; createdBy: Id<...>; }[], string | undefined>; ... 7 more ...; deleteResource: FunctionReference<.....'.
+components/charts/lazy-charts.tsx(22,9): error TS2322: Type 'Promise<{ default: ComponentType<never>; } | { default: ({ data, width, height, ...props }: BaseChartProps) => Element; }>' is not assignable to type 'Promise<{ default: ComponentType<BaseChartProps>; }>'.
+  Type '{ default: ComponentType<never>; } | { default: ({ data, width, height, ...props }: BaseChartProps) => Element; }' is not assignable to type '{ default: ComponentType<BaseChartProps>; }'.
+    Type '{ default: ComponentType<never>; }' is not assignable to type '{ default: ComponentType<BaseChartProps>; }'.
+      Types of property 'default' are incompatible.
+        Type 'ComponentType<never>' is not assignable to type 'ComponentType<BaseChartProps>'.
+          Type 'ComponentClass<never, any>' is not assignable to type 'ComponentType<BaseChartProps>'.
+            Type 'ComponentClass<never, any>' is not assignable to type 'ComponentClass<BaseChartProps, any>'.
+              Types of property 'getDerivedStateFromProps' are incompatible.
+                Type 'GetDerivedStateFromProps<never, any> | undefined' is not assignable to type 'GetDerivedStateFromProps<BaseChartProps, any> | undefined'.
+                  Type 'GetDerivedStateFromProps<never, any>' is not assignable to type 'GetDerivedStateFromProps<BaseChartProps, any>'.
+                    Types of parameters 'nextProps' and 'nextProps' are incompatible.
+                      Type 'Readonly<BaseChartProps>' is not assignable to type 'never'.
+components/charts/lazy-charts.tsx(43,9): error TS2322: Type 'Promise<{ default: ComponentType<never>; } | { default: ({ data, width, height, ...props }: BaseChartProps) => Element; }>' is not assignable to type 'Promise<{ default: ComponentType<BaseChartProps>; }>'.
+  Type '{ default: ComponentType<never>; } | { default: ({ data, width, height, ...props }: BaseChartProps) => Element; }' is not assignable to type '{ default: ComponentType<BaseChartProps>; }'.
+    Type '{ default: ComponentType<never>; }' is not assignable to type '{ default: ComponentType<BaseChartProps>; }'.
+      Types of property 'default' are incompatible.
+        Type 'ComponentType<never>' is not assignable to type 'ComponentType<BaseChartProps>'.
+          Type 'ComponentClass<never, any>' is not assignable to type 'ComponentType<BaseChartProps>'.
+            Type 'ComponentClass<never, any>' is not assignable to type 'ComponentClass<BaseChartProps, any>'.
+              Types of property 'getDerivedStateFromProps' are incompatible.
+                Type 'GetDerivedStateFromProps<never, any> | undefined' is not assignable to type 'GetDerivedStateFromProps<BaseChartProps, any> | undefined'.
+                  Type 'GetDerivedStateFromProps<never, any>' is not assignable to type 'GetDerivedStateFromProps<BaseChartProps, any>'.
+                    Types of parameters 'nextProps' and 'nextProps' are incompatible.
+                      Type 'Readonly<BaseChartProps>' is not assignable to type 'never'.
+components/charts/lazy-charts.tsx(64,9): error TS2322: Type 'Promise<{ default: ComponentType<never>; } | { default: ({ data, width, height, ...props }: BaseChartProps) => Element; }>' is not assignable to type 'Promise<{ default: ComponentType<BaseChartProps>; }>'.
+  Type '{ default: ComponentType<never>; } | { default: ({ data, width, height, ...props }: BaseChartProps) => Element; }' is not assignable to type '{ default: ComponentType<BaseChartProps>; }'.
+    Type '{ default: ComponentType<never>; }' is not assignable to type '{ default: ComponentType<BaseChartProps>; }'.
+      Types of property 'default' are incompatible.
+        Type 'ComponentType<never>' is not assignable to type 'ComponentType<BaseChartProps>'.
+          Type 'ComponentClass<never, any>' is not assignable to type 'ComponentType<BaseChartProps>'.
+            Type 'ComponentClass<never, any>' is not assignable to type 'ComponentClass<BaseChartProps, any>'.
+              Types of property 'getDerivedStateFromProps' are incompatible.
+                Type 'GetDerivedStateFromProps<never, any> | undefined' is not assignable to type 'GetDerivedStateFromProps<BaseChartProps, any> | undefined'.
+                  Type 'GetDerivedStateFromProps<never, any>' is not assignable to type 'GetDerivedStateFromProps<BaseChartProps, any>'.
+                    Types of parameters 'nextProps' and 'nextProps' are incompatible.
+                      Type 'Readonly<BaseChartProps>' is not assignable to type 'never'.
+components/dashboard/clinic-owner/StaffManagement.tsx(42,17): error TS2339: Property 'clinics' does not exist on type '{ accounts: { approveAccount: { approveAccount: FunctionReference<"action", "public", { comments?: string | undefined; sendEmail?: boolean | undefined; statusId: Id<"accountApprovalStatus">; adminUserId: Id<...>; }, { ...; } | { ...; }, string | undefined>; }; declineAccount: { ...; }; index: { ...; }; }; ... 4 more...'.
+components/dashboard/shared/CachedDashboardStats.tsx(33,17): error TS2339: Property 'getDashboardStats' does not exist on type '{ getCurrentUser: FunctionReference<"query", "public", {}, any, string | undefined>; ensurePhysiotherapistProfile: FunctionReference<"mutation", "public", {}, Id<"physiotherapistProfiles"> | null, string | undefined>; ... 5 more ...; getPhysiotherapistDashboardData: FunctionReference<...>; }'.
+components/dashboard/shared/CachedDashboardStats.tsx(59,32): error TS2345: Argument of type '"lastActivity"' is not assignable to parameter of type 'never'.
+components/resources/ResourceDashboard.tsx(81,47): error TS7006: Parameter 'resource' implicitly has an 'any' type.
+convex/actions/clinics/inviteClinicStaff.ts(26,44): error TS2589: Type instantiation is excessively deep and possibly infinite.
+convex/actions/clinics/inviteClinicStaff.ts(74,50): error TS2339: Property 'sendClinicStaffInvitationEmail' does not exist on type '{ index: { sendPatientInvitationEmail: FunctionReference<"action", "public", { patientName?: string | undefined; patientEmail: string; expiresAt: number; physiotherapistName: string; invitationCode: string; invitationLink: string; }, { ...; } | { ...; }, string | undefined>; sendInvitationReminderEmail: FunctionRefe...'.
+convex/users.ts(994,41): error TS2589: Type instantiation is excessively deep and possibly infinite.
+hooks/useCachedQueries.ts(126,22): error TS2551: Property 'getAppointments' does not exist on type '{ createAppointment: FunctionReference<"mutation", "public", { notesForPatient?: string | undefined; notesForTherapist?: string | undefined; patientId: Id<"users">; startTime: number; endTime: number; serviceType: string; }, { ...; }, string | undefined>; ... 14 more ...; submitPatientFeedback: FunctionReference<......'. Did you mean 'getMyAppointments'?
+hooks/useCachedQueries.ts(182,29): error TS2339: Property 'CACHE_PREFIXES' does not exist on type 'typeof import("C:/Users/HP/RH-1/lib/redis/caching")'.
+hooks/useRecurringAppointments.ts(8,3): error TS2724: '"@/lib/types/recurring-appointments"' has no exported member named 'SeriesUpdateMode'. Did you mean 'SeriesEditMode'?
+hooks/useRecurringAppointments.ts(9,3): error TS2305: Module '"@/lib/types/recurring-appointments"' has no exported member 'CreateSeriesParams'.
+hooks/useRecurringAppointments.ts(10,3): error TS2305: Module '"@/lib/types/recurring-appointments"' has no exported member 'UpdateSeriesParams'.
+hooks/useRecurringAppointments.ts(146,38): error TS2339: Property 'isLoading' does not exist on type 'ReactMutation<FunctionReference<"mutation", "public", { clinicId?: Id<"clinics"> | undefined; description?: string | undefined; endDate?: string | undefined; priority?: "urgent" | "high" | "medium" | "low" | undefined; ... 13 more ...; interval: number; }, { ...; }, string | undefined>>'.
+hooks/useRecurringAppointments.ts(147,38): error TS2339: Property 'isLoading' does not exist on type 'ReactMutation<FunctionReference<"mutation", "public", { fromDate?: string | undefined; seriesId: Id<"recurringSeries">; updates: { name?: string | undefined; description?: string | undefined; endDate?: string | undefined; ... 8 more ...; maxOccurrences?: number | undefined; }; mode: "this-and-future" | "all-in-serie...'.
+hooks/useRecurringAppointments.ts(148,38): error TS2339: Property 'isLoading' does not exist on type 'ReactMutation<FunctionReference<"mutation", "public", { fromDate?: string | undefined; seriesId: Id<"recurringSeries">; mode: "this-and-future" | "all-in-series"; }, { success: boolean; }, string | undefined>>'.
+hooks/useRecurringAppointments.ts(307,18): error TS2339: Property '_id' does not exist on type 'RecurringSeries'.
+hooks/useRecurringAppointments.ts(311,27): error TS2339: Property 'frequency' does not exist on type 'RecurringSeries'.
+hooks/useRecurringAppointments.ts(312,26): error TS2339: Property 'interval' does not exist on type 'RecurringSeries'.
+hooks/useRecurringAppointments.ts(313,28): error TS2339: Property 'daysOfWeek' does not exist on type 'RecurringSeries'.
+hooks/useRecurringAppointments.ts(314,25): error TS2339: Property 'endDate' does not exist on type 'RecurringSeries'.
+hooks/useRecurringAppointments.ts(315,32): error TS2339: Property 'maxOccurrences' does not exist on type 'RecurringSeries'.
+hooks/useRecurringAppointments.ts(318,24): error TS2339: Property '_id' does not exist on type 'RecurringSeries'.
+hooks/useResourceManagement.ts(99,24): error TS2554: Expected 2 arguments, but got 1.
+hooks/useResourceManagement.ts(100,27): error TS2554: Expected 2 arguments, but got 1.
+hooks/useResourceManagement.ts(101,35): error TS2554: Expected 2 arguments, but got 1.
+hooks/useResourceManagement.ts(102,31): error TS2554: Expected 2 arguments, but got 1.
+hooks/useResourceManagement.ts(113,12): error TS2349: This expression is not callable.
+  Type '{ _id: Id<"resources">; _creationTime: number; description?: string | undefined; category?: string | undefined; tags?: string[] | undefined; operatingHours?: { monday?: { start: string; end: string; } | undefined; ... 5 more ...; sunday?: { ...; } | undefined; } | undefined; ... 10 more ...; createdBy: Id<...>; }[]' has no call signatures.
+hooks/useResourceManagement.ts(113,12): error TS2722: Cannot invoke an object which is possibly 'undefined'.
+hooks/useResourceManagement.ts(117,12): error TS2349: This expression is not callable.
+  Type '{ _id: Id<"resources">; _creationTime: number; description?: string | undefined; category?: string | undefined; tags?: string[] | undefined; operatingHours?: { monday?: { start: string; end: string; } | undefined; ... 5 more ...; sunday?: { ...; } | undefined; } | undefined; ... 10 more ...; createdBy: Id<...>; }' has no call signatures.
+hooks/useResourceManagement.ts(117,12): error TS2722: Cannot invoke an object which is possibly 'undefined'.
+hooks/useResourceManagement.ts(121,12): error TS2349: This expression is not callable.
+  Type '{ resource: { _id: Id<"resources">; _creationTime: number; description?: string | undefined; category?: string | undefined; tags?: string[] | undefined; operatingHours?: { monday?: { ...; } | undefined; ... 5 more ...; sunday?: { ...; } | undefined; } | undefined; ... 10 more ...; createdBy: Id<...>; }; bookings: { ...' has no call signatures.
+hooks/useResourceManagement.ts(121,12): error TS2722: Cannot invoke an object which is possibly 'undefined'.
+hooks/useResourceManagement.ts(125,12): error TS2349: This expression is not callable.
+  Type '{ _id: Id<"resourceBookings">; _creationTime: number; notes?: string | undefined; cancellationReason?: string | undefined; cancelledAt?: number | undefined; status: "pending" | "confirmed" | "cancelled"; ... 5 more ...; resourceId: Id<...>; }[]' has no call signatures.
+hooks/useResourceManagement.ts(125,12): error TS2722: Cannot invoke an object which is possibly 'undefined'.
+lib/lazy/index.ts(31,65): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/lazy/index.ts(36,17): error TS2339: Property 'displayName' does not exist on type 'LazyExoticComponent<ComponentType<T>>'.
+lib/lazy/index.ts(53,16): error TS2307: Cannot find module '@/components/dashboard/shared/DashboardStats' or its corresponding type declarations.
+lib/lazy/index.ts(58,9): error TS2322: Type 'Promise<typeof import("C:/Users/HP/RH-1/components/admin/AdvancedAnalyticsDashboard")>' is not assignable to type 'Promise<{ default: ComponentType<BaseComponentProps>; }>'.
+  Property 'default' is missing in type 'typeof import("C:/Users/HP/RH-1/components/admin/AdvancedAnalyticsDashboard")' but required in type '{ default: ComponentType<BaseComponentProps>; }'.
+lib/lazy/index.ts(65,11): error TS2322: Type 'Promise<{ default: ComponentType<never>; } | { default: ForwardRefExoticComponent<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; ... 66 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }>' is not assignable to type 'Promise<{ default: ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }>'.
+  Type '{ default: ComponentType<never>; } | { default: ForwardRefExoticComponent<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; ... 66 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }' is not assignable to type '{ default: ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }'.
+    Type '{ default: ComponentType<never>; }' is not assignable to type '{ default: ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }'.
+      Types of property 'default' are incompatible.
+        Type 'ComponentType<never>' is not assignable to type 'ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>'.
+          Type 'ComponentClass<never, any>' is not assignable to type 'ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>'.
+            Type 'ComponentClass<never, any>' is not assignable to type 'ComponentClass<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>, any>'.
+              Types of property 'getDerivedStateFromProps' are incompatible.
+                Type 'GetDerivedStateFromProps<never, any> | undefined' is not assignable to type 'GetDerivedStateFromProps<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>, any> | undefined'.
+                  Type 'GetDerivedStateFromProps<never, any>' is not assignable to type 'GetDerivedStateFromProps<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>, any>'.
+                    Types of parameters 'nextProps' and 'nextProps' are incompatible.
+                      Type 'Readonly<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>' is not assignable to type 'never'.
+lib/lazy/index.ts(69,11): error TS2322: Type 'Promise<{ default: ComponentType<never>; } | { default: ForwardRefExoticComponent<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; ... 66 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }>' is not assignable to type 'Promise<{ default: ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }>'.
+  Type '{ default: ComponentType<never>; } | { default: ForwardRefExoticComponent<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; ... 66 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }' is not assignable to type '{ default: ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }'.
+    Type '{ default: ComponentType<never>; }' is not assignable to type '{ default: ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }'.
+      Types of property 'default' are incompatible.
+        Type 'ComponentType<never>' is not assignable to type 'ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>'.
+          Type 'ComponentClass<never, any>' is not assignable to type 'ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>'.
+            Type 'ComponentClass<never, any>' is not assignable to type 'ComponentClass<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>, any>'.
+              Types of property 'getDerivedStateFromProps' are incompatible.
+                Type 'GetDerivedStateFromProps<never, any> | undefined' is not assignable to type 'GetDerivedStateFromProps<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>, any> | undefined'.
+                  Type 'GetDerivedStateFromProps<never, any>' is not assignable to type 'GetDerivedStateFromProps<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>, any>'.
+                    Types of parameters 'nextProps' and 'nextProps' are incompatible.
+                      Type 'Readonly<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>' is not assignable to type 'never'.
+lib/lazy/index.ts(73,11): error TS2322: Type 'Promise<{ default: ComponentType<never>; } | { default: ForwardRefExoticComponent<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; ... 66 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }>' is not assignable to type 'Promise<{ default: ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }>'.
+  Type '{ default: ComponentType<never>; } | { default: ForwardRefExoticComponent<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; ... 66 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }' is not assignable to type '{ default: ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }'.
+    Type '{ default: ComponentType<never>; }' is not assignable to type '{ default: ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>; }'.
+      Types of property 'default' are incompatible.
+        Type 'ComponentType<never>' is not assignable to type 'ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>'.
+          Type 'ComponentClass<never, any>' is not assignable to type 'ComponentType<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>'.
+            Type 'ComponentClass<never, any>' is not assignable to type 'ComponentClass<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>, any>'.
+              Types of property 'getDerivedStateFromProps' are incompatible.
+                Type 'GetDerivedStateFromProps<never, any> | undefined' is not assignable to type 'GetDerivedStateFromProps<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>, any> | undefined'.
+                  Type 'GetDerivedStateFromProps<never, any>' is not assignable to type 'GetDerivedStateFromProps<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>, any>'.
+                    Types of parameters 'nextProps' and 'nextProps' are incompatible.
+                      Type 'Readonly<CategoricalChartProps & RefAttributes<{ readonly eventEmitterSymbol: Symbol; clipPathId: string; accessibilityManager: AccessibilityManager; ... 65 more ...; UNSAFE_componentWillUpdate?(nextProps: Readonly<...>, nextState: Readonly<...>, nextContext: any): void; }>>' is not assignable to type 'never'.
+lib/lazy/index.ts(81,18): error TS2307: Cannot find module '@/components/ui/date-picker' or its corresponding type declarations.
+lib/lazy/index.ts(85,18): error TS2307: Cannot find module '@/components/ui/rich-text-editor' or its corresponding type declarations.
+lib/lazy/index.ts(89,18): error TS2307: Cannot find module '@/components/ui/file-upload' or its corresponding type declarations.
+lib/lazy/index.ts(96,16): error TS2307: Cannot find module '@/components/video/VideoCallInterface' or its corresponding type declarations.
+lib/lazy/index.ts(110,66): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/lazy/index.ts(120,22): error TS2307: Cannot find module '@/components/dashboard/shared/DashboardStats' or its corresponding type declarations.
+lib/lazy/index.ts(126,22): error TS2307: Cannot find module '@/components/ui/date-picker' or its corresponding type declarations.
+lib/monitoring/bundle-performance.ts(138,34): error TS2339: Property 'responseEnd' does not exist on type 'PerformanceEntry'.
+lib/monitoring/bundle-performance.ts(150,71): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/monitoring/bundle-performance.ts(174,59): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/paystack.ts(129,61): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/paystack.ts(167,59): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/paystack.ts(221,58): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/paystack.ts(270,61): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/paystack.ts(313,53): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/paystack.ts(336,44): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/paystack.ts(351,60): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/simple-payments.ts(70,52): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/simple-payments.ts(90,50): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/simple-payments.ts(106,44): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/simple-payments.ts(125,53): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/simple-payments.ts(149,49): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/payments/simple-payments.ts(172,55): error TS2353: Object literal may only specify known properties, and 'clientIP' does not exist in type 'LogContext'.
+lib/payments/simple-payments.ts(180,9): error TS2353: Object literal may only specify known properties, and 'clientIP' does not exist in type 'LogContext'.
+lib/payments/simple-payments.ts(187,50): error TS2322: Type 'unknown' is not assignable to type 'string | Error | undefined'.
+lib/redis/middleware.ts(30,53): error TS2345: Argument of type '"lastActivity"' is not assignable to parameter of type 'never'.
+lib/redis/test-cache.ts(88,49): error TS2339: Property 'length' does not exist on type '{}'.
+lib/redis/test-cache.ts(156,7): error TS2345: Argument of type '"lastAppointment"' is not assignable to parameter of type 'never'.
+lib/redis/test-cache.ts(178,17): error TS2339: Property 'set' does not exist on type '() => Redis'.
+lib/redis/test-cache.ts(179,32): error TS2339: Property 'get' does not exist on type '() => Redis'.
+lib/redis/test-cache.ts(183,17): error TS2339: Property 'del' does not exist on type '() => Redis'.
+lib/redis/test-cache.ts(187,32): error TS2339: Property 'ping' does not exist on type '() => Redis'.
+lib/services/resourceNotifications.ts(36,34): error TS2589: Type instantiation is excessively deep and possibly infinite.
+lib/services/resourceNotifications.ts(188,69): error TS2551: Property 'getUpcomingAppointments' does not exist on type '{ createAppointment: FunctionReference<"mutation", "public", { notesForPatient?: string | undefined; notesForTherapist?: string | undefined; patientId: Id<"users">; startTime: number; endTime: number; serviceType: string; }, { ...; }, string | undefined>; ... 14 more ...; submitPatientFeedback: FunctionReference<......'. Did you mean 'getMyAppointments'?
+lib/services/resourceNotifications.ts(202,43): error TS7006: Parameter 'r' implicitly has an 'any' type.

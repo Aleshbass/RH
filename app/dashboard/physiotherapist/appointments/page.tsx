@@ -1,18 +1,23 @@
 'use client';
 
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Loader2, Calendar, Plus, Search, Filter } from 'lucide-react';
+import { Loader2, Calendar, Plus, Search, Filter, Repeat, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EnhancedAppointmentCalendar } from '@/components/calendar/EnhancedAppointmentCalendar';
-import { AppointmentModal } from '@/components/calendar/AppointmentModal';
+import { AppointmentBookingModal } from '@/components/appointments/AppointmentBookingModal';
+import { RecurringAppointmentModal } from '@/components/appointments/RecurringAppointmentModal';
+import { RecurringSeriesManager } from '@/components/appointments/RecurringSeriesManager';
+import { ResourceDashboard } from '@/components/resources/ResourceDashboard';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 type AppointmentStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled_by_patient' | 'cancelled_by_therapist' | 'no_show';
 
@@ -59,11 +64,13 @@ export default function AppointmentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
+  const [activeTab, setActiveTab] = useState<'appointments' | 'recurring' | 'resources'>('appointments');
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
+  const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   // Get current user
-  const currentUser = useQuery(api.users.getMyUser);
+  const currentUser = useQuery(api.users.getMyUser) as any;
   
   // Get appointments with optional filters
   const appointments = useQuery(api.appointments.getMyAppointments, {
@@ -71,7 +78,11 @@ export default function AppointmentsPage() {
     endDate: undefined,
     status: statusFilter === 'all' ? undefined : statusFilter,
     limit: 100,
-  });
+  }) as any[];
+
+  // Convex mutations - MUST be called before any conditional returns
+  const createAppointment = useMutation(api.appointments.createAppointment);
+  const bookResource = useMutation(api.resourceManagement.bookResource);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -100,14 +111,14 @@ export default function AppointmentsPage() {
   }
 
   // Filter appointments based on search term
-  const filteredAppointments = appointments.filter((appointment) => {
+  const filteredAppointments = appointments?.filter((appointment: any) => {
     if (!searchTerm) return true;
     const patientName = appointment.patient 
       ? `${appointment.patient.firstName} ${appointment.patient.lastName}`.toLowerCase()
       : '';
     return patientName.includes(searchTerm.toLowerCase()) ||
-           appointment.serviceType.toLowerCase().includes(searchTerm.toLowerCase());
-  });
+           (appointment.serviceType || '').toLowerCase().includes(searchTerm.toLowerCase());
+  }) || [];
 
   const handleCreateAppointment = (date?: Date): void => {
     if (date) {
@@ -116,18 +127,72 @@ export default function AppointmentsPage() {
     setIsAppointmentModalOpen(true);
   };
 
+  const handleCreateRecurring = (date?: Date): void => {
+    if (date) {
+      setSelectedDate(date);
+    }
+    setIsRecurringModalOpen(true);
+  };
+
+  const handleEditRecurringSeries = (seriesId: string): void => {
+    // For now, just log - could open edit modal in future
+    console.log('Edit recurring series:', seriesId);
+  };
+
+  const handleCreateAppointmentWithResources = async (appointmentData: any) => {
+    try {
+      // Create the appointment first
+      const appointmentResult = await createAppointment({
+        patientId: appointmentData.patientId || null, // Handle case where patient might not exist yet
+        startTime: appointmentData.startTime,
+        endTime: appointmentData.endTime,
+        serviceType: appointmentData.serviceType,
+        notesForTherapist: appointmentData.notesForTherapist,
+      });
+
+      // Extract appointment ID from result
+      const appointmentId = appointmentResult?.appointmentId || appointmentResult;
+
+      // Book all selected resources
+      if (appointmentData.selectedResources && appointmentData.selectedResources.length > 0) {
+        await Promise.all(
+          appointmentData.selectedResources.map((resourceId: string) =>
+            bookResource({
+              resourceId: resourceId as any,
+              appointmentId: appointmentId as any,
+              startTime: appointmentData.startTime,
+              endTime: appointmentData.endTime,
+              notes: `Booked for ${appointmentData.serviceType}`,
+            })
+          )
+        );
+      }
+
+      return appointmentId;
+    } catch (error) {
+      console.error('Error creating appointment with resources:', error);
+      throw error;
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Appointments</h1>
-          <p className="text-gray-600">Manage your appointments and schedule</p>
+          <p className="text-gray-600">Manage your appointments and recurring series</p>
         </div>
-        <Button onClick={() => handleCreateAppointment()} className="flex items-center gap-2">
-          <Plus className="h-4 w-4" />
-          New Appointment
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => handleCreateAppointment()} className="flex items-center gap-2">
+            <Plus className="h-4 w-4" />
+            New Appointment
+          </Button>
+          <Button onClick={() => handleCreateRecurring()} variant="outline" className="flex items-center gap-2">
+            <Repeat className="h-4 w-4" />
+            New Recurring Series
+          </Button>
+        </div>
       </div>
 
       {/* Filters and Search */}
@@ -186,133 +251,187 @@ export default function AppointmentsPage() {
         </CardContent>
       </Card>
 
-      {/* Content */}
-      {viewMode === 'calendar' ? (
-        <div className="h-[600px]">
-          <EnhancedAppointmentCalendar
-              appointments={filteredAppointments.map(appointment => ({
-                ...appointment,
-                _id: appointment._id,
-                patientId: appointment.patientId,
-                physiotherapistId: appointment.physiotherapistId,
-                clinicId: appointment.clinicId ? String(appointment.clinicId) : undefined,
-                startTime: appointment.startTime,
-                endTime: appointment.endTime,
-                serviceType: appointment.serviceType,
-                status: appointment.status,
-                priority: undefined, // Priority field not in schema yet
-                appointmentType: undefined, // Field not in schema yet
-                isPinned: undefined, // Field not in schema yet
-                colorCode: undefined, // Field not in schema yet
-                notesForPatient: appointment.notesForPatient,
-                notesForTherapist: appointment.notesForTherapist,
-                cancellationReason: appointment.cancellationReason,
-                patient: appointment.patient ? {
-                  _id: String(appointment.patient._id),
-                  firstName: appointment.patient.firstName || 'Unknown',
-                  lastName: appointment.patient.lastName || 'Patient',
-                  email: appointment.patient.email || '',
-                  imageUrl: appointment.patient.imageUrl,
-                  phoneNumber: appointment.patient.phoneNumber,
-                } : null
-              }))}
-              onCreateAppointment={handleCreateAppointment}
-              onAppointmentClick={(appointment) => {
-                // Handle appointment click - could open details modal
-                console.log('Appointment clicked:', appointment);
-              }}
-            />
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {filteredAppointments.length === 0 ? (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-center py-8">
-                  <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No appointments found</h3>
-                  <p className="text-gray-600 mb-4">
-                    {searchTerm || statusFilter !== 'all' 
-                      ? 'Try adjusting your search or filters'
-                      : 'Create your first appointment to get started'
-                    }
-                  </p>
-                  <Button onClick={() => handleCreateAppointment()}>
-                    Create Appointment
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+      {/* Content with Tabs */}
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'appointments' | 'recurring' | 'resources')} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="appointments" className="flex items-center gap-2">
+            <Calendar className="h-4 w-4" />
+            Appointments
+          </TabsTrigger>
+          <TabsTrigger value="recurring" className="flex items-center gap-2">
+            <Repeat className="h-4 w-4" />
+            Recurring Series
+          </TabsTrigger>
+          <TabsTrigger value="resources" className="flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            Resources
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="appointments" className="space-y-4">
+          {viewMode === 'calendar' ? (
+            <div className="h-[600px]">
+              <EnhancedAppointmentCalendar
+                  appointments={filteredAppointments.map((appointment: any) => ({
+                    ...appointment,
+                    _id: appointment._id,
+                    patientId: appointment.patientId || appointment.patient?._id,
+                    physiotherapistId: appointment.physiotherapistId,
+                    clinicId: appointment.clinicId ? String(appointment.clinicId) : undefined,
+                    startTime: appointment.startTime,
+                    endTime: appointment.endTime,
+                    serviceType: appointment.serviceType || 'General',
+                    status: appointment.status || 'scheduled',
+                    priority: undefined, // Priority field not in schema yet
+                    appointmentType: undefined, // Field not in schema yet
+                    isPinned: undefined, // Field not in schema yet
+                    colorCode: undefined, // Field not in schema yet
+                    notesForPatient: appointment.notesForPatient,
+                    notesForTherapist: appointment.notesForTherapist,
+                    cancellationReason: appointment.cancellationReason,
+                    // Add recurring appointment fields
+                    seriesId: appointment.seriesId,
+                    isRecurring: appointment.isRecurring || false,
+                    instanceDate: appointment.instanceDate,
+                    isException: appointment.isException || false,
+                    patient: appointment.patient ? {
+                      _id: String(appointment.patient._id),
+                      firstName: appointment.patient.firstName || 'Unknown',
+                      lastName: appointment.patient.lastName || 'Patient',
+                      email: appointment.patient.email || '',
+                      imageUrl: appointment.patient.imageUrl,
+                      phoneNumber: appointment.patient.phoneNumber,
+                    } : null
+                  }))}
+                  onCreateAppointment={handleCreateAppointment}
+                  onCreateRecurring={handleCreateRecurring}
+                  onEditRecurringSeries={handleEditRecurringSeries}
+                  onAppointmentClick={(appointment) => {
+                    // Handle appointment click - could open details modal
+                    console.log('Appointment clicked:', appointment);
+                  }}
+                  showRecurringControls={true}
+                />
+            </div>
           ) : (
-            filteredAppointments.map((appointment) => (
-              <Card key={appointment._id}>
-                <CardContent className="pt-6">
-                  <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {appointment.patient 
-                            ? `${appointment.patient.firstName} ${appointment.patient.lastName}`
-                            : 'Unknown Patient'
-                          }
-                        </h3>
-                        <Badge className={getStatusColor(appointment.status)}>
-                          {getStatusLabel(appointment.status)}
-                        </Badge>
+            <div className="space-y-4">
+              {filteredAppointments.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No appointments found
+                </div>
+              ) : (
+                filteredAppointments.map((appointment: any) => (
+                  <Card key={appointment._id}>
+                    <CardContent className="pt-6">
+                      <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              {appointment.patient 
+                                ? `${appointment.patient.firstName} ${appointment.patient.lastName}`
+                                : 'Unknown Patient'
+                              }
+                            </h3>
+                            <Badge className={getStatusColor(appointment.status || 'scheduled')}>
+                              {getStatusLabel(appointment.status || 'scheduled')}
+                            </Badge>
+                            {(appointment.isRecurring || false) && (
+                              <Badge variant="outline" className="flex items-center gap-1">
+                                <Repeat className="h-3 w-3" />
+                                Recurring
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600">{appointment.serviceType || 'General'}</p>
+                          <p className="text-sm text-gray-600">
+                            {appointment.startTime ? format(new Date(appointment.startTime), 'PPP') : 'N/A'}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            {appointment.startTime ? format(new Date(appointment.startTime), 'h:mm a') : 'N/A'} - {appointment.endTime ? format(new Date(appointment.endTime), 'h:mm a') : 'N/A'}
+                          </p>
+                          {appointment.notesForTherapist && (
+                            <div className="mt-2">
+                              <p className="text-xs text-gray-500">Notes: {appointment.notesForTherapist}</p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Badge className={getStatusColor(appointment.status || 'scheduled')}>
+                            {getStatusLabel(appointment.status || 'scheduled')}
+                          </Badge>
+                          <div className="flex gap-2">
+                            {(appointment.status || 'scheduled') === 'confirmed' && (
+                              <Button size="sm">
+                                Mark Complete
+                              </Button>
+                            )}
+                            <Button variant="outline" size="sm">
+                              View Details
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-gray-600 mb-1">
-                        <strong>Service:</strong> {appointment.serviceType}
-                      </p>
-                      <p className="text-gray-600 mb-1">
-                        <strong>Date:</strong> {format(new Date(appointment.startTime), 'PPP')}
-                      </p>
-                      <p className="text-gray-600 mb-1">
-                        <strong>Time:</strong> {format(new Date(appointment.startTime), 'p')} - {format(new Date(appointment.endTime), 'p')}
-                      </p>
-                      {appointment.notesForTherapist && (
-                        <p className="text-gray-600 mt-2">
-                          <strong>Notes:</strong> {appointment.notesForTherapist}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      {appointment.status === 'scheduled' && (
-                        <>
-                          <Button variant="outline" size="sm">
-                            Reschedule
-                          </Button>
-                          <Button variant="outline" size="sm">
-                            Confirm
-                          </Button>
-                        </>
-                      )}
-                      {appointment.status === 'confirmed' && (
-                        <Button size="sm">
-                          Mark Complete
-                        </Button>
-                      )}
-                      <Button variant="outline" size="sm">
-                        View Details
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
           )}
-        </div>
+        </TabsContent>
+
+        <TabsContent value="recurring" className="space-y-4">
+          {currentUser && (
+            <RecurringSeriesManager
+              userId={currentUser._id}
+              role="physiotherapist"
+              onEditSeries={handleEditRecurringSeries}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="resources" className="space-y-4">
+          {currentUser?.clinicId && (
+            <ResourceDashboard clinicId={currentUser.clinicId} />
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Enhanced Appointment Booking Modal with Resource Management */}
+      {currentUser?.clinicId && (
+        <AppointmentBookingModal
+          isOpen={isAppointmentModalOpen}
+          onClose={() => setIsAppointmentModalOpen(false)}
+          clinicId={currentUser.clinicId}
+          physiotherapistId={currentUser._id}
+          selectedDate={selectedDate}
+          selectedTime={selectedDate ? format(selectedDate, 'HH:mm') : undefined}
+          onSubmit={async (appointmentData) => {
+            try {
+              // Create appointment with Convex
+              await handleCreateAppointmentWithResources(appointmentData);
+              setIsAppointmentModalOpen(false);
+              toast.success('Appointment created successfully with resources!');
+            } catch (error) {
+              console.error('Failed to create appointment:', error);
+              toast.error('Failed to create appointment. Please try again.');
+            }
+          }}
+        />
       )}
 
-      {/* Appointment Modal */}
-      <AppointmentModal
-        isOpen={isAppointmentModalOpen}
-        onClose={() => setIsAppointmentModalOpen(false)}
-        selectedDate={selectedDate}
-        onAppointmentCreated={() => {
-          setIsAppointmentModalOpen(false);
-          // Refresh appointments would happen automatically due to Convex reactivity
-        }}
-      />
+      {/* Recurring Appointment Modal */}
+      {currentUser && (
+        <RecurringAppointmentModal
+          isOpen={isRecurringModalOpen}
+          onClose={() => setIsRecurringModalOpen(false)}
+          userId={currentUser._id}
+          role="physiotherapist"
+          defaultValues={{
+            startDate: selectedDate.toISOString().split('T')[0],
+            physiotherapistId: currentUser._id,
+          }}
+        />
+      )}
     </div>
   );
 } 

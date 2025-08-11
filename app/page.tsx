@@ -1,12 +1,17 @@
 "use client";
 
 import { Authenticated, Unauthenticated } from "convex/react";
+import dynamicImport from "next/dynamic";
 
 import { LandingHero } from "@/components/landing/hero";
-import RoleBasedFeatures from "@/components/landing/RoleBasedFeatures";
-import ConnectedCareSection from "@/components/landing/ConnectedCareSection";
-import { RehabifyLearnSection } from "@/components/landing/RehabifyLearnSection";
-import FAQ from '@/components/landing/FAQ';
+const RoleBasedFeatures = dynamicImport(() => import("@/components/landing/RoleBasedFeatures"));
+const ConnectedCareSection = dynamicImport(() => import("@/components/landing/ConnectedCareSection"));
+const RehabifyLearnSection = dynamicImport(
+  () => import("@/components/landing/RehabifyLearnSection").then(m => m.RehabifyLearnSection)
+);
+const FAQ = dynamicImport(() => import('@/components/landing/FAQ'));
+
+export const dynamic = 'force-static';
 
 
 export default function Home() {

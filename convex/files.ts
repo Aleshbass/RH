@@ -240,10 +240,29 @@ export const saveClinicDocument = mutation({
       throw new Error("Not authenticated");
     }
 
-    // Authorization: Check if user is the owner of the clinic
+    // Authorization: Check if user has access to the clinic
     const clinic = await ctx.db.get(args.clinicId);
-    if (!clinic || clinic.ownerId !== user._id) {
-      // TODO: Add more sophisticated role-based access for clinic staff if needed
+    if (!clinic) {
+      throw new Error("Clinic not found");
+    }
+
+    // Allow clinic owner or clinic staff (physiotherapists) to upload
+    let hasAccess = false;
+    if (clinic.ownerId === user._id) {
+      hasAccess = true; // Clinic owner
+    } else if (user.role === "physiotherapist") {
+      // Check if physiotherapist is part of this clinic
+      const physiotherapistProfile = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .unique();
+      
+      if (physiotherapistProfile && physiotherapistProfile.clinicId === args.clinicId) {
+        hasAccess = true; // Clinic staff member
+      }
+    }
+
+    if (!hasAccess) {
       throw new Error("Not authorized to upload documents for this clinic");
     }
 

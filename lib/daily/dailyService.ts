@@ -53,7 +53,7 @@ export class DailyService {
     }
     
     if (!this.domain) {
-      console.warn('Daily.co domain not provided. Using default domain.');
+      console.warn('Daily.co domain not provided. Set NEXT_PUBLIC_DAILY_DOMAIN to your Daily subdomain.');
     }
   }
 
@@ -164,10 +164,10 @@ export class DailyService {
    * Generate a room URL for joining
    */
   getRoomUrl(roomName: string): string {
-    if (this.domain) {
-      return `https://${this.domain}/${roomName}`;
+    if (!this.domain) {
+      throw new Error('Daily.co domain not configured. Set NEXT_PUBLIC_DAILY_DOMAIN.');
     }
-    return `https://${roomName}.daily.co`;
+    return `https://${this.domain}/${roomName}`;
   }
 
   /**
@@ -188,8 +188,8 @@ export class DailyService {
     }
 
     const tokenPayload = {
-      room_name: roomName,
       properties: {
+        room_name: roomName,
         user_name: properties.user_name,
         user_id: properties.user_id,
         is_owner: properties.is_owner ?? false,

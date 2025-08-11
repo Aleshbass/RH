@@ -4,7 +4,7 @@ import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { useAuth } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -42,23 +42,27 @@ export default function ClinicDashboard() {
   const recentActivity = useQuery(api.clinics.getClinicRecentActivity, { limit: 5 })
   const clinicStaff = useQuery(api.clinics.getClinicStaff)
   const pendingInvitations = useQuery(api.clinics.getClinicInvitations)
-  
+  const authRedirected = useRef(false)
+  const roleRedirected = useRef(false)
+
   // Redirect if not authenticated
   useEffect(() => {
-    if (isLoaded && !isSignedIn) {
+    if (isLoaded && !isSignedIn && !authRedirected.current) {
+      authRedirected.current = true
       router.push('/sign-in')
     }
-  }, [isLoaded, isSignedIn, router])
+  }, [isLoaded, isSignedIn])
 
   // Redirect if not approved clinic owner
   useEffect(() => {
     if (currentUser && approvalStatus !== undefined) {
-      if (currentUser.role !== 'clinic_owner') {
+      if (currentUser.role !== 'clinic_owner' && !roleRedirected.current) {
+        roleRedirected.current = true
         router.push('/sign-in')
         return
       }
     }
-  }, [currentUser, approvalStatus, router])
+  }, [currentUser, approvalStatus])
 
   // Loading state
   if (!isLoaded || currentUser === undefined || approvalStatus === undefined) {
@@ -267,7 +271,7 @@ export default function ClinicDashboard() {
                       <p>No recent activity</p>
                     </div>
                   ) : (
-                    recentActivity.map((activity, index) => {
+                    recentActivity.map((activity: any, index: number) => {
                       const getActivityIcon = (type: string) => {
                         switch (type) {
                           case 'patient_registered':
@@ -389,7 +393,7 @@ export default function ClinicDashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {clinicStaff.map((member) => {
+                {clinicStaff.map((member: any) => {
                   const initials = member.user?.firstName && member.user?.lastName 
                     ? `${member.user.firstName.charAt(0)}${member.user.lastName.charAt(0)}`
                     : member.user?.email?.charAt(0).toUpperCase() || 'S'

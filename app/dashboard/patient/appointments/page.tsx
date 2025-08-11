@@ -287,13 +287,13 @@ export default function PatientAppointmentsPage() {
     if (!allAppointments) return { upcoming: [], past: [] }
     
     const now = Date.now()
-    const upcomingList = allAppointments.filter(apt => 
+    const upcomingList = allAppointments.filter((apt: any) => 
       apt.startTime >= now && ['scheduled', 'confirmed'].includes(apt.status)
-    ).sort((a, b) => a.startTime - b.startTime)
+    ).sort((a: any, b: any) => a.startTime - b.startTime)
     
-    const pastList = allAppointments.filter(apt => 
+    const pastList = allAppointments.filter((apt: any) => 
       apt.startTime < now || ['completed', 'cancelled_by_patient', 'cancelled_by_therapist', 'no_show'].includes(apt.status)
-    ).sort((a, b) => b.startTime - a.startTime)
+    ).sort((a: any, b: any) => b.startTime - a.startTime)
     
     return { upcoming: upcomingList, past: pastList }
   }, [allAppointments])
@@ -397,7 +397,7 @@ export default function PatientAppointmentsPage() {
             <AppointmentsSkeleton />
           ) : upcoming.length > 0 ? (
             <div className="space-y-4">
-              {upcoming.map((appointment) => (
+              {upcoming.map((appointment: any) => (
                 <AppointmentCard 
                   key={appointment._id} 
                   appointment={appointment} 
@@ -429,7 +429,7 @@ export default function PatientAppointmentsPage() {
             <AppointmentsSkeleton />
           ) : past.length > 0 ? (
             <div className="space-y-4">
-              {past.map((appointment) => (
+              {past.map((appointment: any) => (
                 <AppointmentCard 
                   key={appointment._id} 
                   appointment={appointment}

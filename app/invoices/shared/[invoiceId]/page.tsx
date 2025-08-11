@@ -275,7 +275,7 @@ function SharedInvoicePageComponent() {
           </Button>
           {invoice.status !== 'paid' && (
             <Button variant="default">
-              Pay with Stripe
+              Pay with Paystack
             </Button>
           )}
         </div>

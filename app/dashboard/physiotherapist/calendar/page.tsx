@@ -3,7 +3,7 @@
 import { useMyUser, useMyAppointments } from '@/hooks/useDashboardData';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Loader2, Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -69,6 +69,7 @@ export default function CalendarPage() {
   const [isSessionLogModalOpen, setIsSessionLogModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'all'>('all');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Get current user
   const { data: currentUser, isLoading: userLoading } = useMyUser();
@@ -81,16 +82,19 @@ export default function CalendarPage() {
     ? endOfWeek(currentWeek, { weekStartsOn: 1 }).getTime()
     : endOfDay(currentWeek).getTime();
 
-  // Get appointments for the current view
+  // Get appointments for the current view with expanded date range to catch edge cases
+  const expandedStartDate = startDate - (24 * 60 * 60 * 1000); // 1 day before
+  const expandedEndDate = endDate + (24 * 60 * 60 * 1000); // 1 day after
+  
   const { data: appointments, isLoading: appointmentsLoading } = useMyAppointments({
-    startDate,
-    endDate,
+    startDate: expandedStartDate,
+    endDate: expandedEndDate,
     status: statusFilter === 'all' ? undefined : statusFilter,
-    limit: 100,
+    limit: 200, // Increased limit to ensure we don't miss appointments
   });
 
   // Map appointments to match AppointmentData type for calendar
-  const calendarAppointments: AppointmentData[] = (appointments ?? []).map((a) => ({
+  const calendarAppointments: AppointmentData[] = ((appointments as any[]) ?? []).map((a: any) => ({
     ...a,
     patient: a.patient
       ? {
@@ -104,10 +108,11 @@ export default function CalendarPage() {
       : null,
   } as unknown as AppointmentData));
 
-  // Get today's schedule for the sidebar
+  // Get today's schedule for the sidebar - memoize date to prevent infinite re-renders
+  const today = useMemo(() => new Date(), []);
   const { data: todaysSchedule, isLoading: todaysScheduleLoading } = useMyAppointments({
-    startDate: startOfDay(new Date()).getTime(),
-    endDate: endOfDay(new Date()).getTime(),
+    startDate: startOfDay(today).getTime(),
+    endDate: endOfDay(today).getTime(),
     limit: 50,
   });
 
@@ -130,7 +135,7 @@ export default function CalendarPage() {
 
   // Redirect if not physiotherapist
   useEffect(() => {
-    if (currentUser && currentUser.role !== 'physiotherapist') {
+    if (currentUser && (currentUser as any).role !== 'physiotherapist') {
       router.push('/dashboard');
     }
     }, [currentUser, router]);
@@ -285,13 +290,13 @@ export default function CalendarPage() {
         <div className="p-6 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Today&apos;s Schedule</h3>
           <div className="space-y-3">
-            {!todaysSchedule || todaysSchedule.length === 0 ? (
+            {!todaysSchedule || (todaysSchedule as any[])?.length === 0 ? (
               <div className="text-center py-8">
                 <CalendarIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                 <p className="text-sm text-gray-500">No appointments today</p>
               </div>
             ) : (
-              todaysSchedule.map((appointment) => (
+              (todaysSchedule as any[]).map((appointment: any) => (
                 <div
                   key={appointment._id}
                   className="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
@@ -326,24 +331,24 @@ export default function CalendarPage() {
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Total Appointments</span>
-              <span className="font-medium text-gray-900">{appointments?.length || 0}</span>
+              <span className="font-medium text-gray-900">{(appointments as any[])?.length || 0}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Confirmed</span>
               <span className="font-medium text-green-600">
-                {appointments?.filter(a => a.status === 'confirmed').length || 0}
+                {(appointments as any[])?.filter((a: any) => a.status === 'confirmed').length || 0}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Completed</span>
               <span className="font-medium text-gray-600">
-                {appointments?.filter(a => a.status === 'completed').length || 0}
+                {(appointments as any[])?.filter((a: any) => a.status === 'completed').length || 0}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Pending</span>
               <span className="font-medium text-blue-600">
-                {appointments?.filter(a => a.status === 'scheduled').length || 0}
+                {(appointments as any[])?.filter((a: any) => a.status === 'scheduled').length || 0}
               </span>
             </div>
           </div>
@@ -389,7 +394,8 @@ export default function CalendarPage() {
         selectedDate={selectedDate || new Date()}
         onAppointmentCreated={() => {
           setIsAppointmentModalOpen(false);
-          // Refresh appointments would happen automatically due to Convex reactivity
+          // Force refresh appointments to ensure new appointment appears immediately
+          setRefreshKey(prev => prev + 1);
         }}
         appointmentId={selectedAppointment?._id}
       />

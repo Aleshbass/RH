@@ -63,6 +63,9 @@ export function PhysiotherapistDashboardV2() {
   // Use the existing getCurrentUser query to get profile information
   const currentUserWithProfile = useQuery(api.queries.getCurrentUser)
   
+  // Get clinic information if user is clinic staff
+  const clinicInfo = useQuery(api.clinics.getMyClinicInfo)
+  
   // Use direct Convex queries instead of custom hooks that depend on auth store
   const dashboardStats = useQuery(api.patients.getDashboardStats, {})
   const patientsData = useQuery(api.patients.getMyPatients, { limit: 10 })
@@ -76,7 +79,7 @@ export function PhysiotherapistDashboardV2() {
   const recentSessionsData = useQuery(api.sessionLogs.getMySessionLogs, { limit: 5 })
   
   // Transform the data to match the expected interface
-  const recentSessions = recentSessionsData?.map(session => ({
+  const recentSessions = recentSessionsData?.map((session: any) => ({
     _id: session._id,
     sessionDate: session.sessionDate,
     patient: session.patient ? {
@@ -126,7 +129,7 @@ export function PhysiotherapistDashboardV2() {
   const handleManagePatients = () => router.push('/dashboard/physiotherapist/patients')
 
   // Loading state
-  if (user === undefined || dashboardStats === undefined || currentUserWithProfile === undefined || patientsData === undefined || todaysAppointmentsData === undefined) {
+  if (user === undefined || dashboardStats === undefined || currentUserWithProfile === undefined || patientsData === undefined || todaysAppointmentsData === undefined || clinicInfo === undefined) {
     return <PhysiotherapistDashboardSkeleton />
   }
 
@@ -145,8 +148,7 @@ export function PhysiotherapistDashboardV2() {
   }
 
   // Determine if physiotherapist is clinic-based from their profile
-  const isClinicBased = currentUserWithProfile?.clinicId ? true : false;
-  const clinicInfo = currentUserWithProfile?.clinic;
+  const isClinicBased = clinicInfo !== null;
   const patientCount = dashboardStats?.totalPatients || 0
   const todaysAppointmentCount = dashboardStats?.todaysAppointments || 0
 
@@ -162,7 +164,7 @@ export function PhysiotherapistDashboardV2() {
             {isClinicBased ? (
               <span className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
-                {clinicInfo?.name || 'Clinic-based'} Physiotherapist
+                Physiotherapist at {clinicInfo?.name || 'Clinic'}
               </span>
             ) : (
               <span className="flex items-center gap-2">
@@ -184,16 +186,67 @@ export function PhysiotherapistDashboardV2() {
         </div>
       </div>
 
-      {/* Clinic Context Alert for Clinic-based Physiotherapists */}
+      {/* Enhanced Clinic Context Card for Clinic-based Physiotherapists */}
       {isClinicBased && clinicInfo && (
-        <Alert className="border-blue-200 bg-blue-50">
-          <Building2 className="h-4 w-4 text-blue-600" />
-          <AlertDescription className="text-blue-800">
-            You are working under <strong>{clinicInfo.name}</strong>. 
-            Your patients and appointments are managed within this clinic&apos;s system.
-            {clinicInfo.address && ` Located at ${clinicInfo.address}.`}
-          </AlertDescription>
-        </Alert>
+        <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-100 p-2 rounded-full">
+                <Building2 className="h-5 w-5 text-blue-600" />
+              </div>
+              <div className="flex-1">
+                <CardTitle className="text-lg text-blue-900">
+                  {clinicInfo.name}
+                </CardTitle>
+                <CardDescription className="text-blue-700">
+                  You are a staff physiotherapist at this clinic
+                </CardDescription>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-medium text-blue-800 capitalize">
+                  {clinicInfo.staffRole?.replace('_', ' ') || 'Physiotherapist'}
+                </div>
+                {clinicInfo.joinedAt && (
+                  <div className="text-xs text-blue-600">
+                    Joined {format(new Date(clinicInfo.joinedAt), 'MMM yyyy')}
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              {clinicInfo.address && (
+                <div className="flex items-center gap-2 text-blue-800">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                  <span><strong>Location:</strong> {clinicInfo.address}</span>
+                </div>
+              )}
+              {clinicInfo.owner && (
+                <div className="flex items-center gap-2 text-blue-800">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                  <span><strong>Clinic Owner:</strong> {clinicInfo.owner.firstName} {clinicInfo.owner.lastName}</span>
+                </div>
+              )}
+              {clinicInfo.contactEmail && (
+                <div className="flex items-center gap-2 text-blue-800">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                  <span><strong>Contact:</strong> {clinicInfo.contactEmail}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-blue-800">
+                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                <span><strong>Status:</strong> Active Staff Member</span>
+              </div>
+            </div>
+            <div className="mt-3 p-3 bg-blue-100 rounded-lg">
+              <p className="text-xs text-blue-800">
+                <strong>Note:</strong> Your patients, appointments, and treatment plans are managed within this clinic's system. 
+                You have your own individual dashboard with full access to manage your assigned patients.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Key Metrics */}

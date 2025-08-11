@@ -103,15 +103,15 @@ export default function AdminSystemPage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center space-x-2">
-              {systemHealth?.data?.status === 'excellent' ? (
+              {(systemHealth?.data as any)?.status === 'excellent' ? (
                 <CheckCircle className="h-5 w-5 text-green-500" />
               ) : (
                 <AlertTriangle className="h-5 w-5 text-yellow-500" />
               )}
-              <div className="text-2xl font-bold">{systemHealth?.data?.overall || 0}%</div>
+              <div className="text-2xl font-bold">{(systemHealth?.data as any)?.overall || 0}%</div>
             </div>
             <p className="text-xs text-muted-foreground capitalize">
-              {systemHealth?.data?.status || 'Loading...'}
+              {(systemHealth?.data as any)?.status || 'Loading...'}
             </p>
           </CardContent>
         </Card>

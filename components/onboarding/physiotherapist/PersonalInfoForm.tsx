@@ -57,15 +57,15 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
   };
 
   return (
-    <div className="max-w-xl mx-auto">
+    <div className="max-w-2xl mx-auto">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="space-y-8"
+        className="space-y-10 bg-white p-10 rounded-xl shadow-xl"
       >
         <form
           onSubmit={onSubmit}
-          className="space-y-6"
+          className="space-y-8"
         >
           <div className="text-center mb-8">
             <h2 className="text-2xl font-semibold text-[#002e2c]">
@@ -83,11 +83,11 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
               initial="hidden"
               animate="visible"
               variants={fadeInVariants}
-              className="space-y-2"
+              className="space-y-3"
             >
               <label
                 htmlFor="firstName"
-                className="block text-sm font-medium text-[#002e2c]"
+                className="block text-base font-semibold text-[#002e2c]"
               >
                 First Name *
               </label>
@@ -99,12 +99,13 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                     id="firstName"
                     type="text"
                     {...field}
-                    className={`block w-full rounded-md border-[#E3DFD2] shadow-sm focus:border-[#005b57] focus:ring focus:ring-[#005b57] focus:ring-opacity-50 ${errors.firstName ? "border-red-500" : ""}`}
+                    placeholder="Enter your first name"
+                    className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 ${errors.firstName ? "border-red-500" : ""}`}
                   />
                 )}
               />
               {errors.firstName && (
-                <p className="mt-1 text-sm text-red-500">
+                <p className="mt-2 text-sm text-red-500">
                   {errors.firstName.message}
                 </p>
               )}
@@ -116,11 +117,11 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
               initial="hidden"
               animate="visible"
               variants={fadeInVariants}
-              className="space-y-2"
+              className="space-y-3"
             >
               <label
                 htmlFor="lastName"
-                className="block text-sm font-medium text-[#002e2c]"
+                className="block text-base font-semibold text-[#002e2c]"
               >
                 Last Name *
               </label>
@@ -132,12 +133,13 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                     id="lastName"
                     type="text"
                     {...field}
-                    className={`block w-full rounded-md border-[#E3DFD2] shadow-sm focus:border-[#005b57] focus:ring focus:ring-[#005b57] focus:ring-opacity-50 ${errors.lastName ? "border-red-500" : ""}`}
+                    placeholder="Enter your last name"
+                    className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 ${errors.lastName ? "border-red-500" : ""}`}
                   />
                 )}
               />
               {errors.lastName && (
-                <p className="mt-1 text-sm text-red-500">
+                <p className="mt-2 text-sm text-red-500">
                   {errors.lastName.message}
                 </p>
               )}
@@ -149,11 +151,11 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
               initial="hidden"
               animate="visible"
               variants={fadeInVariants}
-              className="space-y-2"
+              className="space-y-3"
             >
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-[#002e2c]"
+                className="block text-base font-semibold text-[#002e2c]"
               >
                 Email *
               </label>
@@ -165,12 +167,13 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                     id="email"
                     type="email"
                     {...field}
-                    className={`block w-full rounded-md border-[#E3DFD2] shadow-sm focus:border-[#005b57] focus:ring focus:ring-[#005b57] focus:ring-opacity-50 ${errors.email ? "border-red-500" : ""}`}
+                    placeholder="Enter your email address"
+                    className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 ${errors.email ? "border-red-500" : ""}`}
                   />
                 )}
               />
               {errors.email && (
-                <p className="mt-1 text-sm text-red-500">
+                <p className="mt-2 text-sm text-red-500">
                   {errors.email.message}
                 </p>
               )}
@@ -182,11 +185,11 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
               initial="hidden"
               animate="visible"
               variants={fadeInVariants}
-              className="space-y-2"
+              className="space-y-3"
             >
               <label
                 htmlFor="phoneNumber"
-                className="block text-sm font-medium text-[#002e2c]"
+                className="block text-base font-semibold text-[#002e2c]"
               >
                 Phone Number *
               </label>
@@ -198,12 +201,13 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                     id="phoneNumber"
                     type="tel"
                     {...field}
-                    className={`block w-full rounded-md border-[#E3DFD2] shadow-sm focus:border-[#005b57] focus:ring focus:ring-[#005b57] focus:ring-opacity-50 ${errors.phoneNumber ? "border-red-500" : ""}`}
+                    placeholder="Enter your phone number"
+                    className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 ${errors.phoneNumber ? "border-red-500" : ""}`}
                   />
                 )}
               />
               {errors.phoneNumber && (
-                <p className="mt-1 text-sm text-red-500">
+                <p className="mt-2 text-sm text-red-500">
                   {errors.phoneNumber.message}
                 </p>
               )}
@@ -215,11 +219,11 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
               initial="hidden"
               animate="visible"
               variants={fadeInVariants}
-              className="space-y-2"
+              className="space-y-3"
             >
               <label
                 htmlFor="dateOfBirth"
-                className="block text-sm font-medium text-[#002e2c]"
+                className="block text-base font-semibold text-[#002e2c]"
               >
                 Date of Birth <span className="text-gray-500">(Optional)</span>
               </label>
@@ -232,7 +236,7 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                     type="date"
                     {...field}
                     value={field.value || ""}
-                    className="block w-full rounded-md border-[#E3DFD2] shadow-sm focus:border-[#005b57] focus:ring focus:ring-[#005b57] focus:ring-opacity-50"
+                    className="block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20"
                   />
                 )}
               />
@@ -244,11 +248,11 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
               initial="hidden"
               animate="visible"
               variants={fadeInVariants}
-              className="space-y-2"
+              className="space-y-3"
             >
               <label
                 htmlFor="gender"
-                className="block text-sm font-medium text-[#002e2c]"
+                className="block text-base font-semibold text-[#002e2c]"
               >
                 Gender
               </label>
@@ -259,7 +263,7 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                   <select
                     id="gender"
                     {...field}
-                    className="block w-full rounded-md border-[#E3DFD2] shadow-sm focus:border-[#005b57] focus:ring focus:ring-[#005b57] focus:ring-opacity-50"
+                    className="block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20"
                   >
                     <option value="">Select gender</option>
                     <option value="male">Male</option>
@@ -277,40 +281,14 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
             initial="hidden"
             animate="visible"
             variants={fadeInVariants}
-            className="pt-5"
+            className="flex justify-center pt-4"
           >
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 px-4 flex justify-center items-center bg-gradient-to-r from-[#002e2c] to-[#005b57] hover:from-[#005b57] hover:to-[#007e78] text-white text-sm font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#005b57] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="w-full h-12 text-base font-semibold bg-[#005b57] text-white rounded-md hover:bg-[#00443e] transition-colors duration-200 disabled:opacity-50"
             >
-              {isSubmitting ? (
-                <div className="flex items-center">
-                  <svg
-                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  <span>Submitting...</span>
-                </div>
-              ) : (
-                "Continue"
-              )}
+              {isSubmitting ? "Saving..." : "Continue to Professional Information"}
             </button>
           </motion.div>
         </form>

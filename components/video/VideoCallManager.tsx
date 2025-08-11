@@ -221,9 +221,9 @@ export default function VideoCallManager({
   // Show a loading state until we have the user's ID
   if (activeCall && !currentUser) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+      <div className="min-h-screen flex items-center justify-center bg-call-bg text-neutral-900">
         <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-call-accent mx-auto"></div>
           <p className="text-xl">Connecting to call...</p>
         </div>
       </div>
@@ -249,7 +249,7 @@ export default function VideoCallManager({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Video className="h-6 w-6 text-blue-600" />
+            <Video className="h-6 w-6 text-call-accent" />
             Video Call Manager
           </CardTitle>
         </CardHeader>
@@ -373,7 +373,7 @@ export default function VideoCallManager({
                   </div>
                   <ScrollArea className="h-96">
                     <div className="space-y-2">
-                      {filteredCallHistory?.map((call) => (
+                      {filteredCallHistory?.map((call: any) => (
                         <Card key={call._id} className="p-4">
                           <div className="flex items-center justify-between">
                             <div className="space-y-1">
@@ -460,12 +460,12 @@ export default function VideoCallManager({
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-2">
-              <div className="bg-blue-100 p-2 rounded-lg">
-                <Video className="h-5 w-5 text-blue-600" />
+              <div className="bg-call-bg p-2 rounded-lg">
+                <Video className="h-5 w-5 text-call-accent" />
               </div>
               <div>
                 <div className="text-2xl font-bold">
-                  {callHistory?.filter((c) => c.status === 'ended').length || 0}
+                  {callHistory?.filter((c: any) => c.status === 'ended').length || 0}
                 </div>
                 <div className="text-sm text-gray-500">Total Calls</div>
               </div>
@@ -482,7 +482,7 @@ export default function VideoCallManager({
               <div>
                 <div className="text-2xl font-bold">
                   {Math.round(
-                    (callHistory?.reduce((acc: number, call) => acc + (call.duration || 0), 0) || 0) / 60
+                    (callHistory?.reduce((acc: number, call: any) => acc + (call.duration || 0), 0) || 0) / 60
                   )}m
                 </div>
                 <div className="text-sm text-gray-500">Total Time</div>
@@ -499,7 +499,7 @@ export default function VideoCallManager({
               </div>
               <div>
                 <div className="text-2xl font-bold">
-                  {callHistory?.filter((c) => c.status === 'active').length || 0}
+                  {callHistory?.filter((c: any) => c.status === 'active').length || 0}
                 </div>
                 <div className="text-sm text-gray-500">Active Calls</div>
               </div>
@@ -515,24 +515,24 @@ export default function VideoCallManager({
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-start gap-3">
-            <div className="bg-blue-100 rounded-full p-1 mt-0.5">
-              <span className="text-blue-600 text-sm font-bold px-1">1</span>
+            <div className="bg-call-bg rounded-full p-1 mt-0.5">
+              <span className="text-call-accent text-sm font-bold px-1">1</span>
             </div>
             <div>
               <strong>Create a new call</strong> - Click &quot;Create New Call&quot; to start a video consultation
             </div>
           </div>
           <div className="flex items-start gap-3">
-            <div className="bg-blue-100 rounded-full p-1 mt-0.5">
-              <span className="text-blue-600 text-sm font-bold px-1">2</span>
+            <div className="bg-call-bg rounded-full p-1 mt-0.5">
+              <span className="text-call-accent text-sm font-bold px-1">2</span>
             </div>
             <div>
               <strong>Join an existing call</strong> - Enter a Room ID to join someone else&apos;s call
             </div>
           </div>
           <div className="flex items-start gap-3">
-            <div className="bg-blue-100 rounded-full p-1 mt-0.5">
-              <span className="text-blue-600 text-sm font-bold px-1">3</span>
+            <div className="bg-call-bg rounded-full p-1 mt-0.5">
+              <span className="text-call-accent text-sm font-bold px-1">3</span>
             </div>
             <div>
               <strong>View history</strong> - Access your past calls and rejoin active ones

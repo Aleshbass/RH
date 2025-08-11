@@ -1,8 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from 'convex/react'
-import { api } from '@/convex/_generated/api'
+import { useState } from 'react'
 import { useAuth, useUser } from '@clerk/nextjs'
 import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -15,6 +13,8 @@ import {
 } from '@/components/ui/card'
 import { Heart, Shield, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useValidateInvitationCode } from '@/lib/api/patientInvitations'
+import { usePatientOnboardingAction } from '@/lib/onboardingHelpers'
 
 interface PatientData {
   firstName: string
@@ -35,49 +35,34 @@ export default function PatientInvitePage() {
   const { isLoaded, isSignedIn } = useAuth()
   const { user } = useUser()
   const [isAccepting, setIsAccepting] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   // Get invitation details with validation
-  const validateInvitation = useQuery(
-    api.patientInvitations.validateInvitationCode,
-    code ? { code } : 'skip'
-  )
+  const {
+    isLoading: isValidating,
+    isValid,
+    invitation,
+    physiotherapist,
+    clinic,
+    message,
+  } = useValidateInvitationCode(code || null)
 
-  const completeOnboarding = useMutation(
-    api.patientInvitations.completePatientOnboarding
-  )
+  // Use action wrapper that also sends notifications
+  const completePatientOnboarding = usePatientOnboardingAction()
 
-  // Redirect to sign in if not authenticated
-  useEffect(() => {
-    if (!isLoaded) return
-
-    if (!isSignedIn) {
-      router.push(`/sign-in?redirect=/patient-invite/${code}`)
-      return
-    }
-
-    if (validateInvitation === undefined) {
-      setIsLoading(true)
-      return
-    }
-
-    if (!validateInvitation.valid || !validateInvitation.invitation) {
-      setError((validateInvitation as any).message || 'Invalid or expired invitation code')
-      setIsLoading(false)
-      return
-    }
-
-    setIsLoading(false)
-  }, [isLoaded, isSignedIn, validateInvitation, code, router])
+  const handleSignIn = () => {
+    const redirectPath = encodeURIComponent(`/patient-invite/${code}`)
+    router.push(`/sign-in?redirect_url=${redirectPath}`)
+  }
 
   // Handle form submission
   const handleAcceptInvitation = async () => {
-    if (!user) return
+    if (!isSignedIn || !user) {
+      handleSignIn()
+      return
+    }
 
     try {
       setIsAccepting(true)
-      setIsLoading(true)
       const patientData: PatientData = {
         firstName: user.firstName ?? '',
         lastName: user.lastName ?? '',
@@ -88,7 +73,7 @@ export default function PatientInvitePage() {
         medicalHistory: '',
       }
 
-      const result = await completeOnboarding({
+      const result = await completePatientOnboarding({
         invitationCode: code,
         patientData,
       })
@@ -108,12 +93,11 @@ export default function PatientInvitePage() {
       )
     } finally {
       setIsAccepting(false)
-      setIsLoading(false)
     }
   }
 
   // Loading state
-  if (!isLoaded || isLoading) {
+  if (!isLoaded || isValidating) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 flex items-center justify-center">
         <div className="text-center">
@@ -124,7 +108,29 @@ export default function PatientInvitePage() {
     )
   }
 
-  if (error) {
+  // Not signed in: prompt to sign in seamlessly
+  if (!isSignedIn) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Card className="w-[420px]">
+          <CardHeader>
+            <CardTitle className="">Sign in to continue</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              You need to sign in to accept your invitation.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={handleSignIn} className="w-full">Sign in</Button>
+          </CardFooter>
+        </Card>
+      </div>
+    )
+  }
+
+  // Invalid or expired invitation
+  if (!isValid) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Card className="w-[420px]">
@@ -132,7 +138,7 @@ export default function PatientInvitePage() {
             <CardTitle className="text-red-600">Error</CardTitle>
           </CardHeader>
           <CardContent>
-            <p>{error}</p>
+            <p>{message}</p>
           </CardContent>
           <CardFooter>
             <Button
@@ -148,7 +154,7 @@ export default function PatientInvitePage() {
     )
   }
 
-  if (!validateInvitation?.invitation) return null
+  if (!invitation) return null
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50">
@@ -190,14 +196,12 @@ export default function PatientInvitePage() {
                   <Shield className="h-6 w-6 text-green-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-medium">
-                    You&apos;ve been invited!
-                  </h3>
+                  <h3 className="text-lg font-medium">You&apos;ve been invited!</h3>
                   <p className="text-sm text-muted-foreground">
-                    Invited by {(validateInvitation as any).physiotherapist?.firstName} {(validateInvitation as any).physiotherapist?.lastName}
-                    {(validateInvitation as any).clinic?.name && (
-                      <> from {(validateInvitation as any).clinic.name}</>
-                    )}
+                    Invited by {physiotherapist?.firstName} {physiotherapist?.lastName}
+                    {clinic?.name && (<>
+                      {' '}from {clinic.name}
+                    </>)}
                   </p>
                 </div>
               </div>

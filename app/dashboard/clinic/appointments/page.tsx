@@ -41,15 +41,15 @@ export default function ClinicAppointmentsPage() {
     )
   }
 
-  const todayAppointments = appointments?.filter(apt => 
+  const todayAppointments = appointments?.filter((apt: any) => 
     isToday(new Date(apt.startTime))
   ) || []
 
-  const upcomingAppointments = appointments?.filter(apt => 
+  const upcomingAppointments = appointments?.filter((apt: any) => 
     new Date(apt.startTime) > new Date() && !isToday(new Date(apt.startTime))
   ) || []
 
-  const pastAppointments = appointments?.filter(apt => 
+  const pastAppointments = appointments?.filter((apt: any) => 
     new Date(apt.startTime) < new Date() && !isToday(new Date(apt.startTime))
   ) || []
 
@@ -199,7 +199,7 @@ export default function ClinicAppointmentsPage() {
               <CardContent>
                 {todayAppointments.length > 0 ? (
                   <div className="space-y-4">
-                    {todayAppointments.map((appointment) => (
+                    {todayAppointments.map((appointment: any) => (
                       <AppointmentCard key={appointment._id} appointment={appointment} />
                     ))}
                   </div>
@@ -225,7 +225,7 @@ export default function ClinicAppointmentsPage() {
               <CardContent>
                 {upcomingAppointments.length > 0 ? (
                   <div className="space-y-4">
-                    {upcomingAppointments.map((appointment) => (
+                    {upcomingAppointments.map((appointment: any) => (
                       <AppointmentCard key={appointment._id} appointment={appointment} />
                     ))}
                   </div>
@@ -255,7 +255,7 @@ export default function ClinicAppointmentsPage() {
               <CardContent>
                 {pastAppointments.length > 0 ? (
                   <div className="space-y-4">
-                    {pastAppointments.slice(0, 10).map((appointment) => (
+                    {pastAppointments.slice(0, 10).map((appointment: any) => (
                       <AppointmentCard key={appointment._id} appointment={appointment} />
                     ))}
                     {pastAppointments.length > 10 && (

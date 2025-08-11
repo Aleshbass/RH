@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from 'convex/react';
+import { useQuery, useAction } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
@@ -12,8 +12,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PatientInviteModal } from '@/components/dashboard/clinic-owner/PatientInviteModal';
+import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal';
 import { format } from 'date-fns';
-import { useMutation } from 'convex/react';
 
 interface PatientWithDetails {
   _id: string;
@@ -71,8 +71,10 @@ export default function PatientsPage() {
   // Get patients
   const patients = useQuery(api.patients.getMyPatients, patientParams) as PatientWithDetails[] | undefined;
 
-  // Mutation for patient invitation
-  const createPatientInvitation = useMutation(api.patients.createPatientInvitation);
+  // Invitation action with email/notification
+  const createPatientInvitationWithEmail = useAction(
+    api.actions.patients.invitePatient.createPatientInvitationWithNotification
+  );
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -117,10 +119,18 @@ export default function PatientsPage() {
           <h1 className="text-2xl font-bold text-gray-900">My Patients</h1>
           <p className="text-gray-600">Manage your patient relationships and care</p>
         </div>
-        <Button onClick={() => setIsInviteModalOpen(true)} className="flex items-center gap-2">
-          <Plus className="h-4 w-4" />
-          Invite Patient
-        </Button>
+        <div className="flex gap-2">
+          <AddPatientModal 
+            onSuccess={() => {
+              // Refresh the patients list
+              window.location.reload();
+            }}
+          />
+          <Button onClick={() => setIsInviteModalOpen(true)} variant="outline" className="flex items-center gap-2">
+            <Plus className="h-4 w-4" />
+            Invite Patient
+          </Button>
+        </div>
       </div>
 
       {/* Search and Stats */}
@@ -272,10 +282,11 @@ export default function PatientsPage() {
         onClose={() => setIsInviteModalOpen(false)}
         onSubmit={async (formData) => {
           try {
-            const result = await createPatientInvitation({
+            const result = await createPatientInvitationWithEmail({
               patientEmail: formData.patientEmail,
               patientName: formData.patientName,
               notes: formData.notes,
+              sendEmail: true,
             });
 
             if (result.success) {

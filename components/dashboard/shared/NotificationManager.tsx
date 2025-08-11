@@ -192,7 +192,7 @@ export function NotificationManager() {
                     <Badge variant="outline" className={`w-full justify-center ${getStatusColor(status)} text-white`}>
                       {status.charAt(0).toUpperCase() + status.slice(1)}
                     </Badge>
-                    <p className="text-2xl font-bold mt-2">{count}</p>
+                    <p className="text-2xl font-bold mt-2">{String(count)}</p>
                   </div>
                 ))}
               </div>
@@ -205,7 +205,7 @@ export function NotificationManager() {
                     <Badge variant="outline" className={`w-full justify-center ${getStatusColor(status)} text-white`}>
                       {status.charAt(0).toUpperCase() + status.slice(1)}
                     </Badge>
-                    <p className="text-2xl font-bold mt-2">{count}</p>
+                    <p className="text-2xl font-bold mt-2">{String(count)}</p>
                   </div>
                 ))}
               </div>

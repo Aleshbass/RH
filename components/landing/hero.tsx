@@ -133,6 +133,9 @@ export function LandingHero() {
                 style={{ objectFit: "contain" }}
                 className="max-h-[90%] max-w-[90%] lg:translate-y-[15vh]"
                 priority
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                placeholder="blur"
+                blurDataURL="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
               />
               
               {/* Feature tags - Mobile optimized */}

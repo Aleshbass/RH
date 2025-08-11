@@ -1,18 +1,10 @@
 import React, { useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { User, MicOff, Monitor } from 'lucide-react'
-
-interface Participant {
-  session_id: string;
-  videoTrack?: MediaStreamTrack | null | false;
-  audioTrack?: MediaStreamTrack | null | false;
-  user_name?: string;
-  local?: boolean;
-  screen?: boolean;
-}
+import { useParticipant } from '@daily-co/daily-react'
 
 interface ParticipantTileProps {
-  participant: Participant | null;
+  participantId: string;
 }
 
 /**
@@ -20,28 +12,33 @@ interface ParticipantTileProps {
  * Shows the participant's video track if available, otherwise a placeholder.
  * Displays name overlay and icons for muted audio / screen-sharing status.
  */
-const ParticipantTile: React.FC<ParticipantTileProps> = ({ participant }) => {
-  // If parent passes participant object we don't need to call useParticipant here.
-  // However, if null, we early return.
+const ParticipantTile: React.FC<ParticipantTileProps> = ({ participantId }) => {
+  const participant = useParticipant(participantId)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  const videoTrack: MediaStreamTrack | null =
+    participant?.tracks?.video?.state === 'playable'
+      ? (participant.tracks.video.persistentTrack as MediaStreamTrack)
+      : null
+
+  const audioPlayable = participant?.tracks?.audio?.state === 'playable'
+  const isScreenSharing = participant?.tracks?.screenVideo?.state === 'playable'
 
   // Attach the MediaStream to the video element when track changes
   useEffect(() => {
-    if (participant && participant.videoTrack && videoRef.current) {
-      const stream = new MediaStream([participant.videoTrack])
+    if (videoTrack && videoRef.current) {
+      const stream = new MediaStream([videoTrack])
       videoRef.current.srcObject = stream
       videoRef.current.play().catch(() => {/* autoplay error ignored */})
     }
-  }, [participant, participant?.videoTrack])
+  }, [videoTrack])
 
-  if (!participant) {
-    return null;
-  }
+  if (!participant) return null
 
   return (
-    <Card key={participant.session_id} className="bg-call-control border-gray-300 relative overflow-hidden shadow-lg">
+    <Card className="bg-call-control border-gray-300 relative overflow-hidden shadow-lg">
       <CardContent className="p-0 aspect-video">
-        {participant.videoTrack ? (
+        {videoTrack ? (
           <video
             ref={videoRef}
             className="w-full h-full object-cover"
@@ -62,13 +59,13 @@ const ParticipantTile: React.FC<ParticipantTileProps> = ({ participant }) => {
             {participant.local && ' (You)'}
           </div>
           <div className="flex space-x-1">
-            {!participant.audioTrack && (
+            {!audioPlayable && (
               <div className="bg-red-500 p-1 rounded">
                 <MicOff className="h-3 w-3" />
               </div>
             )}
-            {participant.screen && (
-              <div className="bg-blue-500 p-1 rounded">
+            {isScreenSharing && (
+              <div className="bg-call-accent p-1 rounded">
                 <Monitor className="h-3 w-3" />
               </div>
             )}

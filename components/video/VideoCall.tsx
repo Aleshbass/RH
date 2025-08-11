@@ -5,13 +5,14 @@ import React, { useEffect, useCallback, useState, useRef } from 'react'
 import { useQueryUntyped } from '@/lib/convexUntyped'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
-import { DailyProvider, useDaily, useParticipantIds, useParticipant, useScreenShare, useMeetingState } from '@daily-co/daily-react'
+import { DailyProvider, useDaily, useParticipantIds, useScreenShare, useMeetingState, useLocalSessionId } from '@daily-co/daily-react'
 import { Button } from '@/components/ui/button'
 
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import ParticipantTile from '@/components/video/ParticipantTile'
 import CallControls from '@/components/video/CallControls'
+import { useMutation } from 'convex/react'
 
 import {
   MessageSquare,
@@ -52,29 +53,28 @@ function DailyCallInterface({
   onCallEnd,
   isFullscreen, 
   onToggleFullscreen, 
-  roomInfo 
+  roomInfo,
+  userName,
+  callId,
 }: {
   onCallEnd: () => void
   isFullscreen: boolean
   onToggleFullscreen: () => void
   roomInfo: RoomInfo
+  userName: string
+  callId?: Id<"videoCalls">
 }) {
   const daily = useDaily()
   const participantIds = useParticipantIds()
-  
-  // Create a stable list of participants by calling useParticipant for each ID
-  // We need to call hooks unconditionally, so we'll use a fixed number of calls
-  const participant1 = useParticipant(participantIds[0])
-  const participant2 = useParticipant(participantIds[1])
-  const participant3 = useParticipant(participantIds[2])
-  const participant4 = useParticipant(participantIds[3])
-  
-  // Filter out null participants and create the final list
-  const allParticipants = [participant1, participant2, participant3, participant4]
-    .filter((p): p is NonNullable<typeof p> => Boolean(p))
-    .slice(0, participantIds.length)
+  const localSessionId = useLocalSessionId()
   const { isSharingScreen, startScreenShare, stopScreenShare } = useScreenShare()
   const meetingState = useMeetingState()
+  const saveMessage = useMutation(api.videoCalls.saveVideoCallMessage)
+  // Stable ref for onCallEnd to avoid re-runs and enable safe fallback usage
+  const onCallEndRef = useRef(onCallEnd)
+  useEffect(() => {
+    onCallEndRef.current = onCallEnd
+  }, [onCallEnd])
   
   const [showChat, setShowChat] = useState(false)
   const [chatMessage, setChatMessage] = useState('')
@@ -91,6 +91,33 @@ function DailyCallInterface({
   const [isAudioOutputEnabled, setIsAudioOutputEnabled] = useState(true)
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
 
+  // Load persisted chat messages
+  const backendMessages = useQueryUntyped(
+    api.videoCalls.getVideoCallMessages as unknown,
+    callId ? ({ callId, limit: 100 } as unknown) : ("skip" as unknown)
+  )
+
+  useEffect(() => {
+    if (!backendMessages) return
+    try {
+      const mapped = (backendMessages as any[]).map((m) => {
+        const senderName = m.sender?.firstName || m.sender?.lastName
+          ? `${m.sender?.firstName || ''} ${m.sender?.lastName || ''}`.trim()
+          : (m.sender?.email || 'Anonymous')
+        return {
+          id: String(m._id || `${m.timestamp}-${Math.random()}`),
+          message: m.message,
+          sender: senderName,
+          timestamp: m.timestamp,
+          isLocal: false,
+        }
+      })
+      setChatMessages(mapped)
+    } catch (e) {
+      // ignore mapping errors
+    }
+  }, [backendMessages])
+
   // Handle call state changes
   useEffect(() => {
     if (meetingState === 'joined-meeting') {
@@ -101,9 +128,9 @@ function DailyCallInterface({
       toast.error('Call connection failed')
     } else if (meetingState === 'left-meeting') {
       setConnectionStatus('disconnected')
-      onCallEnd()
+      // onCallEnd is handled via Daily 'left-meeting' event to avoid duplicate calls
     }
-  }, [meetingState, onCallEnd])
+  }, [meetingState])
 
   // Handle Daily.co app messages (chat)
   useEffect(() => {
@@ -116,8 +143,7 @@ function DailyCallInterface({
 
 const handleAppMessage = (event: AppMessage) => {
       const { data, fromId } = event
-      const localParticipant = allParticipants.find(p => (p as { local?: boolean }).local)
-      const isLocal = fromId === localParticipant?.session_id
+      const isLocal = fromId === localSessionId
       
       const newMessage = {
         id: `${Date.now()}-${Math.random()}`,
@@ -147,7 +173,7 @@ const handleAppMessage = (event: AppMessage) => {
     return () => {
       daily.off('app-message', handleAppMessage)
     }
-  }, [daily, allParticipants])
+  }, [daily, localSessionId])
 
   // Handle video toggle
   const toggleVideo = useCallback(() => {
@@ -186,22 +212,33 @@ const handleAppMessage = (event: AppMessage) => {
   const handleEndCall = useCallback(() => {
     if (daily) {
       daily.leave()
+    } else {
+      // Fallback: if no call object exists, invoke end handler directly
+      onCallEndRef.current?.()
     }
-    onCallEnd()
-  }, [daily, onCallEnd])
+  }, [daily])
 
   // Send chat message
   const sendChatMessage = useCallback(() => {
     if (daily && chatMessage.trim()) {
-      const localParticipant = allParticipants.find(p => (p as { local?: boolean }).local)
       const messageData = {
         message: chatMessage.trim(),
-        sender: localParticipant?.user_name || 'Anonymous',
+        sender: userName || 'Anonymous',
         timestamp: Date.now(),
       }
       
       // Send via Daily.co
       daily.sendAppMessage(messageData)
+
+      // Persist to backend (best-effort)
+      if (callId) {
+        try {
+          // fire-and-forget
+          saveMessage({ callId, message: messageData.message, messageType: 'text' } as any)
+        } catch (e) {
+          console.warn('Failed to persist chat message:', e)
+        }
+      }
       
       // Add to local state immediately for better UX
       const newMessage = {
@@ -221,7 +258,7 @@ const handleAppMessage = (event: AppMessage) => {
         }
       }, 100)
     }
-  }, [daily, chatMessage, allParticipants])
+  }, [daily, chatMessage, userName, callId, saveMessage])
 
   // Copy room URL
   const copyRoomUrl = useCallback(() => {
@@ -266,7 +303,7 @@ const handleAppMessage = (event: AppMessage) => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto text-blue-400" />
+          <Loader2 className="h-12 w-12 animate-spin mx-auto text-call-accent" />
           <p className="text-xl">Connecting to call...</p>
           <p className="text-gray-400">Please wait while we establish the connection</p>
         </div>
@@ -312,8 +349,8 @@ const handleAppMessage = (event: AppMessage) => {
       {/* Video Grid */}
         <div className="flex-1 flex">
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-          {allParticipants.map((participant) => (
-            <ParticipantTile key={participant.session_id} participant={participant} />
+          {participantIds.map((id) => (
+            <ParticipantTile key={id} participantId={id} />
           ))}
 
         </div>
@@ -411,6 +448,11 @@ export default function VideoCall({
 }: VideoCallProps) {
 
   const [dailyCall, setDailyCall] = useState<DailyCall | null>(null)
+  // Keep a stable reference to onCallEnd to avoid re-running effects due to function identity changes
+  const onCallEndRef = useRef(onCallEnd)
+  useEffect(() => {
+    onCallEndRef.current = onCallEnd
+  }, [onCallEnd])
 
   // ... (rest of the code remains the same)
 
@@ -478,9 +520,13 @@ export default function VideoCall({
         const { default: DailyCall } = await import('@daily-co/daily-js');
           
         // Construct the Daily.co URL properly
+        const DAILY_DOMAIN = process.env.NEXT_PUBLIC_DAILY_DOMAIN;
         let dailyUrl = roomInfo.dailyRoomUrl;
         if (!dailyUrl && roomInfo.dailyRoomName) {
-          dailyUrl = `https://rehabifyhealth.daily.co/${roomInfo.dailyRoomName}`;
+          if (!DAILY_DOMAIN) {
+            throw new Error('Daily domain not configured. Set NEXT_PUBLIC_DAILY_DOMAIN.');
+          }
+          dailyUrl = `https://${DAILY_DOMAIN}/${roomInfo.dailyRoomName}`;
         }
         
         if (!roomInfo) {
@@ -548,7 +594,7 @@ export default function VideoCall({
         
         const handleLeftMeeting = () => {
           console.log('👋 Left Daily.co meeting');
-          onCallEnd();
+          onCallEndRef.current?.();
         };
         
         const handleError = (err: unknown) => {
@@ -577,14 +623,32 @@ export default function VideoCall({
           console.log('⏳ Daily.co call loading...');
         };
 
+        const handleNetworkConnection = (ev: unknown) => {
+          console.log('🌐 Daily network-connection event:', ev);
+        };
+
         callInstance.on('joined-meeting', handleJoinedMeeting);
         callInstance.on('left-meeting', handleLeftMeeting);
         callInstance.on('error', handleError);
         callInstance.on('joining-meeting', handleJoiningMeeting);
         callInstance.on('loading', handleLoading);
+        callInstance.on('network-connection', handleNetworkConnection);
 
         // Join the call with timeout
         console.log('🔗 Attempting to join call...');
+        // Pre-authenticate first to lock in URL/token and catch access issues early
+        try {
+          await (callInstance as any).preAuth({
+            url: dailyUrl,
+            token: (callConfig as any).token,
+            userName: callConfig.userName,
+            userData: callConfig.userData,
+          });
+          console.log('🔐 preAuth successful');
+        } catch (preAuthErr) {
+          console.error('❌ preAuth failed:', preAuthErr);
+          throw preAuthErr as Error;
+        }
         const joinPromise = callInstance.join();
         const timeoutPromise = new Promise((_, reject) => {
           timeoutId = setTimeout(() => {
@@ -615,9 +679,6 @@ export default function VideoCall({
 
     // Cleanup function for useEffect
     return () => {
-      if (dailyCall) {
-        dailyCall.destroy();
-      }
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
@@ -628,7 +689,7 @@ export default function VideoCall({
         });
       }
     };
-  }, [roomInfo, userId, userName, meetingToken, onCallEnd, dailyCall])
+  }, [roomInfo, userId, userName, meetingToken])
 
   if (error) {
     return (
@@ -647,16 +708,16 @@ export default function VideoCall({
 
   if (!dailyCall || !roomInfo) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+      <div className="min-h-screen flex items-center justify-center bg-call-bg text-neutral-900">
         <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto text-blue-400" />
+          <Loader2 className="h-12 w-12 animate-spin mx-auto text-call-accent" />
           <p className="text-xl">Initializing video call...</p>
-          <p className="text-gray-400">Please wait while we set up your call</p>
+          <p className="text-neutral-500">Please wait while we set up your call</p>
           <div className="mt-6">
             <Button 
               onClick={onCallEnd} 
               variant="outline" 
-              className="text-gray-400 border-gray-600 hover:bg-gray-800"
+              className="text-call-accent border-call-accent hover:bg-call-bg"
             >
               Cancel
             </Button>
@@ -674,11 +735,13 @@ export default function VideoCall({
           isFullscreen={isFullscreen}
           onToggleFullscreen={onToggleFullscreen || (() => {})}
           roomInfo={roomInfo}
+          userName={userName}
+          callId={callId}
         />
       </DailyProvider>
       
       {/* Temporary debug component */}
-      {callId && <TokenDebug callId={callId} />}
+      {process.env.NODE_ENV !== 'production' && callId && <TokenDebug callId={callId} />}
     </div>
   )
 } 

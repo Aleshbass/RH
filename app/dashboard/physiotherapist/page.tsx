@@ -2,7 +2,8 @@
 
 import { useAuth } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+
 import { Loader2 } from 'lucide-react'
 import { PhysiotherapistDashboardV2 } from '@/components/dashboard/physiotherapist/PhysiotherapistDashboardV2'
 import { useQuery } from 'convex/react'
@@ -12,20 +13,24 @@ export default function PhysiotherapistDashboardPage() {
   const router = useRouter()
   const { isLoaded, isSignedIn } = useAuth()
   const user = useQuery(api.users.getMyUser)
+  const authRedirected = useRef(false)
+  const roleRedirected = useRef(false)
   
   // Redirect if not authenticated
   useEffect(() => {
-    if (isLoaded && !isSignedIn) {
+    if (isLoaded && !isSignedIn && !authRedirected.current) {
+      authRedirected.current = true
       router.push('/sign-in')
     }
-  }, [isLoaded, isSignedIn, router])
+  }, [isLoaded, isSignedIn])
 
   // Redirect if not physiotherapist
   useEffect(() => {
-    if (user && user.role !== 'physiotherapist') {
+    if (user && user.role !== 'physiotherapist' && !roleRedirected.current) {
+      roleRedirected.current = true
       router.push('/sign-in')
     }
-  }, [user, router])
+  }, [user])
 
   // Loading state
   if (!isLoaded || user === undefined) {

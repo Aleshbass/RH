@@ -10,7 +10,9 @@ export type EmailTemplate =
   | 'ACCOUNT_DECLINED'
   | 'APPOINTMENT_SCHEDULED'
   | 'APPOINTMENT_REMINDER'
-  | 'APPOINTMENT_CANCELED';
+  | 'APPOINTMENT_CANCELED'
+  | 'CLINIC_STAFF_INVITE_CREATED'
+  | 'CLINIC_STAFF_INVITE_REMINDER';
 
 // Data interfaces for each email template
 export interface InvitationCreatedData {
@@ -29,6 +31,25 @@ export interface OnboardingCompleteData {
 export interface InvitationReminderData {
   patientName?: string;
   physiotherapistName: string;
+  invitationCode: string;
+  invitationLink: string;
+  expiresAt: string | number | Date;
+}
+
+export interface ClinicStaffInvitationCreatedData {
+  inviteeName?: string;
+  clinicOwnerName: string;
+  clinicName?: string;
+  invitationCode: string;
+  invitationLink: string;
+  expiresAt: string | number | Date;
+  message?: string;
+}
+
+export interface ClinicStaffInvitationReminderData {
+  inviteeName?: string;
+  clinicOwnerName: string;
+  clinicName?: string;
   invitationCode: string;
   invitationLink: string;
   expiresAt: string | number | Date;
@@ -87,7 +108,9 @@ export type EmailOptions =
   | { to: string; subject?: string; template: 'ACCOUNT_DECLINED'; data: AccountDeclinedData }
   | { to: string; subject?: string; template: 'APPOINTMENT_SCHEDULED'; data: AppointmentScheduledData }
   | { to: string; subject?: string; template: 'APPOINTMENT_REMINDER'; data: AppointmentReminderData }
-  | { to: string; subject?: string; template: 'APPOINTMENT_CANCELED'; data: AppointmentCanceledData };
+  | { to: string; subject?: string; template: 'APPOINTMENT_CANCELED'; data: AppointmentCanceledData }
+  | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_CREATED'; data: ClinicStaffInvitationCreatedData }
+  | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_REMINDER'; data: ClinicStaffInvitationReminderData };
 
 /**
  * Send an email using the specified template and data
@@ -186,6 +209,45 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
             Complete Registration Now
           </a>
           <p>This invitation will expire on ${new Date(options.data.expiresAt).toLocaleDateString()}. Don't miss out!</p>
+        `
+      };
+
+    case 'CLINIC_STAFF_INVITE_CREATED':
+      return {
+        subject: `You've been invited to join ${options.data.clinicName || 'a clinic'} on Rehabify Health`,
+        body: `
+          <h1>Clinic Staff Invitation</h1>
+          <p>Hello ${options.data.inviteeName || 'there'},</p>
+          <p>${options.data.clinicOwnerName} has invited you to join ${options.data.clinicName || 'their clinic'} as a physiotherapist on Rehabify Health.</p>
+          ${'message' in options.data && options.data.message ? `<p><em>Personal message:</em> ${options.data.message}</p>` : ''}
+          <p>Use the following invitation code to accept the invitation:</p>
+          <div style="background-color: #f3f4f6; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 18px; text-align: center; margin: 20px 0;">
+            ${options.data.invitationCode}
+          </div>
+          <p>Or click the link below to accept:</p>
+          <a href="${options.data.invitationLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin: 16px 0;">
+            Accept Invitation
+          </a>
+          <p>This invitation will expire on ${new Date(options.data.expiresAt).toLocaleDateString()}.</p>
+        `
+      };
+
+    case 'CLINIC_STAFF_INVITE_REMINDER':
+      return {
+        subject: `Reminder: Join ${options.data.clinicName || 'the clinic'} on Rehabify Health`,
+        body: `
+          <h1>Reminder: Clinic Staff Invitation</h1>
+          <p>Hello ${options.data.inviteeName || 'there'},</p>
+          <p>This is a friendly reminder that ${options.data.clinicOwnerName} has invited you to join ${options.data.clinicName || 'their clinic'} as a physiotherapist on Rehabify Health.</p>
+          <p>Your invitation code is:</p>
+          <div style="background-color: #f3f4f6; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 18px; text-align: center; margin: 20px 0;">
+            ${options.data.invitationCode}
+          </div>
+          <p>You can accept the invitation by clicking the link below:</p>
+          <a href="${options.data.invitationLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin: 16px 0;">
+            Accept Invitation
+          </a>
+          <p>This invitation will expire on ${new Date(options.data.expiresAt).toLocaleDateString()}.</p>
         `
       };
     

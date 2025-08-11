@@ -97,7 +97,7 @@ export default function PhysiotherapistMessagesPage() {
                       <SelectValue placeholder="Select a patient" />
                     </SelectTrigger>
                     <SelectContent>
-                      {patients?.filter((patient): patient is NonNullable<typeof patient> => patient !== null).map((patient) => (
+                      {patients?.filter((patient: any): patient is NonNullable<typeof patient> => patient !== null).map((patient: any) => (
                         <SelectItem key={patient._id} value={patient._id}>
                           {patient.firstName || 'Unknown'} {patient.lastName || ''}
                         </SelectItem>

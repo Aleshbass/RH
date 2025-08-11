@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { healthTables } from "./schema/health";
 
 export default defineSchema({
   // Users table: Core user information, linked to Clerk authentication
@@ -13,6 +14,14 @@ export default defineSchema({
 
     // Optional: primary clinic association for users (e.g., clinic owners or staff working in a single clinic)
     clinicId: v.optional(v.id("clinics")),
+    // Staff status within clinic context
+    status: v.optional(v.union(
+      v.literal("active"),
+      v.literal("suspended"),
+      v.literal("terminated")
+    )),
+    // When the user joined the clinic (if applicable)
+    joinedAt: v.optional(v.number()),
 
     role: v.optional(v.union( // Role can be null until onboarding is complete
       v.literal("physiotherapist"),
@@ -35,7 +44,8 @@ export default defineSchema({
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"])
-    .index("by_role", ["role"]), // To query users by role (especially after onboarding)
+    .index("by_role", ["role"]) // To query users by role (especially after onboarding)
+    .index("by_clinic_id", ["clinicId"]),
 
   // Clinics table: Information about physiotherapy clinics
   clinics: defineTable({
@@ -119,9 +129,9 @@ export default defineSchema({
     notes: v.optional(v.string()), // Optional notes from physiotherapist
   })
     .index("by_code", ["code"])
-    .index("by_physiotherapist", ["physiotherapistId"])
     .index("by_patient_email", ["patientEmail"])
-    .index("by_patient_user", ["patientUserId"]),
+    .index("by_patient_user", ["patientUserId"])
+    .index("by_physiotherapist", ["physiotherapistId"]),
 
   // Clinic Staff Invitations: Manages invitations for physiotherapists to join clinics
   clinicStaffInvitations: defineTable({
@@ -170,8 +180,8 @@ export default defineSchema({
     notes: v.optional(v.string()), // Clinical notes about the relationship
   })
     .index("by_patient", ["patientId"])
-    .index("by_physiotherapist", ["physiotherapistId"])
     .index("by_clinic", ["clinicId"])
+    .index("by_physiotherapist", ["physiotherapistId"])
     .index("by_patient_and_physiotherapist", ["patientId", "physiotherapistId"])
     .index("by_primary_physiotherapist", ["patientId", "isPrimaryPhysiotherapist"]),
     
@@ -201,6 +211,7 @@ export default defineSchema({
       link: v.optional(v.string()),
     })),
     createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
     readAt: v.optional(v.number()),
     deliveredAt: v.optional(v.number()),
     failedAt: v.optional(v.number()),
@@ -320,10 +331,70 @@ export default defineSchema({
     notesForTherapist: v.optional(v.string()),
     cancellationReason: v.optional(v.string()),
     rescheduledFromAppointmentId: v.optional(v.id("appointments")),
+    // Resource management
+    selectedResources: v.optional(v.array(v.id("resources"))),
+    // Recurring appointment fields
+    seriesId: v.optional(v.id("recurringSeries")), // Link to recurring series
+    isRecurring: v.optional(v.boolean()), // Flag for recurring appointments
+    instanceDate: v.optional(v.string()), // ISO date for this instance
+    isException: v.optional(v.boolean()), // True if modified from series template
   })
     .index("by_patient_id_and_time", ["patientId", "startTime"])
+    .index("by_clinic_id_and_time", ["clinicId", "startTime"])
     .index("by_physiotherapist_id_and_time", ["physiotherapistId", "startTime"])
-    .index("by_clinic_id_and_time", ["clinicId", "startTime"]),
+    .index("by_series_id", ["seriesId"])
+    .index("by_instance_date", ["instanceDate"]),
+
+  // Recurring appointment series
+  recurringSeries: defineTable({
+    name: v.string(), // User-friendly name for the series
+    description: v.optional(v.string()),
+    patientId: v.id("users"),
+    physiotherapistId: v.id("users"),
+    clinicId: v.optional(v.id("clinics")),
+    serviceType: v.string(),
+    duration: v.number(), // Duration in minutes
+    appointmentType: v.union(v.literal("in-person"), v.literal("telehealth")),
+    priority: v.optional(v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("urgent")
+    )),
+    notesForPatient: v.optional(v.string()),
+    notesForTherapist: v.optional(v.string()),
+    // Recurrence rule
+    frequency: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly")),
+    interval: v.number(), // Every N days/weeks/months
+    daysOfWeek: v.optional(v.array(v.number())), // For weekly: [0,1,2,3,4,5,6]
+    endDate: v.optional(v.string()), // ISO date string
+    maxOccurrences: v.optional(v.number()),
+    // Series metadata
+    startDate: v.string(), // ISO date string
+    startTime: v.string(), // HH:MM format
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_patient_id", ["patientId"])
+    .index("by_physiotherapist_id", ["physiotherapistId"])
+    .index("by_clinic_id", ["clinicId"]),
+
+  // Series exceptions (cancelled or modified instances)
+  seriesExceptions: defineTable({
+    seriesId: v.id("recurringSeries"),
+    instanceDate: v.string(), // ISO date string
+    exceptionType: v.union(
+      v.literal("cancelled"),
+      v.literal("rescheduled"),
+      v.literal("modified")
+    ),
+    reason: v.optional(v.string()),
+    newAppointmentId: v.optional(v.id("appointments")), // For rescheduled
+    createdAt: v.number(),
+  })
+    .index("by_series_id", ["seriesId"])
+    .index("by_instance_date", ["instanceDate"]),
 
   // Session Logs (Treatment Logs)
   sessionLogs: defineTable({
@@ -405,7 +476,6 @@ export default defineSchema({
     cancelledAt: v.optional(v.number()),
   })
     .index("by_patient", ["patientId"])
-    .index("by_physiotherapist", ["physiotherapistId"])
     .index("by_clinic", ["clinicId"])
     .index("by_status", ["status"])
     .index("by_patient_and_status", ["patientId", "status"]),
@@ -451,7 +521,6 @@ export default defineSchema({
   })
     .index("by_treatment_plan", ["treatmentPlanId"])
     .index("by_patient", ["patientId"])
-    .index("by_physiotherapist", ["physiotherapistId"])
     .index("by_entry_date", ["entryDate"])
     .index("by_progress_type", ["progressType"]),
 
@@ -559,9 +628,17 @@ export default defineSchema({
     receiverId: v.id("users"),
     content: v.string(),
     contentType: v.union(v.literal("text"), v.literal("image"), v.literal("file")),
+    replyToMessageId: v.optional(v.id("messages")),
+    fileUrl: v.optional(v.string()),
     timestamp: v.number(),
+    // WhatsApp-style message status fields
+    isDelivered: v.optional(v.boolean()), // Message delivered to recipient's device
     isReadByReceiver: v.boolean(),
+    isRead: v.optional(v.boolean()), // Make optional for existing messages
+    deliveredAt: v.optional(v.number()), // When message was delivered
     readAt: v.optional(v.number()),
+    createdAt: v.optional(v.number()), // Make optional for existing messages
+    updatedAt: v.optional(v.number()), // Make optional for existing messages
     metadata: v.optional(v.any()),
   })
     .index("by_conversation_id", ["conversationId"])
@@ -678,7 +755,6 @@ export default defineSchema({
     .index("by_daily_room_id", ["dailyRoomId"])
     .index("by_initiator", ["initiatorId"])
     .index("by_patient_id_and_scheduled", ["patientId", "scheduledAt"])
-    .index("by_physiotherapist_id_and_scheduled", ["physiotherapistId", "scheduledAt"])
     .index("by_clinic_id_and_scheduled", ["clinicId", "scheduledAt"])
     .index("by_appointment", ["appointmentId"])
     .index("by_status", ["status"])
@@ -1003,8 +1079,7 @@ export default defineSchema({
     .index("by_type_and_timestamp", ["type", "timestamp"])
     .index("by_clinic_and_timestamp", ["clinicId", "timestamp"]),
 
-
-
+  // ... (rest of the code remains the same)
   // Video Call Chat Messages
   videoCallMessages: defineTable({
     callId: v.id("videoCalls"), // Reference to the video call
@@ -1106,6 +1181,274 @@ export default defineSchema({
     submittedAt: v.number(),
   })
     .index("by_appointment", ["appointmentId"])
-    .index("by_patient", ["patientId"])
-    .index("by_physiotherapist", ["physiotherapistId"]),
+    .index("by_patient", ["patientId"]),
+
+  // Patient feedback table
+  patientFeedback: defineTable({
+    appointmentId: v.id("appointments"),
+    patientId: v.id("users"),
+    physiotherapistId: v.id("users"),
+    ratings: v.object({
+      communication: v.number(),
+      treatment_effectiveness: v.number(),
+      professionalism: v.number(),
+    }),
+    submittedAt: v.number(),
+  })
+    .index("by_appointment", ["appointmentId"])
+    .index("by_patient", ["patientId"]),
+
+  // System Logs for monitoring and observability
+  userActivity: defineTable({
+  userId: v.string(),
+  action: v.string(),
+  resource: v.optional(v.string()),
+  duration: v.optional(v.number()),
+  metadata: v.optional(v.any()),
+  timestamp: v.number(),
+  sessionId: v.optional(v.string()),
+  userAgent: v.optional(v.string()),
+  ipAddress: v.optional(v.string()),
+  location: v.optional(v.object({
+    country: v.optional(v.string()),
+    city: v.optional(v.string()),
+    timezone: v.optional(v.string()),
+  })),
+})
+  .index("by_user", ["userId"])
+  .index("by_action", ["action"])
+  .index("by_timestamp", ["timestamp"])
+  .index("by_user_timestamp", ["userId", "timestamp"])
+  .index("by_session", ["sessionId"]),
+
+  // Resource Management System
+  resources: defineTable({
+  clinicId: v.id("clinics"),
+  name: v.string(),
+  type: v.union(
+    v.literal("equipment"),
+    v.literal("room"),
+    v.literal("staff"),
+    v.literal("vehicle")
+  ),
+  description: v.optional(v.string()),
+  category: v.optional(v.string()), // "Physical Therapy", "Occupational Therapy", etc.
+  location: v.optional(v.string()), // Room number, building, etc.
+  capacity: v.optional(v.number()), // Max people/patients for rooms
+  specifications: v.optional(v.object({
+    brand: v.optional(v.string()),
+    model: v.optional(v.string()),
+    serialNumber: v.optional(v.string()),
+    purchaseDate: v.optional(v.string()),
+    warrantyExpiry: v.optional(v.string()),
+  })),
+  operatingHours: v.optional(v.object({
+    monday: v.optional(v.object({ start: v.string(), end: v.string() })),
+    tuesday: v.optional(v.object({ start: v.string(), end: v.string() })),
+    wednesday: v.optional(v.object({ start: v.string(), end: v.string() })),
+    thursday: v.optional(v.object({ start: v.string(), end: v.string() })),
+    friday: v.optional(v.object({ start: v.string(), end: v.string() })),
+    saturday: v.optional(v.object({ start: v.string(), end: v.string() })),
+    sunday: v.optional(v.object({ start: v.string(), end: v.string() })),
+  })),
+  maintenanceSchedule: v.optional(v.object({
+    frequency: v.union(
+      v.literal("daily"),
+      v.literal("weekly"),
+      v.literal("monthly"),
+      v.literal("quarterly"),
+      v.literal("annually")
+    ),
+    lastMaintenance: v.optional(v.string()),
+    nextMaintenance: v.optional(v.string()),
+  })),
+  isActive: v.boolean(),
+  tags: v.optional(v.array(v.string())),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  createdBy: v.id("users"),
+})
+  .index("by_clinic", ["clinicId"])
+  .index("by_type", ["type"])
+  .index("by_category", ["category"])
+  .index("by_clinic_type", ["clinicId", "type"]),
+
+resourceBookings: defineTable({
+  resourceId: v.id("resources"),
+  appointmentId: v.id("appointments"),
+  startTime: v.number(),
+  endTime: v.number(),
+  status: v.union(
+    v.literal("confirmed"),
+    v.literal("pending"),
+    v.literal("cancelled")
+  ),
+  notes: v.optional(v.string()),
+  cancellationReason: v.optional(v.string()),
+  cancelledAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_resource_date", ["resourceId"])
+  .index("by_appointment", ["appointmentId"])
+  .index("by_status", ["status"])
+  .index("by_resource_time", ["resourceId", "startTime"]),
+
+// System Health & Monitoring
+systemHealth: defineTable({
+  service: v.string(), // e.g., "database", "auth", "video", "notifications"
+  status: v.union(
+    v.literal("healthy"),
+    v.literal("degraded"),
+    v.literal("down")
+  ),
+  responseTime: v.optional(v.number()), // in milliseconds
+  errorRate: v.optional(v.number()), // percentage
+  lastChecked: v.number(),
+  metadata: v.optional(v.any()),
+})
+  .index("by_service", ["service"])
+  .index("by_status", ["status"])
+  .index("by_last_checked", ["lastChecked"]),
+
+// Core Web Vitals & Performance Metrics
+performanceMetrics: defineTable({
+  userId: v.optional(v.string()),
+  sessionId: v.optional(v.string()),
+  page: v.string(), // URL or page identifier
+  metric: v.string(), // "LCP", "FID", "CLS", "TTFB", etc.
+  value: v.number(),
+  timestamp: v.number(),
+  userAgent: v.optional(v.string()),
+  connection: v.optional(v.string()), // "4g", "3g", "wifi", etc.
+  metadata: v.optional(v.any()),
+})
+  .index("by_page", ["page"])
+  .index("by_metric", ["metric"])
+  .index("by_timestamp", ["timestamp"])
+  .index("by_user_page", ["userId", "page"]),
+
+  // Bank accounts for physiotherapists
+  bankAccounts: defineTable({
+    userId: v.id("users"),
+    bankCode: v.string(),
+    accountNumber: v.string(),
+    accountName: v.string(),
+    businessName: v.string(),
+    subaccountCode: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending_verification"),
+      v.literal("active"),
+      v.literal("suspended"),
+      v.literal("rejected")
+    ),
+    verificationData: v.optional(v.any()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_status", ["status"])
+    .index("by_subaccount_code", ["subaccountCode"]),
+
+  // Split Payment Configurations
+  splitConfigurations: defineTable({
+    physiotherapistId: v.id("users"),
+    clinicId: v.optional(v.id("clinics")),
+    splitCode: v.string(),
+    name: v.string(),
+    type: v.union(v.literal("percentage"), v.literal("flat")),
+    platformShare: v.number(),
+    physiotherapistShare: v.number(),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_clinic", ["clinicId"]),
+
+  // Payments table for billing system
+  payments: defineTable({
+    invoiceId: v.id("invoices"),
+    patientId: v.optional(v.id("users")),
+    physiotherapistId: v.optional(v.id("users")),
+    amount: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("cancelled")
+    ),
+    paymentMethod: v.union(
+      v.literal("paystack"),
+      v.literal("bank_transfer"),
+      v.literal("cash")
+    ),
+    paystackReference: v.optional(v.string()),
+    createdAt: v.number(),
+    paidAt: v.optional(v.number()),
+  })
+    .index("by_invoice", ["invoiceId"])
+    .index("by_patient_id", ["patientId"])
+    .index("by_physiotherapist_id", ["physiotherapistId"])
+    .index("by_status", ["status"]),
+
+  // Scheduled tasks for background processing
+  scheduledTasks: defineTable({
+    type: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+    data: v.any(),
+    scheduledFor: v.number(),
+    executedAt: v.optional(v.number()),
+    error: v.optional(v.string()),
+    retryCount: v.optional(v.number()),
+    maxRetries: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_type", ["type"])
+    .index("by_scheduled_for", ["scheduledFor"]),
+
+  // System logs for audit trail and debugging
+  systemLogs: defineTable({
+    userId: v.optional(v.id("users")),
+    clinicId: v.optional(v.id("clinics")),
+    type: v.string(),
+    timestamp: v.number(),
+    action: v.string(),
+    targetEntityType: v.optional(v.string()),
+    targetEntityId: v.optional(v.string()),
+    details: v.optional(v.any()),
+    ipAddress: v.optional(v.string()),
+    actorUserId: v.optional(v.id("users")),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_clinic_id", ["clinicId"])
+    .index("by_type", ["type"])
+    .index("by_timestamp", ["timestamp"]),
+
+  // Business metrics for analytics and reporting
+  businessMetrics: defineTable({
+    clinicId: v.optional(v.id("clinics")),
+    userId: v.optional(v.id("users")),
+    type: v.string(),
+    timestamp: v.number(),
+    metadata: v.object({
+      status: v.optional(v.string()),
+      duration: v.optional(v.number()),
+      details: v.optional(v.any()),
+      path: v.optional(v.string()),
+      error: v.optional(v.string()),
+    }),
+  })
+    .index("by_clinic_id", ["clinicId"])
+    .index("by_type", ["type"])
+    .index("by_timestamp", ["timestamp"]),
+
+  // Health Monitoring Tables
+  ...healthTables,
 });

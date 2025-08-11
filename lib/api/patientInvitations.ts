@@ -1,7 +1,8 @@
 // @ts-nocheck - Disable type checking due to deep type instantiation issues with Convex types
 
 import { api } from "@/convex/_generated/api";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex/react";
+import { useActionUntyped } from "../convexUntyped";
 
 /**
  * Hook to validate a patient invitation code
@@ -18,7 +19,9 @@ export function useValidateInvitationCode(code: string | null) {
     isLoading: result === undefined,
     isValid: result?.valid || false,
     invitation: result?.invitation,
-    message: result?.error || 'Unknown error',
+    physiotherapist: (result as any)?.physiotherapist,
+    clinic: (result as any)?.clinic,
+    message: (result as any)?.error || 'Unknown error',
   };
 }
 
@@ -27,7 +30,10 @@ export function useValidateInvitationCode(code: string | null) {
  * @returns Function to complete patient onboarding and success state
  */
 export function useCompletePatientOnboarding() {
-  const completeOnboarding = useMutation(api.patientInvitations.completePatientOnboarding);
+  // Use the action wrapper so notifications are sent and logic is unified
+  // Using untyped action hook to avoid deep TS instantiation issues
+  // @ts-ignore
+  const completeOnboarding = useActionUntyped((api as any).actions.patients.completeOnboarding.completePatientOnboardingWithNotification);
   
   return {
     completePatientOnboarding: async (invitationCode: string, patientData: {
@@ -50,22 +56,30 @@ export function useCompletePatientOnboarding() {
  * @returns Function to create a new invitation and success state
  */
 export function useCreatePatientInvitation() {
-  const createInvitation = useMutation(api.patientInvitations.createPatientInvitation);
-  
+  // Use the unified Convex action that also sends email + notification
+  // Using untyped action hook to avoid deep TS instantiation issues
+  // @ts-ignore
+  const createInvitationAction = useActionUntyped(
+    (api as any).actions.patients.invitePatient.createPatientInvitationWithNotification
+  );
+
   return {
     createPatientInvitation: async (data: {
       patientEmail?: string;
       patientName?: string;
       notes?: string;
       expirationDays?: number;
+      sendEmail?: boolean;
     }) => {
       // Ensure patientEmail is provided or use empty string as fallback
       const invitationData = {
         ...data,
-        patientEmail: data.patientEmail || ''
+        patientEmail: data.patientEmail || '',
+        // Default to true unless explicitly set to false
+        sendEmail: data.sendEmail !== false,
       };
-      return await createInvitation(invitationData);
-    }
+      return await createInvitationAction(invitationData);
+    },
   };
 }
 

@@ -38,7 +38,7 @@ export function TemplateSelector({
   const { templates, processTemplate } = useNotesTemplates({ scope, clinicId })
   
   // Filter templates based on search
-  const filteredTemplates = templates?.filter(template => 
+  const filteredTemplates = templates?.filter((template: Template) => 
     template.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     template.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
     template.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -88,7 +88,7 @@ export function TemplateSelector({
             
             <ScrollArea className="h-[400px] pr-4">
               <div className="space-y-4">
-                {filteredTemplates?.map((template) => (
+                {filteredTemplates?.map((template: Template) => (
                   <Card
                     key={template._id}
                     className="cursor-pointer hover:bg-accent transition-colors"

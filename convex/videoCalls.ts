@@ -3,6 +3,7 @@ import { mutation, query, action, internalMutation, internalQuery } from "./_gen
 import { internal } from "./_generated/api"
 import { type ActionCtx, type MutationCtx, type QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
+import { dailyService } from '../lib/daily/dailyService';
 
 // Action input type
 export type CreateVideoCallInput = {
@@ -57,10 +58,10 @@ export const createVideoCall = action({
       throw new Error("Unauthorized")
     }
 
-    // Get user from database
+    // Get user from database  
     const user = await ctx.runQuery(internal.videoCalls.getUserByClerkId, {
       clerkId: identity.subject
-    }) as any
+    }) as any // Avoid deep type instantiation
     
     if (!user) {
       throw new Error("User not found")
@@ -71,12 +72,7 @@ export const createVideoCall = action({
       args.participants.push(user._id) // Add creator to participants
     }
 
-    // Create Daily.co room
-    const dailyApiKey = process.env.DAILY_API_KEY
-    if (!dailyApiKey) {
-      throw new Error("Daily.co API key not configured")
-    }
-
+    // Create Daily.co room via centralized service
     const roomConfig = {
       privacy: "private" as const,
       properties: {
@@ -91,33 +87,13 @@ export const createVideoCall = action({
           : Math.floor(Date.now() / 1000) + (2 * 60 * 60), // 2 hours default
         eject_at_room_exp: true,
         lang: "en",
-        geo: "us-west",
+        geo: "us-west" as const,
       },
     }
 
     try {
-      // Create Daily.co room with timeout
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
-      
-      const dailyResponse = await fetch("https://api.daily.co/v1/rooms", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${dailyApiKey}`,
-        },
-        body: JSON.stringify(roomConfig),
-        signal: controller.signal,
-      })
-      
-      clearTimeout(timeoutId)
-
-      if (!dailyResponse.ok) {
-        const errorData = await dailyResponse.json()
-        throw new Error(`Failed to create Daily.co room: ${errorData.error || dailyResponse.statusText}`)
-      }
-
-      const dailyRoom = await dailyResponse.json()
+      // Create Daily.co room via centralized service
+      const dailyRoom = await dailyService.createRoom(roomConfig)
 
       // Create video call record in database
       const callId: Id<"videoCalls"> = await ctx.runMutation(internal.videoCalls.createVideoCallRecord, {
@@ -125,10 +101,10 @@ export const createVideoCall = action({
         dailyRoomName: dailyRoom.name,
         dailyRoomUrl: dailyRoom.url,
         dailyRoomId: dailyRoom.id,
-      appointmentId: args.appointmentId,
-      initiatorId: user._id,
-      participants: args.participants,
-      callType: args.callType,
+        appointmentId: args.appointmentId,
+        initiatorId: user._id,
+        participants: args.participants,
+        callType: args.callType,
         title: args.title,
         settings: {
           recordingEnabled: args.settings?.recordingEnabled ?? false,
@@ -144,22 +120,20 @@ export const createVideoCall = action({
         dailyConfig: {
           roomExp: roomConfig.properties.exp,
           roomProperties: dailyRoom.config,
-      },
-    })
+        },
+      })
 
       // Create participant records and meeting tokens
       const meetingTokens = []
-    for (const participantId of args.participants) {
+      for (const participantId of args.participants) {
         const participantUser = await ctx.runQuery(internal.videoCalls.getUserById, {
           userId: participantId
         })
 
         if (participantUser) {
           // Create meeting token for participant
-          const tokenPayload = {
-            
-            properties: {
-              room_name: dailyRoom.name,
+          try {
+            const meetingToken = await dailyService.createMeetingToken(dailyRoom.name, {
               user_name: `${participantUser.firstName || ''} ${participantUser.lastName || ''}`.trim() || participantUser.email || 'Anonymous',
               user_id: participantUser._id,
               is_owner: participantId === user._id,
@@ -168,56 +142,39 @@ export const createVideoCall = action({
               enable_recording: args.settings?.recordingEnabled ?? false,
               start_video_off: false,
               start_audio_off: false,
-            },
-          }
-
-          console.log('📡 Requesting Daily.co meeting token:', tokenPayload)
-          
-          const tokenController = new AbortController()
-          const tokenTimeoutId = setTimeout(() => tokenController.abort(), 8000) // 8 second timeout
-          
-          const tokenResponse = await fetch("https://api.daily.co/v1/meeting-tokens", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${dailyApiKey}`,
-            },
-            body: JSON.stringify(tokenPayload),
-            signal: tokenController.signal,
-          })
-          
-          clearTimeout(tokenTimeoutId)
-
-          let meetingToken: string | undefined = undefined
-          if (tokenResponse.ok) {
-            const tokenData = await tokenResponse.json()
-            meetingToken = tokenData.token
-            console.log('✅ Successfully generated meeting token for participant:', participantId)
-          } else {
-            const errorText = await tokenResponse.text()
-            console.error('❌ Failed to generate meeting token:', {
-              status: tokenResponse.status,
-              statusText: tokenResponse.statusText,
-              error: errorText,
-              participantId
             })
-          }
 
-          // Create participant record
-          await ctx.runMutation(internal.videoCalls.createParticipantRecord, {
-        callId,
-        userId: participantId,
-        role: participantId === user._id ? "host" : "participant",
-            dailyMeetingToken: meetingToken,
-            dailyTokenExpiration: roomConfig.properties.exp,
-          })
+            console.log('✅ Successfully generated meeting token for participant:', participantId)
 
-          if (meetingToken) {
-            meetingTokens.push({
+            // Create participant record
+            await ctx.runMutation(internal.videoCalls.createParticipantRecord, {
+              callId,
               userId: participantId,
-              token: meetingToken,
-              expiresAt: roomConfig.properties.exp,
-              isOwner: participantId === user._id,
+              role: participantId === user._id ? "host" : "participant",
+              dailyMeetingToken: meetingToken,
+              dailyTokenExpiration: roomConfig.properties.exp,
+            })
+
+            if (meetingToken) {
+              meetingTokens.push({
+                userId: participantId,
+                token: meetingToken,
+                expiresAt: roomConfig.properties.exp,
+                isOwner: participantId === user._id,
+              })
+            }
+          } catch (err) {
+            console.error('❌ Failed to generate meeting token:', {
+              error: err instanceof Error ? err.message : String(err),
+              participantId,
+            })
+            // still create participant record without token for visibility
+            await ctx.runMutation(internal.videoCalls.createParticipantRecord, {
+              callId,
+              userId: participantId,
+              role: participantId === user._id ? "host" : "participant",
+              dailyMeetingToken: undefined,
+              dailyTokenExpiration: roomConfig.properties.exp,
             })
           }
         } else {
@@ -251,18 +208,8 @@ export const createVideoCall = action({
       if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('fetch'))) {
         console.log('Retrying Daily.co room creation...')
         try {
-          // Simple retry without timeout for fallback
-          const retryResponse = await fetch("https://api.daily.co/v1/rooms", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${dailyApiKey}`,
-            },
-            body: JSON.stringify(roomConfig),
-          })
-          
-          if (retryResponse.ok) {
-            const dailyRoom = await retryResponse.json()
+          // Simple retry using dailyService
+          const dailyRoom = await dailyService.createRoom(roomConfig)
             // Continue with the rest of the room creation logic...
             const callId: Id<"videoCalls"> = await ctx.runMutation(internal.videoCalls.createVideoCallRecord, {
               roomId: args.roomId || dailyRoom.name,
@@ -298,7 +245,6 @@ export const createVideoCall = action({
               dailyRoomUrl: dailyRoom.url,
               dailyRoomId: dailyRoom.id,
             }
-          }
         } catch (retryError) {
           console.error('Retry also failed:', retryError)
         }
@@ -366,7 +312,7 @@ export const endVideoCall = mutation({
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique()
     
-    // Allow initiator to end the entire call, or participants to end their own participation
+    // Allow initiator to end the entire call; participants should only end their own participation
     if (!user) {
       throw new Error("Unauthorized")
     }
@@ -376,6 +322,23 @@ export const endVideoCall = mutation({
       throw new Error("You are not authorized to end this call")
     }
 
+    // If the user is not the initiator, mark only their participation as ended
+    if (call.initiatorId !== user._id) {
+      const participant = await ctx.db
+        .query("videoCallParticipants")
+        .withIndex("by_call_and_user", (q) => q.eq("callId", args.callId).eq("userId", user._id))
+        .unique()
+
+      if (participant && !participant.leftAt) {
+        await ctx.db.patch(participant._id, {
+          leftAt: Date.now(),
+        })
+      }
+
+      return { success: true, status: "left" as const }
+    }
+
+    // Initiator ends the entire call
     const endTime = Date.now()
     const duration = args.duration || (endTime - call.startTime) / 1000 // Convert to seconds
 
@@ -399,7 +362,7 @@ export const endVideoCall = mutation({
       }
     }
 
-    return { success: true }
+    return { success: true, status: "ended" as const }
   },
 })
 
@@ -437,35 +400,9 @@ export const joinVideoCall = mutation({
         .unique()
     }
 
-    // If no call exists, create one on-the-fly for ad-hoc meetings
+    // If no call exists, reject invalid join to meet frontend expectations
     if (!call) {
-      console.log(`Creating ad-hoc video call for room: ${args.roomId}`)
-      
-      const now = Date.now()
-      const callId = await ctx.db.insert("videoCalls", {
-        roomId: args.roomId,
-        title: `Ad-hoc Meeting - ${args.roomId}`,
-        initiatorId: user._id,
-        participants: [user._id], // Start with just the joining user
-        status: "active",
-        startTime: now,
-        scheduledAt: now, // Add scheduledAt to prevent date formatting errors
-        callType: "consultation",
-        platform: "internal",
-        createdAt: now,
-        settings: {
-          recordingEnabled: false,
-          chatEnabled: true,
-          maxParticipants: 10,
-          waitingRoomEnabled: false,
-        },
-      })
-
-      // Get the newly created call
-      call = await ctx.db.get(callId)
-      if (!call) {
-        throw new Error("Failed to create call")
-      }
+      throw new Error("Call not found for the provided roomId")
     } else {
       // For existing calls, add user to participants if not already included
       if (!call.participants.includes(user._id)) {
@@ -490,20 +427,118 @@ export const joinVideoCall = mutation({
       }
     }
 
-    // Update or create participant record
+    // Ensure Daily.co room exists and attach meeting token for the joining user
+    if (!call.dailyRoomName || !call.dailyRoomUrl || !call.dailyRoomId || call.platform !== "daily") {
+      const expSec = Math.floor(Date.now() / 1000) + (2 * 60 * 60) // 2 hours default
+      const roomConfig = {
+        privacy: "private" as const,
+        properties: {
+          max_participants: call.settings?.maxParticipants || 10,
+          enable_chat: call.settings?.chatEnabled ?? true,
+          enable_screenshare: call.settings?.screenShareEnabled ?? true,
+          enable_recording: call.settings?.recordingEnabled ?? false,
+          enable_knocking: call.settings?.waitingRoomEnabled ?? true,
+          enable_prejoin_ui: true,
+          exp: call.dailyConfig?.roomExp || expSec,
+          eject_at_room_exp: true,
+          lang: "en",
+          geo: "us-west" as const,
+        },
+      }
+
+      const dailyRoom = await dailyService.createRoom(roomConfig)
+      const dailyUrl = dailyRoom.url
+
+      await ctx.db.patch(call._id, {
+        dailyRoomName: dailyRoom.name,
+        dailyRoomUrl: dailyUrl,
+        dailyRoomId: dailyRoom.id,
+        meetingLink: dailyUrl,
+        platform: "daily",
+        dailyConfig: {
+          roomExp: roomConfig.properties.exp!,
+          roomProperties: dailyRoom.config,
+          meetingTokens: call.dailyConfig?.meetingTokens || [],
+        },
+      })
+
+      // Refresh local call reference
+      call = {
+        ...call,
+        dailyRoomName: dailyRoom.name,
+        dailyRoomUrl: dailyUrl,
+        dailyRoomId: dailyRoom.id,
+        platform: "daily",
+        meetingLink: dailyUrl,
+        dailyConfig: {
+          roomExp: roomConfig.properties.exp!,
+          roomProperties: dailyRoom.config,
+          meetingTokens: call.dailyConfig?.meetingTokens || [],
+        },
+      } as any
+    }
+
+    // Ensure call is not null before proceeding
+    if (!call) {
+      throw new Error("Video call not found or could not be created")
+    }
+
+    // Update or create participant record and ensure a meeting token
     const existingParticipant = await ctx.db
       .query("videoCallParticipants")
       .withIndex("by_call_and_user", (q) => q.eq("callId", call._id).eq("userId", user._id))
       .unique()
 
+    const tokenExp = call.dailyConfig?.roomExp || Math.floor(Date.now() / 1000) + (4 * 60 * 60)
+    let meetingToken: string | undefined
+
     if (existingParticipant) {
-      // Update join time if rejoining
-      await ctx.db.patch(existingParticipant._id, {
+      // Update join time and ensure token if missing
+      let updates: any = {
         joinedAt: Date.now(),
-        leftAt: undefined, // Clear left time if rejoining
-      })
+        leftAt: undefined,
+      }
+
+      if (!existingParticipant.dailyMeetingToken && call?.dailyRoomName) {
+        try {
+          meetingToken = await dailyService.createMeetingToken(call.dailyRoomName, {
+            user_name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+            user_id: user._id,
+            is_owner: call.initiatorId === user._id,
+            exp: tokenExp,
+            enable_screenshare: call.settings?.screenShareEnabled ?? true,
+            enable_recording: call.settings?.recordingEnabled ?? false,
+            start_video_off: false,
+            start_audio_off: false,
+          })
+          updates = { ...updates, dailyMeetingToken: meetingToken, dailyTokenExpiration: tokenExp }
+        } catch (e) {
+          console.error('Failed to create meeting token for participant:', e)
+        }
+      } else {
+        meetingToken = existingParticipant.dailyMeetingToken
+      }
+
+      await ctx.db.patch(existingParticipant._id, updates)
     } else {
-      // Create new participant record
+      // Create new participant record with token
+      try {
+        meetingToken = call?.dailyRoomName
+          ? await dailyService.createMeetingToken(call.dailyRoomName, {
+              user_name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+              user_id: user._id,
+              is_owner: call.initiatorId === user._id,
+              exp: tokenExp,
+              enable_screenshare: call.settings?.screenShareEnabled ?? true,
+              enable_recording: call.settings?.recordingEnabled ?? false,
+              start_video_off: false,
+              start_audio_off: false,
+            })
+          : undefined
+      } catch (e) {
+        console.error('Failed to create meeting token for new participant:', e)
+      }
+
       await ctx.db.insert("videoCallParticipants", {
         callId: call._id,
         userId: user._id,
@@ -516,13 +551,17 @@ export const joinVideoCall = mutation({
           canChat: true,
           canRecord: call.initiatorId === user._id,
         },
+        dailyMeetingToken: meetingToken,
+        dailyTokenExpiration: meetingToken ? tokenExp : undefined,
       })
     }
+
 
     return { 
       callId: call._id,
       roomId: call.roomId,
       participants: call.participants,
+      dailyMeetingToken: meetingToken,
     }
   },
 })

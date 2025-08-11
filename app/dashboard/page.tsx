@@ -31,6 +31,7 @@ export default function DashboardPage() {
     if (!isLoaded || user === undefined || dashboardAccess === undefined) return
     
     if (!isSignedIn) {
+      if (!isRedirecting) setIsRedirecting(true)
       router.push('/sign-in')
       return
     }
@@ -55,6 +56,7 @@ export default function DashboardPage() {
       }
       
       // For any other access issues, redirect to onboarding
+      if (!isRedirecting) setIsRedirecting(true)
       router.push('/onboarding/role-selection')
       return
     }
@@ -81,7 +83,7 @@ export default function DashboardPage() {
           router.replace('/onboarding/role-selection')
       }
     }
-  }, [isLoaded, isSignedIn, user, dashboardAccess, router, isRedirecting])
+  }, [isLoaded, isSignedIn, user, dashboardAccess, isRedirecting])
 
   // Loading state while checking auth and user data
   if (!isLoaded || user === undefined || dashboardAccess === undefined) {

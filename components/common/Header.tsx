@@ -301,7 +301,7 @@ const navLinks: NavItem[] = [
       },
     ],
   },
-  { name: "Contact", href: "/contact", type: "link" },
+
 ];
 
 export default function Header() {
@@ -372,7 +372,6 @@ export default function Header() {
         className={cn(
           "relative z-[60] mx-auto hidden w-[90%] max-w-[1100px] flex-row items-center justify-between px-4 py-3 lg:flex text-[#002e2c] font-pally rounded-2xl",
           "sm:px-6 md:px-8", // Responsive padding
-          "bg-[#FAF6E7]/95",
         )}
       >
         <div className="flex-shrink-0">
@@ -418,7 +417,6 @@ export default function Header() {
         }}
         className={cn(
           "relative z-[60] mx-auto flex w-[90%] max-w-md flex-row items-center justify-between px-4 py-2 lg:hidden text-[#002e2c] font-pally rounded-xl",
-          "bg-[#FAF6E7]/95",
         )}
       >
         <div className="flex-shrink-0">

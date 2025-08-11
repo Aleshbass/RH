@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useUserActivityLogs } from "@/hooks/useUserActivityLogs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -127,6 +128,20 @@ function ActivityLogsSkeleton() {
 export default function AdminActivityPage() {
   const activityLogs = useUserActivityLogs(50);
 
+  // Memoize stats calculations to prevent infinite re-renders from Date.now()
+  const stats = useMemo(() => {
+    if (!activityLogs?.data) return { totalEvents: 0, activeUsers: 0, recentActivity: 0 };
+    
+    const now = Date.now();
+    const data = activityLogs.data;
+    
+    return {
+      totalEvents: data.length || 0,
+      activeUsers: new Set(data.map((log: ActivityLog) => log.userId)).size,
+      recentActivity: data.filter((log: ActivityLog) => now - log.timestamp < 60 * 60 * 1000).length,
+    };
+  }, [activityLogs?.data]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -161,7 +176,7 @@ export default function AdminActivityPage() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{activityLogs?.data?.length || 0}</div>
+            <div className="text-2xl font-bold">{stats.totalEvents}</div>
             <p className="text-xs text-muted-foreground">Last 24 hours</p>
           </CardContent>
         </Card>
@@ -172,9 +187,7 @@ export default function AdminActivityPage() {
             <User className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {activityLogs?.data ? new Set(activityLogs.data.map((log: ActivityLog) => log.userId)).size : 0}
-            </div>
+            <div className="text-2xl font-bold">{stats.activeUsers}</div>
             <p className="text-xs text-muted-foreground">Unique users</p>
           </CardContent>
         </Card>
@@ -185,11 +198,7 @@ export default function AdminActivityPage() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {activityLogs?.data ? activityLogs.data.filter((log: ActivityLog) => 
-                Date.now() - log.timestamp < 60 * 60 * 1000
-              ).length : 0}
-            </div>
+            <div className="text-2xl font-bold">{stats.recentActivity}</div>
             <p className="text-xs text-muted-foreground">Last hour</p>
           </CardContent>
         </Card>

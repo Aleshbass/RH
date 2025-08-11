@@ -42,9 +42,9 @@ export default function ClinicBillingPage() {
     )
   }
 
-  const pendingInvoices = invoices?.filter(inv => inv.status === 'pending') || []
-  const paidInvoices = invoices?.filter(inv => inv.status === 'paid') || []
-  const overdueInvoices = invoices?.filter(inv => 
+  const pendingInvoices = invoices?.filter((inv: any) => inv.status === 'pending') || []
+  const paidInvoices = invoices?.filter((inv: any) => inv.status === 'paid') || []
+  const overdueInvoices = invoices?.filter((inv: any) => 
     inv.status === 'pending' && new Date(inv.dueDate) < new Date()
   ) || []
 
@@ -196,7 +196,7 @@ export default function ClinicBillingPage() {
               <CardContent>
                 {pendingInvoices.length > 0 ? (
                   <div className="space-y-4">
-                    {pendingInvoices.map((invoice) => (
+                    {pendingInvoices.map((invoice: any) => (
                       <InvoiceCard key={invoice._id} invoice={invoice} />
                     ))}
                   </div>
@@ -226,7 +226,7 @@ export default function ClinicBillingPage() {
               <CardContent>
                 {paidInvoices.length > 0 ? (
                   <div className="space-y-4">
-                    {paidInvoices.slice(0, 10).map((invoice) => (
+                    {paidInvoices.slice(0, 10).map((invoice: any) => (
                       <InvoiceCard key={invoice._id} invoice={invoice} />
                     ))}
                     {paidInvoices.length > 10 && (
@@ -257,7 +257,7 @@ export default function ClinicBillingPage() {
               <CardContent>
                 {overdueInvoices.length > 0 ? (
                   <div className="space-y-4">
-                    {overdueInvoices.map((invoice) => (
+                    {overdueInvoices.map((invoice: any) => (
                       <InvoiceCard key={invoice._id} invoice={invoice} />
                     ))}
                   </div>

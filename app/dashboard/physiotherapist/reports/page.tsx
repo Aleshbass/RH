@@ -46,8 +46,8 @@ export default function ReportsPage() {
   const dashboardStats = useQuery(api.patients.getDashboardStats, {}) as DashboardStats | undefined;
 
   // Get appointments for the selected date range
+  const now = new Date();
   const startDate = (() => {
-    const now = new Date();
     switch (dateRange) {
       case 'week':
         return subWeeks(now, 1).getTime();
@@ -59,10 +59,11 @@ export default function ReportsPage() {
         return subMonths(now, 1).getTime();
     }
   })();
+  const endDate = now.getTime();
 
   const appointments = useQuery(api.appointments.getMyAppointments, {
     startDate,
-    endDate: Date.now(),
+    endDate,
     limit: 200,
   });
 
@@ -71,14 +72,14 @@ export default function ReportsPage() {
     if (isLoaded && !isSignedIn) {
       router.push('/sign-in');
     }
-  }, [isLoaded, isSignedIn, router]);
+  }, [isLoaded, isSignedIn]);
 
   // Redirect if not physiotherapist
   useEffect(() => {
     if (currentUser && currentUser.role !== 'physiotherapist') {
       router.push('/dashboard');
     }
-  }, [currentUser, router]);
+  }, [currentUser]);
 
   // Loading state
   if (!isLoaded || currentUser === undefined) {
@@ -133,7 +134,7 @@ export default function ReportsPage() {
   }
 
   // Process data for charts
-  const appointmentsByStatus = appointments.reduce((acc: Record<string, number>, appointment) => {
+  const appointmentsByStatus = appointments.reduce((acc: Record<string, number>, appointment: any) => {
     acc[appointment.status] = (acc[appointment.status] || 0) + 1;
     return acc;
   }, {});
@@ -145,8 +146,8 @@ export default function ReportsPage() {
 
   // Appointments by day (last 7 days)
   const appointmentsByDay = Array.from({ length: 7 }, (_, i) => {
-    const date = subDays(new Date(), 6 - i);
-    const dayAppointments = appointments.filter(apt => {
+    const date = subDays(now, 6 - i);
+    const dayAppointments = appointments.filter((apt: any) => {
       const aptDate = new Date(apt.startTime);
       return aptDate.toDateString() === date.toDateString();
     });
@@ -154,12 +155,12 @@ export default function ReportsPage() {
     return {
       date: format(date, 'MMM dd'),
       appointments: dayAppointments.length,
-      completed: dayAppointments.filter(apt => apt.status === 'completed').length,
+      completed: dayAppointments.filter((apt: any) => apt.status === 'completed').length,
     };
   });
 
   // Service type distribution
-  const serviceTypes = appointments.reduce((acc: Record<string, number>, appointment) => {
+  const serviceTypes = appointments.reduce((acc: Record<string, number>, appointment: any) => {
     acc[appointment.serviceType] = (acc[appointment.serviceType] || 0) + 1;
     return acc;
   }, {});
@@ -314,7 +315,7 @@ export default function ReportsPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {appointments.slice(0, 5).map((appointment) => (
+                {appointments.slice(0, 5).map((appointment: any) => (
                   <div key={appointment._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-3">
                       <div>
@@ -434,10 +435,10 @@ export default function ReportsPage() {
                         <div className="w-20 bg-gray-200 rounded-full h-2">
                           <div 
                             className="bg-blue-600 h-2 rounded-full" 
-                            style={{ width: `${(count / appointments.length) * 100}%` }}
+                            style={{ width: `${((count as number) / appointments.length) * 100}%` }}
                           />
                         </div>
-                        <span className="text-sm font-medium text-gray-900">{count}</span>
+                        <span className="text-sm font-medium text-gray-900">{count as number}</span>
                       </div>
                     </div>
                   ))}
@@ -458,12 +459,12 @@ export default function ReportsPage() {
                 <div className="text-center py-8">
                   <div className="text-4xl font-bold text-green-600 mb-2">
                     {appointments.length > 0 
-                      ? Math.round((appointments.filter(apt => apt.status === 'completed').length / appointments.length) * 100)
+                      ? Math.round((appointments.filter((apt: any) => apt.status === 'completed').length / appointments.length) * 100)
                       : 0
                     }%
                   </div>
                   <p className="text-gray-600">
-                    {appointments.filter(apt => apt.status === 'completed').length} of {appointments.length} appointments completed
+                    {appointments.filter((apt: any) => apt.status === 'completed').length} of {appointments.length} appointments completed
                   </p>
                 </div>
               </CardContent>
@@ -478,12 +479,12 @@ export default function ReportsPage() {
                 <div className="text-center py-8">
                   <div className="text-4xl font-bold text-orange-600 mb-2">
                     {appointments.length > 0 
-                      ? Math.round((appointments.filter(apt => apt.status === 'no_show').length / appointments.length) * 100)
+                      ? Math.round((appointments.filter((apt: any) => apt.status === 'no_show').length / appointments.length) * 100)
                       : 0
                     }%
                   </div>
                   <p className="text-gray-600">
-                    {appointments.filter(apt => apt.status === 'no_show').length} no-shows out of {appointments.length} appointments
+                    {appointments.filter((apt: any) => apt.status === 'no_show').length} no-shows out of {appointments.length} appointments
                   </p>
                 </div>
               </CardContent>

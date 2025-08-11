@@ -1,43 +1,83 @@
 'use client'
 
-import { useQuery } from 'convex/react'
+import { useState } from 'react'
+import { useQuery, useAction } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { 
   Users, 
   UserPlus, 
   Mail, 
-  Phone,
-  Calendar,
   Activity,
-  MoreHorizontal
+  Shield,
+  Clock,
+  TrendingUp,
+  BarChart3,
+  FileText,
+  Plus
 } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
+import AddPhysiotherapistModal from '@/components/dashboard/clinic/AddPhysiotherapistModal'
+import StaffTable from '@/components/clinic/staff/StaffTable'
+import { toast } from 'sonner'
 
 
 
 export default function StaffManagementPage() {
+  const [refreshKey, setRefreshKey] = useState(0)
+  
+  // Queries
   const clinicStaffQuery = useQuery(api.clinics.getClinicStaff)
   const pendingInvitationsQuery = useQuery(api.clinics.getClinicInvitations)
+  const staffMetricsQuery = useQuery(api.clinics.getStaffMetrics)
+  
+  // Actions
+  const inviteStaffWithEmail = useAction(api.actions.clinics.createClinicStaffInvitationWithNotification)
+  const resendStaffInvitation = useAction(
+    api.actions.clinics.inviteClinicStaff.resendClinicStaffInvitation
+  )
   
   const clinicStaff = clinicStaffQuery
   const pendingInvitations = pendingInvitationsQuery
+  const staffMetrics = staffMetricsQuery
 
-  if (clinicStaff === undefined || pendingInvitations === undefined) {
+  const handleRefresh = () => {
+    setRefreshKey(prev => prev + 1)
+    // Force refresh by updating a key that triggers re-render
+    window.location.reload()
+  }
+
+  const handleQuickInvite = async (email: string, name?: string) => {
+    try {
+      await inviteStaffWithEmail({
+        inviteeEmail: email,
+        inviteeName: name,
+        message: 'You have been invited to join our clinic team.',
+        sendEmail: true
+      })
+      toast.success('Staff invitation sent successfully!')
+      handleRefresh()
+    } catch (error) {
+      toast.error('Failed to send invitation')
+      console.error('Invite error:', error)
+    }
+  }
+
+  if (clinicStaff === undefined || pendingInvitations === undefined || staffMetrics === undefined) {
     return (
       <div className="p-8">
         <div className="space-y-6">
           <Skeleton className="h-8 w-64" />
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {[...Array(6)].map((_, i) => (
-              <Skeleton key={i} className="h-48" />
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {[...Array(8)].map((_, i) => (
+              <Skeleton key={i} className="h-32" />
             ))}
           </div>
+          <Skeleton className="h-96" />
         </div>
       </div>
     )
@@ -50,18 +90,33 @@ export default function StaffManagementPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Staff Management</h1>
-            <p className="text-gray-600">Manage your clinic&apos;s physiotherapists and staff members</p>
+            <p className="text-gray-600">Comprehensive staff management and analytics for your clinic</p>
           </div>
-          <Link href="/dashboard/clinic/staff/invite">
-            <Button>
-              <UserPlus className="h-4 w-4 mr-2" />
-              Invite Staff
+          <div className="flex gap-2">
+            <Link href="/dashboard/clinic/analytics">
+              <Button variant="outline">
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Analytics
+              </Button>
+            </Link>
+            <Link href="/dashboard/clinic/audit">
+              <Button variant="outline">
+                <FileText className="h-4 w-4 mr-2" />
+                Audit Log
+              </Button>
+            </Link>
+            <AddPhysiotherapistModal 
+              onSuccess={handleRefresh}
+            />
+            <Button onClick={() => handleQuickInvite('', '')}>
+              <Plus className="h-4 w-4 mr-2" />
+              Quick Invite
             </Button>
-          </Link>
+          </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        {/* Enhanced Stats Cards */}
+        <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Staff</CardTitle>
@@ -69,31 +124,50 @@ export default function StaffManagementPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{clinicStaff?.length || 0}</div>
-              <p className="text-xs text-muted-foreground">Active staff members</p>
+              <div className="flex items-center gap-2 mt-2">
+                <p className="text-xs text-muted-foreground">Active: {clinicStaff?.filter((staff: any) => staff.status === 'active').length || 0}</p>
+                <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                  <TrendingUp className="h-3 w-3 mr-1" />
+                  +{staffMetrics?.newThisMonth || 0} this month
+                </Badge>
+              </div>
             </CardContent>
           </Card>
           
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending Invitations</CardTitle>
-              <Mail className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Staff Utilization</CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{pendingInvitations?.length || 0}</div>
-              <p className="text-xs text-muted-foreground">Awaiting response</p>
+              <div className="text-2xl font-bold">{staffMetrics?.utilization?.toFixed(1) || 0}%</div>
+              <p className="text-xs text-muted-foreground">Average workload efficiency</p>
             </CardContent>
           </Card>
           
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Active Today</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
+              <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {clinicStaff?.filter((staff) => staff.user?.onboarded)?.length || 0}
+                {clinicStaff?.filter((staff: any) => staff.user?.onboarded)?.length || 0}
               </div>
               <p className="text-xs text-muted-foreground">Currently online</p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Role Distribution</CardTitle>
+              <Shield className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {clinicStaff?.filter((staff: any) => staff.role === 'physiotherapist').length || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">Physiotherapists</p>
             </CardContent>
           </Card>
         </div>
@@ -102,29 +176,54 @@ export default function StaffManagementPage() {
         {pendingInvitations && pendingInvitations.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Pending Invitations</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Pending Invitations ({pendingInvitations.length})
+              </CardTitle>
               <CardDescription>Staff invitations awaiting response</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {pendingInvitations.map((invitation) => (
-                  <div key={invitation._id} className="flex items-center justify-between p-4 border rounded-lg">
+                {pendingInvitations.map((invitation: any) => (
+                  <div key={invitation._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                     <div className="flex items-center space-x-4">
-                      <Avatar>
-                        <AvatarFallback>
-                          {invitation.inviteeName?.split(' ').map((n: string) => n[0]).join('') || '?'}
-                        </AvatarFallback>
-                      </Avatar>
+                      <div className="bg-orange-100 p-2 rounded-full">
+                        <Mail className="h-4 w-4 text-orange-600" />
+                      </div>
                       <div>
-                        <p className="font-medium">{invitation.inviteeName}</p>
+                        <p className="font-medium">{invitation.inviteeName || 'Unnamed Invitee'}</p>
                         <p className="text-sm text-gray-600">{invitation.inviteeEmail}</p>
+                        <p className="text-xs text-gray-500">
+                          Role: <span className="capitalize">{invitation.role.replace('_', ' ')}</span>
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Badge variant="outline">Pending</Badge>
+                      <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">
+                        <Clock className="h-3 w-3 mr-1" />
+                        Pending
+                      </Badge>
                       <p className="text-sm text-gray-500">
                         Sent {format(new Date(invitation._creationTime), 'MMM d')}
                       </p>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await resendStaffInvitation({
+                              inviteeEmail: invitation.inviteeEmail,
+                              inviteeName: invitation.inviteeName,
+                            })
+                            toast.success('Invitation resent')
+                          } catch (error) {
+                            toast.error('Failed to resend invitation')
+                            console.error('Resend invitation error:', error)
+                          }
+                        }}
+                      >
+                        Resend
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -133,83 +232,11 @@ export default function StaffManagementPage() {
           </Card>
         )}
 
-        {/* Active Staff */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Active Staff Members</CardTitle>
-            <CardDescription>Your clinic&apos;s physiotherapists and staff</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {clinicStaff && clinicStaff.length > 0 ? (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {clinicStaff.map((staff) => (
-                  <Card key={staff._id} className="relative">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center space-x-3">
-                        <Avatar>
-                          <AvatarImage src={staff.user?.imageUrl} />
-                          <AvatarFallback>
-                            {staff.user?.firstName?.[0]}{staff.user?.lastName?.[0]}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1">
-                          <h3 className="font-semibold">
-                            {staff.user?.firstName} {staff.user?.lastName}
-                          </h3>
-                          <p className="text-sm text-gray-600 capitalize">Physiotherapist</p>
-                        </div>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="space-y-2">
-                        <div className="flex items-center text-sm text-gray-600">
-                          <Mail className="h-3 w-3 mr-2" />
-                          {staff.user?.email}
-                        </div>
-                        {staff.user?.phoneNumber && (
-                          <div className="flex items-center text-sm text-gray-600">
-                            <Phone className="h-3 w-3 mr-2" />
-                            {staff.user.phoneNumber}
-                          </div>
-                        )}
-                        <div className="flex items-center text-sm text-gray-600">
-                          <Calendar className="h-3 w-3 mr-2" />
-                          Joined {format(new Date(staff._creationTime), 'MMM yyyy')}
-                        </div>
-                        <div className="flex items-center justify-between pt-2">
-                          <Badge variant={staff.user?.onboarded ? 'default' : 'secondary'}>
-                            {staff.user?.onboarded ? 'Active' : 'Inactive'}
-                          </Badge>
-                          <div className="flex space-x-1">
-                            <Button variant="outline" size="sm">View</Button>
-                            <Button variant="outline" size="sm">Edit</Button>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No staff members yet</h3>
-                <p className="text-gray-600 mb-4">
-                  Start building your team by inviting physiotherapists to join your clinic.
-                </p>
-                <Link href="/dashboard/clinic/staff/invite">
-                  <Button>
-                    <UserPlus className="h-4 w-4 mr-2" />
-                    Invite Your First Staff Member
-                  </Button>
-                </Link>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Enhanced Staff Management Table */}
+        <StaffTable 
+          staff={clinicStaff || []} 
+          onRefresh={handleRefresh}
+        />
       </div>
     </div>
   )

@@ -2,7 +2,7 @@
 
 import { useAuth } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Loader2 } from 'lucide-react'
 import { PatientDashboard } from '@/components/dashboard/patient/PatientDashboard'
 import { useQuery } from 'convex/react'
@@ -13,20 +13,24 @@ export default function PatientDashboardPage() {
   const router = useRouter()
   const { isLoaded, isSignedIn } = useAuth()
   const user = useQuery(api.users.getMyUser) as User | null | undefined
+  const authRedirected = useRef(false)
+  const roleRedirected = useRef(false)
 
   // Redirect if not authenticated
   useEffect(() => {
-    if (isLoaded && !isSignedIn) {
+    if (isLoaded && !isSignedIn && !authRedirected.current) {
+      authRedirected.current = true
       router.push('/sign-in')
     }
-  }, [isLoaded, isSignedIn, router])
+  }, [isLoaded, isSignedIn])
 
   // Redirect if not patient
   useEffect(() => {
-    if (user && user.role !== 'patient') {
+    if (user && user.role !== 'patient' && !roleRedirected.current) {
+      roleRedirected.current = true
       router.push('/sign-in')
     }
-  }, [user, router])
+  }, [user])
 
   // Loading state
   if (!isLoaded || user === undefined) {

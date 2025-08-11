@@ -4,11 +4,13 @@ import { useAuth } from '@clerk/nextjs'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import ClinicSidebar from '@/components/clinic/ClinicSidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertCircle } from 'lucide-react'
+import { Toaster } from "sonner"
+import NotificationToaster from '@/components/dashboard/shared/NotificationToaster'
 
 export default function ClinicLayout({
   children,
@@ -19,13 +21,15 @@ export default function ClinicLayout({
   const { isLoaded, isSignedIn } = useAuth()
   const currentUser = useQuery(api.users.getMyUser)
   const approvalStatus = useQuery(api.users.getUserApprovalStatus)
+  const authRedirected = useRef(false)
 
   // Redirect if not authenticated
   useEffect(() => {
-    if (isLoaded && !isSignedIn) {
+    if (isLoaded && !isSignedIn && !authRedirected.current) {
+      authRedirected.current = true
       router.push('/sign-in')
     }
-  }, [isLoaded, isSignedIn, router])
+  }, [isLoaded, isSignedIn])
 
   // Show loading while auth is loading
   if (!isLoaded || !isSignedIn) {
@@ -138,11 +142,28 @@ export default function ClinicLayout({
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <ClinicSidebar />
-      <main className="flex-1 overflow-auto">
-        {children}
-      </main>
+    <div className="min-h-screen bg-gray-50">
+      {/* Dashboard Header */}
+      <div className="border-b border-gray-200 bg-white">
+        <div className="flex h-16 items-center justify-between px-6">
+          <h1 className="text-xl font-semibold text-gray-900">Clinic Dashboard</h1>
+        </div>
+      </div>
+      
+      <div className="flex">
+        {/* Clinic Sidebar */}
+        <ClinicSidebar />
+        
+        {/* Main Content */}
+        <main className="flex-1 overflow-auto">
+          <div className="h-full px-6 py-6 lg:px-8">
+            {children}
+          </div>
+        </main>
+      </div>
+      
+      <NotificationToaster />
+      <Toaster position="top-right" />
     </div>
   )
 }

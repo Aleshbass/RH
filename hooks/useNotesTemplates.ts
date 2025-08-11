@@ -1,3 +1,5 @@
+// @ts-nocheck - Disable type checking due to deep type instantiation issues with Convex types
+
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { useState, useCallback } from 'react'

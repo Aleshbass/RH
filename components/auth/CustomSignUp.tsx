@@ -33,59 +33,64 @@ export default function CustomSignUp() {
       initial="hidden"
       animate="visible"
       variants={fadeIn}
-      className="min-h-screen flex flex-col bg-[#FAF6E7] p-4 sm:p-6"
+      className="min-h-screen flex flex-col bg-[#FAF6E7] px-4 sm:px-6 lg:px-8 py-6 pt-20"
     >
-      {/* Breadcrumb navigation */}
-      <div className="w-full max-w-6xl mx-auto mb-10 pt-4">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink href="/"><Home className="h-4 w-4" /></BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator>
-              <ChevronRight className="h-4 w-4" />
-            </BreadcrumbSeparator>
-            <BreadcrumbItem>
-              <BreadcrumbPage>Sign Up</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      </div>
       
       <div className="flex-1 flex items-center justify-center">
       {/* Main container with split layout on desktop */}
-      <div className="w-full max-w-6xl flex flex-col lg:flex-row bg-white rounded-2xl shadow-lg overflow-hidden">
+      <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 bg-white rounded-2xl shadow-lg overflow-hidden">
         {/* Left side - Image container (hidden on mobile, shown on desktop) */}
-        <div className="hidden lg:block lg:w-1/2 bg-[#E3DFD2] relative">
-          {/* Placeholder for the image - will be replaced with actual image */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center p-8">
-              <div className="text-[#005b57] text-xl font-medium mb-2">Image Coming Soon</div>
-              <p className="text-[#002e2c]">Your rehabilitation journey starts here</p>
-            </div>
+        <div className="relative hidden lg:block">
+          <Image
+            src="/logos/images/Group 469272 (1).webp"
+            alt="Rehabify Health - Sign up"
+            fill
+            className="object-cover"
+            priority
+            sizes="(min-width: 1024px) 50vw, 100vw"
+            placeholder="blur"
+            blurDataURL="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-black/20" aria-hidden="true" />
+          {/* Logo overlay on image */}
+          <div className="absolute top-8 left-8 right-8">
+            <Image 
+              src="/logos/favicon/apple-touch-icon.png" 
+              alt="Rehabify Health" 
+              width={48} 
+              height={48} 
+              className="bg-white/10 backdrop-blur-sm rounded-lg p-2"
+            />
+          </div>
+          <div className="absolute bottom-8 left-8 right-8 text-white">
+            <h2 className="text-3xl font-bold">Create Your Account</h2>
+            <p className="mt-2 text-lg text-white/90">Your rehabilitation journey starts here</p>
           </div>
         </div>
+
         
         {/* Right side - Form container */}
         <motion.div 
-          className="w-full lg:w-1/2 flex items-center justify-center min-h-[500px] p-8"
+          className="w-full flex flex-col items-center justify-center py-8 px-6 sm:px-10 lg:px-12"
           initial={{ scale: 0.95 }}
           animate={{ scale: 1 }}
           transition={{ duration: 0.3 }}
         >
-          <div className="w-full text-center mb-6">
-            <Image 
-              src="/logos/favicon/apple-touch-icon.png" 
-              alt="Rehabify Health" 
-              width={80} 
-              height={80} 
-              className="mx-auto"
-            />
-            <h1 className="mt-4 text-3xl font-bold text-[#002e2c]">Join Rehabify Health</h1>
-            <p className="mt-2 text-[#005b57]">Create your account to get started</p>
+          {/* Mobile-only branding */}
+          <div className="w-full mb-8 lg:hidden">
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <Image 
+                src="/logos/favicon/apple-touch-icon.png" 
+                alt="Rehabify Health" 
+                width={48} 
+                height={48} 
+              />
+              <h1 className="text-2xl font-bold text-[#002e2c]">Join Rehabify Health</h1>
+            </div>
+
           </div>
           
-          <div className="relative max-w-md mx-auto">
+          <div className="relative w-full max-w-sm mx-auto">
             <SignUp 
               appearance={{
                 elements: {
@@ -93,10 +98,12 @@ export default function CustomSignUp() {
                   headerTitle: "text-[#002e2c] text-2xl",
                   headerSubtitle: "text-[#005b57]",
                   formButtonPrimary: 
-                    "bg-gradient-to-r from-[#002e2c] to-[#005b57] hover:opacity-90 text-white font-medium py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00cd0f] focus:ring-offset-2",
+                    "h-12 bg-gradient-to-r from-[#002e2c] to-[#005b57] hover:opacity-90 text-white font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-[#005b57]/30",
                   formFieldInput: 
-                    "block w-full rounded-md border-[#E3DFD2] shadow-sm focus:border-[#005b57] focus:ring focus:ring-[#005b57] focus:ring-opacity-50",
-                  footerActionLink: "text-[#005b57] hover:text-[#00cd0f]",
+                    "h-12 text-base block w-full rounded-md border border-gray-300 focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20",
+                  formFieldLabel: "text-[#002e2c] font-medium",
+                  socialButtonsBlockButton: "h-12",
+                  footerActionLink: "text-[#005b57] hover:text-[#00443e]",
                 },
               }}
               redirectUrl="/role-selection"

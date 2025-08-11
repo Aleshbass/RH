@@ -220,9 +220,10 @@ export const invitePhysiotherapist = mutation({
       message: args.message,
     });
 
-    // TODO: Send email notification to invitee
+    // Note: Email notification is handled by the action wrapper
+    // createClinicStaffInvitationWithNotification in actions/clinics/inviteClinicStaff.ts
 
-      return {
+    return {
       success: true,
       invitationId,
       code,
@@ -279,10 +280,13 @@ export const acceptClinicInvitation = mutation({
       throw new Error("This invitation was sent to a different email address");
     }
 
-    // Update user role and profile
+    // Update user role, profile, and assign to clinic
     await ctx.db.patch(user._id, {
       role: "physiotherapist",
       onboarded: true,
+      clinicId: invitation.clinicId, // Assign user to clinic
+      status: "active", // Set as active staff member
+      joinedAt: Date.now(), // Track when they joined
     });
 
     // Create or update physiotherapist profile
@@ -1531,5 +1535,515 @@ export const updateClinic = mutation({
     await ctx.db.patch(clinic._id, updateData);
     
     return { success: true };
+  },
+});
+
+/**
+ * Update staff member role
+ */
+export const updateStaffRole = mutation({
+  args: {
+    staffId: v.id("users"),
+    newRole: v.union(
+      v.literal("physiotherapist"),
+      v.literal("clinic_owner"),
+      v.literal("patient"),
+      v.literal("family_member"),
+      v.literal("admin")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Only clinic owners can update staff roles
+    if (user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can update staff roles");
+    }
+
+    // Get the clinic owned by this user
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      throw new Error("Clinic not found");
+    }
+
+    // Verify the staff member belongs to this clinic
+    const staffMember = await ctx.db.get(args.staffId);
+    if (!staffMember || staffMember.clinicId !== clinic._id) {
+      throw new Error("Staff member not found or not in your clinic");
+    }
+
+    // Update the staff member's role
+    await ctx.db.patch(args.staffId, {
+      role: args.newRole,
+    });
+
+    // Log the action
+    await ctx.db.insert("systemLogs", {
+      type: "info",
+      action: "staff_role_updated",
+      userId: user._id,
+      clinicId: clinic._id,
+      targetEntityType: "user",
+      targetEntityId: String(args.staffId),
+      details: {
+        oldRole: staffMember.role,
+        newRole: args.newRole,
+      },
+      timestamp: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Update staff member status
+ */
+export const updateStaffStatus = mutation({
+  args: {
+    staffId: v.id("users"),
+    newStatus: v.union(v.literal("active"), v.literal("suspended"), v.literal("terminated")),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Only clinic owners can update staff status
+    if (user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can update staff status");
+    }
+
+    // Get the clinic owned by this user
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      throw new Error("Clinic not found");
+    }
+
+    // Verify the staff member belongs to this clinic
+    const staffMember = await ctx.db.get(args.staffId);
+    if (!staffMember || staffMember.clinicId !== clinic._id) {
+      throw new Error("Staff member not found or not in your clinic");
+    }
+
+    // Update the staff member's status
+    await ctx.db.patch(args.staffId, {
+      status: args.newStatus,
+    });
+
+    // Log the action
+    await ctx.db.insert("systemLogs", {
+      type: "info",
+      action: "staff_status_updated",
+      userId: user._id,
+      clinicId: clinic._id,
+      targetEntityType: "user",
+      targetEntityId: String(args.staffId),
+      details: {
+        oldStatus: staffMember.status,
+        newStatus: args.newStatus,
+      },
+      timestamp: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Reassign staff to clinic
+ */
+export const reassignStaffToClinic = mutation({
+  args: {
+    staffId: v.id("users"),
+    newClinicId: v.id("clinics"),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Only clinic owners can reassign staff
+    if (user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can reassign staff");
+    }
+
+    // Get the clinic owned by this user
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      throw new Error("Clinic not found");
+    }
+
+    // Verify the staff member belongs to this clinic
+    const staffMember = await ctx.db.get(args.staffId);
+    if (!staffMember || staffMember.clinicId !== clinic._id) {
+      throw new Error("Staff member not found or not in your clinic");
+    }
+
+    // Verify the new clinic exists and is owned by the same owner
+    const newClinic = await ctx.db.get(args.newClinicId);
+    if (!newClinic || newClinic.ownerId !== user._id) {
+      throw new Error("Target clinic not found or not owned by you");
+    }
+
+    // Update the staff member's clinic assignment
+    await ctx.db.patch(args.staffId, {
+      clinicId: args.newClinicId,
+    });
+
+    // Log the action
+    await ctx.db.insert("systemLogs", {
+      type: "info",
+      action: "staff_reassigned",
+      userId: user._id,
+      clinicId: clinic._id,
+      targetEntityType: "user",
+      targetEntityId: String(args.staffId),
+      details: {
+        oldClinicId: clinic._id,
+        newClinicId: args.newClinicId,
+        oldClinicName: clinic.name,
+        newClinicName: newClinic.name,
+      },
+      timestamp: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Create staff member directly (without invitation)
+ */
+export const createStaffDirect = mutation({
+  args: {
+    email: v.string(),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    phoneNumber: v.optional(v.string()),
+    role: v.union(
+      v.literal("physiotherapist"),
+      v.literal("admin")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Only clinic owners can create staff directly
+    if (user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can create staff members");
+    }
+
+    // Get the clinic owned by this user
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      throw new Error("Clinic not found");
+    }
+
+    // Check if user with this email already exists
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .unique();
+
+    if (existingUser) {
+      throw new Error("A user with this email already exists");
+    }
+
+    // Create the staff member
+    const staffId = await ctx.db.insert("users", {
+      email: args.email,
+      firstName: args.firstName,
+      lastName: args.lastName,
+      phoneNumber: args.phoneNumber,
+      role: args.role,
+      status: "active",
+      clinicId: clinic._id,
+      onboarded: false, // Will be set to true when they complete onboarding
+      joinedAt: Date.now(),
+    } as any); // Avoid deep type instantiation
+
+    // If role is physiotherapist, create physiotherapist profile
+    if (args.role === "physiotherapist") {
+      await ctx.db.insert("physiotherapistProfiles", {
+        userId: staffId,
+        clinicId: clinic._id,
+      } as any);
+    }
+
+    // Log the action
+    await ctx.db.insert("systemLogs", {
+      type: "info",
+      action: "staff_created_direct",
+      userId: user._id,
+      clinicId: clinic._id,
+      targetEntityType: "user",
+      targetEntityId: String(staffId),
+      details: {
+        staffEmail: args.email,
+        staffRole: args.role,
+      },
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: true,
+      staffId,
+      message: "Staff member created successfully",
+    };
+  },
+});
+
+/**
+ * Get clinic audit logs for clinic owner
+ */
+export const getClinicAuditLogs = query({
+  args: {
+    limit: v.optional(v.number()),
+    actionFilter: v.optional(v.string()),
+    dateFilter: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Only clinic owners can view audit logs
+    if (user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can view audit logs");
+    }
+
+    // Get the clinic owned by this user
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      throw new Error("Clinic not found");
+    }
+
+    const limit = args.limit || 50;
+    
+    // Build query for system logs
+    let logsQuery = ctx.db
+      .query("systemLogs")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+      .order("desc");
+
+    // Apply date filter
+    if (args.dateFilter && args.dateFilter !== 'all') {
+      const now = Date.now();
+      let startTime = 0;
+      
+      switch (args.dateFilter) {
+        case 'today':
+          const today = new Date();
+          startTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+          break;
+        case 'week':
+          startTime = now - (7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'month':
+          startTime = now - (30 * 24 * 60 * 60 * 1000);
+          break;
+        case 'quarter':
+          startTime = now - (90 * 24 * 60 * 60 * 1000);
+          break;
+      }
+      
+      if (startTime > 0) {
+        logsQuery = logsQuery.filter((q) => q.gte(q.field("timestamp"), startTime));
+      }
+    }
+
+    let logs = await logsQuery.take(limit);
+
+    // Apply action filter
+    if (args.actionFilter && args.actionFilter !== 'all') {
+      logs = logs.filter(log => log.action === args.actionFilter);
+    }
+
+    // Enrich logs with user details
+    const enrichedLogs = await Promise.all(
+      logs.map(async (log) => {
+        const logUser = log.userId ? await ctx.db.get(log.userId) : null;
+        const targetUser = (log.targetEntityType === "user" && log.targetEntityId)
+          ? await ctx.db.get(log.targetEntityId as Id<"users">)
+          : null;
+        
+        return {
+          ...log,
+          user: logUser ? {
+            firstName: logUser.firstName,
+            lastName: logUser.lastName,
+            email: logUser.email,
+            imageUrl: logUser.imageUrl,
+          } : null,
+          targetUser: targetUser ? {
+            firstName: targetUser.firstName,
+            lastName: targetUser.lastName,
+            email: targetUser.email,
+          } : null,
+        };
+      })
+    );
+
+    return enrichedLogs;
+  },
+});
+
+/**
+ * Get owner analytics data
+ */
+export const getOwnerAnalytics = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+
+    if (!clinic) {
+      return null;
+    }
+
+    // Mock analytics data - replace with actual business logic
+    return {
+      revenue: {
+        total: 2500000,
+        thisMonth: 450000,
+        lastMonth: 380000,
+        growth: 18.4
+      },
+      staff: {
+        total: 12,
+        active: 10,
+        utilization: 78.5,
+        newThisMonth: 2
+      },
+      appointments: {
+        total: 324,
+        completed: 298,
+        cancelled: 18,
+        noShows: 8,
+        completionRate: 92.0
+      },
+      telehealth: {
+        totalMinutes: 14520,
+        sessionsCount: 156,
+        averageSessionLength: 93,
+        growth: 24.7
+      },
+      patients: {
+        total: 186,
+        active: 142,
+        newThisMonth: 23,
+        retention: 85.2
+      }
+    };
+  },
+});
+
+/**
+ * Get staff metrics for analytics
+ */
+export const getStaffMetrics = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    await ensureIsClinicOwner(ctx, user);
+
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .first();
+
+    if (!clinic) {
+      return {
+        active: 0,
+        utilization: 0,
+        newThisMonth: 0
+      };
+    }
+
+    // Get staff members for this clinic
+    const staff = await ctx.db
+      .query("users")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+      .filter((q) => q.neq(q.field("role"), "patient"))
+      .collect();
+
+    const activeStaff = staff.filter(s => s.status === "active");
+    
+    // Calculate new staff this month
+    const thisMonth = new Date();
+    const startOfMonth = new Date(thisMonth.getFullYear(), thisMonth.getMonth(), 1).getTime();
+    const newThisMonth = staff.filter(s => s.joinedAt && s.joinedAt >= startOfMonth).length;
+
+    // Mock utilization calculation - replace with actual logic
+    const utilization = activeStaff.length > 0 ? Math.min(95, 60 + (activeStaff.length * 3)) : 0;
+
+    return {
+      active: activeStaff.length,
+      utilization,
+      newThisMonth
+    };
+  },
+});
+
+/**
+ * Get clinic information for clinic staff member
+ */
+export const getMyClinicInfo = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    
+    // Only return clinic info if user is assigned to a clinic
+    if (!user.clinicId) {
+      return null;
+    }
+
+    // Get the clinic information
+    const clinic = await ctx.db.get(user.clinicId);
+    
+    if (!clinic) {
+      return null;
+    }
+
+    // Get clinic owner information
+    const clinicOwner = await ctx.db.get(clinic.ownerId);
+
+    return {
+      _id: clinic._id,
+      name: clinic.name,
+      address: clinic.address,
+      city: clinic.city,
+      country: clinic.country,
+      contactEmail: clinic.contactEmail,
+      contactPhone: clinic.contactPhone,
+      logoUrl: clinic.logoUrl,
+      owner: clinicOwner ? {
+        firstName: clinicOwner.firstName,
+        lastName: clinicOwner.lastName,
+        email: clinicOwner.email,
+      } : null,
+      staffRole: user.role,
+      joinedAt: user.joinedAt,
+    };
   },
 });

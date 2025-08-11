@@ -106,6 +106,7 @@ export const sendMessage = mutation({
     content: v.string(),
     contentType: v.union(v.literal("text"), v.literal("image"), v.literal("file")),
     fileUrl: v.optional(v.string()),
+    replyToMessageId: v.optional(v.id("messages")),
     metadata: v.optional(v.object({
       originalName: v.optional(v.string()),
       fileSize: v.optional(v.number()),
@@ -140,9 +141,18 @@ export const sendMessage = mutation({
       receiverId,
       content: args.content,
       contentType: args.contentType,
+      fileUrl: args.fileUrl,
+      replyToMessageId: args.replyToMessageId,
+      metadata: args.metadata,
       timestamp: Date.now(),
+      // WhatsApp-style message status - initially sent and delivered
+      isDelivered: true, // Mark as delivered immediately for real-time chat
       isReadByReceiver: false,
-      ...(args.metadata && { metadata: args.metadata }),
+      isRead: false, // Legacy field
+      deliveredAt: Date.now(), // Mark as delivered immediately
+      readAt: undefined, // Will be set when message is read
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
 
     const messageId = await ctx.db.insert("messages", message);
@@ -296,11 +306,25 @@ export const getMessages = query({
       .order("desc")
       .paginate({ cursor: args.cursor ?? null, numItems: args.limit || 50 });
 
+    // Transform messages to include reply context
+    const messagesWithReplies = await Promise.all(
+      page.map(async (message) => {
+        let replyToMessage = null;
+        if (message.replyToMessageId) {
+          replyToMessage = await ctx.db.get(message.replyToMessageId);
+        }
+        return {
+          ...message,
+          replyToMessage,
+        };
+      })
+    );
+
     return {
-      items: page,
+      items: messagesWithReplies,
       nextCursor: isDone ? undefined : continueCursor,
       hasMore: !isDone,
-      total: page.length,
+      total: messagesWithReplies.length,
     };
   },
 });
@@ -342,18 +366,23 @@ export const markMessagesAsRead = mutation({
     // Mark unread messages as read
     const unreadMessages = await ctx.db
       .query("messages")
-      .withIndex("by_conversation_and_receiver_and_read", (q) =>
-        q
-          .eq("conversationId", args.conversationId)
-          .eq("receiverId", currentUser._id)
-          .eq("isReadByReceiver", false)
+      .withIndex("by_conversation_id", (q) =>
+        q.eq("conversationId", args.conversationId)
+      )
+      .filter((q) => 
+        q.and(
+          q.eq(q.field("receiverId"), currentUser._id),
+          q.eq(q.field("isReadByReceiver"), false)
+        )
       )
       .collect();
 
     for (const message of unreadMessages) {
       await ctx.db.patch(message._id, {
         isReadByReceiver: true,
+        isRead: true, // Update legacy field too
         readAt: Date.now(),
+        updatedAt: Date.now(),
       });
     }
 

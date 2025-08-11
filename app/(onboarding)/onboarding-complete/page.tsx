@@ -3,7 +3,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { usePatientOnboardingAction, useUserProfileMutation } from "@/lib/onboardingHelpers";
+import { useUserProfileMutation } from "@/lib/onboardingHelpers";
 
 
 import { useOnboardingStore } from '@/stores/onboardingStore';
@@ -16,8 +16,7 @@ export default function OnboardingCompletePage() {
   const [message, setMessage] = useState("Finalizing your onboarding...");
   const { data } = useOnboardingStore();
 
-  // Different completion actions for different roles
-  const completePatientOnboarding = usePatientOnboardingAction();
+  // Completion actions for non-patient roles
   const completeUserProfile = useUserProfileMutation();
 
   useEffect(() => {
@@ -32,32 +31,12 @@ export default function OnboardingCompletePage() {
         // Handle different completion flows based on role
         switch (userRole) {
           case 'patient':
-            // Patient completion flow (existing logic)
-            if (!data.patientData) {
-              throw new Error("Patient data not found");
-            }
-
-            await completePatientOnboarding({
-              invitationCode: data.invitationCode || "",
-              patientData: {
-                firstName: data.patientData.firstName,
-                lastName: data.patientData.lastName,
-                email: data.patientData.email,
-                phoneNumber: data.patientData.phoneNumber || "",
-                dateOfBirth: data.patientData.dateOfBirth,
-                medicalHistory: data.patientData.medicalHistory,
-                emergencyContact: data.patientData.emergencyContact,
-                gender: data.patientData.gender
-              },
-              sendEmail: true
-            });
-
+            // Patient onboarding is already completed in step 2.
             setStatus("success");
             setMessage("Patient onboarding complete! Redirecting to your dashboard...");
-            
             setTimeout(() => {
               router.push("/dashboard/patient");
-            }, 3000);
+            }, 1500);
             break;
 
           case 'physiotherapist':
@@ -128,7 +107,7 @@ export default function OnboardingCompletePage() {
     };
 
     runOnboarding();
-  }, [completePatientOnboarding, completeUserProfile, router, data]);
+  }, [completeUserProfile, router, data]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-green-50">

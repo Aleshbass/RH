@@ -159,7 +159,7 @@ export default function ClinicOverviewPage() {
           {clinicStaff ? (
             clinicStaff.length > 0 ? (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {clinicStaff.map((member) => (
+                {clinicStaff.map((member: any) => (
                   <div key={member._id} className="flex items-center gap-3 p-3 rounded-lg border">
                     <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
                       <Users className="h-5 w-5 text-blue-600" />

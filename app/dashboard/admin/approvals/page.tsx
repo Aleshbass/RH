@@ -212,7 +212,7 @@ export default function AdminApprovalsPage() {
               <div className="bg-white p-4 rounded border border-orange-200">
                 <h4 className="font-semibold text-orange-800 mb-2">🔧 Fix Detected Issue</h4>
                 <p className="text-sm text-orange-700 mb-3">
-                  Found {debugApprovals?.filter(a => a.user === null && a.status === 'pending_review').length || 0} orphaned approval records 
+                  Found {debugApprovals?.filter((a: any) => a.user === null && a.status === 'pending_review').length || 0} orphaned approval records 
                   (where user no longer exists). These are causing pending approvals to not show up.
                 </p>
                 <div className="flex gap-2">
@@ -260,7 +260,7 @@ export default function AdminApprovalsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {pendingApprovals?.filter(a => a.user?.role === 'physiotherapist').length || 0}
+              {pendingApprovals?.filter((a: any) => a.user?.role === 'physiotherapist').length || 0}
             </div>
             <p className="text-xs text-muted-foreground">
               Pending physiotherapist approvals
@@ -275,7 +275,7 @@ export default function AdminApprovalsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {pendingApprovals?.filter(a => a.user?.role === 'clinic_owner').length || 0}
+              {pendingApprovals?.filter((a: any) => a.user?.role === 'clinic_owner').length || 0}
             </div>
             <p className="text-xs text-muted-foreground">
               Pending clinic owner approvals
@@ -305,7 +305,7 @@ export default function AdminApprovalsPage() {
           </div>
           
           <div className="grid gap-4">
-            {pendingApprovals.map((approval) => {
+            {pendingApprovals.map((approval: any) => {
               const roleConfig = {
                 physiotherapist: { label: 'Physiotherapist', icon: Stethoscope, color: 'blue' },
                 clinic_owner: { label: 'Clinic Owner', icon: Building2, color: 'green' },

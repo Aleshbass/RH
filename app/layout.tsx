@@ -9,6 +9,7 @@ import Providers from "./providers";
 import '@fortawesome/fontawesome-svg-core/styles.css';
 import NextTopLoader from 'nextjs-toploader';
 import ConditionalLayout from '@/components/layout/ConditionalLayout';
+import ReactCookiebot from 'react-cookiebot';
 
 const pallyRegular = localFont({
   src: '../public/logos/fonts/Pally-Regular.otf',
@@ -72,6 +73,15 @@ export default function RootLayout({
             </ConvexClientProvider>
           </Providers>
         </ClerkProvider>
+        
+        {/* Cookie Consent Management */}
+        <ReactCookiebot 
+          domainGroupId="48b36e33-f5f8-41b6-a59d-fb929da85bcf"
+          blockingMode="auto"
+          level="strict"
+          culture="en"
+          framework="TCFv2.2"
+        />
       </body>
     </html>
   );

@@ -139,7 +139,7 @@ export function UserApprovalDialog({
 
     return (
       <div className="grid gap-4">
-        {documents.map((doc) => (
+        {documents.map((doc: any) => (
           <Card key={doc._id} className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">

@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
+import { initMonitoring, analytics } from "@/lib/monitoring";
 
 export default function Providers({ children }: { children: ReactNode }) {
   // Create a client with enhanced configuration
@@ -30,6 +33,23 @@ export default function Providers({ children }: { children: ReactNode }) {
       },
     },
   }));
+
+  // Monitoring: initialize and track SPA navigations
+  const pathname = usePathname();
+  const { user } = useUser();
+
+  // Init monitoring when user context is available
+  useEffect(() => {
+    // user?.id may be undefined initially; init is idempotent
+    initMonitoring(user?.id);
+  }, [user?.id]);
+
+  // Track page views on route change
+  useEffect(() => {
+    if (pathname) {
+      analytics.trackPageView(pathname);
+    }
+  }, [pathname]);
 
   return (
     <QueryClientProvider client={queryClient}>
