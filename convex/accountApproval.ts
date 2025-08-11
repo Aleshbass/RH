@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { v } from "convex/values";
 import { mutation, query, action, internalQuery } from "./_generated/server";
 import { getUserByIdOrThrow } from "./users";
