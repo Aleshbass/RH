@@ -6,6 +6,25 @@ import { useAuth } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+
+// Type definitions for activity and staff
+interface ActivityItem {
+  type: string;
+  description: string;
+  timestamp: number;
+  [key: string]: unknown;
+}
+
+interface StaffMember {
+  _id: string;
+  user?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    imageUrl?: string;
+  };
+  [key: string]: unknown;
+}
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -51,7 +70,7 @@ export default function ClinicDashboard() {
       authRedirected.current = true
       router.push('/sign-in')
     }
-  }, [isLoaded, isSignedIn])
+  }, [isLoaded, isSignedIn, router])
 
   // Redirect if not approved clinic owner
   useEffect(() => {
@@ -62,7 +81,7 @@ export default function ClinicDashboard() {
         return
       }
     }
-  }, [currentUser, approvalStatus])
+  }, [currentUser, approvalStatus, router])
 
   // Loading state
   if (!isLoaded || currentUser === undefined || approvalStatus === undefined) {
@@ -271,7 +290,7 @@ export default function ClinicDashboard() {
                       <p>No recent activity</p>
                     </div>
                   ) : (
-                    recentActivity.map((activity: any, index: number) => {
+                    recentActivity.map((activity: ActivityItem, index: number) => {
                       const getActivityIcon = (type: string) => {
                         switch (type) {
                           case 'patient_registered':
@@ -393,7 +412,7 @@ export default function ClinicDashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {clinicStaff.map((member: any) => {
+                {clinicStaff.map((member: StaffMember) => {
                   const initials = member.user?.firstName && member.user?.lastName 
                     ? `${member.user.firstName.charAt(0)}${member.user.lastName.charAt(0)}`
                     : member.user?.email?.charAt(0).toUpperCase() || 'S'

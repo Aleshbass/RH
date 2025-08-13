@@ -7,19 +7,14 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { 
   Target, 
-  TrendingUp, 
   Calendar,
-  Plus,
-  CheckCircle2,
-  Clock
+  Plus
 } from 'lucide-react'
 import { format, addDays } from 'date-fns'
 
-interface HealthGoalsCardProps {
-  patientId: string;
-}
+type Props = object;
 
-export function HealthGoalsCard({ patientId }: HealthGoalsCardProps) {
+export function HealthGoalsCard({}: Props) {
   const [showAddForm, setShowAddForm] = useState(false)
 
   // Mock data - replace with actual API calls

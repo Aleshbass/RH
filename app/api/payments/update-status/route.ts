@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       paystackReference: reference,
       status: mappedStatus,
       ...(paystackData ? { paystackData } : {})
-    } as any)
+    } as Parameters<typeof convex.mutation>[1])
 
     log.info('Payment status updated via Convex', {
       action: 'payment_updated',

@@ -411,7 +411,7 @@ export function RescheduleAppointmentModal({
                   </Card>
                 ) : (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                    {availableSlots?.map((slot: any, index: number) => (
+                    {availableSlots?.map((slot: TimeSlot, index: number) => (
                       <Button
                         key={index}
                         type="button"

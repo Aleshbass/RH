@@ -1,6 +1,4 @@
 'use client'
-
-// @ts-nocheck
 import React, { useState, useEffect } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
@@ -9,7 +7,7 @@ import { QueryCache, CACHE_TTL } from '@/lib/redis/caching'
 import { useCachedUser } from '@/hooks/useCachedQueries'
 import { useSession } from '@/hooks/useSession'
 import { UserSession } from '@/lib/redis/sessionManager'
-import { Logger } from '@/lib/monitoring/logger'
+
 import { Calendar, Users, Clock, CheckCircle } from 'lucide-react'
 
 interface DashboardStatsData {
@@ -200,7 +198,7 @@ export function CachedDashboardStats() {
       {stats.todayAppointments > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Today's Schedule</CardTitle>
+            <CardTitle className="text-lg">Today&apos;s Schedule</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-blue-600">

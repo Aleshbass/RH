@@ -43,7 +43,7 @@ export default function PaymentCallbackPage() {
           setStatus('failed')
           setMessage(result.message || 'Payment verification failed')
         }
-      } catch (error) {
+      } catch {
         setStatus('failed')
         setMessage('Failed to verify payment')
       }

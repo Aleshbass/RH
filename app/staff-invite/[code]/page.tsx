@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useAction } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { 
@@ -27,7 +26,7 @@ import { useAuth } from '@clerk/nextjs'
 export default function StaffInviteAcceptancePage() {
   const params = useParams()
   const router = useRouter()
-  const { isSignedIn, userId } = useAuth()
+  const { isSignedIn } = useAuth()
   const [isAccepting, setIsAccepting] = useState(false)
   const [isDeclined, setIsDeclined] = useState(false)
   

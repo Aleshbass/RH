@@ -4,20 +4,20 @@
 export interface ExtendedLogContext {
   userId?: string
   action?: string
-  extra?: Record<string, any>
+  extra?: Record<string, string | number | boolean | null | undefined>
 }
 
 export interface ExtendedErrorContext {
   userId?: string
   action?: string
-  extra?: Record<string, any>
+  extra?: Record<string, string | number | boolean | null | undefined>
 }
 
 // Helper functions to ensure proper typing
 export const createLogContext = (data: {
   userId?: string
   action: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, string | number | boolean | null | undefined>
 }): ExtendedLogContext => ({
   userId: data.userId,
   action: data.action,
@@ -27,7 +27,7 @@ export const createLogContext = (data: {
 export const createErrorContext = (data: {
   userId?: string
   action: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, string | number | boolean | null | undefined>
 }): ExtendedErrorContext => ({
   userId: data.userId,
   action: data.action,

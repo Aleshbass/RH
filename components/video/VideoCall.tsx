@@ -100,7 +100,7 @@ function DailyCallInterface({
   useEffect(() => {
     if (!backendMessages) return
     try {
-      const mapped = (backendMessages as any[]).map((m) => {
+      const mapped = (Array.isArray(backendMessages) ? backendMessages : []).map((m: { sender?: { firstName?: string; lastName?: string; email?: string }; _id?: string; timestamp: number; message: string }) => {
         const senderName = m.sender?.firstName || m.sender?.lastName
           ? `${m.sender?.firstName || ''} ${m.sender?.lastName || ''}`.trim()
           : (m.sender?.email || 'Anonymous')
@@ -113,7 +113,7 @@ function DailyCallInterface({
         }
       })
       setChatMessages(mapped)
-    } catch (e) {
+    } catch {
       // ignore mapping errors
     }
   }, [backendMessages])
@@ -234,8 +234,8 @@ const handleAppMessage = (event: AppMessage) => {
       if (callId) {
         try {
           // fire-and-forget
-          saveMessage({ callId, message: messageData.message, messageType: 'text' } as any)
-        } catch (e) {
+          saveMessage({ callId, message: messageData.message, messageType: 'text' } as unknown)
+        } catch {
           console.warn('Failed to persist chat message:', e)
         }
       }
@@ -638,9 +638,9 @@ export default function VideoCall({
         console.log('🔗 Attempting to join call...');
         // Pre-authenticate first to lock in URL/token and catch access issues early
         try {
-          await (callInstance as any).preAuth({
+          await (callInstance as unknown as { preAuth: (args: { url: string; token?: string; userName: string; userData: unknown }) => Promise<void> }).preAuth({
             url: dailyUrl,
-            token: (callConfig as any).token,
+            token: (callConfig as unknown as { token?: string }).token,
             userName: callConfig.userName,
             userData: callConfig.userData,
           });
@@ -684,12 +684,12 @@ export default function VideoCall({
       }
       if (callInstance) {
         console.log('🧹 Cleaning up Daily call instance');
-        callInstance.destroy().catch((e: Error) => {
+        callInstance.destroy().catch(() => {
           console.error('Error cleaning up Daily call:', e);
         });
       }
     };
-  }, [roomInfo, userId, userName, meetingToken])
+  }, [roomInfo, userId, userName, meetingToken, dailyCall])
 
   if (error) {
     return (

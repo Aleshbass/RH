@@ -8,7 +8,7 @@ import { SessionManager, UserSession } from './sessionManager'
 import { redis, CACHE_PREFIXES } from './client'
 
 // Test data
-const testUserId = 'test-user-123' as any
+const testUserId = 'test-user-123' as string & { __tableName: 'users' }
 const testData = {
   name: 'Test User',
   email: 'test@example.com',
@@ -85,7 +85,7 @@ async function testQueryCaching() {
     // Retrieve cached query
     const cachedQuery = await QueryCache.getCachedQuery(queryName, params)
     console.log('✅ Query cache GET:', cachedQuery ? 'Success' : 'Failed')
-    console.log('   Data length:', (cachedQuery as any)?.length)
+    console.log('   Data length:', Array.isArray(cachedQuery) ? cachedQuery.length : 'N/A')
     
     // Test getOrSet pattern
     const getOrSetResult = await CacheService.getOrSet(
@@ -175,18 +175,19 @@ async function testRedisConnection() {
   
   try {
     // Test basic Redis operations
-    await (redis as any).set('connection-test', 'success', { ex: 60 })
-    const result = await (redis as any).get('connection-test')
+    const redisClient = redis()
+    await redisClient.set('connection-test', 'success', { ex: 60 })
+    const result = await redisClient.get('connection-test')
     console.log('✅ Redis connection:', result === 'success' ? 'Success' : 'Failed')
     
     // Clean up
-    await (redis as any).del('connection-test')
+    await redisClient.del('connection-test')
     
     // Test Redis info (if available)
     try {
-      const info = await (redis as any).ping()
+      const info = await redisClient.ping()
       console.log('✅ Redis ping:', info)
-    } catch (pingError) {
+    } catch {
       console.log('ℹ️  Redis ping not available (normal for Upstash REST API)')
     }
     

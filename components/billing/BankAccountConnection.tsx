@@ -1,6 +1,4 @@
 'use client'
-
-// @ts-nocheck
 import React, { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,37 +32,15 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  // Derived state for selected bank name
+  const selectedBankName = banks.find(bank => bank.code === selectedBank)?.name || ''
+
   // Fetch banks on component mount
   useEffect(() => {
     fetchBanks()
   }, [])
 
-  const fetchBanks = async () => {
-    try {
-      const response = await fetch('/api/payments/connect-bank')
-      const data = await response.json()
-      
-      if (data.success) {
-        setBanks(data.data)
-      } else {
-        setError('Failed to load banks')
-      }
-    } catch (error) {
-      log.error('Failed to fetch banks', { error: error as Error })
-      setError('Failed to load banks')
-    }
-  }
-
-  // Verify account number when both bank and account number are provided
-  useEffect(() => {
-    if (selectedBank && accountNumber.length === 10) {
-      verifyAccount()
-    } else {
-      setVerifiedAccount(null)
-    }
-  }, [selectedBank, accountNumber])
-
-  const verifyAccount = async () => {
+  const verifyAccount = React.useCallback(async () => {
     if (!selectedBank || accountNumber.length !== 10) return
 
     setIsVerifying(true)
@@ -96,10 +72,35 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
     } finally {
       setIsVerifying(false)
     }
+  }, [selectedBank, accountNumber])
+
+  // Auto-verify account when bank and account number are valid
+  useEffect(() => {
+    if (selectedBank && accountNumber.length === 10) {
+      verifyAccount()
+    } else {
+      setVerifiedAccount(null)
+    }
+  }, [selectedBank, accountNumber, verifyAccount])
+
+  const fetchBanks = async () => {
+    try {
+      const response = await fetch('/api/payments/connect-bank')
+      const data = await response.json()
+      
+      if (data.success) {
+        setBanks(data.data)
+      } else {
+        setError('Failed to load banks')
+      }
+    } catch (error) {
+      log.error('Failed to fetch banks', { error: error as Error })
+      setError('Failed to load banks')
+    }
   }
 
   const handleConnect = async () => {
-    if (!selectedBank || !accountNumber || !businessName || !verifiedAccount) {
+    if (!selectedBank || !accountNumber || !businessName) {
       setError('Please fill all fields and verify your account')
       return
     }
@@ -158,8 +159,6 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
     }
   }
 
-  const selectedBankName = banks.find(bank => bank.code === selectedBank)?.name || ''
-
   return (
     <Card className="w-full max-w-2xl">
       <CardHeader>
@@ -176,7 +175,7 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
         <Alert>
           <Shield className="h-4 w-4" />
           <AlertDescription>
-            Your banking information is encrypted and secure. We use Paystack's enterprise-grade security to protect your data.
+            Your banking information is encrypted and secure. We use Paystack&#39;s enterprise-grade security to protect your data.
           </AlertDescription>
         </Alert>
 

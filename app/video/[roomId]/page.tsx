@@ -93,7 +93,7 @@ export default function VideoCallPage() {
   }
 
   // Check if user is authorized to join this call
-  const isAuthorized = videoCall.participants?.some((p: any) => p.userId === currentUser._id) ||
+  const isAuthorized = videoCall.participants?.some((p: { userId: string }) => p.userId === currentUser._id) ||
                       videoCall.initiatorId === currentUser._id;
 
   if (!isAuthorized) {
@@ -183,7 +183,7 @@ export default function VideoCallPage() {
     <div className="min-h-screen bg-gray-900">
       <VideoCallManager
         appointmentId={videoCall.appointmentId}
-        defaultParticipants={videoCall.participants?.map((p: any) => p.userId) || []}
+        defaultParticipants={videoCall.participants?.map((p: { userId: string }) => p.userId) || []}
         onCallEnd={() => {
           // Redirect back to dashboard after call ends
           window.location.href = `/dashboard/${currentUser.role}/video-calls`;

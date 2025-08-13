@@ -12,7 +12,6 @@ import {
   Pill, 
   TrendingUp, 
   Calendar,
-  Plus,
   Smartphone,
   Target,
   AlertCircle,
@@ -24,11 +23,7 @@ import { SymptomLogger } from './SymptomLogger'
 import { FitbitIntegration } from './FitbitIntegration'
 import { HealthGoalsCard } from './HealthGoalsCard'
 
-interface HealthMonitoringDashboardProps {
-  patientId: string;
-}
-
-export function HealthMonitoringDashboard({ patientId }: HealthMonitoringDashboardProps) {
+export function HealthMonitoringDashboard() {
   const [activeTab, setActiveTab] = useState('overview')
 
   // Mock data for demonstration - replace with actual API calls
@@ -193,7 +188,7 @@ export function HealthMonitoringDashboard({ patientId }: HealthMonitoringDashboa
 
         <TabsContent value="overview" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
-            <HealthGoalsCard patientId={patientId} />
+            <HealthGoalsCard />
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -231,19 +226,19 @@ export function HealthMonitoringDashboard({ patientId }: HealthMonitoringDashboa
         </TabsContent>
 
         <TabsContent value="vitals">
-          <VitalSignsCard patientId={patientId} />
+          <VitalSignsCard />
         </TabsContent>
 
         <TabsContent value="medications">
-          <MedicationTracker patientId={patientId} />
+          <MedicationTracker />
         </TabsContent>
 
         <TabsContent value="symptoms">
-          <SymptomLogger patientId={patientId} />
+          <SymptomLogger />
         </TabsContent>
 
         <TabsContent value="fitbit">
-          <FitbitIntegration patientId={patientId} />
+          <FitbitIntegration />
         </TabsContent>
       </Tabs>
     </div>

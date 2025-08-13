@@ -14,49 +14,12 @@ import {
   TrendingUp,
   TrendingDown,
   Activity,
-  Clock,
   CheckCircle,
   XCircle,
-  AlertTriangle,
-  BarChart3,
-  PieChart,
-  LineChart
+  AlertTriangle
 } from 'lucide-react'
-import { format } from 'date-fns'
 
-interface AnalyticsData {
-  revenue: {
-    total: number
-    thisMonth: number
-    lastMonth: number
-    growth: number
-  }
-  staff: {
-    total: number
-    active: number
-    utilization: number
-    newThisMonth: number
-  }
-  appointments: {
-    total: number
-    completed: number
-    cancelled: number
-    noShows: number
-    completionRate: number
-  }
-  telehealth: {
-    totalMinutes: number
-    sessionsCount: number
-    averageSessionLength: number
-    growth: number
-  }
-  patients: {
-    total: number
-    active: number
-    newThisMonth: number
-    retention: number
-  }
-}
+// Removed unused AnalyticsData interface - data is accessed directly from queries
 
 export default function OwnerAnalyticsPage() {
   // Get analytics data
@@ -127,7 +90,7 @@ export default function OwnerAnalyticsPage() {
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
-          <p className="text-gray-600">Comprehensive insights into your clinic's performance</p>
+          <p className="text-gray-600">Comprehensive insights into your clinic&apos;s performance</p>
         </div>
 
         {/* Key Metrics Cards */}

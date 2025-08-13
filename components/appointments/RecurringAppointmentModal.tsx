@@ -1,6 +1,4 @@
 'use client'
-
-// @ts-nocheck
 import React, { useState, useEffect } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -11,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { CalendarDays, Clock, Repeat, Users, MapPin } from 'lucide-react'
+import { CalendarDays, Clock, Repeat, Users } from 'lucide-react'
 import { useRecurringAppointments, recurringAppointmentUtils } from '@/hooks/useRecurringAppointments'
 import { Id } from '@/convex/_generated/dataModel'
 import { CreateSeriesParams } from '@/lib/types/recurring-appointments'
@@ -101,14 +99,14 @@ export function RecurringAppointmentModal({
     }
   }, [userId, role])
 
-  const handleInputChange = (field: keyof CreateSeriesParams, value: any) => {
+  const handleInputChange = (field: keyof CreateSeriesParams, value: string | number | boolean | number[]) => {
     setFormData(prev => ({ ...prev, [field]: value }))
     setErrors([]) // Clear errors when user makes changes
   }
 
   const handleDayOfWeekToggle = (day: number) => {
     const currentDays = formData.daysOfWeek || []
-    const newDays = currentDays.includes(day as any)
+    const newDays = currentDays.includes(day as import('@/lib/types/recurring-appointments').DayOfWeek)
       ? currentDays.filter(d => d !== day)
       : [...currentDays, day].sort((a, b) => a - b)
     
@@ -432,19 +430,43 @@ export function RecurringAppointmentModal({
                 </div>
                 <div>
                   <Label htmlFor="interval">Repeat Every *</Label>
-                  <div className="flex items-center gap-2">
+                  <Input
+                    id="interval"
+                    type="number"
+                    min="1"
+                    value={formData.interval}
+                    onChange={(e) => handleInputChange('interval', parseInt(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="startDate">Start Date *</Label>
+                  <Input
+                    id="startDate"
+                    type="date"
+                    value={formData.startDate}
+                    onChange={(e) => handleInputChange('startDate', e.target.value)}
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="startTime">Start Time *</Label>
                     <Input
-                      id="interval"
-                      type="number"
-                      min="1"
-                      value={formData.interval}
-                      onChange={(e) => handleInputChange('interval', parseInt(e.target.value))}
-                      className="w-20"
+                      id="startTime"
+                      type="time"
+                      value={formData.startTime}
+                      onChange={(e) => handleInputChange('startTime', e.target.value)}
                     />
-                    <span className="text-sm text-muted-foreground">
-                      {formData.frequency === 'daily' ? 'days' : 
-                       formData.frequency === 'weekly' ? 'weeks' : 'months'}
-                    </span>
+                  </div>
+                  <div>
+                    <Label htmlFor="duration">Duration (minutes) *</Label>
+                    <Input
+                      id="duration"
+                      type="number"
+                      min="15"
+                      step="15"
+                      value={formData.duration}
+                      onChange={(e) => handleInputChange('duration', parseInt(e.target.value))}
+                    />
                   </div>
                 </div>
               </div>
@@ -457,7 +479,7 @@ export function RecurringAppointmentModal({
                       <div key={day.value} className="flex items-center space-x-2">
                         <Checkbox
                           id={`day-${day.value}`}
-                          checked={(formData.daysOfWeek || []).includes(day.value as any)}
+                          checked={(formData.daysOfWeek || []).includes(day.value as import('@/lib/types/recurring-appointments').DayOfWeek)}
                           onCheckedChange={() => handleDayOfWeekToggle(day.value)}
                         />
                         <Label htmlFor={`day-${day.value}`} className="text-sm">

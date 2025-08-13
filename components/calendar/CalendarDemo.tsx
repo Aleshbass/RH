@@ -1,5 +1,4 @@
 'use client'
-// @ts-nocheck
 
 import { useState } from 'react'
 import { DragDropTooltipCalendar, type AppointmentData } from './DragDropTooltipCalendar'
@@ -8,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+
 import { toast } from 'sonner'
 
 // Mock data for demonstration
@@ -137,7 +136,7 @@ export function CalendarDemo() {
   }
 
   // Handle appointment clicks
-  const handleAppointmentClick = (appointment: any) => {
+  const handleAppointmentClick = (appointment: AppointmentData) => {
     toast.info(`Clicked appointment: ${appointment.patient?.firstName} ${appointment.patient?.lastName}`, {
       description: 'This would open the appointment details modal in your app'
     })
@@ -284,19 +283,19 @@ export function CalendarDemo() {
             <div className="flex items-start gap-3">
               <span className="text-lg">1️⃣</span>
               <div>
-                <strong>Test Colors:</strong> Click the "🎨 Colors" button, select a color or gradient, then click any appointment to apply it.
+                <strong>Test Colors:</strong> Click the &quot;🎨 Colors&quot; button, select a color or gradient, then click any appointment to apply it.
               </div>
             </div>
             <div className="flex items-start gap-3">
               <span className="text-lg">2️⃣</span>
               <div>
-                <strong>Test Pin Mode:</strong> Click "📌 Pin Mode" to activate it, then click appointments to pin/unpin them.
+                <strong>Test Pin Mode:</strong> Click &quot;📌 Pin Mode&quot; to activate it, then click appointments to pin/unpin them.
               </div>
             </div>
             <div className="flex items-start gap-3">
               <span className="text-lg">3️⃣</span>
               <div>
-                <strong>Test Priority:</strong> Click "⚡ Priority", select a level (urgent, high, medium, low), then click appointments.
+                <strong>Test Priority:</strong> Click &quot;⚡ Priority&quot;, select a level (urgent, high, medium, low), then click appointments.
               </div>
             </div>
             <div className="flex items-start gap-3">

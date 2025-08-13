@@ -12,7 +12,7 @@ export default function AdminUsersRedirect() {
     if (didRedirect.current) return;
     didRedirect.current = true;
     router.replace("/dashboard/admin/users");
-  }, []);
+  }, [router]);
 
   return (
     <div className="flex items-center justify-center min-h-screen">

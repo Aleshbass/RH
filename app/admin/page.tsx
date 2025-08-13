@@ -11,7 +11,7 @@ export default function AdminPage() {
     if (didRedirect.current) return;
     didRedirect.current = true;
     router.replace('/dashboard/admin');
-  }, []);
+  }, [router]);
 
   return (
     <div className="flex items-center justify-center min-h-screen">

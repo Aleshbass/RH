@@ -1,4 +1,4 @@
-// @ts-nocheck - Disable type checking to avoid deep type instantiation issues
+
 
 import { log } from './logger'
 import { ErrorTracker } from './sentry'
@@ -16,7 +16,7 @@ interface UserActivity {
   userId: string
   action: string
   timestamp: number
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 interface PerformanceMetric {
@@ -38,7 +38,7 @@ class AnalyticsTracker {
   }
 
   // Track user activity
-  trackUserActivity(userId: string, action: string, metadata?: Record<string, any>) {
+  trackUserActivity(userId: string, action: string, metadata?: Record<string, unknown>) {
     try {
       const activity: UserActivity = {
         userId,
@@ -145,7 +145,7 @@ class AnalyticsTracker {
   }
 
   // Update system response time
-  private updateSystemResponseTime(duration: number) {
+  private updateSystemResponseTime() {
     const responseTimeMetrics = this.metrics.get('api_response_time') || []
     if (responseTimeMetrics.length > 0) {
       const recent = responseTimeMetrics.slice(-10) // Last 10 requests
@@ -238,10 +238,10 @@ export const analyticsTracker = new AnalyticsTracker()
 
 // Middleware function for tracking API calls
 export function trackApiCall(endpoint: string) {
-  return function(target: any, propertyName: string, descriptor: PropertyDescriptor) {
+  return function(target: unknown, propertyName: string, descriptor: PropertyDescriptor) {
     const method = descriptor.value
     
-    descriptor.value = async function(...args: any[]) {
+    descriptor.value = async function(...args: unknown[]) {
       const startTime = Date.now()
       let statusCode = 200
       

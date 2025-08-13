@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar, Clock, MapPin, User, Wrench, AlertTriangle, CheckCircle } from 'lucide-react';
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, addDays, isSameDay, parseISO } from 'date-fns';
+import { format, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
 import { useResourceManagement } from '@/hooks/useResourceManagement';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
@@ -56,13 +56,12 @@ interface Resource {
 export const CalendarResourceView: React.FC<CalendarResourceViewProps> = ({
   clinicId,
   selectedDate,
-  onDateChange,
 }) => {
   const [selectedResourceType, setSelectedResourceType] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'day' | 'week'>('week');
 
   // Get resources and bookings
-  const { fetchResources } = useResourceManagement();
+  const {} = useResourceManagement();
   const allResources = useQuery(api.resourceManagement.getResources, { clinicId }) as Resource[] | undefined;
   const clinicResources = allResources?.filter((resource: Resource) => 
     resource.clinicId === clinicId && resource.isActive

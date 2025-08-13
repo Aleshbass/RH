@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, UserPlus, Mail, Phone, Calendar, User } from 'lucide-react'
+import { Loader2, UserPlus, Mail, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { useActionUntyped } from '@/lib/convexUntyped'
 import { api } from '@/convex/_generated/api'
@@ -42,7 +42,7 @@ export default function AddPatientDirectForm({ onSuccess, onCancel }: AddPatient
 
   // Use untyped action to avoid deep type instantiation
   const createPatientInvitation = useActionUntyped(
-    (api as any).actions.patients.invitePatient.createPatientInvitationWithNotification
+    ((api as unknown) as Record<string, Record<string, Record<string, Record<string, unknown>>>>)?.actions?.patients?.invitePatient?.createPatientInvitationWithNotification
   )
 
   const {
@@ -213,7 +213,7 @@ export default function AddPatientDirectForm({ onSuccess, onCancel }: AddPatient
 
             <div className="space-y-2">
               <Label htmlFor="gender">Gender</Label>
-              <Select onValueChange={(value) => setValue('gender', value as any)}>
+              <Select onValueChange={(value) => setValue('gender', value as 'male' | 'female' | 'other' | 'prefer_not_to_say')}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select gender" />
                 </SelectTrigger>

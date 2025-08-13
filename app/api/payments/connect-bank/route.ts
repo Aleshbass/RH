@@ -119,7 +119,7 @@ export async function GET() {
       throw new Error('Failed to fetch banks')
     }
 
-    const banks = banksResult.data.map((bank: any) => ({
+    const banks = banksResult.data.map((bank: { name: string; code: string; slug: string }) => ({
       name: bank.name,
       code: bank.code,
       slug: bank.slug
@@ -144,7 +144,7 @@ async function getBankName(bankCode: string): Promise<string> {
   try {
     const banksResult = await simplePaystackService.getBanks()
     if (banksResult.status) {
-      const bank = banksResult.data.find((b: any) => b.code === bankCode)
+      const bank = banksResult.data.find((b: { name: string; code: string; slug: string }) => b.code === bankCode)
       return bank?.name || 'Unknown Bank'
     }
     return 'Unknown Bank'

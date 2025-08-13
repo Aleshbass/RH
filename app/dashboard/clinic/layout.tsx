@@ -29,7 +29,7 @@ export default function ClinicLayout({
       authRedirected.current = true
       router.push('/sign-in')
     }
-  }, [isLoaded, isSignedIn])
+  }, [isLoaded, isSignedIn, router])
 
   // Show loading while auth is loading
   if (!isLoaded || !isSignedIn) {

@@ -1,7 +1,5 @@
 'use client'
-
-// @ts-nocheck
-import React, { useState, useMemo } from 'react'
+import React, { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,16 +13,13 @@ import {
   Repeat, 
   Edit, 
   Trash2, 
-  Users, 
-  MapPin,
-  AlertTriangle,
   CheckCircle,
   XCircle 
 } from 'lucide-react'
 import { useRecurringAppointments, useSeriesAppointments, recurringAppointmentUtils } from '@/hooks/useRecurringAppointments'
 import { Id } from '@/convex/_generated/dataModel'
 import { RecurringSeries, SeriesUpdateMode } from '@/lib/types/recurring-appointments'
-import { format } from 'date-fns'
+
 
 interface RecurringSeriesManagerProps {
   userId: Id<'users'>
@@ -146,20 +141,20 @@ function SeriesCard({ series, onEdit, onDelete }: {
   onDelete: () => void
 }) {
   const { appointments } = useSeriesAppointments({ 
-    seriesId: series._id as any,
+    seriesId: series._id as Id<'recurringSeries'>,
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] // Next 90 days
   })
 
-  const upcomingCount = appointments?.filter((apt: any) => 
+  const upcomingCount = appointments?.filter((apt: import('@/lib/types/recurring-appointments').SeriesAppointment) => 
     apt.startTime > Date.now() && apt.status === 'scheduled'
   ).length || 0
 
-  const completedCount = appointments?.filter((apt: any) => 
+  const completedCount = appointments?.filter((apt: import('@/lib/types/recurring-appointments').SeriesAppointment) => 
     apt.status === 'completed'
   ).length || 0
 
-  const cancelledCount = appointments?.filter((apt: any) => 
+  const cancelledCount = appointments?.filter((apt: import('@/lib/types/recurring-appointments').SeriesAppointment) => 
     apt.status === 'cancelled_by_patient' || apt.status === 'cancelled_by_therapist'
   ).length || 0
 
@@ -278,7 +273,6 @@ function SeriesCard({ series, onEdit, onDelete }: {
 export function RecurringSeriesManager({ userId, role, onEditSeries }: RecurringSeriesManagerProps) {
   const { 
     recurringSeries, 
-    updateRecurringSeries, 
     deleteRecurringSeries,
     isUpdating,
     isDeleting 
@@ -296,7 +290,7 @@ export function RecurringSeriesManager({ userId, role, onEditSeries }: Recurring
 
   const handleEditSeries = (series: RecurringSeries) => {
     if (onEditSeries) {
-      onEditSeries(series._id as any)
+      onEditSeries(series._id as Id<'recurringSeries'>)
     } else {
       setActionModal({
         isOpen: true,
@@ -314,7 +308,7 @@ export function RecurringSeriesManager({ userId, role, onEditSeries }: Recurring
     })
   }
 
-  const handleActionConfirm = async (mode: SeriesUpdateMode, fromDate?: string, reason?: string) => {
+  const handleActionConfirm = async (mode: SeriesUpdateMode, fromDate?: string) => {
     if (!actionModal.series) return
 
     try {
@@ -322,7 +316,7 @@ export function RecurringSeriesManager({ userId, role, onEditSeries }: Recurring
         // For now, just show a placeholder - full edit functionality would require a more complex modal
         console.log('Edit series:', actionModal.series._id || actionModal.series.id, mode, fromDate)
       } else {
-        await deleteRecurringSeries(actionModal.series._id || actionModal.series.id as any, mode, fromDate)
+        await deleteRecurringSeries((actionModal.series._id || actionModal.series.id) as Id<'recurringSeries'>, mode, fromDate)
       }
       
       setActionModal({ isOpen: false, series: null, action: 'edit' })
@@ -331,8 +325,8 @@ export function RecurringSeriesManager({ userId, role, onEditSeries }: Recurring
     }
   }
 
-  const activeSeries = recurringSeries?.filter((series: any) => series.isActive) || []
-  const inactiveSeries = recurringSeries?.filter((series: any) => !series.isActive) || []
+  const activeSeries = recurringSeries?.filter((series: import('@/lib/types/recurring-appointments').RecurringSeries) => series.isActive) || []
+  const inactiveSeries = recurringSeries?.filter((series: import('@/lib/types/recurring-appointments').RecurringSeries) => !series.isActive) || []
 
   if (!recurringSeries) {
     return (
@@ -364,7 +358,7 @@ export function RecurringSeriesManager({ userId, role, onEditSeries }: Recurring
             </ul>
           </div>
           <p className="text-sm text-gray-600">
-            Click "Create Recurring Series" above to get started
+            Click &quot;Create Recurring Series&quot; above to get started
           </p>
         </div>
       </div>
@@ -381,7 +375,7 @@ export function RecurringSeriesManager({ userId, role, onEditSeries }: Recurring
             Active Series ({activeSeries.length})
           </h3>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {activeSeries.map((series: any) => (
+            {activeSeries.map((series: import('@/lib/types/recurring-appointments').RecurringSeries) => (
               <SeriesCard
                 key={series._id}
                 series={series}
@@ -401,7 +395,7 @@ export function RecurringSeriesManager({ userId, role, onEditSeries }: Recurring
             Inactive Series ({inactiveSeries.length})
           </h3>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {inactiveSeries.map((series: any) => (
+            {inactiveSeries.map((series: import('@/lib/types/recurring-appointments').RecurringSeries) => (
               <SeriesCard
                 key={series._id}
                 series={series}

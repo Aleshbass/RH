@@ -27,8 +27,14 @@ interface WebVitalMetric {
 const canSendWebVitals = (): boolean => {
   if (typeof window === 'undefined') return false
   const enabled = process.env.NEXT_PUBLIC_WEB_VITALS_ENABLED === 'true'
-  const consentOk = (window as any).Cookiebot
-    ? Boolean((window as any).Cookiebot.consent?.statistics)
+  type CookiebotWindow = typeof window & {
+    Cookiebot?: {
+      consent?: { statistics?: boolean }
+    }
+  }
+  const cookiebotWin = window as CookiebotWindow;
+  const consentOk = cookiebotWin.Cookiebot
+    ? Boolean(cookiebotWin.Cookiebot.consent?.statistics)
     : false
   return enabled && consentOk
 }

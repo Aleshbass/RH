@@ -17,8 +17,7 @@ import {
   Shield,
   Zap,
   TrendingUp,
-  Clock,
-  AlertCircle
+  Clock
 } from 'lucide-react'
 
 // Simple interfaces to avoid deep type instantiation
@@ -167,17 +166,6 @@ export default function ProductionReadinessDashboard() {
   const readyFeatures = productionFeatures.filter(f => f.status === 'ready').length
   const totalFeatures = productionFeatures.length
   const readinessPercentage = Math.round((readyFeatures / totalFeatures) * 100)
-
-  const getHealthStatus = (health: SystemHealth) => {
-    switch (health.status) {
-      case 'healthy':
-        return { color: 'text-green-600', bg: 'bg-green-100', icon: CheckCircle2 }
-      case 'warning':
-        return { color: 'text-yellow-600', bg: 'bg-yellow-100', icon: AlertTriangle }
-      case 'critical':
-        return { color: 'text-red-600', bg: 'bg-red-100', icon: AlertCircle }
-    }
-  }
 
   if (loading) {
     return (

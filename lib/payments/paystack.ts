@@ -14,7 +14,7 @@ interface PaymentInitData {
   amount: number
   reference: string
   callback_url: string
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   subaccount?: string
   split_code?: string
 }
@@ -22,7 +22,7 @@ interface PaymentInitData {
 interface PaystackResponse {
   status: boolean
   message: string
-  data: any
+  data: unknown
 }
 
 interface SplitPaymentConfig {

@@ -1,8 +1,6 @@
 'use client'
-
-// @ts-nocheck
-import React, { useState, useEffect } from 'react'
-import { useQuery, useQuery as useQueryUntyped } from 'convex/react'
+import React, { useState } from 'react'
+import { useQuery as useQueryUntyped } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -53,7 +51,7 @@ export function PatientDashboard() {
 
   // Fetch patient data - using untyped to avoid deep type instantiation
   const user = useQueryUntyped(api.users.getMyUser)
-  const appointments = useQueryUntyped(api.appointments.getPatientAppointments, {})
+  const appointments = useQueryUntyped(api.appointments.getPatientAppointments, {}) as unknown[]
   
   // Use empty arrays for now since these endpoints don't exist yet
   const exercises: Exercise[] = []
@@ -86,7 +84,8 @@ export function PatientDashboard() {
   }
 
   // Stats for overview
-  const upcomingAppointments = appointments?.filter((a: any) => new Date(a.startTime) > new Date()) || []
+  
+const upcomingAppointments = appointments?.filter((a) => new Date(a.startTime) > new Date()) || []
   const nextAppointment = upcomingAppointments[0]
   
   const stats = {
@@ -142,7 +141,7 @@ export function PatientDashboard() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {appointments?.slice(0, 3).map((appointment: any) => (
+                {appointments?.slice(0, 3).map((appointment) => (
                   <div key={appointment._id} className="flex items-center space-x-4">
                     <Calendar className="h-5 w-5 text-gray-500" />
                     <div>
@@ -182,7 +181,7 @@ export function PatientDashboard() {
               </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {appointments?.map((appointment: any) => (
+                {appointments?.map((appointment) => (
                   <div key={appointment._id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="flex items-center space-x-4">
                       <div className="p-2 bg-primary/10 rounded-full">
@@ -219,7 +218,7 @@ export function PatientDashboard() {
         </TabsContent>
 
         <TabsContent value="health" className="space-y-6">
-          <HealthMonitoringDashboard patientId={user._id} />
+          <HealthMonitoringDashboard />
         </TabsContent>
 
         <TabsContent value="exercises" className="space-y-6">

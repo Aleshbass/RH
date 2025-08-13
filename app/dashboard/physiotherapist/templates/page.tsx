@@ -42,11 +42,11 @@ export default function NotesTemplatesPage() {
   const deleteTemplate = useMutation(api.notesTemplates.deleteTemplate)
   
   // Filter templates based on search
-  const filteredTemplates = templates?.filter((template: any) => {
+  const filteredTemplates = templates?.filter((template: { title: string; content: string; category?: string; tags?: string[]; scope: string }) => {
     const matchesSearch = template.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       template.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
       template.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      template.tags?.some((tag: any) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+      template.tags?.some((tag: string) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
     
     const matchesScope = template.scope === selectedScope
     
@@ -143,7 +143,7 @@ export default function NotesTemplatesPage() {
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredTemplates?.map((template: any) => (
+        {filteredTemplates?.map((template: { _id: string; title: string; content: string; category?: string; tags?: string[] }) => (
           <Card key={template._id}>
             <CardHeader>
               <CardTitle className="flex justify-between items-start">
@@ -183,7 +183,7 @@ export default function NotesTemplatesPage() {
               </p>
               {template.tags && template.tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-4">
-                  {template.tags.map((tag: any) => (
+                  {template.tags.map((tag: string) => (
                     <Badge key={tag} variant="outline">
                       {tag}
                     </Badge>

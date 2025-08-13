@@ -74,7 +74,7 @@ export class SimplePaystackService {
   }
 
   // Verify payment
-  async verifyPayment(reference: string): Promise<any> {
+  async verifyPayment(reference: string): Promise<unknown> {
     try {
       const response = await fetch(`${this.baseUrl}/transaction/verify/${reference}`, {
         headers: {
@@ -93,7 +93,7 @@ export class SimplePaystackService {
   }
 
   // Get banks list
-  async getBanks(): Promise<any> {
+  async getBanks(): Promise<unknown> {
     try {
       const response = await fetch(`${this.baseUrl}/bank`, {
         headers: {
@@ -109,7 +109,7 @@ export class SimplePaystackService {
   }
 
   // Resolve bank account
-  async resolveBankAccount(bankInfo: BankInfo): Promise<any> {
+  async resolveBankAccount(bankInfo: BankInfo): Promise<unknown> {
     try {
       const response = await fetch(
         `${this.baseUrl}/bank/resolve?account_number=${bankInfo.account_number}&bank_code=${bankInfo.bank_code}`,
@@ -133,7 +133,7 @@ export class SimplePaystackService {
     settlement_bank: string
     account_number: string
     percentage_charge: number
-  }): Promise<any> {
+  }): Promise<unknown> {
     try {
       const response = await fetch(`${this.baseUrl}/subaccount`, {
         method: 'POST',
@@ -152,7 +152,16 @@ export class SimplePaystackService {
   }
 
   // Verify webhook (Paystack uses IP whitelisting, not signature verification)
-  verifyWebhook(request: any): boolean {
+  verifyWebhook(request: unknown): boolean {
+    function isRequestWithHeaders(obj: unknown): obj is { headers?: Record<string, string | string[] | undefined>, connection?: { remoteAddress?: string } } {
+      return typeof obj === 'object' && obj !== null &&
+        ('headers' in obj || 'connection' in obj);
+    }
+
+    if (!isRequestWithHeaders(request)) {
+      log.error('Webhook verification failed: invalid request shape', { request } as Record<string, unknown>);
+      return false;
+    }
     try {
       // Paystack webhook IPs (production)
       const paystackIPs = [
@@ -162,14 +171,23 @@ export class SimplePaystackService {
       ]
       
       // Get client IP (in production, check x-forwarded-for header)
-      const clientIP = request.headers?.['x-forwarded-for']?.split(',')[0] || 
-                      request.headers?.['x-real-ip'] ||
-                      request.connection?.remoteAddress ||
-                      '127.0.0.1'
+      let clientIP: string | undefined;
+      const xForwardedFor = request.headers?.['x-forwarded-for'];
+      if (typeof xForwardedFor === 'string') {
+        clientIP = xForwardedFor.split(',')[0];
+      } else if (Array.isArray(xForwardedFor)) {
+        clientIP = xForwardedFor[0];
+      } else if (typeof request.headers?.['x-real-ip'] === 'string') {
+        clientIP = request.headers['x-real-ip'];
+      } else if (request.connection?.remoteAddress) {
+        clientIP = request.connection.remoteAddress;
+      } else {
+        clientIP = '127.0.0.1';
+      }
       
       // For development, always allow localhost
       if (process.env.NODE_ENV === 'development') {
-        log.info('Webhook verification (dev mode)', { clientIP } as any)
+        log.info('Webhook verification (dev mode)', { clientIP } as Record<string, unknown>)
         return true
       }
       
@@ -180,7 +198,7 @@ export class SimplePaystackService {
         clientIP, 
         isValid: isValidIP,
         paystackIPs 
-      } as any)
+      } as Record<string, unknown>)
       
       return isValidIP
     } catch (error) {

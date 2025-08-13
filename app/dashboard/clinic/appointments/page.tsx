@@ -3,6 +3,7 @@
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Appointment } from '@/stores/appointmentStore'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 
@@ -41,15 +42,15 @@ export default function ClinicAppointmentsPage() {
     )
   }
 
-  const todayAppointments = appointments?.filter((apt: any) => 
+  const todayAppointments = appointments?.filter((apt: Appointment) => 
     isToday(new Date(apt.startTime))
   ) || []
 
-  const upcomingAppointments = appointments?.filter((apt: any) => 
+  const upcomingAppointments = appointments?.filter((apt: Appointment) => 
     new Date(apt.startTime) > new Date() && !isToday(new Date(apt.startTime))
   ) || []
 
-  const pastAppointments = appointments?.filter((apt: any) => 
+  const pastAppointments = appointments?.filter((apt: Appointment) => 
     new Date(apt.startTime) < new Date() && !isToday(new Date(apt.startTime))
   ) || []
 
@@ -199,7 +200,7 @@ export default function ClinicAppointmentsPage() {
               <CardContent>
                 {todayAppointments.length > 0 ? (
                   <div className="space-y-4">
-                    {todayAppointments.map((appointment: any) => (
+                    {todayAppointments.map((appointment: Appointment) => (
                       <AppointmentCard key={appointment._id} appointment={appointment} />
                     ))}
                   </div>
@@ -225,7 +226,7 @@ export default function ClinicAppointmentsPage() {
               <CardContent>
                 {upcomingAppointments.length > 0 ? (
                   <div className="space-y-4">
-                    {upcomingAppointments.map((appointment: any) => (
+                    {upcomingAppointments.map((appointment: Appointment) => (
                       <AppointmentCard key={appointment._id} appointment={appointment} />
                     ))}
                   </div>
@@ -255,7 +256,7 @@ export default function ClinicAppointmentsPage() {
               <CardContent>
                 {pastAppointments.length > 0 ? (
                   <div className="space-y-4">
-                    {pastAppointments.slice(0, 10).map((appointment: any) => (
+                    {pastAppointments.slice(0, 10).map((appointment: Appointment) => (
                       <AppointmentCard key={appointment._id} appointment={appointment} />
                     ))}
                     {pastAppointments.length > 10 && (

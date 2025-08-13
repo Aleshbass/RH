@@ -83,7 +83,7 @@ export default function DashboardPage() {
           router.replace('/onboarding/role-selection')
       }
     }
-  }, [isLoaded, isSignedIn, user, dashboardAccess, isRedirecting])
+  }, [isLoaded, isSignedIn, user, dashboardAccess, isRedirecting, router])
 
   // Loading state while checking auth and user data
   if (!isLoaded || user === undefined || dashboardAccess === undefined) {

@@ -9,7 +9,7 @@ export interface CacheOptions {
   prefix?: string
 }
 
-export interface CachedItem<T = any> {
+export interface CachedItem<T = unknown> {
   data: T
   timestamp: number
   ttl: number
@@ -171,7 +171,7 @@ export class QueryCache {
    */
   static async cacheQuery<T>(
     queryName: string,
-    params: Record<string, any>,
+    params: Record<string, unknown>,
     result: T,
     ttl: number = CACHE_TTL.MEDIUM
   ): Promise<boolean> {
@@ -187,7 +187,7 @@ export class QueryCache {
    */
   static async getCachedQuery<T>(
     queryName: string,
-    params: Record<string, any>
+    params: Record<string, unknown>
   ): Promise<T | null> {
     const key = this.generateQueryKey(queryName, params)
     return CacheService.get<T>(key, { 
@@ -200,7 +200,7 @@ export class QueryCache {
    */
   static async invalidateQuery(
     queryName: string,
-    params?: Record<string, any>
+    params?: Record<string, unknown>
   ): Promise<boolean> {
     if (params) {
       const key = this.generateQueryKey(queryName, params)
@@ -214,13 +214,13 @@ export class QueryCache {
   /**
    * Generate consistent query cache key
    */
-  private static generateQueryKey(queryName: string, params: Record<string, any>): string {
+  private static generateQueryKey(queryName: string, params: Record<string, unknown>): string {
     const sortedParams = Object.keys(params)
       .sort()
       .reduce((acc, key) => {
         acc[key] = params[key]
         return acc
-      }, {} as Record<string, any>)
+      }, {} as Record<string, unknown>)
     
     const paramsHash = Buffer.from(JSON.stringify(sortedParams)).toString('base64')
     return `${queryName}:${paramsHash}`
@@ -234,7 +234,7 @@ export class SessionCache {
    */
   static async setSession(
     userId: string,
-    sessionData: Record<string, any>,
+    sessionData: Record<string, unknown>,
     ttl: number = CACHE_TTL.SESSION
   ): Promise<boolean> {
     return CacheService.set(userId, sessionData, {
@@ -246,7 +246,7 @@ export class SessionCache {
   /**
    * Get user session data
    */
-  static async getSession(userId: string): Promise<Record<string, any> | null> {
+  static async getSession(userId: string): Promise<Record<string, unknown> | null> {
     return CacheService.get(userId, {
       prefix: CACHE_PREFIXES.SESSION
     })
@@ -266,7 +266,7 @@ export class SessionCache {
    */
   static async updateSession(
     userId: string,
-    updates: Record<string, any>
+    updates: Record<string, unknown>
   ): Promise<boolean> {
     try {
       const existing = await this.getSession(userId) || {}

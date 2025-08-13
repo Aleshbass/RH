@@ -13,18 +13,14 @@ import 'tippy.js/themes/light.css'
 import 'tippy.js/themes/light-border.css'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
+
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { 
   Calendar, 
   Video, 
   MapPin, 
-  ChevronLeft,
-  ChevronRight,
   Clock,
-  User,
   Phone,
   Mail,
   AlertCircle,
@@ -328,7 +324,7 @@ export function DragDropTooltipCalendar({
       try {
         await onAppointmentUpdate(appointmentId, { isPinned: !isPinned })
         toast.success(isPinned ? 'Appointment unpinned' : 'Appointment pinned')
-      } catch (error) {
+      } catch {
         toast.error('Failed to update pin status')
       }
     }
@@ -339,7 +335,7 @@ export function DragDropTooltipCalendar({
       try {
         await onAppointmentUpdate(appointmentId, { colorCode })
         toast.success('Color updated successfully')
-      } catch (error) {
+      } catch {
         toast.error('Failed to update color')
       }
     }
@@ -350,7 +346,7 @@ export function DragDropTooltipCalendar({
       try {
         await onAppointmentUpdate(appointmentId, { priority })
         toast.success(`Priority set to ${priority}`)
-      } catch (error) {
+      } catch {
         toast.error('Failed to update priority')
       }
     }
@@ -402,14 +398,14 @@ export function DragDropTooltipCalendar({
   }, [viewMode, currentDate])
 
   // Handle date click for creating new appointments
-  const handleDateClick = (info: any): void => {
+  const handleDateClick = (info: { date: Date }): void => {
     if (!isDragging) {
       onCreateAppointment(info.date)
     }
   }
 
   // Handle event click with interactive modes
-  const handleEventClick = (info: any): void => {
+  const handleEventClick = (info: { event: { extendedProps: { appointment: AppointmentData } } }): void => {
     if (isDragging) return
     
     const appointment = info.event.extendedProps.appointment as AppointmentData
@@ -435,7 +431,7 @@ export function DragDropTooltipCalendar({
   }
 
   // Enhanced drag & drop handler
-  const handleEventDrop = async (info: any): Promise<void> => {
+  const handleEventDrop = async (info: { event: { id: string }; revert: () => void }): Promise<void> => {
     if (!enableDragDrop || !onAppointmentUpdate) {
       info.revert()
       toast.error('Drag & drop is not enabled')
@@ -486,7 +482,7 @@ export function DragDropTooltipCalendar({
   }
 
   // Enhanced resize handler
-  const handleEventResize = async (info: any): Promise<void> => {
+  const handleEventResize = async (info: { event: { id: string }; revert: () => void }): Promise<void> => {
     if (!enableDragDrop || !onAppointmentUpdate) {
       info.revert()
       toast.error('Resizing is not enabled')
@@ -525,7 +521,7 @@ export function DragDropTooltipCalendar({
   }
 
   // Drag start handler
-  const handleEventDragStart = (info: any): void => {
+  const handleEventDragStart = (info: { event: { id: string }; el: HTMLElement }): void => {
     setIsDragging(true)
     setDraggedEvent(info.event.id)
     
@@ -537,7 +533,7 @@ export function DragDropTooltipCalendar({
   }
 
   // Drag stop handler
-  const handleEventDragStop = (info: any): void => {
+  const handleEventDragStop = (info: { el: HTMLElement }): void => {
     // Reset visual feedback
     info.el.style.opacity = '1'
     info.el.style.transform = 'rotate(0deg)'

@@ -135,8 +135,8 @@ export const initBundlePerformanceMonitoring = () => {
       for (const entry of list.getEntries()) {
         if (entry.entryType === 'resource' && entry.name.includes('_next/static/chunks/')) {
           const chunkName = entry.name.split('/').pop()?.split('.')[0] || 'unknown'
-          const loadTime = (entry as any).responseEnd - entry.startTime
-          const size = (entry as any).transferSize || 0
+          const loadTime = (entry as PerformanceResourceTiming).responseEnd - entry.startTime
+          const size = (entry as PerformanceResourceTiming).transferSize || 0
 
           bundleMonitor.trackChunkLoad(chunkName, loadTime, size)
         }

@@ -1,12 +1,12 @@
 'use client'
-
-// @ts-nocheck
 import React, { lazy, Suspense } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 
 // Simple interfaces to avoid deep type instantiation
 interface ChartData {
-  [key: string]: any
+  name?: string
+  value?: number
+  [key: string]: string | number | undefined
 }
 
 interface BaseChartProps {
@@ -25,17 +25,11 @@ const ChartLoading = ({ className, message }: { className?: string; message?: st
   </div>
 )
 
-// Chart error fallback
-const ChartError = ({ error }: { error: Error }) => (
-  <div className="flex items-center justify-center h-[200px] text-muted-foreground">
-    <p>Failed to load chart: {error.message}</p>
-  </div>
-)
 
 // Lazy load Recharts components to reduce bundle size
 const LazyLineChart = lazy(
   () => import('recharts').then(mod => ({ 
-    default: ({ data, dataKey, stroke = '#8884d8', ...props }: any) => {
+    default: ({ data, dataKey, stroke = '#8884d8', ...props }: { data: ChartData[]; dataKey?: string; stroke?: string; [key: string]: unknown }) => {
       const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = mod
       return (
         <ResponsiveContainer width="100%" height={300}>
@@ -55,7 +49,7 @@ const LazyLineChart = lazy(
 
 const LazyBarChart = lazy(
   () => import('recharts').then(mod => ({ 
-    default: ({ data, dataKey, fill = '#8884d8', ...props }: any) => {
+    default: ({ data, dataKey, fill = '#8884d8', ...props }: { data: ChartData[]; dataKey?: string; fill?: string; [key: string]: unknown }) => {
       const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = mod
       return (
         <ResponsiveContainer width="100%" height={300}>
@@ -75,7 +69,7 @@ const LazyBarChart = lazy(
 
 const LazyPieChart = lazy(
   () => import('recharts').then(mod => ({ 
-    default: ({ data, dataKey, ...props }: any) => {
+    default: ({ data, dataKey, ...props }: { data: ChartData[]; dataKey?: string; [key: string]: unknown }) => {
       const { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } = mod
       const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8']
       
@@ -91,7 +85,7 @@ const LazyPieChart = lazy(
               fill="#8884d8"
               dataKey={dataKey || 'value'}
             >
-              {data.map((_: any, index: number) => (
+              {data.map((entry: ChartData, index: number) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>

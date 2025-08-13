@@ -71,7 +71,12 @@ export function ResourceDashboard({ clinicId }: ResourceDashboardProps) {
   const [deletingResourceId, setDeleteingResourceId] = useState<Id<"resources"> | null>(null);
 
   // Fetch resources
-  const [resources, setResources] = useState<any[]>([]);
+  type ResourceType = "equipment" | "room" | "staff" | "vehicle";
+interface Resource extends Omit<CreateResourceParams, "clinicId"> {
+  _id: string;
+  isActive?: boolean;
+}
+const [resources, setResources] = useState<Resource[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Load resources
@@ -81,7 +86,7 @@ export function ResourceDashboard({ clinicId }: ResourceDashboardProps) {
         setLoading(true);
         const data = await fetchResources({
           clinicId,
-          type: typeFilter !== "all" ? (typeFilter as any) : undefined,
+          type: typeFilter !== "all" ? (typeFilter as ResourceType) : undefined,
           isActive: statusFilter === "active" ? true : statusFilter === "inactive" ? false : undefined,
         });
         setResources(data || []);
@@ -96,7 +101,7 @@ export function ResourceDashboard({ clinicId }: ResourceDashboardProps) {
   }, [clinicId, typeFilter, statusFilter, fetchResources]);
 
   // Filter resources by search term
-  const filteredResources = resources.filter((resource: any) =>
+  const filteredResources = resources.filter((resource: Resource) =>
     resource.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     resource.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     resource.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -120,7 +125,7 @@ export function ResourceDashboard({ clinicId }: ResourceDashboardProps) {
   };
 
   // Get status badge
-  const getStatusBadge = (resource: any) => {
+  const getStatusBadge = (resource: Resource) => {
     const status = resourceUtils.getResourceStatus(resource);
     const colorMap: Record<string, string> = {
       green: "bg-green-100 text-green-800",
@@ -145,7 +150,7 @@ export function ResourceDashboard({ clinicId }: ResourceDashboardProps) {
       // Reload resources after deletion
       const data = await fetchResources({
         clinicId,
-        type: typeFilter !== "all" ? (typeFilter as any) : undefined,
+        type: typeFilter !== "all" ? (typeFilter as ResourceType) : undefined,
         isActive: statusFilter === "active" ? true : statusFilter === "inactive" ? false : undefined,
       });
       setResources(data || []);
@@ -156,7 +161,7 @@ export function ResourceDashboard({ clinicId }: ResourceDashboardProps) {
   };
 
   // Resource type statistics
-  const resourceStats = resources.reduce((acc: Record<string, number>, resource: any) => {
+  const resourceStats = resources.reduce((acc: Record<string, number>, resource: Resource) => {
     acc[resource.type] = (acc[resource.type] || 0) + 1;
     acc.total = (acc.total || 0) + 1;
     if (resource.isActive) {
@@ -288,7 +293,7 @@ export function ResourceDashboard({ clinicId }: ResourceDashboardProps) {
         <CardHeader>
           <CardTitle>Resources ({filteredResources.length})</CardTitle>
           <CardDescription>
-            Manage your clinic's resources and their availability
+            Manage your clinic&apos;s resources and their availability
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -339,7 +344,7 @@ export function ResourceDashboard({ clinicId }: ResourceDashboardProps) {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredResources.map((resource: any) => (
+                  {filteredResources.map((resource: Resource) => (
                     <tr key={resource._id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">

@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Create admin notification email
-async function createAdminEmail(paymentType: string, reference: string, amount?: number, metadata?: any) {
+async function createAdminEmail(paymentType: string, reference: string, amount?: number, metadata?: Record<string, unknown>) {
   const isSuccess = paymentType === 'success'
   const amountFormatted = amount ? `₦${(amount / 100).toLocaleString()}` : 'N/A'
   
@@ -116,7 +116,7 @@ async function createAdminEmail(paymentType: string, reference: string, amount?:
 }
 
 // Create patient notification email
-async function createPatientEmail(paymentType: string, reference: string, amount?: number, metadata?: any, userId?: string) {
+async function createPatientEmail(paymentType: string, reference: string, amount?: number, metadata?: Record<string, unknown>, userId?: string) {
   const isSuccess = paymentType === 'success'
   const amountFormatted = amount ? `₦${(amount / 100).toLocaleString()}` : 'N/A'
   
@@ -183,7 +183,7 @@ async function createPatientEmail(paymentType: string, reference: string, amount
 }
 
 // Create physiotherapist notification email
-async function createPhysiotherapistEmail(paymentType: string, reference: string, amount?: number, metadata?: any, userId?: string) {
+async function createPhysiotherapistEmail(paymentType: string, reference: string, amount?: number, metadata?: Record<string, unknown>, userId?: string) {
   const isSuccess = paymentType === 'success'
   const amountFormatted = amount ? `₦${(amount / 100).toLocaleString()}` : 'N/A'
   

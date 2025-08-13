@@ -3,6 +3,27 @@
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Id } from '@/convex/_generated/dataModel'
+
+// Invoice interface
+interface Invoice {
+  _id: Id<"invoices">
+  invoiceNumber: string
+  clinicName?: string
+  items: Array<{
+    description: string
+    quantity: number
+    unitPrice: number
+    totalPrice: number
+  }>
+  subtotalAmount: number
+  discountAmount?: number
+  platformFeeAmount: number
+  totalAmount: number
+  status: string
+  issueDate: number
+  dueDate: number
+}
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -42,9 +63,9 @@ export default function ClinicBillingPage() {
     )
   }
 
-  const pendingInvoices = invoices?.filter((inv: any) => inv.status === 'pending') || []
-  const paidInvoices = invoices?.filter((inv: any) => inv.status === 'paid') || []
-  const overdueInvoices = invoices?.filter((inv: any) => 
+  const pendingInvoices = invoices?.filter((inv: Invoice) => inv.status === 'pending') || []
+  const paidInvoices = invoices?.filter((inv: Invoice) => inv.status === 'paid') || []
+  const overdueInvoices = invoices?.filter((inv: Invoice) => 
     inv.status === 'pending' && new Date(inv.dueDate) < new Date()
   ) || []
 
@@ -196,7 +217,7 @@ export default function ClinicBillingPage() {
               <CardContent>
                 {pendingInvoices.length > 0 ? (
                   <div className="space-y-4">
-                    {pendingInvoices.map((invoice: any) => (
+                    {pendingInvoices.map((invoice: Invoice) => (
                       <InvoiceCard key={invoice._id} invoice={invoice} />
                     ))}
                   </div>
@@ -226,7 +247,7 @@ export default function ClinicBillingPage() {
               <CardContent>
                 {paidInvoices.length > 0 ? (
                   <div className="space-y-4">
-                    {paidInvoices.slice(0, 10).map((invoice: any) => (
+                    {paidInvoices.slice(0, 10).map((invoice: Invoice) => (
                       <InvoiceCard key={invoice._id} invoice={invoice} />
                     ))}
                     {paidInvoices.length > 10 && (
@@ -257,7 +278,7 @@ export default function ClinicBillingPage() {
               <CardContent>
                 {overdueInvoices.length > 0 ? (
                   <div className="space-y-4">
-                    {overdueInvoices.map((invoice: any) => (
+                    {overdueInvoices.map((invoice: Invoice) => (
                       <InvoiceCard key={invoice._id} invoice={invoice} />
                     ))}
                   </div>

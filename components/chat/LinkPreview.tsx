@@ -1,4 +1,4 @@
-// @ts-nocheck - Disable type checking due to deep type instantiation issues with Convex types
+
 
 'use client'
 
@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ExternalLink, Play, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import Image from 'next/image'
 
 interface LinkPreviewProps {
   url: string
@@ -183,12 +184,16 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({ url, className }) => {
           <div className="flex-shrink-0">
             {metadata.image ? (
               <div className="relative w-16 h-12 bg-muted rounded overflow-hidden">
-                <img
+                <Image
                   src={metadata.image}
                   alt={metadata.title || 'Link preview'}
                   className="w-full h-full object-cover"
+                  width={64}
+                  height={48}
                   onError={(e) => {
-                    e.currentTarget.style.display = 'none'
+                    // Handle error by hiding the image
+                    const target = e.target as HTMLImageElement
+                    target.style.display = 'none'
                   }}
                 />
                 {metadata.type === 'video' && (

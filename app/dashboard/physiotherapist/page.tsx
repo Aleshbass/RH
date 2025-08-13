@@ -22,7 +22,7 @@ export default function PhysiotherapistDashboardPage() {
       authRedirected.current = true
       router.push('/sign-in')
     }
-  }, [isLoaded, isSignedIn])
+  }, [isLoaded, isSignedIn, router])
 
   // Redirect if not physiotherapist
   useEffect(() => {
@@ -30,7 +30,7 @@ export default function PhysiotherapistDashboardPage() {
       roleRedirected.current = true
       router.push('/sign-in')
     }
-  }, [user])
+  }, [user, router])
 
   // Loading state
   if (!isLoaded || user === undefined) {

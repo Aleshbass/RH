@@ -1,8 +1,10 @@
-// @ts-nocheck
+
 import { NextRequest, NextResponse } from 'next/server'
 import { SessionManager } from './sessionManager'
 import { QueryCache, CACHE_TTL } from './caching'
 import { Id } from '@/convex/_generated/dataModel'
+
+type RecentActivityKeys = 'lastLogin' | 'lastActivity' | 'lastAppointment' | 'lastPatientView' | 'lastClinicView'
 
 // Cache configuration for different routes
 const ROUTE_CACHE_CONFIG = {
@@ -28,7 +30,7 @@ export async function sessionMiddleware(request: NextRequest) {
       // Record API activity
       const pathname = request.nextUrl.pathname
       if (pathname.startsWith('/api/')) {
-        await SessionManager.recordActivity(userId, 'lastActivity' as any, Date.now())
+        await SessionManager.recordActivity(userId, 'lastActivity' as RecentActivityKeys, Date.now())
       }
     }
   } catch (error) {
@@ -91,7 +93,7 @@ export async function cacheMiddleware(request: NextRequest) {
 export class ResponseCache {
   static async cacheResponse(
     key: string,
-    data: any,
+    data: unknown,
     ttl: number = CACHE_TTL.MEDIUM
   ): Promise<void> {
     try {

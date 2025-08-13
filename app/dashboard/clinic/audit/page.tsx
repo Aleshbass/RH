@@ -18,23 +18,16 @@ import {
 } from '@/components/ui/select'
 import { 
   Shield,
-  ShieldCheck,
-  ShieldX,
   UserPlus,
-  UserMinus,
-  UserCheck,
   UserX,
   UserCog,
   Mail,
-  Calendar,
   Search,
-  Filter,
   Download,
   Activity,
   AlertCircle,
   CheckCircle,
   XCircle,
-  Clock,
   Building2
 } from 'lucide-react'
 import { format } from 'date-fns'
@@ -45,7 +38,7 @@ interface AuditLogEntry {
   userId: string
   targetUserId?: string
   clinicId: string
-  details: any
+  details: Record<string, unknown>
   timestamp: number
   user?: {
     firstName?: string
@@ -73,7 +66,7 @@ export default function AuditLogPage() {
   })
 
   // Filter logs based on search term
-  const filteredLogs = auditLogs?.filter((log: any) => {
+  const filteredLogs = auditLogs?.filter((log: AuditLogEntry) => {
     const searchLower = searchTerm.toLowerCase()
     const userName = `${log.user?.firstName || ''} ${log.user?.lastName || ''}`.trim()
     const targetUserName = `${log.targetUser?.firstName || ''} ${log.targetUser?.lastName || ''}`.trim()
@@ -162,7 +155,7 @@ export default function AuditLogPage() {
   const exportAuditLog = () => {
     const csvContent = [
       ['Timestamp', 'Action', 'User', 'Target User', 'Description', 'Details'],
-      ...filteredLogs.map((log: any) => [
+      ...filteredLogs.map((log: AuditLogEntry) => [
         format(new Date(log.timestamp), 'yyyy-MM-dd HH:mm:ss'),
         log.action,
         `${log.user?.firstName || ''} ${log.user?.lastName || ''}`.trim() || log.user?.email,
@@ -280,7 +273,7 @@ export default function AuditLogPage() {
                   <p>No audit log entries found matching your criteria</p>
                 </div>
               ) : (
-                filteredLogs.map((log: any) => (
+                filteredLogs.map((log: AuditLogEntry) => (
                   <div key={log._id} className="flex items-start gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                     <div className="flex-shrink-0 mt-1">
                       {getActionIcon(log.action)}

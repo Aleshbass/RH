@@ -15,12 +15,12 @@ interface MaintenanceAlertRequest {
 export async function POST(request: NextRequest) {
   try {
     const body: MaintenanceAlertRequest = await request.json();
-    const { clinicId, resourceName, maintenanceType, scheduledDate, description } = body;
+    const { resourceName, maintenanceType, scheduledDate, description } = body;
 
     // Get clinic details (you would fetch this from your database)
     // For now, using placeholder data
     const clinicEmail = 'admin@rehabifyhealth.com'; // This should be fetched from clinic data
-    const clinicName = 'RehabifyHealth Clinic'; // This should be fetched from clinic data
+    // Note: clinicId and clinicName would be used in production to fetch actual clinic details
 
     const formattedDate = format(new Date(scheduledDate), 'PPP');
     const formattedTime = format(new Date(scheduledDate), 'p');

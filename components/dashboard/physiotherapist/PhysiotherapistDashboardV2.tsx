@@ -79,14 +79,19 @@ export function PhysiotherapistDashboardV2() {
   const recentSessionsData = useQuery(api.sessionLogs.getMySessionLogs, { limit: 5 })
   
   // Transform the data to match the expected interface
-  const recentSessions = recentSessionsData?.map((session: any) => ({
+  type SessionLike = {
+    _id: string;
+    sessionDate: string;
+    patient?: { firstName?: string; lastName?: string };
+  };
+  const recentSessions = recentSessionsData?.map((session: SessionLike) => ({
     _id: session._id,
     sessionDate: session.sessionDate,
     patient: session.patient ? {
       firstName: session.patient.firstName || '',
       lastName: session.patient.lastName || ''
     } : undefined
-  }))
+  })) || []
 
   // Router for navigation in quick actions
   const router = useRouter()
@@ -241,7 +246,7 @@ export function PhysiotherapistDashboardV2() {
             </div>
             <div className="mt-3 p-3 bg-blue-100 rounded-lg">
               <p className="text-xs text-blue-800">
-                <strong>Note:</strong> Your patients, appointments, and treatment plans are managed within this clinic's system. 
+                <strong>Note:</strong> Your patients, appointments, and treatment plans are managed within this clinic&apos;s system. 
                 You have your own individual dashboard with full access to manage your assigned patients.
               </p>
             </div>

@@ -33,7 +33,7 @@ export const handlePatientDataFetch = async (patientId: string) => {
 }
 
 // Example 2: Custom Span Instrumentation in Component Actions
-export const handleAppointmentBooking = (appointmentData: any) => {
+export const handleAppointmentBooking = (appointmentData: Record<string, unknown>) => {
   // Create a transaction/span to measure performance
   return Sentry.startSpan(
     {
@@ -45,12 +45,12 @@ export const handleAppointmentBooking = (appointmentData: any) => {
       const serviceType = appointmentData.serviceType
 
       // Metrics can be added to the span
-      span.setAttribute("patient_id", patientId)
-      span.setAttribute("service_type", serviceType)
+      span.setAttribute("patient_id", String(patientId))
+      span.setAttribute("service_type", String(serviceType))
       span.setAttribute("booking_source", "dashboard")
 
       // Perform the booking logic
-      return bookAppointment(appointmentData)
+      return bookAppointment()
     }
   )
 }
@@ -76,13 +76,13 @@ export const fetchUserData = async (userId: string) => {
 }
 
 // Example 4: Using our custom trackUIAction utility
-export const handleHealthDataSubmission = (vitalSigns: any) => {
+export const handleHealthDataSubmission = () => {
   return trackUIAction(
     "Submit Vital Signs",
     "ui.form.submit",
     () => {
       // Submit vital signs logic
-      return submitVitalSigns(vitalSigns)
+      return submitVitalSigns()
     },
     {
       data_type: "vital_signs",
@@ -93,7 +93,7 @@ export const handleHealthDataSubmission = (vitalSigns: any) => {
 }
 
 // Example 5: Using our custom trackAPICall utility
-export const updatePatientProfile = async (patientId: string, profileData: any) => {
+export const updatePatientProfile = async (patientId: string, profileData: Record<string, unknown>) => {
   return trackAPICall(
     "PUT",
     `/api/patients/${patientId}/profile`,
@@ -114,7 +114,7 @@ export const updatePatientProfile = async (patientId: string, profileData: any) 
 }
 
 // Example 6: Structured Logging with Sentry Logger
-export const logPatientActivity = (activityType: string, patientId: string, details: any) => {
+export const logPatientActivity = (activityType: string, patientId: string, details: Record<string, unknown>) => {
   // Using template literal function for variables
   logger.info(logger.fmt`Patient activity recorded: ${activityType}`, {
     patientId,
@@ -192,5 +192,5 @@ export const trackButtonClick = (buttonName: string, componentName: string) => {
 // trackButtonClick("Test Sentry Integration", "ExampleComponent")
 
 // Mock functions for examples
-const bookAppointment = (data: any) => Promise.resolve({ success: true, id: '123' })
-const submitVitalSigns = (data: any) => Promise.resolve({ success: true })
+const bookAppointment = () => Promise.resolve({ success: true, id: '123' })
+const submitVitalSigns = () => Promise.resolve({ success: true })

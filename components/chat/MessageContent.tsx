@@ -1,10 +1,10 @@
-// @ts-nocheck - Disable type checking due to deep type instantiation issues with Convex types
+
 
 'use client'
 
 import React from 'react'
 import LinkPreview from './LinkPreview'
-import { parseTextWithUrls, type TextPart } from '@/lib/utils/linkDetection'
+import { parseTextWithUrls } from '@/lib/utils/linkDetection'
 import { cn } from '@/lib/utils'
 
 interface MessageContentProps {

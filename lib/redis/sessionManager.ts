@@ -2,6 +2,8 @@ import { SessionCache, CACHE_TTL } from './caching'
 import { Id } from '@/convex/_generated/dataModel'
 
 // Session data structure
+type RecentActivityKeys = 'lastLogin' | 'lastActivity' | 'lastAppointment' | 'lastPatientView' | 'lastClinicView';
+
 export interface UserSession {
   userId: Id<"users">
   clerkId: string
@@ -11,11 +13,11 @@ export interface UserSession {
     theme?: 'light' | 'dark'
     language?: string
     timezone?: string
-    dashboardLayout?: Record<string, any>
+    dashboardLayout?: Record<string, unknown>
   }
   dashboardState?: {
     activeTab?: string
-    filters?: Record<string, any>
+    filters?: Record<string, unknown>
     sidebarCollapsed?: boolean
   }
   recentActivity?: {
@@ -156,7 +158,7 @@ export class SessionManager {
    */
   static async recordActivity(
     userId: Id<"users">,
-    activityType: keyof UserSession['recentActivity'],
+    activityType: RecentActivityKeys,
     value: number | string
   ): Promise<boolean> {
     try {

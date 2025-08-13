@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+// Removed unused useState import
 import { useQuery, useAction } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { 
   Users, 
-  UserPlus, 
   Mail, 
   Activity,
   Shield,
@@ -27,8 +26,28 @@ import { toast } from 'sonner'
 
 
 
+// Type definitions for staff and invitations
+interface StaffMember {
+  _id: string;
+  status: string;
+  role: string;
+  user?: {
+    onboarded: boolean;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+  };
+  [key: string]: unknown;
+}
+
+interface Invitation {
+  _id: string;
+  inviteeName?: string;
+  inviteeEmail: string;
+  [key: string]: unknown;
+}
+
 export default function StaffManagementPage() {
-  const [refreshKey, setRefreshKey] = useState(0)
   
   // Queries
   const clinicStaffQuery = useQuery(api.clinics.getClinicStaff)
@@ -46,8 +65,7 @@ export default function StaffManagementPage() {
   const staffMetrics = staffMetricsQuery
 
   const handleRefresh = () => {
-    setRefreshKey(prev => prev + 1)
-    // Force refresh by updating a key that triggers re-render
+    // Force refresh by reloading the page
     window.location.reload()
   }
 
@@ -125,7 +143,7 @@ export default function StaffManagementPage() {
             <CardContent>
               <div className="text-2xl font-bold">{clinicStaff?.length || 0}</div>
               <div className="flex items-center gap-2 mt-2">
-                <p className="text-xs text-muted-foreground">Active: {clinicStaff?.filter((staff: any) => staff.status === 'active').length || 0}</p>
+                <p className="text-xs text-muted-foreground">Active: {clinicStaff?.filter((staff: StaffMember) => staff.status === 'active').length || 0}</p>
                 <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
                   <TrendingUp className="h-3 w-3 mr-1" />
                   +{staffMetrics?.newThisMonth || 0} this month
@@ -152,7 +170,7 @@ export default function StaffManagementPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {clinicStaff?.filter((staff: any) => staff.user?.onboarded)?.length || 0}
+                {clinicStaff?.filter((staff: StaffMember) => staff.user?.onboarded)?.length || 0}
               </div>
               <p className="text-xs text-muted-foreground">Currently online</p>
             </CardContent>
@@ -165,7 +183,7 @@ export default function StaffManagementPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {clinicStaff?.filter((staff: any) => staff.role === 'physiotherapist').length || 0}
+                {clinicStaff?.filter((staff: StaffMember) => staff.role === 'physiotherapist').length || 0}
               </div>
               <p className="text-xs text-muted-foreground">Physiotherapists</p>
             </CardContent>
@@ -184,7 +202,7 @@ export default function StaffManagementPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {pendingInvitations.map((invitation: any) => (
+                {pendingInvitations.map((invitation: Invitation) => (
                   <div key={invitation._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                     <div className="flex items-center space-x-4">
                       <div className="bg-orange-100 p-2 rounded-full">

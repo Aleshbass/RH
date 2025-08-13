@@ -72,14 +72,14 @@ export default function ReportsPage() {
     if (isLoaded && !isSignedIn) {
       router.push('/sign-in');
     }
-  }, [isLoaded, isSignedIn]);
+  }, [isLoaded, isSignedIn, router]);
 
   // Redirect if not physiotherapist
   useEffect(() => {
     if (currentUser && currentUser.role !== 'physiotherapist') {
       router.push('/dashboard');
     }
-  }, [currentUser]);
+  }, [currentUser, router]);
 
   // Loading state
   if (!isLoaded || currentUser === undefined) {
@@ -134,7 +134,7 @@ export default function ReportsPage() {
   }
 
   // Process data for charts
-  const appointmentsByStatus = appointments.reduce((acc: Record<string, number>, appointment: any) => {
+  const appointmentsByStatus = appointments.reduce((acc: Record<string, number>, appointment: { status: string }) => {
     acc[appointment.status] = (acc[appointment.status] || 0) + 1;
     return acc;
   }, {});
@@ -147,7 +147,7 @@ export default function ReportsPage() {
   // Appointments by day (last 7 days)
   const appointmentsByDay = Array.from({ length: 7 }, (_, i) => {
     const date = subDays(now, 6 - i);
-    const dayAppointments = appointments.filter((apt: any) => {
+    const dayAppointments = appointments.filter((apt: { startTime: number }) => {
       const aptDate = new Date(apt.startTime);
       return aptDate.toDateString() === date.toDateString();
     });
@@ -155,12 +155,12 @@ export default function ReportsPage() {
     return {
       date: format(date, 'MMM dd'),
       appointments: dayAppointments.length,
-      completed: dayAppointments.filter((apt: any) => apt.status === 'completed').length,
+      completed: dayAppointments.filter((apt: { status: string }) => apt.status === 'completed').length,
     };
   });
 
   // Service type distribution
-  const serviceTypes = appointments.reduce((acc: Record<string, number>, appointment: any) => {
+  const serviceTypes = appointments.reduce((acc: Record<string, number>, appointment: { serviceType: string }) => {
     acc[appointment.serviceType] = (acc[appointment.serviceType] || 0) + 1;
     return acc;
   }, {});
@@ -315,7 +315,7 @@ export default function ReportsPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {appointments.slice(0, 5).map((appointment: any) => (
+                {appointments.slice(0, 5).map((appointment: { _id: string; patient?: { firstName?: string; lastName?: string }; startTime: number; status: string; serviceType: string }) => (
                   <div key={appointment._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-3">
                       <div>
@@ -459,12 +459,12 @@ export default function ReportsPage() {
                 <div className="text-center py-8">
                   <div className="text-4xl font-bold text-green-600 mb-2">
                     {appointments.length > 0 
-                      ? Math.round((appointments.filter((apt: any) => apt.status === 'completed').length / appointments.length) * 100)
+                      ? Math.round((appointments.filter((apt: { status: string }) => apt.status === 'completed').length / appointments.length) * 100)
                       : 0
                     }%
                   </div>
                   <p className="text-gray-600">
-                    {appointments.filter((apt: any) => apt.status === 'completed').length} of {appointments.length} appointments completed
+                    {appointments.filter((apt: { status: string }) => apt.status === 'completed').length} of {appointments.length} appointments completed
                   </p>
                 </div>
               </CardContent>
@@ -479,12 +479,12 @@ export default function ReportsPage() {
                 <div className="text-center py-8">
                   <div className="text-4xl font-bold text-orange-600 mb-2">
                     {appointments.length > 0 
-                      ? Math.round((appointments.filter((apt: any) => apt.status === 'no_show').length / appointments.length) * 100)
+                      ? Math.round((appointments.filter((apt: { status: string }) => apt.status === 'no_show').length / appointments.length) * 100)
                       : 0
                     }%
                   </div>
                   <p className="text-gray-600">
-                    {appointments.filter((apt: any) => apt.status === 'no_show').length} no-shows out of {appointments.length} appointments
+                    {appointments.filter((apt: { status: string }) => apt.status === 'no_show').length} no-shows out of {appointments.length} appointments
                   </p>
                 </div>
               </CardContent>

@@ -373,7 +373,7 @@ export default function VideoCallManager({
                   </div>
                   <ScrollArea className="h-96">
                     <div className="space-y-2">
-                      {filteredCallHistory?.map((call: any) => (
+                      {filteredCallHistory?.map((call) => (
                         <Card key={call._id} className="p-4">
                           <div className="flex items-center justify-between">
                             <div className="space-y-1">
@@ -465,7 +465,7 @@ export default function VideoCallManager({
               </div>
               <div>
                 <div className="text-2xl font-bold">
-                  {callHistory?.filter((c: any) => c.status === 'ended').length || 0}
+                  {callHistory?.filter((c) => c.status === 'ended').length || 0}
                 </div>
                 <div className="text-sm text-gray-500">Total Calls</div>
               </div>
@@ -482,7 +482,7 @@ export default function VideoCallManager({
               <div>
                 <div className="text-2xl font-bold">
                   {Math.round(
-                    (callHistory?.reduce((acc: number, call: any) => acc + (call.duration || 0), 0) || 0) / 60
+                    (callHistory?.reduce((acc: number, call) => acc + (call.duration || 0), 0) || 0) / 60
                   )}m
                 </div>
                 <div className="text-sm text-gray-500">Total Time</div>
@@ -499,7 +499,7 @@ export default function VideoCallManager({
               </div>
               <div>
                 <div className="text-2xl font-bold">
-                  {callHistory?.filter((c: any) => c.status === 'active').length || 0}
+                  {callHistory?.filter((c) => c.status === 'active').length || 0}
                 </div>
                 <div className="text-sm text-gray-500">Active Calls</div>
               </div>

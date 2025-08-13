@@ -1,9 +1,9 @@
-// @ts-nocheck - Disable type checking due to deep type instantiation issues with Convex types
+
 
 'use client'
 
 import React from 'react'
-import { CheckCheck, Clock, Check } from 'lucide-react'
+import { CheckCheck, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface MessageStatusProps {
@@ -60,19 +60,16 @@ const MessageStatus: React.FC<MessageStatusProps> = ({
           // Double blue checkmarks - Message read
           <CheckCheck 
             className="h-3 w-3 text-blue-500" 
-            title="Read"
           />
         ) : isDelivered ? (
           // Double grey checkmarks - Message delivered but not read
           <CheckCheck 
             className="h-3 w-3 text-primary-foreground/50" 
-            title="Delivered"
           />
         ) : (
           // Single grey checkmark - Message sent but not delivered
           <Check 
             className="h-3 w-3 text-primary-foreground/50" 
-            title="Sent"
           />
         )}
       </div>

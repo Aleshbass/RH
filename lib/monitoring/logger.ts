@@ -41,7 +41,7 @@ interface LogContext {
   resource?: string
   duration?: number
   error?: Error | string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   // Payment-related fields
   type?: string
   emailId?: string
@@ -50,9 +50,9 @@ interface LogContext {
   subaccountCode?: string
   reference?: string
   event?: string
-  data?: any
+  data?: unknown
   // Allow any additional custom properties
-  [key: string]: any
+  [key: string]: unknown
 }
 
 // Enhanced logger with context
@@ -67,7 +67,7 @@ export class Logger {
     return Logger.instance
   }
 
-  private formatMessage(message: string, context?: LogContext): any {
+  private formatMessage(message: string, context?: LogContext): Record<string, unknown> {
     const baseLog = {
       message,
       timestamp: new Date().toISOString(),
@@ -110,7 +110,7 @@ export class Logger {
   }
 
   // Specialized logging methods for common use cases
-  userAction(action: string, userId: string, metadata?: Record<string, any>): void {
+  userAction(action: string, userId: string, metadata?: Record<string, unknown>): void {
     this.info(`User action: ${action}`, {
       userId,
       action,
@@ -146,7 +146,7 @@ export class Logger {
     })
   }
 
-  securityEvent(event: string, userId?: string, metadata?: Record<string, any>): void {
+  securityEvent(event: string, userId?: string, metadata?: Record<string, unknown>): void {
     this.warn(`Security event: ${event}`, {
       userId,
       action: 'security_event',
@@ -162,7 +162,7 @@ export class Logger {
     })
   }
 
-  businessEvent(event: string, userId?: string, metadata?: Record<string, any>): void {
+  businessEvent(event: string, userId?: string, metadata?: Record<string, unknown>): void {
     this.info(`Business event: ${event}`, {
       userId,
       action: 'business_event',

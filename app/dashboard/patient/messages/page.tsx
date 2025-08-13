@@ -12,12 +12,8 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Id } from '@/convex/_generated/dataModel'
 
-interface Physiotherapist {
-  physiotherapistId: Id<"users">;
-  name: string;
-}
-
-type ConversationWithParticipant = {
+// Type definition for conversation with participant
+interface ConversationWithParticipant {
   _id: Id<"conversations">;
   otherParticipant: {
     _id: Id<"users">;
@@ -28,6 +24,14 @@ type ConversationWithParticipant = {
     content: string;
   };
   unreadCount: number;
+}
+
+// Type definition for physiotherapist
+interface Physiotherapist {
+  _id: Id<"users">;
+  firstName?: string;
+  lastName?: string;
+  [key: string]: unknown;
 };
 
 export default function PatientMessagesPage() {
@@ -36,7 +40,7 @@ export default function PatientMessagesPage() {
   const [newConversationPtId, setNewConversationPtId] = useState<Id<"users"> | ''>('')
 
   // Current user
-  const currentUser = useQuery(api.users.getMyUser as any)
+  const currentUser = useQuery(api.users.getMyUser as { _id: Id<"users">; role: string })
 
   // Conversations
   const conversations = useQuery(
@@ -45,7 +49,7 @@ export default function PatientMessagesPage() {
   ) as ConversationWithParticipant[] | undefined
 
   // Get physiotherapists list
-  const physiotherapists = useQuery(api.patientInvitations.getMyPhysiotherapists, {})
+  const physiotherapists = useQuery(api.patientInvitations.getMyPhysiotherapists, {}) as { physiotherapistId: Id<"users">; name: string }[] | undefined
 
   const getOrCreateConversation = useMutation(api.chat.getOrCreateConversation)
 
@@ -91,7 +95,7 @@ export default function PatientMessagesPage() {
                       <SelectValue placeholder="Select a physiotherapist" />
                     </SelectTrigger>
                     <SelectContent>
-                      {physiotherapists?.map((p: any) => (
+                      {physiotherapists?.map((p: Physiotherapist) => (
                         <SelectItem key={p._id} value={p._id}>
                           {`${p.firstName || ''} ${p.lastName || ''}`.trim()}
                         </SelectItem>

@@ -3,13 +3,13 @@
 import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { Pill } from '@/components/ui/pill'
+import { Clock } from '@/components/ui/clock'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { 
-  Pill, 
-  Clock, 
   CheckCircle2, 
   XCircle, 
   AlertTriangle,
@@ -18,11 +18,9 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 
-interface MedicationTrackerProps {
-  patientId: string;
-}
+type MedicationTrackerProps = object;
 
-export function MedicationTracker({ patientId }: MedicationTrackerProps) {
+export function MedicationTracker({}: MedicationTrackerProps) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [formData, setFormData] = useState({
     name: '',

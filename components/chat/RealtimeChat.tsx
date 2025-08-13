@@ -1,8 +1,8 @@
-// @ts-nocheck - Disable type checking due to deep type instantiation issues with Convex types
+
 
 'use client'
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,13 +10,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Textarea } from '@/components/ui/textarea'
+
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { useUser } from '@clerk/nextjs'
+
 import { 
-  CheckCheck, 
-  Clock, 
   Download, 
   File, 
   Loader2, 
@@ -24,9 +22,7 @@ import {
   MoreVertical, 
   Paperclip, 
   Reply, 
-  Send, 
-  X,
-  ChevronDown
+  Send
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -35,7 +31,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Id } from '@/convex/_generated/dataModel'
-import { TypingStatus } from '@/types/chat'
+import { TypingStatus, ChatMessage } from '@/types/chat'
 import { useFileUpload } from '@/lib/hooks/useFileUpload'
 import MessageContent from './MessageContent'
 import MessageStatus from './MessageStatus'
@@ -49,7 +45,7 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   // Use Convex query instead of auth store for reliable user data
   const currentUser = useQuery(api.users.getMyUser)
   const [newMessage, setNewMessage] = useState('')
-  const [replyingTo, setReplyingTo] = useState<any>(null)
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null)
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null)
   const [showNewMessageIndicator, setShowNewMessageIndicator] = useState(false)
   const [lastMessageCount, setLastMessageCount] = useState(0)
@@ -62,18 +58,10 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
 
   const { uploadFile, isUploading } = useFileUpload({
     onSuccess: () => {
-      toast({
-        title: "Success",
-        description: "File uploaded successfully",
-        variant: "default",
-      });
+      toast.success("File uploaded successfully");
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast.error(error.message);
     },
   });
 
@@ -92,14 +80,13 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
       } catch (error: unknown) {
         console.error('Failed to get/create conversation:', error)
         toast({
-          title: "Error",
           description: "Failed to initialize chat. Please try again.",
           variant: "destructive",
         });
       }
     }
     initConversation()
-  }, [recipientId, getOrCreateConversation, toast, currentUser?._id])
+  }, [recipientId, getOrCreateConversation, currentUser?._id])
 
   // Get messages for this conversation
   const messages = useQuery(
@@ -138,7 +125,7 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
     
     // Transform messages to include senderName and reverse order for WhatsApp-like display
     const transformedItems = messages.items
-      .map((message) => ({
+      .map((message: { _id: string; senderId: string; content: string; timestamp: number; isDelivered?: boolean; isReadByReceiver?: boolean }) => ({
         ...message,
         senderName: message.senderId === currentUser?._id ? 'You' : recipientUser?.firstName || 'User'
       }))
@@ -267,7 +254,7 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   };
 
   // Handle message reply
-  const handleReplyToMessage = (message: any) => {
+  const handleReplyToMessage = (message: ChatMessage) => {
     setReplyingTo(message);
     inputRef.current?.focus();
   };
@@ -278,11 +265,9 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   };
 
   // Get user initials for avatar fallback
-  const getUserInitials = (user: any) => {
+  const getUserInitials = (user: { firstName?: string; lastName?: string } | null) => {
     if (!user) return 'U';
-    const firstName = user.firstName || '';
-    const lastName = user.lastName || '';
-    return (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || 'U';
+    return `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`.toUpperCase();
   };
 
   // Handle file selection

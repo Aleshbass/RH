@@ -42,7 +42,7 @@ export default function AddPhysiotherapistDirectForm({ onSuccess, onCancel }: Ad
 
   // Use untyped action to avoid deep type instantiation
   const createClinicStaffInvitation = useActionUntyped(
-    (api as any).actions.clinics.inviteClinicStaff.createClinicStaffInvitationWithNotification
+    api.actions.clinics.inviteClinicStaff.createClinicStaffInvitationWithNotification
   )
 
   const {
@@ -230,7 +230,7 @@ export default function AddPhysiotherapistDirectForm({ onSuccess, onCancel }: Ad
                   <SelectItem value="pediatric">Pediatric Physiotherapy</SelectItem>
                   <SelectItem value="geriatric">Geriatric Physiotherapy</SelectItem>
                   <SelectItem value="sports">Sports Physiotherapy</SelectItem>
-                  <SelectItem value="women_health">Women's Health Physiotherapy</SelectItem>
+                  <SelectItem value="women_health">Women&apos;s Health Physiotherapy</SelectItem>
                   <SelectItem value="general">General Physiotherapy</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
@@ -262,7 +262,7 @@ export default function AddPhysiotherapistDirectForm({ onSuccess, onCancel }: Ad
             <Textarea
               id="message"
               {...register('message')}
-              placeholder="Add a personal message to include in the invitation..."
+              placeholder="Add a personal message to include in the invitation&hellip;"
               rows={3}
             />
           </div>

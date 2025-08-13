@@ -6,17 +6,16 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, Clock, User, MapPin, Wrench, AlertCircle } from 'lucide-react';
-import { format, addMinutes, parseISO } from 'date-fns';
+import { Calendar, Clock, User, Wrench, MapPin, AlertCircle } from 'lucide-react';
+import { format, addMinutes } from 'date-fns';
 import { useResourceManagement } from '@/hooks/useResourceManagement';
-import { useQuery } from 'convex/react';
-import { api } from '@/convex/_generated/api';
 import { toast } from 'sonner';
+import { Id } from '@/convex/_generated/dataModel';
 
 interface AppointmentBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (appointmentData: any) => void;
+  onSubmit: (appointmentData: { patientId?: string; startTime: number; endTime: number; serviceType: string; notesForTherapist?: string; selectedResources?: string[] }) => void;
   selectedDate?: Date;
   selectedTime?: string;
   clinicId: string;
@@ -45,16 +44,15 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
   });
 
   const [showResourceConflicts, setShowResourceConflicts] = useState(false);
-  const [resourceConflicts, setResourceConflicts] = useState<any[]>([]);
+  const [resourceConflicts, setResourceConflicts] = useState<{ _id: string; name: string; type: string; resourceId: string; conflictTime: string; conflictReason?: string }[]>([]);
 
   // Get available resources for the clinic
   const { getResourcesWithAvailability, checkResourceAvailability } = useResourceManagement();
-  const [clinicResources, setClinicResources] = useState<any[]>([]);
+  const [clinicResources, setClinicResources] = useState<{ _id: string; name: string; type: string; description?: string; location?: string; capacity?: number; isAvailable: boolean }[]>([]);
   const [loadingResources, setLoadingResources] = useState(false);
 
   // Get patients for selection - using available API with simplified typing
-  const patientsQuery = useQuery(api.users.getAllUsers);
-  const patients: any[] = patientsQuery || [];
+  // Removed unused patients variable
 
   useEffect(() => {
     if (selectedDate) {
@@ -65,115 +63,78 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
     }
   }, [selectedDate, selectedTime]);
 
-  // Load resources when modal opens or date/time changes
+  // Load resources when modal opens and date/time are set
   useEffect(() => {
+    const loadResourcesWithAvailability = async () => {
+      if (!formData.date || !formData.time) return;
+
+      setLoadingResources(true);
+      try {
+        const startTime = new Date(`${formData.date}T${formData.time}`).getTime();
+        const endTime = addMinutes(new Date(startTime), formData.duration).getTime();
+
+        const resourcesWithAvailability = await getResourcesWithAvailability({
+          resourceId: '' as Id<'resources'>, // This will be handled by the hook
+          startTime,
+          endTime
+        });
+
+        setClinicResources(resourcesWithAvailability || []);
+      } catch (error) {
+        console.error('Error loading resources:', error);
+        setClinicResources([]);
+      } finally {
+        setLoadingResources(false);
+      }
+    };
+
     if (isOpen && formData.date && formData.time) {
       loadResourcesWithAvailability();
     }
-  }, [isOpen, formData.date, formData.time]);
+  }, [isOpen, formData.date, formData.time, getResourcesWithAvailability, formData.duration, clinicId]);
 
   // Check resource availability when selected resources change
   useEffect(() => {
-    if (formData.date && formData.time && formData.selectedResources.length > 0) {
-      checkAvailability();
-    }
-  }, [formData.selectedResources]);
+    const checkAvailability = async () => {
+      if (!formData.date || !formData.time || formData.selectedResources.length === 0) return;
 
-  const loadResourcesWithAvailability = async () => {
-    if (!formData.date || !formData.time) return;
+      const startTime: number = new Date(`${formData.date}T${formData.time}`).getTime();
+      const endTime: number = addMinutes(new Date(startTime), formData.duration).getTime();
 
-    setLoadingResources(true);
-    try {
-      const startTime = new Date(`${formData.date}T${formData.time}`).getTime();
-      const endTime = addMinutes(new Date(startTime), formData.duration).getTime();
+      const conflicts: { _id: string; name: string; type: string; resourceId: string; conflictTime: string; conflictReason?: string }[] = [];
 
-      const resourcesWithAvailability = await getResourcesWithAvailability({
-        clinicId: clinicId as any,
-        startTime,
-        endTime,
-      });
+      for (const resourceId of formData.selectedResources) {
+        try {
+          const isAvailable = await checkResourceAvailability({
+            resourceId: resourceId as Id<'resources'>,
+            startTime,
+            endTime,
+          });
 
-      setClinicResources(resourcesWithAvailability);
-    } catch (error) {
-      console.error('Error loading resources:', error);
-      toast.error('Failed to load resources');
-    } finally {
-      setLoadingResources(false);
-    }
-  };
-
-  const checkAvailability = async () => {
-    if (!formData.date || !formData.time || formData.selectedResources.length === 0) return;
-
-    const startTime = new Date(`${formData.date}T${formData.time}`).getTime();
-    const endTime = addMinutes(new Date(startTime), formData.duration).getTime();
-
-    const conflicts: any[] = [];
-
-    for (const resourceId of formData.selectedResources) {
-      try {
-        const isAvailable = await checkResourceAvailability({
-          resourceId: resourceId as any,
-          startTime,
-          endTime,
-        });
-
-        if (!isAvailable) {
-          const resource = clinicResources.find(r => r._id === resourceId);
-          if (resource) {
-            conflicts.push({
-              ...resource,
-              conflictReason: getConflictReason(resource, startTime, endTime)
-            });
+          if (!isAvailable) {
+            const resource = clinicResources.find((r: { _id: string; name: string; type: string }) => r._id === resourceId);
+            if (resource) {
+              conflicts.push({
+                _id: resource._id,
+                name: resource.name,
+                type: resource.type,
+                resourceId: resourceId,
+                conflictTime: format(new Date(startTime), 'HH:mm'),
+                conflictReason: 'Resource unavailable at this time'
+              });
+            }
           }
+        } catch (error) {
+          console.error('Error checking resource availability:', error);
         }
-      } catch (error) {
-        console.error('Error checking resource availability:', error);
       }
-    }
 
-    setResourceConflicts(conflicts);
-    setShowResourceConflicts(conflicts.length > 0);
-  };
+      setResourceConflicts(conflicts);
+      setShowResourceConflicts(conflicts.length > 0);
+    };
 
-  const getConflictReason = (resource: any, startTime: number, endTime: number): string => {
-    // Check if it's a maintenance conflict
-    if (resource.maintenanceSchedule) {
-      const hasMaintenanceConflict = resource.maintenanceSchedule.some((maintenance: any) => {
-        if (!maintenance.nextMaintenance) return false;
-        const maintenanceStart = new Date(maintenance.nextMaintenance).getTime();
-        const maintenanceEnd = maintenanceStart + (2 * 60 * 60 * 1000);
-        return startTime < maintenanceEnd && endTime > maintenanceStart;
-      });
-      if (hasMaintenanceConflict) return 'Scheduled maintenance';
-    }
-
-    // Check if it's outside operating hours
-    if (resource.operatingHours) {
-      const startDate = new Date(startTime);
-      const dayOfWeek = startDate.getDay();
-      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const dayName = dayNames[dayOfWeek] as keyof typeof resource.operatingHours;
-      
-      const daySchedule = resource.operatingHours[dayName];
-      if (!daySchedule) return 'Not operating on this day';
-      
-      const startHour = startDate.getHours();
-      const startMinute = startDate.getMinutes();
-      const startTimeMinutes = startHour * 60 + startMinute;
-      
-      const [opStartHour, opStartMinute] = daySchedule.start.split(':').map(Number);
-      const [opEndHour, opEndMinute] = daySchedule.end.split(':').map(Number);
-      const opStartMinutes = opStartHour * 60 + opStartMinute;
-      const opEndMinutes = opEndHour * 60 + opEndMinute;
-      
-      if (startTimeMinutes < opStartMinutes || startTimeMinutes >= opEndMinutes) {
-        return 'Outside operating hours';
-      }
-    }
-
-    return 'Already booked';
-  };
+    checkAvailability();
+  }, [formData.selectedResources, formData.date, formData.time, formData.duration, clinicResources, checkResourceAvailability, clinicId]);
 
   const handleResourceToggle = (resourceId: string) => {
     setFormData(prev => ({

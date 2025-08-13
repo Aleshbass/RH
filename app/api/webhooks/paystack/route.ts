@@ -61,7 +61,26 @@ export async function POST(request: NextRequest) {
 }
 
 // Handle successful payment
-async function handlePaymentSuccess(data: any) {
+async function handlePaymentSuccess(data: {
+  reference: string;
+  amount: number;
+  metadata?: Record<string, unknown>;
+  id?: string | number;
+  gateway_response?: string;
+  paid_at?: string;
+  channel?: string;
+  fees?: number;
+  authorization?: {
+    authorization_code: string;
+    bin: string;
+    last4: string;
+    exp_month: string;
+    exp_year: string;
+    card_type: string;
+    bank: string;
+  };
+  [key: string]: unknown;
+}) {
   try {
     const { reference, amount, metadata } = data
     
@@ -114,7 +133,11 @@ async function handlePaymentSuccess(data: any) {
 }
 
 // Handle failed payment
-async function handlePaymentFailed(data: any) {
+async function handlePaymentFailed(data: {
+  reference: string;
+  metadata?: Record<string, unknown>;
+  [key: string]: unknown;
+}) {
   try {
     const { reference, metadata } = data
     
@@ -151,7 +174,7 @@ async function handlePaymentFailed(data: any) {
 }
 
 // Handle successful transfer (physiotherapist payout)
-async function handleTransferSuccess(data: any) {
+async function handleTransferSuccess(data: Record<string, unknown>) {
   try {
     log.info('Transfer successful', { data })
     // Handle physiotherapist payout success
@@ -161,7 +184,7 @@ async function handleTransferSuccess(data: any) {
 }
 
 // Handle failed transfer
-async function handleTransferFailed(data: any) {
+async function handleTransferFailed(data: Record<string, unknown>) {
   try {
     log.info('Transfer failed', { data })
     // Handle physiotherapist payout failure
@@ -175,7 +198,7 @@ async function sendPaymentEmails(params: {
   type: 'success' | 'failed'
   reference: string
   amount?: number
-  metadata?: any
+  metadata?: Record<string, unknown>
 }) {
   try {
     const { type, reference, amount, metadata } = params

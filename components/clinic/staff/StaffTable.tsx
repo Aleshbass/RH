@@ -37,7 +37,6 @@ import {
 import { 
   Users, 
   Search,
-  Filter,
   Download,
   MoreHorizontal,
   UserCheck,
@@ -78,12 +77,12 @@ export default function StaffTable({ staff, onRefresh }: StaffTableProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   
   // Mutations for staff management - using untyped to avoid deep instantiation
-  const updateStaffRole = useMutation(api.clinics.updateStaffRole as any)
-  const updateStaffStatus = useMutation(api.clinics.updateStaffStatus as any)
-  const reassignStaff = useMutation(api.clinics.reassignStaffToClinic as any)
+  const updateStaffRole = useMutation(api.clinics.updateStaffRole)
+  const updateStaffStatus = useMutation(api.clinics.updateStaffStatus)
+  // const reassignStaff = useMutation(api.clinics.reassignStaffToClinic)
   // Actions
   const resendInvitation = useAction(
-    api.actions.clinics.inviteClinicStaff.createClinicStaffInvitationWithNotification as any
+    api.actions.clinics.inviteClinicStaff.createClinicStaffInvitationWithNotification
   )
 
   // Filter staff based on search and filters
@@ -100,7 +99,7 @@ export default function StaffTable({ staff, onRefresh }: StaffTableProps) {
 
   const handleRoleChange = async (staffId: string, newRole: string) => {
     try {
-      await updateStaffRole({ staffId: staffId as any, newRole })
+      await updateStaffRole({ staffId, newRole })
       toast.success('Staff role updated successfully')
       onRefresh()
     } catch (error) {
@@ -111,7 +110,7 @@ export default function StaffTable({ staff, onRefresh }: StaffTableProps) {
 
   const handleStatusChange = async (staffId: string, newStatus: 'active' | 'suspended' | 'terminated') => {
     try {
-      await updateStaffStatus({ staffId: staffId as any, newStatus })
+      await updateStaffStatus({ staffId, newStatus })
       toast.success(`Staff ${newStatus === 'active' ? 'activated' : newStatus} successfully`)
       onRefresh()
     } catch (error) {

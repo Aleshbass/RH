@@ -5,26 +5,28 @@ import { log } from './logger'
 const { logger } = Sentry
 
 // Exception capturing utility
-export const captureException = (error: Error | unknown, context?: Record<string, any>) => {
+import type { SeverityLevel } from '@sentry/types';
+type SentryTags = Record<string, string | number | boolean | null | undefined>;
+export const captureException = (error: Error | unknown, context?: { tags?: SentryTags; extra?: Record<string, unknown>; level?: SeverityLevel }) => {
   // Cast unknown to Error for proper typing
   const errorObj = error instanceof Error ? error : new Error(String(error))
   
   // Use Sentry to capture the exception
   Sentry.captureException(errorObj, {
-    tags: context?.tags,
-    extra: context?.extra,
-    level: context?.level || 'error'
+    tags: context?.tags as SentryTags,
+    extra: typeof context?.extra === 'object' && context?.extra !== null ? context.extra : undefined,
+    level: context?.level ?? 'error' as SeverityLevel
   })
   
   // Also log to structured logger
   log.error('Exception captured', {
     error: errorObj.message,
-    ...(context?.extra && { extra: context.extra })
+    ...(typeof context?.extra === 'object' && context?.extra !== null ? { extra: context.extra } : {})
   })
 }
 
 // Custom span instrumentation for UI actions
-export const trackUIAction = <T>(actionName: string, operation: string, fn: () => T, attributes?: Record<string, any>): T => {
+export const trackUIAction = <T>(actionName: string, operation: string, fn: () => T, attributes?: Record<string, unknown>): T => {
   return Sentry.startSpan(
     {
       op: operation,
@@ -48,7 +50,7 @@ export const trackAPICall = async <T>(
   method: string,
   endpoint: string,
   fn: () => Promise<T>,
-  attributes?: Record<string, any>
+  attributes?: Record<string, unknown>
 ): Promise<T> => {
   return Sentry.startSpan(
     {
@@ -78,26 +80,26 @@ export const trackAPICall = async <T>(
 
 // Structured logging with Sentry logger
 export const sentryLogger = {
-  trace: (message: string, context?: Record<string, any>) => {
+  trace: (message: string, context?: Record<string, unknown>) => {
     logger.trace(message, context)
   },
-  debug: (message: string, context?: Record<string, any>) => {
+  debug: (message: string, context?: Record<string, unknown>) => {
     if (context) {
       logger.debug(logger.fmt`${message}`, context)
     } else {
       logger.debug(message)
     }
   },
-  info: (message: string, context?: Record<string, any>) => {
+  info: (message: string, context?: Record<string, unknown>) => {
     logger.info(message, context)
   },
-  warn: (message: string, context?: Record<string, any>) => {
+  warn: (message: string, context?: Record<string, unknown>) => {
     logger.warn(message, context)
   },
-  error: (message: string, context?: Record<string, any>) => {
+  error: (message: string, context?: Record<string, unknown>) => {
     logger.error(message, context)
   },
-  fatal: (message: string, context?: Record<string, any>) => {
+  fatal: (message: string, context?: Record<string, unknown>) => {
     logger.fatal(message, context)
   }
 }
@@ -114,8 +116,8 @@ export class ErrorTracker {
   static captureException(error: Error, context?: {
     userId?: string
     action?: string
-    extra?: Record<string, any>
-    tags?: Record<string, string>
+    extra?: Record<string, unknown>
+    tags?: SentryTags
   }): void {
     // Log to structured logger
     log.error('Exception captured', {
@@ -150,7 +152,7 @@ export class ErrorTracker {
   static captureMessage(message: string, level: 'info' | 'warning' | 'error' = 'info', context?: {
     userId?: string
     action?: string
-    extra?: Record<string, any>
+    extra?: Record<string, unknown>
   }): void {
     // Log to structured logger
     log[level === 'warning' ? 'warn' : level](message, {
@@ -176,7 +178,7 @@ export class ErrorTracker {
     }
   }
 
-  static addBreadcrumb(message: string, category: string, data?: Record<string, any>): void {
+  static addBreadcrumb(message: string, category: string, data?: Record<string, unknown>): void {
     log.debug(`Breadcrumb: ${message}`, {
       action: 'breadcrumb',
       metadata: { category, ...data }

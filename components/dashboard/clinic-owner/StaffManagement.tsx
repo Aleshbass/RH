@@ -1,6 +1,30 @@
 'use client'
 
-// @ts-nocheck
+interface StaffMember {
+  _id: string;
+  user?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+  };
+  specializations?: string[];
+  yearsOfExperience?: number;
+}
+
+interface Invitation {
+  _id: string;
+  status: string;
+  isExpired?: boolean;
+  inviteeName?: string;
+  inviteeEmail?: string;
+  acceptedBy?: string;
+  message?: string;
+  createdAt?: number;
+  expiresAt?: number;
+  code?: string;
+  [key: string]: unknown;
+}
+
 import React, { useState } from 'react';
 import { useQuery, useAction } from 'convex/react';
 
@@ -35,8 +59,8 @@ export function StaffManagement() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Get invitations and staff
-  const invitations = useQuery(api.clinics.getClinicInvitations) || [];
-  const staff = useQuery(api.clinics.getClinicStaff) || [];
+  const invitations = (useQuery(api.clinics.getClinicInvitations) as Invitation[]) || [];
+  const staff = (useQuery(api.clinics.getClinicStaff) as StaffMember[]) || [];
 
   // Actions
   const createClinicStaffInvitation = useAction(
@@ -199,7 +223,7 @@ export function StaffManagement() {
             </div>
           ) : (
             <div className="space-y-4">
-              {(staff as any).map((member: any) => (
+              {(staff as StaffMember[]).map((member: StaffMember) => (
                 <div key={member._id} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
@@ -212,7 +236,7 @@ export function StaffManagement() {
                       <p className="text-sm text-gray-600">{member.user?.email}</p>
                       {member.specializations && member.specializations.length > 0 && (
                         <div className="flex gap-1 mt-1">
-                          {member.specializations.slice(0, 2).map((spec: any, idx: any) => (
+                          {member.specializations.slice(0, 2).map((spec: string, idx: number) => (
                             <Badge key={idx} variant="outline" className="text-xs">
                               {spec}
                             </Badge>
@@ -248,7 +272,7 @@ export function StaffManagement() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Mail className="h-5 w-5" />
-            Pending Invitations ({(invitations as any).filter((inv: any) => inv.status === 'pending' && !inv.isExpired).length})
+            Pending Invitations ({invitations.filter((inv: Invitation) => inv.status === 'pending' && !inv.isExpired).length})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -260,7 +284,7 @@ export function StaffManagement() {
             </div>
           ) : (
             <div className="space-y-4">
-              {(invitations as any).map((invitation: any) => (
+              {invitations.map((invitation: Invitation) => (
                 <div key={invitation._id} className="p-4 border rounded-lg">
                   <div className="flex items-center justify-between mb-3">
                     <div>
@@ -270,20 +294,20 @@ export function StaffManagement() {
                       <p className="text-sm text-gray-600">{invitation.inviteeEmail}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {getStatusBadge(invitation.status, invitation.isExpired)}
+                      {getStatusBadge(invitation.status ?? '', !!invitation.isExpired)}
                       {invitation.status === 'pending' && !invitation.isExpired && (
                         <div className="flex gap-1">
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => copyInviteLink(invitation.code)}
+                            onClick={() => copyInviteLink(invitation.code ?? '')}
                           >
                             <Copy className="h-3 w-3" />
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => window.open(`/clinic-invite/${invitation.code}`, '_blank')}
+                            onClick={() => window.open(`/clinic-invite/${invitation.code ? invitation.code : ''}`, '_blank')}
                           >
                             <ExternalLink className="h-3 w-3" />
                           </Button>
@@ -295,11 +319,11 @@ export function StaffManagement() {
                   <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-3 w-3" />
-                      <span>Sent: {new Date(invitation.createdAt).toLocaleDateString()}</span>
+                      <span>Sent: {invitation.createdAt ? new Date(invitation.createdAt).toLocaleDateString() : 'Unknown'}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="h-3 w-3" />
-                      <span>Expires: {new Date(invitation.expiresAt).toLocaleDateString()}</span>
+                      <span>Expires: {invitation.expiresAt ? new Date(invitation.expiresAt).toLocaleDateString() : 'Unknown'}</span>
                     </div>
                   </div>
 

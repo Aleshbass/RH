@@ -3,15 +3,7 @@
 import Image from 'next/image';
 import { SignIn } from "@clerk/clerk-react";
 import { motion, Variants } from "framer-motion";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import { ChevronRight, Home } from "lucide-react";
+
 
 export default function CustomSignIn() {
   

@@ -71,6 +71,7 @@ export default function CalendarPage() {
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'all'>('all');
   const [refreshKey, setRefreshKey] = useState(0);
 
+
   // Get current user
   const { data: currentUser, isLoading: userLoading } = useMyUser();
   
@@ -91,22 +92,45 @@ export default function CalendarPage() {
     endDate: expandedEndDate,
     status: statusFilter === 'all' ? undefined : statusFilter,
     limit: 200, // Increased limit to ensure we don't miss appointments
+    refreshKey, // Use refreshKey to force refresh when needed
   });
 
   // Map appointments to match AppointmentData type for calendar
-  const calendarAppointments: AppointmentData[] = ((appointments as any[]) ?? []).map((a: any) => ({
-    ...a,
+  const calendarAppointments = useMemo(() => appointments?.map((a: {
+    _id: string;
+    patientId?: string;
+    physiotherapistId?: string;
+    startTime: number;
+    endTime: number;
+    serviceType?: string;
+    status: string;
+    patient?: {
+      _id: string;
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      imageUrl?: string;
+      phoneNumber?: string;
+    };
+  }) => ({
+    _id: a._id,
+    patientId: a.patientId || a.patient?._id || '',
+    physiotherapistId: a.physiotherapistId || currentUser?._id || '',
+    startTime: a.startTime,
+    endTime: a.endTime,
+    serviceType: a.serviceType || 'General Consultation',
+    status: a.status as AppointmentStatus,
     patient: a.patient
       ? {
           _id: String(a.patient._id),
           firstName: a.patient.firstName ?? '',
           lastName: a.patient.lastName ?? '',
           email: a.patient.email ?? '',
-          imageUrl: a.patient.imageUrl,
-          phoneNumber: a.patient.phoneNumber,
+          imageUrl: a.patient.imageUrl ?? '',
+          phoneNumber: a.patient.phoneNumber ?? '',
         }
       : null,
-  } as unknown as AppointmentData));
+  } as AppointmentWithPatient)), [appointments, currentUser?._id]);
 
   // Get today's schedule for the sidebar - memoize date to prevent infinite re-renders
   const today = useMemo(() => new Date(), []);
@@ -135,10 +159,10 @@ export default function CalendarPage() {
 
   // Redirect if not physiotherapist
   useEffect(() => {
-    if (currentUser && (currentUser as any).role !== 'physiotherapist') {
+    if (currentUser && (currentUser as { role: string }).role !== 'physiotherapist') {
       router.push('/dashboard');
     }
-    }, [currentUser, router]);
+  }, [currentUser, router]);
 
   // Loading state
   if (!isLoaded || userLoading || appointmentsLoading || todaysScheduleLoading) {
@@ -290,17 +314,22 @@ export default function CalendarPage() {
         <div className="p-6 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Today&apos;s Schedule</h3>
           <div className="space-y-3">
-            {!todaysSchedule || (todaysSchedule as any[])?.length === 0 ? (
+            {!todaysSchedule || (todaysSchedule as { _id: string; patient?: { firstName?: string; lastName?: string }; startTime: number; endTime: number; serviceType?: string; status: string }[])?.length === 0 ? (
               <div className="text-center py-8">
                 <CalendarIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
                 <p className="text-sm text-gray-500">No appointments today</p>
               </div>
             ) : (
-              (todaysSchedule as any[]).map((appointment: any) => (
+              (todaysSchedule as { _id: string; patient?: { firstName?: string; lastName?: string }; startTime: number; endTime: number; serviceType?: string; status: string }[]).map((appointment: { _id: string; patient?: { firstName?: string; lastName?: string }; startTime: number; endTime: number; serviceType?: string; status: string }) => (
                 <div
                   key={appointment._id}
                   className="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleAppointmentClick(appointment)}
+                  onClick={() => handleAppointmentClick({
+                    ...appointment,
+                    patientId: appointment.patientId || appointment.patient?._id || '',
+                    physiotherapistId: appointment.physiotherapistId || currentUser?._id || '',
+                    status: appointment.status as AppointmentStatus
+                  } as AppointmentWithPatient)}
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1">
@@ -312,7 +341,7 @@ export default function CalendarPage() {
                       </p>
                       <p className="text-xs text-gray-600">{appointment.serviceType}</p>
                     </div>
-                    <Badge className={getStatusColor(appointment.status)}>
+                    <Badge className={getStatusColor(appointment.status as AppointmentStatus)}>
                       {appointment.status}
                     </Badge>
                   </div>
@@ -331,24 +360,24 @@ export default function CalendarPage() {
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Total Appointments</span>
-              <span className="font-medium text-gray-900">{(appointments as any[])?.length || 0}</span>
+              <span className="font-medium text-gray-900">{(appointments as { _id: string; status: string }[])?.length || 0}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Confirmed</span>
               <span className="font-medium text-green-600">
-                {(appointments as any[])?.filter((a: any) => a.status === 'confirmed').length || 0}
+                {(appointments as { status: string }[])?.filter((a: { status: string }) => a.status === 'confirmed').length || 0}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Completed</span>
               <span className="font-medium text-gray-600">
-                {(appointments as any[])?.filter((a: any) => a.status === 'completed').length || 0}
+                {(appointments as { status: string }[])?.filter((a: { status: string }) => a.status === 'completed').length || 0}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Pending</span>
               <span className="font-medium text-blue-600">
-                {(appointments as any[])?.filter((a: any) => a.status === 'scheduled').length || 0}
+                {(appointments as { status: string }[])?.filter((a: { status: string }) => a.status === 'scheduled').length || 0}
               </span>
             </div>
           </div>
@@ -395,7 +424,7 @@ export default function CalendarPage() {
         onAppointmentCreated={() => {
           setIsAppointmentModalOpen(false);
           // Force refresh appointments to ensure new appointment appears immediately
-          setRefreshKey(prev => prev + 1);
+          setRefreshKey((prev: number) => prev + 1);
         }}
         appointmentId={selectedAppointment?._id}
       />

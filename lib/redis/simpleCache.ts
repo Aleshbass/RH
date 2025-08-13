@@ -30,7 +30,7 @@ export class SimpleCache {
   /**
    * Set a value in cache
    */
-  static async set(key: string, value: any, ttlSeconds: number = TTL.MEDIUM): Promise<boolean> {
+  static async set(key: string, value: unknown, ttlSeconds: number = TTL.MEDIUM): Promise<boolean> {
     try {
       const redis = getRedis()
       const serialized = JSON.stringify(value)
@@ -46,7 +46,7 @@ export class SimpleCache {
   /**
    * Get a value from cache
    */
-  static async get<T = any>(key: string): Promise<T | null> {
+  static async get<T = unknown>(key: string): Promise<T | null> {
     try {
       const redis = getRedis()
       const cached = await redis.get(key)
@@ -151,7 +151,7 @@ export class SessionCache {
     return `session:${userId}`
   }
 
-  static async setSession(userId: string, sessionData: Record<string, any>): Promise<boolean> {
+  static async setSession(userId: string, sessionData: Record<string, unknown>): Promise<boolean> {
     const key = this.getSessionKey(userId)
     return SimpleCache.set(key, {
       ...sessionData,
@@ -159,12 +159,12 @@ export class SessionCache {
     }, TTL.SESSION)
   }
 
-  static async getSession(userId: string): Promise<Record<string, any> | null> {
+  static async getSession(userId: string): Promise<Record<string, unknown> | null> {
     const key = this.getSessionKey(userId)
     return SimpleCache.get(key)
   }
 
-  static async updateSession(userId: string, updates: Record<string, any>): Promise<boolean> {
+  static async updateSession(userId: string, updates: Record<string, unknown>): Promise<boolean> {
     const existing = await this.getSession(userId) || {}
     const merged = {
       ...existing,
@@ -182,7 +182,7 @@ export class SessionCache {
 
 // Query caching utilities
 export class QueryCache {
-  private static getQueryKey(queryName: string, params: Record<string, any> = {}): string {
+  private static getQueryKey(queryName: string, params: Record<string, unknown> = {}): string {
     const paramsStr = Object.keys(params)
       .sort()
       .map(key => `${key}:${params[key]}`)
@@ -192,7 +192,7 @@ export class QueryCache {
 
   static async cacheQuery<T>(
     queryName: string,
-    params: Record<string, any>,
+    params: Record<string, unknown>,
     result: T,
     ttlSeconds: number = TTL.MEDIUM
   ): Promise<boolean> {
@@ -202,13 +202,13 @@ export class QueryCache {
 
   static async getCachedQuery<T>(
     queryName: string,
-    params: Record<string, any> = {}
+    params: Record<string, unknown> = {}
   ): Promise<T | null> {
     const key = this.getQueryKey(queryName, params)
     return SimpleCache.get<T>(key)
   }
 
-  static async invalidateQuery(queryName: string, params?: Record<string, any>): Promise<boolean> {
+  static async invalidateQuery(queryName: string, params?: Record<string, unknown>): Promise<boolean> {
     if (params) {
       const key = this.getQueryKey(queryName, params)
       return SimpleCache.delete(key)

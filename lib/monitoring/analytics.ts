@@ -6,21 +6,21 @@ interface UserEvent {
   action: string
   resource?: string
   duration?: number
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 interface PageView {
   path: string
   referrer?: string
   duration?: number
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 interface BusinessEvent {
   event: string
   value?: number
   currency?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 // Runtime check for whether analytics are allowed (env flag + Cookiebot consent)
@@ -28,8 +28,10 @@ const canSendAnalytics = (): boolean => {
   if (typeof window === 'undefined') return false
   const enabled = process.env.NEXT_PUBLIC_ANALYTICS_ENABLED === 'true'
   // If Cookiebot exists, require statistics consent; otherwise assume allowed
-  const consentOk = (window as any).Cookiebot
-    ? Boolean((window as any).Cookiebot.consent?.statistics)
+  type CookiebotWindow = typeof window & { Cookiebot?: { consent?: { statistics?: boolean } } }
+  const cookiebotWin = window as CookiebotWindow
+  const consentOk = cookiebotWin.Cookiebot
+    ? Boolean(cookiebotWin.Cookiebot.consent?.statistics)
     : false
   return enabled && consentOk
 }
@@ -203,7 +205,7 @@ export class Analytics {
   }
 
   // Track performance metrics
-  trackPerformance(metric: string, value: number, metadata?: Record<string, any>): void {
+  trackPerformance(metric: string, value: number, metadata?: Record<string, unknown>): void {
     log.performanceMetric(metric, value, this.userId)
 
     this.sendToBackend('performance-metric', {
@@ -219,7 +221,7 @@ export class Analytics {
   }
 
   // Track errors
-  trackError(error: Error | string, metadata?: Record<string, any>): void {
+  trackError(error: Error | string, metadata?: Record<string, unknown>): void {
     const errorData = {
       message: typeof error === 'string' ? error : error.message,
       stack: typeof error === 'object' ? error.stack : undefined,
@@ -254,7 +256,7 @@ export class Analytics {
   }
 
   // Send data to backend
-  private sendToBackend(type: string, data: any): void {
+  private sendToBackend(type: string, data: Record<string, unknown>): void {
     if (typeof window === 'undefined') return
     if (!canSendAnalytics()) return
 
@@ -291,9 +293,9 @@ export const useAnalytics = () => {
       analytics.trackPageView(path, options),
     trackBusinessEvent: (event: string, options?: Partial<BusinessEvent>) => 
       analytics.trackBusinessEvent(event, options),
-    trackPerformance: (metric: string, value: number, metadata?: Record<string, any>) => 
+    trackPerformance: (metric: string, value: number, metadata?: Record<string, unknown>) => 
       analytics.trackPerformance(metric, value, metadata),
-    trackError: (error: Error | string, metadata?: Record<string, any>) => 
+    trackError: (error: Error | string, metadata?: Record<string, unknown>) => 
       analytics.trackError(error, metadata),
     setUser: (userId: string) => analytics.setUser(userId),
     clearUser: () => analytics.clearUser(),

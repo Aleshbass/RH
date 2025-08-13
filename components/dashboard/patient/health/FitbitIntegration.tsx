@@ -15,16 +15,13 @@ import {
   Target,
   RefreshCw,
   CheckCircle2,
-  AlertCircle,
   TrendingUp
 } from 'lucide-react'
 import { format } from 'date-fns'
 
-interface FitbitIntegrationProps {
-  patientId: string;
-}
+type Props = object;
 
-export function FitbitIntegration({ patientId }: FitbitIntegrationProps) {
+export function FitbitIntegration({}: Props) {
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
@@ -153,7 +150,7 @@ export function FitbitIntegration({ patientId }: FitbitIntegrationProps) {
               )}
             </Button>
             <p className="text-xs text-gray-500 mt-2">
-              You'll be redirected to Fitbit to authorize access
+              You&#39;ll be redirected to Fitbit to authorize access
             </p>
           </div>
         </CardContent>
@@ -329,7 +326,7 @@ export function FitbitIntegration({ patientId }: FitbitIntegrationProps) {
             Sleep Summary
           </CardTitle>
           <CardDescription>
-            Last night's sleep analysis
+            Last night&#39;s sleep analysis
           </CardDescription>
         </CardHeader>
         <CardContent>

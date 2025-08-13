@@ -1,5 +1,36 @@
 'use client'
 
+// Type definitions
+type DashboardStats = {
+  totalPatients?: number;
+  activeStaff?: number;
+  appointmentsToday?: number;
+  thisMonthAppointments?: number;
+  completionRate?: number;
+};
+
+type Revenue = {
+  thisMonth?: number;
+  lastMonth?: number;
+  pendingPayments?: number;
+  growth?: number;
+};
+
+type PerformanceMetrics = {
+  averageRating?: number;
+  totalReviews?: number;
+  patientRetentionRate?: number;
+  staffUtilization?: number;
+  averageSessionsPerPatient?: number;
+};
+
+type ActivityItem = {
+  type: string;
+  title: string;
+  description: string;
+  timestamp: string;
+};
+
 import { 
   useMyUser, 
   useMyClinic, 
@@ -34,7 +65,7 @@ import {
   TrendingDown
 } from 'lucide-react'
 import { format } from 'date-fns'
-import React, { useState, useEffect } from 'react'
+import React from 'react'
 import { StaffManagement } from './StaffManagement'
 
 export function ClinicOwnerDashboard() {
@@ -65,18 +96,18 @@ export function ClinicOwnerDashboard() {
     if (clinic && user) {
       // Transform clinic data to match store type
       const transformedClinic = {
-        _id: (clinic as any)._id,
-        name: (clinic as any).name,
-        address: (clinic as any).address,
-        city: (clinic as any).city,
-        country: (clinic as any).country,
-        contactEmail: (clinic as any).contactEmail,
-        contactPhone: (clinic as any).contactPhone,
-        logoUrl: (clinic as any).logoUrl,
-        physiotherapistCount: (clinic as any).physiotherapistCount,
-        ownerId: (user as any)._id, // Add missing ownerId from current user
-        phoneNumber: (clinic as any).contactPhone,
-        email: (clinic as any).contactEmail,
+        _id: clinic._id,
+        name: clinic.name,
+        address: clinic.address,
+        city: clinic.city,
+        country: clinic.country,
+        contactEmail: clinic.contactEmail,
+        contactPhone: clinic.contactPhone,
+        logoUrl: clinic.logoUrl,
+        physiotherapistCount: clinic.physiotherapistCount,
+        ownerId: user._id, // Add missing ownerId from current user
+        phoneNumber: clinic.contactPhone,
+        email: clinic.contactEmail,
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setCurrentClinic(transformedClinic as any)
@@ -86,7 +117,7 @@ export function ClinicOwnerDashboard() {
   React.useEffect(() => {
     if (staff) {
       // Transform staff data to match store type
-      const transformedStaff = (staff as any).map((member: any) => ({
+      const transformedStaff = staff.map((member) => ({
         _id: member.userId,
         firstName: member.user?.firstName,
         lastName: member.user?.lastName,
@@ -104,7 +135,7 @@ export function ClinicOwnerDashboard() {
   React.useEffect(() => {
     if (invitations) {
       // Transform invitations data to match store type
-      const transformedInvitations = (invitations as any).map((invitation: any) => ({
+      const transformedInvitations = invitations.map((invitation) => ({
         _id: invitation._id,
         email: invitation.inviteeEmail,
         role: invitation.role,
@@ -167,7 +198,22 @@ export function ClinicOwnerDashboard() {
     )
   }
 
-  const pendingInvitations = (invitations as any)?.filter((inv: any) => inv.status === 'pending') || []
+  interface ClinicInvitation {
+  _id: string;
+  inviteeEmail: string;
+  role: string;
+  code: string;
+  status: string;
+  createdAt: number;
+  expiresAt?: number;
+  clinicOwnerId: string;
+}
+
+interface MinimalClinic {
+  name?: string;
+}
+
+const pendingInvitations = (invitations as ClinicInvitation[])?.filter((inv: ClinicInvitation) => inv.status === 'pending') || []
 
   // Format currency for display
   const formatCurrency = (amount: number) => {
@@ -184,7 +230,7 @@ export function ClinicOwnerDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            {(clinic as any).name}
+            {(clinic as MinimalClinic)?.name || 'Your Clinic'}
           </h1>
           <p className="text-muted-foreground flex items-center gap-2">
             <Building2 className="h-4 w-4" />
@@ -229,7 +275,7 @@ export function ClinicOwnerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {statsLoading ? <Skeleton className="h-8 w-16" /> : (dashboardStats as any)?.totalPatients || 0}
+              {statsLoading ? <Skeleton className="h-8 w-16" /> : (dashboardStats as DashboardStats)?.totalPatients || 0}
             </div>
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <TrendingUp className="h-3 w-3 text-green-600" />
@@ -245,7 +291,7 @@ export function ClinicOwnerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {statsLoading ? <Skeleton className="h-8 w-16" /> : (dashboardStats as any)?.activeStaff || 0}
+              {statsLoading ? <Skeleton className="h-8 w-16" /> : (dashboardStats as DashboardStats)?.activeStaff || 0}
             </div>
             <p className="text-xs text-muted-foreground">
               Physiotherapists
@@ -260,10 +306,10 @@ export function ClinicOwnerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {statsLoading ? <Skeleton className="h-8 w-16" /> : (dashboardStats as any)?.appointmentsToday || 0}
+              {statsLoading ? <Skeleton className="h-8 w-16" /> : (dashboardStats as DashboardStats)?.appointmentsToday || 0}
             </div>
             <p className="text-xs text-muted-foreground">
-              {(dashboardStats as any)?.thisMonthAppointments || 0} this month
+              {(dashboardStats as DashboardStats)?.thisMonthAppointments || 0} this month
             </p>
           </CardContent>
         </Card>
@@ -275,7 +321,7 @@ export function ClinicOwnerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {statsLoading ? <Skeleton className="h-8 w-16" /> : `${(dashboardStats as any)?.completionRate || 0}%`}
+              {statsLoading ? <Skeleton className="h-8 w-16" /> : `${(dashboardStats as DashboardStats)?.completionRate || 0}%`}
             </div>
             <p className="text-xs text-muted-foreground">
               This month
@@ -304,19 +350,19 @@ export function ClinicOwnerDashboard() {
               <div className="space-y-4">
                 <div>
                   <div className="text-3xl font-bold">
-                    {formatCurrency((revenue as any)?.thisMonth || 0)}
+                    {formatCurrency((revenue as Revenue)?.thisMonth || 0)}
                   </div>
                   <p className="text-sm text-muted-foreground">This month</p>
                 </div>
                 <div className="flex items-center gap-4 text-sm">
                   <div className="flex items-center gap-1">
-                    {((revenue as any)?.growth || 0) >= 0 ? (
+                    {((revenue as Revenue)?.growth || 0) >= 0 ? (
                       <TrendingUp className="h-4 w-4 text-green-600" />
                     ) : (
                       <TrendingDown className="h-4 w-4 text-red-600" />
                     )}
-                    <span className={`font-medium ${((revenue as any)?.growth || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {Math.abs((revenue as any)?.growth || 0)}%
+                    <span className={`font-medium ${((revenue as Revenue)?.growth || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {Math.abs((revenue as Revenue)?.growth || 0)}%
                     </span>
                     <span className="text-muted-foreground">vs last month</span>
                   </div>
@@ -324,13 +370,13 @@ export function ClinicOwnerDashboard() {
                 <div className="grid grid-cols-2 gap-4 pt-4 border-t">
                   <div>
                     <div className="text-lg font-semibold">
-                      {formatCurrency((revenue as any)?.lastMonth || 0)}
+                      {formatCurrency((revenue as Revenue)?.lastMonth || 0)}
                     </div>
                     <p className="text-xs text-muted-foreground">Last month</p>
                   </div>
                   <div>
                     <div className="text-lg font-semibold">
-                      {formatCurrency((revenue as any)?.pendingPayments || 0)}
+                      {formatCurrency((revenue as Revenue)?.pendingPayments || 0)}
                     </div>
                     <p className="text-xs text-muted-foreground">Pending payments</p>
                   </div>
@@ -358,25 +404,25 @@ export function ClinicOwnerDashboard() {
               <div className="space-y-4">
                 <div>
                   <div className="text-2xl font-bold flex items-center gap-2">
-                    {(performanceMetrics as any)?.averageRating || 0}
+                    {(performanceMetrics as PerformanceMetrics)?.averageRating || 0}
                     <Star className="h-5 w-5 text-yellow-500 fill-current" />
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {(performanceMetrics as any)?.totalReviews || 0} reviews
+                    {(performanceMetrics as PerformanceMetrics)?.totalReviews || 0} reviews
                   </p>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span>Patient Retention</span>
-                    <span className="font-medium">{(performanceMetrics as any)?.patientRetentionRate || 0}%</span>
+                    <span className="font-medium">{(performanceMetrics as PerformanceMetrics)?.patientRetentionRate || 0}%</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Staff Utilization</span>
-                    <span className="font-medium">{(performanceMetrics as any)?.staffUtilization || 0}%</span>
+                    <span className="font-medium">{(performanceMetrics as PerformanceMetrics)?.staffUtilization || 0}%</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Avg Sessions/Patient</span>
-                    <span className="font-medium">{(performanceMetrics as any)?.averageSessionsPerPatient || 0}</span>
+                    <span className="font-medium">{(performanceMetrics as PerformanceMetrics)?.averageSessionsPerPatient || 0}</span>
                   </div>
                 </div>
               </div>
@@ -416,9 +462,9 @@ export function ClinicOwnerDashboard() {
                     </div>
                   ))}
                 </div>
-              ) : recentActivity && (recentActivity as any).length > 0 ? (
+              ) : recentActivity && (recentActivity as ActivityItem[]).length > 0 ? (
                 <div className="space-y-4">
-                  {(recentActivity as any).map((activity: any, index: any) => (
+                  {(recentActivity as ActivityItem[]).map((activity: ActivityItem, index: number) => (
                     <div key={index} className="flex items-center gap-4 p-3 rounded-lg border">
                       <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
                         {activity.type === 'appointment' && <Calendar className="h-5 w-5 text-blue-600" />}
@@ -462,15 +508,15 @@ export function ClinicOwnerDashboard() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <span>Total Patients</span>
-                    <span className="font-bold">{(dashboardStats as any)?.totalPatients || 0}</span>
+                    <span className="font-bold">{dashboardStats?.totalPatients || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Retention Rate</span>
-                    <span className="font-bold">{(performanceMetrics as any)?.patientRetentionRate || 0}%</span>
+                    <span className="font-bold">{(performanceMetrics as PerformanceMetrics)?.patientRetentionRate || 0}%</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Avg Sessions per Patient</span>
-                    <span className="font-bold">{(performanceMetrics as any)?.averageSessionsPerPatient || 0}</span>
+                    <span className="font-bold">{(performanceMetrics as PerformanceMetrics)?.averageSessionsPerPatient || 0}</span>
                   </div>
                 </div>
               </CardContent>
@@ -484,15 +530,15 @@ export function ClinicOwnerDashboard() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <span>Active Staff</span>
-                    <span className="font-bold">{(dashboardStats as any)?.activeStaff || 0}</span>
+                    <span className="font-bold">{dashboardStats?.activeStaff || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Utilization Rate</span>
-                    <span className="font-bold">{(performanceMetrics as any)?.staffUtilization || 0}%</span>
+                    <span className="font-bold">{(performanceMetrics as PerformanceMetrics)?.staffUtilization || 0}%</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Pending Invitations</span>
-                    <span className="font-bold">{(dashboardStats as any)?.pendingInvitations || 0}</span>
+                    <span className="font-bold">{dashboardStats?.pendingInvitations || 0}</span>
                   </div>
                 </div>
               </CardContent>
@@ -513,21 +559,21 @@ export function ClinicOwnerDashboard() {
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <label className="text-sm font-medium">Clinic Name</label>
-                    <p className="text-sm text-muted-foreground">{(clinic as any).name}</p>
+                    <p className="text-sm text-muted-foreground">{clinic.name}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium">Location</label>
                     <p className="text-sm text-muted-foreground">
-                      {(clinic as any).city ? `${(clinic as any).city}, ${(clinic as any).country}` : 'Not set'}
+                      {clinic.city ? `${clinic.city}, ${clinic.country}` : 'Not set'}
                     </p>
                   </div>
                   <div>
                     <label className="text-sm font-medium">Contact Email</label>
-                    <p className="text-sm text-muted-foreground">{(clinic as any).contactEmail || 'Not set'}</p>
+                    <p className="text-sm text-muted-foreground">{clinic.contactEmail || 'Not set'}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium">Contact Phone</label>
-                    <p className="text-sm text-muted-foreground">{(clinic as any).contactPhone || 'Not set'}</p>
+                    <p className="text-sm text-muted-foreground">{clinic.contactPhone || 'Not set'}</p>
                   </div>
                 </div>
                 <div className="pt-4">

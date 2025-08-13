@@ -1,4 +1,4 @@
-// @ts-nocheck - Disable type checking due to deep type instantiation issues with Convex types
+
 
 import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
@@ -19,9 +19,9 @@ export function useValidateInvitationCode(code: string | null) {
     isLoading: result === undefined,
     isValid: result?.valid || false,
     invitation: result?.invitation,
-    physiotherapist: (result as any)?.physiotherapist,
-    clinic: (result as any)?.clinic,
-    message: (result as any)?.error || 'Unknown error',
+    physiotherapist: (result as unknown as { physiotherapist?: unknown })?.physiotherapist,
+    clinic: (result as unknown as { clinic?: unknown })?.clinic,
+    message: (result as unknown as { error?: string })?.error || 'Unknown error',
   };
 }
 
@@ -32,8 +32,8 @@ export function useValidateInvitationCode(code: string | null) {
 export function useCompletePatientOnboarding() {
   // Use the action wrapper so notifications are sent and logic is unified
   // Using untyped action hook to avoid deep TS instantiation issues
-  // @ts-ignore
-  const completeOnboarding = useActionUntyped((api as any).actions.patients.completeOnboarding.completePatientOnboardingWithNotification);
+  // @ts-expect-error - Using untyped action to avoid deep TypeScript instantiation issues with complex Convex API types
+  const completeOnboarding = useActionUntyped((api as unknown as { actions: { patients: { completeOnboarding: { completePatientOnboardingWithNotification: unknown }}}}).actions.patients.completeOnboarding.completePatientOnboardingWithNotification);
   
   return {
     completePatientOnboarding: async (invitationCode: string, patientData: {
@@ -58,9 +58,9 @@ export function useCompletePatientOnboarding() {
 export function useCreatePatientInvitation() {
   // Use the unified Convex action that also sends email + notification
   // Using untyped action hook to avoid deep TS instantiation issues
-  // @ts-ignore
+  // @ts-expect-error - Using untyped action to avoid deep TypeScript instantiation issues with complex Convex API types
   const createInvitationAction = useActionUntyped(
-    (api as any).actions.patients.invitePatient.createPatientInvitationWithNotification
+    (api as unknown as { actions: { patients: { invitePatient: { createPatientInvitationWithNotification: unknown }}}}).actions.patients.invitePatient.createPatientInvitationWithNotification
   );
 
   return {

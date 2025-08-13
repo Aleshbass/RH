@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 type UploadDropzoneProps = {
   label?: string;
@@ -127,7 +128,7 @@ export function UploadDropzone({
       >
         <div className="text-center px-4">
           {variant === "image" && previewUrl ? (
-            <img src={previewUrl} alt="Selected preview" className="h-24 w-24 rounded-full object-cover mx-auto" />
+            <Image src={previewUrl} alt="Selected preview" width={96} height={96} className="h-24 w-24 rounded-full object-cover mx-auto" />
           ) : (
             <>
               <p className="text-sm text-gray-700">

@@ -59,7 +59,7 @@ export function safeJsonParse<T>(value: string | null): T | null {
 }
 
 // Helper function to safely stringify JSON for Redis
-export function safeJsonStringify(value: any): string {
+export function safeJsonStringify(value: unknown): string {
   try {
     return JSON.stringify(value)
   } catch (error) {

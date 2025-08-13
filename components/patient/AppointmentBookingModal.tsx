@@ -154,7 +154,7 @@ export function AppointmentBookingModal({
                 <SelectValue placeholder="Choose your physiotherapist" />
               </SelectTrigger>
               <SelectContent>
-                {physiotherapists?.map((physio: any) => physio && (
+                {physiotherapists?.map((physio: Physiotherapist) => physio && (
                   <SelectItem key={physio._id} value={physio._id}>
                     <div className="flex items-center gap-2">
                       <User className="h-4 w-4" />
@@ -222,7 +222,7 @@ export function AppointmentBookingModal({
                 </Card>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                  {availableSlots?.map((slot: any, index: number) => (
+                  {availableSlots?.map((slot: TimeSlot, index: number) => (
                     <Button
                       key={index}
                       type="button"
@@ -262,8 +262,8 @@ export function AppointmentBookingModal({
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-blue-600" />
                   <span>
-                    {physiotherapists?.find((p: any) => p?._id === selectedPhysiotherapist)?.firstName}{' '}
-                    {physiotherapists?.find((p: any) => p?._id === selectedPhysiotherapist)?.lastName}
+                    {physiotherapists?.find((p: Physiotherapist) => p?._id === selectedPhysiotherapist)?.firstName}{' '}
+                    {physiotherapists?.find((p: Physiotherapist) => p?._id === selectedPhysiotherapist)?.lastName}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">

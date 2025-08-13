@@ -11,7 +11,6 @@ import { Slider } from '@/components/ui/slider'
 import { 
   AlertCircle, 
   TrendingUp, 
-  Calendar,
   Plus,
   MapPin,
   Clock,
@@ -19,11 +18,9 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 
-interface SymptomLoggerProps {
-  patientId: string;
-}
+type SymptomLoggerProps = object; // Use 'object' type for any object, not empty interface
 
-export function SymptomLogger({ patientId }: SymptomLoggerProps) {
+export function SymptomLogger({}: SymptomLoggerProps) {
   const [showPainForm, setShowPainForm] = useState(false)
   const [showSymptomForm, setShowSymptomForm] = useState(false)
   const [painLevel, setPainLevel] = useState([3])
@@ -179,7 +176,7 @@ export function SymptomLogger({ patientId }: SymptomLoggerProps) {
               Log Symptoms
             </CardTitle>
             <CardDescription>
-              Record other symptoms you're experiencing
+              Record other symptoms you&apos;re experiencing
             </CardDescription>
           </CardHeader>
           <CardContent>

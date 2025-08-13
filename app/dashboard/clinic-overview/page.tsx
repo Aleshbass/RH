@@ -3,6 +3,17 @@
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+
+// Type definition for staff member
+interface StaffMember {
+  _id: string;
+  user?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+  };
+  [key: string]: unknown;
+}
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -159,7 +170,7 @@ export default function ClinicOverviewPage() {
           {clinicStaff ? (
             clinicStaff.length > 0 ? (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {clinicStaff.map((member: any) => (
+                {clinicStaff.map((member: StaffMember) => (
                   <div key={member._id} className="flex items-center gap-3 p-3 rounded-lg border">
                     <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
                       <Users className="h-5 w-5 text-blue-600" />

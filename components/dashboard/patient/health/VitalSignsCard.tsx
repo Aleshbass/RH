@@ -16,11 +16,9 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 
-interface VitalSignsCardProps {
-  patientId: string;
-}
+type VitalSignsCardProps = object; // Use 'object' type for any object, not empty interface
 
-export function VitalSignsCard({ patientId }: VitalSignsCardProps) {
+export function VitalSignsCard({}: VitalSignsCardProps) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [formData, setFormData] = useState({
     heartRate: '',

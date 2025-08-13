@@ -100,13 +100,13 @@ export default function AdminSecurityPage() {
     if (!securityEvents?.data) return { total: 0, critical: 0, high: 0, lastHour: 0 };
     
     const now = Date.now();
-    const events = securityEvents.data as any[];
+    const events = securityEvents.data as SecurityEvent[];
     
     return {
       total: events.length || 0,
-      critical: events.filter((e: any) => e.severity === 'critical').length || 0,
-      high: events.filter((e: any) => e.severity === 'high').length || 0,
-      lastHour: events.filter((e: any) => now - e.timestamp < 60 * 60 * 1000).length || 0,
+      critical: events.filter((e: SecurityEvent) => e.severity === 'critical').length || 0,
+      high: events.filter((e: SecurityEvent) => e.severity === 'high').length || 0,
+      lastHour: events.filter((e: SecurityEvent) => now - e.timestamp < 60 * 60 * 1000).length || 0,
     };
   }, [securityEvents?.data]);
 
@@ -202,7 +202,7 @@ export default function AdminSecurityPage() {
             <CardContent>
               {securityEvents?.data ? (
                 <DataTable 
-                  data={(securityEvents.data as any[]) || []} 
+                  data={(securityEvents.data as SecurityEvent[]) || []} 
                   columns={securityColumns}
                   searchKey="details"
                 />

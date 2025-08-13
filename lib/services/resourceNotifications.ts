@@ -1,6 +1,22 @@
 import { api } from '@/convex/_generated/api';
 import { ConvexHttpClient } from 'convex/browser';
 
+// Type definitions for resource objects
+interface ResourceMaintenanceSchedule {
+  nextMaintenance?: string | Date;
+  lastMaintenance?: string | Date;
+  frequency?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annually';
+  description?: string;
+}
+
+interface ResourceObject {
+  _id: string;
+  name: string;
+  maintenanceSchedule?: ResourceMaintenanceSchedule;
+}
+
+type NotificationData = Record<string, string | number | boolean | string[] | null | undefined>;
+
 interface ResourceMaintenanceAlert {
   resourceId: string;
   resourceName: string;
@@ -21,18 +37,18 @@ interface ResourceAvailabilityAlert {
 }
 
 export class ResourceNotificationService {
-  private convex: any;
+  private convex: ConvexHttpClient;
   // Use untyped client to avoid deep TS generic instantiation issues
-  private get client(): any {
-    return this.convex as any;
+  private get client(): ConvexHttpClient {
+    return this.convex;
   }
   // Use untyped API reference to avoid deep generics on api.*
-  private get api(): any {
-    return api as any;
+  private get api(): typeof api {
+    return api;
   }
 
   constructor() {
-    this.convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!) as any;
+    this.convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
   }
 
   /**
@@ -157,28 +173,28 @@ export class ResourceNotificationService {
       const now = Date.now();
       const oneWeekFromNow = now + (7 * 24 * 60 * 60 * 1000);
 
-      for (const resource of resources as any[]) {
+      for (const resource of resources as ResourceObject[]) {
         const nextMaintenanceTime = this.getNextMaintenanceTime(resource);
         if (!nextMaintenanceTime) continue;
 
         // Check for upcoming maintenance (within 1 week)
         if (nextMaintenanceTime > now && nextMaintenanceTime <= oneWeekFromNow) {
           await this.sendMaintenanceAlert({
-            resourceId: (resource as any)._id,
-            resourceName: (resource as any).name,
+            resourceId: resource._id,
+            resourceName: resource.name,
             maintenanceType: 'scheduled',
             scheduledDate: nextMaintenanceTime,
-            description: (resource as any).maintenanceSchedule?.description,
+            description: resource.maintenanceSchedule?.description,
             clinicId,
           });
         } else if (nextMaintenanceTime < now) {
           // Overdue maintenance
           await this.sendMaintenanceAlert({
-            resourceId: (resource as any)._id,
-            resourceName: (resource as any).name,
+            resourceId: resource._id,
+            resourceName: resource.name,
             maintenanceType: 'overdue',
             scheduledDate: nextMaintenanceTime,
-            description: (resource as any).maintenanceSchedule?.description,
+            description: resource.maintenanceSchedule?.description,
             clinicId,
           });
         }
@@ -206,7 +222,7 @@ export class ResourceNotificationService {
   }
 
   // Compute the next maintenance time from the resource's maintenanceSchedule
-  private getNextMaintenanceTime(resource: any): number | null {
+  private getNextMaintenanceTime(resource: ResourceObject): number | null {
     const sched = resource?.maintenanceSchedule;
     if (!sched) return null;
 
@@ -233,7 +249,7 @@ export class ResourceNotificationService {
   }
 
   // Return a maintenance window around the next maintenance time (2 hours by default)
-  private getMaintenanceWindow(resource: any): { start: number; end: number } | null {
+  private getMaintenanceWindow(resource: ResourceObject): { start: number; end: number } | null {
     const t = this.getNextMaintenanceTime(resource);
     if (!t) return null;
     const durationMs = 2 * 60 * 60 * 1000; // 2 hours
@@ -336,7 +352,7 @@ export class ResourceNotificationService {
   private async sendPushNotification(notification: {
     title: string;
     body: string;
-    data: any;
+    data: NotificationData;
   }): Promise<void> {
     try {
       // Implementation would depend on your push notification service

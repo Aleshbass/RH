@@ -62,7 +62,7 @@ export default function PatientVideoCallsPage() {
   const videoCalls = allVideoCalls || [];
 
   // Filter video calls based on search and status
-  const filteredCalls = videoCalls.filter((call: any) => {
+  const filteredCalls = videoCalls.filter((call: { title?: string; physiotherapist?: { firstName?: string; lastName?: string }; status: string }) => {
     const matchesSearch = !searchTerm || 
       call.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       call.physiotherapist?.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -74,9 +74,9 @@ export default function PatientVideoCallsPage() {
   });
 
   // Separate calls by status for better organization
-  const upcomingCalls = filteredCalls.filter((call: any) => call.status === 'scheduled');
-  const activeCalls = filteredCalls.filter((call: any) => call.status === 'active');
-  const pastCalls = filteredCalls.filter((call: any) => ['ended', 'cancelled', 'missed'].includes(call.status));
+  const upcomingCalls = filteredCalls.filter((call: { status: string }) => call.status === 'scheduled');
+  const activeCalls = filteredCalls.filter((call: { status: string }) => call.status === 'active');
+  const pastCalls = filteredCalls.filter((call: { status: string }) => ['ended', 'cancelled', 'missed'].includes(call.status));
 
   const handleJoinCall = (call: VideoCall) => {
     setSelectedCall(call);
@@ -207,7 +207,7 @@ export default function PatientVideoCallsPage() {
               <div>
                 <p className="text-sm text-gray-500">Completed</p>
                 <p className="text-2xl font-bold text-gray-600">
-                  {videoCalls.filter((c: any) => c.status === 'ended').length}
+                  {videoCalls.filter((c: { status: string }) => c.status === 'ended').length}
                 </p>
               </div>
               <CheckCircle className="h-8 w-8 text-gray-500" />
@@ -221,7 +221,7 @@ export default function PatientVideoCallsPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-green-600">🟢 Active Calls - Join Now!</h2>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {activeCalls.map((call: any) => (
+            {activeCalls.map((call: { _id: string; callType: string; title?: string; physiotherapist?: { firstName?: string; lastName?: string }; startTime: number }) => (
               <Card key={call._id} className="border-green-200 bg-green-50">
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -269,7 +269,7 @@ export default function PatientVideoCallsPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-blue-600">📅 Upcoming Calls</h2>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {upcomingCalls.map((call: any) => (
+            {upcomingCalls.map((call: { _id: string; status: string; callType: string; title?: string; physiotherapist?: { firstName?: string; lastName?: string }; scheduledAt?: number; roomId: string }) => (
               <Card key={call._id}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -335,7 +335,7 @@ export default function PatientVideoCallsPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-gray-600">📚 Call History</h2>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {pastCalls.slice(0, 6).map((call: any) => (
+            {pastCalls.slice(0, 6).map((call: { _id: string; status: string; callType: string; title?: string; physiotherapist?: { firstName?: string; lastName?: string }; startTime: number; endTime?: number; duration?: number }) => (
               <Card key={call._id}>
                 <CardHeader>
                   <div className="flex items-center justify-between">

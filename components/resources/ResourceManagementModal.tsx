@@ -182,10 +182,10 @@ export function ResourceManagementModal({
           purchaseDate: formData.specifications.purchaseDate || undefined,
           warrantyExpiry: formData.specifications.warrantyExpiry || undefined,
         } : undefined,
-        operatingHours: Object.entries(formData.operatingHours).some(([_, hours]) => hours.start && hours.end) ? 
+        operatingHours: Object.entries(formData.operatingHours).some(([, hours]) => hours.start && hours.end) ? 
           Object.fromEntries(
             Object.entries(formData.operatingHours)
-              .filter(([_, hours]) => hours.start && hours.end)
+              .filter(([, hours]) => hours.start && hours.end)
               .map(([day, hours]) => [day, hours])
           ) : undefined,
         maintenanceSchedule: formData.maintenanceSchedule.frequency ? {
@@ -280,7 +280,7 @@ export function ResourceManagementModal({
               <Label htmlFor="type">Resource Type *</Label>
               <Select
                 value={formData.type}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, type: value as any }))}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, type: value as ResourceType }))}
               >
                 <SelectTrigger className={errors.type ? "border-red-500" : ""}>
                   <SelectValue placeholder="Select resource type" />
@@ -451,7 +451,7 @@ export function ResourceManagementModal({
                   value={formData.maintenanceSchedule.frequency}
                   onValueChange={(value) => setFormData(prev => ({
                     ...prev,
-                    maintenanceSchedule: { ...prev.maintenanceSchedule, frequency: value as any }
+                    maintenanceSchedule: { ...prev.maintenanceSchedule, frequency: value as MaintenanceFrequency }
                   }))}
                 >
                   <SelectTrigger>

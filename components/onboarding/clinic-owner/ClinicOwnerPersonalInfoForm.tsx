@@ -38,8 +38,8 @@ export default function ClinicOwnerPersonalInfoForm({ onNext }: ClinicOwnerPerso
   const { data, updateClinicOwnerData } = useOnboardingStore();
   const { clinicOwnerData } = data;
   const [profilePhoto, setProfilePhoto] = useState<File | null>(null);
-  const generateUploadUrl = useMutationUntyped((api as any).files.generateUploadUrl);
-  const updateProfileImageFromStorage = useMutationUntyped((api as any).users.updateProfileImageFromStorage);
+  const generateUploadUrl = useMutationUntyped((api as unknown as { files: { generateUploadUrl: unknown } }).files.generateUploadUrl);
+  const updateProfileImageFromStorage = useMutationUntyped((api as unknown as { users: { updateProfileImageFromStorage: unknown } }).users.updateProfileImageFromStorage);
 
   const {
     control,
