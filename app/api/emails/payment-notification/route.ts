@@ -3,7 +3,7 @@ import { Resend } from 'resend'
 import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,6 +32,13 @@ export async function POST(request: NextRequest) {
       default:
         throw new Error(`Unknown email type: ${type}`)
     }
+
+    const apiKey = process.env.RESEND_API_KEY
+    if (!apiKey) {
+      log.warn('Resend API key missing; skipping payment email send', { type, reference })
+      return NextResponse.json({ success: true, skipped: true })
+    }
+    const resend = new Resend(apiKey)
 
     // Send email via Resend (using verified domain)
     const result = await resend.emails.send({

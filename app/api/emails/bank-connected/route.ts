@@ -3,7 +3,7 @@ import { Resend } from 'resend'
 import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   let userId: string | undefined
@@ -18,6 +18,13 @@ export async function POST(request: NextRequest) {
       userId,
       action: 'bank_connection_email'
     })
+
+    const apiKey = process.env.RESEND_API_KEY
+    if (!apiKey) {
+      log.warn('Resend API key missing; skipping email send', { action: 'bank_connection_email', userId })
+      return NextResponse.json({ success: true, skipped: true })
+    }
+    const resend = new Resend(apiKey)
 
     // In a real implementation, you'd fetch physiotherapist email from database
     const physiotherapistEmail = `physio-${userId}@temp.com` // Temporary

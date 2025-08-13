@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { format } from 'date-fns';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+export const dynamic = 'force-dynamic';
 
 interface MaintenanceAlertRequest {
   clinicId: string;
@@ -199,6 +199,11 @@ export async function POST(request: NextRequest) {
       html: getEmailContent(),
     };
 
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ success: true, skipped: true, message: 'Resend API key missing; skipped email send' });
+    }
+    const resend = new Resend(apiKey);
     const result = await resend.emails.send(emailData);
 
     return NextResponse.json({
