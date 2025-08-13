@@ -128,8 +128,7 @@ const nextConfig = {
     ],
   },
 
-  // Output optimization
-  output: 'standalone',
+  // Output optimization - removed 'standalone' to fix Vercel deployment symlink issues
   poweredByHeader: false,
   compress: true,
 
