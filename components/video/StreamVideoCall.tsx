@@ -321,6 +321,14 @@ export default function StreamVideoCall({
   const getStreamToken = useActionUntyped(streamModule['getStreamToken']) as unknown as (
     args: { userId: string; userName: string; userImage?: string }
   ) => Promise<{ token: string; apiKey: string; chatToken?: string }>
+  const createStreamCall = useActionUntyped(streamModule['createStreamCall']) as unknown as (
+    args: {
+      callId: string
+      callType: string
+      participants: Array<{ userId: string; userName: string; userImage?: string; role?: 'host' | 'participant' }>
+      settings?: { recordingEnabled?: boolean; transcriptionEnabled?: boolean; maxDuration?: number; geoFencing?: boolean }
+    }
+  ) => Promise<{ callId: string; callType: string; cid: string; created: boolean }>
   const endStreamCall = useActionUntyped(streamModule['endStreamCall']) as unknown as (
     args: { callId: string; callType: string }
   ) => Promise<void>
@@ -368,6 +376,31 @@ export default function StreamVideoCall({
 
         console.log('Stream client initialized')
         setClient(streamClient)
+
+        // Ensure the call exists server-side with proper roles (host for creator)
+        try {
+          await createStreamCall({
+            callId,
+            callType,
+            participants: [
+              {
+                userId: user.id,
+                userName: user.fullName || user.emailAddresses[0]?.emailAddress || 'Anonymous',
+                userImage: user.imageUrl,
+                role: 'host',
+              },
+            ],
+            settings: {
+              recordingEnabled: false,
+              transcriptionEnabled: false,
+              maxDuration: 7200,
+              geoFencing: false,
+            },
+          })
+        } catch (e) {
+          // Safe to ignore if it already exists
+          console.debug('[stream] createStreamCall idempotent failure (likely exists):', e)
+        }
 
         // Create call handle and join (create if needed) without auto-starting devices
         const streamCall = streamClient.call(callType, callId)
@@ -444,7 +477,7 @@ export default function StreamVideoCall({
     }
 
     initializeStream()
-  }, [isLoaded, user, callId, callType, client, getStreamToken, ensureChatMembership, setMyRsvpStatus])
+  }, [isLoaded, user, callId, callType, client, getStreamToken, createStreamCall, ensureChatMembership, setMyRsvpStatus])
 
   // Disconnect only on actual page unload to avoid Strict Mode double-unmounts interrupting the call.
   useEffect(() => {
@@ -510,7 +543,7 @@ export default function StreamVideoCall({
     <StreamVideo client={client}>
       <StreamCall call={call}>
         <StreamTheme>
-          <div className={isFullscreen ? 'fixed inset-0 z-50' : 'h-screen'}>
+          <div className={`rehabify-stream ${isFullscreen ? 'fixed inset-0 z-50' : 'h-screen'}`}>
             <CallUI 
               onCallEnd={onCallEnd} 
               callId={callId} 

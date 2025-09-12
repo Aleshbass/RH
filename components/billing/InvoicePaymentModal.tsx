@@ -81,7 +81,7 @@ export function InvoicePaymentModal({
       // Initialize payment with Paystack split payment
       const result = await initializePayment({
         invoiceId: invoice._id,
-        redirectUrl: `${window.location.origin}/payment/callback`
+        redirectUrl: `${process.env.NEXT_PUBLIC_APP_URL}/payment/callback`
       })
 
       if (result.success && result.authorizationUrl) {

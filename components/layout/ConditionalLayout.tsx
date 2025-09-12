@@ -18,7 +18,9 @@ export default function ConditionalLayout({ children }: ConditionalLayoutProps) 
     pathname.startsWith('/physiotherapist') ||
     pathname.startsWith('/clinic-owner') ||
     pathname.startsWith('/onboarding-complete')
-  const showHeaderFooter = !isDashboardRoute && !isOnboardingRoute
+  // Hide global header/footer on payment routes (e.g., /payment/callback)
+  const isPaymentRoute = pathname.startsWith('/payment')
+  const showHeaderFooter = !isDashboardRoute && !isOnboardingRoute && !isPaymentRoute
   
   return (
     <>

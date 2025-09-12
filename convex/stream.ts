@@ -147,7 +147,7 @@ export const createStreamCall = action({
           created_by_id: identity.subject,
           members: streamUserIds.map(uid => ({
             user_id: uid,
-            role: 'participant',
+            role: uid === identity.subject ? 'host' : 'participant',
           })),
           settings_override: {
             recording: {

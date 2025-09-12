@@ -70,7 +70,8 @@ export const createPatientInvitationWithNotification = action({
         if (!physiotherapistName) {
           physiotherapistName = user.email || 'Your Physiotherapist';
         }
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        // Force production domain for all outgoing invitation links
+        const baseUrl = 'https://www.rehabifyhealth.com';
         const invitationLink = `${baseUrl}/patient-invite/${result.invitationCode}`;
         const expiresAt = Date.now() + (args.expirationDays || 7) * 24 * 60 * 60 * 1000;
         

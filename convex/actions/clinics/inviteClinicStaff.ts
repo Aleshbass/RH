@@ -77,7 +77,8 @@ export const createClinicStaffInvitationWithNotification = action({
 
       // Send email if requested (default true)
       if (args.sendEmail !== false) {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        // Force production domain for all outgoing staff invitation links
+        const baseUrl = 'https://www.rehabifyhealth.com';
         const invitationLink = `${baseUrl}/staff-invite/${result.code}`;
 
         try {
@@ -187,7 +188,8 @@ export const resendClinicStaffInvitation = action({
       const expiresAt = fullInvitation?.expiresAt ?? invitation.expiresAt;
       const clinicName = fullInvitation?.clinic?.name as string | undefined;
 
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      // Force production domain for staff invitation reminder links
+      const baseUrl = 'https://www.rehabifyhealth.com';
       const invitationLink = `${baseUrl}/staff-invite/${invitation.code}`;
 
       // Send reminder email

@@ -151,3 +151,30 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Stream Video SDK menu/tooltip overrides (scoped to our call container) */
+.rehabify-stream .str-video__menu,
+.rehabify-stream .str-video__context-menu,
+.rehabify-stream .str-video__floating-menu,
+.rehabify-stream .str-video__tooltip-content {
+  color: #fff !important;
+}
+
+.rehabify-stream .str-video__menu-title,
+.rehabify-stream .str-video__menu-item,
+.rehabify-stream .str-video__menu-item span,
+.rehabify-stream .str-video__menu-item-label {
+  color: #fff !important;
+}
+
+.rehabify-stream .str-video__menu-item svg,
+.rehabify-stream .str-video__menu-title svg {
+  color: #fff !important;
+  stroke: #fff !important;
+}
+
+.rehabify-stream .str-video__menu-item:hover,
+.rehabify-stream .str-video__menu-item[aria-selected="true"] {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+

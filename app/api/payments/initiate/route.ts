@@ -78,6 +78,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Determine absolute origin from the incoming request to avoid env misconfig (e.g. localhost in prod)
+    const url = new URL(request.url);
+    const origin = url.origin;
+
     // Prepare Paystack payment data
     const patientNameForMeta = invoice.patientEmail
       ? (invoice.patientEmail.split('@')[0] || 'Patient')
@@ -118,7 +122,7 @@ export async function POST(request: NextRequest) {
           }
         ]
       },
-      callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment/callback`,
+      callback_url: `${origin}/payment/callback`,
       channels: ['card', 'bank', 'ussd', 'mobile_money', 'bank_transfer']
     };
 
