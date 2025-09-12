@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PatientInviteModal } from '@/components/dashboard/clinic-owner/PatientInviteModal';
 import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 interface PatientWithDetails {
   _id: string;
@@ -290,21 +291,26 @@ export default function PatientsPage() {
             });
 
             if (result.success) {
-              // Close modal on success
+              // Smoothly close the modal on success
               setIsInviteModalOpen(false);
-              // Show success message - you may want to add toast notifications
-              alert(`Patient invitation sent successfully to ${formData.patientEmail}`);
+              const emailSent = (result as { emailSent?: boolean }).emailSent === true;
+              if (emailSent) {
+                toast.success(`Invitation email sent to ${formData.patientEmail}`);
+              } else {
+                toast.success('Invitation created');
+                toast.warning('Email delivery failed. Please verify Resend configuration and domain settings.');
+              }
               return true;
-            } else {
-              throw new Error(result.message || 'Failed to send invitation');
             }
-          } catch (error) {
+            throw new Error(result.message || 'Failed to send invitation');
+          } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Failed to send invitation';
             console.error('Error inviting patient:', error);
-            alert(`Error: ${error instanceof Error ? error.message : 'Failed to send invitation'}`);
+            toast.error(msg);
             return false;
           }
         }}
       />
     </div>
   );
-} 
+}

@@ -118,8 +118,15 @@ export function PhysiotherapistDashboardV2() {
       if (!result.success) {
         throw new Error(result.message || 'Failed to send invitation')
       }
-      
-      toast.success('Invitation sent successfully')
+      // Close the modal smoothly on success
+      setIsInviteModalOpen(false)
+      const emailSent = (result as { emailSent?: boolean }).emailSent === true
+      if (emailSent) {
+        toast.success(`Invitation email sent to ${data.patientEmail}`)
+      } else {
+        toast.success('Invitation created')
+        toast.warning('Email delivery failed. Please verify Resend configuration and domain settings.')
+      }
       return true
     } catch (error: unknown) {
       console.error('Failed to send invitation', error)
@@ -129,9 +136,12 @@ export function PhysiotherapistDashboardV2() {
   }
 
   const handleInvitePatient = () => setIsInviteModalOpen(true)
-  const handleScheduleAppointment = () => router.push('/dashboard/physiotherapist/appointments')
+  const handleScheduleAppointment = () => router.push('/dashboard/physiotherapist/calendar?new=1')
   const handleCreateSession = () => router.push('/dashboard/physiotherapist/calendar')
   const handleManagePatients = () => router.push('/dashboard/physiotherapist/patients')
+  const handleExerciseLibrary = () => router.push('/dashboard/physiotherapist/exercise-library')
+  const handleTreatmentTemplates = () => router.push('/dashboard/physiotherapist/treatment-templates')
+  const handleAssessments = () => router.push('/dashboard/physiotherapist/assessments')
 
   // Loading state
   if (user === undefined || dashboardStats === undefined || currentUserWithProfile === undefined || patientsData === undefined || todaysAppointmentsData === undefined || clinicInfo === undefined) {
@@ -159,10 +169,10 @@ export function PhysiotherapistDashboardV2() {
 
   return (
     <div className="space-y-6">
-      {/* Header Section */}
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
+          <h1 className="text-3xl font-bold tracking-tight text-[#005b57]"> 
             Welcome back, {user?.firstName || 'User'}!
           </h1>
           <p className="text-muted-foreground">
@@ -179,7 +189,7 @@ export function PhysiotherapistDashboardV2() {
             )}
           </p>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2 sm:self-auto">
           <Button variant="outline">
             <Bell className="mr-2 h-4 w-4" />
             Notifications
@@ -436,6 +446,9 @@ export function PhysiotherapistDashboardV2() {
           onScheduleAppointment={handleScheduleAppointment}
           onCreateSession={handleCreateSession}
           onManagePatients={handleManagePatients}
+          onExerciseLibrary={handleExerciseLibrary}
+          onTreatmentTemplates={handleTreatmentTemplates}
+          onAssessments={handleAssessments}
         />
 
         {/* Recent Sessions */}

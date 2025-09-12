@@ -9,6 +9,8 @@ type InvitationResult = {
   success: boolean;
   invitationCode?: string;
   message?: string;
+  emailSent?: boolean;
+  emailError?: string;
 };
 
 /**
@@ -27,6 +29,8 @@ export const createPatientInvitationWithNotification = action({
     success: v.boolean(),
     invitationCode: v.optional(v.string()),
     message: v.optional(v.string()),
+    emailSent: v.optional(v.boolean()),
+    emailError: v.optional(v.string()),
   }),
   handler: async (ctx, args): Promise<InvitationResult> => {
     try {
@@ -52,6 +56,8 @@ export const createPatientInvitationWithNotification = action({
       const identity = await ctx.auth.getUserIdentity();
       
       // Send email to patient if requested
+      let emailSent = false;
+      let emailError: string | undefined;
       if (args.sendEmail !== false) { // Default to true
         // Try to get name from multiple sources
         let physiotherapistName = '';
@@ -76,7 +82,7 @@ export const createPatientInvitationWithNotification = action({
         
         // Send email using the dedicated email action
         try {
-          await ctx.runAction(api.actions.emails.sendInvitationEmail.sendPatientInvitationEmail, {
+          const emailResult = await ctx.runAction(api.actions.emails.sendInvitationEmail.sendPatientInvitationEmail, {
             patientEmail: args.patientEmail,
             patientName: args.patientName,
             physiotherapistName,
@@ -84,9 +90,15 @@ export const createPatientInvitationWithNotification = action({
             invitationLink,
             expiresAt,
           });
+          emailSent = Boolean((emailResult as { success?: boolean }).success);
+          if (!emailSent) {
+            emailError = (emailResult as { error?: string }).error || 'Unknown email error';
+          }
         } catch (emailError) {
-          console.error('Failed to send invitation email:', emailError);
-          // Continue - invitation was created, just email failed
+          const err = emailError as Error;
+          console.error('Failed to send invitation email:', err.message);
+          emailSent = false;
+          emailError = err.message;
         }
       }
       
@@ -110,12 +122,13 @@ export const createPatientInvitationWithNotification = action({
           }
         });
       
-      return result;
+      return { ...result, emailSent };
     } catch (error) {
-      console.error('Error in createPatientInvitationWithNotification:', error);
+      const err = error as Error;
+      console.error('Error in createPatientInvitationWithNotification:', err.message);
       return {
         success: false,
-        message: error instanceof Error ? error.message : "Failed to create patient invitation",
+        message: err.message || "Failed to create patient invitation",
       };
     }
   },
