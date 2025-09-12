@@ -3,7 +3,6 @@
 'use client'
 
 import React, { useState, useRef, useEffect, useMemo } from 'react'
-import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,25 +15,38 @@ import { cn } from '@/lib/utils'
 
 import { 
   Download, 
-  File, 
+  File as FileIcon, 
   Loader2, 
   MessageSquare, 
   MoreVertical, 
   Paperclip, 
   Reply, 
-  Send
+  Send,
+  Star,
+  StarOff,
+  Edit,
+  Trash,
+  Mic,
+  MicOff,
+  Smile
 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import StorageAudio from '@/components/media/StorageAudio'
 import { Id } from '@/convex/_generated/dataModel'
 import { TypingStatus, ChatMessage } from '@/types/chat'
 import { useFileUpload } from '@/lib/hooks/useFileUpload'
 import MessageContent from './MessageContent'
 import MessageStatus from './MessageStatus'
+import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
 
 type ChatProps = {
   recipientId: Id<"users">;
@@ -42,8 +54,12 @@ type ChatProps = {
 };
 
 const RealtimeChat = ({ recipientId, className }: ChatProps) => {
+  // Access Convex API modules via unknown-indexers to avoid deep generic instantiation
+  const apiUntyped = api as unknown as Record<string, unknown>
+  const usersModule = apiUntyped['users'] as Record<string, unknown>
+  const chatModule = apiUntyped['chat'] as Record<string, unknown>
   // Use Convex query instead of auth store for reliable user data
-  const currentUser = useQuery(api.users.getMyUser)
+  const currentUser = useQueryUntyped(usersModule['getMyUser'])
   const [newMessage, setNewMessage] = useState('')
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null)
   const [selectedMessage, setSelectedMessage] = useState<string | null>(null)
@@ -55,6 +71,16 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Using this ref in a useEffect for typing indicators
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  // Map of messageId -> DOM node for scrolling/highlighting
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  // Voice note recording
+  const [isRecording, setIsRecording] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordedChunksRef = useRef<Blob[]>([])
+  // Edit state
+  const [editingMessage, setEditingMessage] = useState<{ id: string; content: string } | null>(null)
+  // Starred dialog
+  const [starredOpen, setStarredOpen] = useState(false)
 
   const { uploadFile, isUploading } = useFileUpload({
     onSuccess: () => {
@@ -66,8 +92,8 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   });
 
   // Get or create conversation with recipient
-  const getOrCreateConversation = useMutation(api.chat.getOrCreateConversation)
-  const markMessagesAsRead = useMutation(api.chat.markMessagesAsRead)
+  const getOrCreateConversation = useMutationUntyped(chatModule['getOrCreateConversation'])
+  const markMessagesAsRead = useMutationUntyped(chatModule['markMessagesAsRead'])
   const [conversationId, setConversationId] = useState<Id<"conversations"> | null>(null)
 
   // Get conversation ID on mount
@@ -79,39 +105,36 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
         setConversationId(result.conversationId)
       } catch (error: unknown) {
         console.error('Failed to get/create conversation:', error)
-        toast({
-          description: "Failed to initialize chat. Please try again.",
-          variant: "destructive",
-        });
+        toast.error("Failed to initialize chat. Please try again.")
       }
     }
     initConversation()
   }, [recipientId, getOrCreateConversation, currentUser?._id])
 
   // Get messages for this conversation
-  const messages = useQuery(
-    api.chat.getMessages,
+  const messages = useQueryUntyped(
+    chatModule['getMessages'],
     conversationId ? { conversationId, limit: 50 } : 'skip'
   );
 
   // Auto-mark messages as read when conversation is loaded and visible
   useEffect(() => {
-    if (conversationId && messages?.items?.length > 0) {
+    if (conversationId && messages?.items && messages.items.length > 0) {
       // Mark messages as read after a short delay to simulate "viewing"
       const timer = setTimeout(() => {
         markMessagesAsRead({ conversationId })
-          .catch((error) => {
-            console.error('Failed to mark messages as read:', error);
+          .catch((error: unknown) => {
+            console.error('Failed to mark messages as read:', error)
           });
       }, 1000); // 1 second delay to simulate user viewing messages
 
       return () => clearTimeout(timer);
     }
-  }, [conversationId, messages?.items?.length, markMessagesAsRead]);
+  }, [conversationId, messages?.items?.length, markMessagesAsRead, messages?.items]);
 
   // Memoize paginated messages to prevent unnecessary re-renders
   // Get recipient user information
-  const recipientUser = useQuery(api.users.getUserById, { userId: recipientId });
+  const recipientUser = useQueryUntyped(usersModule['getUserById'], { userId: recipientId });
 
   const paginatedMessages = useMemo(() => {
     if (!messages) {
@@ -124,10 +147,11 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
     }
     
     // Transform messages to include senderName and reverse order for WhatsApp-like display
-    const transformedItems = messages.items
-      .map((message: { _id: string; senderId: string; content: string; timestamp: number; isDelivered?: boolean; isReadByReceiver?: boolean }) => ({
+    // Keep all original fields (including replyToMessage) by not narrowing the type
+    const transformedItems = (messages.items as ChatMessage[])
+      .map((message: ChatMessage) => ({
         ...message,
-        senderName: message.senderId === currentUser?._id ? 'You' : recipientUser?.firstName || 'User'
+        senderName: message.senderId === currentUser?._id ? 'You' : recipientUser?.firstName || 'User',
       }))
       .reverse(); // Reverse to show oldest first (WhatsApp style)
     
@@ -140,9 +164,10 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   // Auto-scroll to bottom when new messages arrive (only if user is near bottom)
   useEffect(() => {
     if (messagesEndRef.current && scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      const scrollContainer = scrollAreaRef.current.querySelector('[data-slot="scroll-area-viewport"]');
       if (scrollContainer) {
-        const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+        const sc = scrollContainer as HTMLElement;
+        const { scrollTop, scrollHeight, clientHeight } = sc;
         const isNearBottom = scrollTop + clientHeight >= scrollHeight - 100; // 100px threshold
         
         // Check if new messages arrived
@@ -174,9 +199,10 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   // Hide new message indicator when user scrolls to bottom manually
   const handleScroll = () => {
     if (scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      const scrollContainer = scrollAreaRef.current.querySelector('[data-slot="scroll-area-viewport"]');
       if (scrollContainer) {
-        const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+        const sc = scrollContainer as HTMLElement;
+        const { scrollTop, scrollHeight, clientHeight } = sc;
         const isNearBottom = scrollTop + clientHeight >= scrollHeight - 50;
         
         if (isNearBottom) {
@@ -187,8 +213,8 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   };
 
   // Get typing status
-  const typingStatusResult = useQuery(
-    api.chat.getTypingStatus,
+  const typingStatusResult = useQueryUntyped(
+    chatModule['getTypingStatus'],
     conversationId ? { conversationId } : 'skip'
   );
 
@@ -196,8 +222,12 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
     isOtherUserTyping: false,
   };
 
-  const sendMessage = useMutation(api.chat.sendMessage)
-  const setTypingStatus = useMutation(api.chat.setTyping)
+  const sendMessage = useMutationUntyped(chatModule['sendMessage'])
+  const toggleReaction = useMutationUntyped(chatModule['toggleReaction'])
+  const editMessageMut = useMutationUntyped(chatModule['editMessage'])
+  const deleteMessageMut = useMutationUntyped(chatModule['deleteMessage'])
+  const toggleStar = useMutationUntyped(chatModule['toggleStar'])
+  const setTypingStatus = useMutationUntyped(chatModule['setTyping'])
 
   // Handle file upload
   const handleFileUpload = async (file: File) => {
@@ -230,6 +260,19 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
 
   // Handle message send
   const handleSendMessage = async () => {
+    if (editingMessage && conversationId) {
+      try {
+        await editMessageMut({ messageId: editingMessage.id as Id<"messages">, newContent: newMessage.trim() })
+        setEditingMessage(null)
+        setNewMessage('')
+        await setTypingStatus({ conversationId, isTyping: false })
+      } catch (error) {
+        console.error('Failed to edit message:', error)
+        toast.error('Failed to edit message')
+      }
+      return
+    }
+
     if (!newMessage.trim() || !conversationId || !currentUser) return;
 
     try {
@@ -249,23 +292,61 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
       });
     } catch (error: unknown) {
       console.error('Failed to send message:', error);
-      toast.error("Failed to send message. Please try again.");
     }
   };
 
   // Handle message reply
-  const handleReplyToMessage = (message: ChatMessage) => {
+  const handleReply = (message: ChatMessage) => {
     setReplyingTo(message);
     inputRef.current?.focus();
   };
 
-  // Handle message selection
-  const handleMessageClick = (messageId: string) => {
-    setSelectedMessage(selectedMessage === messageId ? null : messageId);
-  };
+  // Handle edit
+  const handleEdit = (message: ChatMessage) => {
+    setEditingMessage({ id: message._id, content: message.content })
+    setNewMessage(message.content)
+    inputRef.current?.focus()
+  }
+
+  const handleStartEdit = (message: ChatMessage) => {
+    handleEdit(message)
+  }
+
+  const handleReplyToMessage = (message: ChatMessage) => {
+    handleReply(message)
+  }
+
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      await deleteMessageMut({ messageId: messageId as Id<'messages'> })
+    } catch (error) {
+      console.error('Failed to delete message:', error)
+      toast.error('Failed to delete message')
+    }
+  }
+
+  // Reactions
+  const EMOJI_OPTIONS = ['👍','❤️','😂','🎉','😮','🙏']
+  const handleToggleReaction = async (messageId: string, type: string) => {
+    try {
+      await toggleReaction({ messageId: messageId as Id<'messages'>, type })
+    } catch (error) {
+      console.error('Failed to toggle reaction:', error)
+    }
+  }
+
+  // Starred
+  const handleToggleStar = async (messageId: string) => {
+    try {
+      await toggleStar({ messageId: messageId as Id<'messages'> })
+    } catch (error) {
+      console.error('Failed to toggle star:', error)
+    }
+  }
+
 
   // Get user initials for avatar fallback
-  const getUserInitials = (user: { firstName?: string; lastName?: string } | null) => {
+  const getUserInitials = (user: { firstName?: string; lastName?: string } | null | undefined) => {
     if (!user) return 'U';
     return `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`.toUpperCase();
   };
@@ -304,12 +385,62 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
     };
   }, [newMessage, conversationId, setTypingStatus]);
 
+  // Voice recording handlers
+  const startRecording = async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        toast.error('Microphone not supported in this browser');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream)
+      recordedChunksRef.current = []
+      mr.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data)
+      }
+      mr.onstop = async () => {
+        try {
+          const blob = new Blob(recordedChunksRef.current, { type: 'audio/webm' })
+          const file = new File([blob], `voice-note-${Date.now()}.webm`, { type: 'audio/webm' })
+          const result = await uploadFile(file)
+          if (result?.storageId && conversationId) {
+            await sendMessage({
+              conversationId,
+              content: file.name,
+              contentType: 'audio',
+              fileUrl: String(result.storageId),
+              metadata: { originalName: file.name, fileSize: file.size, mimeType: file.type },
+            })
+          }
+        } catch (err) {
+          console.error('Failed to send voice note', err)
+          toast.error('Failed to send voice note')
+        } finally {
+          setIsRecording(false)
+          stream.getTracks().forEach(t => t.stop())
+        }
+      }
+      mediaRecorderRef.current = mr
+      mr.start()
+      setIsRecording(true)
+    } catch (err) {
+      console.error('Mic access error', err)
+      toast.error('Microphone permission denied')
+    }
+  }
+
+  const stopRecording = () => {
+    try {
+      mediaRecorderRef.current?.stop()
+    } catch {}
+  }
+
   // Mark messages as read when they become visible
   useEffect(() => {
     if (!conversationId || !paginatedMessages.items.length) return;
 
     const unreadMessages = paginatedMessages.items.filter(
-      (msg) => !msg.isReadByReceiver && msg.senderId === recipientId
+      (msg: ChatMessage) => !msg.isReadByReceiver && msg.senderId === recipientId
     );
 
     if (unreadMessages.length > 0) {
@@ -357,9 +488,14 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   return (
     <Card className={cn("w-full h-[600px] flex flex-col", className)}>
       <CardHeader className="pb-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 justify-between">
           <MessageSquare className="h-5 w-5" />
           <CardTitle>Chat</CardTitle>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setStarredOpen(true)} className="h-8">
+              <Star className="h-4 w-4 mr-1" /> Starred
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-4 p-4">
@@ -370,14 +506,17 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
             onScrollCapture={handleScroll}
           >
             <div className="space-y-2 p-4 min-h-[400px]">
-            {paginatedMessages.items.map((message) => {
+            {paginatedMessages.items.map((message: ChatMessage) => {
               const isOwnMessage = message.senderId === currentUser?._id;
               const senderUser = isOwnMessage ? currentUser : recipientUser;
               const isSelected = selectedMessage === message._id;
+              const isDeleted = !!message.isDeleted;
+              const isStarred = Array.isArray(message.starredBy) && currentUser?._id && message.starredBy.includes(currentUser._id);
               
               return (
                 <div
                   key={message._id}
+                  ref={(el) => { messageRefs.current[String(message._id)] = el }}
                   className={cn(
                     "flex items-end gap-2 group",
                     isOwnMessage ? "flex-row-reverse" : "flex-row"
@@ -392,13 +531,37 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
                   
                   <div className={cn("flex flex-col max-w-[70%]", isOwnMessage ? "items-end" : "items-start")}>
                     {/* Reply context */}
-                    {message.replyToMessageId && (
-                      <div className={cn(
-                        "mb-1 px-3 py-2 rounded-lg border-l-4 bg-muted/50 text-xs",
-                        isOwnMessage ? "border-l-primary" : "border-l-muted-foreground"
-                      )}>
-                        <p className="font-medium opacity-70">Replying to message</p>
-                      </div>
+                    {(message.replyToMessage || message.replyToMessageId) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const targetId = String(message.replyToMessage?._id || message.replyToMessageId);
+                          const el = targetId ? messageRefs.current[targetId] : null;
+                          if (el) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            setSelectedMessage(targetId);
+                            setTimeout(() => setSelectedMessage(null), 2000);
+                          }
+                        }}
+                        className={cn(
+                          "mb-1 px-3 py-2 rounded-lg border-l-4 bg-muted/50 text-left",
+                          "hover:bg-muted/70 transition-colors",
+                          isOwnMessage ? "border-l-primary" : "border-l-muted-foreground"
+                        )}
+                      >
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Replying to</p>
+                        <p className="text-xs font-medium opacity-80">
+                          {message.replyToMessage
+                            ? (message.replyToMessage.senderId === currentUser?._id ? 'You' : (recipientUser?.firstName || 'User'))
+                            : 'Message'}
+                        </p>
+                        {message.replyToMessage?.content && (
+                          <p className="text-xs line-clamp-2 opacity-80">
+                            {message.replyToMessage.content}
+                          </p>
+                        )}
+                      </button>
                     )}
                     
                     <div
@@ -410,26 +573,33 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
                         isSelected && "ring-2 ring-primary/50 shadow-lg scale-[1.02]",
                         "hover:shadow-md"
                       )}
-                      onClick={() => handleMessageClick(message._id)}
+                        onClick={() => handleReply(message)}
                     >
-                      {message.contentType === "text" ? (
+                      {isDeleted ? (
+                        <div className="text-xs italic opacity-70">This message was deleted</div>
+                      ) : message.contentType === "text" ? (
                         <MessageContent 
                           content={message.content}
                           isOwnMessage={isOwnMessage}
                           className="text-sm leading-relaxed"
                         />
+                      ) : message.contentType === "audio" ? (
+                        <div className="w-64">
+                          <StorageAudio storageId={message.fileUrl} />
+                        </div>
                       ) : (
                         <div className="flex items-center gap-2">
-                          <File className="h-4 w-4" />
+                          <FileIcon className="h-4 w-4" />
                           <span className="text-sm">{message.content}</span>
-                          {message.metadata?.fileUrl && (
+                          {(message.fileUrl || (message.metadata as { fileUrl?: string })?.fileUrl) && (
                             <Button
                               variant="ghost"
                               size="sm"
                               className="p-0 h-auto"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                window.open(message.metadata.fileUrl, '_blank');
+                                const url = (message.metadata as { fileUrl?: string })?.fileUrl || message.fileUrl;
+                                if (url) window.open(url, '_blank');
                               }}
                             >
                               <Download className="h-4 w-4" />
@@ -448,7 +618,31 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
                           timestamp={message.timestamp}
                           isOwnMessage={isOwnMessage}
                         />
+                        {message.editedAt && !isDeleted && (
+                          <span className="ml-2 text-[10px] opacity-70">(edited)</span>
+                        )}
+                        {isStarred && (
+                          <Star className="h-3 w-3 ml-1 text-yellow-400" />
+                        )}
                       </div>
+                      {/* Reactions row */}
+                      {!isDeleted && Array.isArray(message.reactions) && message.reactions.length > 0 && (
+                        <div className={cn("mt-1 flex gap-1 flex-wrap", isOwnMessage ? 'justify-end' : 'justify-start')}>
+                          {Object.entries(
+                            (message.reactions ?? []).reduce((acc: Record<string, number>, r) => {
+                              acc[r.type] = (acc[r.type] || 0) + 1; return acc
+                            }, {} as Record<string, number>)
+                          ).map(([type, count]) => (
+                            <button
+                              key={type}
+                              className="text-xs px-2 py-0.5 rounded-full bg-background/70 border hover:bg-background"
+                              onClick={(e) => { e.stopPropagation(); handleToggleReaction(message._id, type) }}
+                            >
+                              {type} <span className="ml-1 opacity-70">{count as number}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       
                       {/* Message actions dropdown */}
                       <DropdownMenu>
@@ -469,6 +663,34 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
                           <DropdownMenuItem onClick={() => handleReplyToMessage(message)}>
                             <Reply className="h-4 w-4 mr-2" />
                             Reply
+                          </DropdownMenuItem>
+                          {!isDeleted && (
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger>
+                                <Smile className="h-4 w-4 mr-2" /> React
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent>
+                                {EMOJI_OPTIONS.map((e) => (
+                                  <DropdownMenuItem key={e} onClick={() => handleToggleReaction(message._id, e)}>
+                                    {e}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                          )}
+                          {!isDeleted && isOwnMessage && message.contentType === 'text' && (
+                            <DropdownMenuItem onClick={() => handleStartEdit(message)}>
+                              <Edit className="h-4 w-4 mr-2" /> Edit
+                            </DropdownMenuItem>
+                          )}
+                          {isOwnMessage && (
+                            <DropdownMenuItem onClick={() => handleDeleteMessage(message._id)}>
+                              <Trash className="h-4 w-4 mr-2" /> Delete
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => handleToggleStar(message._id)}>
+                            {isStarred ? <StarOff className="h-4 w-4 mr-2" /> : <Star className="h-4 w-4 mr-2" />}
+                            {isStarred ? 'Unstar' : 'Star'}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -554,10 +776,19 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
               className="hidden"
               onChange={handleFileSelect}
             />
+            <Button
+              variant={isRecording ? 'destructive' : 'ghost'}
+              size="icon"
+              onClick={() => (isRecording ? stopRecording() : startRecording())}
+              className="mb-1"
+              title={isRecording ? 'Stop recording' : 'Record voice note'}
+            >
+              {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            </Button>
             <div className="flex-1">
               <Input
                 ref={inputRef}
-                placeholder="Type a message..."
+                placeholder={editingMessage ? 'Edit your message...' : 'Type a message...'}
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyDown={(e) => {
@@ -574,15 +805,82 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
               size="icon"
               className="shrink-0 rounded-full"
               onClick={handleSendMessage}
-              disabled={!newMessage.trim() || isUploading}
+              disabled={(!!editingMessage && !newMessage.trim()) || (!editingMessage && !newMessage.trim()) || isUploading || isRecording}
             >
               <Send className="h-4 w-4" />
             </Button>
           </div>
+          {editingMessage && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Editing message</span>
+              <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => { setEditingMessage(null); setNewMessage('') }}>Cancel</Button>
+            </div>
+          )}
         </div>
       </CardContent>
+
+      {/* Starred messages dialog */}
+      <StarredMessagesDialog
+        open={starredOpen}
+        onOpenChange={setStarredOpen}
+        conversationId={conversationId}
+        onGoToMessage={(id) => {
+          setStarredOpen(false)
+          setTimeout(() => {
+            const el = id ? messageRefs.current[String(id)] : null
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              setSelectedMessage(String(id))
+              setTimeout(() => setSelectedMessage(null), 2000)
+            }
+          }, 200)
+        }}
+      />
     </Card>
   );
 };
 
 export default RealtimeChat;
+
+// Starred dialog component (local)
+function StarredMessagesDialog({ open, onOpenChange, conversationId, onGoToMessage }: { open: boolean; onOpenChange: (o: boolean) => void; conversationId: Id<'conversations'> | null; onGoToMessage: (id: string) => void }) {
+  const apiUntyped = api as unknown as Record<string, unknown>
+  const chatModuleLocal = apiUntyped['chat'] as Record<string, unknown>
+  const result = useQueryUntyped(
+    chatModuleLocal['getStarredMessages'],
+    open && conversationId ? { conversationId } : 'skip'
+  )
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Starred messages</DialogTitle>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-auto space-y-3">
+          {result === undefined && (
+            <div className="text-sm text-muted-foreground">Loading...</div>
+          )}
+          {result?.items?.length === 0 && (
+            <div className="text-sm text-muted-foreground">No starred messages</div>
+          )}
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          {result?.items?.map((m: any) => (
+            <div key={m._id} className="p-3 border rounded-lg bg-background/50">
+              {m.replyToMessage && (
+                <div className="mb-1 px-3 py-2 rounded-lg border-l-4 bg-muted/50 text-xs border-l-muted-foreground">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Replying to</p>
+                  <p className="text-xs opacity-80 line-clamp-1">{m.replyToMessage.content}</p>
+                </div>
+              )}
+              <div className="text-sm">{m.content}</div>
+              <div className="mt-2">
+                <Button variant="ghost" size="sm" onClick={() => onGoToMessage(m._id)}>Go to message</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}

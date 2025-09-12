@@ -7,6 +7,8 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import listPlugin from '@fullcalendar/list'
 import { format } from 'date-fns'
+import type { EventClickArg, EventDropArg, EventHoveringArg } from '@fullcalendar/core'
+import type { EventResizeDoneArg } from '@fullcalendar/interaction'
 import Tippy from '@tippyjs/react'
 import 'tippy.js/dist/tippy.css'
 import 'tippy.js/themes/light.css'
@@ -64,6 +66,15 @@ export interface AppointmentData {
     imageUrl?: string
     phoneNumber?: string
   } | null
+}
+
+type CalendarExtendedProps = {
+  appointment: AppointmentData
+  serviceType: AppointmentData['serviceType']
+  status: AppointmentData['status']
+  priority?: AppointmentData['priority']
+  appointmentType?: AppointmentData['appointmentType']
+  patientName: string
 }
 
 interface DragDropTooltipCalendarProps {
@@ -397,6 +408,24 @@ export function DragDropTooltipCalendar({
     }
   }, [viewMode, currentDate])
 
+  // Handle mouse enter for tooltip
+  const handleMouseEnter = (info: EventHoveringArg): void => {
+    // Show tooltip with appointment details
+    const appt = (info.event.extendedProps as unknown as CalendarExtendedProps)?.appointment
+    if (info.el && appt) {
+      const patientName = appt.patient ? `${appt.patient.firstName} ${appt.patient.lastName}` : 'Unknown Patient'
+      info.el.setAttribute('title', `${patientName} - ${appt.serviceType}`)
+    }
+  }
+
+  // Handle mouse leave for tooltip
+  const handleMouseLeave = (info: EventHoveringArg): void => {
+    // Clear any active tooltips
+    if (info.el) {
+      info.el.removeAttribute('title')
+    }
+  }
+
   // Handle date click for creating new appointments
   const handleDateClick = (info: { date: Date }): void => {
     if (!isDragging) {
@@ -405,10 +434,10 @@ export function DragDropTooltipCalendar({
   }
 
   // Handle event click with interactive modes
-  const handleEventClick = (info: { event: { extendedProps: { appointment: AppointmentData } } }): void => {
+  const handleEventClick = (info: EventClickArg): void => {
     if (isDragging) return
     
-    const appointment = info.event.extendedProps.appointment as AppointmentData
+    const appointment = (info.event.extendedProps as unknown as CalendarExtendedProps).appointment
     
     // Handle interactive modes
     if (pinMode) {
@@ -430,17 +459,19 @@ export function DragDropTooltipCalendar({
     onAppointmentClick(appointment)
   }
 
-  // Enhanced drag & drop handler
-  const handleEventDrop = async (info: { event: { id: string }; revert: () => void }): Promise<void> => {
-    if (!enableDragDrop || !onAppointmentUpdate) {
-      info.revert()
-      toast.error('Drag & drop is not enabled')
-      return
-    }
+  // Handle event drop (drag and drop)
+  const handleEventDrop = async (info: EventDropArg): Promise<void> => {
+    if (!onAppointmentUpdate) return
 
     const appointmentId = info.event.id
     const newStart = info.event.start
     const newEnd = info.event.end
+
+    if (!enableDragDrop) {
+      info.revert()
+      toast.error('Drag & drop is not enabled')
+      return
+    }
 
     if (!newStart || !newEnd) {
       info.revert()
@@ -461,15 +492,7 @@ export function DragDropTooltipCalendar({
 
       toast.success('Appointment rescheduled successfully!', { id: appointmentId })
       
-      // Show success feedback
-      const eventEl = info.el
-      eventEl.style.transform = 'scale(1.05)'
-      eventEl.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)'
-      
-      setTimeout(() => {
-        eventEl.style.transform = 'scale(1)'
-        eventEl.style.boxShadow = ''
-      }, 300)
+      // Show success feedback (visual effect handled via toast)
 
     } catch (error) {
       console.error('Failed to reschedule appointment:', error)
@@ -481,8 +504,8 @@ export function DragDropTooltipCalendar({
     }
   }
 
-  // Enhanced resize handler
-  const handleEventResize = async (info: { event: { id: string }; revert: () => void }): Promise<void> => {
+  // Handle event resize
+  const handleEventResize = async (info: EventResizeDoneArg): Promise<void> => {
     if (!enableDragDrop || !onAppointmentUpdate) {
       info.revert()
       toast.error('Resizing is not enabled')
@@ -490,10 +513,10 @@ export function DragDropTooltipCalendar({
     }
 
     const appointmentId = info.event.id
-    const newStart = info.event.start
-    const newEnd = info.event.end
+    const newStartResize = info.event.start
+    const newEndResize = info.event.end
 
-    if (!newStart || !newEnd) {
+    if (!newStartResize || !newEndResize) {
       info.revert()
       toast.error('Invalid time range')
       return
@@ -505,8 +528,8 @@ export function DragDropTooltipCalendar({
       toast.loading('Updating appointment duration...', { id: appointmentId })
       
       await onAppointmentUpdate(appointmentId, {
-        startTime: newStart.getTime(),
-        endTime: newEnd.getTime()
+        startTime: newStartResize.getTime(),
+        endTime: newEndResize.getTime()
       })
 
       toast.success('Appointment duration updated!', { id: appointmentId })
@@ -735,10 +758,13 @@ export function DragDropTooltipCalendar({
             eventClick={handleEventClick}
             eventDrop={handleEventDrop}
             eventResize={handleEventResize}
+            eventMouseEnter={handleMouseEnter}
+            eventMouseLeave={handleMouseLeave}
             eventDragStart={handleEventDragStart}
             eventDragStop={handleEventDragStop}
             eventContent={(eventInfo) => {
-              const { serviceType, status, priority, appointmentType, patientName, appointment } = eventInfo.event.extendedProps
+              const { serviceType, status, priority, appointmentType, patientName, appointment } = eventInfo.event
+                .extendedProps as unknown as CalendarExtendedProps
               
               const EventContent = (
                 <div className={cn(
