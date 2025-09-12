@@ -43,9 +43,22 @@ export const sendPatientInvitationEmail = action({
       
       console.log('[EMAIL ACTION] Using email:', `${fromName} <${fromEmail}>`);
       
+      // Normalize invitation link to production domain regardless of input
+      const PRODUCTION_BASE = 'https://www.rehabifyhealth.com';
+      let normalizedInvitationLink = args.invitationLink;
+      try {
+        const u = new URL(args.invitationLink);
+        u.protocol = 'https:';
+        u.host = 'www.rehabifyhealth.com';
+        normalizedInvitationLink = u.toString();
+      } catch (_e) {
+        // Fallback if the provided link isn't a full URL
+        normalizedInvitationLink = `${PRODUCTION_BASE}/patient-invite/${args.invitationCode}`;
+      }
+
       // Create QR code URL (external service) and email HTML content
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
-        args.invitationLink
+        normalizedInvitationLink
       )}`;
       const emailHtml = `
         <!DOCTYPE html>
@@ -65,13 +78,13 @@ export const sendPatientInvitationEmail = action({
             </div>
             <p style="text-align: center; margin: 12px 0; color: #555;">or</p>
             <div style="text-align: center; margin: 16px 0 28px;">
-              <a href="${args.invitationLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">
+              <a href="${normalizedInvitationLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">
                 Complete Registration
               </a>
             </div>
             <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; word-break: break-all;">
               <p style="margin: 0 0 6px; font-size: 12px; color: #555;">Direct link:</p>
-              <a href="${args.invitationLink}" style="color: #065f46; text-decoration: underline;">${args.invitationLink}</a>
+              <a href="${normalizedInvitationLink}" style="color: #065f46; text-decoration: underline;">${normalizedInvitationLink}</a>
             </div>
             <p style="margin-top: 16px;">This invitation will expire on ${new Date(args.expiresAt).toLocaleDateString()}.</p>
             <p>If you have any questions, please contact your physiotherapist directly.</p>
@@ -118,6 +131,37 @@ export const sendPatientInvitationEmail = action({
 });
 
 /**
+ * Preview-only utility action: normalize a patient invitation link to production domain
+ * Does NOT send an email. Useful for tests to ensure no localhost links remain.
+ */
+export const previewNormalizedPatientInvitationLink = action({
+  args: {
+    invitationLink: v.string(),
+    invitationCode: v.string(),
+  },
+  returns: v.object({
+    normalizedLink: v.string(),
+    isProduction: v.boolean(),
+  }),
+  handler: async (_ctx, args) => {
+    const PRODUCTION_BASE = 'https://www.rehabifyhealth.com';
+    let normalizedLink = args.invitationLink;
+    try {
+      const u = new URL(args.invitationLink);
+      u.protocol = 'https:';
+      u.host = 'www.rehabifyhealth.com';
+      normalizedLink = u.toString();
+    } catch (_e) {
+      normalizedLink = `${PRODUCTION_BASE}/patient-invite/${args.invitationCode}`;
+    }
+
+    const isProduction = normalizedLink.startsWith(PRODUCTION_BASE);
+    console.log('[EMAIL ACTION][PREVIEW] Normalized invitation link:', normalizedLink, 'isProduction:', isProduction);
+    return { normalizedLink, isProduction };
+  }
+});
+
+/**
  * Send a reminder email for pending invitations
  */
 export const sendInvitationReminderEmail = action({
@@ -147,8 +191,20 @@ export const sendInvitationReminderEmail = action({
       const fromEmail = 'noreply@rehabifyhealth.com';
       const fromName = 'Rehabify Health';
       
+      // Normalize invitation link for reminder as well
+      const PRODUCTION_BASE = 'https://www.rehabifyhealth.com';
+      let normalizedInvitationLink = args.invitationLink;
+      try {
+        const u = new URL(args.invitationLink);
+        u.protocol = 'https:';
+        u.host = 'www.rehabifyhealth.com';
+        normalizedInvitationLink = u.toString();
+      } catch (_e) {
+        normalizedInvitationLink = `${PRODUCTION_BASE}/patient-invite/${args.invitationCode}`;
+      }
+
       const reminderQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
-        args.invitationLink
+        normalizedInvitationLink
       )}`;
       const emailHtml = `
         <!DOCTYPE html>
@@ -168,13 +224,13 @@ export const sendInvitationReminderEmail = action({
             </div>
             <p style="text-align: center; margin: 12px 0; color: #555;">or</p>
             <div style="text-align: center; margin: 16px 0 28px;">
-              <a href="${args.invitationLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">
+              <a href="${normalizedInvitationLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">
                 Complete Registration Now
               </a>
             </div>
             <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; word-break: break-all;">
               <p style="margin: 0 0 6px; font-size: 12px; color: #555;">Direct link:</p>
-              <a href="${args.invitationLink}" style="color: #065f46; text-decoration: underline;">${args.invitationLink}</a>
+              <a href="${normalizedInvitationLink}" style="color: #065f46; text-decoration: underline;">${normalizedInvitationLink}</a>
             </div>
             <p style="margin-top: 16px;">This invitation will expire on ${new Date(args.expiresAt).toLocaleDateString()}.</p>
           </div>
