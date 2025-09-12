@@ -115,14 +115,14 @@ export default function ClinicOwnerPersonalInfoForm({ onNext }: ClinicOwnerPerso
       initial={{ opacity: 0 }} 
       animate={{ opacity: 1 }} 
       transition={{ duration: 0.5 }}
-      className="w-full max-w-2xl p-10 space-y-8 bg-white rounded-xl shadow-xl"
+      className="w-full max-w-3xl space-y-6"
     >
       <div className="text-center">
-        <h1 className="text-3xl font-bold text-[#005b57]">Owner Information</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-[#005b57]">Owner Information</h1>
         <p className="text-gray-600">Tell us a bit about yourself.</p>
         <OnboardingProgress current={data.currentStep} total={4} className="mt-4" />
       </div>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* First Name */}
         <motion.div custom={0} initial="hidden" animate="visible" variants={fadeInVariants} className="space-y-3">
           <Label htmlFor="firstName" className="block text-base font-semibold text-[#002e2c]">First Name *</Label>
@@ -266,7 +266,7 @@ export default function ClinicOwnerPersonalInfoForm({ onNext }: ClinicOwnerPerso
           </motion.div>
         )}
 
-        <motion.div custom={4} initial="hidden" animate="visible" variants={fadeInVariants} className="pt-4">
+        <motion.div custom={4} initial="hidden" animate="visible" variants={fadeInVariants} className="pt-2">
           <Button 
             type="submit" 
             disabled={isSubmitting} 

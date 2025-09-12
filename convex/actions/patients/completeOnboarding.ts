@@ -6,7 +6,6 @@ import { v } from "convex/values";
 import { action } from "../../_generated/server";
 import { api } from "../../_generated/api";
 import { Id } from "../../_generated/dataModel";
-import { sendEmail } from "../../../lib/email/emailService";
 
 /**
  * Complete patient onboarding with invitation and send notifications
@@ -39,9 +38,8 @@ export const completePatientOnboardingWithNotification = action({
     success: v.boolean(),
     message: v.optional(v.string()),
     patientId: v.optional(v.id("users")),
-    welcomeEmailSent: v.optional(v.boolean()),
   }),
-  handler: async (ctx, args): Promise<{ success: boolean; message?: string; patientId?: Id<"users">; welcomeEmailSent?: boolean }> => {
+  handler: async (ctx, args): Promise<{ success: boolean; message?: string; patientId?: Id<"users"> }> => {
     try {
       const result: { success: boolean; message?: string; patientId?: Id<"users"> } = await ctx.runMutation(
         api.patientInvitations.completePatientOnboarding,
@@ -73,7 +71,6 @@ export const completePatientOnboardingWithNotification = action({
       }
 
       const patientName = `${args.patientData.firstName} ${args.patientData.lastName}`.trim();
-      let welcomeEmailSent = false;
 
       // Send notification to patient
       await ctx.runMutation(api.notifications.create, {
@@ -114,30 +111,10 @@ export const completePatientOnboardingWithNotification = action({
         });
       }
 
-      // Send welcome email to the patient (optional, default on)
-      if (args.sendEmail !== false) {
-        try {
-          const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-          const dashboardLink = `${baseUrl}/dashboard/patient`;
-          const emailResult = await sendEmail({
-            to: args.patientData.email,
-            template: 'ONBOARDING_COMPLETE',
-            data: {
-              userName: patientName,
-              dashboardLink,
-            },
-          });
-          welcomeEmailSent = Boolean(emailResult.success);
-        } catch (e) {
-          console.error('Failed to send welcome email to patient:', e);
-        }
-      }
-
       return {
         success: true,
         message: "Patient onboarding completed successfully.",
         patientId: patientId,
-        welcomeEmailSent,
       };
     } catch (error) {
       console.error("Error in completePatientOnboardingWithNotification:", error);

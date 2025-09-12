@@ -9,13 +9,15 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Video, Calendar, Clock, Plus, Copy, X } from 'lucide-react';
 import { format } from 'date-fns';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Id } from '@/convex/_generated/dataModel';
-import VideoCallManager from '@/components/video/VideoCallManager';
+import StreamVideoCallManager from '@/components/video/StreamVideoCallManager';
 // Removed deprecated InferQueryOutput import
 
 // Simple type definition to avoid complex inference
@@ -23,11 +25,13 @@ type Patient = {
   _id: Id<"users">;
   firstName?: string;
   lastName?: string;
+  email?: string;
 };
 
 type VideoCall = {
   _id: Id<"videoCalls">;
   roomId: string;
+  title?: string;
   patientId?: Id<"users">;
   physiotherapistId?: Id<"users">;
   scheduledAt?: number;
@@ -39,20 +43,33 @@ type VideoCall = {
   platform: string;
   notes?: string;
   patient?: Patient;
-  dailyRoomUrl?: string;
+  streamCallId?: string;
 };
 
 export default function VideoCallsPage() {
+  const router = useRouter();
   const [showNewCall, setShowNewCall] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<string>('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [title, setTitle] = useState('');
   const [activeCall, setActiveCall] = useState<VideoCall | null>(null);
+  const [invitePreviewOpen, setInvitePreviewOpen] = useState(false);
+  const [inviteDraft, setInviteDraft] = useState({
+    patientEmail: '',
+    patientName: '',
+    physiotherapistName: '',
+    callLink: '',
+    callTitle: '',
+    scheduledAt: '',
+    message: ''
+  });
 
   const videoCalls = useQuery(api.videoCalls.getMyVideoCalls, {}) as VideoCall[] | undefined;
   const patients = useQuery(api.patients.getMyPatients, {}) as Patient[] | undefined;
 
   const createVideoCall = useAction(api.videoCalls.createVideoCall);
+  const sendVideoCallInvitation = useAction(api["actions/emails/sendVideoCallInvitation"].sendVideoCallInvitation)
+  const me = useQuery(api.users.getMyUser)
   const startVideoCall = useMutation(api.videoCalls.startVideoCall);
   const cancelVideoCall = useMutation(api.videoCalls.cancelVideoCall);
 
@@ -78,20 +95,67 @@ export default function VideoCallsPage() {
     }
 
     try {
-      // Use createVideoCall to integrate with Daily.co
-      await createVideoCall({
+      // Create the video call with Stream
+      const result = await createVideoCall({
         participants: [selectedPatient as Id<"users">],
         callType: 'appointment',
         title,
         settings: {
           recordingEnabled: false,
           chatEnabled: true,
-          maxParticipants: 2,
+          maxParticipants: 10,
           waitingRoomEnabled: false,
           screenShareEnabled: true,
-          durationMinutes: 30
+          durationMinutes: 60
         }
       });
+
+      // Compose meeting link for invitations
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://rehabifyhealth.com')
+      const callLink = `${baseUrl}/video-call/${result?.streamCallId || result?.roomId}`
+
+      // Auto-send the invitation email (restores previous behavior)
+      try {
+        const patient = (patients || []).find(p => String(p._id) === selectedPatient)
+        if (patient?.email) {
+          await sendVideoCallInvitation({
+            patientEmail: patient.email,
+            patientName: `${patient?.firstName || ''} ${patient?.lastName || ''}`.trim() || undefined,
+            physiotherapistName: `${me?.firstName || ''} ${me?.lastName || ''}`.trim() || 'Your physiotherapist',
+            callLink,
+            callTitle: title,
+            scheduledAt: scheduledAt ? new Date(scheduledAt).getTime() : undefined,
+            message: undefined,
+          } as {
+            patientEmail: string;
+            patientName?: string;
+            physiotherapistName: string;
+            callLink: string;
+            callTitle?: string;
+            scheduledAt?: number;
+            message?: string;
+          })
+          toast.success('Invitation email sent')
+        } else {
+          toast.warning('Patient has no email on file. Please add an email or send manually.')
+        }
+      } catch (e) {
+        console.error(e)
+        toast.error('Failed to send invitation email')
+      }
+
+      // Open preview modal to confirm email before sending
+      const patient = (patients || []).find(p => String(p._id) === selectedPatient)
+      setInviteDraft({
+        patientEmail: patient?.email || '',
+        patientName: `${patient?.firstName || ''} ${patient?.lastName || ''}`.trim(),
+        physiotherapistName: `${me?.firstName || ''} ${me?.lastName || ''}`.trim() || 'Your physiotherapist',
+        callLink,
+        callTitle: title,
+        scheduledAt,
+        message: ''
+      })
+      setInvitePreviewOpen(true)
 
       setShowNewCall(false);
       setSelectedPatient('');
@@ -108,10 +172,11 @@ export default function VideoCallsPage() {
     try {
       await startVideoCall({ callId: call._id });
       
-      // For Daily.co calls, use the roomId directly (it should be the Daily room name)
-      console.log('Starting Daily.co call with room ID:', call.roomId);
-      
-      setActiveCall(call);
+      // Route straight into the Stream call page (ignore any legacy Daily links)
+      const sanitizedLink = (call.meetingLink && !call.meetingLink.includes('daily.co'))
+        ? call.meetingLink
+        : `/video-call/${call.streamCallId || call.roomId}`;
+      router.push(sanitizedLink);
       
       toast.success('Video call started');
     } catch (error) {
@@ -140,10 +205,29 @@ export default function VideoCallsPage() {
     toast.success('Video call ended');
   };
 
-  // If there's an active call, show the VideoCallManager
+  const handleInvite = async (call: VideoCall) => {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://rehabifyhealth.com')
+    const callLink = (call.meetingLink && !call.meetingLink.includes('daily.co'))
+      ? call.meetingLink
+      : `${baseUrl}/video-call/${call.streamCallId || call.roomId}`
+
+    const patient = call.patient || (patients || []).find(p => String(p._id) === String(call.patientId))
+    setInviteDraft({
+      patientEmail: patient?.email || '',
+      patientName: `${patient?.firstName || ''} ${patient?.lastName || ''}`.trim(),
+      physiotherapistName: `${me?.firstName || ''} ${me?.lastName || ''}`.trim() || 'Your physiotherapist',
+      callLink,
+      callTitle: call?.title || 'Telehealth Session',
+      scheduledAt: call.scheduledAt ? new Date(call.scheduledAt).toISOString().slice(0,16) : '',
+      message: ''
+    })
+    setInvitePreviewOpen(true)
+  }
+
+  // If there's an active call, show the StreamVideoCallManager
   if (activeCall) {
     return (
-      <VideoCallManager
+      <StreamVideoCallManager
         appointmentId={undefined}
         defaultParticipants={activeCall.patientId ? [activeCall.patientId] : []}
         onCallEnd={handleEndCall}
@@ -173,7 +257,7 @@ export default function VideoCallsPage() {
                 <Badge variant={call.status === 'scheduled' ? 'default' : 'secondary'}>
                   {call.status}
                 </Badge>
-                <Badge variant="outline">{call.platform}</Badge>
+                <Badge variant="outline">stream</Badge>
               </div>
               <CardTitle className="text-lg">{call.patient?.firstName} {call.patient?.lastName}</CardTitle>
             </CardHeader>
@@ -212,22 +296,25 @@ export default function VideoCallsPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={() => handleInvite(call)}
+                  >
+                    Invite
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={async () => {
-                      // Fallback to dailyRoomUrl if meetingLink is undefined (for old records)
-                      const linkToCopy = call.meetingLink || call.dailyRoomUrl
-                      
-                      if (!linkToCopy) {
-                        toast.error('No meeting link available to copy')
-                        return
-                      }
-                      
+                      // Copy a Stream meeting link (fallback to Stream route if legacy Daily link is present)
+                      const computed = (call.meetingLink && !call.meetingLink.includes('daily.co'))
+                        ? call.meetingLink
+                        : `${window.location.origin}/video-call/${call.streamCallId || call.roomId}`
                       try {
                         if (navigator.clipboard?.writeText) {
-                          await navigator.clipboard.writeText(linkToCopy)
+                          await navigator.clipboard.writeText(computed)
                           toast.success('Meeting link copied')
                         } else {
                           const textArea = document.createElement('textarea')
-                          textArea.value = linkToCopy
+                          textArea.value = computed
                           document.body.appendChild(textArea)
                           textArea.select()
                           const successful = document.execCommand('copy')
@@ -266,6 +353,9 @@ export default function VideoCallsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Schedule a New Video Call</DialogTitle>
+            <DialogDescription>
+              Select a patient and time; after creating the call, we’ll email them a unique join link. They join from their own device.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
@@ -298,8 +388,106 @@ export default function VideoCallsPage() {
           <Button onClick={handleScheduleCall} className="w-full">
             Schedule Call
           </Button>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-} 
+      </DialogContent>
+    </Dialog>
+
+    {/* Invite Preview Modal */}
+    <Dialog open={invitePreviewOpen} onOpenChange={setInvitePreviewOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Send Video Call Invitation</DialogTitle>
+          <DialogDescription>Review and confirm before sending the email invite.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>Email</Label>
+              <Input
+                value={inviteDraft.patientEmail}
+                onChange={(e) => setInviteDraft({ ...inviteDraft, patientEmail: e.target.value })}
+                placeholder="patient@example.com"
+              />
+            </div>
+            <div>
+              <Label>Patient Name</Label>
+              <Input
+                value={inviteDraft.patientName}
+                onChange={(e) => setInviteDraft({ ...inviteDraft, patientName: e.target.value })}
+                placeholder="Patient name"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>Call Title</Label>
+              <Input
+                value={inviteDraft.callTitle}
+                onChange={(e) => setInviteDraft({ ...inviteDraft, callTitle: e.target.value })}
+                placeholder="Telehealth Session"
+              />
+            </div>
+            <div>
+              <Label>Scheduled At</Label>
+              <Input
+                type="datetime-local"
+                value={inviteDraft.scheduledAt}
+                onChange={(e) => setInviteDraft({ ...inviteDraft, scheduledAt: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Join Link</Label>
+            <Input value={inviteDraft.callLink} readOnly />
+          </div>
+          <div>
+            <Label>Message (optional)</Label>
+            <Textarea
+              placeholder="Add a short personal message"
+              value={inviteDraft.message}
+              onChange={(e) => setInviteDraft({ ...inviteDraft, message: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            className="flex-1"
+            onClick={async () => {
+              if (!inviteDraft.patientEmail) {
+                toast.error('Patient email is required')
+                return
+              }
+              try {
+                await sendVideoCallInvitation({
+                  patientEmail: inviteDraft.patientEmail,
+                  patientName: inviteDraft.patientName || undefined,
+                  physiotherapistName: `${me?.firstName || ''} ${me?.lastName || ''}`.trim() || 'Your physiotherapist',
+                  callLink: inviteDraft.callLink,
+                  callTitle: inviteDraft.callTitle || undefined,
+                  scheduledAt: inviteDraft.scheduledAt || undefined,
+                  message: inviteDraft.message || undefined,
+                } as {
+                  patientEmail: string;
+                  patientName?: string;
+                  physiotherapistName: string;
+                  callLink: string;
+                  callTitle?: string;
+                  scheduledAt?: number;
+                  message?: string;
+                })
+                setInvitePreviewOpen(false)
+                toast.success('Invitation email sent')
+              } catch (e) {
+                console.error(e)
+                toast.error('Failed to send invitation email')
+              }
+            }}
+          >
+            Send Invitation
+          </Button>
+          <Button variant="outline" onClick={() => setInvitePreviewOpen(false)}>Cancel</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  </div>
+);
+}

@@ -8,10 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 interface StaffMember {
   _id: string;
   user?: {
+    _id?: string;
     firstName?: string;
     lastName?: string;
     email?: string;
   };
+  specializations?: string[];
   [key: string]: unknown;
 }
 import { Badge } from '@/components/ui/badge'
@@ -182,7 +184,7 @@ export default function ClinicOverviewPage() {
                       <p className="text-sm text-muted-foreground">
                         {member.specializations?.[0] || 'Physiotherapist'}
                       </p>
-                      {member.user?._id === user?._id && (
+                      {member.user?._id && user && (member.user._id === (user as unknown as { _id?: string })?._id) && (
                         <Badge variant="secondary" className="text-xs mt-1">
                           You
                         </Badge>

@@ -345,14 +345,18 @@ export const getClinicInvitations = query({
   args: {},
   returns: v.array(v.object({
     _id: v.id("clinicStaffInvitations"),
+    _creationTime: v.number(),
     clinicId: v.id("clinics"),
     clinicOwnerId: v.id("users"),
     inviteeEmail: v.string(),
+    inviteeName: v.optional(v.string()),
     code: v.string(),
+    role: v.string(),
     status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("declined"), v.literal("expired")),
     expiresAt: v.number(),
     createdAt: v.number(),
     acceptedBy: v.optional(v.id("users")),
+    message: v.optional(v.string()),
     isExpired: v.boolean(),
   })),
   handler: async (ctx) => {
@@ -671,11 +675,12 @@ export const getClinicDashboardStats = query({
       ? Math.round((completedAppointments.length / allThisMonthAppointments.length) * 100)
       : 0;
 
-    // Get pending invitations
+    // Get pending and non-expired invitations
     const pendingInvitations = await ctx.db
       .query("clinicStaffInvitations")
       .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
       .filter((q) => q.eq(q.field("status"), "pending"))
+      .filter((q) => q.gt(q.field("expiresAt"), Date.now()))
       .collect();
 
     return {
@@ -756,7 +761,7 @@ export const getClinicRevenue = query({
     );
     const thisMonthRevenue = thisMonthInvoices
       .filter(invoice => invoice.status === "paid")
-      .reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+      .reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0);
 
     // Calculate last month's revenue
     const lastMonthInvoices = flatInvoices.filter(invoice => 
@@ -764,7 +769,7 @@ export const getClinicRevenue = query({
     );
     const lastMonthRevenue = lastMonthInvoices
       .filter(invoice => invoice.status === "paid")
-      .reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+      .reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0);
 
     // Calculate growth percentage
     const growth = lastMonthRevenue > 0 
@@ -774,12 +779,12 @@ export const getClinicRevenue = query({
     // Calculate total revenue
     const totalRevenue = flatInvoices
       .filter(invoice => invoice.status === "paid")
-      .reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+      .reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0);
 
     // Calculate pending payments (only "sent" status exists)
     const pendingPayments = flatInvoices
       .filter(invoice => invoice.status === "sent")
-      .reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+      .reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0);
 
     return {
       thisMonth: thisMonthRevenue,
@@ -1380,9 +1385,9 @@ export const getClinicAppointmentStats = query({
 });
 
 /**
- * Get clinic billing data
+ * Get staff metrics for analytics
  */
-export const getClinicBilling = query({
+export const getStaffMetrics = query({
   args: {},
   handler: async (ctx) => {
     const user = await getAuthenticatedUser(ctx);
@@ -1394,112 +1399,52 @@ export const getClinicBilling = query({
       .first();
 
     if (!clinic) {
-      return {
-        totalRevenue: 0,
-        pendingAmount: 0,
-        overdueAmount: 0,
-        thisMonthRevenue: 0,
-      };
+      throw new Error("Clinic not found");
     }
 
-    // This is a placeholder - you would implement actual billing logic here
-    return {
-      totalRevenue: 125000,
-      pendingAmount: 15000,
-      overdueAmount: 3500,
-      thisMonthRevenue: 28000,
-    };
-  },
-});
+    // Get physiotherapists through user relationships since "physiotherapists" table may not exist
+    const physiotherapists = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("role"), "physiotherapist"))
+      .collect();
 
-
-
-/**
- * Get clinic invoices
- */
-export const getClinicInvoices = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
-    await ensureIsClinicOwner(ctx, user);
-
-    // Placeholder data - implement actual invoice system
-    return [
-      {
-        _id: "invoice1" as Id<"invoices">,
-        _creationTime: Date.now() - 86400000, // 1 day ago
-        invoiceNumber: "INV-001",
-        amount: 5000,
-        status: "pending",
-        dueDate: Date.now() + 2592000000, // 30 days from now
-        patient: {
-          user: {
-            firstName: "John",
-            lastName: "Doe",
-          }
-        }
-      },
-      {
-        _id: "invoice2" as Id<"invoices">,
-        _creationTime: Date.now() - 172800000, // 2 days ago
-        invoiceNumber: "INV-002",
-        amount: 7500,
-        status: "paid",
-        dueDate: Date.now() - 86400000, // 1 day ago
-        patient: {
-          user: {
-            firstName: "Jane",
-            lastName: "Smith",
-          }
-        }
-      },
-    ];
-  },
-});
-
-/**
- * Get clinic reports data
- */
-export const getClinicReports = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
-    await ensureIsClinicOwner(ctx, user);
-
-    // Placeholder data - implement actual reporting logic
-    return {
-      monthlyPerformance: [],
-      patientDemographics: [],
-      revenueBreakdown: [],
-      treatmentOutcomes: [],
-    };
-  },
-});
-
-/**
- * Get current clinic for authenticated clinic owner
- */
-export const getCurrentClinic = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
+    const activePhysios = physiotherapists.filter(p => (p as any).status === "active");
     
-    if (user.role !== "clinic_owner") {
-      throw new Error("Only clinic owners can access this function");
-    }
+    // Get this month's new staff
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const newThisMonth = physiotherapists.filter(p => 
+      p._creationTime >= startOfMonth
+    ).length;
 
-    const clinic = await ctx.db
-      .query("clinics")
-      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
-      .first();
+    // Calculate utilization (simplified)
+    const appointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
+      .filter((q) => q.eq(q.field("status"), "scheduled"))
+      .collect();
 
-    return clinic;
+    const completedAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
+      .filter((q) => q.eq(q.field("status"), "completed"))
+      .collect();
+
+    const utilization = activePhysios.length > 0
+      ? Math.min(100, (appointments.length / (activePhysios.length * 6)) * 100) // Assuming 6 appointments/day capacity
+      : 0;
+
+    return {
+      total: physiotherapists.length,
+      active: activePhysios.length,
+      pending: physiotherapists.filter(p => (p as any).status === "pending").length,
+      inactive: physiotherapists.filter(p => (p as any).status === "inactive").length,
+      newThisMonth,
+      utilization: Math.round(utilization),
+    };
   },
 });
 
-/**
- * Update clinic information
- */
 export const updateClinic = mutation({
   args: {
     name: v.optional(v.string()),
@@ -1954,53 +1899,6 @@ export const getOwnerAnalytics = query({
         newThisMonth: 23,
         retention: 85.2
       }
-    };
-  },
-});
-
-/**
- * Get staff metrics for analytics
- */
-export const getStaffMetrics = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await getAuthenticatedUser(ctx);
-    await ensureIsClinicOwner(ctx, user);
-
-    const clinic = await ctx.db
-      .query("clinics")
-      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
-      .first();
-
-    if (!clinic) {
-      return {
-        active: 0,
-        utilization: 0,
-        newThisMonth: 0
-      };
-    }
-
-    // Get staff members for this clinic
-    const staff = await ctx.db
-      .query("users")
-      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
-      .filter((q) => q.neq(q.field("role"), "patient"))
-      .collect();
-
-    const activeStaff = staff.filter(s => s.status === "active");
-    
-    // Calculate new staff this month
-    const thisMonth = new Date();
-    const startOfMonth = new Date(thisMonth.getFullYear(), thisMonth.getMonth(), 1).getTime();
-    const newThisMonth = staff.filter(s => s.joinedAt && s.joinedAt >= startOfMonth).length;
-
-    // Mock utilization calculation - replace with actual logic
-    const utilization = activeStaff.length > 0 ? Math.min(95, 60 + (activeStaff.length * 3)) : 0;
-
-    return {
-      active: activeStaff.length,
-      utilization,
-      newThisMonth
     };
   },
 });

@@ -1,3 +1,13 @@
+/**
+ * DEPRECATED: Legacy Daily.co integration service
+ * ------------------------------------------------------------
+ * RehabifyHealth has migrated to Stream Video SDK.
+ * This module is retained temporarily for reference/rollback only.
+ * Do NOT import from this file in new code.
+ */
+if (typeof console !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  console.warn('[DEPRECATED] lib/daily/dailyService.ts — Daily.co integration is no longer in use. Use Stream backend/actions instead.')
+}
 export interface DailyRoomConfig {
   name?: string;
   privacy?: 'public' | 'private';

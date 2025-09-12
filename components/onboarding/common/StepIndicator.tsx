@@ -17,7 +17,7 @@ export default function StepIndicator({
   };
 
   return (
-    <div className="w-full py-6 px-4">
+    <div className="w-full py-4 sm:py-6 px-2 sm:px-4">
       <div className="flex items-center justify-center">
         {steps.map((stepLabel, index) => {
           const isActive = currentStep > index;
@@ -30,7 +30,7 @@ export default function StepIndicator({
                 type="button"
                 disabled={!isStepClickable(index + 1)}
                 onClick={() => isStepClickable(index + 1) && onStepClick?.(index + 1)}
-                className={`relative flex items-center justify-center w-10 h-10 rounded-full border-2 transition-colors ${
+                className={`relative flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full border-2 transition-colors ${
                   isActive
                     ? 'bg-[#005b57] border-[#005b57] text-white'
                     : isCurrent
@@ -47,11 +47,11 @@ export default function StepIndicator({
                   damping: 10
                 }}
               >
-                <span className="text-sm font-medium">{index + 1}</span>
+                <span className="text-xs sm:text-sm font-medium">{index + 1}</span>
                 
                 {/* Step Label */}
                 <span 
-                  className={`absolute top-12 text-xs whitespace-nowrap ${
+                  className={`absolute hidden sm:block top-12 text-xs whitespace-nowrap ${
                     isActive || isCurrent ? 'text-[#002e2c] font-medium' : 'text-gray-500'
                   }`}
                 >
@@ -61,7 +61,7 @@ export default function StepIndicator({
                 {/* Current Step Indicator */}
                 {isCurrent && (
                   <motion.span
-                    className="absolute w-14 h-14 rounded-full"
+                    className="absolute w-12 h-12 sm:w-14 sm:h-14 rounded-full"
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1.2, opacity: 0 }}
                     transition={{ 
@@ -79,7 +79,7 @@ export default function StepIndicator({
               {/* Connector Line */}
               {index < steps.length - 1 && (
                 <motion.div 
-                  className={`flex-1 h-0.5 mx-2 max-w-16 ${
+                  className={`flex-1 h-0.5 mx-1 sm:mx-2 max-w-10 sm:max-w-16 ${
                     currentStep > index + 1 ? 'bg-[#005b57]' : 'bg-gray-300'
                   }`}
                   initial={{ scaleX: 0, opacity: 0 }}

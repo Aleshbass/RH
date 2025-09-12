@@ -33,7 +33,7 @@ interface InvoiceModalProps {
   onClose: () => void
   selectedPatientId?: Id<"users">
   selectedSessionIds?: Id<"appointments">[]
-  appointmentId: Id<'appointments'>
+  appointmentId?: Id<'appointments'>
   onSuccess?: () => void
 }
 
@@ -78,8 +78,14 @@ export function InvoiceModal({
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Get patients for selection
-  const patients = useQuery(api.patients.getMyPatients, { limit: 100 }) || []
+  // Get patients for selection based on user role
+  const currentUser = useQuery(api.users.getMyUser)
+  const clinicPatients = useQuery(api.clinics.getClinicPatients, {})
+  const myPatients = useQuery(api.patients.getMyPatients, { limit: 100 })
+  
+  const patients = currentUser?.role === 'clinic_owner' 
+    ? (clinicPatients || [])
+    : (myPatients || [])
   
   // Create invoice mutation
   const createInvoice = useMutation(api.billing.createInvoice)
@@ -104,13 +110,15 @@ export function InvoiceModal({
     'Net 30'
   ]
 
-  // Calculate totals with platform fee
+  // Calculate totals: show invoice total (base) separately from platform + gateway fees
   const subtotal = formData.services.reduce((sum, service) => sum + service.total, 0)
   const discountAmount = formData.discountType === 'amount' 
     ? formData.discountAmount 
     : (subtotal * formData.discountPercentage / 100)
-  const platformFee = 1000 // Platform fee in naira
-  const total = subtotal - discountAmount + platformFee
+  const baseTotal = Math.max(0, subtotal - discountAmount)
+  const platformFee = 1000 // Platform fee in naira (display only)
+  const paystackFee = Math.round((baseTotal + platformFee) * 0.015) + 100 // Estimated
+  const totalPayable = baseTotal + platformFee + paystackFee
 
   const handleServiceChange = (index: number, field: keyof Service, value: string | number) => {
     const newServices = [...formData.services]
@@ -215,11 +223,10 @@ export function InvoiceModal({
     onClose()
   }
 
-  const appointmentDetails = useQuery(api.appointments.getAppointmentDetails, {
-    appointmentId,
-  })
-
-  if (!appointmentDetails) return null
+  const appointmentDetails = useQuery(
+    api.appointments.getAppointmentDetails,
+    appointmentId ? { appointmentId } : 'skip'
+  )
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -230,7 +237,10 @@ export function InvoiceModal({
             Create Invoice
           </DialogTitle>
           <DialogDescription>
-            Create an invoice for {appointmentDetails.appointment.patient?.firstName} {appointmentDetails.appointment.patient?.lastName}&apos;s appointment
+            {appointmentDetails ? 
+              `Create an invoice for ${appointmentDetails.appointment.patient?.firstName} ${appointmentDetails.appointment.patient?.lastName}'s appointment` :
+              'Create a new invoice for a patient'
+            }
           </DialogDescription>
         </DialogHeader>
 
@@ -493,8 +503,20 @@ export function InvoiceModal({
                 </div>
               )}
               <div className="border-t pt-2 flex justify-between font-medium text-lg">
-                <span>Total:</span>
-                <span>₦{total.toLocaleString()}</span>
+                <span>Invoice Total:</span>
+                <span>₦{baseTotal.toLocaleString()}</span>
+              </div>
+              <div className="pt-2 flex justify-between text-muted-foreground">
+                <span>Platform Fee (display only):</span>
+                <span>₦{platformFee.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Estimated Paystack Fee:</span>
+                <span>₦{paystackFee.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between font-semibold">
+                <span>Patient Pays (at checkout):</span>
+                <span>₦{totalPayable.toLocaleString()}</span>
               </div>
             </div>
           </div>

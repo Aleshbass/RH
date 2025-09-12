@@ -228,6 +228,71 @@ export const updateNotificationStatus = mutation({
 /**
  * Delete a notification
  */
+/**
+ * Create payment notification
+ */
+export const createPaymentNotification = mutation({
+  args: {
+    invoiceId: v.id("invoices"),
+    type: v.union(v.literal("payment_success"), v.literal("payment_failed")),
+    amount: v.optional(v.number()),
+    reference: v.optional(v.string())
+  },
+  handler: async (ctx, args) => {
+    const invoice = await ctx.db.get(args.invoiceId);
+    if (!invoice) return;
+
+    const title = args.type === "payment_success" 
+      ? "Payment Successful" 
+      : "Payment Failed";
+    
+    const body = args.type === "payment_success"
+      ? `Payment for invoice #${invoice.invoiceNumber} has been confirmed`
+      : `Payment for invoice #${invoice.invoiceNumber} failed. Please try again.`;
+
+    // Notify patient
+    await ctx.db.insert("notifications", {
+      userId: invoice.patientId,
+      type: args.type as any,
+      priority: args.type === "payment_failed" ? "high" : "medium",
+      status: "pending",
+      payload: {
+        title,
+        body,
+        data: {
+          entityId: args.invoiceId,
+          entityType: "invoice",
+          invoiceNumber: invoice.invoiceNumber,
+          amount: args.amount,
+          reference: args.reference
+        }
+      },
+      createdAt: Date.now()
+    });
+
+    // Notify physiotherapist if payment successful
+    if (args.type === "payment_success" && (invoice as any).physiotherapistId) {
+      await ctx.db.insert("notifications", {
+        userId: (invoice as any).physiotherapistId,
+        type: "payment_received" as any,
+        priority: "high",
+        status: "pending",
+        payload: {
+          title: "Payment Received",
+          body: `Payment received for invoice #${invoice.invoiceNumber}`,
+          data: {
+            entityId: args.invoiceId,
+            entityType: "invoice",
+            invoiceNumber: invoice.invoiceNumber,
+            amount: args.amount
+          }
+        },
+        createdAt: Date.now()
+      });
+    }
+  }
+});
+
 export const deleteNotification = mutation({
   args: {
     notificationId: v.id("notifications"),

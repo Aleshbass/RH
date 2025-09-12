@@ -4,7 +4,7 @@ import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter, useParams } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Loader2, ArrowLeft, Calendar, FileText, Phone, Mail, User, Heart, Pill, AlertTriangle, Plus, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 import { Id } from '@/convex/_generated/dataModel';
+import { InteractiveTreatmentPlan } from '@/components/dashboard/physiotherapist/treatment/InteractiveTreatmentPlan';
 
 // Type definitions for patient data structures
 interface User {
@@ -25,17 +26,6 @@ interface User {
   role: 'patient' | 'physiotherapist' | 'admin';
 }
 
-interface PatientRelationship {
-  _id: string;
-  patientId: string;
-  physiotherapistId: string;
-  clinicId: string;
-  status: 'active' | 'inactive' | 'archived';
-  isPrimaryPhysiotherapist: boolean;
-  startDate: number;
-  endDate?: number;
-  notes?: string;
-}
 
 interface EmergencyContact {
   name: string;
@@ -86,9 +76,15 @@ interface PatientDocument {
   _id: string;
   fileName: string;
   documentType: string;
-  uploadDate: number;
+  uploadedAt: number;
   fileSize: number;
   downloadUrl: string;
+}
+
+interface PatientRelationship {
+  isPrimaryPhysiotherapist: boolean;
+  status: 'active' | 'inactive' | 'archived' | string;
+  startDate: number;
 }
 
 interface PatientDetailsData {
@@ -115,10 +111,111 @@ export default function PatientDetailsPage() {
   const currentUser = useQuery(api.users.getMyUser) as User | undefined;
   
   // Get patient details
-  const patientDetails = useQuery(
+  const detailsRaw = useQuery(
     api.patients.getPatientDetails,
     patientId ? { patientId: patientId as Id<'users'> } : 'skip'
-  ) as PatientDetailsData | undefined;
+  ) as {
+    patient?: {
+      _id: string;
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      imageUrl?: string;
+      phoneNumber?: string;
+    };
+    profile?: {
+      dateOfBirth?: number;
+      gender?: string;
+      emergencyContact?: string;
+      medicalHistory?: string[];
+      currentConditions?: string[];
+      currentMedications?: string[];
+      medications?: string[];
+      allergies?: string[];
+    };
+    relationship?: unknown;
+    appointments?: unknown[];
+    sessionLogs?: unknown[];
+    treatmentPlans?: Array<{
+      _id: string;
+      title?: string;
+      description?: string;
+      startDate?: number;
+      endDate?: number;
+      goals?: Array<{ description: string }>;
+      status?: string;
+    }>;
+  } | undefined;
+
+  // Map backend shape { patient, profile, relationship, appointments, sessionLogs, treatmentPlans }
+  // to the UI view model expected by this page
+  type RawTreatmentPlan = {
+    _id: string;
+    title?: string;
+    description?: string;
+    startDate?: number;
+    endDate?: number;
+    goals?: Array<string | { description: string }>;
+    status?: string;
+  };
+
+  // Narrowing helper for relationship object
+  const isRelationshipObject = (
+    v: unknown
+  ): v is { isPrimaryPhysiotherapist?: boolean; status?: string; startDate?: number } => {
+    return typeof v === 'object' && v !== null && 'status' in (v as Record<string, unknown>);
+  };
+
+  const patientData = useMemo(() => {
+    if (!detailsRaw?.patient) return null;
+    const p = detailsRaw.patient;
+    const prof = detailsRaw.profile || undefined;
+    // Map relationship into a safe view model without using `any`
+    const rawRel: unknown = detailsRaw.relationship;
+    const relationship: PatientRelationship = isRelationshipObject(rawRel)
+      ? {
+          isPrimaryPhysiotherapist: Boolean(rawRel.isPrimaryPhysiotherapist),
+          status: (rawRel.status as PatientRelationship['status']) || 'active',
+          startDate: (rawRel.startDate as number) || Date.now(),
+        }
+      : {
+          isPrimaryPhysiotherapist: false,
+          status: (typeof rawRel === 'string' ? rawRel : 'active') as PatientRelationship['status'],
+          startDate: Date.now(),
+        };
+
+    return {
+      _id: p._id,
+      firstName: p.firstName || 'Unknown',
+      lastName: p.lastName || 'Patient',
+      email: p.email || 'no-email@example.com',
+      imageUrl: p.imageUrl,
+      phoneNumber: p.phoneNumber,
+      relationship,
+      patientProfile: prof ? {
+        dateOfBirth: prof.dateOfBirth,
+        gender: prof.gender,
+        emergencyContact: prof.emergencyContact,
+        medicalHistory: prof.medicalHistory || prof.currentConditions || [],
+        currentMedications: prof.currentMedications || prof.medications || [],
+        allergies: prof.allergies || [],
+      } : undefined,
+      appointments: detailsRaw.appointments || [],
+      sessionLogs: detailsRaw.sessionLogs || [],
+      treatmentPlans: (detailsRaw.treatmentPlans || []).map((tp: RawTreatmentPlan) => ({
+        _id: tp._id,
+        title: tp.title || 'Untitled Plan',
+        description: tp.description,
+        startDate: tp.startDate || Date.now(),
+        endDate: tp.endDate,
+        goals: (tp.goals || []).map((g) => typeof g === 'string' ? g : g.description),
+        status: tp.status || 'active',
+      })),
+    } as PatientDetailsData;
+  }, [detailsRaw]);
+
+  // Backwards-compatible alias for existing JSX that references `patientDetails`
+  const patientDetails = patientData as PatientDetailsData | null;
 
   // Patient documents for physio
   const patientDocs = useQuery(
@@ -141,7 +238,7 @@ export default function PatientDetailsPage() {
   }, [currentUser, router]);
 
   // Loading state
-  if (!isLoaded || currentUser === undefined || patientDetails === undefined) {
+  if (!isLoaded || currentUser === undefined || patientDetails === null) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -192,7 +289,7 @@ export default function PatientDetailsPage() {
           </h1>
           <p className="text-gray-600">Patient Details & Treatment History</p>
         </div>
-        <Button className="flex items-center gap-2">
+        <Button className="flex items-center gap-2" onClick={() => router.push(`/dashboard/physiotherapist/appointments?patient=${patientId}`)}>
           <Calendar className="h-4 w-4" />
           Schedule Appointment
         </Button>
@@ -428,51 +525,7 @@ export default function PatientDetailsPage() {
         </TabsContent>
 
         <TabsContent value="treatment" className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Treatment Plans</h3>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              New Treatment Plan
-            </Button>
-          </div>
-          <div className="space-y-3">
-            {patientDetails.treatmentPlans.map((plan: TreatmentPlan) => (
-              <Card key={plan._id}>
-                <CardContent className="pt-4">
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h4 className="font-medium text-gray-900">{plan.title}</h4>
-                        <p className="text-sm text-gray-600">
-                          {format(new Date(plan.startDate), 'MMM dd, yyyy')} - 
-                          {plan.endDate ? format(new Date(plan.endDate), 'MMM dd, yyyy') : 'Ongoing'}
-                        </p>
-                      </div>
-                      <Badge>{plan.status}</Badge>
-                    </div>
-                    
-                    {plan.description && (
-                      <p className="text-sm text-gray-600">{plan.description}</p>
-                    )}
-                    
-                    {plan.goals.length > 0 && (
-                      <div>
-                        <p className="text-sm font-medium text-gray-700 mb-2">Goals:</p>
-                        <ul className="text-sm text-gray-600 space-y-1">
-                          {plan.goals.map((goal: string, index: number) => (
-                            <li key={index} className="flex items-start gap-2">
-                              <span className="text-blue-500">•</span>
-                              {goal}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <InteractiveTreatmentPlan patientId={patientId} />
         </TabsContent>
 
         <TabsContent value="medical" className="space-y-4">

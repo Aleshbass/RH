@@ -3,7 +3,7 @@
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { DashboardSidebar } from './DashboardSidebar'
-import { LayoutDashboard, Calendar, Clock, Users, FileText, Video, MessageSquare, CreditCard, Settings } from 'lucide-react'
+import { LayoutDashboard, Calendar, Clock, Users, FileText, Video, MessageSquare, CreditCard, Settings, User, Activity } from 'lucide-react'
 
 // Navigation configuration for physiotherapists
 const physiotherapistNavItems = [
@@ -23,6 +23,7 @@ const physiotherapistNavItems = [
 const patientNavItems = [
   { title: 'Dashboard', href: '/dashboard/patient', icon: LayoutDashboard, roles: ['patient'] },
   { title: 'Appointments', href: '/dashboard/patient/appointments', icon: Calendar, roles: ['patient'] },
+  { title: 'Treatment Plans', href: '/dashboard/patient/treatment-plans', icon: Activity, roles: ['patient'] },
   { title: 'Video Calls', href: '/dashboard/patient/video-calls', icon: Video, roles: ['patient'] },
   { title: 'Messages', href: '/dashboard/patient/messages', icon: MessageSquare, roles: ['patient'] },
   { title: 'Invoices', href: '/dashboard/patient/invoices', icon: CreditCard, roles: ['patient'] },
@@ -40,6 +41,7 @@ const clinicOwnerNavItems = [
   { title: 'Billing', href: '/dashboard/clinic/billing', icon: CreditCard, roles: ['clinic_owner'] },
   { title: 'Reports', href: '/dashboard/clinic/reports', icon: FileText, roles: ['clinic_owner'] },
   { title: 'Settings', href: '/dashboard/clinic/settings', icon: Settings, roles: ['clinic_owner'] },
+  { title: 'Profile', href: '/dashboard/profile', icon: User, roles: ['clinic_owner'] },
 ]
 
 

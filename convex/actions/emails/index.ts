@@ -7,3 +7,9 @@ export {
   sendClinicStaffInvitationEmail, 
   sendClinicStaffInvitationReminderEmail 
 } from "./sendClinicStaffInvitationEmail";
+export { sendVideoCallInvitation } from "./sendVideoCallInvitation";
+export { sendAppointmentScheduledEmail } from "./sendAppointmentScheduledEmail";
+export { sendAppointmentRequestedEmail } from "./sendAppointmentRequestedEmail";
+export { sendAppointmentConfirmedProviderEmail } from "./sendAppointmentConfirmedProviderEmail";
+export { sendAppointmentRescheduledProviderEmail } from "./sendAppointmentRescheduledProviderEmail";
+export { sendAppointmentCanceledProviderEmail } from "./sendAppointmentCanceledProviderEmail";

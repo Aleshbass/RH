@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { UserButton } from '@clerk/nextjs'
-import { useQuery } from 'convex/react'
+import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,19 +31,27 @@ import {
   Settings,
   X,
 } from 'lucide-react'
+import { Menu } from 'lucide-react'
 import { format } from 'date-fns'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
+import { useSidebarStore } from '@/stores/sidebarStore'
 
-interface Notification {
+interface NotificationDoc {
   _id: string
-  title?: string
-  message?: string
-  read?: boolean
   createdAt: number
-  data?: {
-    actionUrl?: string
+  readAt?: number
+  status?: 'pending' | 'delivered' | 'read' | 'failed' | 'retrying'
+  payload?: {
+    title?: string
+    body?: string
+    data?: {
+      actionUrl?: string
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      [key: string]: any
+    }
+    link?: string
   }
 }
 
@@ -52,16 +60,18 @@ export function DashboardHeader() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showNotifications, setShowNotifications] = useState(false)
   const [lastNotifId, setLastNotifId] = useState<string | null>(null)
+  const { toggleMobile } = useSidebarStore()
 
   // Recent notifications & count
   const notifications = useQuery(api.notifications.getMyNotifications, { limit: 5, includeRead: true })
   const unreadCount = useQuery(api.notifications.getMyUnreadCount, {})
+  const markAsRead = useMutation(api.notifications.markAsRead)
 
   const quickActions = [
     {
       title: 'Schedule Appointment',
       icon: Calendar,
-      href: '/dashboard/appointments/new',
+      href: '/dashboard/physiotherapist/calendar?new=1',
       roles: ['physiotherapist', 'clinic_owner'],
     },
     {
@@ -90,15 +100,17 @@ export function DashboardHeader() {
   // Toast on new notification
   useEffect(() => {
     if (notifications && notifications.length > 0) {
-      const latest = notifications[0] as Notification
-      if (!latest.read && latest._id !== lastNotifId) {
-        toast(latest.title, {
-          description: latest.message,
+      const latest = notifications[0] as unknown as NotificationDoc
+      const isRead = Boolean(latest.readAt) || latest.status === 'read'
+      if (!isRead && latest._id !== lastNotifId) {
+        toast(latest.payload?.title ?? 'Notification', {
+          description: latest.payload?.body,
           action: {
             label: 'Open',
             onClick: () => {
-              if (latest.data?.actionUrl) {
-                router.push(latest.data.actionUrl)
+              const url = latest.payload?.data?.actionUrl || latest.payload?.link
+              if (url) {
+                router.push(url)
               }
               setShowNotifications(true)
             },
@@ -110,25 +122,36 @@ export function DashboardHeader() {
   }, [notifications, lastNotifId, router])
 
   return (
-    <header className="bg-white border-b border-gray-200 px-6 py-4">
+    <header className="bg-[#005b57] border-b border-[#005b57]/20 px-4 py-3 sm:px-6 sm:py-4"> {/* 30% - Core Green */}
       <div className="flex items-center justify-between">
         {/* Left Side - Logo & Search */}
-        <div className="flex items-center gap-4 flex-1">
+        <div className="flex items-center gap-3 sm:gap-4 flex-1">
+          {/* Mobile hamburger */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleMobile}
+            className="text-white hover:bg-white/10 md:hidden"
+            aria-label="Open menu"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="h-8 w-8 bg-emerald-600 rounded-lg flex items-center justify-center">
+            <div className="h-8 w-8 bg-[#00cd0f] rounded-lg flex items-center justify-center"> {/* 10% - Highlighter accent */}
               <span className="text-white font-bold text-sm">R</span>
             </div>
-            <span className="text-xl font-bold text-gray-900">Rehabify</span>
+            <span className="text-xl font-bold text-white hidden sm:inline">Rehabify</span>
           </Link>
-          
+
           {/* Search Bar */}
-          <div className="relative max-w-md flex-1">
+          <div className="relative max-w-md flex-1 hidden md:block">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
               placeholder="Search patients, appointments..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-gray-50 border-gray-200"
+              className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/70 focus:bg-white/20"
             />
           </div>
         </div>
@@ -139,9 +162,9 @@ export function DashboardHeader() {
           {filteredQuickActions.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
+                <Button variant="outline" size="sm" className="gap-2 border-white/30 text-white bg-transparent hover:bg-white/10 hover:text-white">
                   <Plus className="h-4 w-4" />
-                  Quick Actions
+                  <span className="hidden md:inline">Quick Actions</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
@@ -168,14 +191,12 @@ export function DashboardHeader() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="relative p-2"
+                className="relative p-2 text-white hover:bg-white/10"
               >
                 <Bell className="h-5 w-5" />
                 {unreadCount && unreadCount > 0 && (
                   <Badge 
-                    variant="destructive" 
-                    className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs"
-                  >
+                    className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs bg-[#00cd0f] text-white border-0"> {/* 10% - Highlighter accent */}
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </Badge>
                 )}
@@ -196,18 +217,34 @@ export function DashboardHeader() {
               <ScrollArea className="h-80">
                 {notifications && notifications.length > 0 ? (
                   <div className="divide-y">
-                    {notifications.map((notification: Notification) => (
-                      <div key={notification._id} className="p-4 hover:bg-gray-50">
+                    {(notifications as unknown as NotificationDoc[]).map((notification) => (
+                      <div
+                        key={notification._id}
+                        className="p-4 hover:bg-gray-50 cursor-pointer"
+                        onClick={async () => {
+                          try {
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            await markAsRead({ notificationId: notification._id as any })
+                          } catch (e) {
+                            console.error('Failed to mark notification as read', e)
+                          }
+                          const url = notification.payload?.data?.actionUrl || notification.payload?.link
+                          if (url) {
+                            router.push(url)
+                          }
+                          setShowNotifications(false)
+                        }}
+                      >
                         <div className="flex items-start gap-3">
                           <div className={`h-2 w-2 rounded-full mt-2 ${
-                            notification.read ? 'bg-gray-300' : 'bg-blue-600'
+                            notification.readAt ? 'bg-gray-300' : 'bg-blue-600'
                           }`} />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-900">
-                              {notification.title}
+                              {notification.payload?.title}
                             </p>
                             <p className="text-sm text-gray-600 mt-1">
-                              {notification.message}
+                              {notification.payload?.body}
                             </p>
                             <p className="text-xs text-gray-400 mt-2">
                               {format(new Date(notification.createdAt), 'MMM d, h:mm a')}
@@ -237,7 +274,7 @@ export function DashboardHeader() {
           </Popover>
 
           {/* Settings */}
-          <Button variant="ghost" size="sm" asChild className="p-2">
+          <Button variant="ghost" size="sm" asChild className="p-2 text-white hover:bg-white/10">
             <Link href="/dashboard/settings">
               <Settings className="h-5 w-5" />
             </Link>

@@ -1,5 +1,17 @@
 'use client'
 
+// @ts-nocheck
+/*
+  DEPRECATED: Legacy Daily.co VideoCall (not used in Stream flow)
+  ----------------------------------------------------------------
+  This file is part of the previous Daily.co implementation. The app
+  has migrated to Stream Video SDK. Do NOT use this component in new code.
+  Use `components/video/StreamVideoCall.tsx` instead.
+*/
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  console.warn('[DEPRECATED] components/video/VideoCall.tsx (Daily) — use StreamVideoCall instead.')
+}
+
 import React, { useEffect, useCallback, useState, useRef } from 'react'
 
 import { useQueryUntyped } from '@/lib/convexUntyped'
@@ -48,77 +60,69 @@ interface RoomInfo {
   tokenExpiration?: number;
 }
 
-// Daily.co Call Interface Component
-function DailyCallInterface({ 
-  onCallEnd,
+// DailyCallInterface component - handles the actual call UI
+const DailyCallInterface = ({ 
+  onCallEnd, 
   isFullscreen, 
-  onToggleFullscreen, 
+  onToggleFullscreen,
   roomInfo,
   userName,
-  callId,
+  callId
 }: {
   onCallEnd: () => void
-  isFullscreen: boolean
-  onToggleFullscreen: () => void
+  isFullscreen?: boolean
+  onToggleFullscreen?: () => void
   roomInfo: RoomInfo
   userName: string
   callId?: Id<"videoCalls">
-}) {
+}) => {
   const daily = useDaily()
-  const participantIds = useParticipantIds()
-  const localSessionId = useLocalSessionId()
-  const { isSharingScreen, startScreenShare, stopScreenShare } = useScreenShare()
   const meetingState = useMeetingState()
-  const saveMessage = useMutation(api.videoCalls.saveVideoCallMessage)
-  // Stable ref for onCallEnd to avoid re-runs and enable safe fallback usage
+  const participantIds = useParticipantIds()
+  const { isSharingScreen, startScreenShare, stopScreenShare } = useScreenShare()
+  const localSessionId = useLocalSessionId()
+  
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [messages, setMessages] = useState<Array<{
+    id: string
+    sender: string
+    text: string
+    timestamp: Date
+  }>>([])
+  const [newMessage, setNewMessage] = useState('')
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  
+  // Keep a stable reference to onCallEnd to avoid re-running effects due to function identity changes
   const onCallEndRef = useRef(onCallEnd)
   useEffect(() => {
     onCallEndRef.current = onCallEnd
   }, [onCallEnd])
-  
-  const [showChat, setShowChat] = useState(false)
-  const [chatMessage, setChatMessage] = useState('')
-  const [chatMessages, setChatMessages] = useState<Array<{
-    id: string
-    message: string
+
+  // Convex mutations for chat
+  const sendMessageMutation = useMutation(api.videoCalls.sendMessage)
+  const messagesQuery = useQueryUntyped(
+    api.videoCalls.getMessages as unknown,
+    callId ? ({ callId } as unknown) : ("skip" as unknown)
+  ) as Array<{
+    _id: string
     sender: string
+    text: string
     timestamp: number
-    isLocal: boolean
-  }>>([])
-  const chatScrollRef = useRef<HTMLDivElement>(null)
-  const [isVideoEnabled, setIsVideoEnabled] = useState(true)
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true)
-  const [isAudioOutputEnabled, setIsAudioOutputEnabled] = useState(true)
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  }> | undefined
 
-  // Load persisted chat messages
-  const backendMessages = useQueryUntyped(
-    api.videoCalls.getVideoCallMessages as unknown,
-    callId ? ({ callId, limit: 100 } as unknown) : ("skip" as unknown)
-  )
-
+  // Update local messages from query
   useEffect(() => {
-    if (!backendMessages) return
-    try {
-      const mapped = (Array.isArray(backendMessages) ? backendMessages : []).map((m: { sender?: { firstName?: string; lastName?: string; email?: string }; _id?: string; timestamp: number; message: string }) => {
-        const senderName = m.sender?.firstName || m.sender?.lastName
-          ? `${m.sender?.firstName || ''} ${m.sender?.lastName || ''}`.trim()
-          : (m.sender?.email || 'Anonymous')
-        return {
-          id: String(m._id || `${m.timestamp}-${Math.random()}`),
-          message: m.message,
-          sender: senderName,
-          timestamp: m.timestamp,
-          isLocal: false,
-        }
-      })
-      setChatMessages(mapped)
-    } catch {
-      // ignore mapping errors
+    if (messagesQuery) {
+      setMessages(messagesQuery.map(msg => ({
+        id: msg._id,
+        sender: msg.sender,
+        text: msg.text,
+        timestamp: new Date(msg.timestamp)
+      })))
     }
-  }, [backendMessages])
+  }, [messagesQuery])
 
-  // Handle call state changes
+  // Handle meeting state changes
   useEffect(() => {
     if (meetingState === 'joined-meeting') {
       setConnectionStatus('connected')
@@ -128,308 +132,248 @@ function DailyCallInterface({
       toast.error('Call connection failed')
     } else if (meetingState === 'left-meeting') {
       setConnectionStatus('disconnected')
-      // onCallEnd is handled via Daily 'left-meeting' event to avoid duplicate calls
+      // onCallEnd handled via event
     }
   }, [meetingState])
 
-  // Handle Daily.co app messages (chat)
+  // Handle Daily events
   useEffect(() => {
     if (!daily) return
 
-    interface AppMessage {
-  data: { message: string; sender?: string; timestamp?: number };
-  fromId: string;
-}
-
-const handleAppMessage = (event: AppMessage) => {
-      const { data, fromId } = event
-      const isLocal = fromId === localSessionId
-      
-      const newMessage = {
-        id: `${Date.now()}-${Math.random()}`,
-        message: data.message,
-        sender: data.sender || 'Anonymous',
-        timestamp: data.timestamp || Date.now(),
-        isLocal
-      }
-      
-      setChatMessages(prev => [...prev, newMessage])
-      
-      // Show toast for new messages from others
-      if (!isLocal) {
-        toast.info(`${data.sender}: ${data.message}`)
-      }
-      
-      // Auto-scroll to bottom
-      setTimeout(() => {
-        if (chatScrollRef.current) {
-          chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+    const handleAppMessage = (event: { data?: { type?: string; sender?: string; text?: string } }) => {
+      if (event?.data?.type === 'chat-message') {
+        const message = {
+          id: Date.now().toString(),
+          sender: event.data.sender || 'Unknown',
+          text: event.data.text || '',
+          timestamp: new Date()
         }
-      }, 100)
+        setMessages(prev => [...prev, message])
+      }
+    }
+
+    const handleParticipantJoined = (event: { participant?: { user_name?: string } }) => {
+      if (event?.participant?.user_name) {
+        toast.info(`${event.participant.user_name} joined the call`)
+      }
+    }
+
+    const handleParticipantLeft = (event: { participant?: { user_name?: string } }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (event?.participant?.user_name && (event.participant as any).session_id !== localSessionId) {
+        toast.info(`${event.participant.user_name} left the call`)
+      }
+    }
+
+    const handleLeftMeeting = () => {
+      console.log('Left meeting event triggered')
+      onCallEndRef.current?.()
     }
 
     daily.on('app-message', handleAppMessage)
-    
+    daily.on('participant-joined', handleParticipantJoined)
+    daily.on('participant-left', handleParticipantLeft)
+    daily.on('left-meeting', handleLeftMeeting)
+
     return () => {
       daily.off('app-message', handleAppMessage)
+      daily.off('participant-joined', handleParticipantJoined)
+      daily.off('participant-left', handleParticipantLeft)
+      daily.off('left-meeting', handleLeftMeeting)
     }
   }, [daily, localSessionId])
 
-  // Handle video toggle
-  const toggleVideo = useCallback(() => {
-    if (daily) {
-      daily.setLocalVideo(!isVideoEnabled)
-      setIsVideoEnabled(!isVideoEnabled)
-    }
-  }, [daily, isVideoEnabled])
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !daily) return
 
-  // Handle audio toggle
-  const toggleAudio = useCallback(() => {
-    if (daily) {
-      daily.setLocalAudio(!isAudioEnabled)
-      setIsAudioEnabled(!isAudioEnabled)
-    }
-  }, [daily, isAudioEnabled])
+    try {
+      // Send via Daily for real-time delivery
+      await daily.sendAppMessage({
+        type: 'chat-message',
+        sender: userName,
+        text: newMessage.trim()
+      }, '*')
 
-  // Handle audio output toggle
-  const toggleAudioOutput = useCallback(() => {
-    if (daily) {
-      daily.setOutputDeviceAsync({ outputDeviceId: isAudioOutputEnabled ? undefined : 'default' })
-      setIsAudioOutputEnabled(!isAudioOutputEnabled)
-    }
-  }, [daily, isAudioOutputEnabled])
+      // Also save to Convex for persistence
+      if (callId) {
+        await sendMessageMutation({
+          message: newMessage.trim(),
+          callId,
+          messageType: 'text'
+        })
+      }
 
-  // Handle screen share toggle
-  const toggleScreenShare = useCallback(() => {
-    if (isSharingScreen) {
-      stopScreenShare();
-    } else {
-      startScreenShare();
+      setNewMessage('')
+    } catch (error) {
+      console.error('Failed to send message:', error)
+      toast.error('Failed to send message')
     }
-  }, [isSharingScreen, startScreenShare, stopScreenShare])
+  }
 
-  // Handle ending call
-  const handleEndCall = useCallback(() => {
+  const handleEndCall = useCallback(async () => {
     if (daily) {
-      daily.leave()
-    } else {
-      // Fallback: if no call object exists, invoke end handler directly
-      onCallEndRef.current?.()
+      try {
+        await daily.leave()
+      } catch (error) {
+        console.error('Error leaving call:', error)
+      }
     }
+    onCallEndRef.current?.()
   }, [daily])
 
-  // Send chat message
-  const sendChatMessage = useCallback(() => {
-    if (daily && chatMessage.trim()) {
-      const messageData = {
-        message: chatMessage.trim(),
-        sender: userName || 'Anonymous',
-        timestamp: Date.now(),
-      }
-      
-      // Send via Daily.co
-      daily.sendAppMessage(messageData)
-
-      // Persist to backend (best-effort)
-      if (callId) {
-        try {
-          // fire-and-forget
-          saveMessage({ callId, message: messageData.message, messageType: 'text' } as unknown)
-        } catch {
-          console.warn('Failed to persist chat message:', e)
-        }
-      }
-      
-      // Add to local state immediately for better UX
-      const newMessage = {
-        id: `${Date.now()}-${Math.random()}`,
-        message: messageData.message,
-        sender: messageData.sender,
-        timestamp: messageData.timestamp,
-        isLocal: true
-      }
-      setChatMessages(prev => [...prev, newMessage])
-      setChatMessage('')
-      
-      // Auto-scroll to bottom
-      setTimeout(() => {
-        if (chatScrollRef.current) {
-          chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
-        }
-      }, 100)
+  const handleCopyRoomId = () => {
+    if (roomInfo?.dailyRoomName) {
+      navigator.clipboard.writeText(roomInfo.dailyRoomName)
+      toast.success('Room ID copied to clipboard')
     }
-  }, [daily, chatMessage, userName, callId, saveMessage])
-
-  // Copy room URL
-  const copyRoomUrl = useCallback(() => {
-    if (roomInfo?.dailyRoomUrl) {
-      navigator.clipboard.writeText(roomInfo.dailyRoomUrl)
-      toast.success('Room URL copied to clipboard')
-    }
-  }, [roomInfo])
-
-  // Handle keyboard shortcuts
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        switch (e.key) {
-          case 'd':
-            e.preventDefault()
-            toggleVideo()
-            break
-          case 'm':
-            e.preventDefault()
-            toggleAudio()
-            break
-          case 'e':
-            e.preventDefault()
-            handleEndCall()
-            break
-          case 'Enter':
-            if (showChat && chatMessage.trim()) {
-              e.preventDefault()
-              sendChatMessage()
-            }
-            break
-        }
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyPress)
-    return () => window.removeEventListener('keydown', handleKeyPress)
-  }, [toggleVideo, toggleAudio, handleEndCall, showChat, chatMessage, sendChatMessage])
-
-  if (connectionStatus === 'connecting') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto text-call-accent" />
-          <p className="text-xl">Connecting to call...</p>
-          <p className="text-gray-400">Please wait while we establish the connection</p>
-        </div>
-      </div>
-    )
   }
+
+  const toggleScreenShare = useCallback(async () => {
+    if (!daily) return
+    
+    try {
+      if (isSharingScreen) {
+        await stopScreenShare()
+        toast.info('Screen sharing stopped')
+      } else {
+        await startScreenShare()
+        toast.success('Screen sharing started')
+      }
+    } catch (error) {
+      console.error('Screen share error:', error)
+      toast.error('Failed to toggle screen sharing')
+    }
+  }, [daily, isSharingScreen, startScreenShare, stopScreenShare])
 
   return (
     <div className={`${isFullscreen ? 'fixed inset-0 z-50' : ''} bg-call-bg text-gray-800 flex flex-col`}>
-        {/* Header */}
-      <div className="bg-call-control p-4 flex justify-between items-center border-b border-gray-200">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
-            <div className={`w-3 h-3 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'}`} />
-            <span className="text-sm font-medium text-call-accent">
-              {connectionStatus === 'connected' ? 'Connected' : 'Disconnected'}
+            <div className={`w-3 h-3 rounded-full ${
+              connectionStatus === 'connected' ? 'bg-green-500' : 
+              connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
+              'bg-red-500'
+            }`} />
+            <span className="text-sm font-medium">
+              {connectionStatus === 'connected' ? 'Connected' : 
+               connectionStatus === 'connecting' ? 'Connecting...' : 
+               'Disconnected'}
             </span>
           </div>
-          <div className="text-sm text-gray-600">
-            {participantIds.length} participant{participantIds.length !== 1 ? 's' : ''}
-          </div>
-        </div>
+          {roomInfo?.dailyRoomName && (
             <div className="flex items-center space-x-2">
-              <Button
-                variant="ghost"
-            size="sm"
-            onClick={copyRoomUrl}
-            className="text-call-accent hover:text-call-accent/80"
-              >
-                <Copy className="h-4 w-4 text-call-accent" />
-              </Button>
+              <span className="text-sm text-gray-600">Room: {roomInfo.dailyRoomName}</span>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={onToggleFullscreen}
-            className="text-call-accent hover:text-call-accent/80"
+                onClick={handleCopyRoomId}
+                className="h-6 w-6 p-0"
               >
-                {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                <Copy className="h-3 w-3" />
               </Button>
-          </div>
-        </div>
-
-      {/* Video Grid */}
-        <div className="flex-1 flex">
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-          {participantIds.map((id) => (
-            <ParticipantTile key={id} participantId={id} />
-          ))}
-
-        </div>
-
-          {/* Chat Sidebar */}
-          {showChat && (
-            <div className="w-80 bg-call-control border-l border-gray-300 flex flex-col">
-            <div className="p-4 border-b border-gray-300">
-              <h3 className="text-lg font-semibold flex items-center text-call-accent">
-                <MessageSquare className="h-5 w-5 mr-2 text-call-accent" />
-                Chat
-              </h3>
-            </div>
-            <ScrollArea className="flex-1 p-4 space-y-3" ref={chatScrollRef}>
-              {chatMessages.length === 0 ? (
-                <div className="text-gray-500 text-sm text-center py-8">
-                  No messages yet. Start the conversation!
-                </div>
-              ) : (
-                chatMessages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.isLocal ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                      msg.isLocal 
-                        ? 'bg-call-accent text-white' 
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      <div className="text-sm font-medium mb-1">
-                        {msg.sender}
-                      </div>
-                      <div className="text-sm">
-                        {msg.message}
-                      </div>
-                      <div className={`text-xs mt-1 opacity-70`}>
-                        {new Date(msg.timestamp).toLocaleTimeString([], { 
-                          hour: '2-digit', 
-                          minute: '2-digit' 
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </ScrollArea>
-            <div className="p-4 border-t border-gray-300">
-                <div className="flex space-x-2">
-                  <Input
-                    placeholder="Type a message..."
-                  value={chatMessage}
-                  onChange={(e) => setChatMessage(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendChatMessage()}
-                  className="bg-white border-gray-300 text-gray-800 focus:border-call-accent"
-                  />
-                <Button onClick={sendChatMessage} size="sm" className="bg-call-accent hover:bg-call-accent/80 text-white">
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
             </div>
           )}
         </div>
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsChatOpen(!isChatOpen)}
+            className="relative"
+          >
+            <MessageSquare className="h-4 w-4" />
+            {messages.length > 0 && !isChatOpen && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
+                {messages.length}
+              </span>
+            )}
+          </Button>
+          {onToggleFullscreen && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleFullscreen}
+            >
+              {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+            </Button>
+          )}
+        </div>
+      </div>
 
-        {/* Controls */}
-        <CallControls
-          isVideoEnabled={isVideoEnabled}
-          isAudioEnabled={isAudioEnabled}
-          isAudioOutputEnabled={isAudioOutputEnabled}
-          isSharingScreen={isSharingScreen}
-          showChat={showChat}
-          onToggleVideo={toggleVideo}
-          onToggleAudio={toggleAudio}
-          onToggleAudioOutput={toggleAudioOutput}
+      {/* Main content area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Video grid */}
+        <div className="flex-1 p-4">
+          <div className={`grid gap-4 h-full ${
+            participantIds.length === 1 ? 'grid-cols-1' :
+            participantIds.length === 2 ? 'grid-cols-2' :
+            participantIds.length <= 4 ? 'grid-cols-2 grid-rows-2' :
+            participantIds.length <= 6 ? 'grid-cols-3 grid-rows-2' :
+            'grid-cols-3 grid-rows-3'
+          }`}>
+            {participantIds.map(id => (
+              <ParticipantTile key={id} participantId={id} />
+            ))}
+          </div>
+        </div>
+
+        {/* Chat sidebar */}
+        {isChatOpen && (
+          <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="font-semibold">Chat</h3>
+            </div>
+            <ScrollArea className="flex-1 p-4">
+              <div className="space-y-3">
+                {messages.map(msg => (
+                  <div key={msg.id} className="space-y-1">
+                    <div className="flex items-baseline space-x-2">
+                      <span className="font-medium text-sm">{msg.sender}</span>
+                      <span className="text-xs text-gray-500">
+                        {msg.timestamp.toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-700">{msg.text}</p>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+            <div className="p-4 border-t border-gray-200">
+              <div className="flex space-x-2">
+                <Input
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Type a message..."
+                  className="flex-1"
+                />
+                <Button onClick={handleSendMessage} size="sm">
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Call controls */}
+      <div className="bg-white border-t border-gray-200 px-4 py-3">
+        <CallControls 
+          isVideoEnabled={true}
+          isAudioEnabled={true}
+          isAudioOutputEnabled={true}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          isSharingScreen={isSharingScreen as any}
+          showChat={isChatOpen}
+          onToggleVideo={() => {}}
+          onToggleAudio={() => {}}
+          onToggleAudioOutput={() => {}}
           onToggleScreenShare={toggleScreenShare}
-          onToggleChat={() => setShowChat(!showChat)}
+          onToggleChat={() => setIsChatOpen((prev) => !prev)}
           onEndCall={handleEndCall}
         />
-
-      {/* Keyboard Shortcuts Help */}
-      <div className="absolute top-4 right-4 text-xs text-gray-500">
-        <div>Shortcuts: Ctrl+D (video), Ctrl+M (audio), Ctrl+E (end call)</div>
       </div>
     </div>
   )
@@ -442,254 +386,138 @@ export default function VideoCall({
   userName,
   onCallEnd,
   isFullscreen = false,
-  onToggleFullscreen,
+  onToggleFullscreen = () => {},
   callId,
   meetingToken,
 }: VideoCallProps) {
 
   const [dailyCall, setDailyCall] = useState<DailyCall | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  
   // Keep a stable reference to onCallEnd to avoid re-running effects due to function identity changes
   const onCallEndRef = useRef(onCallEnd)
   useEffect(() => {
     onCallEndRef.current = onCallEnd
   }, [onCallEnd])
 
-  // ... (rest of the code remains the same)
-
-  const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const isCreatingCall = React.useRef(false)
-
-  const roomInfoQuery = useQueryUntyped(
+  // Fetch room info from backend - try both by callId and roomId
+  const roomInfoByCallId = useQueryUntyped(
     api.videoCalls.getDailyRoomInfo as unknown,
     callId ? ({ callId } as unknown) : ("skip" as unknown)
-  )
-
-  // Get room info by roomId if callId is not provided
-  const roomInfoByIdQuery = useQueryUntyped(
+  ) as RoomInfo | undefined
+  
+  const roomInfoByRoomId = useQueryUntyped(
     api.videoCalls.getCallByRoomId as unknown,
-    !callId ? ({ roomId } as unknown) : ("skip" as unknown)
+    !callId && roomId ? ({ roomId } as unknown) : ("skip" as unknown)
   )
+  
+  // Use whichever room info is available
+  const roomInfo = React.useMemo(() => roomInfoByCallId || (roomInfoByRoomId ? {
+    dailyRoomUrl: roomInfoByRoomId.dailyRoomUrl,
+    dailyRoomName: roomInfoByRoomId.dailyRoomName,
+    isHost: roomInfoByRoomId.isHost,
+    meetingToken: roomInfoByRoomId.meetingToken || meetingToken,
+    tokenExpiration: roomInfoByRoomId.tokenExpiration,
+  } : undefined), [roomInfoByCallId, roomInfoByRoomId, meetingToken])
 
-  // Use the appropriate room info
-  useEffect(() => {
-    console.log('🔍 Room info debug:', {
-      callId,
-      roomId,
-      roomInfoQuery,
-      roomInfoByIdQuery,
-      userId,
-      userName
-    })
-    
-    if (callId && roomInfoQuery) {
-      console.log('✅ Using roomInfoQuery:', roomInfoQuery)
-      setRoomInfo(roomInfoQuery)
-    } else if (!callId && roomInfoByIdQuery) {
-      console.log('✅ Using roomInfoByIdQuery:', roomInfoByIdQuery)
-      setRoomInfo(roomInfoByIdQuery)
-    } else if (callId && roomInfoQuery === null) {
-      console.error('❌ Room info query returned null for callId:', callId)
-      setError('Video call not found or you do not have permission to join this call')
-    } else if (!callId && roomInfoByIdQuery === null) {
-      console.error('❌ Room info by ID query returned null for roomId:', roomId)
-      setError('Video call room not found or you do not have permission to join this call')
-    }
-  }, [callId, roomInfoQuery, roomInfoByIdQuery, roomId, userId, userName])
+  // Handle left meeting
+  const handleLeftMeeting = useCallback(() => {
+    console.log('User left meeting, calling onCallEnd')
+    onCallEndRef.current?.()
+  }, [])
 
   // Create Daily call instance
   useEffect(() => {
-    let callInstance: DailyCall | null = null;
-    let timeoutId: NodeJS.Timeout | undefined;
-    const token = meetingToken || roomInfo?.meetingToken;
-    
-    const createCall = async () => {
-      if (!roomInfo || !(roomInfo.dailyRoomUrl || roomInfo.dailyRoomName)) {
-        return;
-      }
-      
-      // Prevent duplicate DailyIframe instances
-      if (isCreatingCall.current || dailyCall) {
-        console.warn('Daily call creation already in progress or call object already exists, skipping creation');
-        return;
-      }
-      
-      isCreatingCall.current = true;
-      
+    if (!roomInfo?.dailyRoomUrl || !userId || !userName || dailyCall) return
+
+    const initCall = async () => {
       try {
-        const { default: DailyCall } = await import('@daily-co/daily-js');
-          
-        // Construct the Daily.co URL properly
-        const DAILY_DOMAIN = process.env.NEXT_PUBLIC_DAILY_DOMAIN;
-        let dailyUrl = roomInfo.dailyRoomUrl;
-        if (!dailyUrl && roomInfo.dailyRoomName) {
-          if (!DAILY_DOMAIN) {
-            throw new Error('Daily domain not configured. Set NEXT_PUBLIC_DAILY_DOMAIN.');
-          }
-          dailyUrl = `https://${DAILY_DOMAIN}/${roomInfo.dailyRoomName}`;
+        // Check for HTTPS in production
+        if (typeof window !== 'undefined' && window.location.protocol !== 'https:' && !window.location.hostname.includes('localhost')) {
+          console.warn('Video calls require HTTPS for camera/microphone access')
         }
+
+        // Check browser support
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Your browser does not support video calls')
+        }
+
+        const DailyIframe = (await import('@daily-co/daily-js')).default
         
-        if (!roomInfo) {
-          throw new Error('Failed to get room information');
-        }
-
-        // Check for secure context and device access
-        if (typeof window === 'undefined' || !window.navigator) {
-          setError('Window or navigator not available');
-          return;
-        }
-
-        if (!window.isSecureContext) {
-          setError('Camera/mic access requires HTTPS or localhost. Please reload over HTTPS.');
-          return;
-        }
-
-        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-          setError('Camera/mic access is not supported in this browser. Please use a modern browser over HTTPS.');
-          return;
-        }
-
-        interface DailyCallConfig {
-          url: string | undefined;
-          userName: string;
-          userData: {
-            userId: string;
-            isHost: boolean | undefined;
-          };
-          token?: string;
-        }
-
-        const callConfig: DailyCallConfig = {
-          url: dailyUrl,
-          userName: userName,
-          userData: {
-            userId: userId,
-            isHost: roomInfo.isHost,
+        const callConfig: { url: string; showLeaveButton: boolean; showFullscreenButton: boolean; iframeStyle: { position: string; width: string; height: string; border: string; borderRadius: string; }; token?: string; userName?: string; } = {
+          url: roomInfo.dailyRoomUrl,
+          showLeaveButton: false,
+          showFullscreenButton: false,
+          iframeStyle: {
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            border: '0',
+            borderRadius: '8px',
           },
-        };
-
-        // Add meeting token if available and not expired
-        
-        if (token) {
-          // Check if token is expired
-          const tokenExpiration = roomInfo.tokenExpiration;
-          if (tokenExpiration && Date.now() / 1000 > tokenExpiration) {
-            console.error('❌ Token expired:', { tokenExpiration, currentTime: Date.now() / 1000 });
-            throw new Error('Meeting token has expired. Please refresh and try again.');
-          }
-          console.log('✅ Adding token to call config');
-          (callConfig as { token?: string }).token = token;
-        } else {
-          console.warn('⚠️ No meeting token available - this may cause permission issues');
         }
 
-        console.log('🚀 Creating Daily call with config:', callConfig);
-        callInstance = DailyCall.createCallObject(callConfig);
-        setDailyCall(callInstance);
-
-        // Set up event listeners
-        const handleJoinedMeeting = () => {
-          console.log('✅ Joined Daily.co meeting successfully');
-        };
-        
-        const handleLeftMeeting = () => {
-          console.log('👋 Left Daily.co meeting');
-          onCallEndRef.current?.();
-        };
-        
-        const handleError = (err: unknown) => {
-          console.error('❌ Daily.co error:', err);
-          if (typeof err === 'object' && err !== null) {
-            const e = err as {
-              type?: string;
-              message?: string;
-              errorMsg?: string;
-              action?: string;
-              details?: unknown;
-              callClientId?: string;
-            };
-            console.error('Error details:', e);
-            setError(e.message ?? e.errorMsg ?? 'Call connection failed');
-          } else {
-            setError('Call connection failed');
-          }
-        };
-        
-        const handleJoiningMeeting = () => {
-          console.log('🔄 Joining Daily.co meeting...');
-        };
-        
-        const handleLoading = () => {
-          console.log('⏳ Daily.co call loading...');
-        };
-
-        const handleNetworkConnection = (ev: unknown) => {
-          console.log('🌐 Daily network-connection event:', ev);
-        };
-
-        callInstance.on('joined-meeting', handleJoinedMeeting);
-        callInstance.on('left-meeting', handleLeftMeeting);
-        callInstance.on('error', handleError);
-        callInstance.on('joining-meeting', handleJoiningMeeting);
-        callInstance.on('loading', handleLoading);
-        callInstance.on('network-connection', handleNetworkConnection);
-
-        // Join the call with timeout
-        console.log('🔗 Attempting to join call...');
-        // Pre-authenticate first to lock in URL/token and catch access issues early
-        try {
-          await (callInstance as unknown as { preAuth: (args: { url: string; token?: string; userName: string; userData: unknown }) => Promise<void> }).preAuth({
-            url: dailyUrl,
-            token: (callConfig as unknown as { token?: string }).token,
-            userName: callConfig.userName,
-            userData: callConfig.userData,
-          });
-          console.log('🔐 preAuth successful');
-        } catch (preAuthErr) {
-          console.error('❌ preAuth failed:', preAuthErr);
-          throw preAuthErr as Error;
+        // Add meeting token if available
+        if (roomInfo.meetingToken || meetingToken) {
+          callConfig.token = roomInfo.meetingToken || meetingToken
         }
-        const joinPromise = callInstance.join();
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(() => {
-            console.error('⏰ Call join timeout after 15 seconds');
-            reject(new Error('Call join timeout - this may be due to Daily.co account setup. Please ensure your Daily.co account has a credit card added.'));
-          }, 15000);
-        });
 
-        const result = await Promise.race([joinPromise, timeoutPromise]);
-        // Clear the timeout if the promise resolves before the timeout
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = undefined;
+        // Add user name
+        if (userName) {
+          callConfig.userName = userName
         }
-        console.log('✅ Call join result:', result);
-      } catch (error) {
-        console.error('❌ Failed to create Daily.co call:', error);
-        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-        setError(error instanceof Error ? error.message : 'Failed to initialize video call');
-      } finally {
-        isCreatingCall.current = false;
+
+        console.log('🎥 Creating Daily call with config:', {
+          url: callConfig.url,
+          hasToken: !!callConfig.token,
+          userName: callConfig.userName,
+          roomId: roomId,
+          callId: callId,
+        })
+
+        const callInstance = DailyIframe.createCallObject(callConfig)
+        
+        // Set up event listeners before joining
+        callInstance.on('joined-meeting', () => {
+          console.log('✅ Successfully joined meeting')
+        })
+        
+        callInstance.on('left-meeting', () => {
+          console.log('👋 Left meeting')
+          handleLeftMeeting()
+        })
+        
+        callInstance.on('error', (error: { errorMsg?: string; error?: string }) => {
+          console.error('❌ Daily call error:', error)
+          setError(`Call error: ${error?.errorMsg || error?.error || 'Unknown error'}`)
+        })
+
+        setDailyCall(callInstance)
+        
+        // Join the call
+        console.log('🔄 Joining call...')
+        await callInstance.join()
+        
+      } catch (err) {
+        console.error('Failed to initialize Daily call:', err)
+        setError(err instanceof Error ? err.message : 'Failed to initialize video call')
       }
-    };
-
-    if (roomInfo && userId && userName) {
-      createCall();
     }
 
-    // Cleanup function for useEffect
+    initCall()
+  }, [roomInfo, userId, userName, meetingToken, handleLeftMeeting, callId, dailyCall, roomId])
+
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+      if (dailyCall) {
+        console.log('🧹 Cleaning up Daily call instance')
+        dailyCall.destroy().catch((e: Error) => {
+          console.error('Error cleaning up Daily call:', e)
+        })
       }
-      if (callInstance) {
-        console.log('🧹 Cleaning up Daily call instance');
-        callInstance.destroy().catch(() => {
-          console.error('Error cleaning up Daily call:', e);
-        });
-      }
-    };
-  }, [roomInfo, userId, userName, meetingToken, dailyCall])
+    }
+  }, [dailyCall])
 
   if (error) {
     return (
@@ -744,4 +572,4 @@ export default function VideoCall({
       {process.env.NODE_ENV !== 'production' && callId && <TokenDebug callId={callId} />}
     </div>
   )
-} 
+}

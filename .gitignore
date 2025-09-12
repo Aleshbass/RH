@@ -35,7 +35,7 @@ yarn-error.log*
 .env.production
 .env.development
 # Allow .env.local for local development
-# .env.local
+!.env.local
 
 # vercel
 .vercel

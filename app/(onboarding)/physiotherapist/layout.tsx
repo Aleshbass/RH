@@ -6,6 +6,8 @@ import { useUser } from '@clerk/clerk-react';
 import { useEffect } from 'react';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { redirect } from 'next/navigation';
+import { useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 
 export default function PhysiotherapistOnboardingLayout({
   children,
@@ -15,6 +17,7 @@ export default function PhysiotherapistOnboardingLayout({
   const pathname = usePathname();
   const { user, isLoaded } = useUser();
   const { data, setCurrentStep, setRole } = useOnboardingStore();
+  const currentUser = useQuery(api.users.getMyUser);
   
   const steps = [
     'Personal Information',
@@ -34,6 +37,11 @@ export default function PhysiotherapistOnboardingLayout({
       if (!user) {
         redirect('/sign-in');
       }
+
+      // If user already completed onboarding, skip onboarding flow
+      if (currentUser && (currentUser as { onboarded?: boolean }).onboarded) {
+        redirect('/dashboard');
+      }
       
       // Set role if not already set
       if (!data.role) {
@@ -45,7 +53,7 @@ export default function PhysiotherapistOnboardingLayout({
         setCurrentStep(currentStepFromUrl);
       }
     }
-  }, [isLoaded, user, data.role, currentStepFromUrl, data.currentStep, setRole, setCurrentStep]);
+  }, [isLoaded, user, currentUser, data.role, currentStepFromUrl, data.currentStep, setRole, setCurrentStep]);
   
   const handleStepClick = (step: number) => {
     // Only allow navigating to completed steps

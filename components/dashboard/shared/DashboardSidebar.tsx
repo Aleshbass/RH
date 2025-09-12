@@ -14,8 +14,10 @@ import {
   Stethoscope,
   ChevronLeft,
   ChevronRight,
+  X,
 } from 'lucide-react'
 import { LucideIcon } from 'lucide-react'
+import { useSidebarStore } from '@/stores/sidebarStore'
 
 interface NavItem {
   title: string
@@ -45,49 +47,89 @@ export function DashboardSidebar({ items = [], defaultCollapsed = false }: Sideb
   // Filter items based on user role
   const filteredItems = items.filter(item => item.roles.includes(userRole))
 
-  return (
-    <div className={cn('relative border-r bg-background duration-300 ease-in-out', isCollapsed ? 'w-[80px]' : 'w-[240px]')}>
-      <div className="flex h-[60px] items-center justify-between px-4">
-        <Link href="/dashboard" className={cn('flex items-center space-x-2', isCollapsed && 'hidden')}>
-          <Stethoscope className="h-6 w-6 text-primary" />
-          <span className="font-bold">Rehabify</span>
-        </Link>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          onClick={() => setIsCollapsed(!isCollapsed)}
-        >
-          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </Button>
-      </div>
-      <ScrollArea className="h-[calc(100vh-60px)] pb-10">
-        <div className="px-3 py-2">
-          <div className="space-y-1">
-            {filteredItems.map((item, index) => (
-              <Link key={index} href={item.href}>
-                <Button
-                  variant={pathname === item.href ? 'secondary' : 'ghost'}
-                  className={cn(
-                    'w-full justify-start',
-                    pathname === item.href && 'bg-secondary/50'
-                  )}
-                >
-                  <item.icon className={cn('h-5 w-5', isCollapsed ? 'mx-auto' : 'mr-2')} />
-                  {!isCollapsed && (
-                    <span>{item.title}</span>
-                  )}
-                  {item.badge && !isCollapsed && (
-                    <Badge variant="secondary" className="ml-auto">
-                      {item.badge}
-                    </Badge>
-                  )}
-                </Button>
-              </Link>
-            ))}
-          </div>
+  // Mobile sidebar state
+  const { mobileOpen, closeMobile } = useSidebarStore()
+
+  const NavList = ({ collapsed }: { collapsed: boolean }) => (
+    <ScrollArea className="h-[calc(100vh-60px)] pb-10">
+      <div className="px-3 py-2">
+        <div className="space-y-1">
+          {filteredItems.map((item, index) => (
+            <Link key={index} href={item.href} onClick={() => { if (mobileOpen) closeMobile() }}>
+              <Button
+                variant={pathname === item.href ? 'secondary' : 'ghost'}
+                className={cn(
+                  'w-full justify-start text-white hover:bg-white/10',
+                  pathname === item.href && 'bg-[#D4FAE8] text-[#005b57] hover:bg-[#D4FAE8] hover:text-[#005b57]'
+                )}
+              >
+                <item.icon className={cn('h-5 w-5', collapsed ? 'mx-auto' : 'mr-2')} />
+                {!collapsed && (
+                  <span>{item.title}</span>
+                )}
+                {item.badge && !collapsed && (
+                  <Badge className="ml-auto bg-[#00cd0f] text-white border-0">
+                    {item.badge}
+                  </Badge>
+                )}
+              </Button>
+            </Link>
+          ))}
         </div>
-      </ScrollArea>
-    </div>
+      </div>
+    </ScrollArea>
   )
-} 
+
+  return (
+    <>
+      {/* Mobile overlay */}
+      <div
+        className={cn('fixed inset-0 z-40 bg-black/40 md:hidden', mobileOpen ? 'block' : 'hidden')}
+        onClick={closeMobile}
+      />
+      {/* Mobile drawer */}
+      <div
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 w-[240px] border-r bg-[#005b57] shadow-lg transition-transform duration-300 md:hidden',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        <div className="flex h-[60px] items-center justify-between px-4">
+          <Link href="/dashboard" className="flex items-center space-x-2">
+            <Stethoscope className="h-6 w-6 text-[#00cd0f]" /> {/* 10% - Highlighter accent */}
+            <span className="font-bold text-white">Rehabify</span>
+          </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-white hover:bg-white/10"
+            onClick={closeMobile}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <NavList collapsed={false} />
+      </div>
+
+      {/* Desktop sidebar */}
+      <div className={cn('relative hidden md:flex md:flex-col border-r bg-[#005b57] duration-300 ease-in-out', isCollapsed ? 'w-[80px]' : 'w-[240px]')}> {/* 30% - Core Green sidebar */}
+        <div className="flex h-[60px] items-center justify-between px-4">
+          <Link href="/dashboard" className={cn('flex items-center space-x-2', isCollapsed && 'hidden')}>
+            <Stethoscope className="h-6 w-6 text-[#00cd0f]" /> {/* 10% - Highlighter accent */}
+            <span className="font-bold text-white">Rehabify</span>
+          </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-white hover:bg-white/10"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+          >
+            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </Button>
+        </div>
+        <NavList collapsed={isCollapsed} />
+      </div>
+    </>
+  )
+}
+ 

@@ -5,11 +5,17 @@ import { toast } from 'sonner'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 
-interface Notification {
+interface NotificationDoc {
   _id: string
-  title: string
-  message: string
   createdAt: number
+  readAt?: number
+  payload?: {
+    title?: string
+    body?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data?: { actionUrl?: string; [k: string]: any }
+    link?: string
+  }
 }
 
 export default function NotificationToaster() {
@@ -17,7 +23,7 @@ export default function NotificationToaster() {
   const notifications = useQuery(api.notifications.getMyNotifications, {
     limit: 1,
     includeRead: false,
-  }) as Notification[] | undefined
+  }) as NotificationDoc[] | undefined
 
   const lastSeenId = useRef<string | null>(null)
 
@@ -31,12 +37,12 @@ export default function NotificationToaster() {
     }
     if (latest._id !== lastSeenId.current) {
       lastSeenId.current = latest._id
-      toast(latest.title, {
-        description: latest.message,
+      toast(latest.payload?.title ?? 'Notification', {
+        description: latest.payload?.body,
         duration: 5000,
       })
     }
   }, [notifications])
 
   return null
-} 
+}

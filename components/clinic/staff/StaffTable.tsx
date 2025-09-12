@@ -82,7 +82,7 @@ export default function StaffTable({ staff, onRefresh }: StaffTableProps) {
   // const reassignStaff = useMutation(api.clinics.reassignStaffToClinic)
   // Actions
   const resendInvitation = useAction(
-    api.actions.clinics.inviteClinicStaff.createClinicStaffInvitationWithNotification
+            api.actions.clinics.createClinicStaffInvitationWithNotification
   )
 
   // Filter staff based on search and filters

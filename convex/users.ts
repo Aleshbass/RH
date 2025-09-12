@@ -29,6 +29,22 @@ export const getMyUser = query({
 });
 
 /**
+ * Get a user by email address
+ * Used by actions that only know the patient's email (e.g., invitations)
+ */
+export const getUserByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    if (!args.email) return null as any
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .unique();
+    return user || null;
+  },
+});
+
+/**
  * Get a user by ID
  * @returns The user document or null if not found
  */
@@ -486,6 +502,54 @@ export const completeUserProfile = mutation({
         createdAt: Date.now(),
       });
       console.log("[completeUserProfile] Pending review notification created for user:", user._id);
+
+      // Notify all admins in-app and via email that approval is required
+      try {
+        const admins = await ctx.db
+          .query("users")
+          .withIndex("by_role", (q) => q.eq("role", "admin"))
+          .collect();
+
+        const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || (user.email || "User");
+        const adminActionUrl = `/admin/users/${user._id}`;
+        const roleLabel = args.role === "physiotherapist" ? "Physiotherapist" : "Clinic Owner";
+
+        for (const admin of admins) {
+          // In-app notification to admin
+          await ctx.db.insert("notifications", {
+            userId: admin._id,
+            type: "onboarding_complete",
+            priority: "high",
+            status: "pending",
+            payload: {
+              title: `Approval Required: ${roleLabel} Onboarding Submitted`,
+              body: `${displayName} has completed onboarding and is awaiting approval.`,
+              data: {
+                entityId: String(user._id),
+                entityType: "user",
+                actionUrl: adminActionUrl,
+                metadata: {
+                  role: args.role,
+                },
+              },
+            },
+            createdAt: Date.now(),
+          });
+
+          // Email to admin (if email exists)
+          if (admin.email) {
+            await ctx.scheduler.runAfter(0, internal.actions.emails.sendOnboardingNotificationEmail as any, {
+              adminEmail: admin.email,
+              userName: `${displayName} (${roleLabel})`,
+              adminDashboardLink: adminActionUrl,
+              userRole: roleLabel,
+              submittedAt: Date.now(),
+            });
+          }
+        }
+      } catch (notifyError) {
+        console.error("[completeUserProfile] Failed to notify admins of onboarding completion:", notifyError);
+      }
     }
 
     return { success: true, message: "Profile completed successfully." };

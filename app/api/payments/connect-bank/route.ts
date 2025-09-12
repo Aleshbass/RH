@@ -3,6 +3,24 @@ import { simplePaystackService } from '@/lib/payments/simple-payments'
 import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'
 
+interface ResolveBankAccountResponse {
+  status: boolean;
+  message?: string;
+  data?: { account_name: string };
+}
+
+interface SubaccountResponse {
+  status: boolean;
+  message?: string;
+  data?: { subaccount_code: string };
+}
+
+interface BanksResponse {
+  status: boolean;
+  message?: string;
+  data: Array<{ name: string; code: string; slug: string }>;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -21,14 +39,15 @@ export async function POST(request: NextRequest) {
       bank_code: bankCode
     })
 
-    if (!accountResolution.status) {
+    const accountRes = accountResolution as ResolveBankAccountResponse
+    if (!accountRes.status) {
       return NextResponse.json({
         success: false,
         message: 'Could not verify bank account. Please check your details.'
       }, { status: 400 })
     }
 
-    const accountName = accountResolution.data.account_name
+    const accountName = accountRes.data?.account_name ?? 'Unknown Account'
 
     log.info('Bank account verified', {
       accountName,
@@ -46,14 +65,15 @@ export async function POST(request: NextRequest) {
 
     const subaccountResult = await simplePaystackService.createSubaccount(subaccountData)
 
-    if (!subaccountResult.status) {
+    const subaccount = subaccountResult as SubaccountResponse
+    if (!subaccount.status) {
       return NextResponse.json({
         success: false,
         message: 'Failed to create payment account. Please try again.'
       }, { status: 400 })
     }
 
-    const subaccountCode = subaccountResult.data.subaccount_code
+    const subaccountCode = subaccount.data?.subaccount_code as string
 
     log.info('Paystack subaccount created', {
       subaccountCode,
@@ -115,11 +135,12 @@ export async function GET() {
   try {
     const banksResult = await simplePaystackService.getBanks()
     
-    if (!banksResult.status) {
+    const banksRes = banksResult as BanksResponse
+    if (!banksRes.status) {
       throw new Error('Failed to fetch banks')
     }
 
-    const banks = banksResult.data.map((bank: { name: string; code: string; slug: string }) => ({
+    const banks = banksRes.data.map((bank) => ({
       name: bank.name,
       code: bank.code,
       slug: bank.slug
@@ -143,8 +164,9 @@ export async function GET() {
 async function getBankName(bankCode: string): Promise<string> {
   try {
     const banksResult = await simplePaystackService.getBanks()
-    if (banksResult.status) {
-      const bank = banksResult.data.find((b: { name: string; code: string; slug: string }) => b.code === bankCode)
+    const res = banksResult as BanksResponse
+    if (res.status) {
+      const bank = res.data.find((b) => b.code === bankCode)
       return bank?.name || 'Unknown Bank'
     }
     return 'Unknown Bank'

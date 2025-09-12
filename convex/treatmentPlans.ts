@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthenticatedUser } from "./auth";
+import { internal } from "./_generated/api";
 
 /**
  * Treatment Plan Management System
@@ -207,6 +208,10 @@ export const updateTreatmentPlan = mutation({
         duration: v.optional(v.string()),
         frequency: v.string(),
         notes: v.optional(v.string()),
+        videoUrl: v.optional(v.string()),
+        youtubeId: v.optional(v.string()),
+        beforeImageStorageId: v.optional(v.id("_storage")),
+        afterImageStorageId: v.optional(v.id("_storage")),
       })),
     }))),
     reviewInterval: v.optional(v.number()),
@@ -605,4 +610,429 @@ export const getExerciseCompletionMap = query({
     }
     return map;
   },
-}); 
+});
+
+/**
+ * Get treatment templates for physiotherapists
+ */
+export const getTreatmentTemplates = query({
+  args: {
+    category: v.optional(v.string()),
+    difficulty: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const physiotherapist = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!physiotherapist || physiotherapist.role !== "physiotherapist") {
+      throw new Error("Only physiotherapists can access treatment templates");
+    }
+
+    let q = ctx.db.query("treatmentTemplates")
+      .filter((f) =>
+        f.or(
+          f.eq(f.field("createdBy"), physiotherapist._id),
+          f.eq(f.field("isPublic"), true),
+          physiotherapist.clinicId ? f.eq(f.field("clinicId"), physiotherapist.clinicId) : f.eq(f.field("createdBy"), physiotherapist._id)
+        )
+      );
+
+    if (args.category) {
+      q = q.filter((f) => f.eq(f.field("category"), args.category));
+    }
+    if (args.difficulty) {
+      q = q.filter((f) => f.eq(f.field("difficulty"), args.difficulty));
+    }
+
+    const templates = await q.collect();
+    return templates;
+  },
+});
+
+export const getTreatmentTemplateById = query({
+  args: { templateId: v.id("treatmentTemplates") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) throw new Error("User not found");
+
+    const tpl = await ctx.db.get(args.templateId);
+    if (!tpl) return null;
+    // Access: creator, public, or same clinic
+    const allowed =
+      tpl.isPublic === true ||
+      tpl.createdBy === user._id ||
+      (tpl.clinicId && user.clinicId && tpl.clinicId === user.clinicId);
+    if (!allowed) throw new Error("Access denied");
+    return tpl;
+  },
+});
+
+/**
+ * Create treatment template
+ */
+export const createTreatmentTemplate = mutation({
+  args: {
+    title: v.string(),
+    description: v.optional(v.string()),
+    category: v.optional(v.string()),
+    duration: v.optional(v.string()),
+    difficulty: v.optional(v.union(v.literal("Beginner"), v.literal("Intermediate"), v.literal("Advanced"))),
+    // Simplified creation input from UI (strings)
+    exercises: v.optional(v.array(v.string())),
+    phases: v.optional(v.array(v.string())),
+    goals: v.optional(v.array(v.string())),
+    // Full builder payload (preferred). If provided, overrides the simplified inputs above.
+    builderPhases: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          description: v.optional(v.string()),
+          duration: v.optional(v.string()),
+          order: v.number(),
+          exercises: v.array(
+            v.object({
+              exerciseRefId: v.optional(v.id("exercises")),
+              exerciseId: v.optional(v.string()),
+              sets: v.optional(v.number()),
+              reps: v.optional(v.number()),
+              duration: v.optional(v.string()),
+              frequency: v.optional(v.string()),
+              notes: v.optional(v.string()),
+              videoUrl: v.optional(v.string()),
+              youtubeId: v.optional(v.string()),
+              beforeImageStorageId: v.optional(v.id("_storage")),
+              afterImageStorageId: v.optional(v.id("_storage")),
+            })
+          ),
+        })
+      )
+    ),
+    isPublic: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const physiotherapist = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!physiotherapist || physiotherapist.role !== "physiotherapist") {
+      throw new Error("Only physiotherapists can create treatment templates");
+    }
+
+    // Map simple inputs to schema shape, unless full builderPhases provided
+    let phases: any[];
+    if (args.builderPhases && args.builderPhases.length > 0) {
+      phases = args.builderPhases.map((p, idx) => ({
+        name: p.name,
+        description: p.description || "",
+        duration: p.duration || undefined,
+        order: p.order ?? idx + 1,
+        exercises: (p.exercises || []).map((e) => ({
+          exerciseRefId: e.exerciseRefId,
+          exerciseId: e.exerciseId,
+          sets: e.sets ?? 3,
+          reps: e.reps ?? 10,
+          duration: e.duration,
+          frequency: e.frequency || "Daily",
+          notes: e.notes,
+          videoUrl: e.videoUrl,
+          youtubeId: e.youtubeId,
+          beforeImageStorageId: e.beforeImageStorageId,
+          afterImageStorageId: e.afterImageStorageId,
+        })),
+      }));
+    } else {
+      type TemplateExerciseSeed = {
+        exerciseId: string;
+        sets: number;
+        reps: number;
+        duration?: string;
+        frequency: string;
+        notes?: string;
+        videoUrl?: string;
+        youtubeId?: string;
+      };
+
+      phases = (args.phases || []).map((name, idx) => ({
+        name,
+        description: "",
+        duration: args.duration || undefined,
+        order: idx + 1,
+        exercises: [] as TemplateExerciseSeed[],
+      }));
+
+      // If exercises provided, add them to first phase
+      if ((args.exercises || []).length) {
+        if (phases.length === 0) {
+          phases.push({ name: "Phase 1", description: "", duration: args.duration || undefined, order: 1, exercises: [] as TemplateExerciseSeed[] });
+        }
+        const target = phases[phases.length - 1];
+        for (const ex of args.exercises || []) {
+          target.exercises.push({
+            exerciseId: ex,
+            sets: 3,
+            reps: 10,
+            frequency: "Daily",
+            notes: "",
+          });
+        }
+      }
+    }
+
+    const goals = (args.goals || []).map((g) => ({ description: g }));
+
+    const templateId = await ctx.db.insert("treatmentTemplates", {
+      title: args.title,
+      description: args.description,
+      category: args.category,
+      difficulty: args.difficulty,
+      duration: args.duration,
+      goals,
+      phases,
+      createdBy: physiotherapist._id,
+      clinicId: physiotherapist.clinicId,
+      isPublic: args.isPublic ?? false,
+      usageCount: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    return templateId;
+  },
+});
+
+export const updateTreatmentTemplate = mutation({
+  args: {
+    templateId: v.id("treatmentTemplates"),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
+    category: v.optional(v.string()),
+    duration: v.optional(v.string()),
+    difficulty: v.optional(v.union(v.literal("Beginner"), v.literal("Intermediate"), v.literal("Advanced"))),
+    goals: v.optional(
+      v.array(
+        v.object({ description: v.string(), targetValue: v.optional(v.string()), timeline: v.optional(v.string()), measurable: v.optional(v.boolean()) })
+      )
+    ),
+    phases: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          description: v.optional(v.string()),
+          duration: v.optional(v.string()),
+          order: v.number(),
+          exercises: v.array(
+            v.object({
+              exerciseRefId: v.optional(v.id("exercises")),
+              exerciseId: v.optional(v.string()),
+              sets: v.optional(v.number()),
+              reps: v.optional(v.number()),
+              duration: v.optional(v.string()),
+              frequency: v.optional(v.string()),
+              notes: v.optional(v.string()),
+              videoUrl: v.optional(v.string()),
+              youtubeId: v.optional(v.string()),
+              beforeImageStorageId: v.optional(v.id("_storage")),
+              afterImageStorageId: v.optional(v.id("_storage")),
+            })
+          ),
+        })
+      )
+    ),
+    isPublic: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!user) throw new Error("User not found");
+
+    const existing = await ctx.db.get(args.templateId);
+    if (!existing) throw new Error("Template not found");
+    if (existing.createdBy !== user._id) throw new Error("Access denied");
+
+    const { templateId, ...patch } = args as any;
+    await ctx.db.patch(args.templateId, { ...patch, updatedAt: Date.now() });
+    return { success: true };
+  },
+});
+
+export const deleteTreatmentTemplate = mutation({
+  args: { templateId: v.id("treatmentTemplates") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!user) throw new Error("User not found");
+    const tpl = await ctx.db.get(args.templateId);
+    if (!tpl) return { success: true };
+    if (tpl.createdBy !== user._id) throw new Error("Access denied");
+    await ctx.db.delete(args.templateId);
+    return { success: true };
+  },
+});
+
+export const assignTemplateToPatient = mutation({
+  args: {
+    templateId: v.id("treatmentTemplates"),
+    patientId: v.id("users"),
+    clinicId: v.optional(v.id("clinics")),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
+    priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
+    activate: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const physiotherapist = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!physiotherapist || physiotherapist.role !== "physiotherapist") {
+      throw new Error("Only physiotherapists can assign templates");
+    }
+
+    // Verify active relationship with patient
+    const relationship = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient_and_physiotherapist", (q) =>
+        q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
+      )
+      .unique();
+    if (!relationship || relationship.status !== "active") {
+      throw new Error("No active relationship with this patient");
+    }
+
+    const tpl = await ctx.db.get(args.templateId);
+    if (!tpl) throw new Error("Template not found");
+
+    // Determine clinic context: prefer explicit arg, then relationship, then physiotherapist profile, then template.
+    // If none is available, proceed without clinic context (support independent physiotherapists).
+    const resolvedClinicId = args.clinicId || relationship?.clinicId || physiotherapist.clinicId || tpl.clinicId;
+    if (!resolvedClinicId) {
+      console.warn("[treatmentPlans.assignTemplateToPatient] Proceeding without clinic context; independent physiotherapist flow.");
+    }
+
+    const planId = await ctx.db.insert("treatmentPlans", {
+      patientId: args.patientId,
+      physiotherapistId: physiotherapist._id,
+      clinicId: resolvedClinicId,
+      title: args.title || tpl.title,
+      description: args.description || tpl.description,
+      startDate: Date.now(),
+      endDate: undefined,
+      priority: args.priority || "medium",
+      status: args.activate === false ? "draft" : "active",
+      goals: (tpl.goals || []).map((g: any) => ({
+        description: g.description,
+        targetValue: g.targetValue || "",
+        timeline: g.timeline || "",
+        measurable: g.measurable ?? true,
+      })),
+      phases: (tpl.phases || []).map((p: any) => ({
+        name: p.name,
+        description: p.description || "",
+        duration: p.duration || "",
+        order: p.order,
+        exercises: (p.exercises || []).map((ex: any) => ({
+          exerciseId: ex.exerciseRefId || ex.exerciseId || "",
+          sets: ex.sets || 3,
+          reps: ex.reps || 10,
+          duration: ex.duration,
+          frequency: ex.frequency || "Daily",
+          notes: ex.notes,
+          videoUrl: ex.videoUrl,
+          youtubeId: ex.youtubeId,
+          beforeImageStorageId: ex.beforeImageStorageId,
+          afterImageStorageId: ex.afterImageStorageId,
+        })),
+      })),
+      reviewInterval: 14,
+      notes: undefined,
+      version: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      completedAt: undefined,
+      cancelledAt: undefined,
+    });
+
+    // Log creation
+    await ctx.db.insert("treatmentProgress", {
+      treatmentPlanId: planId,
+      patientId: args.patientId,
+      physiotherapistId: physiotherapist._id,
+      entryDate: Date.now(),
+      progressType: "plan_created",
+      notes: `Plan created from template: ${tpl.title}`,
+      recordedBy: physiotherapist._id,
+    });
+
+    // Optional: send sync/notification via plan sync system
+    try {
+      await ctx.runMutation(internal.treatmentPlanSync.syncTreatmentPlanToPatient, {
+        treatmentPlanId: planId,
+        changeType: "created",
+        changeDescription: `New treatment plan assigned: ${args.title || tpl.title}`,
+        previousData: null,
+        newData: { fromTemplateId: args.templateId },
+      });
+    } catch (e) {
+      // Best-effort; do not block
+    }
+
+    // Increment usage count
+    await ctx.db.patch(args.templateId, {
+      usageCount: (tpl.usageCount || 0) + 1,
+      updatedAt: Date.now(),
+    });
+
+    return planId;
+  },
+});
+
+export const getTreatmentPlan = query({
+  args: { treatmentPlanId: v.id("treatmentPlans") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!user) throw new Error("User not found");
+
+    const plan = await ctx.db.get(args.treatmentPlanId);
+    if (!plan) return null;
+    const canAccess =
+      plan.patientId === user._id || plan.physiotherapistId === user._id;
+    if (!canAccess) throw new Error("Access denied");
+    return plan;
+  },
+});

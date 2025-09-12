@@ -91,7 +91,7 @@ export default function PendingApprovalPage({
             
             {isDeclined && (
               <Button 
-                onClick={() => router.push('/onboarding/role-selection')} 
+                onClick={() => router.push('/role-selection')} 
                 className="w-full"
               >
                 Apply Again

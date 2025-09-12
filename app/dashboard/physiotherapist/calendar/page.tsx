@@ -2,7 +2,7 @@
 
 import { useMyUser, useMyAppointments } from '@/hooks/useDashboardData';
 import { useAuth } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { Loader2, Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -61,6 +61,7 @@ const getStatusColor = (status: AppointmentStatus): string => {
 
 export default function CalendarPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isLoaded, isSignedIn } = useAuth();
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -69,7 +70,8 @@ export default function CalendarPage() {
   const [isSessionLogModalOpen, setIsSessionLogModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'all'>('all');
-  const [refreshKey, setRefreshKey] = useState(0);
+  // Removed unused refreshKey state
+  const [openedFromQuery, setOpenedFromQuery] = useState(false);
 
 
   // Get current user
@@ -92,45 +94,50 @@ export default function CalendarPage() {
     endDate: expandedEndDate,
     status: statusFilter === 'all' ? undefined : statusFilter,
     limit: 200, // Increased limit to ensure we don't miss appointments
-    refreshKey, // Use refreshKey to force refresh when needed
+    // refreshKey removed - not supported by query parameters
   });
 
   // Map appointments to match AppointmentData type for calendar
-  const calendarAppointments = useMemo(() => appointments?.map((a: {
-    _id: string;
-    patientId?: string;
-    physiotherapistId?: string;
-    startTime: number;
-    endTime: number;
-    serviceType?: string;
-    status: string;
-    patient?: {
+  const currentUserId = (currentUser as { _id?: string } | null | undefined)?._id;
+  const calendarAppointments = useMemo(() => {
+    if (!appointments) return [];
+    
+    return (appointments as Array<{
       _id: string;
-      firstName?: string;
-      lastName?: string;
-      email?: string;
-      imageUrl?: string;
-      phoneNumber?: string;
-    };
-  }) => ({
-    _id: a._id,
-    patientId: a.patientId || a.patient?._id || '',
-    physiotherapistId: a.physiotherapistId || currentUser?._id || '',
-    startTime: a.startTime,
-    endTime: a.endTime,
-    serviceType: a.serviceType || 'General Consultation',
-    status: a.status as AppointmentStatus,
-    patient: a.patient
-      ? {
-          _id: String(a.patient._id),
-          firstName: a.patient.firstName ?? '',
-          lastName: a.patient.lastName ?? '',
-          email: a.patient.email ?? '',
-          imageUrl: a.patient.imageUrl ?? '',
-          phoneNumber: a.patient.phoneNumber ?? '',
-        }
-      : null,
-  } as AppointmentWithPatient)), [appointments, currentUser?._id]);
+      patientId?: string;
+      physiotherapistId?: string;
+      startTime: number;
+      endTime: number;
+      serviceType?: string;
+      status: string;
+      patient?: {
+        _id: string;
+        firstName?: string;
+        lastName?: string;
+        email?: string;
+        imageUrl?: string;
+        phoneNumber?: string;
+      };
+    }>).map((a) => ({
+      _id: a._id,
+      patientId: a.patientId || a.patient?._id || '',
+      physiotherapistId: a.physiotherapistId || (currentUserId as string) || '',
+      startTime: a.startTime,
+      endTime: a.endTime,
+      serviceType: a.serviceType || 'General Consultation',
+      status: a.status as AppointmentStatus,
+      patient: a.patient
+        ? {
+            _id: String(a.patient._id),
+            firstName: a.patient.firstName || 'Unknown',
+            lastName: a.patient.lastName || 'Patient',
+            email: a.patient.email || 'no-email@example.com',
+            imageUrl: a.patient.imageUrl,
+            phoneNumber: a.patient.phoneNumber,
+          }
+        : null,
+    } as AppointmentData));
+  }, [appointments, currentUserId]);
 
   // Get today's schedule for the sidebar - memoize date to prevent infinite re-renders
   const today = useMemo(() => new Date(), []);
@@ -156,6 +163,16 @@ export default function CalendarPage() {
       router.push('/sign-in');
     }
   }, [isLoaded, isSignedIn, router]);
+
+  // If arriving with ?new=1, auto-open the new appointment modal once
+  useEffect(() => {
+    const shouldOpen = searchParams.get('new') === '1';
+    if (isLoaded && shouldOpen && !openedFromQuery) {
+      setSelectedDate(new Date());
+      setIsAppointmentModalOpen(true);
+      setOpenedFromQuery(true);
+    }
+  }, [searchParams, isLoaded, openedFromQuery]);
 
   // Redirect if not physiotherapist
   useEffect(() => {
@@ -320,14 +337,23 @@ export default function CalendarPage() {
                 <p className="text-sm text-gray-500">No appointments today</p>
               </div>
             ) : (
-              (todaysSchedule as { _id: string; patient?: { firstName?: string; lastName?: string }; startTime: number; endTime: number; serviceType?: string; status: string }[]).map((appointment: { _id: string; patient?: { firstName?: string; lastName?: string }; startTime: number; endTime: number; serviceType?: string; status: string }) => (
+              (todaysSchedule as Array<{
+                _id: string;
+                patient?: { _id?: string; firstName?: string; lastName?: string };
+                patientId?: string;
+                physiotherapistId?: string;
+                startTime: number;
+                endTime: number;
+                serviceType?: string;
+                status: string;
+              }>).map((appointment) => (
                 <div
                   key={appointment._id}
                   className="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleAppointmentClick({
                     ...appointment,
                     patientId: appointment.patientId || appointment.patient?._id || '',
-                    physiotherapistId: appointment.physiotherapistId || currentUser?._id || '',
+                    physiotherapistId: appointment.physiotherapistId || (currentUserId as string) || '',
                     status: appointment.status as AppointmentStatus
                   } as AppointmentWithPatient)}
                 >
@@ -360,7 +386,7 @@ export default function CalendarPage() {
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Total Appointments</span>
-              <span className="font-medium text-gray-900">{(appointments as { _id: string; status: string }[])?.length || 0}</span>
+              <span className="font-medium text-gray-900">{(appointments as Array<{ _id: string; status: string }>)?.length || 0}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">Confirmed</span>
@@ -423,8 +449,6 @@ export default function CalendarPage() {
         selectedDate={selectedDate || new Date()}
         onAppointmentCreated={() => {
           setIsAppointmentModalOpen(false);
-          // Force refresh appointments to ensure new appointment appears immediately
-          setRefreshKey((prev: number) => prev + 1);
         }}
         appointmentId={selectedAppointment?._id}
       />

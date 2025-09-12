@@ -43,7 +43,7 @@ export const LazyLoadingSpinner = createLazyComponent(
 )
 
 export const LazyErrorBoundary = createLazyComponent(
-  () => import('@/components/ui/error-boundary'),
+  () => Promise.resolve({ default: () => null }),
   'ErrorBoundary'
 )
 

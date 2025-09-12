@@ -5,14 +5,20 @@ import { Resend } from 'resend';
 export type EmailTemplate = 
   | 'INVITATION_CREATED' 
   | 'ONBOARDING_COMPLETE'
+  | 'ADMIN_APPROVAL_REQUIRED'
   | 'INVITATION_REMINDER'
   | 'ACCOUNT_APPROVED'
   | 'ACCOUNT_DECLINED'
+  | 'APPOINTMENT_REQUESTED'
+  | 'APPOINTMENT_CONFIRMED_PROVIDER'
+  | 'APPOINTMENT_RESCHEDULED_PROVIDER'
+  | 'APPOINTMENT_CANCELED_PROVIDER'
   | 'APPOINTMENT_SCHEDULED'
   | 'APPOINTMENT_REMINDER'
   | 'APPOINTMENT_CANCELED'
   | 'CLINIC_STAFF_INVITE_CREATED'
-  | 'CLINIC_STAFF_INVITE_REMINDER';
+  | 'CLINIC_STAFF_INVITE_REMINDER'
+  | 'VIDEO_CALL_INVITATION';
 
 // Data interfaces for each email template
 export interface InvitationCreatedData {
@@ -26,6 +32,13 @@ export interface InvitationCreatedData {
 export interface OnboardingCompleteData {
   userName: string;
   dashboardLink: string;
+}
+
+export interface AdminApprovalRequiredData {
+  userName: string; // The applicant's display name
+  userRole?: string; // Physiotherapist or Clinic Owner
+  adminDashboardLink: string; // Link to admin approval screen
+  submittedAt?: string | number | Date;
 }
 
 export interface InvitationReminderData {
@@ -80,6 +93,44 @@ export interface AppointmentScheduledData {
   rescheduleLink: string;
 }
 
+export interface AppointmentRequestedData {
+  patientName: string;
+  physiotherapistName: string;
+  appointmentDate: string | number | Date;
+  appointmentTime: string;
+  clinicName?: string;
+  clinicAddress?: string;
+  viewLink: string;
+  approveLink?: string;
+}
+
+export interface AppointmentConfirmedProviderData {
+  patientName: string;
+  physiotherapistName: string;
+  appointmentDate: string | number | Date;
+  appointmentTime: string;
+  viewLink: string;
+}
+
+export interface AppointmentRescheduledProviderData {
+  patientName: string;
+  physiotherapistName: string;
+  oldDate: string | number | Date;
+  oldTime: string;
+  newDate: string | number | Date;
+  newTime: string;
+  viewLink: string;
+}
+
+export interface AppointmentCanceledProviderData {
+  patientName: string;
+  physiotherapistName: string;
+  appointmentDate: string | number | Date;
+  appointmentTime: string;
+  cancellationReason?: string;
+  viewLink: string;
+}
+
 export interface AppointmentReminderData {
   patientName: string;
   physiotherapistName: string;
@@ -99,18 +150,33 @@ export interface AppointmentCanceledData {
   rescheduleLink: string;
 }
 
+export interface VideoCallInvitationData {
+  patientName?: string;
+  physiotherapistName: string;
+  callTitle?: string;
+  callLink: string;
+  scheduledAt?: string | number | Date;
+  message?: string;
+}
+
 // Discriminated union for EmailOptions
 export type EmailOptions = 
   | { to: string; subject?: string; template: 'INVITATION_CREATED'; data: InvitationCreatedData }
   | { to: string; subject?: string; template: 'ONBOARDING_COMPLETE'; data: OnboardingCompleteData }
+  | { to: string; subject?: string; template: 'ADMIN_APPROVAL_REQUIRED'; data: AdminApprovalRequiredData }
   | { to: string; subject?: string; template: 'INVITATION_REMINDER'; data: InvitationReminderData }
   | { to: string; subject?: string; template: 'ACCOUNT_APPROVED'; data: AccountApprovedData }
   | { to: string; subject?: string; template: 'ACCOUNT_DECLINED'; data: AccountDeclinedData }
+  | { to: string; subject?: string; template: 'APPOINTMENT_REQUESTED'; data: AppointmentRequestedData }
+  | { to: string; subject?: string; template: 'APPOINTMENT_CONFIRMED_PROVIDER'; data: AppointmentConfirmedProviderData }
+  | { to: string; subject?: string; template: 'APPOINTMENT_RESCHEDULED_PROVIDER'; data: AppointmentRescheduledProviderData }
+  | { to: string; subject?: string; template: 'APPOINTMENT_CANCELED_PROVIDER'; data: AppointmentCanceledProviderData }
   | { to: string; subject?: string; template: 'APPOINTMENT_SCHEDULED'; data: AppointmentScheduledData }
   | { to: string; subject?: string; template: 'APPOINTMENT_REMINDER'; data: AppointmentReminderData }
   | { to: string; subject?: string; template: 'APPOINTMENT_CANCELED'; data: AppointmentCanceledData }
   | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_CREATED'; data: ClinicStaffInvitationCreatedData }
-  | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_REMINDER'; data: ClinicStaffInvitationReminderData };
+  | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_REMINDER'; data: ClinicStaffInvitationReminderData }
+  | { to: string; subject?: string; template: 'VIDEO_CALL_INVITATION'; data: VideoCallInvitationData };
 
 /**
  * Send an email using the specified template and data
@@ -131,8 +197,10 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
 
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
+    const fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+    const fromName = process.env.FROM_NAME || 'Rehabify Health';
     const { data: resendData, error } = await resend.emails.send({
-      from: 'Rehabify Health <noreply@rehabifyhealth.com>',
+      from: `${fromName} <${fromEmail}>`,
       to: [options.to],
       subject: options.subject || finalSubject,
       html: emailBody,
@@ -157,6 +225,89 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
  */
 export function getEmailContent(options: EmailOptions): { subject: string; body: string } {
   switch (options.template) {
+    case 'APPOINTMENT_REQUESTED':
+      return {
+        subject: options.subject || `New Appointment Request from ${options.data.patientName}`,
+        body: `
+          <h1>New Appointment Request</h1>
+          <p>Hello ${options.data.physiotherapistName},</p>
+          <p>${options.data.patientName} has requested an appointment.</p>
+          <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0; font-weight: bold;">Date: ${new Date(options.data.appointmentDate).toLocaleDateString()}</p>
+            <p style="margin: 8px 0 0 0; font-weight: bold;">Time: ${options.data.appointmentTime}</p>
+            ${options.data.clinicName ? `<p style="margin: 8px 0 0 0;">Clinic: ${options.data.clinicName}</p>` : ''}
+            ${options.data.clinicAddress ? `<p style=\"margin: 8px 0 0 0;\">Address: ${options.data.clinicAddress}</p>` : ''}
+          </div>
+          <div style="margin: 20px 0;">
+            ${options.data.approveLink ? `<a href="${options.data.approveLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin-right: 12px;">Approve</a>` : ''}
+            <a href="${options.data.viewLink}" style="display: inline-block; background-color: transparent; border: 1px solid #10b981; color: #10b981; padding: 12px 24px; border-radius: 6px; text-decoration: none;">View Schedule</a>
+          </div>
+        `
+      };
+    case 'APPOINTMENT_CONFIRMED_PROVIDER':
+      return {
+        subject: options.subject || `Appointment Confirmed by ${options.data.patientName}`,
+        body: `
+          <h1>Appointment Confirmed</h1>
+          <p>Hello ${options.data.physiotherapistName},</p>
+          <p>${options.data.patientName} has confirmed their appointment.</p>
+          <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0; font-weight: bold;">Date: ${new Date(options.data.appointmentDate).toLocaleDateString()}</p>
+            <p style="margin: 8px 0 0 0; font-weight: bold;">Time: ${options.data.appointmentTime}</p>
+          </div>
+          <a href="${options.data.viewLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">View Appointment</a>
+        `
+      };
+    case 'APPOINTMENT_RESCHEDULED_PROVIDER':
+      return {
+        subject: options.subject || `Appointment Rescheduled: ${options.data.patientName}`,
+        body: `
+          <h1>Appointment Rescheduled</h1>
+          <p>Hello ${options.data.physiotherapistName},</p>
+          <p>The appointment with ${options.data.patientName} has been rescheduled.</p>
+          <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0; font-weight: bold;">Old Date: ${new Date(options.data.oldDate).toLocaleDateString()}</p>
+            <p style="margin: 8px 0 0 0;">Old Time: ${options.data.oldTime}</p>
+            <p style="margin: 12px 0 0 0; font-weight: bold;">New Date: ${new Date(options.data.newDate).toLocaleDateString()}</p>
+            <p style="margin: 8px 0 0 0;">New Time: ${options.data.newTime}</p>
+          </div>
+          <a href="${options.data.viewLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">View Updated Schedule</a>
+        `
+      };
+    case 'APPOINTMENT_CANCELED_PROVIDER':
+      return {
+        subject: options.subject || `Appointment Canceled: ${options.data.patientName}`,
+        body: `
+          <h1>Appointment Canceled</h1>
+          <p>Hello ${options.data.physiotherapistName},</p>
+          <p>The appointment with ${options.data.patientName} has been canceled.</p>
+          <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0; font-weight: bold;">Date: ${new Date(options.data.appointmentDate).toLocaleDateString()}</p>
+            <p style="margin: 8px 0 0 0; font-weight: bold;">Time: ${options.data.appointmentTime}</p>
+          </div>
+          ${options.data.cancellationReason ? `<p><strong>Reason:</strong> ${options.data.cancellationReason}</p>` : ''}
+          <a href="${options.data.viewLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">View Schedule</a>
+        `
+      };
+    case 'VIDEO_CALL_INVITATION':
+      return {
+        subject: options.subject || `Video Call Invitation from ${options.data.physiotherapistName}`,
+        body: `
+          <h1>Video Call Invitation</h1>
+          <p>Hello ${options.data.patientName || 'there'},</p>
+          <p>${options.data.physiotherapistName} has invited you to a secure video call${options.data.callTitle ? `: <strong>${options.data.callTitle}</strong>` : ''}.</p>
+          ${options.data.scheduledAt ? `<p><strong>When:</strong> ${new Date(options.data.scheduledAt).toLocaleString()}</p>` : ''}
+          ${options.data.message ? `<p>${options.data.message}</p>` : ''}
+          <p>Click the button below to join at the scheduled time:</p>
+          <a href="${options.data.callLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin: 16px 0;">
+            Join Video Call
+          </a>
+          <p>If the button doesn't work, copy and paste this link into your browser:</p>
+          <div style="background-color: #f3f4f6; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 14px; word-break: break-all;">
+            ${options.data.callLink}
+          </div>
+        `
+      }
     case 'INVITATION_CREATED':
       return {
         subject: `You've been invited to join Rehabify Health`,
@@ -190,6 +341,22 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
             Go to Dashboard
           </a>
           <p>We're excited to have you as part of our community!</p>
+        `
+      };
+
+    case 'ADMIN_APPROVAL_REQUIRED':
+      return {
+        subject: options.subject || `Action Required: New Onboarding Awaiting Approval`,
+        body: `
+          <h1>Approval Required</h1>
+          <p>Hello Admin,</p>
+          <p><strong>${options.data.userName}</strong>${options.data.userRole ? ` (<em>${options.data.userRole}</em>)` : ''} has completed onboarding and is awaiting your review.</p>
+          ${options.data.submittedAt ? `<p>Submitted: ${new Date(options.data.submittedAt).toLocaleString()}</p>` : ''}
+          <p>Please review their details and approve or decline the application.</p>
+          <a href="${options.data.adminDashboardLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin: 16px 0;">
+            Review & Approve
+          </a>
+          <p>If you have any questions, please contact support.</p>
         `
       };
       

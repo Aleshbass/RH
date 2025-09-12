@@ -5,7 +5,7 @@ import { log } from './logger'
 const { logger } = Sentry
 
 // Exception capturing utility
-import type { SeverityLevel } from '@sentry/types';
+import type { SeverityLevel } from '@sentry/nextjs';
 type SentryTags = Record<string, string | number | boolean | null | undefined>;
 export const captureException = (error: Error | unknown, context?: { tags?: SentryTags; extra?: Record<string, unknown>; level?: SeverityLevel }) => {
   // Cast unknown to Error for proper typing

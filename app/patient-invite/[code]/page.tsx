@@ -198,9 +198,9 @@ export default function PatientInvitePage() {
                 <div>
                   <h3 className="text-lg font-medium">You&apos;ve been invited!</h3>
                   <p className="text-sm text-muted-foreground">
-                    Invited by {physiotherapist?.firstName} {physiotherapist?.lastName}
-                    {clinic?.name && (<>
-                      {' '}from {clinic.name}
+                    Invited by {(physiotherapist as { firstName?: string; lastName?: string })?.firstName} {(physiotherapist as { firstName?: string; lastName?: string })?.lastName}
+                    {(clinic as { name?: string })?.name && (<>
+                      {' '}from {(clinic as { name?: string }).name}
                     </>)}
                   </p>
                 </div>

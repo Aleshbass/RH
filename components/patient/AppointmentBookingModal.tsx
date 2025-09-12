@@ -1,5 +1,6 @@
-'use client'
+"use client"
 
+import { useQueryUntyped } from '@/lib/convexUntyped'
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
@@ -53,8 +54,8 @@ export function AppointmentBookingModal({
   const [notes, setNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Get patient's physiotherapists
-  const physiotherapists = useQuery(api.appointments.getMyPhysiotherapists)
+  // Get patient's physiotherapists (use untyped hook to avoid deep instantiation)
+  const physiotherapists = useQueryUntyped(api.appointments.getMyPhysiotherapists)
   
   // Get available time slots for selected physiotherapist and date
   const availableSlots = useQuery(
@@ -154,7 +155,8 @@ export function AppointmentBookingModal({
                 <SelectValue placeholder="Choose your physiotherapist" />
               </SelectTrigger>
               <SelectContent>
-                {physiotherapists?.map((physio: Physiotherapist) => physio && (
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {physiotherapists?.map((physio: any) => physio && (
                   <SelectItem key={physio._id} value={physio._id}>
                     <div className="flex items-center gap-2">
                       <User className="h-4 w-4" />
@@ -262,8 +264,10 @@ export function AppointmentBookingModal({
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-blue-600" />
                   <span>
-                    {physiotherapists?.find((p: Physiotherapist) => p?._id === selectedPhysiotherapist)?.firstName}{' '}
-                    {physiotherapists?.find((p: Physiotherapist) => p?._id === selectedPhysiotherapist)?.lastName}
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                    {physiotherapists?.find((p: any) => p?._id === selectedPhysiotherapist)?.firstName}{' '}
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                    {physiotherapists?.find((p: any) => p?._id === selectedPhysiotherapist)?.lastName}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">

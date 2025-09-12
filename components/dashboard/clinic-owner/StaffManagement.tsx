@@ -64,7 +64,7 @@ export function StaffManagement() {
 
   // Actions
   const createClinicStaffInvitation = useAction(
-    api.actions.clinics.inviteClinicStaff.createClinicStaffInvitationWithNotification
+            api.actions.clinics.createClinicStaffInvitationWithNotification
   );
 
   const handleInviteSubmit = async (e: React.FormEvent) => {

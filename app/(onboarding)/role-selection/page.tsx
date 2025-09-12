@@ -1,7 +1,7 @@
 // /Users/ella/rehabifyhealth/app/(onboarding)/role-selection/page.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOnboardingStore, UserRole } from '@/stores/onboardingStore';
 // Add this type that excludes 'admin' from UserRole
@@ -9,6 +9,7 @@ type OnboardingRole = Exclude<UserRole, 'admin'>;
 import { Button } from '@/components/ui/button';
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import { useQuery } from 'convex/react';
 
 // A simple way to generate a unique ID for the onboarding session
 const generateOnboardingId = () => `onboarding_${new Date().getTime()}_${Math.random().toString(36).substring(2, 10)}`;
@@ -18,6 +19,21 @@ export default function RoleSelectionPage() {
   const { setRoleAndStep, setCurrentOnboardingId } = useOnboardingStore();
   const updateUserRole = useMutation(api.users.updateUserRole);
   const [isLoading, setIsLoading] = useState(false);
+  const currentUser = useQuery(api.users.getMyUser);
+
+  // If user already completed onboarding, check their approval status
+  useEffect(() => {
+    if (currentUser && currentUser.onboarded) {
+      // For roles that require approval, check status before redirecting
+      if (currentUser.role === 'physiotherapist' || currentUser.role === 'clinic_owner') {
+        // Let DashboardAuthGuard handle the approval status check
+        router.replace('/dashboard');
+      } else {
+        // Admin and patient roles can go directly to dashboard
+        router.replace('/dashboard');
+      }
+    }
+  }, [currentUser, router]);
 
   const handleRoleSelect = async (role: OnboardingRole) => {
     try {

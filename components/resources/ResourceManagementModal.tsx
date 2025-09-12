@@ -42,6 +42,9 @@ export function ResourceManagementModal({
   mode,
 }: ResourceManagementModalProps) {
   const { createResource, updateResource, fetchResourceById } = useResourceManagement();
+  // Derive unions from shared types to avoid duplication
+  type ResourceType = CreateResourceParams["type"];
+  type MaintenanceFrequency = NonNullable<CreateResourceParams["maintenanceSchedule"]>["frequency"];
   
   // Form state
   const [formData, setFormData] = useState({
@@ -100,7 +103,8 @@ export function ResourceManagementModal({
                 purchaseDate: existingResource.specifications?.purchaseDate || "",
                 warrantyExpiry: existingResource.specifications?.warrantyExpiry || "",
               },
-              operatingHours: existingResource.operatingHours || {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              operatingHours: (existingResource.operatingHours as any) || {
                 monday: { start: "", end: "" },
                 tuesday: { start: "", end: "" },
                 wednesday: { start: "", end: "" },

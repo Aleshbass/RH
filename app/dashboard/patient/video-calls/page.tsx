@@ -12,7 +12,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Id } from '@/convex/_generated/dataModel';
-import VideoCallManager from '@/components/video/VideoCallManager';
+import StreamVideoCallManager from '@/components/video/StreamVideoCallManager';
 
 // Type definition for video calls
 type VideoCall = {
@@ -78,8 +78,8 @@ export default function PatientVideoCallsPage() {
   const activeCalls = filteredCalls.filter((call: { status: string }) => call.status === 'active');
   const pastCalls = filteredCalls.filter((call: { status: string }) => ['ended', 'cancelled', 'missed'].includes(call.status));
 
-  const handleJoinCall = (call: VideoCall) => {
-    setSelectedCall(call);
+  const handleJoinCall = (call: unknown) => {
+    setSelectedCall(call as VideoCall);
     setShowVideoManager(true);
   };
 
@@ -105,7 +105,7 @@ export default function PatientVideoCallsPage() {
 
   if (showVideoManager && selectedCall) {
     return (
-      <VideoCallManager
+      <StreamVideoCallManager
         appointmentId={selectedCall.appointmentId}
         defaultParticipants={selectedCall.participants}
         onCallEnd={() => {

@@ -7,6 +7,7 @@ type DashboardStats = {
   appointmentsToday?: number;
   thisMonthAppointments?: number;
   completionRate?: number;
+  pendingInvitations?: number;
 };
 
 type Revenue = {
@@ -29,6 +30,48 @@ type ActivityItem = {
   title: string;
   description: string;
   timestamp: string;
+};
+
+// Clinic data types
+type ClinicData = {
+  _id: string;
+  name: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  logoUrl?: string;
+  physiotherapistCount?: number;
+};
+
+type UserData = {
+  _id: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+};
+
+type StaffMember = {
+  _id: string;
+  userId: string;
+  _creationTime: number;
+  user?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+  };
+};
+
+type InvitationData = {
+  _id: string;
+  inviteeEmail: string;
+  role: string;
+  code: string;
+  status: string;
+  createdAt: number;
+  expiresAt: number;
+  clinicOwnerId: string;
 };
 
 import { 
@@ -67,6 +110,8 @@ import {
 import { format } from 'date-fns'
 import React from 'react'
 import { StaffManagement } from './StaffManagement'
+import type { Clinic as ClinicStore, StaffMember as ClinicStaff, ClinicInvitation as ClinicInvitationStore } from '@/stores/clinicStore'
+import { Id } from '@/convex/_generated/dataModel'
 
 export function ClinicOwnerDashboard() {
   // Use dashboard store for UI state
@@ -95,58 +140,53 @@ export function ClinicOwnerDashboard() {
   React.useEffect(() => {
     if (clinic && user) {
       // Transform clinic data to match store type
-      const transformedClinic = {
-        _id: clinic._id,
-        name: clinic.name,
-        address: clinic.address,
-        city: clinic.city,
-        country: clinic.country,
-        contactEmail: clinic.contactEmail,
-        contactPhone: clinic.contactPhone,
-        logoUrl: clinic.logoUrl,
-        physiotherapistCount: clinic.physiotherapistCount,
-        ownerId: user._id, // Add missing ownerId from current user
-        phoneNumber: clinic.contactPhone,
-        email: clinic.contactEmail,
+      const clinicData = clinic as ClinicData;
+      const userData = user as UserData;
+      const transformedClinic: ClinicStore = {
+        _id: clinicData._id as unknown as Id<'clinics'>,
+        name: clinicData.name,
+        address: clinicData.address,
+        phoneNumber: clinicData.contactPhone,
+        email: clinicData.contactEmail,
+        ownerId: userData._id as unknown as Id<'users'>,
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setCurrentClinic(transformedClinic as any)
+      setCurrentClinic(transformedClinic)
     }
   }, [clinic, user, setCurrentClinic])
   
   React.useEffect(() => {
     if (staff) {
       // Transform staff data to match store type
-      const transformedStaff = staff.map((member) => ({
-        _id: member.userId,
+      const staffData = staff as StaffMember[];
+      const transformedStaff: ClinicStaff[] = staffData.map((member) => ({
+        _id: member.userId as unknown as Id<'users'>,
         firstName: member.user?.firstName,
         lastName: member.user?.lastName,
         email: member.user?.email,
         role: 'physiotherapist',
         profileId: member._id,
         joinedAt: member._creationTime,
-        status: 'active' as const,
+        status: 'active',
       }))
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setStaff(transformedStaff as any)
+      setStaff(transformedStaff)
     }
   }, [staff, setStaff])
   
   React.useEffect(() => {
     if (invitations) {
       // Transform invitations data to match store type
-      const transformedInvitations = invitations.map((invitation) => ({
-        _id: invitation._id,
+      const invitationData = invitations as InvitationData[];
+      const transformedInvitations: ClinicInvitationStore[] = invitationData.map((invitation) => ({
+        _id: invitation._id as unknown as Id<'clinicStaffInvitations'>,
         email: invitation.inviteeEmail,
         role: invitation.role,
         invitationCode: invitation.code,
-        status: invitation.status,
+        status: invitation.status as ClinicInvitationStore['status'],
         invitedAt: invitation.createdAt,
         expiresAt: invitation.expiresAt,
-        invitedBy: invitation.clinicOwnerId,
+        invitedBy: invitation.clinicOwnerId as unknown as Id<'users'>,
       }))
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setInvitations(transformedInvitations as any)
+      setInvitations(transformedInvitations)
     }
   }, [invitations, setInvitations])
 
@@ -508,15 +548,15 @@ const pendingInvitations = (invitations as ClinicInvitation[])?.filter((inv: Cli
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <span>Total Patients</span>
-                    <span className="font-bold">{dashboardStats?.totalPatients || 0}</span>
+                    <span className="font-bold">{(dashboardStats as DashboardStats | undefined)?.totalPatients || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Retention Rate</span>
-                    <span className="font-bold">{(performanceMetrics as PerformanceMetrics)?.patientRetentionRate || 0}%</span>
+                    <span className="font-bold">{(performanceMetrics as PerformanceMetrics | undefined)?.patientRetentionRate || 0}%</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Avg Sessions per Patient</span>
-                    <span className="font-bold">{(performanceMetrics as PerformanceMetrics)?.averageSessionsPerPatient || 0}</span>
+                    <span className="font-bold">{(performanceMetrics as PerformanceMetrics | undefined)?.averageSessionsPerPatient || 0}</span>
                   </div>
                 </div>
               </CardContent>
@@ -530,15 +570,15 @@ const pendingInvitations = (invitations as ClinicInvitation[])?.filter((inv: Cli
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <span>Active Staff</span>
-                    <span className="font-bold">{dashboardStats?.activeStaff || 0}</span>
+                    <span className="font-bold">{(dashboardStats as DashboardStats | undefined)?.activeStaff || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Utilization Rate</span>
-                    <span className="font-bold">{(performanceMetrics as PerformanceMetrics)?.staffUtilization || 0}%</span>
+                    <span className="font-bold">{(performanceMetrics as PerformanceMetrics | undefined)?.staffUtilization || 0}%</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Pending Invitations</span>
-                    <span className="font-bold">{dashboardStats?.pendingInvitations || 0}</span>
+                    <span className="font-bold">{(dashboardStats as DashboardStats | undefined)?.pendingInvitations || 0}</span>
                   </div>
                 </div>
               </CardContent>
@@ -559,21 +599,21 @@ const pendingInvitations = (invitations as ClinicInvitation[])?.filter((inv: Cli
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <label className="text-sm font-medium">Clinic Name</label>
-                    <p className="text-sm text-muted-foreground">{clinic.name}</p>
+                    <p className="text-sm text-muted-foreground">{(clinic as ClinicData).name}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium">Location</label>
                     <p className="text-sm text-muted-foreground">
-                      {clinic.city ? `${clinic.city}, ${clinic.country}` : 'Not set'}
+                      {(clinic as ClinicData).city ? `${(clinic as ClinicData).city}, ${(clinic as ClinicData).country}` : 'Not set'}
                     </p>
                   </div>
                   <div>
                     <label className="text-sm font-medium">Contact Email</label>
-                    <p className="text-sm text-muted-foreground">{clinic.contactEmail || 'Not set'}</p>
+                    <p className="text-sm text-muted-foreground">{(clinic as ClinicData).contactEmail || 'Not set'}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium">Contact Phone</label>
-                    <p className="text-sm text-muted-foreground">{clinic.contactPhone || 'Not set'}</p>
+                    <p className="text-sm text-muted-foreground">{(clinic as ClinicData).contactPhone || 'Not set'}</p>
                   </div>
                 </div>
                 <div className="pt-4">

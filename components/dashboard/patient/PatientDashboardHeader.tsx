@@ -6,7 +6,8 @@ import { useUser } from '@clerk/nextjs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 
-import { Bell, Settings, User } from 'lucide-react'
+import { Settings, User } from 'lucide-react'
+import { TreatmentPlanSyncIndicator, SyncStatusIndicator } from './TreatmentPlanSyncIndicator'
 
 export function PatientDashboardHeader() {
   const { user } = useUser()
@@ -15,8 +16,8 @@ export function PatientDashboardHeader() {
   if (!patientData) return null
 
   return (
-    <div className="flex items-center justify-between mb-8">
-      <div className="flex items-center space-x-4">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-8">
+      <div className="flex items-center gap-4">
         <Avatar className="h-12 w-12">
           <AvatarImage src={user?.imageUrl} />
           <AvatarFallback>
@@ -30,12 +31,11 @@ export function PatientDashboardHeader() {
           <p className="text-gray-600">
             Here&apos;s your health overview
           </p>
+          <SyncStatusIndicator className="mt-1" />
         </div>
       </div>
-      <div className="flex items-center space-x-2">
-        <Button variant="ghost" size="icon">
-          <Bell className="h-5 w-5" />
-        </Button>
+      <div className="flex items-center gap-2 sm:self-auto">
+        <TreatmentPlanSyncIndicator />
         <Button variant="ghost" size="icon">
           <Settings className="h-5 w-5" />
         </Button>

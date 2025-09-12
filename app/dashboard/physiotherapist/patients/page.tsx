@@ -14,7 +14,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PatientInviteModal } from '@/components/dashboard/clinic-owner/PatientInviteModal';
 import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal';
 import { format } from 'date-fns';
-import { toast } from 'sonner';
+
+// Lightweight user type to avoid deep Convex type instantiation
+type CurrentUserLite = {
+  _id: string;
+  role?: 'physiotherapist' | 'patient' | 'clinic_owner' | 'admin' | string;
+} | null;
 
 interface PatientWithDetails {
   _id: string;
@@ -60,8 +65,8 @@ export default function PatientsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
-  // Get current user
-  const currentUser = useQuery(api.users.getMyUser);
+  // Get current user (narrowed via unknown-cast to avoid deep TS instantiation)
+  const currentUser = useQuery(api.users.getMyUser) as unknown as CurrentUserLite | undefined;
   
   // Memoize query params to keep reference stable and lighten TS inference
   const patientParams = useMemo(() => ({
@@ -291,26 +296,18 @@ export default function PatientsPage() {
             });
 
             if (result.success) {
-              // Smoothly close the modal on success
-              setIsInviteModalOpen(false);
-              const emailSent = (result as { emailSent?: boolean }).emailSent === true;
-              if (emailSent) {
-                toast.success(`Invitation email sent to ${formData.patientEmail}`);
-              } else {
-                toast.success('Invitation created');
-                toast.warning('Email delivery failed. Please verify Resend configuration and domain settings.');
-              }
+              // Modal will close automatically via the onSubmit callback
               return true;
+            } else {
+              throw new Error(result.message || 'Failed to send invitation');
             }
-            throw new Error(result.message || 'Failed to send invitation');
-          } catch (error: unknown) {
-            const msg = error instanceof Error ? error.message : 'Failed to send invitation';
+          } catch (error) {
             console.error('Error inviting patient:', error);
-            toast.error(msg);
+            // Error will be handled by the modal component
             return false;
           }
         }}
       />
     </div>
   );
-}
+} 

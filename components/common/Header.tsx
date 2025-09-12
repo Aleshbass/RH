@@ -45,35 +45,37 @@ interface NavItemProps {
   isActive: boolean;
   onClick: () => void;
   onMouseEnter: () => void;
-  onMouseLeave: () => void;
+  onMouseLeave: (fromItem?: string) => void;
 }
 
 // Desktop Navigation Item Component
 const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave }: NavItemProps) => {
-  const [isHovering, setIsHovering] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  
-  useEffect(() => {
-    // Only apply for dropdown type items
-    if (item.type !== "dropdown") return;
-    
-    const handleMouseOver = () => setIsHovering(true);
-    const handleMouseOut = () => setIsHovering(false);
-    
-    const dropdownElement = dropdownRef.current;
-    if (dropdownElement) {
-      dropdownElement.addEventListener('mouseover', handleMouseOver);
-      dropdownElement.addEventListener('mouseout', handleMouseOut);
+  // Track hover state using refs to avoid stale closures and unnecessary re-renders
+  const hoveringRef = useRef(false);
+  const closeTimeoutRef = useRef<number | null>(null);
+
+  const clearCloseTimeout = () => {
+    if (closeTimeoutRef.current !== null) {
+      window.clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
     }
-    
-    return () => {
-      if (dropdownElement) {
-        dropdownElement.removeEventListener('mouseover', handleMouseOver);
-        dropdownElement.removeEventListener('mouseout', handleMouseOut);
+  };
+
+  const scheduleClose = () => {
+    clearCloseTimeout();
+    // Small delay to allow moving pointer from trigger to dropdown without closing
+    closeTimeoutRef.current = window.setTimeout(() => {
+      if (!hoveringRef.current) {
+        onMouseLeave(item.name);
       }
-    };
-  }, [item.type, isActive]);
-  
+    }, 120);
+  };
+
+  useEffect(() => {
+    return () => clearCloseTimeout();
+  }, []);
+
   // For normal links
   if (item.type === "link") {
     return (
@@ -82,30 +84,25 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
         className="px-4 py-2 text-sm font-medium text-[#002e2c] hover:text-blue-600 transition-colors font-pally"
         onClick={onClick}
         onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
+        onMouseLeave={() => onMouseLeave(item.name)}
       >
         {item.name}
       </Link>
     );
   }
-  
+
   // For dropdown menus
   const handleItemMouseEnter = () => {
+    clearCloseTimeout();
+    hoveringRef.current = true;
     onMouseEnter();
-    setIsHovering(true);
   };
-  
+
   const handleItemMouseLeave = () => {
-    // Only close if not hovering over the dropdown itself
-    if (!isHovering) {
-      setTimeout(() => {
-        if (!isHovering) {
-          onMouseLeave();
-        }
-      }, 100);
-    }
+    hoveringRef.current = false;
+    scheduleClose();
   };
-  
+
   return (
     <div 
       className="relative"
@@ -117,6 +114,7 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
         onClick={onClick}
       >
         {item.name}
+
         <svg 
           xmlns="http://www.w3.org/2000/svg" 
           width="16" 
@@ -132,7 +130,7 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
           <polyline points="6 9 12 15 18 9"></polyline>
         </svg>
       </button>
-      
+
       {isActive && (
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
@@ -141,21 +139,20 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
           transition={{ type: "spring", stiffness: 400, damping: 25 }}
           className="absolute left-1/2 z-50 mt-2 w-[380px] -translate-x-1/2 rounded-xl bg-[#FAF6E7] p-4 shadow-[0_8px_30px_rgba(0,0,0,0.1)] border border-[#002e2c]/10 focus:outline-none"
           ref={dropdownRef}
-          onMouseEnter={() => setIsHovering(true)}
+          onMouseEnter={() => {
+            clearCloseTimeout();
+            hoveringRef.current = true;
+          }}
           onMouseLeave={() => {
-            setIsHovering(false);
-            setTimeout(() => {
-              if (!isHovering) {
-                onMouseLeave();
-              }
-            }, 100);
+            hoveringRef.current = false;
+            scheduleClose();
           }}
         >
           <div className="flex min-h-[180px]">
             <div className="w-1/2 py-1 pr-4">
               {item.items?.map((subItem, idx) => {
                 const isExternalLink = subItem.href.startsWith('http');
-                
+
                 return isExternalLink ? (
                   <a
                     key={idx}
@@ -313,8 +310,14 @@ export default function Header() {
     setActiveItem(itemName);
   };
 
-  const handleCloseDropdowns = () => {
-    setActiveItem(null);
+  const handleCloseDropdowns = (fromItem?: string) => {
+    // If called without a specific item (e.g., on click), close unconditionally
+    if (!fromItem) {
+      setActiveItem(null);
+      return;
+    }
+    // Otherwise, only close if we're still closing the same item that is active
+    setActiveItem((prev) => (prev === fromItem ? null : prev));
   };
 
   // Use motion's useScroll hook for better animation integration
@@ -385,7 +388,11 @@ export default function Header() {
               item={item}
               isActive={activeItem === item.name}
               onClick={handleCloseDropdowns}
-              onMouseEnter={() => handleItemHover(item.name)}
+              onMouseEnter={() =>
+                item.type === 'dropdown'
+                  ? handleItemHover(item.name)
+                  : handleCloseDropdowns()
+              }
               onMouseLeave={handleCloseDropdowns}
             />
           ))}

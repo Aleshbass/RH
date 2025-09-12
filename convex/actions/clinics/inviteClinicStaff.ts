@@ -24,11 +24,20 @@ export const createClinicStaffInvitationWithNotification = action({
   handler: async (ctx, args) => {
     try {
       // Create the invitation using the base mutation
-      const result = await ctx.runMutation(api.clinics.invitePhysiotherapist, {
-        inviteeEmail: args.inviteeEmail,
-        inviteeName: args.inviteeName,
-        message: args.message,
-      }) as { success: boolean; invitationId?: string; code?: string; message?: string };
+      let result;
+      try {
+        result = await ctx.runMutation(api.clinics.invitePhysiotherapist, {
+          inviteeEmail: args.inviteeEmail,
+          inviteeName: args.inviteeName,
+          message: args.message,
+        }) as { success: boolean; invitationId?: string; code?: string; message?: string };
+      } catch (mutationError) {
+        // Handle specific mutation errors (like duplicate invitation)
+        return {
+          success: false,
+          message: mutationError instanceof Error ? mutationError.message : 'Failed to create invitation',
+        };
+      }
 
       if (!result?.success || !result.code) {
         return {
@@ -72,7 +81,7 @@ export const createClinicStaffInvitationWithNotification = action({
         const invitationLink = `${baseUrl}/staff-invite/${result.code}`;
 
         try {
-          await ctx.runAction(api.actions.emails.sendClinicStaffInvitationEmail.sendClinicStaffInvitationEmail, {
+          await ctx.runAction(api.actions.emails.sendClinicStaffInvitationEmail, {
             inviteeEmail: args.inviteeEmail,
             inviteeName: args.inviteeName,
             clinicOwnerName,
@@ -183,7 +192,7 @@ export const resendClinicStaffInvitation = action({
 
       // Send reminder email
       await ctx.runAction(
-        api.actions.emails.sendClinicStaffInvitationEmail.sendClinicStaffInvitationReminderEmail,
+        api.actions.emails.sendClinicStaffInvitationReminderEmail,
         {
           inviteeEmail: args.inviteeEmail,
           inviteeName: args.inviteeName ?? invitation.inviteeName,

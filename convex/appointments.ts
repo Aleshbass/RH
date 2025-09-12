@@ -1,11 +1,12 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { api, internal } from "./_generated/api";
 
 /**
- * Get authenticated physiotherapist user and validate permissions
+ * Get authenticated user with role-based validation
  */
-async function getAuthenticatedPhysiotherapist(ctx: any) {
+async function getAuthenticatedUser(ctx: any, allowedRoles: string[] = ["physiotherapist", "clinic_owner"]) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
     throw new Error("Not authenticated");
@@ -20,18 +21,20 @@ async function getAuthenticatedPhysiotherapist(ctx: any) {
     throw new Error("User not found");
   }
 
-  if (user.role !== "physiotherapist") {
-    throw new Error("Access denied. Physiotherapist privileges required.");
+  if (!allowedRoles.includes(user.role)) {
+    throw new Error(`Access denied. ${allowedRoles.join(" or ")} privileges required.`);
   }
 
-  // Check if physiotherapist is approved
-  const approvalStatus = await ctx.db
-    .query("accountApprovalStatus")
-    .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
-    .unique();
+  // Check approval status for physiotherapists only
+  if (user.role === "physiotherapist") {
+    const approvalStatus = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
+      .unique();
 
-  if (!approvalStatus || approvalStatus.status !== "approved") {
-    throw new Error("Account not approved. Please wait for admin approval.");
+    if (!approvalStatus || approvalStatus.status !== "approved") {
+      throw new Error("Account not approved. Please wait for admin approval.");
+    }
   }
 
   return user;
@@ -50,13 +53,13 @@ export const createAppointment = mutation({
     notesForTherapist: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const physiotherapist = await getAuthenticatedPhysiotherapist(ctx);
+    const user = await getAuthenticatedUser(ctx);
 
-    // Verify physiotherapist has access to this patient
+    // Verify user has access to this patient
     const relationship = await ctx.db
       .query("patientPhysiotherapistRelationships")
       .withIndex("by_patient_and_physiotherapist", (q) => 
-        q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
+        q.eq("patientId", args.patientId).eq("physiotherapistId", user._id)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
       .unique();
@@ -66,7 +69,7 @@ export const createAppointment = mutation({
     }
 
     // Get physiotherapist profile to get clinic info
-    const physiotherapistProfile = await ctx.db.get(physiotherapist.physiotherapistProfileId!);
+    const physiotherapistProfile = await ctx.db.get(user.physiotherapistProfileId!);
     if (!physiotherapistProfile) {
       throw new Error("Physiotherapist profile not found");
     }
@@ -75,7 +78,7 @@ export const createAppointment = mutation({
     const conflictingAppointments = await ctx.db
       .query("appointments")
       .withIndex("by_physiotherapist_id_and_time", (q) => 
-        q.eq("physiotherapistId", physiotherapist._id)
+        q.eq("physiotherapistId", user._id)
       )
       .filter((q) => 
         q.or(
@@ -97,7 +100,7 @@ export const createAppointment = mutation({
     // Create the appointment
     const appointmentId = await ctx.db.insert("appointments", {
       patientId: args.patientId,
-      physiotherapistId: physiotherapist._id,
+      physiotherapistId: user._id,
       clinicId: (physiotherapistProfile as any)?.clinicId || undefined,
       startTime: args.startTime,
       endTime: args.endTime,
@@ -110,6 +113,19 @@ export const createAppointment = mutation({
     // Create notifications for both patient and therapist
     const patient = await ctx.db.get(args.patientId);
     const patientName = patient ? `${patient.firstName} ${patient.lastName}` : "Patient";
+    const physiotherapistName = `${(user as any)?.firstName || ''} ${(user as any)?.lastName || ''}`.trim() || 'Physiotherapist';
+    // Compute clinic information for emails (best-effort)
+    let clinicName = 'Rehabify Health';
+    let clinicAddress = '';
+    if ((physiotherapistProfile as any)?.clinicId) {
+      const clinic = await ctx.db.get((physiotherapistProfile as any).clinicId);
+      if (clinic) {
+        clinicName = (clinic as any).name || clinicName;
+        clinicAddress = (clinic as any).address || '';
+      }
+    }
+    // Precompute a friendly time range string for emails
+    const appointmentTimeStr = `${new Date(args.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(args.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     
     // Notification for patient
     await ctx.db.insert("notifications", {
@@ -129,9 +145,36 @@ export const createAppointment = mutation({
       createdAt: Date.now(),
     });
 
+    // Email: confirmation to patient
+    const patientEmail = patient?.email as string | undefined;
+    if (patientEmail) {
+      await ctx.scheduler.runAfter(0, api.actions.emails.sendAppointmentScheduledEmail as any, {
+        to: patientEmail,
+        patientName,
+        physiotherapistName,
+        appointmentDate: args.startTime,
+        appointmentTime: appointmentTimeStr,
+        clinicName,
+        clinicAddress,
+        calendarLink: "/dashboard/patient/appointments",
+        rescheduleLink: "/dashboard/patient/appointments",
+      });
+    }
+
     // Notification for physiotherapist
+    const calendarEvent = {
+      title: `Appointment with ${patientName}`,
+      start: new Date(args.startTime),
+      end: new Date(args.endTime),
+    };
+    // Use internal calendar function instead of runAction
+    await ctx.scheduler.runAfter(0, api.calendar.nodeActions.createCalendarEvent, {
+      userId: user._id,
+      event: calendarEvent,
+    });
+
     await ctx.db.insert("notifications", {
-      userId: physiotherapist._id,
+      userId: user._id,
       type: "appointment_scheduled",
       priority: "medium",
       status: "pending",
@@ -173,56 +216,143 @@ export const getMyAppointments = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const physiotherapist = await getAuthenticatedPhysiotherapist(ctx);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     const limit = args.limit ?? 100;
+    let appointmentsQuery;
 
-    let appointmentsQuery = ctx.db
-      .query("appointments")
-      .withIndex("by_physiotherapist_id_and_time", (q) => 
-        q.eq("physiotherapistId", physiotherapist._id)
+    if (user.role === "physiotherapist") {
+      // For physiotherapists, get their own appointments
+      appointmentsQuery = ctx.db
+        .query("appointments")
+        .withIndex("by_physiotherapist_id_and_time", (q) => 
+          q.eq("physiotherapistId", user._id)
+        );
+    } else if (user.role === "clinic_owner") {
+      // For clinic owners, get all appointments for their clinic's physiotherapists
+      const clinicPhysiotherapists = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_clinic_id", (q) => q.eq("clinicId", user.clinicId!))
+        .collect();
+      
+      const physiotherapistIds = clinicPhysiotherapists
+        .map(profile => profile.userId);
+
+      // Get appointments for all clinic physiotherapists
+      const allAppointments = await Promise.all(
+        physiotherapistIds.map(physioId =>
+          ctx.db
+            .query("appointments")
+            .withIndex("by_physiotherapist_id_and_time", (q) => 
+              q.eq("physiotherapistId", physioId)
+            )
+            .collect()
+        )
       );
 
-    // Apply date filters if provided
-    if (args.startDate) {
-      appointmentsQuery = appointmentsQuery.filter((q) => 
-        q.gte(q.field("startTime"), args.startDate!)
+      // Flatten and sort appointments
+      const flatAppointments = allAppointments.flat()
+        .sort((a, b) => b.startTime - a.startTime)
+        .slice(0, limit);
+
+      // Apply filters and return early for clinic owners
+      let filteredAppointments = flatAppointments;
+
+      if (args.startDate) {
+        filteredAppointments = filteredAppointments.filter(apt => apt.startTime >= args.startDate!);
+      }
+
+      if (args.endDate) {
+        filteredAppointments = filteredAppointments.filter(apt => apt.startTime <= args.endDate!);
+      }
+
+      if (args.status) {
+        filteredAppointments = filteredAppointments.filter(apt => apt.status === args.status);
+      }
+
+      // Get patient details for each appointment
+      const appointmentsWithPatients = await Promise.all(
+        filteredAppointments.map(async (appointment) => {
+          const patient = await ctx.db.get(appointment.patientId);
+          return {
+            ...appointment,
+            patient: patient ? {
+              _id: patient._id,
+              firstName: patient.firstName,
+              lastName: patient.lastName,
+              email: patient.email,
+              imageUrl: patient.imageUrl,
+              phoneNumber: patient.phoneNumber,
+            } : null,
+          };
+        })
       );
+
+      return appointmentsWithPatients;
+    } else if (user.role && (user.role as string === "physiotherapist" || user.role as string === "clinic_owner")) {
+      // For physiotherapists, get their own appointments
+      appointmentsQuery = ctx.db
+        .query("appointments")
+        .withIndex("by_physiotherapist_id_and_time", (q) => 
+          q.eq("physiotherapistId", user._id)
+        );
+
+      // Apply date filters if provided
+      if (args.startDate) {
+        appointmentsQuery = appointmentsQuery.filter((q) => 
+          q.gte(q.field("startTime"), args.startDate!)
+        );
+      }
+
+      if (args.endDate) {
+        appointmentsQuery = appointmentsQuery.filter((q) => 
+          q.lte(q.field("startTime"), args.endDate!)
+        );
+      }
+
+      // Apply status filter if provided
+      if (args.status) {
+        appointmentsQuery = appointmentsQuery.filter((q) => 
+          q.eq(q.field("status"), args.status!)
+        );
+      }
+
+      const appointments = await appointmentsQuery.order("asc").take(limit);
+
+      // Get patient details for each appointment
+      const appointmentsWithPatients = await Promise.all(
+        appointments.map(async (appointment) => {
+          const patient = await ctx.db.get(appointment.patientId);
+          return {
+            ...appointment,
+            patient: patient ? {
+              _id: patient._id,
+              firstName: patient.firstName,
+              lastName: patient.lastName,
+              email: patient.email,
+              imageUrl: patient.imageUrl,
+              phoneNumber: patient.phoneNumber,
+            } : null,
+          };
+        })
+      );
+
+      return appointmentsWithPatients;
+    } else {
+      throw new Error("Access denied. Physiotherapist or clinic owner privileges required.");
     }
-
-    if (args.endDate) {
-      appointmentsQuery = appointmentsQuery.filter((q) => 
-        q.lte(q.field("startTime"), args.endDate!)
-      );
-    }
-
-    // Apply status filter if provided
-    if (args.status) {
-      appointmentsQuery = appointmentsQuery.filter((q) => 
-        q.eq(q.field("status"), args.status!)
-      );
-    }
-
-    const appointments = await appointmentsQuery.order("asc").take(limit);
-
-    // Get patient details for each appointment
-    const appointmentsWithPatients = await Promise.all(
-      appointments.map(async (appointment) => {
-        const patient = await ctx.db.get(appointment.patientId);
-        return {
-          ...appointment,
-          patient: patient ? {
-            _id: patient._id,
-            firstName: patient.firstName,
-            lastName: patient.lastName,
-            email: patient.email,
-            imageUrl: patient.imageUrl,
-            phoneNumber: patient.phoneNumber,
-          } : null,
-        };
-      })
-    );
-
-    return appointmentsWithPatients;
   },
 });
 
@@ -241,7 +371,7 @@ export const updateAppointmentStatus = mutation({
     cancellationReason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const physiotherapist = await getAuthenticatedPhysiotherapist(ctx);
+    const user = await getAuthenticatedUser(ctx, ["physiotherapist", "clinic_owner"]);
 
     // Get the appointment
     const appointment = await ctx.db.get(args.appointmentId);
@@ -250,7 +380,7 @@ export const updateAppointmentStatus = mutation({
     }
 
     // Verify physiotherapist owns this appointment
-    if (appointment.physiotherapistId !== physiotherapist._id) {
+    if (appointment.physiotherapistId !== user._id) {
       throw new Error("Access denied. Appointment not assigned to you.");
     }
 
@@ -324,7 +454,7 @@ export const rescheduleAppointment = mutation({
     newEndTime: v.number(),
   },
   handler: async (ctx, args) => {
-    const physiotherapist = await getAuthenticatedPhysiotherapist(ctx);
+    const user = await getAuthenticatedUser(ctx, ["physiotherapist", "clinic_owner"]);
 
     // Get the appointment
     const appointment = await ctx.db.get(args.appointmentId);
@@ -333,7 +463,7 @@ export const rescheduleAppointment = mutation({
     }
 
     // Verify physiotherapist owns this appointment
-    if (appointment.physiotherapistId !== physiotherapist._id) {
+    if (appointment.physiotherapistId !== user._id) {
       throw new Error("Access denied. Appointment not assigned to you.");
     }
 
@@ -341,7 +471,7 @@ export const rescheduleAppointment = mutation({
     const conflictingAppointments = await ctx.db
       .query("appointments")
       .withIndex("by_physiotherapist_id_and_time", (q) => 
-        q.eq("physiotherapistId", physiotherapist._id)
+        q.eq("physiotherapistId", user._id)
       )
       .filter((q) => 
         q.and(
@@ -362,6 +492,10 @@ export const rescheduleAppointment = mutation({
     if (conflictingAppointments.length > 0) {
       throw new Error("New time slot conflicts with existing appointment");
     }
+
+    // Keep old times for email content before updating
+    const oldStart = appointment.startTime;
+    const oldEnd = appointment.endTime;
 
     // Update the appointment
     await ctx.db.patch(args.appointmentId, {
@@ -391,6 +525,27 @@ export const rescheduleAppointment = mutation({
       createdAt: Date.now(),
     });
 
+    // Email: notify physiotherapist (provider-facing) about reschedule
+    const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
+    const physioEmail = physiotherapist?.email as string | undefined;
+    const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "Physiotherapist";
+    const patientNameForEmail = patient ? `${patient.firstName} ${patient.lastName}` : "Patient";
+    const oldTimeStr = `${new Date(oldStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(oldEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const newTimeStr = `${new Date(args.newStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(args.newEndTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    if (physioEmail) {
+      await ctx.scheduler.runAfter(0, api.actions.emails.sendAppointmentRescheduledProviderEmail as any, {
+        to: physioEmail,
+        patientName: patientNameForEmail,
+        physiotherapistName,
+        oldDate: oldStart,
+        oldTime: oldTimeStr,
+        newDate: args.newStartTime,
+        newTime: newTimeStr,
+        viewLink: "/dashboard/physiotherapist/appointments",
+        subjectOverride: `Appointment rescheduled: ${patientNameForEmail}`,
+      });
+    }
+
     return {
       success: true,
       message: "Appointment rescheduled successfully.",
@@ -404,7 +559,7 @@ export const rescheduleAppointment = mutation({
 export const getTodaysSchedule = query({
   args: {},
   handler: async (ctx) => {
-    const physiotherapist = await getAuthenticatedPhysiotherapist(ctx);
+    const user = await getAuthenticatedUser(ctx, ["physiotherapist", "clinic_owner"]);
 
     // Get today's date boundaries
     const today = new Date();
@@ -415,7 +570,7 @@ export const getTodaysSchedule = query({
     const appointments = await ctx.db
       .query("appointments")
       .withIndex("by_physiotherapist_id_and_time", (q) => 
-        q.eq("physiotherapistId", physiotherapist._id).gte("startTime", startOfDay)
+        q.eq("physiotherapistId", user._id).gte("startTime", startOfDay)
       )
       .filter((q) => q.lte(q.field("startTime"), endOfDay))
       .order("asc")
@@ -451,7 +606,7 @@ export const getAppointmentDetails = query({
     appointmentId: v.id("appointments"),
   },
   handler: async (ctx, args) => {
-    const physiotherapist = await getAuthenticatedPhysiotherapist(ctx);
+    const user = await getAuthenticatedUser(ctx, ["physiotherapist", "clinic_owner"]);
 
     // Get the appointment
     const appointment = await ctx.db.get(args.appointmentId);
@@ -460,7 +615,7 @@ export const getAppointmentDetails = query({
     }
 
     // Verify physiotherapist owns this appointment
-    if (appointment.physiotherapistId !== physiotherapist._id) {
+    if (appointment.physiotherapistId !== user._id) {
       throw new Error("Access denied. Appointment not assigned to you.");
     }
 
@@ -512,11 +667,11 @@ export const updateAppointmentFields = mutation({
     }),
   },
   handler: async (ctx, { appointmentId, updates }) => {
-    const physio = await getAuthenticatedPhysiotherapist(ctx);
+    const user = await getAuthenticatedUser(ctx, ["physiotherapist", "clinic_owner"]);
 
     const appointment = await ctx.db.get(appointmentId);
     if (!appointment) throw new Error("Appointment not found");
-    if (appointment.physiotherapistId !== physio._id) {
+    if (appointment.physiotherapistId !== user._id) {
       throw new Error("Access denied");
     }
 
@@ -826,6 +981,17 @@ export const requestAppointment = mutation({
 
     const patientName = `${patient.firstName} ${patient.lastName}`;
     const physiotherapistName = `${physiotherapist.firstName} ${physiotherapist.lastName}`;
+    // Determine clinic info for emails
+    let clinicName = 'Rehabify Health';
+    let clinicAddress = '';
+    if ((physiotherapistProfile as any)?.clinicId) {
+      const clinic = await ctx.db.get((physiotherapistProfile as any).clinicId);
+      if (clinic) {
+        clinicName = (clinic as any).name || clinicName;
+        clinicAddress = (clinic as any).address || '';
+      }
+    }
+    const appointmentTimeStr = `${new Date(args.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(args.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
     // Create notification for physiotherapist
     await ctx.db.insert("notifications", {
@@ -862,6 +1028,38 @@ export const requestAppointment = mutation({
       },
       createdAt: Date.now(),
     });
+
+    // Send emails: provider notification and patient confirmation
+    const physioEmail = physiotherapist.email as string | undefined;
+    if (physioEmail) {
+      await ctx.scheduler.runAfter(0, api.actions.emails.sendAppointmentRequestedEmail as any, {
+        to: physioEmail,
+        patientName,
+        physiotherapistName,
+        appointmentDate: args.startTime,
+        appointmentTime: appointmentTimeStr,
+        clinicName,
+        clinicAddress,
+        viewLink: "/dashboard/physiotherapist/appointments",
+        approveLink: "/dashboard/physiotherapist/appointments",
+        subjectOverride: `New appointment request from ${patientName}`,
+      });
+    }
+
+    const patientEmail = patient.email as string | undefined;
+    if (patientEmail) {
+      await ctx.scheduler.runAfter(0, api.actions.emails.sendAppointmentScheduledEmail as any, {
+        to: patientEmail,
+        patientName,
+        physiotherapistName,
+        appointmentDate: args.startTime,
+        appointmentTime: appointmentTimeStr,
+        clinicName,
+        clinicAddress,
+        calendarLink: "/dashboard/patient/appointments",
+        rescheduleLink: "/dashboard/patient/appointments",
+      });
+    }
 
     return {
       success: true,
@@ -947,6 +1145,22 @@ export const cancelAppointmentAsPatient = mutation({
       createdAt: Date.now(),
     });
 
+    // Email: notify physiotherapist (provider-facing) about cancellation
+    const physioEmail = physiotherapist?.email as string | undefined;
+    const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    if (physioEmail) {
+      await ctx.scheduler.runAfter(0, api.actions.emails.sendAppointmentCanceledProviderEmail as any, {
+        to: physioEmail,
+        patientName,
+        physiotherapistName,
+        appointmentDate: appointment.startTime,
+        appointmentTime: appointmentTimeStr,
+        cancellationReason: args.cancellationReason,
+        viewLink: "/dashboard/physiotherapist/appointments",
+        subjectOverride: `Appointment canceled: ${patientName}`,
+      });
+    }
+
     return {
       success: true,
       message: "Appointment cancelled successfully.",
@@ -991,7 +1205,7 @@ export const confirmAppointmentAsPatient = mutation({
     const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
 
     // Create notification for physiotherapist
-    await ctx.db.insert("notifications", {
+    const notificationId = await ctx.db.insert("notifications", {
       userId: appointment.physiotherapistId,
       type: "appointment_confirmed",
       priority: "medium",
@@ -1007,6 +1221,35 @@ export const confirmAppointmentAsPatient = mutation({
       },
       createdAt: Date.now(),
     });
+
+    // Proactively schedule notification delivery via internal notification service
+    try {
+      await ctx.scheduler.runAfter(0, internal.notifications.service.deliverNotification, {
+        notificationId,
+      });
+    } catch (err) {
+      console.error("Failed to schedule notification delivery for appointment confirmation:", err);
+    }
+
+    // Email: notify physiotherapist (provider-facing) about confirmation
+    const physioEmail = physiotherapist?.email as string | undefined;
+    const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    if (physioEmail) {
+      try {
+        await ctx.scheduler.runAfter(0, api.actions.emails.sendAppointmentConfirmedProviderEmail, {
+          to: physioEmail,
+          patientName,
+          physiotherapistName,
+          appointmentDate: appointment.startTime,
+          appointmentTime: appointmentTimeStr,
+          viewLink: "/dashboard/physiotherapist/appointments",
+          subjectOverride: `Appointment confirmed by ${patientName}`,
+        });
+      } catch (err) {
+        // Don't fail the mutation if email scheduling fails; log for diagnostics
+        console.error("Failed to schedule provider confirmation email:", err);
+      }
+    }
 
     return {
       success: true,
@@ -1255,7 +1498,7 @@ export const submitPatientFeedback = mutation({
     
     // Create notification for physiotherapist
     await ctx.db.insert("notifications", {
-      userId: physiotherapist._id,
+      userId: appointment.physiotherapistId,
       type: "appointment_feedback",
       priority: "medium",
       status: "pending",

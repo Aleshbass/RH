@@ -153,7 +153,7 @@ export default function NotesTemplatesPage() {
                     variant="ghost"
                     size="icon"
                     onClick={() => {
-                      setSelectedTemplate(template)
+                      setSelectedTemplate(template as NotesTemplate)
                       setFormData({
                         title: template.title,
                         content: template.content,
@@ -167,7 +167,7 @@ export default function NotesTemplatesPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleDeleteTemplate(template._id)}
+                    onClick={() => handleDeleteTemplate(template._id as Id<'notesTemplates'>)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

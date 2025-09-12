@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery, useMutation, useAction } from "convex/react";
+import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { useQueryUntyped } from "@/lib/convexUntyped";
 
 // Type definitions for approval objects
 type ApprovalWithUser = {
@@ -21,9 +22,11 @@ type ApprovalWithUser = {
     firstName?: string;
     lastName?: string;
     email?: string;
+    imageUrl?: string;
     [key: string]: unknown;
   } | null;
 };
+
 import { useState, useCallback } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -49,8 +52,6 @@ import {
   CheckCircle2
 } from "lucide-react";
 
-
-
 export default function AdminApprovalsPage() {
   const [selectedUserId, setSelectedUserId] = useState<Id<"users"> | null>(null);
   const [showDialog, setShowDialog] = useState(false);
@@ -58,8 +59,8 @@ export default function AdminApprovalsPage() {
   const [showDebug, setShowDebug] = useState(false);
 
   // Queries and mutations
-  const pendingApprovals = useQuery(api.users.getPendingApprovals);
-  const debugApprovals = useQuery(api.users.debugApprovalStatus);
+  const pendingApprovals = useQueryUntyped(api.users.getPendingApprovals) as ApprovalWithUser[] | undefined;
+  const debugApprovals = useQueryUntyped(api.users.debugApprovalStatus) as ApprovalWithUser[] | undefined;
   const approveUser = useMutation(api.users.approveUser);
   const declineUser = useMutation(api.users.declineUser);
   const cleanupOrphanedApprovals = useMutation(api.users.cleanupOrphanedApprovals);
@@ -233,7 +234,7 @@ export default function AdminApprovalsPage() {
               <div className="bg-white p-4 rounded border border-orange-200">
                 <h4 className="font-semibold text-orange-800 mb-2">🔧 Fix Detected Issue</h4>
                 <p className="text-sm text-orange-700 mb-3">
-                  Found {debugApprovals?.filter((a: ApprovalWithUser) => a.user === null && a.status === 'pending_review').length || 0} orphaned approval records 
+                  Found {debugApprovals?.filter((a) => a.user === null && a.status === 'pending_review').length || 0} orphaned approval records 
                   (where user no longer exists). These are causing pending approvals to not show up.
                 </p>
                 <div className="flex gap-2">
@@ -281,7 +282,7 @@ export default function AdminApprovalsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {pendingApprovals?.filter((a: ApprovalWithUser) => a.user?.role === 'physiotherapist').length || 0}
+              {pendingApprovals?.filter((a) => a.user?.role === 'physiotherapist').length || 0}
             </div>
             <p className="text-xs text-muted-foreground">
               Pending physiotherapist approvals
@@ -296,7 +297,7 @@ export default function AdminApprovalsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {pendingApprovals?.filter((a: ApprovalWithUser) => a.user?.role === 'clinic_owner').length || 0}
+              {pendingApprovals?.filter((a) => a.user?.role === 'clinic_owner').length || 0}
             </div>
             <p className="text-xs text-muted-foreground">
               Pending clinic owner approvals
@@ -349,7 +350,7 @@ export default function AdminApprovalsPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-4">
                         <Avatar className="h-12 w-12">
-                          <AvatarImage src={approval.user.imageUrl} />
+                          <AvatarImage src={approval.user?.imageUrl ?? undefined} />
                           <AvatarFallback>
                             {approval.user.firstName?.charAt(0) || approval.user.email?.charAt(0) || 'U'}
                           </AvatarFallback>

@@ -2,12 +2,12 @@
 
 import { useState } from 'react';
 import { z } from 'zod';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { useFormWithZod } from '@/lib/hooks/useFormWithZod';
 import { useMutation } from 'convex/react';
@@ -102,106 +102,104 @@ export default function ProfessionalDetailsForm({ onNext, onPrev }: Professional
   };
 
   return (
-    <Card className="w-full max-w-4xl mx-auto">
-      <CardHeader>
-        <CardTitle>Professional Details</CardTitle>
-        <CardDescription>
-          Please provide your professional information to complete your profile.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-4">
-            <Label htmlFor="licenseNumber">License Number</Label>
-            <Input
-              id="licenseNumber"
-              placeholder="Enter your license number"
-              {...register('licenseNumber')}
-              aria-invalid={!!errors.licenseNumber}
-            />
-            {errors.licenseNumber && (
-              <p className="text-sm text-red-500 mt-1">{errors.licenseNumber.message}</p>
-            )}
-          </div>
+    <div className="w-full max-w-3xl mx-auto">
+      <div className="text-center mb-4">
+        <h2 className="text-xl sm:text-2xl font-semibold text-[#002e2c]">Professional Details</h2>
+        <p className="text-gray-600">Please provide your professional information to complete your profile.</p>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-3">
+          <Label htmlFor="licenseNumber">License Number</Label>
+          <Input
+            id="licenseNumber"
+            placeholder="Enter your license number"
+            className="h-12 text-base"
+            {...register('licenseNumber')}
+            aria-invalid={!!errors.licenseNumber}
+          />
+          {errors.licenseNumber && (
+            <p className="text-sm text-red-500 mt-1">{errors.licenseNumber.message}</p>
+          )}
+        </div>
 
-          <div className="space-y-4">
-            <Label htmlFor="yearsOfExperience">Years of Experience</Label>
-            <Input
-              id="yearsOfExperience"
-              type="number"
-              min="0"
-              placeholder="Years of experience"
-              {...register('yearsOfExperience', { valueAsNumber: true })}
-              aria-invalid={!!errors.yearsOfExperience}
-            />
-            {errors.yearsOfExperience && (
-              <p className="text-sm text-red-500 mt-1">{errors.yearsOfExperience.message}</p>
-            )}
-          </div>
+        <div className="space-y-3">
+          <Label htmlFor="yearsOfExperience">Years of Experience</Label>
+          <Input
+            id="yearsOfExperience"
+            type="number"
+            min="0"
+            placeholder="Years of experience"
+            className="h-12 text-base"
+            {...register('yearsOfExperience', { valueAsNumber: true })}
+            aria-invalid={!!errors.yearsOfExperience}
+          />
+          {errors.yearsOfExperience && (
+            <p className="text-sm text-red-500 mt-1">{errors.yearsOfExperience.message}</p>
+          )}
+        </div>
 
-          <div className="space-y-4">
-            <Label>Specializations</Label>
-            <div className="flex gap-2">
-              <Select
-                value={specialization}
-                onValueChange={setSpecialization}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select specialization" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Orthopedic">Orthopedic</SelectItem>
-                  <SelectItem value="Neurological">Neurological</SelectItem>
-                  <SelectItem value="Pediatric">Pediatric</SelectItem>
-                  <SelectItem value="Geriatric">Geriatric</SelectItem>
-                  <SelectItem value="Sports">Sports</SelectItem>
-                  <SelectItem value="Cardiovascular">Cardiovascular</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button type="button" onClick={addSpecialization}>Add</Button>
+        <div className="space-y-3">
+          <Label>Specializations</Label>
+          <div className="flex gap-2">
+            <Select
+              value={specialization}
+              onValueChange={setSpecialization}
+            >
+              <SelectTrigger className="h-12">
+                <SelectValue placeholder="Select specialization" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Orthopedic">Orthopedic</SelectItem>
+                <SelectItem value="Neurological">Neurological</SelectItem>
+                <SelectItem value="Pediatric">Pediatric</SelectItem>
+                <SelectItem value="Geriatric">Geriatric</SelectItem>
+                <SelectItem value="Sports">Sports</SelectItem>
+                <SelectItem value="Cardiovascular">Cardiovascular</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="button" onClick={addSpecialization}>Add</Button>
+          </div>
+          {specializations.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {specializations.map((spec, index) => (
+                <div key={index} className="bg-gray-100 rounded-md px-3 py-1 flex items-center gap-2">
+                  <span>{spec}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeSpecialization(index)}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
-            {specializations.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {specializations.map((spec, index) => (
-                  <div key={index} className="bg-gray-100 rounded-md px-3 py-1 flex items-center gap-2">
-                    <span>{spec}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeSpecialization(index)}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
+        </div>
 
-          <div className="space-y-4">
-            <Label htmlFor="bio">Professional Bio</Label>
-            <Textarea
-              id="bio"
-              placeholder="Tell us about your professional background"
-              rows={4}
-              {...register('bio')}
-              aria-invalid={!!errors.bio}
-            />
-            {errors.bio && (
-              <p className="text-sm text-red-500 mt-1">{errors.bio.message}</p>
-            )}
-          </div>
+        <div className="space-y-3">
+          <Label htmlFor="bio">Professional Bio</Label>
+          <Textarea
+            id="bio"
+            placeholder="Tell us about your professional background"
+            rows={4}
+            {...register('bio')}
+            aria-invalid={!!errors.bio}
+          />
+          {errors.bio && (
+            <p className="text-sm text-red-500 mt-1">{errors.bio.message}</p>
+          )}
+        </div>
 
-          <div className="flex justify-between pt-4">
-            <Button type="button" variant="outline" onClick={onPrev} disabled={isFormSubmitting || isSubmittingProfile}>
-              Previous
-            </Button>
-            <Button type="submit" disabled={isFormSubmitting || isSubmittingProfile}>
-              {isSubmittingProfile ? "Saving..." : (isFormSubmitting ? "Validating..." : "Next")}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+        <div className="flex justify-between pt-2">
+          <Button type="button" variant="outline" onClick={onPrev} disabled={isFormSubmitting || isSubmittingProfile}>
+            Previous
+          </Button>
+          <Button type="submit" disabled={isFormSubmitting || isSubmittingProfile}>
+            {isSubmittingProfile ? "Saving..." : (isFormSubmitting ? "Validating..." : "Next")}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }

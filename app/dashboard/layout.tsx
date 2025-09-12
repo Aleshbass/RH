@@ -5,6 +5,7 @@ import { DashboardHeader } from '@/components/dashboard/shared/DashboardHeader'
 import { Toaster } from "sonner"
 import NotificationToaster from '@/components/dashboard/shared/NotificationToaster'
 import { DashboardSidebarWrapper } from '../../components/dashboard/shared/DashboardSidebarWrapper'
+import DashboardAuthGuard from '@/components/auth/DashboardAuthGuard'
 
 export default async function DashboardLayout({
   children,
@@ -18,24 +19,26 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Dashboard Header */}
-      <DashboardHeader />
-      
-      <div className="flex">
-        {/* Sidebar */}
-        <DashboardSidebarWrapper />
+    <DashboardAuthGuard>
+      <div className="min-h-screen bg-[#F5F5DC]"> {/* 60% - Bone background */}
+        {/* Dashboard Header */}
+        <DashboardHeader />
         
-        {/* Main Content */}
-        <main className="flex-1 overflow-hidden">
-          <div className="h-full px-6 py-6 lg:px-8">
-            {children}
-          </div>
-        </main>
+        <div className="flex">
+          {/* Sidebar */}
+          <DashboardSidebarWrapper />
+          
+          {/* Main Content */}
+          <main className="flex-1 overflow-hidden">
+            <div className="h-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+              {children}
+            </div>
+          </main>
+        </div>
+        
+        <NotificationToaster />
+        <Toaster position="top-right" />
       </div>
-      
-      <NotificationToaster />
-      <Toaster position="top-right" />
-    </div>
+    </DashboardAuthGuard>
   )
 } 

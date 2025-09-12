@@ -16,13 +16,14 @@ import {
   TrendingUp,
   BarChart3,
   FileText,
-  Plus
 } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import AddPhysiotherapistModal from '@/components/dashboard/clinic/AddPhysiotherapistModal'
 import StaffTable from '@/components/clinic/staff/StaffTable'
 import { toast } from 'sonner'
+import { useEffect, useState } from 'react'
+import { useSearchParams, usePathname, useRouter } from 'next/navigation'
 
 
 
@@ -48,16 +49,19 @@ interface Invitation {
 }
 
 export default function StaffManagementPage() {
-  
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const pathname = usePathname()
+  const [inviteOpen, setInviteOpen] = useState(false)
+
   // Queries
   const clinicStaffQuery = useQuery(api.clinics.getClinicStaff)
   const pendingInvitationsQuery = useQuery(api.clinics.getClinicInvitations)
   const staffMetricsQuery = useQuery(api.clinics.getStaffMetrics)
   
   // Actions
-  const inviteStaffWithEmail = useAction(api.actions.clinics.createClinicStaffInvitationWithNotification)
   const resendStaffInvitation = useAction(
-    api.actions.clinics.inviteClinicStaff.resendClinicStaffInvitation
+    api.actions.clinics.resendClinicStaffInvitation
   )
   
   const clinicStaff = clinicStaffQuery
@@ -69,21 +73,21 @@ export default function StaffManagementPage() {
     window.location.reload()
   }
 
-  const handleQuickInvite = async (email: string, name?: string) => {
-    try {
-      await inviteStaffWithEmail({
-        inviteeEmail: email,
-        inviteeName: name,
-        message: 'You have been invited to join our clinic team.',
-        sendEmail: true
-      })
-      toast.success('Staff invitation sent successfully!')
-      handleRefresh()
-    } catch (error) {
-      toast.error('Failed to send invitation')
-      console.error('Invite error:', error)
+  // Open invite modal via deep link: ?action=invite
+  useEffect(() => {
+    const action = searchParams.get('action')
+    if (action === 'invite') {
+      setInviteOpen(true)
+      // Clean the URL to avoid re-triggering on refresh
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('action')
+      const newQuery = params.toString()
+      router.replace(newQuery ? `${pathname}?${newQuery}` : pathname, { scroll: false })
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, pathname])
+
+  
 
   if (clinicStaff === undefined || pendingInvitations === undefined || staffMetrics === undefined) {
     return (
@@ -124,12 +128,10 @@ export default function StaffManagementPage() {
               </Button>
             </Link>
             <AddPhysiotherapistModal 
+              open={inviteOpen}
+              onOpenChange={setInviteOpen}
               onSuccess={handleRefresh}
             />
-            <Button onClick={() => handleQuickInvite('', '')}>
-              <Plus className="h-4 w-4 mr-2" />
-              Quick Invite
-            </Button>
           </div>
         </div>
 
@@ -212,7 +214,7 @@ export default function StaffManagementPage() {
                         <p className="font-medium">{invitation.inviteeName || 'Unnamed Invitee'}</p>
                         <p className="text-sm text-gray-600">{invitation.inviteeEmail}</p>
                         <p className="text-xs text-gray-500">
-                          Role: <span className="capitalize">{invitation.role.replace('_', ' ')}</span>
+                          Role: <span className="capitalize">{(invitation.role as string)?.replace('_', ' ')}</span>
                         </p>
                       </div>
                     </div>
@@ -222,7 +224,7 @@ export default function StaffManagementPage() {
                         Pending
                       </Badge>
                       <p className="text-sm text-gray-500">
-                        Sent {format(new Date(invitation._creationTime), 'MMM d')}
+                        Sent {format(new Date(invitation._creationTime as number), 'MMM d')}
                       </p>
                       <Button 
                         variant="ghost" 

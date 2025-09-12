@@ -31,14 +31,16 @@ interface InvoiceData {
   isOverdue: boolean;
   currency: string;
   items: InvoiceItem[];
-  subtotal: number;
-  taxRate: number;
-  taxAmount: number;
-  total: number;
+  subtotalAmount: number;
+  discountAmount?: number;
+  platformFeeAmount: number;
+  totalAmount: number;
   clinicName?: string;
   clinicAddress?: string;
   clinicPhone?: string;
   patientName?: string;
+  patientEmail?: string;
+  patientPhone?: string;
   issueDate: number;
   dueDate: number;
   paymentDate?: number;
@@ -178,12 +180,12 @@ function SharedInvoicePageComponent() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Issue Date:</span>
-                    <span className="text-gray-900">{format(new Date(invoice.issueDate), 'MMM d, yyyy')}</span>
+                    <span className="text-gray-900">{format(new Date(invoice.issueDate), 'MMM d, yyyy, h:mm a')}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Due Date:</span>
                     <span className={`${invoice.isOverdue ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
-                      {format(new Date(invoice.dueDate), 'MMM d, yyyy')}
+                      {format(new Date(invoice.dueDate), 'MMM d, yyyy, h:mm a')}
                     </span>
                   </div>
                   {invoice.paymentDate && (
@@ -242,16 +244,18 @@ function SharedInvoicePageComponent() {
               <div className="w-full md:w-1/3">
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Subtotal</span>
-                    <span className="text-gray-900">{formatCurrency(invoice.subtotal, invoice.currency)}</span>
+                    <span className="text-gray-600">Invoice Total</span>
+                    <span className="text-gray-900">{formatCurrency(invoice.totalAmount, invoice.currency)}</span>
                   </div>
+                  {invoice.discountAmount && invoice.discountAmount > 0 && (
+                    <div className="flex justify-between text-green-600">
+                      <span>Discount</span>
+                      <span>-{formatCurrency(invoice.discountAmount, invoice.currency)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Tax ({invoice.taxRate}%)</span>
-                    <span className="text-gray-900">{formatCurrency(invoice.taxAmount, invoice.currency)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-lg">
-                    <span className="text-gray-900">Total</span>
-                    <span className="text-gray-900">{formatCurrency(invoice.total, invoice.currency)}</span>
+                    <span className="text-gray-600">Platform Fee</span>
+                    <span className="text-gray-900">{formatCurrency(invoice.platformFeeAmount, invoice.currency)}</span>
                   </div>
                 </div>
               </div>
@@ -274,8 +278,11 @@ function SharedInvoicePageComponent() {
             Download PDF
           </Button>
           {invoice.status !== 'paid' && (
-            <Button variant="default">
-              Pay with Paystack
+            <Button variant="default" onClick={() => {
+              // suggest users to login and go to dashboard payment modal
+              window.location.href = `/dashboard/patient/invoices`
+            }}>
+              Pay Now
             </Button>
           )}
         </div>

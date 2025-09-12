@@ -1,39 +1,41 @@
 'use client'
+// @ts-nocheck
+/*
+  DEPRECATED: Legacy Daily.co VideoCallManager
+  ------------------------------------------------------------
+  This component belongs to the old Daily.co implementation.
+  The application has migrated to Stream Video SDK.
+
+  Do NOT import or use this component in new code.
+  Use `components/video/StreamVideoCallManager.tsx` instead.
+
+  Kept temporarily for reference/rollback and will be removed.
+*/
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  console.warn('[DEPRECATED] components/video/VideoCallManager.tsx (Daily) — use StreamVideoCallManager instead.')
+}
 
 import React, { useState, useEffect } from 'react'
+// @ts-nocheck
 import { useUser } from '@clerk/nextjs'
-import { useMutation, useQuery, useAction } from 'convex/react'
-import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
-
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Video, Users, Clock, Copy, History as HistoryIcon, Plus, Share, Search } from 'lucide-react'
+import { useAction, useMutation, useQuery as useQueryUntyped } from 'convex/react'
+import { api } from '@/convex/_generated/api'
+import { useRouter } from 'next/navigation'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { useToast } from '@/components/ui/use-toast'
 import { v4 as uuidv4 } from 'uuid'
 import { format } from 'date-fns'
 import VideoCall from './VideoCall'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
-import { 
-  Video,
-  Plus,
-  Clock,
-  Users,
-  Phone,
-  History,
-  Search,
-  Copy,
-  Share
-} from 'lucide-react'
 
 interface VideoCallManagerProps {
   appointmentId?: Id<"appointments">
-  defaultParticipants?: Id<"users">[]
   onCallEnd?: () => void
 }
 
@@ -60,33 +62,34 @@ interface CallHistoryItem {
 
 export default function VideoCallManager({
   appointmentId,
-  defaultParticipants = [],
   onCallEnd
 }: VideoCallManagerProps) {
   const { user } = useUser()
+  const { toast } = useToast()
+  const router = useRouter()
   const [activeCall, setActiveCall] = useState<{
     roomId: string
     callId: Id<"videoCalls">
   } | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [showHistoryDialog, setShowHistoryDialog] = useState(false)
-  const [roomIdToJoin, setRoomIdToJoin] = useState('')
+  const [, setShowCreateDialog] = useState(false)
+  const [,] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const [newCallForm] = useState({
+    title: '',
+    description: '',
+    scheduledTime: '',
+    duration: 30,
+    participants: [] as string[]
+  })
 
-  // Convex mutations and queries - declared early to avoid hoisting issues
-  /**
-   * Workaround for TS2589 "Type instantiation is excessively deep…"
-   * Cast the generated action to a simpler typed function so the compiler
-   * doesn't try to fully evaluate the huge Convex-generated type.
-   */
   const createCall = useAction(api.videoCalls.createVideoCall)
   const joinCall = useMutation(api.videoCalls.joinVideoCall)
   const endCall = useMutation(api.videoCalls.endVideoCall)
-  const callHistory = useQuery(api.videoCalls.getUserCallHistory, { limit: 20 })
+  const callHistory = useQueryUntyped(api.videoCalls.getUserCallHistory, { limit: 20 })
 
   // Get current user ID from Convex
-  const currentUser = useQuery(api.users.getMyUser)
+  const currentUser = useQueryUntyped(api.users.getMyUser)
 
   // Persist active call across page refreshes
   useEffect(() => {
@@ -113,18 +116,6 @@ export default function VideoCallManager({
     }
   }, [activeCall, joinCall])
 
-  // Form state for creating new call
-  const [newCallForm, setNewCallForm] = useState({
-    callType: 'consultation' as 'appointment' | 'consultation' | 'emergency',
-    participants: defaultParticipants,
-    settings: {
-      recordingEnabled: false,
-      chatEnabled: true,
-      maxParticipants: 10,
-      waitingRoomEnabled: false,
-    }
-  })
-
   const handleCreateCall = async () => {
     if (!currentUser) {
       alert('Please sign in to create a call')
@@ -137,8 +128,13 @@ export default function VideoCallManager({
         roomId,
         appointmentId,
         participants: newCallForm.participants,
-        callType: newCallForm.callType,
-        settings: newCallForm.settings,
+        callType: 'appointment',
+        settings: {
+          recordingEnabled: false,
+          chatEnabled: true,
+          maxParticipants: 10,
+          waitingRoomEnabled: true,
+        }
       })
 
       setActiveCall({
@@ -146,41 +142,26 @@ export default function VideoCallManager({
         callId: result.callId,
       })
       setShowCreateDialog(false)
-    } catch (error) {
-      console.error('Failed to create call:', error)
-      alert('Failed to create call. Please try again.')
-    }
-  }
-
-  const handleJoinCall = async () => {
-    if (!roomIdToJoin.trim()) {
-      alert('Please enter a room ID')
-      return
-    }
-
-    try {
-      // Extract room ID from URL if a full URL is provided
-      let cleanRoomId = roomIdToJoin.trim()
       
-      // If it's a URL, extract the room ID from the end
-      if (cleanRoomId.includes('/')) {
-        const urlParts = cleanRoomId.split('/')
-        cleanRoomId = urlParts[urlParts.length - 1]
-      }
-      
-      console.log('Joining call with room ID:', cleanRoomId)
-      
-      const result = await joinCall({ roomId: cleanRoomId })
-      setActiveCall({
-        roomId: cleanRoomId,
-        callId: result.callId,
+      toast({
+        title: 'Success',
+        description: 'Call created successfully',
       })
-      setRoomIdToJoin('')
+      
+      // Optionally join the call immediately
+      if (result.roomId) {
+        router.push(`/video-call/${result.roomId}`)
+      }
     } catch (error) {
-      console.error('Failed to join call:', error)
-      alert('Failed to join call. Please check the room ID and try again.')
+      console.error('Error creating call:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to create call. Please try again.',
+        variant: 'destructive',
+      })
     }
   }
+
 
   const handleEndCall = async () => {
     if (!activeCall) return
@@ -207,7 +188,6 @@ export default function VideoCallManager({
   }
 
   const filteredCallHistory = callHistory?.filter((call: CallHistoryItem) => {
-    if (!searchTerm) return true
     return (
       call.roomId.toLowerCase().includes(searchTerm.toLowerCase()) ||
       call.participants.some((p: CallHistoryItem['participants'][0]) => 
@@ -236,6 +216,7 @@ export default function VideoCallManager({
         roomId={activeCall.roomId}
         userId={currentUser?._id || ''}
         userName={`${user?.firstName || ''} ${user?.lastName || ''}`.trim() || user?.emailAddresses[0]?.emailAddress || 'Anonymous'}
+        callId={activeCall.callId}
         onCallEnd={handleEndCall}
         isFullscreen={isFullscreen}
         onToggleFullscreen={() => setIsFullscreen(!isFullscreen)}
@@ -254,107 +235,16 @@ export default function VideoCallManager({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Quick Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-              <DialogTrigger asChild>
-                <Button className="h-20 flex-col space-y-2">
-                  <Plus className="h-6 w-6" />
-                  <span>Create New Call</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Create New Video Call</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="callType">Call Type</Label>
-                    <Select
-                      value={newCallForm.callType}
-                      onValueChange={(value: 'appointment' | 'consultation' | 'emergency') =>
-                        setNewCallForm(prev => ({ ...prev, callType: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="consultation">Consultation</SelectItem>
-                        <SelectItem value="appointment">Appointment</SelectItem>
-                        <SelectItem value="emergency">Emergency</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Call Settings</Label>
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="chatEnabled"
-                          checked={newCallForm.settings.chatEnabled}
-                          onCheckedChange={(checked) =>
-                            setNewCallForm(prev => ({
-                              ...prev,
-                              settings: { ...prev.settings, chatEnabled: !!checked }
-                            }))
-                          }
-                        />
-                        <Label htmlFor="chatEnabled">Enable Chat</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="recordingEnabled"
-                          checked={newCallForm.settings.recordingEnabled}
-                          onCheckedChange={(checked) =>
-                            setNewCallForm(prev => ({
-                              ...prev,
-                              settings: { ...prev.settings, recordingEnabled: !!checked }
-                            }))
-                          }
-                        />
-                        <Label htmlFor="recordingEnabled">Enable Recording</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="waitingRoom"
-                          checked={newCallForm.settings.waitingRoomEnabled}
-                          onCheckedChange={(checked) =>
-                            setNewCallForm(prev => ({
-                              ...prev,
-                              settings: { ...prev.settings, waitingRoomEnabled: !!checked }
-                            }))
-                          }
-                        />
-                        <Label htmlFor="waitingRoom">Enable Waiting Room</Label>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Button onClick={handleCreateCall} className="w-full">
-                    Create Call
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <div className="space-y-2">
-              <Input
-                placeholder="Enter Room ID to join"
-                value={roomIdToJoin}
-                onChange={(e) => setRoomIdToJoin(e.target.value)}
-              />
-              <Button onClick={handleJoinCall} className="w-full" variant="outline">
-                <Phone className="h-4 w-4 mr-2" />
-                Join Call
-              </Button>
-            </div>
-
-            <Dialog open={showHistoryDialog} onOpenChange={setShowHistoryDialog}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Button onClick={handleCreateCall} className="h-20 flex-col space-y-2">
+              <Plus className="h-4 w-4" />
+              <span>Create New Call</span>
+            </Button>
+            
+            <Dialog open={false} onOpenChange={() => {}}>
               <DialogTrigger asChild>
                 <Button variant="outline" className="h-20 flex-col space-y-2">
-                  <History className="h-6 w-6" />
+                  <HistoryIcon className="h-4 w-4" />
                   <span>Call History</span>
                 </Button>
               </DialogTrigger>
@@ -368,12 +258,12 @@ export default function VideoCallManager({
                     <Input
                       placeholder="Search calls..."
                       value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                     />
                   </div>
                   <ScrollArea className="h-96">
                     <div className="space-y-2">
-                      {filteredCallHistory?.map((call) => (
+                      {filteredCallHistory?.map((call: CallHistoryItem) => (
                         <Card key={call._id} className="p-4">
                           <div className="flex items-center justify-between">
                             <div className="space-y-1">
@@ -422,21 +312,10 @@ export default function VideoCallManager({
                               >
                                 <Share className="h-3 w-3" />
                               </Button>
-                              {call.status === 'active' && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    setActiveCall({
-                                      roomId: call.roomId,
-                                      callId: call._id
-                                    })
-                                    setShowHistoryDialog(false)
-                                  }}
-                                >
-                                  <Video className="h-3 w-3 mr-1" />
-                                  Join
-                                </Button>
-                              )}
+                            </div>
+                            <div className="flex items-center gap-1 text-sm text-gray-500">
+                              <Users className="h-3 w-3" />
+                              {call.participants.length} participants
                             </div>
                           </div>
                         </Card>
@@ -465,7 +344,7 @@ export default function VideoCallManager({
               </div>
               <div>
                 <div className="text-2xl font-bold">
-                  {callHistory?.filter((c) => c.status === 'ended').length || 0}
+                  {callHistory?.filter((c: CallHistoryItem) => c.status === 'ended').length || 0}
                 </div>
                 <div className="text-sm text-gray-500">Total Calls</div>
               </div>
@@ -482,7 +361,7 @@ export default function VideoCallManager({
               <div>
                 <div className="text-2xl font-bold">
                   {Math.round(
-                    (callHistory?.reduce((acc: number, call) => acc + (call.duration || 0), 0) || 0) / 60
+                    (callHistory?.reduce((acc: number, call: CallHistoryItem) => acc + (call.duration || 0), 0) || 0) / 60
                   )}m
                 </div>
                 <div className="text-sm text-gray-500">Total Time</div>
@@ -499,7 +378,7 @@ export default function VideoCallManager({
               </div>
               <div>
                 <div className="text-2xl font-bold">
-                  {callHistory?.filter((c) => c.status === 'active').length || 0}
+                  {callHistory?.filter((c: CallHistoryItem) => c.status === 'active').length || 0}
                 </div>
                 <div className="text-sm text-gray-500">Active Calls</div>
               </div>

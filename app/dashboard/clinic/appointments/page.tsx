@@ -122,7 +122,10 @@ export default function ClinicAppointmentsPage() {
             <h1 className="text-3xl font-bold">Appointments</h1>
             <p className="text-gray-600">Manage all clinic appointments and schedules</p>
           </div>
-          <Button>
+          <Button onClick={() => {
+            // Navigate to physiotherapist dashboard to book appointments
+            window.location.href = '/dashboard/physiotherapist/appointments';
+          }}>
             <Plus className="h-4 w-4 mr-2" />
             New Appointment
           </Button>

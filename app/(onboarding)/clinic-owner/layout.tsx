@@ -6,6 +6,8 @@ import { useUser } from '@clerk/clerk-react';
 import { useEffect } from 'react';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { redirect } from 'next/navigation';
+import { api } from '@/convex/_generated/api';
+import { useQueryUntyped } from '@/lib/convexUntyped';
 
 export default function ClinicOwnerOnboardingLayout({
   children,
@@ -15,6 +17,7 @@ export default function ClinicOwnerOnboardingLayout({
   const pathname = usePathname() || '';
   const { user, isLoaded } = useUser();
   const { data, setCurrentStep, setRole } = useOnboardingStore();
+  const currentUser = useQueryUntyped(api.users.getMyUser);
   
   const steps = [
     'Personal Details',
@@ -35,6 +38,11 @@ export default function ClinicOwnerOnboardingLayout({
       if (!user) {
         redirect('/sign-in');
       }
+
+      // If user already completed onboarding, skip onboarding flow
+      if (currentUser && (currentUser as { onboarded?: boolean }).onboarded) {
+        redirect('/dashboard');
+      }
       
       // Set role if not already set
       if (!data.role) {
@@ -46,7 +54,7 @@ export default function ClinicOwnerOnboardingLayout({
         setCurrentStep(currentStepFromUrl);
       }
     }
-  }, [isLoaded, user, data.role, currentStepFromUrl, data.currentStep, setRole, setCurrentStep]);
+  }, [isLoaded, user, currentUser, data.role, currentStepFromUrl, data.currentStep, setRole, setCurrentStep]);
   
   const handleStepClick = (step: number) => {
     // Only allow navigating to completed steps

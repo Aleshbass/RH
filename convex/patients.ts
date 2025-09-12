@@ -227,10 +227,32 @@ export const getPatientDetails = query({
       throw new Error("Patient not found");
     }
 
-    // Get patient profile
+    // Get patient profile (basic demographics)
     const patientProfile = patient.patientProfileId 
       ? await ctx.db.get(patient.patientProfileId)
       : null;
+
+    // Get extended clinical record from patients table if available
+    const patientRecord = await ctx.db
+      .query("patients")
+      .withIndex("by_user_id", (q: any) => q.eq("userId", args.patientId))
+      .unique();
+
+    // Merge clinical arrays into profile for downstream UI consumption
+    const enrichedProfile = patientProfile || patientRecord ? {
+      ...(patientProfile || {}),
+      // Prefer explicit profile fields if they exist, otherwise fall back to patientRecord
+      emergencyContact: (patientProfile as any)?.emergencyContact ?? patientRecord?.emergencyContact,
+      medicalHistory:
+        (patientProfile as any)?.medicalHistory ??
+        (Array.isArray((patientRecord as any)?.medicalHistory)
+          ? (patientRecord as any)?.medicalHistory
+          : ((patientRecord as any)?.currentConditions || ((patientRecord as any)?.medicalHistory ? [ (patientRecord as any).medicalHistory ] : []))),
+      currentMedications:
+        (patientProfile as any)?.currentMedications ?? (patientRecord as any)?.medications ?? [],
+      allergies:
+        (patientProfile as any)?.allergies ?? (patientRecord as any)?.allergies ?? [],
+    } : null;
 
     // Get recent appointments
     const appointments = await ctx.db
@@ -276,7 +298,7 @@ export const getPatientDetails = query({
         imageUrl: patient.imageUrl,
         phoneNumber: patient.phoneNumber,
       },
-      profile: patientProfile,
+      profile: enrichedProfile,
       relationship,
       appointments,
       sessionLogs,
@@ -285,10 +307,6 @@ export const getPatientDetails = query({
     };
   },
 });
-
-/**
- * Get patient invitations created by this physiotherapist
- */
 export const getMyPatientInvitations = query({
   args: {
     status: v.optional(v.union(
@@ -794,5 +812,47 @@ export const getPatientCareTeam = query({
     );
 
     return careTeam.filter(Boolean); // Remove null entries
+  },
+});
+
+/**
+ * Get patient by their user ID (for patient dashboard use)
+ */
+export const getPatientByUserId = query({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get the user by their clerk ID
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.userId))
+      .unique();
+
+    if (!user || user.role !== "patient") {
+      return null;
+    }
+
+    // Get patient profile
+    const patientProfile = user.patientProfileId 
+      ? await ctx.db.get(user.patientProfileId)
+      : null;
+
+    return {
+      _id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phoneNumber,
+      dateOfBirth: patientProfile?.dateOfBirth,
+      imageUrl: user.imageUrl,
+      patientProfileId: user.patientProfileId,
+      profile: patientProfile,
+    };
   },
 });

@@ -5,12 +5,9 @@ import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef } from 'react'
-import ClinicSidebar from '@/components/clinic/ClinicSidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertCircle } from 'lucide-react'
-import { Toaster } from "sonner"
-import NotificationToaster from '@/components/dashboard/shared/NotificationToaster'
 
 export default function ClinicLayout({
   children,
@@ -22,6 +19,7 @@ export default function ClinicLayout({
   const currentUser = useQuery(api.users.getMyUser)
   const approvalStatus = useQuery(api.users.getUserApprovalStatus)
   const authRedirected = useRef(false)
+  
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -103,7 +101,7 @@ export default function ClinicLayout({
           <h2 className="text-xl font-semibold mb-2">Complete Your Profile</h2>
           <p className="text-gray-600 mb-4">Please complete your profile setup to access the clinic dashboard</p>
           <button 
-            onClick={() => router.push('/onboarding/role-selection')}
+            onClick={() => router.push('/role-selection')}
             className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90"
           >
             Complete Profile
@@ -142,28 +140,6 @@ export default function ClinicLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Dashboard Header */}
-      <div className="border-b border-gray-200 bg-white">
-        <div className="flex h-16 items-center justify-between px-6">
-          <h1 className="text-xl font-semibold text-gray-900">Clinic Dashboard</h1>
-        </div>
-      </div>
-      
-      <div className="flex">
-        {/* Clinic Sidebar */}
-        <ClinicSidebar />
-        
-        {/* Main Content */}
-        <main className="flex-1 overflow-auto">
-          <div className="h-full px-6 py-6 lg:px-8">
-            {children}
-          </div>
-        </main>
-      </div>
-      
-      <NotificationToaster />
-      <Toaster position="top-right" />
-    </div>
+    <>{children}</>
   )
 }

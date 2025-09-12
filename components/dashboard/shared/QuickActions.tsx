@@ -2,20 +2,26 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { UserPlus, Calendar, FileTextIcon, Users } from 'lucide-react'
+import { UserPlus, Calendar, FileTextIcon, Users, Dumbbell, ClipboardList, BookOpen } from 'lucide-react'
 
 interface QuickActionsProps {
   onInvitePatient: () => void
   onScheduleAppointment: () => void
   onCreateSession: () => void
   onManagePatients: () => void
+  onExerciseLibrary?: () => void
+  onTreatmentTemplates?: () => void
+  onAssessments?: () => void
 }
 
 export function QuickActions({ 
   onInvitePatient, 
   onScheduleAppointment, 
   onCreateSession, 
-  onManagePatients 
+  onManagePatients,
+  onExerciseLibrary,
+  onTreatmentTemplates,
+  onAssessments
 }: QuickActionsProps) {
   return (
     <Card>
@@ -58,6 +64,39 @@ export function QuickActions({
           <Users className="h-4 w-4 mr-2" />
           Manage Patients
         </Button>
+
+        {onExerciseLibrary && (
+          <Button 
+            className="w-full justify-start" 
+            variant="outline"
+            onClick={onExerciseLibrary}
+          >
+            <Dumbbell className="h-4 w-4 mr-2" />
+            Exercise Library
+          </Button>
+        )}
+
+        {onTreatmentTemplates && (
+          <Button 
+            className="w-full justify-start" 
+            variant="outline"
+            onClick={onTreatmentTemplates}
+          >
+            <BookOpen className="h-4 w-4 mr-2" />
+            Treatment Templates
+          </Button>
+        )}
+
+        {onAssessments && (
+          <Button 
+            className="w-full justify-start" 
+            variant="outline"
+            onClick={onAssessments}
+          >
+            <ClipboardList className="h-4 w-4 mr-2" />
+            Run Assessment
+          </Button>
+        )}
       </CardContent>
     </Card>
   )

@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import { Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { useOnboardingStore } from '@/stores/onboardingStore';
-import FileUpload from '@/components/ui/FileUpload';
+import { FileUpload } from '@/components/ui/file-upload';
+
 import { useFormWithZod } from '@/lib/hooks/useFormWithZod';
 import { usePhysiotherapistDocuments } from '@/lib/hooks/usePhysiotherapistDocuments';
 

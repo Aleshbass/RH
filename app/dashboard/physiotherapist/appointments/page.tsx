@@ -6,6 +6,7 @@ import { api } from '@/convex/_generated/api';
 
 
 import { useAuth } from '@clerk/nextjs';
+import { useSearchParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { Calendar, Filter, Plus, Repeat, Settings } from 'lucide-react';
@@ -26,11 +27,19 @@ type AppointmentStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled_by
 
 type AppointmentLike = {
   _id: string;
-  patient?: { firstName?: string; lastName?: string } | null;
+  patient?: {
+    _id?: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    imageUrl?: string;
+    phoneNumber?: string;
+  } | null;
   startTime: number;
   endTime: number;
   serviceType?: string;
   status?: string;
+  notesForTherapist?: string;
 };
 
 // Removed unused getStatusColor function
@@ -52,10 +61,19 @@ const getStatusLabel = (status: string): string => {
     default:
       return status;
   }
+
+  // If a patient is provided in query params, auto-open booking modal for convenience
+  // useEffect(() => {
+  //   if (preselectedPatientId) {
+  //     setIsAppointmentModalOpen(true);
+  //   }
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [preselectedPatientId]);
 };
 
 export default function AppointmentsPage() {
   const { isLoaded, isSignedIn } = useAuth();
+  const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
@@ -67,6 +85,7 @@ export default function AppointmentsPage() {
   // Get current user
   type UserLike = { _id: string; clinicId?: string; role?: string };
 const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined;
+  const preselectedPatientId = (searchParams?.get('patient') || '').trim();
 
   // Get appointments with optional filters
   const appointments = useQuery(api.appointments.getMyAppointments, {
@@ -278,7 +297,7 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
               <EnhancedAppointmentCalendar
                 appointments={filteredAppointments.map((appointment: AppointmentLike) => ({
                   _id: appointment._id,
-                  patientId: appointment.patientId || '',
+                  patientId: appointment.patient?._id || '',
                   physiotherapistId: '',
                   clinicId: currentUser?.clinicId ? String(currentUser.clinicId) : undefined,
                   startTime: appointment.startTime,
@@ -297,7 +316,7 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
                   instanceDate: '',
                   isException: false,
                   patient: appointment.patient ? {
-                    _id: appointment.patient._id,
+                    _id: appointment.patient._id || '',
                     firstName: appointment.patient.firstName || 'Unknown',
                     lastName: appointment.patient.lastName || 'Patient',
                     email: appointment.patient.email || '',
@@ -391,27 +410,34 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
       </Tabs>
 
       {/* Enhanced Appointment Booking Modal with Resource Management */}
-      {currentUser?.clinicId && (
-        <AppointmentBookingModal
-          isOpen={isAppointmentModalOpen}
-          onClose={() => setIsAppointmentModalOpen(false)}
-          clinicId={currentUser.clinicId as Id<'clinics'>}
-          physiotherapistId={currentUser._id}
-          selectedDate={selectedDate}
-          selectedTime={selectedDate ? format(selectedDate, 'HH:mm') : undefined}
-          onSubmit={async (appointmentData) => {
-            try {
-              // Create appointment with Convex
-              await handleCreateAppointmentWithResources(appointmentData);
-              setIsAppointmentModalOpen(false);
-              toast.success('Appointment created successfully with resources!');
-            } catch (error) {
-              console.error('Failed to create appointment:', error);
-              toast.error('Failed to create appointment. Please try again.');
-            }
-          }}
-        />
-      )}
+      <AppointmentBookingModal
+        isOpen={isAppointmentModalOpen}
+        onClose={() => setIsAppointmentModalOpen(false)}
+        clinicId={currentUser?.clinicId as Id<'clinics'>}
+        physiotherapistId={currentUser?._id || ''}
+        selectedDate={selectedDate}
+        selectedTime={selectedDate ? format(selectedDate, 'HH:mm') : undefined}
+        onSubmit={async (appointmentData) => {
+          try {
+            // Inject preselected patientId if present
+            const merged = {
+              ...appointmentData,
+              patientId: preselectedPatientId || appointmentData.patientId,
+            };
+
+            // Create appointment with Convex
+            await handleCreateAppointmentWithResources(merged);
+
+            // Best-effort: notify user
+            toast.success('Appointment created successfully');
+
+            setIsAppointmentModalOpen(false);
+          } catch (error) {
+            console.error('Failed to create appointment:', error);
+            toast.error('Failed to create appointment. Please try again.');
+          }
+        }}
+      />
 
       {/* Recurring Appointment Modal */}
       {currentUser && (

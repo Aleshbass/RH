@@ -125,6 +125,31 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
+      // YouTube thumbnails and channel images
+      {
+        protocol: 'https',
+        hostname: 'img.youtube.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'i.ytimg.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'yt3.ggpht.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'yt3.googleusercontent.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
 
@@ -162,6 +187,16 @@ const nextConfig = {
         ],
       },
     ];
+  },
+
+  // Rewrites
+  async rewrites() {
+    return [
+      {
+        source: '/favicon.ico',
+        destination: '/logos/favicon/favicon.ico',
+      },
+    ]
   },
 };
 

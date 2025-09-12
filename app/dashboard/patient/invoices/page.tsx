@@ -8,9 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { 
   Receipt, 
   DollarSign, 
@@ -25,6 +24,7 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
+import { usePaystackCheckout } from '@/components/billing/PaystackCheckout'
 
 interface Invoice {
   _id: Id<"invoices">
@@ -53,24 +53,23 @@ interface Invoice {
 
 export default function PatientInvoicesPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState('')
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
+  const { initializePayment } = usePaystackCheckout()
   
   // Queries
   const invoices = useQuery(api.billing.getPatientInvoices, { limit: 50 }) as Invoice[] | undefined
   
   // Mutations
-  const processPayment = useMutation(api.billing.processPayment)
+  const generateInvoicePDF = useMutation(api.billing.generateInvoicePDF)
   
   // Calculate summary stats
   const stats = {
     total: invoices?.length || 0,
-    pending: invoices?.filter(inv => inv.status === 'sent').length || 0,
+    pending: invoices?.filter(inv => inv.status === 'pending' || inv.status === 'sent').length || 0,
     overdue: invoices?.filter(inv => inv.isOverdue).length || 0,
     paid: invoices?.filter(inv => inv.status === 'paid').length || 0,
-    totalPending: invoices?.filter(inv => inv.status === 'sent').reduce((sum, inv) => sum + inv.totalAmount, 0) || 0,
+    totalPending: invoices?.filter(inv => inv.status === 'pending' || inv.status === 'sent').reduce((sum, inv) => sum + inv.totalAmount, 0) || 0,
   }
   
   const getStatusBadge = (status: string, isOverdue: boolean) => {
@@ -80,10 +79,10 @@ export default function PatientInvoicesPage() {
     if (isOverdue && status !== 'paid') {
       return <Badge className="bg-red-100 text-red-800">Overdue</Badge>
     }
-    if (status === 'sent') {
-      return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>
+    if (status === 'pending' || status === 'sent') {
+      return <Badge className="bg-blue-100 text-blue-800">Pending Payment</Badge>
     }
-    return <Badge variant="secondary">{status}</Badge>
+    return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>
   }
   
   const formatCurrency = (amount: number, currency: string = 'NGN') => {
@@ -93,30 +92,13 @@ export default function PatientInvoicesPage() {
     }).format(amount / 100) // Convert from kobo to naira
   }
   
-  const handlePayment = async () => {
-    if (!selectedInvoice || !paymentMethod) {
-      toast.error('Please select a payment method')
-      return
-    }
-    
+  const handlePayNow = async (invoice: Invoice) => {
     setIsProcessingPayment(true)
     try {
-      const result = await processPayment({
-        invoiceId: selectedInvoice._id,
-        paymentMethod,
-        paymentReference: `PAY-${Date.now()}-${selectedInvoice.invoiceNumber}`,
-      })
-      
-      if (result.success) {
-        toast.success('Payment processed successfully!')
-        setIsPaymentModalOpen(false)
-        setSelectedInvoice(null)
-        setPaymentMethod('')
-      } else {
-        toast.error(result.message)
-      }
+      await initializePayment(invoice._id)
+      // Paystack will redirect to their checkout page
     } catch (error) {
-      toast.error('Failed to process payment')
+      toast.error('Failed to initialize payment')
       console.error('Payment error:', error)
     } finally {
       setIsProcessingPayment(false)
@@ -130,9 +112,18 @@ export default function PatientInvoicesPage() {
     setShareModalOpen(false)
   }
   
-  const downloadInvoice = () => {
-    // This would integrate with a PDF generation service
-    toast.info('PDF download feature coming soon')
+  const downloadInvoice = async () => {
+    if (!selectedInvoice) return
+    
+    try {
+      const result = await generateInvoicePDF({ invoiceId: selectedInvoice._id })
+      if (result.pdfUrl) {
+        window.open(result.pdfUrl, '_blank')
+        toast.success('PDF generated successfully')
+      }
+    } catch {
+      toast.error('Failed to send reminder')
+    }
   }
 
   return (
@@ -220,8 +211,8 @@ export default function PatientInvoicesPage() {
                         </div>
                         <p className="text-sm text-gray-600">{invoice.clinicName}</p>
                         <div className="flex items-center space-x-4 text-xs text-gray-500 mt-1">
-                          <span>Issued: {format(new Date(invoice.issueDate), 'MMM d, yyyy')}</span>
-                          <span>Due: {format(new Date(invoice.dueDate), 'MMM d, yyyy')}</span>
+                          <span>Issued: {format(new Date(invoice.issueDate), 'MMM d, yyyy, h:mm a')}</span>
+                          <span>Due: {format(new Date(invoice.dueDate), 'MMM d, yyyy, h:mm a')}</span>
                           {invoice.paymentDate && (
                             <span>Paid: {format(new Date(invoice.paymentDate), 'MMM d, yyyy')}</span>
                           )}
@@ -261,17 +252,15 @@ export default function PatientInvoicesPage() {
                           Share
                         </Button>
                         
-                        {invoice.canPay && (
+                        {((invoice.status === 'pending' || invoice.status === 'sent') || invoice.isOverdue) && (
                           <Button
                             size="sm"
-                            onClick={() => {
-                              setSelectedInvoice(invoice)
-                              setIsPaymentModalOpen(true)
-                            }}
-                            className="bg-green-600 hover:bg-green-700"
+                            onClick={() => handlePayNow(invoice)}
+                            disabled={isProcessingPayment}
+                            className="bg-green-600 hover:bg-green-700 text-white"
                           >
-                            <CreditCard className="w-4 h-4 mr-1" />
-                            Pay Now
+                            <CreditCard className="h-4 w-4 mr-2" />
+                            {isProcessingPayment ? 'Processing...' : 'Pay Now'}
                           </Button>
                         )}
                       </div>
@@ -291,7 +280,7 @@ export default function PatientInvoicesPage() {
       </Card>
 
       {/* Invoice Details Modal */}
-      {selectedInvoice && !isPaymentModalOpen && !shareModalOpen && (
+      {selectedInvoice && !shareModalOpen && (
         <Dialog open={!!selectedInvoice} onOpenChange={() => setSelectedInvoice(null)}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -301,7 +290,7 @@ export default function PatientInvoicesPage() {
                 {getStatusBadge(selectedInvoice.status, selectedInvoice.isOverdue)}
               </DialogTitle>
               <DialogDescription>
-                {selectedInvoice.clinicName} • Issued on {format(new Date(selectedInvoice.issueDate), 'MMMM d, yyyy')}
+                {selectedInvoice.clinicName} • Issued on {format(new Date(selectedInvoice.issueDate), 'MMMM d, yyyy, h:mm a')}
               </DialogDescription>
             </DialogHeader>
             
@@ -411,11 +400,12 @@ export default function PatientInvoicesPage() {
                 
                 {selectedInvoice.canPay && (
                   <Button
-                    onClick={() => setIsPaymentModalOpen(true)}
+                    onClick={() => handlePayNow(selectedInvoice)}
+                    disabled={isProcessingPayment}
                     className="flex-1 bg-green-600 hover:bg-green-700"
                   >
                     <CreditCard className="w-4 h-4 mr-2" />
-                    Pay Now
+                    {isProcessingPayment ? 'Processing...' : 'Pay Now'}
                   </Button>
                 )}
               </div>
@@ -424,53 +414,6 @@ export default function PatientInvoicesPage() {
         </Dialog>
       )}
 
-      {/* Payment Modal */}
-      {isPaymentModalOpen && selectedInvoice && (
-        <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Pay Invoice #{selectedInvoice.invoiceNumber}</DialogTitle>
-              <DialogDescription>
-                Total amount: {formatCurrency(selectedInvoice.totalAmount, selectedInvoice.currency)}
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="paymentMethod">Payment Method</Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select payment method" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="card">Credit/Debit Card</SelectItem>
-                    <SelectItem value="paystack">Paystack</SelectItem>
-                    <SelectItem value="cash">Cash Payment</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="flex space-x-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsPaymentModalOpen(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handlePayment}
-                  disabled={isProcessingPayment || !paymentMethod}
-                  className="flex-1"
-                >
-                  {isProcessingPayment ? 'Processing...' : 'Process Payment'}
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
 
       {/* Share Modal */}
       {shareModalOpen && selectedInvoice && (

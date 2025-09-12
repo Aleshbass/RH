@@ -57,23 +57,16 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="w-full max-w-3xl mx-auto">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="space-y-10 bg-white p-10 rounded-xl shadow-xl"
+        className="space-y-6"
       >
-        <form
-          onSubmit={onSubmit}
-          className="space-y-8"
-        >
-          <div className="text-center mb-8">
-            <h2 className="text-2xl font-semibold text-[#002e2c]">
-              Personal Information
-            </h2>
-            <p className="text-[#005b57]">
-              Let&apos;s start with your basic personal details
-            </p>
+        <form onSubmit={onSubmit} className="space-y-6">
+          <div className="text-center mb-4">
+            <h2 className="text-xl sm:text-2xl font-semibold text-[#002e2c]">Personal Information</h2>
+            <p className="text-[#005b57] text-sm sm:text-base">Let&apos;s start with your basic personal details</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
@@ -281,7 +274,7 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
             initial="hidden"
             animate="visible"
             variants={fadeInVariants}
-            className="flex justify-center pt-4"
+            className="pt-2"
           >
             <button
               type="submit"

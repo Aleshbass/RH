@@ -55,9 +55,7 @@ export default function DashboardPage() {
         return // Will show declined message below
       }
       
-      // For any other access issues, redirect to onboarding
-      if (!isRedirecting) setIsRedirecting(true)
-      router.push('/onboarding/role-selection')
+      // For any other access issues, do not redirect to onboarding to avoid loops
       return
     }
 
@@ -80,7 +78,7 @@ export default function DashboardPage() {
           break
         default:
           // If no role assigned, redirect to role selection
-          router.replace('/onboarding/role-selection')
+          router.replace('/role-selection')
       }
     }
   }, [isLoaded, isSignedIn, user, dashboardAccess, isRedirecting, router])
@@ -124,7 +122,7 @@ export default function DashboardPage() {
         <div className="text-center">
           <h2 className="text-xl font-semibold mb-2">Complete Your Profile</h2>
           <p className="text-gray-600 mb-4">Please complete your profile setup to access the dashboard</p>
-          <Button onClick={() => router.push('/onboarding/role-selection')}>
+          <Button onClick={() => router.push('/role-selection')}>
             Complete Profile
           </Button>
         </div>
@@ -153,6 +151,19 @@ export default function DashboardPage() {
           <Button onClick={() => router.push('/sign-in')}>
             Back to Sign In
           </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Catch-all: access denied for other reasons. Avoid redirecting to onboarding for onboarded users.
+  if (!dashboardAccess.canAccess) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2">Access Not Available</h2>
+          <p className="text-gray-600 mb-4">{dashboardAccess.reason || 'Your account cannot access the dashboard at this time.'}</p>
+          <Button onClick={() => router.push('/')}>Go to Home</Button>
         </div>
       </div>
     )

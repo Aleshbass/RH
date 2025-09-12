@@ -37,11 +37,19 @@ export function PatientInviteModal({ isOpen, onClose, onSubmit }: PatientInviteM
       })
 
       if (success) {
+        toast.success(`Invitation sent successfully to ${formData.patientEmail}`)
+        // Reset form
         setFormData({ patientEmail: '', patientName: '', notes: '' })
-        onClose()
+        // Close modal with slight delay for smooth UX
+        setTimeout(() => {
+          onClose()
+        }, 500)
+      } else {
+        toast.error('Failed to send invitation. Please try again.')
       }
     } catch (error) {
       console.error('Error submitting invitation:', error)
+      toast.error('An unexpected error occurred')
     } finally {
       setIsSubmitting(false)
     }

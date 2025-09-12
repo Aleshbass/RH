@@ -32,7 +32,6 @@ export function useValidateInvitationCode(code: string | null) {
 export function useCompletePatientOnboarding() {
   // Use the action wrapper so notifications are sent and logic is unified
   // Using untyped action hook to avoid deep TS instantiation issues
-  // @ts-expect-error - Using untyped action to avoid deep TypeScript instantiation issues with complex Convex API types
   const completeOnboarding = useActionUntyped((api as unknown as { actions: { patients: { completeOnboarding: { completePatientOnboardingWithNotification: unknown }}}}).actions.patients.completeOnboarding.completePatientOnboardingWithNotification);
   
   return {
@@ -58,7 +57,6 @@ export function useCompletePatientOnboarding() {
 export function useCreatePatientInvitation() {
   // Use the unified Convex action that also sends email + notification
   // Using untyped action hook to avoid deep TS instantiation issues
-  // @ts-expect-error - Using untyped action to avoid deep TypeScript instantiation issues with complex Convex API types
   const createInvitationAction = useActionUntyped(
     (api as unknown as { actions: { patients: { invitePatient: { createPatientInvitationWithNotification: unknown }}}}).actions.patients.invitePatient.createPatientInvitationWithNotification
   );

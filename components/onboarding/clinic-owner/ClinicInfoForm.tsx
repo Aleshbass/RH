@@ -133,18 +133,11 @@ export default function ClinicInfoForm({ onNext, onBack }: ClinicInfoFormProps) 
   const yearOptions = Array.from({ length: 100 }, (_, i) => currentYear - i);
 
   return (
-    <div className="max-w-4xl mx-auto bg-white p-10 rounded-xl shadow-xl">
-      <form
-        className="space-y-8"
-        onSubmit={handleSubmit(onSubmit)}
-      >
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-bold text-[#005b57]">
-            Clinic Information
-          </h2>
-          <p className="text-gray-600 text-lg mt-2">
-            Tell us about your healthcare facility
-          </p>
+    <div className="max-w-4xl mx-auto">
+      <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
+        <div className="text-center mb-4">
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#005b57]">Clinic Information</h2>
+          <p className="text-gray-600 mt-2">Tell us about your healthcare facility</p>
           <OnboardingProgress current={data.currentStep} total={4} className="mt-4" />
         </div>
 
@@ -464,7 +457,7 @@ export default function ClinicInfoForm({ onNext, onBack }: ClinicInfoFormProps) 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.8 }}
-          className="flex justify-between mt-10 pt-6 border-t border-gray-200"
+          className="flex justify-between mt-6 pt-4 border-t border-gray-200"
         >
           <button
             type="button"

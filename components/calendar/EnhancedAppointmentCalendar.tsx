@@ -174,7 +174,7 @@ export function EnhancedAppointmentCalendar({
   } = useCalendarUIStore();
 
   // Convert appointments to FullCalendar events
-  const events = appointments.map((appointment) => {
+  const events = (appointments || []).map((appointment) => {
     const color = getAppointmentColor(appointment);
     const gradient = getAppointmentGradient(appointment);
     const patientName = appointment.patient 

@@ -60,9 +60,8 @@ class AnalyticsTracker {
         metadata
       })
     } catch (error) {
-      ErrorTracker.captureException(error, {
-        context: 'analytics_tracker',
-        extra: { userId, action }
+      ErrorTracker.captureException(error as Error, {
+        extra: { context: 'analytics_tracker', userId, action }
       })
     }
   }
@@ -95,9 +94,8 @@ class AnalyticsTracker {
         tags
       })
     } catch (error) {
-      ErrorTracker.captureException(error, {
-        context: 'analytics_tracker',
-        extra: { metric, value }
+      ErrorTracker.captureException(error as Error, {
+        extra: { context: 'analytics_tracker', metric, value }
       })
     }
   }
@@ -110,7 +108,7 @@ class AnalyticsTracker {
     })
 
     // Update system metrics
-    this.updateSystemResponseTime(duration)
+    // this.updateSystemResponseTime(duration) // Method not implemented
     
     if (statusCode >= 400) {
       this.trackError(endpoint, statusCode)
@@ -121,7 +119,7 @@ class AnalyticsTracker {
   trackError(source: string, errorCode?: number) {
     this.trackPerformance('error_count', 1, {
       source,
-      error_code: errorCode?.toString()
+      error_code: errorCode?.toString() || ''
     })
 
     this.updateErrorRate()
@@ -283,6 +281,6 @@ export const trackEmailSent = (success: boolean) =>
 export const trackError = (source: string, error: Error) => {
   analyticsTracker.trackError(source)
   ErrorTracker.captureException(error, {
-    context: source
+    extra: { context: source }
   })
 }

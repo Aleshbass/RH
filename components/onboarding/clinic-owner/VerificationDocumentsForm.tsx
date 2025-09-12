@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import FileUpload from '@/components/ui/FileUpload';
+import { FileUpload } from '@/components/ui/file-upload';
 import { useClinicDocuments, ClinicDocumentType } from '@/lib/hooks/useClinicDocuments';
 import { Id } from '@/convex/_generated/dataModel';
 import { Loader2 } from 'lucide-react';
@@ -242,25 +242,25 @@ export default function VerificationDocumentsForm({
   };
 
   return (
-    <div className="w-full max-w-3xl mx-auto p-6 bg-white rounded-xl shadow-sm">
+    <div className="w-full max-w-3xl mx-auto">
       <motion.div
         initial="hidden"
         animate="visible"
         variants={containerVariants}
-        className="space-y-8"
+        className="space-y-6"
       >
         <motion.div variants={itemVariants}>
-          <h2 className="text-2xl font-bold text-[#005b57] mb-1">
+          <h2 className="text-xl sm:text-2xl font-bold text-[#005b57] mb-1">
             Verification & Documents
           </h2>
-          <p className="text-[#002e2c] mb-6">
+          <p className="text-[#002e2c] mb-4 sm:mb-6">
             Please upload the required documents for verification
           </p>
         </motion.div>
 
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="space-y-8"
+          className="space-y-6"
         >
           {/* Business License */}
           <motion.div variants={itemVariants} className="space-y-2">

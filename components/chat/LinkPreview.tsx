@@ -190,6 +190,7 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({ url, className }) => {
                   className="w-full h-full object-cover"
                   width={64}
                   height={48}
+                  unoptimized
                   onError={(e) => {
                     // Handle error by hiding the image
                     const target = e.target as HTMLImageElement

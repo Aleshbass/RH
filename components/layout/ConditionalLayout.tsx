@@ -13,14 +13,20 @@ export default function ConditionalLayout({ children }: ConditionalLayoutProps) 
   
   // Check if current route is a dashboard route
   const isDashboardRoute = pathname.startsWith('/dashboard') || pathname.startsWith('/admin')
+  // Hide global header/footer for onboarding routes to avoid overlap and clutter
+  const isOnboardingRoute =
+    pathname.startsWith('/physiotherapist') ||
+    pathname.startsWith('/clinic-owner') ||
+    pathname.startsWith('/onboarding-complete')
+  const showHeaderFooter = !isDashboardRoute && !isOnboardingRoute
   
   return (
     <>
-      {!isDashboardRoute && <Header />}
+      {showHeaderFooter && <Header />}
       <main className={isDashboardRoute ? "min-h-screen" : "flex-grow"}>
         {children}
       </main>
-      {!isDashboardRoute && <Footer />}
+      {showHeaderFooter && <Footer />}
     </>
   )
-} 
+}

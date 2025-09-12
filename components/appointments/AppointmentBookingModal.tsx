@@ -18,7 +18,7 @@ interface AppointmentBookingModalProps {
   onSubmit: (appointmentData: { patientId?: string; startTime: number; endTime: number; serviceType: string; notesForTherapist?: string; selectedResources?: string[] }) => void;
   selectedDate?: Date;
   selectedTime?: string;
-  clinicId: string;
+  clinicId?: string;
   physiotherapistId: string;
 }
 
@@ -67,6 +67,10 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
   useEffect(() => {
     const loadResourcesWithAvailability = async () => {
       if (!formData.date || !formData.time) return;
+      if (!clinicId) {
+        setClinicResources([]);
+        return;
+      }
 
       setLoadingResources(true);
       try {
@@ -74,9 +78,9 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
         const endTime = addMinutes(new Date(startTime), formData.duration).getTime();
 
         const resourcesWithAvailability = await getResourcesWithAvailability({
-          resourceId: '' as Id<'resources'>, // This will be handled by the hook
+          clinicId: clinicId as Id<'clinics'>,
           startTime,
-          endTime
+          endTime,
         });
 
         setClinicResources(resourcesWithAvailability || []);

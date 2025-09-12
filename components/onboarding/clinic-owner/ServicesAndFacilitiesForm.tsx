@@ -127,21 +127,21 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
   };
 
   return (
-    <div className="w-full max-w-3xl mx-auto p-6 bg-white rounded-xl shadow-sm">
+    <div className="w-full max-w-3xl mx-auto">
       <motion.div
         initial="hidden"
         animate="visible"
         variants={containerVariants}
-        className="space-y-8"
+        className="space-y-6"
       >
         <motion.div variants={itemVariants}>
-          <h2 className="text-2xl font-bold text-[#005b57] mb-1">Services & Facilities</h2>
-          <p className="text-[#002e2c] mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-[#005b57] mb-1">Services & Facilities</h2>
+          <p className="text-[#002e2c] mb-4 sm:mb-6">
             Tell us about the services and facilities your clinic offers
           </p>
         </motion.div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* Services Section */}
           <motion.div variants={itemVariants} className="space-y-4">
             <h3 className="text-lg font-medium text-[#005b57]">Services Offered</h3>
@@ -321,7 +321,7 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
           {/* Form Navigation */}
           <motion.div
             variants={itemVariants}
-            className="flex justify-between items-center pt-4"
+            className="flex justify-between items-center pt-2"
           >
             <Button
               type="button"

@@ -74,6 +74,9 @@ export default function RootLayout({
           </Providers>
         </ClerkProvider>
         
+        {/* Paystack Inline Script */}
+        <script src="https://js.paystack.co/v1/inline.js" async />
+        
         {/* Cookie Consent Management */}
         <ReactCookiebot 
           domainGroupId="48b36e33-f5f8-41b6-a59d-fb929da85bcf"

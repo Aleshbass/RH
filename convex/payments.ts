@@ -1,10 +1,13 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, action } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
+import { Id, Doc } from "./_generated/dataModel";
+import { api } from "./_generated/api";
+import { internal } from "./_generated/api";
 
-// Payment status enum
+// Payment status enum (aligned with schema.payments.status)
 const paymentStatus = v.union(
   v.literal("pending"),
+  v.literal("processing"),
   v.literal("completed"),
   v.literal("failed"),
   v.literal("cancelled")
@@ -18,7 +21,482 @@ const paymentMethod = v.union(
 );
 
 /**
- * Initialize payment for an invoice
+ * Initialize invoice payment with Paystack
+ * This is what the UI calls to start payment process
+ */
+export const initializeInvoicePayment = action({
+  args: {
+    invoiceId: v.id("invoices"),
+    paymentMethod: v.string(),
+    redirectUrl: v.string()
+  },
+  returns: v.object({
+    success: v.boolean(),
+    authorizationUrl: v.optional(v.string()),
+    reference: v.optional(v.string()),
+    error: v.optional(v.string())
+  }),
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    authorizationUrl?: string;
+    reference?: string;
+    error?: string;
+  }> => {
+    // Get invoice details
+    const invoice = await ctx.runQuery(api.billing.getInvoiceById, { 
+      invoiceId: args.invoiceId 
+    });
+    
+    if (!invoice) {
+      return { success: false, error: "Invoice not found" };
+    }
+
+    if (invoice.status === "paid") {
+      return { success: false, error: "Invoice is already paid" };
+    }
+
+    // Generate unique payment reference
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
+    const reference = `INV_${invoice.invoiceNumber}_${timestamp}_${random}`;
+
+    // Initialize payment in database
+    const result = await ctx.runMutation(internal.payments.createPaymentRecord, {
+      invoiceId: args.invoiceId,
+      reference,
+      amount: invoice.totalAmount,
+      paymentMethod: args.paymentMethod
+    });
+
+    if (!result.success) {
+      return { success: false, error: result.message };
+    }
+
+    // Determine amount to charge (patient payable): base (invoice.totalAmount) + platform + paystack fees
+    const platformFee = (invoice as any).platformFeeAmount ?? 100000; // ₦1,000 in kobo default
+    const baseAmount = invoice.totalAmount;
+    const paystackFee = (invoice as any).paystackFeeAmount ?? (Math.round((baseAmount + platformFee) * 0.015) + 10000);
+    const amountToCharge = ((invoice as any).feeBreakdown?.total) ?? (baseAmount + platformFee + paystackFee);
+
+    // Update pending payment record with the charge amount if different
+    if (amountToCharge !== invoice.totalAmount) {
+      try {
+        const paymentRecord = await ctx.runQuery(api.payments.getPaymentHistory, { limit: 1 });
+        // best-effort: patch latest by reference
+        await ctx.runMutation(internal.payments.updatePaymentStatus, {
+          paystackReference: reference,
+          status: "pending",
+          paystackData: { amountToCharge }
+        });
+      } catch (e) {
+        console.warn("Could not update payment record with amountToCharge", e);
+      }
+    }
+
+    // Initialize Paystack payment
+    const paystackResult = await ctx.runAction(internal.payments.initializePaystackPayment, {
+      reference,
+      amount: amountToCharge, // Amount in kobo
+      email: invoice.patientEmail || "patient@example.com",
+      metadata: {
+        invoiceId: args.invoiceId,
+        invoiceNumber: invoice.invoiceNumber,
+        patientId: invoice.patientId,
+        physiotherapistId: invoice.physiotherapistId || null
+      },
+      callback_url: args.redirectUrl
+    });
+
+    return paystackResult;
+  }
+});
+
+/**
+ * Internal mutation to create payment record
+ */
+export const createPaymentRecord = mutation({
+  args: {
+    invoiceId: v.id("invoices"),
+    reference: v.string(),
+    amount: v.number(),
+    paymentMethod: v.string()
+  },
+  returns: v.object({
+    success: v.boolean(),
+    paymentId: v.optional(v.id("payments")),
+    message: v.string()
+  }),
+  handler: async (ctx, args) => {
+    // Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return { success: false, message: "Not authenticated" };
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) {
+      return { success: false, message: "User not found" };
+    }
+
+    // Create payment record
+    const paymentId = await ctx.db.insert("payments", {
+      invoiceId: args.invoiceId,
+      userId: user._id,
+      amount: args.amount,
+      currency: "NGN",
+      paymentMethod: args.paymentMethod as any,
+      status: "pending" as const,
+      paystackReference: args.reference,
+      transactionReference: args.reference,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+
+    // Update invoice with payment reference
+    await ctx.db.patch(args.invoiceId, {
+      paymentReference: args.reference
+    });
+
+    return {
+      success: true,
+      paymentId,
+      message: "Payment record created"
+    };
+  }
+});
+
+/**
+ * Initialize Paystack payment (Server Action)
+ */
+export const initializePaystackPayment = action({
+  args: {
+    reference: v.string(),
+    amount: v.number(), // In kobo
+    email: v.string(),
+    metadata: v.any(),
+    callback_url: v.string()
+  },
+  returns: v.object({
+    success: v.boolean(),
+    authorizationUrl: v.optional(v.string()),
+    reference: v.optional(v.string()),
+    error: v.optional(v.string())
+  }),
+  handler: async (ctx, args) => {
+    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
+    
+    if (!PAYSTACK_SECRET) {
+      console.error("Paystack secret key not configured");
+      return { success: false, error: "Payment service not configured" };
+    }
+
+    try {
+      // Optional split to physiotherapist subaccount
+      let subaccountCode: string | null = null;
+      let platformShare = 0;
+      try {
+        const invoiceId = (args.metadata as any)?.invoiceId;
+        if (invoiceId) {
+          const invoice = await ctx.runQuery(api.billing.getInvoiceById, { invoiceId });
+          if (invoice && invoice.physiotherapistId) {
+            const bankDetails = await ctx.runQuery(api.paystack.getPhysiotherapistBankDetails as any, {
+              physiotherapistId: invoice.physiotherapistId,
+            });
+            subaccountCode = bankDetails?.subaccountCode || null;
+          }
+          // Determine platform fee (kobo)
+          platformShare = (invoice as any)?.feeBreakdown?.platformFee || (invoice as any)?.platformFeeAmount || 0;
+        }
+      } catch (e) {
+        console.warn("initializePaystackPayment: could not resolve subaccount/platform fee", e);
+      }
+
+      // Build Paystack payload
+      const payload: any = {
+        reference: args.reference,
+        amount: args.amount, // Already in kobo
+        email: args.email,
+        metadata: args.metadata,
+        callback_url: args.callback_url,
+        channels: ["card", "bank", "ussd", "mobile_money", "bank_transfer"],
+      };
+
+      if (subaccountCode) {
+        payload.subaccount = subaccountCode;
+        payload.transaction_charge = platformShare > 0 ? platformShare : 0;
+        payload.bearer = "subaccount"; // Subaccount bears Paystack fees
+      }
+
+      const response = await fetch("https://api.paystack.co/transaction/initialize", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${PAYSTACK_SECRET}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+
+      if (data.status) {
+        return {
+          success: true,
+          authorizationUrl: data.data.authorization_url,
+          reference: data.data.reference
+        };
+      } else {
+        console.error("Paystack initialization failed:", data);
+        return {
+          success: false,
+          error: data.message || "Payment initialization failed"
+        };
+      }
+    } catch (error) {
+      console.error("Paystack API error:", error);
+      return {
+        success: false,
+        error: "Payment service unavailable"
+      };
+    }
+  }
+});
+
+/**
+ * Verify Paystack transaction
+ */
+export const verifyPaystackTransaction = action({
+  args: {
+    reference: v.string()
+  },
+  returns: v.object({
+    success: v.boolean(),
+    status: v.optional(v.string()),
+    amount: v.optional(v.number()),
+    metadata: v.optional(v.any()),
+    error: v.optional(v.string())
+  }),
+  handler: async (ctx, args) => {
+    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
+    
+    if (!PAYSTACK_SECRET) {
+      console.error("Paystack secret key not configured");
+      return { success: false, error: "Payment service not configured" };
+    }
+
+    try {
+      const response = await fetch(`https://api.paystack.co/transaction/verify/${args.reference}`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${PAYSTACK_SECRET}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.status && data.data) {
+        const transaction = data.data;
+        
+        // Update payment and invoice status based on transaction status
+        if (transaction.status === "success") {
+          await ctx.runMutation(internal.payments.updatePaymentStatus, {
+            paystackReference: args.reference,
+            status: "completed",
+            paystackData: transaction
+          })
+          
+          // Update patient balance automatically
+          if (transaction.metadata?.invoiceId) {
+            await ctx.runMutation(internal.payments.updatePatientBalance, {
+              invoiceId: transaction.metadata.invoiceId,
+              amountPaid: transaction.amount
+            })
+          }
+        } else if (transaction.status === "failed") {
+          await ctx.runMutation(internal.payments.updatePaymentStatus, {
+            paystackReference: args.reference,
+            status: "failed",
+            paystackData: transaction
+          })
+        }
+
+        return {
+          success: true,
+          status: transaction.status,
+          amount: transaction.amount,
+          metadata: transaction.metadata
+        };
+      } else {
+        return {
+          success: false,
+          error: data.message || "Verification failed"
+        };
+      }
+    } catch (error) {
+      console.error("Paystack verification error:", error);
+      return {
+        success: false,
+        error: "Verification service unavailable"
+      };
+    }
+  }
+});
+
+/**
+ * Update patient balance after successful payment
+ */
+export const updatePatientBalance = mutation({
+  args: {
+    invoiceId: v.id("invoices"),
+    amountPaid: v.number()
+  },
+  handler: async (ctx, args) => {
+    const invoice = await ctx.db.get(args.invoiceId);
+    if (!invoice) return;
+
+    // Get patient
+    const patient = await ctx.db.get(invoice.patientId);
+    if (!patient) return;
+
+    // Update patient profile balance if it exists
+    const patientProfile = await ctx.db
+      .query("patientProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", invoice.patientId))
+      .unique();
+
+    if (patientProfile) {
+      const currentBalance = (patientProfile as any).accountBalance || 0;
+      const newBalance = currentBalance - args.amountPaid;
+      
+      await ctx.db.patch(patientProfile._id, {
+        accountBalance: newBalance,
+        lastPaymentDate: Date.now(),
+        updatedAt: Date.now()
+      } as any);
+    }
+
+    // Log the balance update
+    await ctx.db.insert("analytics_events", {
+      type: "balance_updated",
+      userId: invoice.patientId,
+      timestamp: Date.now(),
+      metadata: {
+        status: "completed",
+        details: {
+          invoiceId: args.invoiceId,
+          amountPaid: args.amountPaid,
+          newBalance: ((patientProfile as any)?.accountBalance || 0) - args.amountPaid
+        }
+      }
+    });
+  }
+});
+
+/**
+ * Update payment and invoice status
+ */
+export const updatePaymentStatus = mutation({
+  args: {
+    paystackReference: v.string(),
+    status: v.string(),
+    paystackData: v.optional(v.any())
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+    paymentId: v.optional(v.id("payments")),
+    invoiceId: v.optional(v.id("invoices"))
+  }),
+  handler: async (ctx, args) => {
+    // Find payment by reference
+    const payment = await ctx.db
+      .query("payments")
+      .filter((q) => q.eq(q.field("paystackReference"), args.paystackReference))
+      .unique();
+
+    if (!payment) {
+      console.error("Payment not found for reference:", args.paystackReference);
+      return {
+        success: false,
+        message: "Payment not found"
+      };
+    }
+
+    // Update payment status
+    await ctx.db.patch(payment._id, {
+      status: args.status as any,
+      updatedAt: Date.now(),
+      metadata: args.paystackData
+    });
+
+    // If payment is completed, update invoice
+    if (args.status === "completed") {
+      const invoice = await ctx.db.get(payment.invoiceId as Id<"invoices">) as Doc<"invoices"> | null;
+      if (invoice) {
+        await ctx.db.patch(payment.invoiceId, {
+          status: "paid" as const,
+          paymentDate: Date.now(),
+          paymentMethod: payment.paymentMethod,
+          paidAmount: payment.amount
+        });
+
+        // Create notification for physiotherapist if physiotherapistId exists
+        if ((invoice as any).physiotherapistId) {
+          await ctx.db.insert("notifications", {
+            userId: (invoice as any).physiotherapistId,
+            type: "payment_received" as any,
+            priority: "high",
+            status: "pending",
+            payload: {
+              title: "Payment Received",
+              body: `Invoice #${invoice.invoiceNumber} has been paid (₦${(payment.amount / 100).toLocaleString()})`,
+              data: {
+                entityId: invoice._id,
+                entityType: "invoice",
+                actionUrl: `/dashboard/physiotherapist/billing`,
+                invoiceNumber: invoice.invoiceNumber,
+                amount: payment.amount
+              }
+            },
+            createdAt: Date.now()
+          });
+        }
+
+        // Create notification for patient
+        await ctx.db.insert("notifications", {
+          userId: invoice.patientId,
+          type: "payment_confirmed" as any,
+          priority: "medium",
+          status: "pending",
+          payload: {
+            title: "Payment Confirmed",
+            body: `Your payment for invoice #${invoice.invoiceNumber} has been confirmed`,
+            data: {
+              entityId: invoice._id,
+              entityType: "invoice",
+              actionUrl: `/dashboard/patient/invoices/${invoice._id}`,
+              invoiceNumber: invoice.invoiceNumber
+            }
+          },
+          createdAt: Date.now()
+        });
+      }
+    }
+
+    return {
+      success: true,
+      message: "Payment status updated",
+      paymentId: payment._id,
+      invoiceId: payment.invoiceId
+    };
+  }
+});
+
+/**
+ * Initialize payment for an invoice (DEPRECATED - use initializeInvoicePayment)
  * Creates payment record and prepares for Paystack processing
  */
 export const initializePayment = mutation({
@@ -80,30 +558,32 @@ export const initializePayment = mutation({
     // Create payment record
     const paymentId = await ctx.db.insert("payments", {
       invoiceId: args.invoiceId,
-      patientId: invoice.patientId,
-      physiotherapistId: invoice.clinicId ? undefined : await getPhysiotherapistFromInvoice(ctx, args.invoiceId),
-
+      userId: user._id,
       amount: invoice.totalAmount,
+      currency: "NGN",
       paymentMethod: args.paymentMethod,
+      status: "pending" as const,
       paystackReference,
-      status: "pending",
-      createdAt: timestamp
+      transactionReference: paystackReference,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     });
 
-    // Log payment initialization
+    // Log payment initialization with correct metadata structure
     await ctx.db.insert("analytics_events", {
       type: "payment_initialized",
-      userId: user._id,
+      userId: invoice.patientId,
+      timestamp: Date.now(),
       metadata: {
         status: "pending",
         details: {
           invoiceId: args.invoiceId,
+          paymentId: paymentId,
+          paymentMethod: args.paymentMethod,
           amount: invoice.totalAmount,
-          paystackReference,
-          paymentMethod: args.paymentMethod
+          clientIP: args.metadata?.ipAddress || "unknown",
         }
       },
-      timestamp: timestamp
     });
 
     return {
@@ -115,126 +595,7 @@ export const initializePayment = mutation({
   }
 });
 
-/**
- * Update payment status (called by webhook)
- */
-export const updatePaymentStatus = mutation({
-  args: {
-    paystackReference: v.string(),
-    status: paymentStatus,
-    paystackData: v.optional(v.object({
-      transactionId: v.optional(v.string()),
-      gatewayResponse: v.optional(v.string()),
-      paidAt: v.optional(v.number()),
-      channel: v.optional(v.string()),
-      fees: v.optional(v.number()),
-      authorization: v.optional(v.object({
-        authorizationCode: v.optional(v.string()),
-        bin: v.optional(v.string()),
-        last4: v.optional(v.string()),
-        expMonth: v.optional(v.string()),
-        expYear: v.optional(v.string()),
-        cardType: v.optional(v.string()),
-        bank: v.optional(v.string())
-      }))
-    }))
-  },
-  returns: v.object({
-    success: v.boolean(),
-    paymentId: v.optional(v.id("payments")),
-    invoiceId: v.optional(v.id("invoices")),
-    message: v.string()
-  }),
-  handler: async (ctx, args) => {
-    // Find payment by Paystack reference
-    const payment = await ctx.db
-      .query("payments")
-      .filter((q) => q.eq(q.field("paystackReference"), args.paystackReference))
-      .unique();
-
-    if (!payment) {
-      throw new Error("Payment not found");
-    }
-
-    const timestamp = Date.now();
-
-    // Update payment status
-    await ctx.db.patch(payment._id, {
-      status: args.status,
-      ...(args.status === "completed" && args.paystackData?.paidAt && {
-        paidAt: args.paystackData.paidAt
-      })
-    });
-
-    // If payment successful, update invoice status
-    if (args.status === "completed") {
-      await ctx.db.patch(payment.invoiceId, {
-        status: "paid" as const,
-        paymentMethod: "paystack" as const,
-        paymentDate: timestamp
-      });
-
-      // Create success notifications
-      await createPaymentNotifications(ctx, payment, "completed");
-
-      // Log successful payment
-      await ctx.db.insert("systemLogs", {
-        type: "info",
-        action: "payment_success",
-        userId: payment.patientId,
-        timestamp: timestamp,
-        details: {
-          message: "Payment completed successfully",
-          paymentId: payment._id,
-          invoiceId: payment.invoiceId,
-          amount: payment.amount,
-          paystackReference: args.paystackReference,
-          transactionId: args.paystackData?.transactionId
-        }
-      });
-
-      // Track business metrics
-      await ctx.db.insert("businessMetrics", {
-        type: "payment_completed",
-        timestamp: timestamp,
-        metadata: {
-          status: "success",
-          details: {
-            paymentMethod: "paystack",
-            amount: payment.amount,
-            currency: "NGN"
-          }
-        }
-      });
-    } else if (args.status === "failed") {
-      // Create failure notifications
-      await createPaymentNotifications(ctx, payment, "failed");
-
-      // Log failed payment
-      await ctx.db.insert("systemLogs", {
-        type: "error",
-        action: "payment_failed",
-        userId: payment.patientId,
-        timestamp: timestamp,
-        details: {
-          message: "Payment failed",
-          paymentId: payment._id,
-          invoiceId: payment.invoiceId,
-          amount: payment.amount,
-          paystackReference: args.paystackReference,
-          gatewayResponse: args.paystackData?.gatewayResponse
-        }
-      });
-    }
-
-    return {
-      success: true,
-      paymentId: payment._id,
-      invoiceId: payment.invoiceId,
-      message: `Payment status updated to ${args.status}`
-    };
-  }
-});
+// Removed duplicate updatePaymentStatus - using the one defined earlier
 
 /**
  * Connect physiotherapist bank account
@@ -244,33 +605,39 @@ export const connectBankAccount = mutation({
     bankCode: v.string(),
     accountNumber: v.string(),
     accountName: v.string(),
-    businessName: v.optional(v.string())
+    businessName: v.optional(v.string()),
+    subaccountCode: v.optional(v.string())
   },
   returns: v.object({
     success: v.boolean(),
-    subaccountCode: v.optional(v.string()),
+    bankAccountId: v.optional(v.id("bankAccounts")),
     message: v.string()
   }),
   handler: async (ctx, args) => {
-    // Get authenticated physiotherapist
+    // Get authenticated user
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
     }
 
-    const physiotherapist = await ctx.db
+    const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .unique();
 
-    if (!physiotherapist || physiotherapist.role !== "physiotherapist") {
-      throw new Error("Only physiotherapists can connect bank accounts");
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Allow physiotherapists and clinic owners to connect bank accounts
+    if (user.role !== "physiotherapist" && user.role !== "clinic_owner") {
+      throw new Error("Only physiotherapists and clinic owners can connect bank accounts");
     }
 
     // Check if bank account already connected
     const existingAccount = await ctx.db
       .query("bankAccounts")
-      .withIndex("by_user_id", (q: any) => q.eq("userId", physiotherapist._id))
+      .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
       .first();
 
     if (existingAccount && existingAccount.status === "active") {
@@ -281,25 +648,43 @@ export const connectBankAccount = mutation({
     }
 
     const timestamp = Date.now();
-    const businessName = args.businessName || `${physiotherapist.firstName} ${physiotherapist.lastName}`;
+    const businessName = args.businessName || `${user.firstName} ${user.lastName}`;
 
-    // Create bank account record
-    const bankAccountId = await ctx.db.insert("bankAccounts", {
-      userId: physiotherapist._id,
-      bankCode: args.bankCode,
-      accountNumber: args.accountNumber,
-      accountName: args.accountName,
-      businessName,
-      status: "pending_verification",
-      createdAt: timestamp,
-      updatedAt: timestamp
-    });
+    // Create or update bank account record
+    const status = args.subaccountCode ? "active" : "pending" as const;
+    
+    let bankAccountId: Id<"bankAccounts">;
+    if (existingAccount) {
+      await ctx.db.patch(existingAccount._id, {
+        bankCode: args.bankCode,
+        accountNumber: args.accountNumber,
+        accountName: args.accountName,
+        businessName,
+        paystackRecipientCode: args.subaccountCode || "",
+        status,
+        updatedAt: timestamp
+      });
+      bankAccountId = existingAccount._id;
+    } else {
+      bankAccountId = await ctx.db.insert("bankAccounts", {
+        userId: user._id,
+        bankCode: args.bankCode,
+        accountNumber: args.accountNumber,
+        accountName: args.accountName,
+        businessName,
+        bankName: "", // Add missing bankName
+        paystackRecipientCode: args.subaccountCode || "",
+        status,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+    }
 
     // Log bank account connection
     await ctx.db.insert("systemLogs", {
       type: "info",
       action: "bank_account_connect",
-      userId: physiotherapist._id,
+      userId: user._id,
       timestamp: timestamp,
       details: {
         message: "Bank account connection initiated",
@@ -312,7 +697,8 @@ export const connectBankAccount = mutation({
 
     return {
       success: true,
-      message: "Bank account connection initiated. Verification in progress."
+      bankAccountId,
+      message: args.subaccountCode ? "Bank account connected successfully" : "Bank account connection initiated. Verification in progress."
     };
   }
 });
@@ -365,16 +751,16 @@ export const getPaymentHistory = query({
     }
 
     // Query payments based on user role
-    let payments;
+    let payments: any[];
     
     if (user.role === "patient") {
       payments = await ctx.db.query("payments")
-        .withIndex("by_patient_id", (q: any) => q.eq("patientId", targetUserId))
+        .withIndex("by_user_id", (q: any) => q.eq("userId", targetUserId))
         .order("desc")
         .take(args.limit || 50);
     } else if (user.role === "physiotherapist") {
       payments = await ctx.db.query("payments")
-        .withIndex("by_physiotherapist_id", (q: any) => q.eq("physiotherapistId", targetUserId))
+        .withIndex("by_user_id", (q: any) => q.eq("userId", targetUserId))
         .order("desc")
         .take(args.limit || 50);
     } else {
@@ -388,24 +774,28 @@ export const getPaymentHistory = query({
       ? payments.filter(p => p.status === args.status)
       : payments;
 
-    // Enrich with invoice data
+    // Enrich with invoice data (and match declared return shape)
     const enrichedPayments = await Promise.all(
-      filteredPayments.map(async (payment) => {
-        const invoice = await ctx.db.get(payment.invoiceId);
+      filteredPayments.map(async (payment: any) => {
+        const invoice = await ctx.db.get(payment.invoiceId as Id<"invoices">) as Doc<"invoices"> | null;
         return {
           _id: payment._id,
-          invoiceId: payment.invoiceId,
+          invoiceId: payment.invoiceId as Id<"invoices">,
           amount: payment.amount,
           status: payment.status,
           paymentMethod: payment.paymentMethod,
-          paystackReference: payment.paystackReference || "",
+          paystackReference: payment.paystackReference,
           createdAt: payment.createdAt,
           paidAt: payment.paidAt,
-          invoice: {
-            invoiceNumber: invoice?.invoiceNumber || "",
-            issueDate: invoice?.issueDate || 0,
-            dueDate: invoice?.dueDate || 0
-          }
+          invoice: invoice ? {
+            invoiceNumber: invoice.invoiceNumber,
+            issueDate: invoice.issueDate,
+            dueDate: invoice.dueDate,
+          } : {
+            invoiceNumber: "",
+            issueDate: 0,
+            dueDate: 0,
+          },
         };
       })
     );
@@ -418,79 +808,9 @@ export const getPaymentHistory = query({
 async function getPhysiotherapistFromInvoice(ctx: any, invoiceId: Id<"invoices">) {
   const invoice = await ctx.db.get(invoiceId);
   if (!invoice) return undefined;
-
-  // If clinic-based, find the physiotherapist who created the invoice
-  // This would require tracking the creator in the invoice
-  // For now, return undefined for clinic-based invoices
-  return undefined;
-}
-
-// Helper function to create payment notifications
-async function createPaymentNotifications(ctx: any, payment: any, status: "completed" | "failed") {
-  const timestamp = Date.now();
-  const invoice = await ctx.db.get(payment.invoiceId);
-  const patient = await ctx.db.get(payment.patientId);
   
-  if (status === "completed") {
-    // Notification to patient
-    await ctx.db.insert("notifications", {
-      userId: payment.patientId,
-      type: "payment_success" as any,
-      priority: "high",
-      status: "pending",
-      payload: {
-        title: "Payment Successful",
-        body: `Your payment of ₦${(payment.amount / 100).toLocaleString()} for invoice #${invoice?.invoiceNumber} has been processed successfully.`,
-        data: {
-          entityId: payment.invoiceId,
-          entityType: "invoice",
-          actionUrl: `/dashboard/patient/invoices/${payment.invoiceId}`,
-          paymentId: payment._id,
-          amount: payment.amount
-        }
-      },
-      createdAt: timestamp
-    });
-
-    // Notification to physiotherapist (if applicable)
-    if (payment.physiotherapistId) {
-      await ctx.db.insert("notifications", {
-        userId: payment.physiotherapistId,
-        type: "payment_received" as any,
-        priority: "high",
-        status: "pending",
-        payload: {
-          title: "Payment Received",
-          body: `Payment of ₦${(payment.physiotherapistShare / 100).toLocaleString()} received from ${patient?.firstName} ${patient?.lastName} for invoice #${invoice?.invoiceNumber}`,
-          data: {
-            entityId: payment.invoiceId,
-            entityType: "invoice",
-            actionUrl: `/dashboard/physiotherapist/billing`,
-            paymentId: payment._id,
-            amount: payment.physiotherapistShare
-          }
-        },
-        createdAt: timestamp
-      });
-    }
-  } else if (status === "failed") {
-    // Notification to patient about failed payment
-    await ctx.db.insert("notifications", {
-      userId: payment.patientId,
-      type: "payment_failed" as any,
-      priority: "high",
-      status: "pending",
-      payload: {
-        title: "Payment Failed",
-        body: `Your payment for invoice #${invoice?.invoiceNumber} could not be processed. Please try again or contact support.`,
-        data: {
-          entityId: payment.invoiceId,
-          entityType: "invoice",
-          actionUrl: `/dashboard/patient/invoices/${payment.invoiceId}`,
-          paymentId: payment._id
-        }
-      },
-      createdAt: timestamp
-    });
-  }
+  // Return physiotherapist ID if exists
+  return (invoice as any).physiotherapistId;
 }
+
+// Removed duplicate initializeInvoicePayment - using the action defined earlier

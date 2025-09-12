@@ -429,7 +429,17 @@ export const getPatientDocuments = query({
     return await Promise.all(
       documents.map(async (doc) => {
         const downloadUrl = (await ctx.storage.getUrl(doc.storageId)) || "";
-        return { ...doc, downloadUrl };
+        return {
+          _id: doc._id,
+          patientProfileId: doc.patientProfileId,
+          storageId: doc.storageId,
+          documentType: doc.documentType,
+          fileName: doc.fileName,
+          fileSize: doc.fileSize,
+          contentType: doc.contentType,
+          uploadedAt: doc.uploadedAt,
+          downloadUrl,
+        };
       })
     );
   },
@@ -479,9 +489,18 @@ export const getPatientDocumentsForPhysio = query({
       .withIndex("by_patient_profile_id", (q)=>q.eq("patientProfileId", patient.patientProfileId!))
       .collect();
 
-    return await Promise.all(docs.map(async (d)=>({
-      ...d,
-      downloadUrl: (await ctx.storage.getUrl(d.storageId)) || "",
-    })));
+    return await Promise.all(
+      docs.map(async (d) => ({
+        _id: d._id,
+        patientProfileId: d.patientProfileId,
+        storageId: d.storageId,
+        documentType: d.documentType,
+        fileName: d.fileName,
+        fileSize: d.fileSize,
+        contentType: d.contentType,
+        uploadedAt: d.uploadedAt,
+        downloadUrl: (await ctx.storage.getUrl(d.storageId)) || "",
+      }))
+    );
   },
 });

@@ -8,62 +8,80 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import {
-  LayoutDashboard,
   Users,
-  UserCheck,
   Calendar,
-  Receipt,
-  BarChart3,
   Settings,
+  ChevronRight,
+  BarChart3,
+  LayoutDashboard,
+  UserCheck,
+  Receipt,
   User,
   Building2,
-  ChevronLeft,
-  ChevronRight,
-  CreditCard,
-  Clock,
-  UserPlus
+  ChevronLeft
 } from 'lucide-react'
 
 interface SidebarProps {
   className?: string
 }
 
-const sidebarItems = [
+// Grouped sidebar items for better organization
+const sidebarGroups = [
   {
-    title: 'Dashboard',
-    href: '/dashboard/clinic',
-    icon: LayoutDashboard,
-    description: 'Overview of clinic operations'
+    label: 'Main',
+    items: [
+      {
+        title: 'Dashboard',
+        href: '/dashboard/clinic',
+        icon: LayoutDashboard,
+        description: 'Overview'
+      }
+    ]
   },
   {
-    title: 'Staff Management',
-    href: '/dashboard/clinic/staff',
-    icon: UserCheck,
-    description: 'Manage physiotherapists and staff'
+    label: 'People',
+    items: [
+      {
+        title: 'Staff',
+        href: '/dashboard/clinic/staff',
+        icon: UserCheck,
+        description: 'Physiotherapists'
+      },
+      {
+        title: 'Patients',
+        href: '/dashboard/clinic/patients',
+        icon: Users,
+        description: 'All patients'
+      }
+    ]
   },
   {
-    title: 'Patients',
-    href: '/dashboard/clinic/patients',
-    icon: Users,
-    description: 'View and manage all clinic patients'
+    label: 'Operations',
+    items: [
+      {
+        title: 'Appointments',
+        href: '/dashboard/clinic/appointments',
+        icon: Calendar,
+        description: 'Schedule'
+      },
+      {
+        title: 'Billing',
+        href: '/dashboard/clinic/billing',
+        icon: Receipt,
+        description: 'Invoices'
+      }
+    ]
   },
   {
-    title: 'Appointments',
-    href: '/dashboard/clinic/appointments',
-    icon: Calendar,
-    description: 'Schedule and manage appointments'
-  },
-  {
-    title: 'Billing & Invoicing',
-    href: '/dashboard/clinic/billing',
-    icon: Receipt,
-    description: 'Financial management and invoicing'
-  },
-  {
-    title: 'Reports & Analytics',
-    href: '/dashboard/clinic/reports',
-    icon: BarChart3,
-    description: 'Clinic performance metrics'
+    label: 'Insights',
+    items: [
+      {
+        title: 'Reports',
+        href: '/dashboard/clinic/reports',
+        icon: BarChart3,
+        description: 'Analytics'
+      }
+    ]
   }
 ]
 
@@ -115,65 +133,49 @@ export default function ClinicSidebar({ className }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <ScrollArea className="flex-1 px-3 py-4">
-        <nav className="space-y-2">
-          {sidebarItems.map((item) => {
-            const isActive = pathname === item.href
-            const Icon = item.icon
+      <ScrollArea className="flex-1 py-2">
+        <nav className="px-2 space-y-6">
+          {sidebarGroups.map((group, groupIndex) => (
+            <div key={group.label} className="space-y-1">
+              {!isCollapsed && (
+                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">
+                  {group.label}
+                </h4>
+              )}
+              {group.items.map((item) => {
+                const isActive = pathname === item.href
+                const Icon = item.icon
 
-            return (
-              <Link key={item.href} href={item.href}>
-                <Button
-                  variant={isActive ? "secondary" : "ghost"}
-                  className={cn(
-                    "w-full justify-start h-10 px-3",
-                    isActive && "bg-primary/10 text-primary border-primary/20",
-                    isCollapsed && "px-2"
-                  )}
-                  title={isCollapsed ? item.title : undefined}
-                >
-                  <Icon className={cn("h-4 w-4", !isCollapsed && "mr-3")} />
-                  {!isCollapsed && (
-                    <span className="truncate">{item.title}</span>
-                  )}
-                </Button>
-              </Link>
-            )
-          })}
-        </nav>
-
-        <Separator className="my-4" />
-
-        {/* Quick Actions */}
-        {!isCollapsed && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium text-gray-500 px-3">Quick Actions</h4>
-            <div className="space-y-1">
-              <Link href="/dashboard/clinic/staff/invite">
-                <Button variant="ghost" size="sm" className="w-full justify-start h-8 px-3">
-                  <UserPlus className="h-3 w-3 mr-2" />
-                  Invite Staff
-                </Button>
-              </Link>
-              <Link href="/dashboard/clinic/appointments/new">
-                <Button variant="ghost" size="sm" className="w-full justify-start h-8 px-3">
-                  <Clock className="h-3 w-3 mr-2" />
-                  New Appointment
-                </Button>
-              </Link>
-              <Link href="/dashboard/clinic/billing/new">
-                <Button variant="ghost" size="sm" className="w-full justify-start h-8 px-3">
-                  <CreditCard className="h-3 w-3 mr-2" />
-                  Create Invoice
-                </Button>
-              </Link>
+                return (
+                  <Link key={item.href} href={item.href}>
+                    <Button
+                      variant={isActive ? "secondary" : "ghost"}
+                      className={cn(
+                        "w-full justify-start h-auto py-2 px-2",
+                        isActive && "bg-primary/10 text-primary hover:bg-primary/15",
+                        "hover:bg-gray-100 transition-colors",
+                        isCollapsed && "px-0 justify-center"
+                      )}
+                      title={isCollapsed ? item.title : undefined}
+                    >
+                      <Icon className={cn("h-4 w-4 shrink-0", !isCollapsed && "mr-2")} />
+                      {!isCollapsed && (
+                        <span className="text-sm">{item.title}</span>
+                      )}
+                    </Button>
+                  </Link>
+                )
+              })}
+              {groupIndex < sidebarGroups.length - 1 && !isCollapsed && (
+                <Separator className="my-2" />
+              )}
             </div>
-          </div>
-        )}
+          ))}
+        </nav>
       </ScrollArea>
 
       {/* Bottom Navigation */}
-      <div className="border-t border-gray-200 p-3">
+      <div className="border-t border-gray-200 p-2">
         <nav className="space-y-1">
           {bottomItems.map((item) => {
             const isActive = pathname === item.href
@@ -184,15 +186,16 @@ export default function ClinicSidebar({ className }: SidebarProps) {
                 <Button
                   variant={isActive ? "secondary" : "ghost"}
                   className={cn(
-                    "w-full justify-start h-9 px-3",
+                    "w-full justify-start h-auto py-2 px-2",
                     isActive && "bg-primary/10 text-primary",
-                    isCollapsed && "px-2"
+                    "hover:bg-gray-100 transition-colors",
+                    isCollapsed && "px-0 justify-center"
                   )}
                   title={isCollapsed ? item.title : undefined}
                 >
-                  <Icon className={cn("h-4 w-4", !isCollapsed && "mr-3")} />
+                  <Icon className={cn("h-4 w-4", !isCollapsed && "mr-2")} />
                   {!isCollapsed && (
-                    <span className="truncate">{item.title}</span>
+                    <span className="text-sm">{item.title}</span>
                   )}
                 </Button>
               </Link>

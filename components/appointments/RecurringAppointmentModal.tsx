@@ -12,7 +12,33 @@ import { Separator } from '@/components/ui/separator'
 import { CalendarDays, Clock, Repeat, Users } from 'lucide-react'
 import { useRecurringAppointments, recurringAppointmentUtils } from '@/hooks/useRecurringAppointments'
 import { Id } from '@/convex/_generated/dataModel'
-import { CreateSeriesParams } from '@/lib/types/recurring-appointments'
+// Local lightweight type to avoid deep type instantiation and export resolution issues
+import type { DayOfWeek } from '@/lib/types/recurring-appointments'
+type CreateSeriesParams = {
+  // Series metadata
+  name: string
+  description?: string
+  // Participants
+  patientId: Id<'users'>
+  physiotherapistId: Id<'users'>
+  clinicId?: Id<'clinics'>
+  // Template fields
+  serviceType: string
+  duration: number
+  appointmentType: 'in-person' | 'telehealth'
+  priority?: 'low' | 'medium' | 'high' | 'urgent'
+  notesForPatient?: string
+  notesForTherapist?: string
+  // Recurrence
+  frequency: 'daily' | 'weekly' | 'monthly'
+  interval: number
+  daysOfWeek?: number[]
+  endDate?: string
+  maxOccurrences?: number
+  // Scheduling
+  startDate: string
+  startTime: string
+}
 
 interface RecurringAppointmentModalProps {
   isOpen: boolean
@@ -86,16 +112,16 @@ export function RecurringAppointmentModal({
   // Initialize form with default values
   useEffect(() => {
     if (defaultValues) {
-      setFormData(prev => ({ ...prev, ...defaultValues }))
+      setFormData((prev: CreateSeriesParams) => ({ ...prev, ...defaultValues }))
     }
   }, [defaultValues])
 
   // Auto-set user based on role
   useEffect(() => {
     if (role === 'patient') {
-      setFormData(prev => ({ ...prev, patientId: userId }))
+      setFormData((prev: CreateSeriesParams) => ({ ...prev, patientId: userId }))
     } else if (role === 'physiotherapist') {
-      setFormData(prev => ({ ...prev, physiotherapistId: userId }))
+      setFormData((prev: CreateSeriesParams) => ({ ...prev, physiotherapistId: userId }))
     }
   }, [userId, role])
 
@@ -138,10 +164,11 @@ export function RecurringAppointmentModal({
     }
 
     // Validate recurrence rule
+    const toDayOfWeek = (arr?: number[]): DayOfWeek[] | undefined => arr ? arr.filter((d): d is DayOfWeek => d >= 0 && d <= 6) : undefined
     const ruleErrors = recurringAppointmentUtils.validateRecurrenceRule({
       frequency: formData.frequency,
       interval: formData.interval,
-      daysOfWeek: formData.daysOfWeek,
+      daysOfWeek: toDayOfWeek(formData.daysOfWeek),
       endDate: endType === 'date' ? formData.endDate : undefined,
       maxOccurrences: endType === 'occurrences' ? formData.maxOccurrences : undefined,
     })
@@ -198,10 +225,11 @@ export function RecurringAppointmentModal({
   const getRecurrencePreview = () => {
     if (!formData.frequency) return ''
     
+    const toDayOfWeek = (arr?: number[]): DayOfWeek[] | undefined => arr ? arr.filter((d): d is DayOfWeek => d >= 0 && d <= 6) : undefined
     return recurringAppointmentUtils.getRecurrenceDescription({
       frequency: formData.frequency,
       interval: formData.interval,
-      daysOfWeek: formData.daysOfWeek,
+      daysOfWeek: toDayOfWeek(formData.daysOfWeek),
       endDate: endType === 'date' ? formData.endDate : undefined,
       maxOccurrences: endType === 'occurrences' ? formData.maxOccurrences : undefined,
     })

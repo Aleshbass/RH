@@ -17,11 +17,12 @@ import {
   FileText,
   Eye,
   Send,
-  CreditCard
+  CreditCard,
+  Building2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 import { Id } from '@/convex/_generated/dataModel';
@@ -29,8 +30,9 @@ import { Patient } from '@/app/types';
 
 // Simple type definition to avoid complex inference
 
-// Import SimpleInvoiceModal component
+// Import billing components
 import { SimpleInvoiceModal } from '@/components/billing/SimpleInvoiceModal';
+import { BankAccountConnection } from '@/components/billing/BankAccountConnection';
 
 // Type definitions
 
@@ -48,7 +50,7 @@ type InvoiceFromQuery = {
   patientName: string;
   totalAmount: number;
   currency: string;
-  status: "draft" | "sent" | "paid" | "overdue" | "void" | "partial_payment";
+  status: "draft" | "pending" | "sent" | "paid" | "overdue" | "void" | "partial_payment";
   issueDate: number;
   dueDate: number;
   paymentDate?: number;
@@ -66,6 +68,8 @@ function useBillingData() {
 
   return { patients, invoices, billingStats };
 }
+
+interface BankAccount { isDefault?: boolean; accountName?: string }
 
 export default function BillingPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceFromQuery | null>(null);
@@ -88,6 +92,10 @@ export default function BillingPage() {
     invoices: InvoiceFromQuery[] | undefined;
     billingStats: BillingStats | undefined;
   };
+  // Connected payout account status
+  const bankAccounts = useQuery(api.paystack.getMyBankAccounts as never);
+  const accounts: BankAccount[] = Array.isArray(bankAccounts) ? (bankAccounts as unknown as BankAccount[]) : [];
+  const defaultAccount: BankAccount | undefined = accounts.find((a) => a?.isDefault) || accounts[0];
   
   // Mutations
   const createInvoice = useMutation(api.billing.createInvoice);
@@ -205,9 +213,13 @@ export default function BillingPage() {
     }));
   }, []);
 
-  const getStatusBadge = useCallback((status: string) => {
+  const getStatusBadge = useCallback((status: string, isOverdue?: boolean) => {
+    if (isOverdue && status !== 'paid') {
+      return <Badge variant="destructive">Overdue</Badge>;
+    }
     switch (status) {
       case 'paid': return <Badge variant="default" className="bg-green-500 text-white">Paid</Badge>;
+      case 'pending': return <Badge variant="secondary" className="bg-blue-500 text-white">Pending</Badge>;
       case 'sent': return <Badge variant="secondary">Sent</Badge>;
       case 'partial_payment': return <Badge variant="secondary" className="bg-yellow-500 text-white">Partial</Badge>;
       case 'overdue': return <Badge variant="destructive">Overdue</Badge>;
@@ -231,7 +243,9 @@ export default function BillingPage() {
       patient: { 
         firstName: invoice.patientName.split(' ')[0],
         lastName: invoice.patientName.split(' ').slice(1).join(' '),
-      }
+      },
+      patientEmail: (invoice as InvoiceFromQuery & { patientEmail?: string }).patientEmail,
+      patientPhone: (invoice as InvoiceFromQuery & { patientPhone?: string }).patientPhone,
     };
     setSelectedInvoice(fullInvoiceDetails);
     setIsInvoiceModalOpen(true);
@@ -247,16 +261,44 @@ export default function BillingPage() {
             Manage invoices, track payments, and handle billing
           </p>
         </div>
-        <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Invoice
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+        <div className="flex gap-2">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Building2 className="mr-2 h-4 w-4" />
+                {defaultAccount ? (
+                  <span className="flex items-center gap-2">
+                    <span className="inline-flex h-2 w-2 rounded-full bg-green-500" />
+                    {defaultAccount?.accountName || 'Account Connected'}
+                  </span>
+                ) : (
+                  'Bank Account'
+                )}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Connect Bank Account</DialogTitle>
+                <DialogDescription>
+                  Connect or update your payout account to receive funds from patient payments. You can remove or replace your account anytime.
+                </DialogDescription>
+              </DialogHeader>
+              <BankAccountConnection />
+            </DialogContent>
+          </Dialog>
+          <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Invoice
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Invoice</DialogTitle>
+              <DialogDescription>
+                Create and send an invoice to a patient. Platform fees and Paystack fees are calculated automatically at checkout.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -425,7 +467,8 @@ export default function BillingPage() {
               </div>
             </div>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       {/* Quick Stats */}
@@ -517,6 +560,7 @@ export default function BillingPage() {
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="sent">Sent</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
                   <SelectItem value="overdue">Overdue</SelectItem>
@@ -539,14 +583,14 @@ export default function BillingPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="font-medium">#{invoice.invoiceNumber}</p>
-                        {getStatusBadge(invoice.status)}
+                        {getStatusBadge(invoice.status, invoice.isOverdue)}
                       </div>
                       <p className="text-sm text-muted-foreground">
                         {invoice.patientName || 'Unknown Patient'}
                       </p>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>Issued: {format(new Date(invoice.issueDate), 'MMM d, yyyy')}</span>
-                        <span>Due: {format(new Date(invoice.dueDate), 'MMM d, yyyy')}</span>
+                        <span>Issued: {format(new Date(invoice.issueDate), 'MMM d, yyyy, h:mm a')}</span>
+                        <span>Due: {format(new Date(invoice.dueDate), 'MMM d, yyyy, h:mm a')}</span>
                         <span className="font-medium">{formatCurrency(invoice.totalAmount, invoice.currency)}</span>
                       </div>
                     </div>
@@ -575,7 +619,7 @@ export default function BillingPage() {
                         Send
                       </Button>
                     )}
-                    {(invoice.status === 'sent' || invoice.status === 'overdue') && (
+                    {(invoice.status === 'pending' || invoice.status === 'sent' || invoice.status === 'overdue') && (
                       <Button
                         size="sm"
                         onClick={() => handleRecordPayment(invoice._id, invoice.totalAmount / 100, 'bank_transfer')}

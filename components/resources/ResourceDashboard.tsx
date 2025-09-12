@@ -51,7 +51,7 @@ import {
   Stethoscope,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useResourceManagement, resourceUtils } from "@/hooks/useResourceManagement";
+import { useResourceManagement, resourceUtils, type CreateResourceParams } from "@/hooks/useResourceManagement";
 import { ResourceManagementModal } from "./ResourceManagementModal";
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -73,7 +73,7 @@ export function ResourceDashboard({ clinicId }: ResourceDashboardProps) {
   // Fetch resources
   type ResourceType = "equipment" | "room" | "staff" | "vehicle";
 interface Resource extends Omit<CreateResourceParams, "clinicId"> {
-  _id: string;
+  _id: Id<"resources">;
   isActive?: boolean;
 }
 const [resources, setResources] = useState<Resource[]>([]);

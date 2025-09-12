@@ -1,3 +1,15 @@
+/*
+  DEPRECATED: Legacy Daily.co ParticipantTile
+  ------------------------------------------------------------
+  This component belongs to the old Daily.co implementation.
+  The application has migrated to Stream Video SDK.
+
+  Do NOT import or use this component in new code.
+  Use Stream components instead.
+*/
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  console.warn('[DEPRECATED] components/video/ParticipantTile.tsx (Daily) — not used in Stream flow.')
+}
 import React, { useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { User, MicOff, Monitor } from 'lucide-react'

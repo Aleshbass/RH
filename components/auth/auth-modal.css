@@ -1,0 +1,172 @@
+/* Auth Modal Styles - Prevents layout collapse and ensures smooth transitions */
+
+/* Prevent body scroll when modal is open */
+.modal-open {
+  overflow: hidden;
+}
+
+/* Custom dialog overlay to prevent layout shift */
+.auth-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background-color: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+/* Modal container with stable dimensions */
+.auth-modal-container {
+  position: relative;
+  width: 100%;
+  max-width: 80rem; /* 5xl */
+  height: 600px;
+  max-height: 90vh;
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+/* Ensure form containers maintain height */
+.auth-form-container {
+  height: 600px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Clerk form wrapper with consistent spacing */
+.clerk-form-wrapper {
+  height: 400px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Smooth transitions for all interactive elements */
+.auth-modal-container * {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+}
+
+/* Prevent flash of unstyled content */
+.auth-modal-container .cl-card {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+/* Ensure buttons maintain consistent height */
+.auth-modal-container .cl-formButtonPrimary,
+.auth-modal-container .cl-socialButtonsBlockButton {
+  height: 3rem !important; /* 48px */
+  transition: all 200ms ease-in-out !important;
+}
+
+.auth-modal-container .cl-formButtonPrimary:hover,
+.auth-modal-container .cl-socialButtonsBlockButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 91, 87, 0.15);
+}
+
+/* Input field consistency */
+.auth-modal-container .cl-formFieldInput {
+  height: 3rem !important; /* 48px */
+  font-size: 1rem !important;
+  transition: all 200ms ease-in-out !important;
+}
+
+.auth-modal-container .cl-formFieldInput:focus {
+  transform: none !important;
+  box-shadow: 0 0 0 2px rgba(0, 91, 87, 0.2) !important;
+}
+
+/* Loading states */
+.auth-modal-container .cl-loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Error states */
+.auth-modal-container .cl-formFieldError {
+  animation: shake 0.3s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+/* Success states */
+.auth-modal-container .cl-formFieldSuccess {
+  animation: success-pulse 0.5s ease-in-out;
+}
+
+@keyframes success-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+/* Mobile responsiveness */
+@media (max-width: 1024px) {
+  .auth-modal-container {
+    max-width: 95vw;
+    min-height: 500px;
+  }
+  
+  .auth-form-container {
+    min-height: 500px;
+  }
+  
+  .clerk-form-wrapper {
+    min-height: 350px;
+  }
+}
+
+@media (max-width: 640px) {
+  .auth-modal-overlay {
+    padding: 0.5rem;
+  }
+  
+  .auth-modal-container {
+    min-height: 450px;
+  }
+  
+  .auth-form-container {
+    min-height: 450px;
+    padding: 1.5rem;
+  }
+  
+  .clerk-form-wrapper {
+    min-height: 300px;
+  }
+}
+
+/* Prevent layout shift during Clerk loading */
+.auth-modal-container .cl-rootBox {
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Smooth image loading */
+.auth-modal-container img {
+  transition: opacity 300ms ease-in-out;
+}
+
+.auth-modal-container img[data-loaded="false"] {
+  opacity: 0;
+}
+
+.auth-modal-container img[data-loaded="true"] {
+  opacity: 1;
+}

@@ -5,15 +5,16 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Loader2, User, Bell, Shield, Palette } from 'lucide-react';
+import { Loader2, User, Bell, Shield, Palette, Calendar, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CalendarIntegration } from '@/components/calendar/CalendarIntegration';
 
 export default function PhysiotherapistSettingsPage() {
   const router = useRouter();
@@ -73,11 +74,12 @@ export default function PhysiotherapistSettingsPage() {
 
       {/* Settings Tabs */}
       <Tabs defaultValue="profile" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="privacy">Privacy</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
+          <TabsTrigger value="calendar">Calendar</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="space-y-4">
@@ -129,7 +131,7 @@ export default function PhysiotherapistSettingsPage() {
                 <Label htmlFor="bio">Professional Bio</Label>
                 <Textarea
                   id="bio"
-                  defaultValue={currentUserProfile.profileData?.bio || ''}
+                  defaultValue={currentUserProfile?.profileData?.bio || ''}
                   placeholder="Tell us about your professional background..."
                   rows={4}
                 />
@@ -139,7 +141,7 @@ export default function PhysiotherapistSettingsPage() {
                 <Label htmlFor="specializations">Specializations</Label>
                 <Input
                   id="specializations"
-                  defaultValue={currentUserProfile.profileData?.specializations?.join(', ') || ''}
+                  defaultValue={currentUserProfile?.profileData?.specializations?.join(', ') || ''}
                   placeholder="e.g., Sports Therapy, Neurological Rehabilitation"
                 />
               </div>
@@ -254,7 +256,76 @@ export default function PhysiotherapistSettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="calendar" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Calendar Integration
+              </CardTitle>
+              <CardDescription>
+                Connect your Google Calendar to sync appointments and enable Google Meet links
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CalendarIntegration userId={currentUser?._id} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Connected Calendars</CardTitle>
+              <CardDescription>
+                Your Google Calendar accounts and sync status
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Automatic Appointment Sync</p>
+                    <p className="text-sm text-muted-foreground">
+                      New appointments automatically sync to your Google Calendar
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-3">
+                  <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Google Meet Integration</p>
+                    <p className="text-sm text-muted-foreground">
+                      Generate Google Meet links for telehealth appointments
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Patient Invitations</p>
+                    <p className="text-sm text-muted-foreground">
+                      Patients receive calendar invites with all appointment details
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Real-time Sync</p>
+                    <p className="text-sm text-muted-foreground">
+                      Changes to appointments sync instantly across all devices
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
-} 
+}

@@ -26,13 +26,6 @@ interface ConversationWithParticipant {
   unreadCount: number;
 }
 
-// Type definition for physiotherapist
-interface Physiotherapist {
-  _id: Id<"users">;
-  firstName?: string;
-  lastName?: string;
-  [key: string]: unknown;
-};
 
 export default function PatientMessagesPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<Id<"conversations">>()
@@ -40,7 +33,7 @@ export default function PatientMessagesPage() {
   const [newConversationPtId, setNewConversationPtId] = useState<Id<"users"> | ''>('')
 
   // Current user
-  const currentUser = useQuery(api.users.getMyUser as { _id: Id<"users">; role: string })
+  const currentUser = useQuery(api.users.getMyUser)
 
   // Conversations
   const conversations = useQuery(
@@ -95,9 +88,9 @@ export default function PatientMessagesPage() {
                       <SelectValue placeholder="Select a physiotherapist" />
                     </SelectTrigger>
                     <SelectContent>
-                      {physiotherapists?.map((p: Physiotherapist) => (
-                        <SelectItem key={p._id} value={p._id}>
-                          {`${p.firstName || ''} ${p.lastName || ''}`.trim()}
+                      {physiotherapists?.map((p: { physiotherapistId: Id<"users">; name: string }) => (
+                        <SelectItem key={p.physiotherapistId} value={p.physiotherapistId}>
+                          {p.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

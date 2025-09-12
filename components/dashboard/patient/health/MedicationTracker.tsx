@@ -142,7 +142,9 @@ export function MedicationTracker({}: MedicationTrackerProps) {
                 </div>
               </div>
             </div>
-            <Pill className="h-12 w-12 text-green-600 ml-4" />
+            <Pill className="h-12 w-12 text-green-600 ml-4">
+              <span className="sr-only">Pill</span>
+            </Pill>
           </div>
         </CardContent>
       </Card>
@@ -232,7 +234,9 @@ export function MedicationTracker({}: MedicationTrackerProps) {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="p-3 bg-blue-100 rounded-full">
-                      <Pill className="h-5 w-5 text-blue-600" />
+                      <Pill className="h-5 w-5 text-blue-600">
+                        <span className="sr-only">Pill</span>
+                      </Pill>
                     </div>
                     <div>
                       <h4 className="font-semibold text-lg">{medication.name}</h4>

@@ -51,7 +51,7 @@ export class SessionManager {
 
       const success = await SessionCache.setSession(
         userId,
-        sessionData,
+        sessionData as unknown as Record<string, unknown>,
         CACHE_TTL.SESSION
       )
 
@@ -92,7 +92,7 @@ export class SessionManager {
         lastActivity: Date.now(),
       }
 
-      return SessionCache.setSession(userId, updated, CACHE_TTL.SESSION)
+      return SessionCache.setSession(userId, updated as unknown as Record<string, unknown>, CACHE_TTL.SESSION)
     } catch (error) {
       console.error('[SESSION] Error updating activity:', error)
       return false
@@ -119,7 +119,7 @@ export class SessionManager {
         lastActivity: Date.now(),
       }
 
-      return SessionCache.setSession(userId, updated, CACHE_TTL.SESSION)
+      return SessionCache.setSession(userId, updated as unknown as Record<string, unknown>, CACHE_TTL.SESSION)
     } catch (error) {
       console.error('[SESSION] Error updating preferences:', error)
       return false
@@ -146,7 +146,7 @@ export class SessionManager {
         lastActivity: Date.now(),
       }
 
-      return SessionCache.setSession(userId, updated, CACHE_TTL.SESSION)
+      return SessionCache.setSession(userId, updated as unknown as Record<string, unknown>, CACHE_TTL.SESSION)
     } catch (error) {
       console.error('[SESSION] Error updating dashboard state:', error)
       return false
@@ -174,7 +174,7 @@ export class SessionManager {
         lastActivity: Date.now(),
       }
 
-      return SessionCache.setSession(userId, updated, CACHE_TTL.SESSION)
+      return SessionCache.setSession(userId, updated as unknown as Record<string, unknown>, CACHE_TTL.SESSION)
     } catch (error) {
       console.error('[SESSION] Error recording activity:', error)
       return false

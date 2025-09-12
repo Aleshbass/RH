@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Doc, Id } from '@/convex/_generated/dataModel';
-import VideoCallManager from '@/components/video/VideoCallManager';
+import StreamVideoCallManager from '@/components/video/StreamVideoCallManager';
 
 // Type definition for video calls
 type VideoCall = {
@@ -137,7 +137,7 @@ export default function ClinicVideoCallsPage() {
 
   if (showVideoManager && selectedCall) {
     return (
-      <VideoCallManager
+      <StreamVideoCallManager
         defaultParticipants={selectedCall.participants}
         onCallEnd={() => {
           setShowVideoManager(false);
@@ -155,7 +155,10 @@ export default function ClinicVideoCallsPage() {
           <h1 className="text-2xl font-bold">Clinic Video Calls</h1>
           <p className="text-gray-500">Manage and monitor all video calls in your clinic</p>
         </div>
-        <Button>
+        <Button onClick={() => {
+          // Navigate to create new video call
+          window.location.href = '/dashboard/clinic/appointments';
+        }}>
           <Plus className="h-4 w-4 mr-2" />
           New Call
         </Button>

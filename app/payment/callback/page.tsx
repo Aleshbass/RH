@@ -2,15 +2,21 @@
 
 import { useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { useAction } from 'convex/react'
+import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 export default function PaymentCallbackPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [status, setStatus] = useState<'loading' | 'success' | 'failed'>('loading')
   const [message, setMessage] = useState('')
+  const [invoiceId, setInvoiceId] = useState<string | null>(null)
+  
+  const verifyPaystackTransaction = useAction(api.payments.verifyPaystackTransaction)
 
   useEffect(() => {
     const reference = searchParams.get('reference')
@@ -25,36 +31,46 @@ export default function PaymentCallbackPage() {
     // Use reference or trxref (Paystack sends trxref)
     const paymentRef = reference || trxref
 
-    // Verify payment with backend
+    // Verify payment with Paystack
     const verifyPayment = async () => {
       try {
-        const response = await fetch('/api/payments/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reference: paymentRef })
+        const result = await verifyPaystackTransaction({
+          reference: paymentRef
         })
 
-        const result = await response.json()
-
-        if (result.success && result.data?.status === 'success') {
+        if (result.success && result.status === 'success') {
           setStatus('success')
-          setMessage('Payment completed successfully!')
+          setMessage('Payment completed successfully! Your balance has been updated.')
+          
+          // Extract invoice ID from metadata if available
+          if (result.metadata?.invoiceId) {
+            setInvoiceId(result.metadata.invoiceId)
+          }
+          
+          toast.success('Payment successful!')
         } else {
           setStatus('failed')
-          setMessage(result.message || 'Payment verification failed')
+          setMessage(result.error || 'Payment verification failed')
+          toast.error('Payment failed')
         }
-      } catch {
+      } catch (error) {
+        console.error('Payment verification error:', error)
         setStatus('failed')
         setMessage('Failed to verify payment')
+        toast.error('Failed to verify payment')
       }
     }
 
     verifyPayment()
-  }, [searchParams])
+  }, [searchParams, verifyPaystackTransaction])
 
   const handleContinue = () => {
-    // Redirect to appropriate dashboard based on user role
-    router.push('/dashboard')
+    // Redirect to invoices page or dashboard
+    if (invoiceId) {
+      router.push('/dashboard/patient/invoices')
+    } else {
+      router.push('/dashboard')
+    }
   }
 
   return (

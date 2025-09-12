@@ -1,5 +1,4 @@
 'use client'
-// @ts-nocheck
 
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
@@ -341,7 +340,7 @@ export function UserApprovalDialog({
             {/* User Info Header */}
             <div className="flex items-center space-x-4">
               <Avatar className="h-16 w-16">
-                <AvatarImage src={user.imageUrl} />
+                <AvatarImage src={(user as { imageUrl?: string }).imageUrl} />
                 <AvatarFallback>
                   {user.firstName?.charAt(0) || user.email?.charAt(0) || 'U'}
                 </AvatarFallback>
@@ -359,7 +358,7 @@ export function UserApprovalDialog({
                   {approvalStatus && (
                     <Badge variant="secondary">
                       <Clock className="mr-1 h-3 w-3" />
-                      Submitted {format(new Date(approvalStatus.submittedAt), 'MMM dd, yyyy')}
+                      Submitted {format(new Date(user._creationTime), 'MMM dd, yyyy')}
                     </Badge>
                   )}
                 </div>
@@ -518,4 +517,4 @@ export function UserApprovalDialog({
       </DialogContent>
     </Dialog>
   )
-} 
+  }

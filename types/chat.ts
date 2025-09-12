@@ -6,19 +6,37 @@ export interface ChatMessage {
   senderId: Id<"users">;
   receiverId: Id<"users">;
   content: string;
-  contentType: "text" | "image" | "file";
-  fileUrl?: string;
+  contentType: "text" | "image" | "file" | "audio";
+  fileUrl?: string; // storageId string
   metadata?: {
     originalName?: string;
     fileSize?: number;
     mimeType?: string;
   };
+  replyToMessageId?: Id<"messages">;
+  replyToMessage?: ChatMessage | null; // denormalized in queries
   timestamp: number;
   isReadByReceiver: boolean;
   readAt?: number;
   isRead: boolean;
   createdAt: number;
   updatedAt: number;
+  // Delivery status (WhatsApp-style)
+  isDelivered?: boolean;
+  deliveredAt?: number;
+  // Reactions
+  reactions?: Array<{
+    userId: Id<"users">;
+    type: string; // emoji code or key
+    timestamp: number;
+  }>;
+  // Edit/Delete
+  isDeleted?: boolean;
+  deletedAt?: number;
+  editedAt?: number;
+  editedBy?: Id<"users">;
+  // Starring
+  starredBy?: Id<"users">[];
 }
 
 export interface ChatConversation {

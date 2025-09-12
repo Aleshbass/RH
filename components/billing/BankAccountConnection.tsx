@@ -1,14 +1,16 @@
 'use client'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { useAction, useQuery, useMutation } from 'convex/react'
+import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, CheckCircle, AlertCircle, CreditCard, Shield } from 'lucide-react'
-import { log } from '@/lib/monitoring/logger'
-import { ErrorTracker } from '@/lib/monitoring/sentry'
+import { Loader2, CheckCircle, AlertCircle, CreditCard, Shield, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { Id } from '@/convex/_generated/dataModel'
 
 interface Bank {
   name: string
@@ -17,11 +19,10 @@ interface Bank {
 }
 
 interface BankConnectionProps {
-  userId: string
   onConnectionSuccess?: () => void
 }
 
-export default function BankAccountConnection({ userId, onConnectionSuccess }: BankConnectionProps) {
+export function BankAccountConnection({ onConnectionSuccess }: BankConnectionProps) {
   const [banks, setBanks] = useState<Bank[]>([])
   const [selectedBank, setSelectedBank] = useState('')
   const [accountNumber, setAccountNumber] = useState('')
@@ -30,15 +31,30 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
   const [isVerifying, setIsVerifying] = useState(false)
   const [verifiedAccount, setVerifiedAccount] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  
+  // Convex hooks
+  const getBankList = useAction(api.paystack.getBankList)
+  const verifyBankAccount = useAction(api.paystack.verifyBankAccount)
+  const createSubaccount = useAction(api.paystack.createPhysiotherapistSubaccount)
+  const existingAccounts = useQuery(api.paystack.getMyBankAccounts)
+  const currentUser = useQuery(api.users.getMyUser)
+  const deleteBankAccount = useMutation(api.paystack.deleteBankAccount)
 
   // Derived state for selected bank name
   const selectedBankName = banks.find(bank => bank.code === selectedBank)?.name || ''
 
-  // Fetch banks on component mount
-  useEffect(() => {
-    fetchBanks()
-  }, [])
+  const fetchBanks = useCallback(async () => {
+    try {
+      const bankList = await getBankList()
+      // De-duplicate banks by code and sort alphabetically by name
+      const uniqueByCode = Array.from(new Map(bankList.map((b: Bank) => [b.code, b])).values()) as Bank[]
+      uniqueByCode.sort((a, b) => a.name.localeCompare(b.name))
+      setBanks(uniqueByCode)
+    } catch (error) {
+      console.error('Failed to fetch banks:', error)
+      toast.error('Failed to load banks')
+    }
+  }, [getBankList])
 
   const verifyAccount = React.useCallback(async () => {
     if (!selectedBank || accountNumber.length !== 10) return
@@ -47,32 +63,26 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
     setError('')
 
     try {
-      const response = await fetch('/api/payments/verify-account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bankCode: selectedBank,
-          accountNumber
-        })
+      const result = await verifyBankAccount({
+        bankCode: selectedBank,
+        accountNumber
       })
-
-      const data = await response.json()
       
-      if (data.success) {
-        setVerifiedAccount(data.accountName)
-        setBusinessName(data.accountName) // Pre-fill business name
+      if (result.success && result.accountName) {
+        setVerifiedAccount(result.accountName)
+        setBusinessName(result.accountName) // Pre-fill business name
       } else {
         setVerifiedAccount(null)
-        setError('Could not verify account. Please check your details.')
+        setError(result.message || 'Could not verify account. Please check your details.')
       }
     } catch (error) {
-      log.error('Account verification failed', { error: error as Error })
+      console.error('Account verification failed:', error)
       setVerifiedAccount(null)
       setError('Account verification failed')
     } finally {
       setIsVerifying(false)
     }
-  }, [selectedBank, accountNumber])
+  }, [selectedBank, accountNumber, verifyBankAccount])
 
   // Auto-verify account when bank and account number are valid
   useEffect(() => {
@@ -83,24 +93,9 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
     }
   }, [selectedBank, accountNumber, verifyAccount])
 
-  const fetchBanks = async () => {
-    try {
-      const response = await fetch('/api/payments/connect-bank')
-      const data = await response.json()
-      
-      if (data.success) {
-        setBanks(data.data)
-      } else {
-        setError('Failed to load banks')
-      }
-    } catch (error) {
-      log.error('Failed to fetch banks', { error: error as Error })
-      setError('Failed to load banks')
-    }
-  }
 
   const handleConnect = async () => {
-    if (!selectedBank || !accountNumber || !businessName) {
+    if (!selectedBank || !accountNumber || !businessName || !currentUser) {
       setError('Please fill all fields and verify your account')
       return
     }
@@ -109,28 +104,15 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
     setError('')
 
     try {
-      log.info('Connecting bank account', {
+      const result = await createSubaccount({
+        physiotherapistId: currentUser._id,
+        businessName,
         bankCode: selectedBank,
         accountNumber,
-        businessName,
-        userId
       })
-
-      const response = await fetch('/api/payments/connect-bank', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bankCode: selectedBank,
-          accountNumber,
-          businessName,
-          userId
-        })
-      })
-
-      const data = await response.json()
       
-      if (data.success) {
-        setSuccess('Bank account connected successfully! You can now receive payments.')
+      if (result.success) {
+        toast.success('Bank account connected successfully! You can now receive payments.')
         
         // Reset form
         setSelectedBank('')
@@ -140,24 +122,22 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
         
         // Call success callback
         onConnectionSuccess?.()
-        
-        log.info('Bank account connected successfully', {
-          userId,
-          accountName: data.data.accountName as string
-        })
       } else {
-        setError(data.message || 'Failed to connect bank account')
+        setError(result.message || 'Failed to connect bank account')
       }
     } catch (error) {
-      log.error('Bank connection failed', { error: error as Error })
-      ErrorTracker.captureException(error as Error, {
-        tags: { component: 'bank_connection' } as Record<string, string>
-      })
+      console.error('Bank connection failed:', error)
+      toast.error('Failed to connect bank account')
       setError('Failed to connect bank account')
     } finally {
       setIsLoading(false)
     }
   }
+
+  // Fetch banks on component mount
+  useEffect(() => {
+    fetchBanks()
+  }, [fetchBanks])
 
   return (
     <Card className="w-full max-w-2xl">
@@ -179,14 +159,42 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
           </AlertDescription>
         </Alert>
 
-        {/* Success Message */}
-        {success && (
-          <Alert className="border-green-200 bg-green-50">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-800">
-              {success}
-            </AlertDescription>
-          </Alert>
+        {/* Existing Bank Accounts */}
+        {existingAccounts && existingAccounts.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">Connected Accounts</h4>
+            {existingAccounts.map((account: {
+              _id: string;
+              accountName: string;
+              bankName: string;
+              accountNumber: string;
+              isDefault?: boolean;
+            }) => (
+              <div key={account._id} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                <div>
+                  <p className="font-medium">{account.accountName}</p>
+                  <p className="text-sm text-gray-600">
+                    {account.bankName} - {account.accountNumber}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {account.isDefault && (
+                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Default</span>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 hover:text-red-700"
+                    onClick={() => deleteBankAccount({ accountId: account._id as Id<'physiotherapistBankAccounts'> })}
+                    title="Remove account"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <p className="text-xs text-gray-500">To change your payout account, connect a new bank below. Your default account will be replaced.</p>
+          </div>
         )}
 
         {/* Error Message */}
@@ -207,7 +215,7 @@ export default function BankAccountConnection({ userId, onConnectionSuccess }: B
               </SelectTrigger>
               <SelectContent>
                 {banks.map((bank) => (
-                  <SelectItem key={bank.code} value={bank.code}>
+                  <SelectItem key={`${bank.code}-${bank.slug}`} value={bank.code}>
                     {bank.name}
                   </SelectItem>
                 ))}

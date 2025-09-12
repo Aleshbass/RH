@@ -21,8 +21,8 @@ import {
   AlertCircle,
   Loader2,
   Plus,
-
   Star,
+  Video
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { User as UserType } from '@/app/types'
@@ -49,6 +49,7 @@ interface Appointment {
   cancellationReason?: string
   feedbackSubmitted?: boolean
   physiotherapistName?: string
+  googleMeetLink?: string
 }
 
 const getStatusIcon = (status: string) => {
@@ -156,6 +157,20 @@ function AppointmentCard({
               {format(startDate, 'h:mm a')} - {format(endDate, 'h:mm a')}
             </span>
           </div>
+          
+          {appointment.googleMeetLink && (
+            <div className="flex items-center gap-2 text-sm">
+              <Video className="h-4 w-4 text-purple-600" />
+              <a 
+                href={appointment.googleMeetLink} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-purple-600 hover:text-purple-700 underline"
+              >
+                Join Google Meet
+              </a>
+            </div>
+          )}
         </div>
 
         {appointment.notesForPatient && (
@@ -397,7 +412,7 @@ export default function PatientAppointmentsPage() {
             <AppointmentsSkeleton />
           ) : upcoming.length > 0 ? (
             <div className="space-y-4">
-              {upcoming.map((appointment: { _id: string }) => (
+              {upcoming.map((appointment: Appointment) => (
                 <AppointmentCard 
                   key={appointment._id} 
                   appointment={appointment} 
@@ -429,7 +444,7 @@ export default function PatientAppointmentsPage() {
             <AppointmentsSkeleton />
           ) : past.length > 0 ? (
             <div className="space-y-4">
-              {past.map((appointment: { _id: string }) => (
+              {past.map((appointment: Appointment) => (
                 <AppointmentCard 
                   key={appointment._id} 
                   appointment={appointment}

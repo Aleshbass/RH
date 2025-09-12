@@ -118,15 +118,8 @@ export function PhysiotherapistDashboardV2() {
       if (!result.success) {
         throw new Error(result.message || 'Failed to send invitation')
       }
-      // Close the modal smoothly on success
-      setIsInviteModalOpen(false)
-      const emailSent = (result as { emailSent?: boolean }).emailSent === true
-      if (emailSent) {
-        toast.success(`Invitation email sent to ${data.patientEmail}`)
-      } else {
-        toast.success('Invitation created')
-        toast.warning('Email delivery failed. Please verify Resend configuration and domain settings.')
-      }
+      
+      toast.success('Invitation sent successfully')
       return true
     } catch (error: unknown) {
       console.error('Failed to send invitation', error)

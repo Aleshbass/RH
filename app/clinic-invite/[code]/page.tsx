@@ -63,7 +63,7 @@ function ClinicInvite({ code }: { code: string }) {
           </CardHeader>
           <CardContent>
             <Button
-              onClick={() => router.push('/onboarding/role-selection')}
+              onClick={() => router.push('/role-selection')}
               className="w-full"
             >
               Complete Profile Setup

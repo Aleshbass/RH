@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { formatCurrency } from '@/lib/utils';
+// Remove formatCurrency import since we'll define our own
 import { format } from 'date-fns';
 import { 
   Send, 
@@ -29,17 +29,24 @@ interface InvoiceItem {
 
 interface Invoice {
   _id?: string;
+  invoiceNumber?: string;
+  patientName?: string;
+  patientEmail?: string;
+  patientPhone?: string;
   patient?: {
     firstName?: string;
     lastName?: string;
     email?: string;
     phoneNumber?: string;
   } | null;
+  issueDate?: number;
   dueDate?: number | string;
-  status: 'paid' | 'sent' | 'overdue' | 'draft' | string;
+  status: 'paid' | 'pending' | 'sent' | 'overdue' | 'draft' | string;
   totalAmount?: number;
   subtotal?: number;
+  subtotalAmount?: number;
   platformFee?: number;
+  platformFeeAmount?: number;
   discountAmount?: number;
   items?: InvoiceItem[];
 }
@@ -63,9 +70,15 @@ export function SimpleInvoiceModal({
 }: SimpleInvoiceModalProps) {
   if (!selectedInvoice) return null;
 
+  // Format currency in Naira
+  const formatCurrency = (amount: number) => {
+    return `₦${(amount / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'paid': return 'bg-green-100 text-green-800';
+      case 'pending': return 'bg-blue-100 text-blue-800';
       case 'sent': return 'bg-blue-100 text-blue-800';
       case 'overdue': return 'bg-red-100 text-red-800';
       case 'draft': return 'bg-gray-100 text-gray-800';
@@ -80,7 +93,7 @@ export function SimpleInvoiceModal({
           <div className="flex justify-between items-start">
             <div>
               <DialogTitle className="text-2xl">Invoice Details</DialogTitle>
-              <p className="text-muted-foreground">View and manage invoice #{selectedInvoice._id?.slice(-6)}</p>
+              <p className="text-muted-foreground">View and manage invoice #{selectedInvoice.invoiceNumber || selectedInvoice._id?.slice(-6)}</p>
             </div>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="h-4 w-4" />
@@ -96,22 +109,26 @@ export function SimpleInvoiceModal({
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <User className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-medium">{selectedInvoice.patient?.firstName} {selectedInvoice.patient?.lastName}</span>
+                    <span className="font-medium">{selectedInvoice.patientName || `${selectedInvoice.patient?.firstName || ''} ${selectedInvoice.patient?.lastName || ''}`.trim() || 'Patient'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span>{selectedInvoice.patient?.email || 'N/A'}</span>
+                    <span>{selectedInvoice.patientEmail || selectedInvoice.patient?.email || 'Email not available'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{selectedInvoice.patient?.phoneNumber || 'N/A'}</span>
+                    <span>{selectedInvoice.patientPhone || selectedInvoice.patient?.phoneNumber || 'Phone not available'}</span>
                   </div>
                 </div>
                 
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span>Due: {selectedInvoice.dueDate ? format(new Date(selectedInvoice.dueDate), 'MMM dd, yyyy') : 'N/A'}</span>
+                    <span>Issued: {selectedInvoice.issueDate ? format(new Date(selectedInvoice.issueDate), 'MMM dd, yyyy, h:mm a') : 'N/A'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <span>Due: {selectedInvoice.dueDate ? format(new Date(selectedInvoice.dueDate), 'MMM dd, yyyy, h:mm a') : 'N/A'}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">Status:</span>
@@ -151,7 +168,7 @@ export function SimpleInvoiceModal({
                 <div className="pt-4 space-y-2">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
-                    <span>{formatCurrency(selectedInvoice.subtotal ?? ((selectedInvoice.totalAmount ?? 0) - (selectedInvoice.platformFee ?? 1000)))}</span>
+                    <span>{formatCurrency(selectedInvoice.subtotalAmount ?? selectedInvoice.subtotal ?? (selectedInvoice.totalAmount ?? 0))}</span>
                   </div>
                   {(selectedInvoice.discountAmount ?? 0) > 0 && (
                     <div className="flex justify-between text-green-600">
@@ -161,7 +178,7 @@ export function SimpleInvoiceModal({
                   )}
                   <div className="flex justify-between">
                     <span>Platform Fee:</span>
-                    <span>{formatCurrency(selectedInvoice.platformFee ?? 1000)}</span>
+                    <span>{formatCurrency(selectedInvoice.platformFeeAmount ?? selectedInvoice.platformFee ?? 100000)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-lg pt-2 border-t">
                     <span>Total:</span>
@@ -186,7 +203,7 @@ export function SimpleInvoiceModal({
               </Button>
             )}
             
-            {(selectedInvoice.status === 'sent' || selectedInvoice.status === 'overdue') && (
+            {(selectedInvoice.status === 'pending' || selectedInvoice.status === 'sent' || selectedInvoice.status === 'overdue') && (
               <Button onClick={() => onRecordPayment((selectedInvoice.totalAmount || 0) / 100, 'bank_transfer')}>
                 <CreditCard className="h-4 w-4 mr-2" />
                 Record Payment

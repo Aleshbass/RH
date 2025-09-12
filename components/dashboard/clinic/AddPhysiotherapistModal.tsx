@@ -9,22 +9,28 @@ import AddPhysiotherapistDirectForm from './AddPhysiotherapistDirectForm'
 interface AddPhysiotherapistModalProps {
   trigger?: React.ReactNode
   onSuccess?: () => void
+  open?: boolean
+  defaultOpen?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-export default function AddPhysiotherapistModal({ trigger, onSuccess }: AddPhysiotherapistModalProps) {
-  const [isOpen, setIsOpen] = useState(false)
+export default function AddPhysiotherapistModal({ trigger, onSuccess, open, defaultOpen, onOpenChange }: AddPhysiotherapistModalProps) {
+  const [internalOpen, setInternalOpen] = useState(defaultOpen ?? false)
+  const isControlled = open !== undefined
+  const openValue = isControlled ? open : internalOpen
+  const setOpenValue = isControlled && onOpenChange ? onOpenChange : setInternalOpen
 
   const handleSuccess = () => {
-    setIsOpen(false)
+    setOpenValue(false)
     onSuccess?.()
   }
 
   const handleCancel = () => {
-    setIsOpen(false)
+    setOpenValue(false)
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={openValue} onOpenChange={setOpenValue}>
       <DialogTrigger asChild>
         {trigger || (
           <Button>
@@ -45,3 +51,4 @@ export default function AddPhysiotherapistModal({ trigger, onSuccess }: AddPhysi
     </Dialog>
   )
 }
+

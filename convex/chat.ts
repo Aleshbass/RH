@@ -98,13 +98,206 @@ export const getOrCreateConversation = mutation({
 });
 
 /**
+ * Toggle a reaction on a message for the current user
+ */
+export const toggleReaction = mutation({
+  args: {
+    messageId: v.id("messages"),
+    type: v.string(), // e.g., "👍", "❤️", "😂"
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+
+    const message = await ctx.db.get(args.messageId);
+    if (!message) throw new Error("Message not found");
+
+    // Verify user is part of the conversation
+    const conversation = await ctx.db.get(message.conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.participant1Id !== user._id && conversation.participant2Id !== user._id) {
+      throw new Error("Access denied");
+    }
+
+    const reactions = (message.reactions as Array<{ userId: Id<"users">; type: string; timestamp: number }>) || [];
+    const existingIndex = reactions.findIndex(r => r.userId === user._id);
+
+    if (existingIndex !== -1) {
+      // Same type => remove, different type => replace
+      if (reactions[existingIndex].type === args.type) {
+        reactions.splice(existingIndex, 1);
+      } else {
+        reactions[existingIndex] = { userId: user._id, type: args.type, timestamp: Date.now() };
+      }
+    } else {
+      reactions.push({ userId: user._id, type: args.type, timestamp: Date.now() });
+    }
+
+    await ctx.db.patch(args.messageId, { reactions, updatedAt: Date.now() });
+    return { success: true };
+  },
+});
+
+/**
+ * Edit a message (sender only)
+ */
+export const editMessage = mutation({
+  args: {
+    messageId: v.id("messages"),
+    newContent: v.string(),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+
+    const message = await ctx.db.get(args.messageId);
+    if (!message) throw new Error("Message not found");
+    if (message.senderId !== user._id) throw new Error("Only the sender can edit this message");
+    if (message.isDeleted) throw new Error("Cannot edit a deleted message");
+
+    await ctx.db.patch(args.messageId, {
+      content: args.newContent,
+      editedAt: Date.now(),
+      editedBy: user._id,
+      updatedAt: Date.now(),
+    });
+    return { success: true };
+  },
+});
+
+/**
+ * Soft-delete a message (sender only)
+ */
+export const deleteMessage = mutation({
+  args: { messageId: v.id("messages") },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+
+    const message = await ctx.db.get(args.messageId);
+    if (!message) throw new Error("Message not found");
+    if (message.senderId !== user._id) throw new Error("Only the sender can delete this message");
+
+    await ctx.db.patch(args.messageId, {
+      isDeleted: true,
+      deletedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    return { success: true };
+  },
+});
+
+/**
+ * Star/Unstar a message for current user
+ */
+export const toggleStar = mutation({
+  args: { messageId: v.id("messages") },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+
+    const message = await ctx.db.get(args.messageId);
+    if (!message) throw new Error("Message not found");
+
+    // Verify user is part of the conversation
+    const conversation = await ctx.db.get(message.conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.participant1Id !== user._id && conversation.participant2Id !== user._id) {
+      throw new Error("Access denied");
+    }
+
+    const starredBy: Id<"users">[] = (message.starredBy as Id<"users">[]) || [];
+    const idx = starredBy.findIndex((u) => u === user._id);
+    if (idx >= 0) starredBy.splice(idx, 1); else starredBy.push(user._id);
+    await ctx.db.patch(args.messageId, { starredBy, updatedAt: Date.now() });
+    return { success: true };
+  },
+});
+
+/**
+ * Get starred messages by current user in a conversation
+ */
+export const getStarredMessages = query({
+  args: { conversationId: v.id("conversations") },
+  returns: v.object({
+    items: v.array(v.any()),
+    total: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!user) throw new Error("User not found");
+
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.participant1Id !== user._id && conversation.participant2Id !== user._id) {
+      throw new Error("Access denied");
+    }
+
+    const msgs = await ctx.db
+      .query("messages")
+      .withIndex("by_conversation_id", (q) => q.eq("conversationId", args.conversationId))
+      .order("desc")
+      .collect();
+
+    const starred = msgs.filter((m: any) => Array.isArray(m.starredBy) && m.starredBy.includes(user._id));
+
+    // Load reply context for each starred message
+    const items = await Promise.all(starred.map(async (m) => {
+      const replyToMessage = m.replyToMessageId ? await ctx.db.get(m.replyToMessageId) : null;
+      return { ...m, replyToMessage };
+    }));
+
+    return { items, total: items.length };
+  },
+});
+
+/**
  * Send a message in a conversation
  */
 export const sendMessage = mutation({
   args: {
     conversationId: v.id("conversations"),
     content: v.string(),
-    contentType: v.union(v.literal("text"), v.literal("image"), v.literal("file")),
+    contentType: v.union(
+      v.literal("text"),
+      v.literal("image"),
+      v.literal("file"),
+      v.literal("audio")
+    ),
     fileUrl: v.optional(v.string()),
     replyToMessageId: v.optional(v.id("messages")),
     metadata: v.optional(v.object({
@@ -659,7 +852,12 @@ export const getConversations = query({
         v.object({
           _id: v.id("messages"),
           content: v.string(),
-          contentType: v.union(v.literal("text"), v.literal("image"), v.literal("file")),
+          contentType: v.union(
+            v.literal("text"),
+            v.literal("image"),
+            v.literal("file"),
+            v.literal("audio")
+          ),
           timestamp: v.number(),
         })
       ),

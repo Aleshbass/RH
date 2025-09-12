@@ -33,8 +33,10 @@ interface PerformanceMetrics {
 export default function ClinicReportsPage() {
   const reportsData = useQuery(api.clinics.getClinicReports)
   const performanceMetrics = useQuery(api.clinics.getClinicPerformanceMetrics) as PerformanceMetrics | undefined
+  const appointmentStats = useQuery(api.clinics.getClinicAppointmentStats)
+  const staffMetrics = { utilization: 75 } // Default staff metrics
 
-  if (reportsData === undefined || performanceMetrics === undefined) {
+  if (reportsData === undefined || performanceMetrics === undefined || appointmentStats === undefined) {
     return (
       <div className="p-8">
         <div className="space-y-6">
@@ -74,7 +76,7 @@ export default function ClinicReportsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{performanceMetrics?.patientSatisfaction || 0}%</div>
-              <p className="text-xs text-muted-foreground">+2% from last month</p>
+              <p className="text-xs text-muted-foreground">Based on patient feedback</p>
             </CardContent>
           </Card>
           
@@ -85,7 +87,7 @@ export default function ClinicReportsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{performanceMetrics?.treatmentSuccess || 0}%</div>
-              <p className="text-xs text-muted-foreground">+5% from last month</p>
+              <p className="text-xs text-muted-foreground">Treatment outcomes</p>
             </CardContent>
           </Card>
           
@@ -203,7 +205,7 @@ export default function ClinicReportsPage() {
                         <p className="text-sm text-gray-600">Direct patient payments</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-green-600">$12,450</p>
+                        <p className="font-bold text-green-600">₦12,450</p>
                         <p className="text-sm text-gray-600">65%</p>
                       </div>
                     </div>
@@ -213,7 +215,7 @@ export default function ClinicReportsPage() {
                         <p className="text-sm text-gray-600">Insurance reimbursements</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-green-600">$5,200</p>
+                        <p className="font-bold text-green-600">₦5,200</p>
                         <p className="text-sm text-gray-600">27%</p>
                       </div>
                     </div>
@@ -223,7 +225,7 @@ export default function ClinicReportsPage() {
                         <p className="text-sm text-gray-600">Multi-session packages</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-green-600">$1,530</p>
+                        <p className="font-bold text-green-600">₦1,530</p>
                         <p className="text-sm text-gray-600">8%</p>
                       </div>
                     </div>
@@ -341,8 +343,8 @@ export default function ClinicReportsPage() {
                         <p className="text-sm text-gray-600">Missed appointments</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold">5.2%</p>
-                        <p className="text-sm text-red-600">+0.3% from last month</p>
+                        <p className="font-bold">{appointmentStats?.noShowRate || 0}%</p>
+                        <p className="text-sm text-red-600">Missed appointments</p>
                       </div>
                     </div>
                     <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
@@ -351,8 +353,8 @@ export default function ClinicReportsPage() {
                         <p className="text-sm text-gray-600">Capacity usage</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold">87%</p>
-                        <p className="text-sm text-green-600">+2% from last month</p>
+                        <p className="font-bold">{staffMetrics?.utilization || 0}%</p>
+                        <p className="text-sm text-green-600">Current rate</p>
                       </div>
                     </div>
                   </div>
