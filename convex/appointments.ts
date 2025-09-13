@@ -148,7 +148,7 @@ export const createAppointment = mutation({
     // Email: confirmation to patient
     const patientEmail = patient?.email as string | undefined;
     if (patientEmail) {
-      await ctx.scheduler.runAfter(0, api.actions.emails.sendAppointmentScheduledEmail as any, {
+      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentScheduledEmail as any, {
         to: patientEmail,
         patientName,
         physiotherapistName,
@@ -161,16 +161,16 @@ export const createAppointment = mutation({
       });
     }
 
-    // Notification for physiotherapist
-    const calendarEvent = {
-      title: `Appointment with ${patientName}`,
-      start: new Date(args.startTime),
-      end: new Date(args.endTime),
-    };
-    // Use internal calendar function instead of runAction
-    await ctx.scheduler.runAfter(0, api.calendar.nodeActions.createCalendarEvent, {
+    // Notification for physiotherapist: schedule Google Calendar event creation
+    await ctx.scheduler.runAfter(0, internal.calendar.nodeActions.createEvent as any, {
       userId: user._id,
-      event: calendarEvent,
+      appointmentId,
+      summary: `Appointment with ${patientName}`,
+      description: `Service: ${args.serviceType}${clinicName ? ` @ ${clinicName}` : ''}`,
+      startTime: args.startTime,
+      endTime: args.endTime,
+      attendees: patientEmail ? [{ email: patientEmail, displayName: patientName }] : undefined,
+      createMeetLink: false,
     });
 
     await ctx.db.insert("notifications", {
@@ -533,7 +533,7 @@ export const rescheduleAppointment = mutation({
     const oldTimeStr = `${new Date(oldStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(oldEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     const newTimeStr = `${new Date(args.newStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(args.newEndTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     if (physioEmail) {
-      await ctx.scheduler.runAfter(0, api.actions.emails.sendAppointmentRescheduledProviderEmail as any, {
+      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledProviderEmail as any, {
         to: physioEmail,
         patientName: patientNameForEmail,
         physiotherapistName,
