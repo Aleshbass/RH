@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth, useUser } from '@clerk/nextjs'
 import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ import { Heart, Shield, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useValidateInvitationCode } from '@/lib/api/patientInvitations'
 import { usePatientOnboardingAction } from '@/lib/onboardingHelpers'
+import Confetti from '@/components/ui/Confetti'
 
 interface PatientData {
   firstName: string
@@ -35,6 +36,7 @@ export default function PatientInvitePage() {
   const { isLoaded, isSignedIn } = useAuth()
   const { user } = useUser()
   const [isAccepting, setIsAccepting] = useState(false)
+  const [showConfetti, setShowConfetti] = useState(false)
 
   // Get invitation details with validation
   const {
@@ -80,7 +82,11 @@ export default function PatientInvitePage() {
 
       if (result.success) {
         toast.success('Welcome to Rehabify Health!')
-        router.push('/dashboard/patient')
+        setShowConfetti(true)
+        // Briefly show confetti before redirecting
+        setTimeout(() => {
+          router.push('/dashboard/patient')
+        }, 1200)
       } else {
         toast.error(result.message || 'Failed to accept invitation')
       }
@@ -96,7 +102,22 @@ export default function PatientInvitePage() {
     }
   }
 
-  // Loading state
+  // Friendly handling for already accepted invitations
+  const alreadyAccepted = !isValid && typeof message === 'string' && message.toLowerCase().includes('already been accepted')
+
+  // If the invitation was already accepted and user is signed in, celebrate and go to dashboard
+  useEffect(() => {
+    if (alreadyAccepted && isSignedIn) {
+      toast.success('You are all set! Redirecting to your dashboard...')
+      setShowConfetti(true)
+      const t = setTimeout(() => {
+        router.push('/dashboard/patient')
+      }, 1200)
+      return () => clearTimeout(t)
+    }
+  }, [alreadyAccepted, isSignedIn, router])
+
+  // Loading state (placed after hooks to satisfy react-hooks rules)
   if (!isLoaded || isValidating) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 flex items-center justify-center">
@@ -110,6 +131,25 @@ export default function PatientInvitePage() {
 
   // Not signed in: prompt to sign in seamlessly
   if (!isSignedIn) {
+    if (alreadyAccepted) {
+      return (
+        <div className="flex min-h-screen items-center justify-center">
+          <Card className="w-[420px]">
+            <CardHeader>
+              <CardTitle className="">You&apos;re already registered</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Sign in to access your patient dashboard.
+              </p>
+            </CardContent>
+            <CardFooter>
+              <Button onClick={handleSignIn} className="w-full">Sign in</Button>
+            </CardFooter>
+          </Card>
+        </div>
+      )
+    }
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Card className="w-[420px]">
@@ -131,6 +171,17 @@ export default function PatientInvitePage() {
 
   // Invalid or expired invitation
   if (!isValid) {
+    if (alreadyAccepted && isSignedIn) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 flex items-center justify-center">
+          {showConfetti && <Confetti />}
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+            <p className="mt-4 text-gray-600">Redirecting to your dashboard...</p>
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Card className="w-[420px]">
@@ -158,6 +209,7 @@ export default function PatientInvitePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50">
+      {showConfetti && <Confetti />}
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 py-6">

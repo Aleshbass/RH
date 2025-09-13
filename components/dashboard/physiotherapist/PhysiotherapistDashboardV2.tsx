@@ -15,8 +15,8 @@ import {
   AlertCircle
 } from 'lucide-react'
 import { format } from 'date-fns'
-import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
+import { useQueryUntyped, useActionUntyped } from '@/lib/convexUntyped'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { QuickActions } from '@/components/dashboard/shared/QuickActions'
 import { RecentSessions } from '@/components/dashboard/physiotherapist/RecentSessions'
@@ -24,7 +24,7 @@ import { PatientInviteModal } from '@/components/dashboard/clinic-owner/PatientI
 import { toast } from 'sonner'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAction } from 'convex/react'
+ 
 
 // Type definitions for better type safety
 interface Patient {
@@ -57,34 +57,57 @@ interface Appointment {
   };
 }
 
+type ClinicInfo = {
+  name?: string;
+  staffRole?: string;
+  joinedAt?: number;
+  address?: string;
+  owner?: { firstName?: string; lastName?: string };
+  contactEmail?: string;
+} | null;
+
+type DashboardStats = {
+  completedSessionsThisWeek?: number;
+  totalPatients?: number;
+  todaysAppointments?: number;
+  pendingInvitations?: number;
+} | null;
+
 export function PhysiotherapistDashboardV2() {
-  const user = useQuery(api.users.getMyUser)
+  // Avoid deep generic instantiation by routing through an any-cast handle
+  const apiAny = api as unknown as any
+  // Only the firstName is used in the header; keep a minimal shape
+  const user = useQueryUntyped(apiAny.users.getMyUser) as { firstName?: string } | null | undefined
   
   // Use the existing getCurrentUser query to get profile information
-  const currentUserWithProfile = useQuery(api.queries.getCurrentUser)
+  const currentUserWithProfile = useQueryUntyped(apiAny.queries.getCurrentUser) as unknown | null | undefined
   
   // Get clinic information if user is clinic staff
-  const clinicInfo = useQuery(api.clinics.getMyClinicInfo)
+  const clinicInfo = useQueryUntyped(apiAny.clinics.getMyClinicInfo) as ClinicInfo | undefined
   
   // Use direct Convex queries instead of custom hooks that depend on auth store
-  const dashboardStats = useQuery(api.patients.getDashboardStats, {})
-  const patientsData = useQuery(api.patients.getMyPatients, { limit: 10 })
-  const todaysAppointmentsData = useQuery(api.appointments.getMyAppointments, {
+  const dashboardStats = useQueryUntyped(apiAny.patients.getDashboardStats, {}) as DashboardStats | undefined
+  const patientsData = useQueryUntyped(apiAny.patients.getMyPatients, { limit: 10 }) as Patient[] | undefined
+  const todaysAppointmentsData = useQueryUntyped(apiAny.appointments.getMyAppointments, {
     startDate: new Date().setHours(0, 0, 0, 0),
     endDate: new Date().setHours(23, 59, 59, 999),
     limit: 5
-  })
+  }) as Appointment[] | undefined
 
   // Recent session logs
-  const recentSessionsData = useQuery(api.sessionLogs.getMySessionLogs, { limit: 5 })
+  const recentSessionsData = useQueryUntyped(apiAny.sessionLogs.getMySessionLogs, { limit: 5 }) as Array<{
+    _id: string;
+    sessionDate: number;
+    patient?: { firstName?: string; lastName?: string } | null;
+  }> | undefined
   
   // Transform the data to match the expected interface
   type SessionLike = {
     _id: string;
-    sessionDate: string;
-    patient?: { firstName?: string; lastName?: string };
+    sessionDate: number;
+    patient?: { firstName?: string; lastName?: string } | null;
   };
-  const recentSessions = recentSessionsData?.map((session: SessionLike) => ({
+  const recentSessions = recentSessionsData?.map((session) => ({
     _id: session._id,
     sessionDate: session.sessionDate,
     patient: session.patient ? {
@@ -100,7 +123,7 @@ export function PhysiotherapistDashboardV2() {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
 
   // Mutation for creating patient invitation
-  const createPatientInvitationWithEmail = useAction(api.actions.patients.invitePatient.createPatientInvitationWithNotification)
+  const createPatientInvitationWithEmail = useActionUntyped(apiAny.actions.patients.invitePatient.createPatientInvitationWithNotification)
 
   // Type the data with fallbacks
   const patients = (patientsData || []) as Patient[]
@@ -120,6 +143,8 @@ export function PhysiotherapistDashboardV2() {
       }
       
       toast.success('Invitation sent successfully')
+      // Close the modal immediately on success for better UX
+      setIsInviteModalOpen(false)
       return true
     } catch (error: unknown) {
       console.error('Failed to send invitation', error)

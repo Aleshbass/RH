@@ -234,7 +234,7 @@ export default function PatientInvoicesPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setSelectedInvoice(invoice)}
+                          onClick={() => { window.location.href = `/dashboard/patient/invoices/${invoice._id}` }}
                         >
                           <Eye className="w-4 h-4 mr-1" />
                           View
