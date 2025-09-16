@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Id } from '@/convex/_generated/dataModel';
 import StreamVideoCallManager from '@/components/video/StreamVideoCallManager';
+import { PatientProfileMiniCard } from '@/components/dashboard/physiotherapist/PatientProfileMiniCard';
 // Removed deprecated InferQueryOutput import
 
 // Simple type definition to avoid complex inference
@@ -49,7 +50,7 @@ type VideoCall = {
 export default function VideoCallsPage() {
   const router = useRouter();
   const [showNewCall, setShowNewCall] = useState(false);
-  const [selectedPatient, setSelectedPatient] = useState<string>('');
+  const [selectedPatient, setSelectedPatient] = useState<Id<'users'> | ''>('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [title, setTitle] = useState('');
   const [activeCall, setActiveCall] = useState<VideoCall | null>(null);
@@ -97,7 +98,7 @@ export default function VideoCallsPage() {
     try {
       // Create the video call with Stream
       const result = await createVideoCall({
-        participants: [selectedPatient as Id<"users">],
+        participants: [selectedPatient as Id<'users'>],
         callType: 'appointment',
         title,
         settings: {
@@ -116,7 +117,7 @@ export default function VideoCallsPage() {
 
       // Auto-send the invitation email (restores previous behavior)
       try {
-        const patient = (patients || []).find(p => String(p._id) === selectedPatient)
+        const patient = (patients || []).find(p => String(p._id) === String(selectedPatient))
         if (patient?.email) {
           await sendVideoCallInvitation({
             patientEmail: patient.email,
@@ -364,18 +365,23 @@ export default function VideoCallsPage() {
             </div>
             <div>
               <Label htmlFor="patient">Patient</Label>
-              <Select onValueChange={setSelectedPatient} value={selectedPatient}>
+              <Select onValueChange={(v) => setSelectedPatient(v as unknown as Id<'users'>)} value={(selectedPatient as unknown as string) || ''}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a patient" />
                 </SelectTrigger>
                 <SelectContent>
                   {(patients ?? []).map((patient: Patient) => (
-                    <SelectItem key={patient!._id} value={patient!._id}>
+                    <SelectItem key={patient!._id} value={patient!._id as unknown as string}>
                       {patient!.firstName} {patient!.lastName}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {selectedPatient && (
+                <div className="mt-3">
+                  <PatientProfileMiniCard patientId={selectedPatient as Id<'users'>} />
+                </div>
+              )}
             </div>
             <div>
               <Label htmlFor="scheduledAt">Date and Time</Label>

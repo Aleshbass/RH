@@ -14,6 +14,7 @@ import { useRecurringAppointments, recurringAppointmentUtils } from '@/hooks/use
 import { Id } from '@/convex/_generated/dataModel'
 // Local lightweight type to avoid deep type instantiation and export resolution issues
 import type { DayOfWeek } from '@/lib/types/recurring-appointments'
+import { PatientProfileMiniCard } from '@/components/dashboard/physiotherapist/PatientProfileMiniCard'
 type CreateSeriesParams = {
   // Series metadata
   name: string
@@ -318,6 +319,11 @@ export function RecurringAppointmentModal({
                         ))}
                       </SelectContent>
                     </Select>
+                    {formData.patientId && (
+                      <div className="mt-2">
+                        <PatientProfileMiniCard patientId={formData.patientId as Id<'users'>} />
+                      </div>
+                    )}
                   </div>
                 )}
 

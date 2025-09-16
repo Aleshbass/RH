@@ -9,16 +9,18 @@ import {
   CallingState,
   useCall,
   StreamTheme,
+  CallControls,
 } from '@stream-io/video-react-sdk'
 import '@stream-io/video-react-sdk/dist/css/styles.css'
 import { useUser } from '@clerk/nextjs'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Phone, PhoneOff, Video, VideoOff, Mic, MicOff, Monitor, Users, Copy, XOctagon, MessageSquare } from 'lucide-react'
+import { Loader2, Phone, Video, Users, Copy, XOctagon, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { StreamChat } from 'stream-chat'
 import { Chat as StreamChatUI, Channel, MessageList, MessageInput, Window as ChatWindow, ChannelHeader, Thread } from 'stream-chat-react'
+import { useQueryUntyped } from '@/lib/convexUntyped'
 import { useActionUntyped, useMutationUntyped } from '@/lib/convexUntyped'
 
 interface StreamVideoCallProps {
@@ -35,117 +37,32 @@ interface StreamVideoCallProps {
   }>
 }
 
-// Custom Call Controls Component
-const CustomCallControls = ({ onLeave, onEndForAll }: { onLeave: () => void, onEndForAll: () => void }) => {
-  const { useMicrophoneState, useCameraState, useScreenShareState } = useCallStateHooks()
-  
-  const { microphone, isMute: isMicMuted } = useMicrophoneState()
-  const { camera, isMute: isCameraMuted } = useCameraState()
-  const { screenShare } = useScreenShareState()
-
-  const toggleMicrophone = async () => {
-    try {
-      if (isMicMuted) {
-        await microphone.enable()
-      } else {
-        await microphone.disable()
-      }
-    } catch (error: unknown) {
-      const e = error as Error & { name?: string }
-      const msg = e?.name === 'NotReadableError'
-        ? 'Your microphone is in use by another app. Close other apps using the mic and try again.'
-        : (e?.message || 'Failed to access microphone')
-      toast.error(msg)
-      console.error('[devices]: Failed to get audio stream', e)
-    }
-  }
-
-  const toggleCamera = async () => {
-    try {
-      if (isCameraMuted) {
-        await camera.enable()
-      } else {
-        await camera.disable()
-      }
-    } catch (error: unknown) {
-      const e = error as Error & { name?: string }
-      const msg = e?.name === 'NotReadableError'
-        ? 'Could not start camera. It may be in use by another app (Zoom/Teams/browser tab) or blocked by OS permissions.'
-        : (e?.message || 'Failed to access camera')
-      toast.error(msg)
-      console.error('[devices]: Failed to get video stream', e)
-    }
-  }
-
-  const toggleScreenShare = async () => {
-    try {
-      const isSharing = (screenShare as { status?: string } | undefined)?.status === 'enabled'
-      if (isSharing) {
-        await screenShare.disable()
-      } else {
-        await screenShare.enable()
-      }
-    } catch (error: unknown) {
-      const e = error as Error
-      toast.error(e?.message || 'Failed to toggle screen sharing')
-      console.error('[devices]: Failed to toggle screen share', e)
-    }
-  }
-
+// Floating control bar wrapped around Stream's reliable CallControls
+const FloatingCallControls = ({ onLeave, canEndForAll, onEndForAll }: { onLeave: () => void; canEndForAll: boolean; onEndForAll: () => void }) => {
   return (
-    <div className="flex items-center justify-center space-x-4 p-4 bg-gray-900 border-t border-gray-800 text-white">
-      <Button
-        variant="ghost"
-        size="lg"
-        onClick={toggleMicrophone}
-        className={`rounded-full bg-white/10 hover:bg-white/20 text-white ${isMicMuted ? 'ring-2 ring-red-500/40' : ''}`}
-      >
-        {isMicMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-      </Button>
-      
-      <Button
-        variant="ghost"
-        size="lg"
-        onClick={toggleCamera}
-        className={`rounded-full bg-white/10 hover:bg-white/20 text-white ${isCameraMuted ? 'ring-2 ring-red-500/40' : ''}`}
-      >
-        {isCameraMuted ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
-      </Button>
-      
-      <Button
-        variant="ghost"
-        size="lg"
-        onClick={toggleScreenShare}
-        className={`rounded-full bg-white/10 hover:bg-white/20 text-white ${((screenShare as { status?: string } | undefined)?.status === 'enabled') ? 'ring-2 ring-emerald-500/40' : ''}`}
-      >
-        <Monitor className="h-5 w-5" />
-      </Button>
-      
-      <Button
-        variant="ghost"
-        size="lg"
-        onClick={onLeave}
-        className="rounded-full bg-red-600/80 hover:bg-red-600 text-white"
-      >
-        <PhoneOff className="h-5 w-5" />
-      </Button>
-
-      {/* End for Everyone (host-controlled in future) */}
-      <Button
-        variant="ghost"
-        size="lg"
-        onClick={onEndForAll}
-        className="rounded-full bg-red-700/80 hover:bg-red-700 text-white"
-        title="End call for everyone"
-      >
-        <XOctagon className="h-5 w-5" />
-      </Button>
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex items-center justify-center">
+      <div className="pointer-events-auto rounded-full bg-black/70 backdrop-blur supports-[backdrop-filter]:bg-black/40 shadow-lg ring-1 ring-white/10">
+        <div className="flex items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-3 text-white">
+          <CallControls onLeave={onLeave} />
+          {canEndForAll && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onEndForAll}
+              className="ml-1 rounded-full bg-red-600/80 hover:bg-red-600 text-white"
+              title="End call for everyone"
+            >
+              <XOctagon className="h-5 w-5" />
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
 
 // Call UI Component
-const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatChannel, onEndForAll }: { onCallEnd: () => void, callId: string, showChat: boolean, onToggleChat: () => void, chatClient: StreamChat | null, chatChannel: ReturnType<StreamChat['channel']> | null, onEndForAll: () => void }) => {
+const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatChannel, onEndForAll, canEndForAll }: { onCallEnd: () => void, callId: string, showChat: boolean, onToggleChat: () => void, chatClient: StreamChat | null, chatChannel: ReturnType<StreamChat['channel']> | null, onEndForAll: () => void, canEndForAll: boolean }) => {
   const call = useCall()
   const { useCallCallingState, useParticipantCount } = useCallStateHooks()
   const callingState = useCallCallingState()
@@ -200,14 +117,14 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
   }
 
   return (
-    <div className="h-screen flex flex-col bg-white">
+    <div className="h-screen flex flex-col bg-neutral-950 text-white">
       {/* Share Link Banner */}
       {showShareLink && (
-        <div className="bg-green-600 text-white p-3 relative">
+        <div className="bg-emerald-600 text-white p-3 relative">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3 flex-1">
               <span className="font-medium whitespace-nowrap">Share link:</span>
-              <code className="bg-green-700 px-3 py-1 rounded text-sm flex-1 overflow-x-auto">
+              <code className="bg-emerald-700 px-3 py-1 rounded text-sm flex-1 overflow-x-auto">
                 {shareLink}
               </code>
             </div>
@@ -243,35 +160,35 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
       )}
 
       {/* Header */}
-      <div className="bg-white text-gray-900 px-4 py-3 flex items-center justify-between border-b">
+      <div className="bg-neutral-900/60 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
-            <Users className="h-5 w-5" />
-            <span>{participantCount} participant{participantCount !== 1 ? 's' : ''}</span>
+            <Users className="h-5 w-5 text-white" />
+            <span className="text-white/90">{participantCount} participant{participantCount !== 1 ? 's' : ''}</span>
           </div>
           <div className="flex items-center space-x-2">
-            <Video className="h-5 w-5 text-green-600" />
-            <span className="text-green-600">Stream Video Active</span>
+            <Video className="h-5 w-5 text-emerald-400" />
+            <span className="text-emerald-400">Stream Video Active</span>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Button size="sm" variant="outline" onClick={onToggleChat}>
+          <Button size="sm" variant="secondary" onClick={onToggleChat}>
             <MessageSquare className="h-4 w-4 mr-1" /> {showChat ? 'Hide Chat' : 'Show Chat'}
           </Button>
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-white/60">
             Call ID: {callId}
           </div>
         </div>
       </div>
 
       {/* Video + Chat */}
-      <div className="flex-1 relative bg-white p-4">
-        <div className="h-full w-full flex gap-4">
-          <div className="flex-1 min-w-0 rounded-md overflow-hidden border">
+      <div className="flex-1 relative bg-neutral-950 p-0 sm:p-4">
+        <div className="h-full w-full flex gap-0 sm:gap-4">
+          <div className="flex-1 min-w-0 rounded-none sm:rounded-md overflow-hidden border-0 sm:border">
             <SpeakerLayout participantsBarPosition="bottom" />
           </div>
           {showChat && chatClient && chatChannel && (
-            <div className="w-[360px] min-w-[320px] max-w-[420px] h-full rounded-md overflow-hidden border">
+            <div className="w-[360px] min-w-[320px] max-w-[420px] h-full rounded-md overflow-hidden border bg-white text-gray-900">
               <StreamChatUI client={chatClient} theme="str-chat__theme-light">
                 <Channel channel={chatChannel}>
                   <ChatWindow>
@@ -287,11 +204,8 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
         </div>
       </div>
 
-      {/* Controls */}
-      <CustomCallControls 
-        onLeave={handleLeave} 
-        onEndForAll={onEndForAll}
-      />
+      {/* Floating Controls (never disappear) */}
+      <FloatingCallControls onLeave={handleLeave} canEndForAll={canEndForAll} onEndForAll={onEndForAll} />
     </div>
   )
 }
@@ -302,8 +216,14 @@ export default function StreamVideoCall({
   callType = 'default',
   onCallEnd,
   isFullscreen = false,
+  participants,
 }: StreamVideoCallProps) {
   const { user, isLoaded } = useUser()
+  // Prefer Convex user's uploaded profile photo (fallback to Clerk)
+  const apiUntypedAll = api as unknown as Record<string, unknown>
+  const usersModule = apiUntypedAll['users'] as Record<string, unknown>
+  const getMyUserQuery = usersModule['getMyUser']
+  const convexUser = useQueryUntyped(getMyUserQuery) as { firstName?: string; imageUrl?: string } | null | undefined
   const [client, setClient] = useState<StreamVideoClient | null>(null)
   type StreamCallHandle = ReturnType<StreamVideoClient['call']>
   const [call, setCall] = useState<StreamCallHandle | null>(null)
@@ -312,6 +232,7 @@ export default function StreamVideoCall({
   const [chatClient, setChatClient] = useState<StreamChat | null>(null)
   const [chatChannel, setChatChannel] = useState<ReturnType<StreamChat['channel']> | null>(null)
   const [showChat, setShowChat] = useState(true)
+  const [canEndForAll, setCanEndForAll] = useState(false)
   
   // Access Convex API modules via unknown-indexers to avoid deep type instantiation
   const apiUntyped = api as unknown as Record<string, unknown>
@@ -344,6 +265,30 @@ export default function StreamVideoCall({
     onCallEndRef.current = onCallEnd
   }, [onCallEnd])
 
+  // Determine if the current user can end the call for everyone (host)
+  useEffect(() => {
+    if (!user) return
+    try {
+      // Prefer roles from provided participants if available
+      const isHostFromProps = Array.isArray(participants)
+        ? !!participants.find(p => p.userId === user.id && p.role === 'host')
+        : false
+      setCanEndForAll(isHostFromProps)
+    } catch {
+      setCanEndForAll(false)
+    }
+  }, [participants, user])
+
+  // Compute display fields used in initialization
+  const displayName = React.useMemo(
+    () => convexUser?.firstName || user?.fullName || user?.emailAddresses[0]?.emailAddress || 'Anonymous',
+    [convexUser?.firstName, user?.fullName, user?.emailAddresses]
+  )
+  const displayImage = React.useMemo(
+    () => convexUser?.imageUrl || user?.imageUrl,
+    [convexUser?.imageUrl, user?.imageUrl]
+  )
+
   // Initialize Stream client and call
   useEffect(() => {
     if (!isLoaded || !user || client) return
@@ -357,8 +302,8 @@ export default function StreamVideoCall({
         // Get Stream token from Convex
         const { token, apiKey, chatToken } = await getStreamToken({
           userId: user.id,
-          userName: user.fullName || user.emailAddresses[0]?.emailAddress || 'Anonymous',
-          userImage: user.imageUrl,
+          userName: displayName,
+          userImage: displayImage,
         })
 
         console.log('Got Stream token, API Key:', apiKey)
@@ -368,8 +313,8 @@ export default function StreamVideoCall({
           apiKey,
           user: {
             id: user.id,
-            name: user.fullName || user.emailAddresses[0]?.emailAddress || 'Anonymous',
-            image: user.imageUrl,
+            name: displayName,
+            image: displayImage,
           },
           token,
         })
@@ -385,8 +330,8 @@ export default function StreamVideoCall({
             participants: [
               {
                 userId: user.id,
-                userName: user.fullName || user.emailAddresses[0]?.emailAddress || 'Anonymous',
-                userImage: user.imageUrl,
+                userName: displayName,
+                userImage: displayImage,
                 role: 'host',
               },
             ],
@@ -423,8 +368,8 @@ export default function StreamVideoCall({
             const sc = StreamChat.getInstance(apiKey)
             await sc.connectUser({
               id: user.id,
-              name: user.fullName || user.emailAddresses[0]?.emailAddress || 'Anonymous',
-              image: user.imageUrl,
+              name: displayName,
+              image: displayImage,
             }, chatToken)
 
             const channel = sc.channel('messaging', callId, { name: `Call ${callId}` })
@@ -477,7 +422,7 @@ export default function StreamVideoCall({
     }
 
     initializeStream()
-  }, [isLoaded, user, callId, callType, client, getStreamToken, createStreamCall, ensureChatMembership, setMyRsvpStatus])
+  }, [isLoaded, user, callId, callType, client, getStreamToken, createStreamCall, ensureChatMembership, setMyRsvpStatus, displayName, displayImage])
 
   // Disconnect only on actual page unload to avoid Strict Mode double-unmounts interrupting the call.
   useEffect(() => {
@@ -574,6 +519,7 @@ export default function StreamVideoCall({
                   }
                 }
               }}
+              canEndForAll={canEndForAll}
             />
           </div>
         </StreamTheme>

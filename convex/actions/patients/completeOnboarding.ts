@@ -41,6 +41,20 @@ export const completePatientOnboardingWithNotification = action({
   }),
   handler: async (ctx, args): Promise<{ success: boolean; message?: string; patientId?: Id<"users"> }> => {
     try {
+      // Fetch invitation context BEFORE completing onboarding, so we can still read it even after status turns 'accepted'
+      let physiotherapistIdForNotif: Id<"users"> | undefined = undefined;
+      try {
+        const invitationCtx: any = await ctx.runQuery(
+          api.patientInvitations.getInvitationByCode,
+          { code: args.invitationCode }
+        );
+        if (invitationCtx?.valid && invitationCtx?.physiotherapist?._id) {
+          physiotherapistIdForNotif = invitationCtx.physiotherapist._id as Id<"users">;
+        }
+      } catch (_e) {
+        // Ignore, we'll proceed without physio notification if unavailable
+      }
+
       const result: { success: boolean; message?: string; patientId?: Id<"users"> } = await ctx.runMutation(
         api.patientInvitations.completePatientOnboarding,
         {
@@ -54,21 +68,6 @@ export const completePatientOnboardingWithNotification = action({
       }
 
       const patientId = result.patientId;
-
-      const invitationResult = await ctx.runQuery(api.patientInvitations.validateInvitationCode, {
-        code: args.invitationCode,
-      });
-
-      if (!invitationResult.valid) {
-        return { success: false, message: invitationResult.error };
-      }
-
-      const invitation = invitationResult.invitation;
-      const physiotherapist = invitationResult.physiotherapist;
-
-      if (!invitation) {
-        return { success: false, message: "Invitation not found." };
-      }
 
       const patientName = `${args.patientData.firstName} ${args.patientData.lastName}`.trim();
 
@@ -88,8 +87,8 @@ export const completePatientOnboardingWithNotification = action({
         }
       });
 
-      if (physiotherapist) {
-        const physiotherapistId = physiotherapist._id;
+      if (physiotherapistIdForNotif) {
+        const physiotherapistId = physiotherapistIdForNotif;
 
         // Create notification for the physiotherapist
         await ctx.runMutation(api.notifications.create, {

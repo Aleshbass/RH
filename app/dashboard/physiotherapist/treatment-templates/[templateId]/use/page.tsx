@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { PatientProfileMiniCard } from "@/components/dashboard/physiotherapist/PatientProfileMiniCard";
 
 export default function UseTreatmentTemplatePage() {
   const params = useParams();
@@ -23,7 +24,7 @@ export default function UseTreatmentTemplatePage() {
   const patients = useQuery(api.patients.getMyPatients, { limit: 100 });
   const assignTemplate = useMutation(api.treatmentPlans.assignTemplateToPatient);
 
-  const [patientId, setPatientId] = useState<string>("");
+  const [patientId, setPatientId] = useState<Id<"users"> | "">("");
   const [title, setTitle] = useState<string>("");
   const [description, setDescription] = useState<string>("");
   const [priority, setPriority] = useState<"low" | "medium" | "high">("medium");
@@ -41,7 +42,7 @@ export default function UseTreatmentTemplatePage() {
     if (!patients) return [];
     const s = search.toLowerCase();
     return (patients as Array<{
-      _id: string;
+      _id: Id<"users">;
       firstName?: string;
       lastName?: string;
       email?: string;
@@ -152,6 +153,9 @@ export default function UseTreatmentTemplatePage() {
             <CardTitle>Select Patient</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {patientId ? (
+              <PatientProfileMiniCard patientId={patientId as Id<"users">} />
+            ) : null}
             <Input placeholder="Search patients..." value={search} onChange={(e) => setSearch(e.target.value)} />
             <div className="max-h-80 overflow-auto border rounded">
               {filteredPatients.length === 0 ? (
@@ -159,7 +163,7 @@ export default function UseTreatmentTemplatePage() {
               ) : (
                 <ul>
                   {filteredPatients.map((p: {
-                    _id: string;
+                    _id: Id<"users">;
                     firstName?: string;
                     lastName?: string;
                     email?: string;

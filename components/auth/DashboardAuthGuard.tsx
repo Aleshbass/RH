@@ -28,8 +28,21 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
       return
     }
 
-    // If user hasn't selected a role yet, redirect to role selection
+    // If user hasn't selected a role yet, but they already have a profile, route to their dashboard
     if (!currentUser.role) {
+      if (currentUser.patientProfileId) {
+        router.replace('/dashboard/patient')
+        return
+      }
+      if (currentUser.physiotherapistProfileId) {
+        router.replace('/dashboard/physiotherapist')
+        return
+      }
+      if (currentUser.clinicOwnerProfileId) {
+        router.replace('/dashboard/clinic')
+        return
+      }
+      // No role and no profile: go to role selection
       router.replace('/role-selection')
       return
     }
@@ -44,8 +57,12 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
           router.replace('/clinic-owner/step1')
           break
         case 'patient':
-          // Patients are typically invited and onboarded through invitation flow
-          router.replace('/role-selection')
+          // Patients typically complete onboarding via invitation. If a patient profile exists, allow dashboard access.
+          if (currentUser.patientProfileId) {
+            router.replace('/dashboard/patient')
+          } else {
+            router.replace('/role-selection')
+          }
           break
         default:
           router.replace('/role-selection')

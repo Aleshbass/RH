@@ -1,18 +1,21 @@
 'use client';
 
 import Image from 'next/image';
-import { useSignUp, useAuth } from "@clerk/clerk-react";
+import { useSignUp, useSignIn, useAuth } from "@clerk/clerk-react";
 import { motion, Variants } from "framer-motion";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
 
 
 export default function CustomSignUp() {
   const { signUp, setActive } = useSignUp();
+  const { signIn } = useSignIn();
   const { isSignedIn } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTarget = searchParams?.get("redirect_url") || "/role-selection";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -54,9 +57,9 @@ export default function CustomSignUp() {
     return fallback;
   };
 
-  // Redirect if already signed in
+  // Redirect if already signed in - honor redirect_url if present
   if (isSignedIn) {
-    router.push("/dashboard");
+    router.push(redirectTarget || "/dashboard");
     return null;
   }
 
@@ -68,12 +71,19 @@ export default function CustomSignUp() {
     setError("");
     
     try {
+      // Some Clerk configurations don't accept name fields at create() time
+      // Pass only core fields first, then update names in a separate call.
       await signUp?.create({
         emailAddress: email,
         password,
-        firstName,
-        lastName,
       });
+
+      // Best-effort update of profile names. If not allowed, ignore the error.
+      try {
+        await signUp?.update({ firstName, lastName });
+      } catch {
+        // ignore; not all instances allow updating these fields at this step
+      }
       
       await signUp?.prepareEmailAddressVerification({ strategy: "email_code" });
       setPendingVerification(true);
@@ -96,7 +106,7 @@ export default function CustomSignUp() {
       
       if (result?.status === "complete") {
         await setActive?.({ session: result.createdSessionId });
-        router.push("/role-selection");
+        router.push(redirectTarget);
       }
     } catch (err: unknown) {
       setError(extractErrorMessage(err, "Invalid verification code"));
@@ -110,10 +120,13 @@ export default function CustomSignUp() {
     setError("");
     
     try {
-      await signUp?.authenticateWithRedirect({
+      // Use signIn flow for OAuth; Clerk will create or reuse accounts automatically
+      await signIn?.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: "/role-selection",
-        redirectUrlComplete: "/role-selection",
+        // Use Clerk's recommended callback route
+        redirectUrl: "/sso-callback",
+        // Final destination after OAuth completes
+        redirectUrlComplete: redirectTarget,
       });
     } catch (err: unknown) {
       setError(extractErrorMessage(err, "Google sign-up failed"));
@@ -238,6 +251,10 @@ export default function CustomSignUp() {
               </form>
             ) : (
               <>
+                {/* Clerk Smart CAPTCHA mount point (required for Smart CAPTCHA in custom flows). */}
+                {/* If not present, Clerk falls back to Invisible CAPTCHA and logs a console error. */}
+                <div id="clerk-captcha" className="mb-4" />
+
                 {/* Google Sign Up Button */}
                 <button
                   onClick={handleGoogleSignUp}

@@ -26,6 +26,8 @@ import { PatientDashboardHeader } from './PatientDashboardHeader'
 import { PatientStatsCards } from './PatientStatsCards'
 import { HealthMonitoringDashboard } from './health/HealthMonitoringDashboard'
 import { TreatmentPlanUpdateCard } from './TreatmentPlanSyncIndicator'
+import { MyPhysiotherapistCard } from './MyPhysiotherapistCard'
+import { ProfilePhotoUploader } from '@/components/dashboard/shared/ProfilePhotoUploader'
 
 
 interface Exercise {
@@ -114,6 +116,21 @@ const upcomingAppointments = appointments?.filter((a: Appointment) => new Date(a
   return (
     <div className="space-y-6">
       <PatientDashboardHeader />
+      {/* Profile Photo */}
+      <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-100">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-emerald-900">Your Profile</CardTitle>
+          <CardDescription className="text-emerald-700">This photo is shown to your physiotherapist in chats and video calls.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ProfilePhotoUploader
+            currentImageUrl={(user as { imageUrl?: string } | null | undefined)?.imageUrl}
+            title="Profile Photo"
+            description="Upload a clear headshot. We’ll optimize it to WebP for speed."
+            size="lg"
+          />
+        </CardContent>
+      </Card>
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="flex w-full overflow-x-auto bg-[#005b57] text-white gap-2 rounded-md">
@@ -125,6 +142,7 @@ const upcomingAppointments = appointments?.filter((a: Appointment) => new Date(a
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
+          <MyPhysiotherapistCard />
           <PatientStatsCards 
             upcomingCount={stats.upcomingCount}
             nextAppointmentDate={stats.nextAppointmentDate}

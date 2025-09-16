@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useAction } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { PatientInviteModal } from '@/components/dashboard/clinic-owner/PatientInviteModal';
+import EnhancedPatientInviteModal from '@/components/dashboard/shared/EnhancedPatientInviteModal';
 import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal';
 import { format } from 'date-fns';
 
@@ -77,10 +77,7 @@ export default function PatientsPage() {
   // Get patients
   const patients = useQuery(api.patients.getMyPatients, patientParams) as PatientWithDetails[] | undefined;
 
-  // Invitation action with email/notification
-  const createPatientInvitationWithEmail = useAction(
-    api.actions.patients.invitePatient.createPatientInvitationWithNotification
-  );
+  // Invitation actions are handled inside EnhancedPatientInviteModal
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -282,31 +279,10 @@ export default function PatientsPage() {
         )}
       </div>
 
-      {/* Patient Invite Modal */}
-      <PatientInviteModal
+      {/* Patient Invite Modal - enhanced multi-method */}
+      <EnhancedPatientInviteModal
         isOpen={isInviteModalOpen}
         onClose={() => setIsInviteModalOpen(false)}
-        onSubmit={async (formData) => {
-          try {
-            const result = await createPatientInvitationWithEmail({
-              patientEmail: formData.patientEmail,
-              patientName: formData.patientName,
-              notes: formData.notes,
-              sendEmail: true,
-            });
-
-            if (result.success) {
-              // Modal will close automatically via the onSubmit callback
-              return true;
-            } else {
-              throw new Error(result.message || 'Failed to send invitation');
-            }
-          } catch (error) {
-            console.error('Error inviting patient:', error);
-            // Error will be handled by the modal component
-            return false;
-          }
-        }}
       />
     </div>
   );

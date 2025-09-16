@@ -188,7 +188,7 @@ export const acceptInvitation = mutation({
       .unique();
 
     if (!user) {
-      // Create new user
+      // Create new user (patient by default via invitation)
       const userId = await ctx.db.insert("users", {
         clerkId: identity.subject,
         email: args.patientData.email,
@@ -205,27 +205,50 @@ export const acceptInvitation = mutation({
       if (!user) {
         throw new Error("Failed to create user");
       }
+    } else {
+      // Ensure existing account is provisioned as a patient
+      await ctx.db.patch(user._id, {
+        role: "patient",
+        onboarded: true,
+        firstName: user.firstName ?? args.patientData.firstName,
+        lastName: user.lastName ?? args.patientData.lastName,
+        email: user.email ?? args.patientData.email,
+        phoneNumber: user.phoneNumber ?? args.patientData.phoneNumber,
+      });
+      user = await ctx.db.get(user._id);
+      if (!user) {
+        throw new Error("User not found after update");
+      }
     }
 
-    // Create patient profile
-    const patientProfileId = await ctx.db.insert("patientProfiles", {
-      userId: user._id,
-      dateOfBirth: args.patientData.dateOfBirth,
-      gender: args.patientData.gender,
-      medicalHistorySummary: args.patientData.medicalHistory,
-      emergencyContact: typeof args.patientData.emergencyContact === 'string' ? undefined : args.patientData.emergencyContact,
-    });
+    // Narrow nullability for TypeScript
+    const ensuredUser = user as NonNullable<typeof user>;
+    // Create patient profile if none exists
+    let patientProfileId = ensuredUser.patientProfileId;
+    if (!patientProfileId) {
+      patientProfileId = await ctx.db.insert("patientProfiles", {
+        userId: ensuredUser._id,
+        dateOfBirth: args.patientData.dateOfBirth,
+        gender: args.patientData.gender,
+        medicalHistorySummary: args.patientData.medicalHistory,
+        emergencyContact:
+          typeof args.patientData.emergencyContact === "string"
+            ? undefined
+            : (args.patientData.emergencyContact as any),
+      });
+    }
 
     // Update user with patient profile ID
-    await ctx.db.patch(user._id, {
+    await ctx.db.patch(ensuredUser._id, {
       patientProfileId,
     });
 
     // Create patient-physiotherapist relationship
     await ctx.db.insert("patientPhysiotherapistRelationships", {
-      patientId: user._id,
+      patientId: ensuredUser._id,
       physiotherapistId: invitation.physiotherapistId,
       clinicId: invitation.clinicId,
+      invitationId: invitation._id,
       isPrimaryPhysiotherapist: true,
       status: "active",
       startDate: Date.now(),
@@ -234,12 +257,12 @@ export const acceptInvitation = mutation({
     // Update invitation status
     await ctx.db.patch(invitation._id, {
       status: "accepted",
-      patientUserId: user._id,
+      patientUserId: ensuredUser._id,
     });
 
     return {
       success: true,
-      patientId: user._id,
+      patientId: ensuredUser._id,
       message: "Invitation accepted successfully",
     };
   },
@@ -317,27 +340,50 @@ export const completePatientOnboarding = mutation({
       if (!user) {
         throw new Error("Failed to create user");
       }
+    } else {
+      // Ensure existing account is provisioned as a patient
+      await ctx.db.patch(user._id, {
+        role: "patient",
+        onboarded: true,
+        firstName: user.firstName ?? args.patientData.firstName,
+        lastName: user.lastName ?? args.patientData.lastName,
+        email: user.email ?? args.patientData.email,
+        phoneNumber: user.phoneNumber ?? args.patientData.phoneNumber,
+      });
+      user = await ctx.db.get(user._id);
+      if (!user) {
+        throw new Error("User not found after update");
+      }
     }
 
-    // Create patient profile
-    const patientProfileId = await ctx.db.insert("patientProfiles", {
-      userId: user._id,
-      dateOfBirth: args.patientData.dateOfBirth,
-      gender: args.patientData.gender,
-      medicalHistorySummary: args.patientData.medicalHistory,
-      emergencyContact: typeof args.patientData.emergencyContact === 'string' ? undefined : args.patientData.emergencyContact,
-    });
+    // Narrow nullability for TypeScript
+    const ensuredUser = user as NonNullable<typeof user>;
+    // Create patient profile if none exists
+    let patientProfileId = ensuredUser.patientProfileId;
+    if (!patientProfileId) {
+      patientProfileId = await ctx.db.insert("patientProfiles", {
+        userId: ensuredUser._id,
+        dateOfBirth: args.patientData.dateOfBirth,
+        gender: args.patientData.gender,
+        medicalHistorySummary: args.patientData.medicalHistory,
+        emergencyContact:
+          typeof args.patientData.emergencyContact === "string"
+            ? undefined
+            : (args.patientData.emergencyContact as any),
+      });
+    }
 
     // Update user with patient profile ID
-    await ctx.db.patch(user._id, {
+    await ctx.db.patch(ensuredUser._id, {
       patientProfileId,
     });
 
     // Create patient-physiotherapist relationship
     await ctx.db.insert("patientPhysiotherapistRelationships", {
-      patientId: user._id,
+      patientId: ensuredUser._id,
       physiotherapistId: invitation.physiotherapistId,
       clinicId: invitation.clinicId,
+      invitationId: invitation._id,
       isPrimaryPhysiotherapist: true,
       status: "active",
       startDate: Date.now(),
@@ -346,12 +392,12 @@ export const completePatientOnboarding = mutation({
     // Update invitation status
     await ctx.db.patch(invitation._id, {
       status: "accepted",
-      patientUserId: user._id,
+      patientUserId: ensuredUser._id,
     });
 
     return {
       success: true,
-      patientId: user._id,
+      patientId: ensuredUser._id,
       message: "Invitation accepted successfully",
     };
   },

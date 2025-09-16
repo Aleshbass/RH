@@ -19,7 +19,7 @@ export function PatientDashboardHeader() {
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-8">
       <div className="flex items-center gap-4">
         <Avatar className="h-12 w-12">
-          <AvatarImage src={user?.imageUrl} />
+          <AvatarImage src={(patientData as { imageUrl?: string } | null | undefined)?.imageUrl || user?.imageUrl || undefined} />
           <AvatarFallback>
             <User className="h-6 w-6" />
           </AvatarFallback>

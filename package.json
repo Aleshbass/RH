@@ -40,6 +40,7 @@
     "test:billing-flow": "node scripts/test-billing-flow.js"
   },
   "dependencies": {
+    "@clerk/backend": "2.14.0",
     "@clerk/clerk-react": "^5.31.8",
     "@clerk/nextjs": "^6.12.6",
     "@clerk/themes": "^2.2.48",
@@ -122,6 +123,7 @@
     "svix": "^1.66.0",
     "tailwind-merge": "^3.3.0",
     "tippy.js": "^6.3.7",
+    "twilio": "5.9.0",
     "use-debounce": "^10.0.4",
     "uuid": "^9.0.1",
     "web-vitals": "^5.1.0",

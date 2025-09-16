@@ -46,6 +46,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookiebotGroupId = process.env.NEXT_PUBLIC_COOKIEBOT_DOMAIN_GROUP_ID || '00000000-0000-0000-0000-000000000000'
   return (
     <html lang="en">
       <body
@@ -79,11 +80,19 @@ export default function RootLayout({
         
         {/* Cookie Consent Management */}
         <ReactCookiebot 
-          domainGroupId="48b36e33-f5f8-41b6-a59d-fb929da85bcf"
+          domainGroupId={cookiebotGroupId}
           blockingMode="auto"
           level="strict"
           culture="en"
           framework="TCFv2.2"
+          onLoad={() => {
+            if (typeof window !== 'undefined') {
+              // Simple runtime signal that Cookiebot initialized
+              console.info('Cookiebot loaded', { groupId: cookiebotGroupId, hasCookiebot: !!window.Cookiebot })
+            }
+          }}
+          onAccept={() => console.info('Cookie consent accepted')}
+          onDecline={() => console.info('Cookie consent declined')}
         />
       </body>
     </html>

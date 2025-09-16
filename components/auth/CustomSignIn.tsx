@@ -4,7 +4,7 @@ import Image from 'next/image';
 import { useSignIn, useAuth } from "@clerk/clerk-react";
 import { motion, Variants } from "framer-motion";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
 
@@ -13,6 +13,8 @@ export default function CustomSignIn() {
   const { signIn, setActive } = useSignIn();
   const { isSignedIn } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTarget = searchParams?.get("redirect_url") || "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -53,7 +55,7 @@ export default function CustomSignIn() {
 
   // Redirect if already signed in
   if (isSignedIn) {
-    router.push("/dashboard");
+    router.push(redirectTarget);
     return null;
   }
 
@@ -96,7 +98,7 @@ export default function CustomSignIn() {
         if (setActive) {
           await setActive({ session: result.createdSessionId });
         }
-        router.push("/dashboard");
+        router.push(redirectTarget);
       }
     } catch (err: unknown) {
       setError(extractErrorMessage(err, "Invalid password"));
@@ -112,8 +114,8 @@ export default function CustomSignIn() {
     try {
       await signIn?.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: "/dashboard",
-        redirectUrlComplete: "/dashboard",
+        redirectUrl: redirectTarget,
+        redirectUrlComplete: redirectTarget,
       });
     } catch (err: unknown) {
       setError(extractErrorMessage(err, "Google sign-in failed"));
@@ -198,6 +200,10 @@ export default function CustomSignIn() {
                 <p className="text-sm text-red-600">{error}</p>
               </div>
             )}
+
+            {/* Clerk Smart CAPTCHA mount point (required for Smart CAPTCHA in custom flows). */}
+            {/* If not present, Clerk falls back to Invisible CAPTCHA and logs a console error. */}
+            <div id="clerk-captcha" className="mb-4" />
 
             {/* Google Sign In Button */}
             <button

@@ -1,7 +1,6 @@
  'use client'
 
 import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,6 +16,8 @@ import {
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
 import { format } from 'date-fns'
+import { PatientProfileMiniCard } from '@/components/dashboard/physiotherapist/PatientProfileMiniCard'
+import { useQueryUntyped, useMutationUntyped } from '@/lib/convexUntyped'
 
 
 
@@ -33,6 +34,21 @@ interface PatientOption {
   firstName: string
   lastName: string
   email: string
+}
+
+// Lightweight types to safely read getAppointmentDetails response without deep generics
+type AppointmentCore = {
+  patientId: string
+  startTime: number
+  endTime: number
+  serviceType: string
+  notesForPatient?: string | null
+  notesForTherapist?: string | null
+}
+
+type ExistingAppointmentResult = {
+  appointment: AppointmentCore
+  sessionLog?: unknown
 }
 
 const SERVICE_TYPES = [
@@ -64,19 +80,25 @@ export function AppointmentModal({
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Get current user's patients
-  const patients = useQuery(api.patients.getMyPatients, {
-    limit: 100,
-  }) as PatientOption[] | undefined
+  // Get current user's patients (avoid deep type instantiation by indexing api via unknown maps)
+  const apiRoot = api as unknown as Record<string, unknown>
+  const patientsModule = apiRoot['patients'] as Record<string, unknown>
+  const getMyPatientsQuery = patientsModule['getMyPatients']
+  const patients = useQueryUntyped(getMyPatientsQuery, { limit: 100 }) as PatientOption[] | undefined
 
-  // Get existing appointment details if editing
-  const existingAppointment = useQuery(
-    api.appointments.getAppointmentDetails,
+  // Get existing appointment details if editing (use untyped to avoid deep instantiation)
+  const appointmentsModule = apiRoot['appointments'] as Record<string, unknown>
+  const getAppointmentDetailsQuery = appointmentsModule['getAppointmentDetails']
+  const existingAppointment = useQueryUntyped(
+    getAppointmentDetailsQuery,
     appointmentId ? { appointmentId: appointmentId as Id<'appointments'> } : 'skip'
-  )
+  ) as ExistingAppointmentResult | undefined
 
-  // Mutations
-  const createAppointment = useMutation(api.appointments.createAppointment)
+  // Mutations (resolve via untyped indexing to avoid deep generic expansion)
+  const createAppointmentMutation = (appointmentsModule as Record<string, unknown>)[
+    'createAppointment'
+  ]
+  const createAppointment = useMutationUntyped(createAppointmentMutation)
 
   // Update form data when selectedDate changes
   useEffect(() => {
@@ -224,6 +246,11 @@ export function AppointmentModal({
                 ))}
               </SelectContent>
             </Select>
+            {formData.patientId && (
+              <div className="mt-3">
+                <PatientProfileMiniCard patientId={formData.patientId as Id<'users'>} />
+              </div>
+            )}
           </div>
 
           {/* Date and Time */}

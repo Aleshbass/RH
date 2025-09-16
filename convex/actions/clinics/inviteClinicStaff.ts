@@ -77,8 +77,9 @@ export const createClinicStaffInvitationWithNotification = action({
 
       // Send email if requested (default true)
       if (args.sendEmail !== false) {
-        // Force production domain for all outgoing staff invitation links
-        const baseUrl = 'https://www.rehabifyhealth.com';
+        // Use env-based domain for staff invitation links (falls back to rehabifyhealth.com)
+        const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://rehabifyhealth.com';
+        const baseUrl = envBase.replace(/\/$/, '');
         const invitationLink = `${baseUrl}/staff-invite/${result.code}`;
 
         try {
@@ -188,8 +189,9 @@ export const resendClinicStaffInvitation = action({
       const expiresAt = fullInvitation?.expiresAt ?? invitation.expiresAt;
       const clinicName = fullInvitation?.clinic?.name as string | undefined;
 
-      // Force production domain for staff invitation reminder links
-      const baseUrl = 'https://www.rehabifyhealth.com';
+      // Use env-based domain for staff invitation reminder links
+      const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://rehabifyhealth.com';
+      const baseUrl = envBase.replace(/\/$/, '');
       const invitationLink = `${baseUrl}/staff-invite/${invitation.code}`;
 
       // Send reminder email

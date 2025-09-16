@@ -16,14 +16,14 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { api } from '@/convex/_generated/api'
-import { useQueryUntyped, useActionUntyped } from '@/lib/convexUntyped'
+import { useQueryUntyped } from '@/lib/convexUntyped'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { QuickActions } from '@/components/dashboard/shared/QuickActions'
 import { RecentSessions } from '@/components/dashboard/physiotherapist/RecentSessions'
-import { PatientInviteModal } from '@/components/dashboard/clinic-owner/PatientInviteModal'
-import { toast } from 'sonner'
+import EnhancedPatientInviteModal from '@/components/dashboard/shared/EnhancedPatientInviteModal'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+ 
  
 
 // Type definitions for better type safety
@@ -75,6 +75,7 @@ type DashboardStats = {
 
 export function PhysiotherapistDashboardV2() {
   // Avoid deep generic instantiation by routing through an any-cast handle
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const apiAny = api as unknown as any
   // Only the firstName is used in the header; keep a minimal shape
   const user = useQueryUntyped(apiAny.users.getMyUser) as { firstName?: string } | null | undefined
@@ -101,20 +102,22 @@ export function PhysiotherapistDashboardV2() {
     patient?: { firstName?: string; lastName?: string } | null;
   }> | undefined
   
-  // Transform the data to match the expected interface
-  type SessionLike = {
+  // Transform the data to match the RecentSessions prop type exactly
+  type RecentSession = {
     _id: string;
     sessionDate: number;
-    patient?: { firstName?: string; lastName?: string } | null;
+    patient?: { firstName: string; lastName: string };
   };
-  const recentSessions = recentSessionsData?.map((session) => ({
+  const recentSessions: RecentSession[] = (recentSessionsData?.map((session) => ({
     _id: session._id,
     sessionDate: session.sessionDate,
-    patient: session.patient ? {
-      firstName: session.patient.firstName || '',
-      lastName: session.patient.lastName || ''
-    } : undefined
-  })) || []
+    patient: session.patient
+      ? {
+          firstName: session.patient.firstName || '',
+          lastName: session.patient.lastName || '',
+        }
+      : undefined,
+  })) || [])
 
   // Router for navigation in quick actions
   const router = useRouter()
@@ -122,36 +125,11 @@ export function PhysiotherapistDashboardV2() {
   // Patient invitation modal state
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
 
-  // Mutation for creating patient invitation
-  const createPatientInvitationWithEmail = useActionUntyped(apiAny.actions.patients.invitePatient.createPatientInvitationWithNotification)
-
   // Type the data with fallbacks
   const patients = (patientsData || []) as Patient[]
   const todaysAppointments = (todaysAppointmentsData || []) as Appointment[]
 
-  const handleInviteSubmit = async (data: { patientEmail: string; patientName?: string; notes?: string }): Promise<boolean> => {
-    try {
-      const result = await createPatientInvitationWithEmail({
-        patientEmail: data.patientEmail,
-        patientName: data.patientName,
-        notes: data.notes,
-        sendEmail: true // Enable email sending
-      })
-      
-      if (!result.success) {
-        throw new Error(result.message || 'Failed to send invitation')
-      }
-      
-      toast.success('Invitation sent successfully')
-      // Close the modal immediately on success for better UX
-      setIsInviteModalOpen(false)
-      return true
-    } catch (error: unknown) {
-      console.error('Failed to send invitation', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to send invitation')
-      return false
-    }
-  }
+  // Invitation is now handled entirely within EnhancedPatientInviteModal
 
   const handleInvitePatient = () => setIsInviteModalOpen(true)
   const handleScheduleAppointment = () => router.push('/dashboard/physiotherapist/calendar?new=1')
@@ -218,6 +196,8 @@ export function PhysiotherapistDashboardV2() {
           </Button>
         </div>
       </div>
+
+      
 
       {/* Enhanced Clinic Context Card for Clinic-based Physiotherapists */}
       {isClinicBased && clinicInfo && (
@@ -477,11 +457,10 @@ export function PhysiotherapistDashboardV2() {
         />
       </div>
 
-      {/* Patient Invitation Modal */}
-      <PatientInviteModal
+      {/* Patient Invitation Modal - enhanced multi-method */}
+      <EnhancedPatientInviteModal
         isOpen={isInviteModalOpen}
         onClose={() => setIsInviteModalOpen(false)}
-        onSubmit={handleInviteSubmit}
       />
     </div>
   )

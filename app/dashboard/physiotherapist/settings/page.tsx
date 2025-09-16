@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalendarIntegration } from '@/components/calendar/CalendarIntegration';
+import { ProfessionalProfileCard } from '@/components/dashboard/physiotherapist/ProfessionalProfileCard';
 
 export default function PhysiotherapistSettingsPage() {
   const router = useRouter();
@@ -83,6 +84,22 @@ export default function PhysiotherapistSettingsPage() {
         </TabsList>
 
         <TabsContent value="profile" className="space-y-4">
+          {/* Professional Profile (photo + license + board + year + bio) */}
+          {(() => {
+            type ProfileData = {
+              profileData?: { bio?: string; specializations?: string[] } | null;
+              imageUrl?: string | null;
+            } | null | undefined;
+            const profile = (currentUserProfile as ProfileData)?.profileData || null;
+            const imageUrl = ((currentUserProfile as ProfileData)?.imageUrl) || currentUser?.imageUrl || null;
+            return (
+              <ProfessionalProfileCard
+                initialValues={profile}
+                currentImageUrl={imageUrl}
+              />
+            );
+          })()}
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import { getAuthenticatedUser } from "./auth";
-import { Id } from "./_generated/dataModel";
 
 export const upsertPhysiotherapistProfessionalDetails = mutation({
   args: {
@@ -9,6 +8,8 @@ export const upsertPhysiotherapistProfessionalDetails = mutation({
     yearsOfExperience: v.optional(v.number()),
     bio: v.optional(v.string()),
     licenseNumber: v.optional(v.string()),
+    certificationBoard: v.optional(v.string()),
+    certificationYear: v.optional(v.float64()),
     languagesSpoken: v.optional(v.array(v.string())),
     clinicId: v.optional(v.id("clinics")), // Added optional clinicId
     // Add any other fields relevant to professional details here
@@ -30,6 +31,8 @@ export const upsertPhysiotherapistProfessionalDetails = mutation({
       ...(args.yearsOfExperience !== undefined && { yearsOfExperience: args.yearsOfExperience }),
       ...(args.bio && { bio: args.bio }),
       ...(args.licenseNumber && { licenseNumber: args.licenseNumber }),
+      ...(args.certificationBoard && { certificationBoard: args.certificationBoard }),
+      ...(args.certificationYear !== undefined && { certificationYear: args.certificationYear }),
       ...(args.languagesSpoken && { languagesSpoken: args.languagesSpoken }),
       ...(args.clinicId && { clinicId: args.clinicId }), // Include clinicId if provided
     };
@@ -48,6 +51,12 @@ export const upsertPhysiotherapistProfessionalDetails = mutation({
         ...(args.clinicId && { clinicId: args.clinicId }), // Add clinicId if provided
         ...profileData, // Spread other profile data, ensuring clinicId from args takes precedence if set
       } as any); // Using 'as any' temporarily if schema has strict non-optional clinicId and it's not in profileData. Ideally, ensure profileData type matches schema or handle clinicId more explicitly.
+      // Link the new profile to the user for future queries
+      try {
+        await ctx.db.patch(user._id, { physiotherapistProfileId: newProfileId });
+      } catch (e) {
+        console.warn("Failed to patch user with physiotherapistProfileId", e);
+      }
       return newProfileId;
     }
   },

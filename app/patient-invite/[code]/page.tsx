@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useAuth, useUser } from '@clerk/nextjs'
 import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,7 @@ export default function PatientInvitePage() {
   const { isLoaded, isSignedIn } = useAuth()
   const { user } = useUser()
   const [isAccepting, setIsAccepting] = useState(false)
+  const [autoAcceptTriggered, setAutoAcceptTriggered] = useState(false)
   const [showConfetti, setShowConfetti] = useState(false)
 
   // Get invitation details with validation
@@ -51,15 +52,20 @@ export default function PatientInvitePage() {
   // Use action wrapper that also sends notifications
   const completePatientOnboarding = usePatientOnboardingAction()
 
-  const handleSignIn = () => {
+  const handleSignIn = useCallback(() => {
     const redirectPath = encodeURIComponent(`/patient-invite/${code}`)
     router.push(`/sign-in?redirect_url=${redirectPath}`)
-  }
+  }, [router, code])
+
+  const handleSignUp = useCallback(() => {
+    const redirectPath = encodeURIComponent(`/patient-invite/${code}`)
+    router.push(`/sign-up?redirect_url=${redirectPath}`)
+  }, [router, code])
 
   // Handle form submission
-  const handleAcceptInvitation = async () => {
+  const handleAcceptInvitation = useCallback(async () => {
     if (!isSignedIn || !user) {
-      handleSignIn()
+      handleSignUp()
       return
     }
 
@@ -100,7 +106,7 @@ export default function PatientInvitePage() {
     } finally {
       setIsAccepting(false)
     }
-  }
+  }, [isSignedIn, user, completePatientOnboarding, code, router, handleSignUp])
 
   // Friendly handling for already accepted invitations
   const alreadyAccepted = !isValid && typeof message === 'string' && message.toLowerCase().includes('already been accepted')
@@ -117,6 +123,18 @@ export default function PatientInvitePage() {
     }
   }, [alreadyAccepted, isSignedIn, router])
 
+  // Auto-accept invitation after authentication
+  useEffect(() => {
+    if (isSignedIn && isValid && !alreadyAccepted && !autoAcceptTriggered && !isAccepting) {
+      setAutoAcceptTriggered(true)
+      // slight delay to ensure user is available
+      const t = setTimeout(() => {
+        handleAcceptInvitation()
+      }, 200)
+      return () => clearTimeout(t)
+    }
+  }, [isSignedIn, isValid, alreadyAccepted, autoAcceptTriggered, isAccepting, handleAcceptInvitation])
+
   // Loading state (placed after hooks to satisfy react-hooks rules)
   if (!isLoaded || isValidating) {
     return (
@@ -129,7 +147,7 @@ export default function PatientInvitePage() {
     )
   }
 
-  // Not signed in: prompt to sign in seamlessly
+  // Not signed in: prompt to sign up seamlessly
   if (!isSignedIn) {
     if (alreadyAccepted) {
       return (
@@ -154,15 +172,18 @@ export default function PatientInvitePage() {
       <div className="flex min-h-screen items-center justify-center">
         <Card className="w-[420px]">
           <CardHeader>
-            <CardTitle className="">Sign in to continue</CardTitle>
+            <CardTitle className="">Create your account to continue</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              You need to sign in to accept your invitation.
+              You need to sign up to accept your invitation.
             </p>
           </CardContent>
           <CardFooter>
-            <Button onClick={handleSignIn} className="w-full">Sign in</Button>
+            <div className="flex flex-col gap-2 w-full">
+              <Button onClick={handleSignUp} className="w-full">Sign up</Button>
+              <Button onClick={handleSignIn} variant="outline" className="w-full">I already have an account</Button>
+            </div>
           </CardFooter>
         </Card>
       </div>

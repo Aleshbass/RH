@@ -38,9 +38,25 @@ export default function DashboardPage() {
 
     if (user === null) return // Will show error message below
 
-    // Check if user needs to complete onboarding
+    // Derive an effective role if the stored role is missing
+    const effectiveRole: UserRole | undefined = ((): UserRole | undefined => {
+      if (user.role) return user.role as UserRole
+      // Fallback based on existing profile IDs
+      if (user.patientProfileId) return 'patient'
+      if (user.physiotherapistProfileId) return 'physiotherapist'
+      if (user.clinicOwnerProfileId) return 'clinic_owner'
+      return undefined
+    })()
+
+    // If onboarding isn't marked complete:
     if (!user.onboarded) {
-      return // Will show onboarding message below
+      // Patients invited via code may have profile created; allow them straight to dashboard
+      if (effectiveRole === 'patient' && user.patientProfileId) {
+        if (!isRedirecting) setIsRedirecting(true)
+        router.replace('/dashboard/patient')
+        return
+      }
+      return // Will show onboarding message below for others
     }
 
     // Use the proper dashboard access check
@@ -63,7 +79,7 @@ export default function DashboardPage() {
     if (!isRedirecting && dashboardAccess.canAccess) {
       setIsRedirecting(true)
       
-      switch (user.role) {
+      switch (effectiveRole) {
         case 'physiotherapist':
           router.replace('/dashboard/physiotherapist')
           break
@@ -115,8 +131,9 @@ export default function DashboardPage() {
     )
   }
 
-  // Check if user needs to complete onboarding
-  if (!user.onboarded) {
+  // Check if user needs to complete onboarding (except auto-handled patients with profile)
+  const hasPatientProfile = Boolean(user.patientProfileId)
+  if (!user.onboarded && !hasPatientProfile) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
