@@ -14,7 +14,7 @@ import { internal } from "./_generated/api";
 export const createTreatmentPlan = mutation({
   args: {
     patientId: v.id("users"),
-    clinicId: v.id("clinics"),
+    clinicId: v.optional(v.id("clinics")),
     title: v.string(),
     description: v.optional(v.string()),
     startDate: v.number(),
@@ -70,9 +70,22 @@ export const createTreatmentPlan = mutation({
       throw new Error("No active relationship with this patient");
     }
 
+    // Determine clinic context: prefer explicit arg, then relationship, then physiotherapist profile.
+    const resolvedClinicId = args.clinicId || relationship?.clinicId || physiotherapist.clinicId;
+
     const treatmentPlanId = await ctx.db.insert("treatmentPlans", {
-      ...args,
+      patientId: args.patientId,
       physiotherapistId: physiotherapist._id,
+      clinicId: resolvedClinicId,
+      title: args.title,
+      description: args.description,
+      startDate: args.startDate,
+      endDate: args.endDate,
+      priority: args.priority,
+      goals: args.goals,
+      phases: args.phases,
+      reviewInterval: args.reviewInterval,
+      notes: args.notes,
       status: "draft",
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -88,6 +101,28 @@ export const createTreatmentPlan = mutation({
       progressType: "plan_created",
       notes: "Treatment plan created",
       recordedBy: physiotherapist._id,
+    });
+
+    // Notify patient about new plan
+    await ctx.db.insert("notifications", {
+      userId: args.patientId,
+      type: "treatment_plan_created" as any,
+      priority: "high",
+      status: "pending",
+      payload: {
+        title: "New Treatment Plan Assigned",
+        body: `${physiotherapist.firstName || "Your physiotherapist"} created a new treatment plan for you`,
+        data: {
+          entityId: String(treatmentPlanId),
+          entityType: "treatmentPlan",
+          actionUrl: undefined,
+          metadata: {
+            physiotherapistId: physiotherapist._id,
+          },
+        },
+        link: `/dashboard/physiotherapist/patients/${args.patientId}/treatment-plan`,
+      },
+      createdAt: Date.now(),
     });
 
     return treatmentPlanId;
@@ -260,6 +295,25 @@ export const updateTreatmentPlan = mutation({
       recordedBy: physiotherapist._id,
     });
 
+    // Notify patient that plan was updated
+    await ctx.db.insert("notifications", {
+      userId: treatmentPlan.patientId,
+      type: "treatment_plan_updated" as any,
+      priority: "medium",
+      status: "pending",
+      payload: {
+        title: "Treatment Plan Updated",
+        body: `${physiotherapist.firstName || "Your physiotherapist"} updated your treatment plan`,
+        data: {
+          entityId: String(args.treatmentPlanId),
+          entityType: "treatmentPlan",
+          actionUrl: undefined,
+        },
+        link: `/dashboard/physiotherapist/patients/${treatmentPlan.patientId}/treatment-plan`,
+      },
+      createdAt: Date.now(),
+    });
+
     return { success: true };
   },
 });
@@ -319,6 +373,31 @@ export const updateTreatmentPlanStatus = mutation({
       progressType: "status_change",
       notes: `Status changed to ${args.status}${args.statusNotes ? `: ${args.statusNotes}` : ''}`,
       recordedBy: physiotherapist._id,
+    });
+
+    // Notify patient about status change
+    const statusTitleMap: Record<string, string> = {
+      draft: "Treatment Plan Drafted",
+      active: "Treatment Plan Activated",
+      completed: "Treatment Plan Completed",
+      cancelled: "Treatment Plan Cancelled",
+      on_hold: "Treatment Plan On Hold",
+    };
+    await ctx.db.insert("notifications", {
+      userId: treatmentPlan.patientId,
+      type: `treatment_plan_${args.status}` as any,
+      priority: args.status === "completed" ? "high" : "medium",
+      status: "pending",
+      payload: {
+        title: statusTitleMap[args.status] || "Treatment Plan Status Updated",
+        body: `Your treatment plan status is now ${args.status.replace("_", " ")}`,
+        data: {
+          entityId: String(args.treatmentPlanId),
+          entityType: "treatmentPlan",
+        },
+        link: `/dashboard/physiotherapist/patients/${treatmentPlan.patientId}/treatment-plan`,
+      },
+      createdAt: Date.now(),
     });
 
     return { success: true };
@@ -575,7 +654,7 @@ export const logExerciseCompletion = mutation({
       patientId: user._id,
       physiotherapistId: plan.physiotherapistId,
       entryDate: Date.now(),
-      progressType: "exercise_completed",
+      progressType: "exercise_completion",
       notes: args.notes,
       recordedBy: user._id,
       metadata: {
@@ -583,6 +662,78 @@ export const logExerciseCompletion = mutation({
         phaseOrder: args.phaseOrder,
       },
     } as any);
+
+    // Notify physiotherapist about exercise completion
+    await ctx.db.insert("notifications", {
+      userId: plan.physiotherapistId,
+      type: "exercise_completed" as any,
+      priority: "low",
+      status: "pending",
+      payload: {
+        title: "Patient Completed Exercise",
+        body: `${user.firstName} ${user.lastName} completed an exercise in ${plan.title}`,
+        data: {
+          entityId: String(args.treatmentPlanId),
+          entityType: "treatmentPlan",
+          exerciseId: args.exerciseId,
+          phaseOrder: args.phaseOrder,
+        },
+        link: `/dashboard/physiotherapist/patients/${plan.patientId}/treatment-plan`,
+      },
+      createdAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Patient accepts treatment plan
+ */
+export const acceptTreatmentPlan = mutation({
+  args: { treatmentPlanId: v.id("treatmentPlans") },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (user.role !== "patient") throw new Error("Access denied");
+
+    const plan = await ctx.db.get(args.treatmentPlanId);
+    if (!plan) throw new Error("Plan not found");
+    if (plan.patientId !== user._id) throw new Error("Access denied");
+
+    // Update plan with acceptance timestamp and activate if draft
+    await ctx.db.patch(args.treatmentPlanId, {
+      acceptedAt: Date.now(),
+      status: plan.status === "draft" ? "active" : plan.status,
+    } as any);
+
+    // Log acceptance in progress
+    await ctx.db.insert("treatmentProgress", {
+      treatmentPlanId: args.treatmentPlanId,
+      patientId: user._id,
+      physiotherapistId: plan.physiotherapistId,
+      entryDate: Date.now(),
+      progressType: "general",
+      notes: "Patient accepted treatment plan",
+      recordedBy: user._id,
+    });
+
+    // Notify physiotherapist
+    await ctx.db.insert("notifications", {
+      userId: plan.physiotherapistId,
+      type: "treatment_plan_accepted" as any,
+      priority: "medium",
+      status: "pending",
+      payload: {
+        title: "Patient Accepted Treatment Plan",
+        body: `${user.firstName} ${user.lastName} accepted the treatment plan: ${plan.title}`,
+        data: {
+          entityId: String(args.treatmentPlanId),
+          entityType: "treatmentPlan",
+        },
+        link: `/dashboard/physiotherapist/patients/${plan.patientId}/treatment-plan`,
+      },
+      createdAt: Date.now(),
+    });
 
     return { success: true };
   },
@@ -599,7 +750,7 @@ export const getExerciseCompletionMap = query({
       .query("treatmentProgress")
       .withIndex("by_treatment_plan", (q) => q.eq("treatmentPlanId", args.treatmentPlanId))
       .filter((q) => q.eq(q.field("patientId"), user._id))
-      .filter((q) => q.eq(q.field("progressType"), "exercise_completed"))
+      .filter((q) => q.eq(q.field("progressType"), "exercise_completion"))
       .collect();
 
     const map: Record<string, boolean> = {};
@@ -991,6 +1142,25 @@ export const assignTemplateToPatient = mutation({
       progressType: "plan_created",
       notes: `Plan created from template: ${tpl.title}`,
       recordedBy: physiotherapist._id,
+    });
+
+    // Notify patient about plan created from template
+    await ctx.db.insert("notifications", {
+      userId: args.patientId,
+      type: "treatment_plan_created" as any,
+      priority: "high",
+      status: "pending",
+      payload: {
+        title: "New Treatment Plan Assigned",
+        body: `${physiotherapist.firstName || "Your physiotherapist"} assigned a new treatment plan to you`,
+        data: {
+          entityId: String(planId),
+          entityType: "treatmentPlan",
+          metadata: { templateId: args.templateId },
+        },
+        link: `/dashboard/physiotherapist/patients/${args.patientId}/treatment-plan`,
+      },
+      createdAt: Date.now(),
     });
 
     // Optional: send sync/notification via plan sync system

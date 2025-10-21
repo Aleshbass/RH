@@ -11,6 +11,9 @@ interface PaystackPaymentData {
   status: string;
   metadata?: {
     invoiceId?: string;
+    email?: string;
+    userName?: string;
+    custom_fields?: Array<{ variable_name: string; value: string }>;
     [key: string]: unknown;
   };
   gateway_response?: string;
@@ -25,6 +28,12 @@ interface PaystackPaymentData {
     exp_year: string;
     card_type: string;
     bank: string;
+  };
+  // Optional customer info provided by Paystack
+  customer?: {
+    email?: string;
+    first_name?: string;
+    last_name?: string;
   };
 }
 
@@ -56,6 +65,13 @@ export async function POST(request: NextRequest) {
     const signature = request.headers.get('x-paystack-signature');
     const rawBody = await request.text();
     
+    // Versioned log to verify the deployed code path
+    console.log('🔥 WEBHOOK VERSION: 2.1 - enhanced logging enabled');
+    console.log('ENV CHECK:', {
+      NEXT_PUBLIC_CONVEX_URL: process.env.NEXT_PUBLIC_CONVEX_URL,
+      PAYSTACK_SECRET_KEY_SET: Boolean(process.env.PAYSTACK_SECRET_KEY),
+    });
+    
     // Verify webhook signature
     if (signature && !verifyWebhookSignature(rawBody, signature)) {
       return NextResponse.json(
@@ -65,6 +81,7 @@ export async function POST(request: NextRequest) {
     }
 
     const event = JSON.parse(rawBody);
+    console.log('📨 Incoming Paystack event:', event?.event);
     
     // Handle different event types
     switch (event.event) {
@@ -100,6 +117,85 @@ async function handleSuccessfulPayment(data: PaystackPaymentData) {
   if (status !== 'success') return;
 
   try {
+    // Log the metadata for debugging
+    console.log('Webhook metadata:', JSON.stringify(metadata, null, 2));
+    console.log('Payment reference:', reference);
+    console.log('Customer email (if any):', data.customer?.email);
+    console.log('Convex URL (env):', process.env.NEXT_PUBLIC_CONVEX_URL);
+    
+    // Check if this is a verification badge payment
+    // Method 1: Check custom_fields in metadata
+    const transactionType = metadata?.custom_fields?.find(
+      (field: any) => field.variable_name === 'transaction_type'
+    )?.value;
+
+    const transactionId = metadata?.custom_fields?.find(
+      (field: any) => field.variable_name === 'transaction_id'
+    )?.value;
+    
+    // Method 2: Check if reference starts with VERIFICATION_
+    const isVerificationByReference = reference.startsWith('VERIFICATION_');
+    
+    console.log('Transaction type:', transactionType);
+    console.log('Transaction ID:', transactionId);
+    console.log('Is verification by reference:', isVerificationByReference);
+
+    if ((transactionType === 'verification_badge' && transactionId) || isVerificationByReference) {
+      console.log('🏆 Processing verification badge payment...');
+      
+      // Extract transaction ID from reference if not in metadata
+      let txId = transactionId;
+      if (!txId && isVerificationByReference) {
+        // Format: VERIFICATION_{transactionId}_{timestamp}
+        const parts = reference.split('_');
+        if (parts.length >= 2) {
+          txId = parts[1];
+        }
+      }
+      
+      if (!txId) {
+        console.error('❌ Could not extract transaction ID');
+        return;
+      }
+      
+      console.log('Using transaction ID:', txId);
+      
+      // Handle verification badge payment
+      const result = await convex.mutation(api.marketplace.verification.completeVerificationPurchase, {
+        transactionId: txId as Id<'marketplaceTransactions'>,
+        paymentReference: reference,
+      });
+      console.log('completeVerificationPurchase result:', result);
+      
+      // Send confirmation email
+      if (result.success && result.userId) {
+        try {
+          // Get user email from result or metadata
+          const userEmail = data.customer?.email || metadata?.email || "";
+          const userName = data.customer?.first_name || metadata?.userName || "";
+          
+          if (userEmail) {
+            await convex.action(api.actions.emails.sendVerificationBadgeEmail.sendVerificationBadgeConfirmation, {
+              userEmail,
+              userName,
+              tier: result.tier,
+              amount,
+              expiresAt: result.expiresAt,
+              paymentReference: reference,
+            });
+          }
+        } catch (emailError) {
+          console.error('Error sending verification email:', emailError);
+          // Don't fail the whole process if email fails
+        }
+      }
+      
+      console.log(`Verification badge payment successful: ${reference}`);
+      return;
+    }
+
+    // Handle regular invoice payments
+    console.log('FALLTHROUGH to regular payment path for reference:', reference);
     // Update payment status in database
     await convex.mutation(api.payments.updatePaymentStatus, {
       paystackReference: reference,

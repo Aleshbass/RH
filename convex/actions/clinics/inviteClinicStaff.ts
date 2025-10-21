@@ -77,28 +77,30 @@ export const createClinicStaffInvitationWithNotification = action({
 
       // Send email if requested (default true)
       if (args.sendEmail !== false) {
-        // Use env-based domain for staff invitation links (falls back to rehabifyhealth.com)
         const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://rehabifyhealth.com';
         const baseUrl = envBase.replace(/\/$/, '');
         const invitationLink = `${baseUrl}/staff-invite/${result.code}`;
 
         try {
-          await ctx.runAction(api.actions.emails.sendClinicStaffInvitationEmail, {
-            inviteeEmail: args.inviteeEmail,
-            inviteeName: args.inviteeName,
-            clinicOwnerName,
-            clinicName,
-            invitationCode: result.code,
-            invitationLink,
-            expiresAt,
-            message: args.message,
-          });
+          await ctx.runAction(
+            api.actions.emails.sendClinicStaffInvitationEmail.sendClinicStaffInvitationEmail,
+            {
+              inviteeEmail: args.inviteeEmail,
+              inviteeName: args.inviteeName,
+              clinicOwnerName,
+              clinicName,
+              invitationCode: result.code,
+              invitationLink,
+              expiresAt,
+              message: args.message,
+            }
+          );
         } catch (emailError) {
           console.error('Failed to send clinic staff invitation email:', emailError);
         }
       }
 
-      // Create notification for the clinic owner
+
       try {
         if (user?._id) {
           await ctx.runMutation(api.notifications.create, {
@@ -111,7 +113,7 @@ export const createClinicStaffInvitationWithNotification = action({
               data: {
                 entityId: result.code,
                 entityType: 'clinic_staff_invitation',
-                actionUrl: '/dashboard/clinic-owner',
+                actionUrl: '/dashboard/clinic/staff',
                 metadata: {
                   inviteeEmail: args.inviteeEmail,
                   inviteeName: args.inviteeName,
@@ -196,7 +198,7 @@ export const resendClinicStaffInvitation = action({
 
       // Send reminder email
       await ctx.runAction(
-        api.actions.emails.sendClinicStaffInvitationReminderEmail,
+        api.actions.emails.sendClinicStaffInvitationEmail.sendClinicStaffInvitationReminderEmail,
         {
           inviteeEmail: args.inviteeEmail,
           inviteeName: args.inviteeName ?? invitation.inviteeName,

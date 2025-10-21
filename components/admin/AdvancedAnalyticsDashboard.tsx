@@ -48,15 +48,19 @@ export function AdvancedAnalyticsDashboard() {
   const systemMetrics = useQuery(api.admin.getSystemMetrics)
   const platformRevenue = useQuery(api.admin.getPlatformRevenue)
   
-  // Create time-series data for the revenue chart
-  const revenueAnalytics: Array<{ date: number; amount: number }> = platformRevenue ? Array.from({ length: 30 }, (_, i) => {
-    const date = new Date()
-    date.setDate(date.getDate() - (29 - i))
-    return {
-      date: date.getTime(),
-      amount: Math.floor((platformRevenue.monthlyRevenue || 0) * (0.8 + Math.random() * 0.4) / 30)
-    }
-  }) : []
+  // Create time-series data for the revenue chart (deterministic, no randomness)
+  const revenueAnalytics: Array<{ date: number; amount: number }> = platformRevenue ? (() => {
+    const days = 30
+    const perDay = Math.floor((platformRevenue.monthlyRevenue || 0) / days)
+    return Array.from({ length: days }, (_, i) => {
+      const date = new Date()
+      date.setDate(date.getDate() - (29 - i))
+      return {
+        date: date.getTime(),
+        amount: perDay,
+      }
+    })
+  })() : []
   const activityLogs = useQuery(api.admin.getUserActivityLogs, { limit: 10 }) as ActivityLog[] | undefined
   const adminStats = useQuery(api.admin.getAdminDashboardStats)
   const pendingActions: PendingActionsSummary | undefined = adminStats ? {
@@ -356,9 +360,9 @@ export function AdvancedAnalyticsDashboard() {
                       <Area
                         type="monotone"
                         dataKey="amount"
-                        stroke="#8884d8"
-                        fill="#8884d8"
-                        fillOpacity={0.3}
+                        stroke="#005b57"
+                        fill="#005b57"
+                        fillOpacity={0.25}
                       />
                     </AreaChart>
                   </ResponsiveContainer>

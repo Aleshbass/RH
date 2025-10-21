@@ -35,9 +35,13 @@ export default function StaffInviteAcceptancePage() {
   // Get invitation details
   const invitation = useQuery(api.clinics.getInvitationByCode, { code })
   
-  // Actions
-  const acceptInvitation = useAction(api.actions.clinics.acceptStaffInvitationWithNotification)
-  const declineInvitation = useAction(api.actions.clinics.declineStaffInvitationWithNotification)
+  // Actions (use correct module paths)
+  const acceptInvitation = useAction(
+    api.actions.clinics.staffInvitationActions.acceptStaffInvitationWithNotification
+  )
+  const declineInvitation = useAction(
+    api.actions.clinics.staffInvitationActions.declineStaffInvitationWithNotification
+  )
 
   const handleAcceptInvitation = async () => {
     if (!invitation || !isSignedIn) return
@@ -268,13 +272,17 @@ export default function StaffInviteAcceptancePage() {
               </p>
               <div className="flex gap-2">
                 <Button 
-                  onClick={() => router.push('/sign-in')}
+                  onClick={() =>
+                    router.push(`/sign-in?redirect_url=${encodeURIComponent(`/staff-invite/${code}`)}`)
+                  }
                   className="flex-1"
                 >
                   Sign In
                 </Button>
                 <Button 
-                  onClick={() => router.push('/sign-up')}
+                  onClick={() =>
+                    router.push(`/sign-up?redirect_url=${encodeURIComponent(`/staff-invite/${code}`)}`)
+                  }
                   variant="outline"
                   className="flex-1"
                 >

@@ -370,13 +370,51 @@ export const savePatientDocument = mutation({
       throw new Error("File not found in storage");
     }
 
+    // Validate file type and size for patient documents
+    const normalizeType = (t: string | null | undefined) => {
+      const lower = (t || "").toLowerCase();
+      if (lower === "image/jpg") return "image/jpeg";
+      if (lower === "application/x-pdf") return "application/pdf";
+      if (lower === "image/pjpeg") return "image/jpeg";
+      return lower;
+    };
+
+    const ext = (args.fileName.split(".").pop() || "").toLowerCase();
+    const extToMime: Record<string, string> = {
+      pdf: "application/pdf",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+    };
+
+    const rawType = fileMetadata.contentType || extToMime[ext] || "application/octet-stream";
+    const contentType = normalizeType(rawType);
+
+    const allowedTypes = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      // Accept common variants
+      "image/jpg",
+      "application/x-pdf",
+    ];
+    if (!allowedTypes.includes(contentType)) {
+      throw new Error("Invalid file type. Only PDF, JPEG, and PNG files are allowed.");
+    }
+
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (fileMetadata.size > maxSize) {
+      throw new Error("File size exceeds maximum limit of 10MB");
+    }
+
     return await ctx.db.insert("patientDocuments", {
       patientProfileId: args.patientProfileId,
       storageId: args.storageId,
       documentType: args.documentType,
       fileName: args.fileName,
       fileSize: fileMetadata.size,
-      contentType: fileMetadata.contentType || "application/octet-stream",
+      contentType, // store normalized content type
       uploadedAt: Date.now(),
     });
   },

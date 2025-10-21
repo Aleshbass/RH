@@ -254,6 +254,7 @@ const navLinks: NavItem[] = [
       },
     ],
   },
+  { name: "Find a Physio", href: "/find-a-physio", type: "link" },
   { name: "Features", href: "/#features", type: "link" },
   { name: "Pricing", href: "/#pricing", type: "link" },
   {

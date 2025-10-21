@@ -201,8 +201,8 @@ export const processSingleEmailRetry = internalMutation({
     await ctx.db.patch(args.retryId, { status: "processing" });
     
     try {
-      // Process the email
-      await ctx.runMutation(internal.notifications.service.processEmailForNotification, {
+      // Process the email via the email routing module
+      await ctx.runMutation(internal.notifications.email.processEmailForNotification, {
         notificationId: retry.notificationId,
         retryOnFailure: false, // Don't create recursive retries
         maxRetries: 1,

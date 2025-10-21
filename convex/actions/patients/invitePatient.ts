@@ -9,6 +9,7 @@ import { api } from "../../_generated/api";
 type InvitationResult = {
   success: boolean;
   invitationCode?: string;
+  invitationId?: string;
   message?: string;
 };
 
@@ -27,6 +28,7 @@ export const createPatientInvitationWithNotification = action({
   returns: v.object({
     success: v.boolean(),
     invitationCode: v.optional(v.string()),
+    invitationId: v.optional(v.string()),
     message: v.optional(v.string()),
   }),
   handler: async (ctx, args): Promise<InvitationResult> => {

@@ -48,14 +48,43 @@ export default function FileUpload({
     // Type validation
     if (accept) {
       const acceptedTypes = accept.split(',').map(type => type.trim());
-      const fileType = file.type;
+      const fileType = (file.type || '').toLowerCase();
+
+      // Fallback to extension-based detection when file.type is missing or atypical
+      const ext = (file.name.split('.')?.pop() || '').toLowerCase();
+      const extToMime: Record<string, string> = {
+        pdf: 'application/pdf',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+      };
+      const derivedType = extToMime[ext];
+
+      // Account for common non-standard variants browsers may report
+      const normalizeType = (t: string) => {
+        const lower = t.toLowerCase();
+        if (lower === 'image/jpg') return 'image/jpeg';
+        if (lower === 'application/x-pdf') return 'application/pdf';
+        if (lower === 'image/pjpeg') return 'image/jpeg';
+        return lower;
+      };
+
+      const candidateType = normalizeType(fileType || derivedType || '');
+
       const isValidType = acceptedTypes.some(type => {
-        if (type.includes('/*')) {
+        const normalizedAccept = normalizeType(type);
+        if (normalizedAccept.includes('/*')) {
           // Handle wildcards like 'image/*'
-          const [category] = type.split('/');
-          return fileType.startsWith(category + '/');
+          const [category] = normalizedAccept.split('/');
+          // If we have a candidateType, test against it; otherwise infer from ext
+          if (candidateType) return candidateType.startsWith(category + '/');
+          return !!derivedType && derivedType.startsWith(category + '/');
         }
-        return type === fileType;
+        // Exact match against candidateType OR extension-derived type
+        return (
+          (candidateType && candidateType === normalizedAccept) ||
+          (derivedType && normalizeType(derivedType) === normalizedAccept)
+        );
       });
 
       if (!isValidType) {

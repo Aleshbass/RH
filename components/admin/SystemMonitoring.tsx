@@ -46,28 +46,19 @@ interface SystemMetrics {
 export function SystemMonitoring() {
   const platformAnalytics = useQuery(api.admin.getPlatformAnalytics)
   const systemMetrics = useQuery(api.admin.getSystemMetrics) as SystemMetrics | undefined
-  
-  // Mock pending actions data since the API doesn't exist yet
-  const pendingActions = {
-    systemAlerts: 2,
-    failedNotifications: 3
-  }
+
+  // Derive pending actions from real metrics (no mocks)
+  const pendingActions = systemMetrics ? {
+    systemAlerts: systemMetrics.api.errorRate > 1 ? 1 : 0,
+    failedNotifications: systemMetrics.notifications.failureRate > 1 ? Math.round(systemMetrics.notifications.failureRate) : 0,
+  } : { systemAlerts: 0, failedNotifications: 0 }
 
   if (!platformAnalytics || !systemMetrics) {
     return <SystemMonitoringSkeleton />
   }
 
-  // Mock performance data for the last 24 hours
-  const performanceData = Array.from({ length: 24 }, (_, i) => {
-    const hour = new Date()
-    hour.setHours(hour.getHours() - (23 - i))
-    return {
-      time: format(hour, 'HH:mm'),
-      cpu: Math.random() * 30 + 40, // 40-70% CPU usage
-      memory: Math.random() * 20 + 60, // 60-80% memory usage
-      responseTime: Math.random() * 100 + 200, // 200-300ms response time
-    }
-  })
+  // No historical series available from backend yet; show current snapshot only
+  const performanceData: Array<{ time: string; cpu: number; memory: number; responseTime: number }> = []
 
   const getStatusColor = (value: number, thresholds: { good: number; warning: number }) => {
     if (value >= thresholds.good) return 'text-green-600 bg-green-100'
@@ -164,48 +155,31 @@ export function SystemMonitoring() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Performance Chart */}
+        {/* Performance Snapshot - historical series unavailable */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center">
               <Activity className="mr-2 h-5 w-5" />
-              System Performance (24h)
+              System Performance Snapshot
             </CardTitle>
             <CardDescription>
-              Real-time system metrics over the last 24 hours
+              Historical series not available yet. Displaying current metrics.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={performanceData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="cpu"
-                    stroke="#8884d8"
-                    strokeWidth={2}
-                    name="CPU Usage (%)"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="memory"
-                    stroke="#82ca9d"
-                    strokeWidth={2}
-                    name="Memory Usage (%)"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="responseTime"
-                    stroke="#ffc658"
-                    strokeWidth={2}
-                    name="Response Time (ms)"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="text-sm text-muted-foreground">Avg Response</div>
+                <div className="text-2xl font-bold">{systemMetrics?.api.averageResponseTime ?? 0}ms</div>
+              </div>
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="text-sm text-muted-foreground">Requests/min</div>
+                <div className="text-2xl font-bold">{systemMetrics?.api.requestsPerMinute ?? 0}</div>
+              </div>
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="text-sm text-muted-foreground">Error Rate</div>
+                <div className="text-2xl font-bold">{systemMetrics?.api.errorRate ?? 0}%</div>
+              </div>
             </div>
           </CardContent>
         </Card>

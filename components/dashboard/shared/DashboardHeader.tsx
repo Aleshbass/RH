@@ -30,6 +30,7 @@ import {
   FileText,
   Settings,
   X,
+  Building2,
 } from 'lucide-react'
 import { Menu } from 'lucide-react'
 import { format } from 'date-fns'
@@ -62,10 +63,15 @@ export function DashboardHeader() {
   const [lastNotifId, setLastNotifId] = useState<string | null>(null)
   const { toggleMobile } = useSidebarStore()
 
+  // Get user and clinic info
+  const user = useQuery(api.users.getMyUser)
+  const clinicInfo = useQuery(api.clinics.getMyClinicInfo)
+
   // Recent notifications & count
   const notifications = useQuery(api.notifications.getMyNotifications, { limit: 5, includeRead: true })
   const unreadCount = useQuery(api.notifications.getMyUnreadCount, {})
   const markAsRead = useMutation(api.notifications.markAsRead)
+  const markAllMyAsRead = useMutation(api.notifications.markAllMyAsRead)
 
   const quickActions = [
     {
@@ -108,9 +114,27 @@ export function DashboardHeader() {
           action: {
             label: 'Open',
             onClick: () => {
-              const url = latest.payload?.data?.actionUrl || latest.payload?.link
+              console.log('[TOAST CLICK] Toast notification payload:', latest.payload)
+              let url = latest.payload?.data?.actionUrl || latest.payload?.link
+              console.log('[TOAST CLICK] Extracted URL:', url)
+              
+              // Fix old clinic-owner routes to new clinic routes
+              if (url && url.includes('/dashboard/clinic-owner')) {
+                url = url.replace('/dashboard/clinic-owner', '/dashboard/clinic/staff')
+                console.log('[TOAST CLICK] Replaced clinic-owner route:', url)
+              }
+              // Fallback for legacy notifications without URLs
+              if (!url) {
+                url = '/dashboard/clinic/staff'
+                console.log('[TOAST CLICK] Using fallback URL:', url)
+              }
+              
+              console.log('[TOAST CLICK] Final URL:', url)
               if (url) {
+                console.log('[TOAST CLICK] Navigating to:', url)
                 router.push(url)
+              } else {
+                console.error('[TOAST CLICK] No URL to navigate to!')
               }
               setShowNotifications(true)
             },
@@ -143,6 +167,17 @@ export function DashboardHeader() {
             </div>
             <span className="text-xl font-bold text-white hidden sm:inline">Rehabify</span>
           </Link>
+
+          {/* Clinic Badge for Clinic Physiotherapists */}
+          {user?.role === 'physiotherapist' && clinicInfo && (
+            <Badge 
+              variant="secondary" 
+              className="hidden lg:flex items-center gap-1.5 bg-white/10 text-white border-white/20 hover:bg-white/20 px-3 py-1.5"
+            >
+              <Building2 className="h-3.5 w-3.5" />
+              <span className="font-medium">{clinicInfo.name}</span>
+            </Badge>
+          )}
 
           {/* Search Bar */}
           <div className="relative max-w-md flex-1 hidden md:block">
@@ -205,14 +240,28 @@ export function DashboardHeader() {
             <PopoverContent className="w-80 p-0" align="end">
               <div className="flex items-center justify-between p-4 border-b">
                 <h3 className="font-semibold">Notifications</h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowNotifications(false)}
-                  className="h-6 w-6 p-0"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={async () => {
+                      try {
+                        await markAllMyAsRead({})
+                      } catch {}
+                    }}
+                  >
+                    Mark all read
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowNotifications(false)}
+                    className="h-6 w-6 p-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               <ScrollArea className="h-80">
                 {notifications && notifications.length > 0 ? (
@@ -228,9 +277,28 @@ export function DashboardHeader() {
                           } catch (e) {
                             console.error('Failed to mark notification as read', e)
                           }
-                          const url = notification.payload?.data?.actionUrl || notification.payload?.link
+                          
+                          console.log('[NOTIFICATION CLICK] Notification payload:', notification.payload)
+                          let url = notification.payload?.data?.actionUrl || notification.payload?.link
+                          console.log('[NOTIFICATION CLICK] Extracted URL:', url)
+                          
+                          // Fix old clinic-owner routes to new clinic routes
+                          if (url && url.includes('/dashboard/clinic-owner')) {
+                            url = url.replace('/dashboard/clinic-owner', '/dashboard/clinic/staff')
+                            console.log('[NOTIFICATION CLICK] Replaced clinic-owner route:', url)
+                          }
+                          // Fallback for legacy notifications without URLs
+                          if (!url) {
+                            url = '/dashboard/clinic/staff'
+                            console.log('[NOTIFICATION CLICK] Using fallback URL:', url)
+                          }
+                          
+                          console.log('[NOTIFICATION CLICK] Final URL:', url)
                           if (url) {
+                            console.log('[NOTIFICATION CLICK] Navigating to:', url)
                             router.push(url)
+                          } else {
+                            console.error('[NOTIFICATION CLICK] No URL to navigate to!')
                           }
                           setShowNotifications(false)
                         }}
@@ -275,7 +343,7 @@ export function DashboardHeader() {
 
           {/* Settings */}
           <Button variant="ghost" size="sm" asChild className="p-2 text-white hover:bg-white/10">
-            <Link href="/dashboard/settings">
+            <Link prefetch={false} href="/dashboard/settings/calendars">
               <Settings className="h-5 w-5" />
             </Link>
           </Button>

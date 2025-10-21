@@ -138,8 +138,8 @@ async function syncToCalendar(ctx: any, calendarEvents: any[], localEvents: any[
         const result = await ctx.runMutation(internal.calendar.service.createCalendarEvent, {
           userId,
           appointmentId: appointment._id,
-          summary: `Physiotherapy Session - ${appointment.type}`,
-          description: appointment.notes,
+          summary: `Physiotherapy Session - ${appointment.serviceType}`,
+          description: appointment.notesForPatient || appointment.notesForTherapist,
           startTime: appointment.startTime,
           endTime: appointment.endTime,
           attendees: [],
@@ -160,10 +160,10 @@ async function syncToCalendar(ctx: any, calendarEvents: any[], localEvents: any[
 
 // Find or create appointment from Google Calendar event
 async function findOrCreateAppointment(ctx: any, googleEvent: any) {
-  // Try to find existing appointment by event ID or attendee emails
+  // Try to find existing appointment by serviceType (formerly title)
   const existingAppointment = await ctx.db
     .query("appointments")
-    .filter((q) => q.eq(q.field("title"), googleEvent.summary))
+    .filter((q) => q.eq(q.field("serviceType"), googleEvent.summary))
     .first();
 
   if (existingAppointment) {
@@ -174,17 +174,11 @@ async function findOrCreateAppointment(ctx: any, googleEvent: any) {
   const startTime = new Date(googleEvent.start.dateTime || googleEvent.start.date).getTime();
   const endTime = new Date(googleEvent.end.dateTime || googleEvent.end.date).getTime();
 
-  const appointmentId = await ctx.db.insert("appointments", {
-    title: googleEvent.summary,
-    description: googleEvent.description,
-    startTime,
-    endTime,
-    status: "scheduled",
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  });
-
-  return await ctx.db.get(appointmentId);
+  // Note: When syncing from Google Calendar, we don't have patient/physiotherapist IDs
+  // This is a limitation - ideally should match by attendee emails to find users
+  // For now, skip creating orphaned appointments without proper user assignments
+  console.warn("Cannot create appointment from Google Calendar without patient/physiotherapist assignment");
+  return null;
 }
 
 // Detect conflicts between calendar and local events

@@ -28,7 +28,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'signin' }: AuthModal
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent 
         className="max-w-5xl w-full mx-4 p-0 overflow-hidden bg-transparent border-none shadow-none"
         // Prevent default dialog animations to use our custom ones

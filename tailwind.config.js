@@ -18,6 +18,9 @@ module.exports = {
         'call-control': '#FFFFFF',
         'call-accent': '#002e2c',
         'teal-dark': '#002e2c',
+        'brand': '#005b57',
+        'brand-dark': '#00443e',
+        'brand-light': '#007d77',
       },
       animation: {
         'fadeIn': 'fadeIn 0.5s ease-in-out forwards',

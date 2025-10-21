@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useAuth } from '@clerk/nextjs';
 import { api } from '../../../convex/_generated/api';
+import { useActionUntyped } from '@/lib/convexUntyped';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
@@ -26,9 +27,9 @@ function ClinicInvite({ code }: { code: string }) {
   // Get current user
   const currentUser = useQuery(api.users.getMyUser);
 
-  // Mutations
-  const acceptInvitation = useMutation(api.clinics.acceptClinicInvitation);
-  const declineInvitation = useMutation(api.clinics.declineClinicInvitation);
+  // Actions (wrap base mutations + emails/notifications)
+  const acceptInvitation = useActionUntyped(api.actions.clinics.staffInvitationActions.acceptStaffInvitationWithNotification);
+  const declineInvitation = useActionUntyped(api.actions.clinics.staffInvitationActions.declineStaffInvitationWithNotification);
 
   // Redirect if not authenticated
   useEffect(() => {

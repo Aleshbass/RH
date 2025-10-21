@@ -17,6 +17,7 @@ import { ExerciseLibrary } from './ExerciseLibrary';
 import { OswestryAssessmentForm } from '../assessments/OswestryAssessmentForm';
 import { exerciseService } from '@/lib/exercisedb/exerciseService';
 import { LazyExerciseMedia } from './LazyExerciseMedia';
+import { UploadDropzone } from '@/components/ui/UploadDropzone';
 
 interface InteractiveTreatmentPlanProps {
   patientId: string;
@@ -30,9 +31,13 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
   const [newGoal, setNewGoal] = useState({ description: '', target: '', currentValue: '', targetValue: '', deadline: new Date() });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [exerciseDetails, setExerciseDetails] = useState<Record<string, any>>({});
+  const [uploadingImages, setUploadingImages] = useState<Record<string, { before?: boolean; after?: boolean }>>({});
   const { toast } = useToast();
   
   const updateTreatmentPlan = useMutation(api.treatmentPlans.updateTreatmentPlan);
+  const createTreatmentPlan = useMutation(api.treatmentPlans.createTreatmentPlan);
+  const updateTreatmentPlanStatus = useMutation(api.treatmentPlans.updateTreatmentPlanStatus);
+  const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   
   // Get treatment plans for the patient
   const treatmentPlans = useQuery(api.treatmentPlans.getPatientTreatmentPlans, {
@@ -79,9 +84,96 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
       
       setExerciseDetails(details);
     };
-    
+
     fetchExerciseDetails();
   }, [currentPlan]);
+
+  // Handle upload of before/after images for a specific exercise within a phase
+  const handleUploadExerciseImage = async (
+    phaseOrder: number,
+    exerciseId: string,
+    which: 'before' | 'after',
+    file: File | null
+  ) => {
+    if (!currentPlan || !file) return;
+    const key = `${phaseOrder}-${exerciseId}`;
+    setUploadingImages((prev) => ({ ...prev, [key]: { ...prev[key], [which]: true } }));
+    try {
+      const uploadUrl = await generateUploadUrl({ fileType: file.type || 'application/octet-stream', fileName: file.name });
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      });
+      const { storageId } = await res.json();
+
+      // Build updated phases with new storageId on targeted exercise
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updatedPhases: any[] = (currentPlan.phases ? [...currentPlan.phases] : []).map((p: any) => ({ ...p, exercises: [...p.exercises] }));
+      const targetPhase = updatedPhases.find((p) => p.order === phaseOrder);
+      if (!targetPhase) throw new Error('Phase not found');
+      const targetExercise = targetPhase.exercises.find((e: any) => e.exerciseId === exerciseId);
+      if (!targetExercise) throw new Error('Exercise not found in phase');
+      if (which === 'before') targetExercise.beforeImageStorageId = storageId;
+      if (which === 'after') targetExercise.afterImageStorageId = storageId;
+
+      await updateTreatmentPlan({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        treatmentPlanId: currentPlan._id as any,
+        phases: updatedPhases,
+      });
+
+      toast({
+        title: 'Image Uploaded',
+        description: `${which === 'before' ? 'Before' : 'After'} image saved for this exercise.`,
+      });
+    } catch (e) {
+      toast({
+        title: 'Upload failed',
+        description: 'Could not upload the image. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setUploadingImages((prev) => ({ ...prev, [key]: { ...prev[key], [which]: false } }));
+    }
+  };
+
+  const handleCreatePlan = async () => {
+    try {
+      // Create a new draft plan with minimal required fields
+      const planId = await createTreatmentPlan({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        patientId: patientId as any,
+        title: 'Treatment Plan',
+        description: '',
+        startDate: Date.now(),
+        endDate: undefined,
+        priority: 'medium',
+        goals: [],
+        phases: [],
+        reviewInterval: 14,
+        notes: '',
+      });
+
+      // Immediately activate the plan so it appears in the active view
+      await updateTreatmentPlanStatus({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        treatmentPlanId: planId as any,
+        status: 'active',
+      });
+
+      toast({
+        title: 'Plan Created',
+        description: 'A new treatment plan has been created and activated.',
+      });
+    } catch (e) {
+      toast({
+        title: 'Error',
+        description: 'Failed to create treatment plan.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const addExerciseToPlan = async (exercise: any) => {
@@ -99,7 +191,7 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
           duration: '2 weeks',
           order: 1,
           exercises: [{
-            exerciseId: exercise.id,
+            exerciseId: exercise._id,
             sets: 3,
             reps: 10,
             frequency: 'Daily',
@@ -110,7 +202,7 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
         // Add to last phase
         const lastPhase = updatedPhases[updatedPhases.length - 1];
         lastPhase.exercises.push({
-          exerciseId: exercise.id,
+          exerciseId: exercise._id,
           sets: 3,
           reps: 10,
           frequency: 'Daily',
@@ -183,6 +275,12 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
               <Badge variant={currentPlan.status === 'active' ? 'default' : 'secondary'}>
                 {currentPlan.status}
               </Badge>
+            )}
+            {!currentPlan && (
+              <Button onClick={handleCreatePlan}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Plan
+              </Button>
             )}
           </div>
         </CardHeader>
@@ -329,6 +427,38 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
                                 exerciseId={exercise.exerciseId}
                               />
                             )}
+                            {/* Before/After images upload & preview */}
+                            <div className="mt-4 space-y-3">
+                              <h6 className="font-medium text-sm">Exercise Images</h6>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <div className="text-xs font-medium mb-2">Before</div>
+                                  {exercise.beforeImageStorageId ? (
+                                    <StorageImage storageId={exercise.beforeImageStorageId} />
+                                  ) : (
+                                    <UploadDropzone
+                                      accept="image/*"
+                                      maxSizeMb={5}
+                                      variant="image"
+                                      onFileSelected={(f) => handleUploadExerciseImage(phase.order, exercise.exerciseId, 'before', f)}
+                                    />
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="text-xs font-medium mb-2">After</div>
+                                  {exercise.afterImageStorageId ? (
+                                    <StorageImage storageId={exercise.afterImageStorageId} />
+                                  ) : (
+                                    <UploadDropzone
+                                      accept="image/*"
+                                      maxSizeMb={5}
+                                      variant="image"
+                                      onFileSelected={(f) => handleUploadExerciseImage(phase.order, exercise.exerciseId, 'after', f)}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -443,3 +573,14 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
     </div>
   );
 }
+
+// Small preview component for Convex storage images
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const StorageImage: React.FC<{ storageId: any }> = ({ storageId }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const url = useQuery(api.files.getFileUrl, { storageId: storageId as any });
+  if (!url) return null;
+  return (
+    <img src={url} alt="Exercise" className="w-full h-24 object-cover rounded border" />
+  );
+};

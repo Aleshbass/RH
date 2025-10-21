@@ -157,7 +157,9 @@ export default function TemplateBuilder({ templateId, initialPhases = [], onPhas
       const next = [...prev];
       const target = next[phaseIdx];
       const newExercise: TemplateExercise = {
-        exerciseId: exercise.exerciseId || `custom-${Date.now()}`,
+        // Prefer the AssessmentExercise._id (from ExerciseLibrary transform),
+        // then fallback to any provided exerciseId or exerciseDbId. If none exists, generate a custom id.
+        exerciseId: exercise._id || exercise.exerciseId || exercise.exerciseDbId || `custom-${Date.now()}`,
         name: exercise.name,
         sets: exercise.sets || 3,
         reps: exercise.reps || 10,

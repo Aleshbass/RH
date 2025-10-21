@@ -59,6 +59,22 @@ export function useFileUpload(options?: UseFileUploadOptions) {
         // Step 2: Upload the file to the generated URL
         const xhr = new XMLHttpRequest();
         
+        // Determine a safe Content-Type: use browser-provided type or derive from file extension
+        const ext = (file.name.split(".").pop() || "").toLowerCase();
+        const fallbackTypeMap: Record<string, string> = {
+          pdf: "application/pdf",
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          png: "image/png",
+          webp: "image/webp",
+          heic: "image/heic",
+          heif: "image/heif",
+        };
+        const derivedType = fallbackTypeMap[ext];
+        const safeContentType = (file.type && file.type.trim().length > 0)
+          ? file.type
+          : (derivedType || "application/octet-stream");
+        
         // Set up progress tracking
         xhr.upload.addEventListener('progress', (event) => {
           if (event.lengthComputable) {
@@ -104,7 +120,7 @@ export function useFileUpload(options?: UseFileUploadOptions) {
 
         // Configure and send the request
         xhr.open('POST', uploadUrl, true);
-        xhr.setRequestHeader('Content-Type', file.type);
+        xhr.setRequestHeader('Content-Type', safeContentType);
         xhr.timeout = 30000; // 30 second timeout
         xhr.send(file);
 

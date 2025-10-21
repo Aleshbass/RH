@@ -310,8 +310,7 @@ export const startVideoCall = mutation({
     }
 
     await ctx.db.patch(args.callId, {
-      status: "active",
-      startTime: Date.now(),
+      startTime: call.startTime || Date.now(),
     })
 
     return { success: true }
@@ -394,6 +393,43 @@ export const endVideoCall = mutation({
   },
 })
 
+// Cancel a video call
+export const cancelVideoCall = mutation({
+  args: {
+    callId: v.id("videoCalls"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity) {
+      throw new Error("Unauthorized")
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique()
+
+    if (!user) throw new Error("User not found")
+
+    const call = await ctx.db.get(args.callId)
+    if (!call) throw new Error("Call not found")
+
+    // Allow initiator or any participant to cancel
+    const isParticipant = (call.participants || []).includes(user._id) || call.initiatorId === user._id
+    if (!isParticipant) throw new Error("Unauthorized to cancel this call")
+
+    await ctx.db.patch(args.callId, {
+      status: "cancelled",
+      cancellationReason: args.reason,
+      cancelledBy: user._id,
+      cancelledAt: Date.now(),
+    })
+
+    return { success: true }
+  },
+})
+
 // Join a video call (for participants) - supports both legacy and Daily.co rooms
 export const joinVideoCall = mutation({
   args: {
@@ -446,13 +482,8 @@ export const joinVideoCall = mutation({
         throw new Error("This call has ended or been cancelled")
       }
 
-      // Activate scheduled calls when someone joins
-      if (call.status === "scheduled") {
-        await ctx.db.patch(call._id, {
-          status: "active",
-          startTime: Date.now(),
-        })
-      }
+      // Do not immediately mark as active here; we'll set 'active' only after
+      // we confirm at least two participants are in the room below.
     }
 
     // Daily.co integration removed; Stream handles room creation client-side
@@ -501,6 +532,22 @@ export const joinVideoCall = mutation({
       })
     }
 
+    // After ensuring a participant record, update call status if both parties are present
+    try {
+      const participantsNow = await ctx.db
+        .query("videoCallParticipants")
+        .withIndex("by_call_id", (q) => q.eq("callId", call._id))
+        .collect()
+      const activeCount = participantsNow.filter(p => !p.leftAt).length
+      if (call.status === "scheduled" && activeCount >= 2) {
+        await ctx.db.patch(call._id, {
+          status: "active",
+          startTime: call.startTime || Date.now(),
+        })
+      }
+    } catch (e) {
+      console.warn('[joinVideoCall] Failed to evaluate active participants:', e)
+    }
 
     return { 
       callId: call._id,
@@ -511,440 +558,7 @@ export const joinVideoCall = mutation({
   },
 })
 
-// Leave a video call
-export const leaveVideoCall = mutation({
-  args: {
-    callId: v.id("videoCalls"),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error("Unauthorized")
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique()
-    
-    if (!user) {
-      throw new Error("User not found")
-    }
-
-    // Find participant record
-    const participant = await ctx.db
-      .query("videoCallParticipants")
-      .withIndex("by_call_and_user", (q) => q.eq("callId", args.callId).eq("userId", user._id))
-      .unique()
-
-    if (participant) {
-      await ctx.db.patch(participant._id, {
-        leftAt: Date.now(),
-      })
-    }
-
-    return { success: true }
-  },
-})
-
-// Save chat message
-export const saveVideoCallMessage = mutation({
-  args: {
-    callId: v.id("videoCalls"),
-    message: v.string(),
-    messageType: v.union(
-      v.literal("text"),
-      v.literal("system"),
-      v.literal("file"),
-      v.literal("emoji")
-    ),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error("Unauthorized")
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique()
-    
-    if (!user) {
-      throw new Error("User not found")
-    }
-
-    // Verify user is in the call
-    const call = await ctx.db.get(args.callId)
-    if (!call || !call.participants.includes(user._id)) {
-      throw new Error("You are not in this call")
-    }
-
-    const messageId = await ctx.db.insert("videoCallMessages", {
-      callId: args.callId,
-      senderId: user._id,
-      message: args.message,
-      timestamp: Date.now(),
-      messageType: args.messageType,
-    })
-
-    return { messageId }
-  },
-})
-
-// Get video call details
-export const getVideoCall = query({
-  args: {
-    roomId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const call = await ctx.db
-      .query("videoCalls")
-      .withIndex("by_room_id", (q) => q.eq("roomId", args.roomId))
-      .unique()
-
-    if (!call) {
-      return null
-    }
-
-    // Get participant details
-    const participants = await ctx.db
-      .query("videoCallParticipants")
-      .withIndex("by_call_id", (q) => q.eq("callId", call._id))
-      .collect()
-
-    // Get user details for participants
-    const participantDetails = await Promise.all(
-      participants.map(async (participant) => {
-        const user = await ctx.db.get(participant.userId)
-        return {
-          ...participant,
-          user: user ? {
-            id: user._id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-            imageUrl: user.imageUrl,
-          } : null,
-        }
-      })
-    )
-
-    return {
-      ...call,
-      participants: participantDetails,
-    }
-  },
-})
-
-// Get chat messages for a call
-export const getVideoCallMessages = query({
-  args: {
-    callId: v.id("videoCalls"),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const limit = args.limit || 50
-
-    const messages = await ctx.db
-      .query("videoCallMessages")
-      .withIndex("by_call_id_and_timestamp", (q) => q.eq("callId", args.callId))
-      .order("desc")
-      .take(limit)
-
-    // Get sender details
-    const messagesWithUsers = await Promise.all(
-      messages.map(async (message) => {
-        const sender = await ctx.db.get(message.senderId)
-        return {
-          ...message,
-          sender: sender ? {
-            id: sender._id,
-            firstName: sender.firstName,
-            lastName: sender.lastName,
-            email: sender.email,
-            imageUrl: sender.imageUrl,
-          } : null,
-        }
-      })
-    )
-
-    return messagesWithUsers.reverse() // Return in chronological order
-  },
-})
-
-// Get user's call history
-export const getUserCallHistory = query({
-  args: {
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error("Unauthorized")
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique()
-    
-    if (!user) {
-      throw new Error("User not found")
-    }
-
-    const limit = args.limit || 20
-
-    // Get calls where user was a participant
-    const allCalls = await ctx.db
-      .query("videoCalls")
-      .order("desc")
-      .collect()
-    
-    // Filter calls where user is a participant
-    const userCalls = allCalls.filter(call => 
-      call.participants.includes(user._id) || call.initiatorId === user._id
-    )
-    
-    const calls = userCalls.slice(0, limit)
-
-    // Get participant details for each call
-    const callsWithDetails = await Promise.all(
-      calls.map(async (call) => {
-        const participants = await ctx.db
-          .query("videoCallParticipants")
-          .withIndex("by_call_id", (q) => q.eq("callId", call._id))
-          .collect()
-
-        const participantDetails = await Promise.all(
-          participants.map(async (participant) => {
-            const participantUser = await ctx.db.get(participant.userId)
-            return {
-              ...participant,
-              user: participantUser ? {
-                id: participantUser._id,
-                firstName: participantUser.firstName,
-                lastName: participantUser.lastName,
-                email: participantUser.email,
-                imageUrl: participantUser.imageUrl,
-              } : null,
-            }
-          })
-        )
-
-        return {
-          ...call,
-          participants: participantDetails,
-        }
-      })
-    )
-
-    return callsWithDetails
-  },
-}) 
-
-// Get video calls for a specific clinic (for clinic owners)
-export const getClinicVideoCalls = query({
-  args: {
-    clinicId: v.id("clinics"),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error("Unauthorized")
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique()
-    
-    if (!user) {
-      throw new Error("User not found")
-    }
-
-    // Verify user is clinic owner or admin
-    if (user.role !== "clinic_owner" && user.role !== "admin") {
-      throw new Error("Only clinic owners and admins can view clinic video calls")
-    }
-
-    // For clinic owners, verify they own this clinic
-    if (user.role === "clinic_owner") {
-      const clinic = await ctx.db.get(args.clinicId)
-      if (!clinic || clinic.ownerId !== user._id) {
-        throw new Error("You can only view video calls for your own clinic")
-      }
-    }
-
-    const limit = args.limit || 50
-
-    // Get calls for this clinic
-    const calls = await ctx.db
-      .query("videoCalls")
-      .withIndex("by_clinic_id_and_scheduled", (q) => q.eq("clinicId", args.clinicId))
-      .order("desc")
-      .take(limit)
-
-    // Get participant, patient, and physiotherapist details for each call
-    const callsWithDetails = await Promise.all(
-      calls.map(async (call) => {
-        let patient = null
-        let physiotherapist = null
-
-        if (call.patientId) {
-          patient = await ctx.db.get(call.patientId)
-        }
-
-        if (call.physiotherapistId) {
-          physiotherapist = await ctx.db.get(call.physiotherapistId)
-        }
-
-        return {
-          ...call,
-          patient: patient ? {
-            _id: patient._id,
-            firstName: patient.firstName,
-            lastName: patient.lastName,
-            email: patient.email,
-          } : null,
-          physiotherapist: physiotherapist ? {
-            _id: physiotherapist._id,
-            firstName: physiotherapist.firstName,
-            lastName: physiotherapist.lastName,
-            email: physiotherapist.email,
-          } : null,
-        }
-      })
-    )
-
-    return callsWithDetails
-  },
-})
-
-// Cancel a video call (with proper authorization)
-export const cancelVideoCall = mutation({
-  args: {
-    callId: v.id("videoCalls"),
-    reason: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error("Unauthorized")
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique()
-    
-    if (!user) {
-      throw new Error("User not found")
-    }
-
-    const call = await ctx.db.get(args.callId)
-    if (!call) {
-      throw new Error("Call not found")
-    }
-
-    // Check authorization - user must be initiator, participant, clinic owner, or admin
-    const isAuthorized = 
-      call.initiatorId === user._id || 
-      call.participants.includes(user._id) ||
-      user.role === "admin" ||
-      (user.role === "clinic_owner" && call.clinicId && await ctx.db.get(call.clinicId).then(clinic => clinic?.ownerId === user._id))
-
-    if (!isAuthorized) {
-      throw new Error("You are not authorized to cancel this call")
-    }
-
-    // Only allow cancellation of scheduled calls
-    if (call.status !== "scheduled") {
-      throw new Error("Only scheduled calls can be cancelled")
-    }
-
-    await ctx.db.patch(args.callId, {
-      status: "cancelled",
-      cancellationReason: args.reason,
-      cancelledBy: user._id,
-      cancelledAt: Date.now(),
-    })
-
-    return { success: true }
-  },
-}) 
-
-// Alias for getUserCallHistory - for compatibility with frontend
-export const getMyVideoCalls = query({
-  args: {
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
-      throw new Error("Unauthorized")
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique()
-    
-    if (!user) {
-      throw new Error("User not found")
-    }
-
-    const limit = args.limit || 20
-
-    // Get calls where user was a participant
-    const allCalls = await ctx.db
-      .query("videoCalls")
-      .order("desc")
-      .collect()
-    
-    // Filter calls where user is a participant
-    const userCalls = allCalls.filter(call => 
-      call.participants.includes(user._id) || call.initiatorId === user._id
-    )
-    
-    const calls = userCalls.slice(0, limit)
-
-    // Get patient details for physiotherapist dashboard
-    const callsWithDetails = await Promise.all(
-      calls.map(async (call) => {
-        let patient = null
-        let physiotherapist = null
-
-        if (call.patientId) {
-          patient = await ctx.db.get(call.patientId)
-        }
-
-        if (call.physiotherapistId) {
-          physiotherapist = await ctx.db.get(call.physiotherapistId)
-        }
-
-        return {
-          ...call,
-          patient: patient ? {
-            _id: patient._id,
-            firstName: patient.firstName,
-            lastName: patient.lastName,
-            email: patient.email,
-          } : null,
-          physiotherapist: physiotherapist ? {
-            _id: physiotherapist._id,
-            firstName: physiotherapist.firstName,
-            lastName: physiotherapist.lastName,
-            email: physiotherapist.email,
-          } : null,
-        }
-      })
-    )
-
-    return callsWithDetails
-  },
-})
+// ... (rest of the code remains the same)
 
 // Schedule a video call - alias for createVideoCall with specific formatting
 export const scheduleVideoCall = mutation({
@@ -957,6 +571,7 @@ export const scheduleVideoCall = mutation({
     duration: v.optional(v.number()),
     meetingLink: v.optional(v.string()),
     clinicId: v.optional(v.id("clinics")),
+    force: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity()
@@ -976,17 +591,45 @@ export const scheduleVideoCall = mutation({
     // Extract roomId from meetingLink if provided, otherwise generate one
     let roomId: string
     if (args.meetingLink) {
-      // Extract roomId from URL like "https://domain.com/video/room_123_abc"
+      // Extract roomId from URL like "https://domain.com/video-call/room_123_abc"
       const urlParts = args.meetingLink.split('/')
       const extractedRoomId = urlParts[urlParts.length - 1]
-      roomId = extractedRoomId || `room_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      roomId = extractedRoomId || `call-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     } else {
-      // Generate a unique room ID
-      roomId = `room_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      // Generate a unique call ID compatible with Stream route
+      roomId = `call-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    }
+
+    // Duplicate-check: look for other scheduled calls around this time with same patient or initiator
+    try {
+      const windowMinutes = args.duration || 30
+      const halfWindowMs = Math.max(5, Math.min(180, windowMinutes)) * 60 * 1000 // clamp 5-180 minutes
+      const windowStart = args.scheduledAt - halfWindowMs
+      const windowEnd = args.scheduledAt + halfWindowMs
+
+      const nearby = await ctx.db
+        .query("videoCalls")
+        .withIndex("by_patient_id_and_scheduled", (q) => q.eq("patientId", args.patientId))
+        .collect()
+      const conflicts = nearby.filter(c => c.status === 'scheduled' && typeof c.scheduledAt === 'number' && c.scheduledAt >= windowStart && c.scheduledAt <= windowEnd)
+      if (conflicts.length > 0 && !args.force) {
+        const err = new Error(`A scheduled call already exists close to this time (${new Date(conflicts[0].scheduledAt!).toISOString()}).`)
+        // @ts-ignore add code for client handling
+        err.code = 'DUPLICATE_SCHEDULED_CALL'
+        // @ts-ignore include conflict id
+        err.conflictCallId = conflicts[0]._id
+        throw err
+      }
+    } catch (dupCheckErr) {
+      if ((dupCheckErr as any)?.code === 'DUPLICATE_SCHEDULED_CALL') throw dupCheckErr
+      console.warn('[scheduleVideoCall] Duplicate check failed, proceeding:', dupCheckErr)
     }
 
     // Set up participants - user (physiotherapist) and patient
     const participants = [user._id, args.patientId]
+
+    const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com'
+    const computedMeetingLink = args.meetingLink || `${appBase}/video-call/${roomId}`
 
     const callId = await ctx.db.insert("videoCalls", {
       roomId,
@@ -999,7 +642,7 @@ export const scheduleVideoCall = mutation({
       scheduledAt: args.scheduledAt,
       startTime: args.scheduledAt, // Will be updated when call actually starts
       platform: args.platform as "internal" | "google_meet" | "zoom",
-      meetingLink: args.meetingLink,
+      meetingLink: computedMeetingLink,
       status: "scheduled",
       callType: "appointment",
       plannedDuration: args.duration || 30,
@@ -1028,6 +671,24 @@ export const scheduleVideoCall = mutation({
           canRecord: participantId === user._id,
         },
       })
+    }
+
+    // Auto-send invitation email to patient (and create in-app notification)
+    try {
+      const patientUser = await ctx.db.get(args.patientId)
+      if (patientUser?.email) {
+        await ctx.runAction(api["actions/emails/sendVideoCallInvitation"].sendVideoCallInvitation as any, {
+          patientEmail: patientUser.email,
+          patientName: `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || undefined,
+          physiotherapistName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Your healthcare provider',
+          callLink: computedMeetingLink,
+          callTitle: args.title,
+          scheduledAt: args.scheduledAt,
+          message: args.notes || undefined,
+        } as any)
+      }
+    } catch (inviteErr) {
+      console.warn('Failed to auto-send scheduled call invitation:', inviteErr)
     }
 
     return { callId, roomId }
@@ -1286,6 +947,76 @@ export const getDailyRoomInfo = query({
     
     console.log('📊 Returning room info:', result)
     return result
+  },
+})
+
+// Get my video calls (for dashboard pages)
+export const getMyVideoCalls = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity) {
+      throw new Error("Not authenticated")
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique()
+
+    if (!user) {
+      throw new Error("User not found")
+    }
+
+    // Get all calls where user is involved (as initiator, participant, patient, or physiotherapist)
+    const allCalls = await ctx.db.query("videoCalls").collect()
+    
+    // Filter calls where user is involved
+    const myCalls = allCalls.filter(call => 
+      call.initiatorId === user._id ||
+      call.participants?.includes(user._id) ||
+      call.patientId === user._id ||
+      call.physiotherapistId === user._id
+    )
+
+    // Enrich calls with patient/physiotherapist data
+    const enrichedCalls = await Promise.all(
+      myCalls.map(async (call) => {
+        let patient = null
+        let physiotherapist = null
+
+        if (call.patientId) {
+          patient = await ctx.db.get(call.patientId)
+        }
+
+        if (call.physiotherapistId) {
+          physiotherapist = await ctx.db.get(call.physiotherapistId)
+        }
+
+        return {
+          ...call,
+          patient: patient ? {
+            _id: patient._id,
+            firstName: patient.firstName,
+            lastName: patient.lastName,
+            email: patient.email,
+          } : undefined,
+          physiotherapist: physiotherapist ? {
+            _id: physiotherapist._id,
+            firstName: physiotherapist.firstName,
+            lastName: physiotherapist.lastName,
+            email: physiotherapist.email,
+          } : undefined,
+        }
+      })
+    )
+
+    // Sort by most recent first
+    return enrichedCalls.sort((a, b) => {
+      const aTime = a.scheduledAt || a.startTime || a.createdAt || 0
+      const bTime = b.scheduledAt || b.startTime || b.createdAt || 0
+      return bTime - aTime
+    })
   },
 })
 

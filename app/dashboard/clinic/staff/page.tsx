@@ -16,6 +16,7 @@ import {
   TrendingUp,
   BarChart3,
   FileText,
+  UserPlus,
 } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
@@ -131,6 +132,12 @@ export default function StaffManagementPage() {
               open={inviteOpen}
               onOpenChange={setInviteOpen}
               onSuccess={handleRefresh}
+              trigger={
+                <Button>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Invite Physiotherapist
+                </Button>
+              }
             />
           </div>
         </div>

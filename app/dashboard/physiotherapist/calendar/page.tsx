@@ -9,13 +9,16 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
 
-import { EnhancedAppointmentCalendar, type AppointmentData } from '@/components/calendar/EnhancedAppointmentCalendar';
+import { AppointmentCalendar } from '@/components/calendar/AppointmentCalendar';
+import { AppointmentData } from '@/lib/calendar/dayPilotAdapter';
 import { AppointmentModal } from '@/components/calendar/AppointmentModal';
 import { SessionLogModal } from '@/components/dashboard/physiotherapist/SessionLogModal';
+import { TimeConflictModal } from '@/components/appointments/TimeConflictModal';
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, startOfDay, endOfDay } from 'date-fns';
 import { useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel';
+import { toast } from 'sonner';
 
 type AppointmentStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled_by_patient' | 'cancelled_by_therapist' | 'no_show';
 
@@ -66,7 +69,7 @@ export default function CalendarPage() {
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
-  const [selectedAppointment, setSelectedAppointment] = useState<AppointmentWithPatient | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<AppointmentData | null>(null);
   const [isSessionLogModalOpen, setIsSessionLogModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'all'>('all');
@@ -119,23 +122,20 @@ export default function CalendarPage() {
         phoneNumber?: string;
       };
     }>).map((a) => ({
-      _id: a._id,
-      patientId: a.patientId || a.patient?._id || '',
-      physiotherapistId: a.physiotherapistId || (currentUserId as string) || '',
+      _id: a._id as Id<'appointments'>,
+      patientId: (a.patientId || a.patient?._id || '') as Id<'users'>,
+      physiotherapistId: (a.physiotherapistId || (currentUserId as string) || '') as Id<'users'>,
       startTime: a.startTime,
       endTime: a.endTime,
       serviceType: a.serviceType || 'General Consultation',
       status: a.status as AppointmentStatus,
       patient: a.patient
         ? {
-            _id: String(a.patient._id),
             firstName: a.patient.firstName || 'Unknown',
             lastName: a.patient.lastName || 'Patient',
-            email: a.patient.email || 'no-email@example.com',
             imageUrl: a.patient.imageUrl,
-            phoneNumber: a.patient.phoneNumber,
           }
-        : null,
+        : undefined,
     } as AppointmentData));
   }, [appointments, currentUserId]);
 
@@ -147,14 +147,26 @@ export default function CalendarPage() {
     limit: 50,
   });
 
-  // Mutation for updates
-  const updateAppointment = useMutation(api.appointments.updateAppointmentFields)
+  // Mutation for rescheduling (preserves emails and notifications)
+  const rescheduleAppointment = useMutation(api.appointments.rescheduleAppointment)
 
-  const handleAppointmentUpdate = (appointmentId: string, updates: Partial<AppointmentData>) => {
-    updateAppointment({
-      appointmentId: appointmentId as Id<"appointments">,
-      updates: updates as Partial<AppointmentWithPatient>,
-    });
+  const handleAppointmentReschedule = async (appointmentId: string, newStartTime: number, newEndTime: number) => {
+    try {
+      await rescheduleAppointment({
+        appointmentId: appointmentId as Id<"appointments">,
+        newStartTime,
+        newEndTime,
+      });
+    } catch (error) {
+      console.error('Failed to reschedule appointment:', error);
+      throw error; // Re-throw to let DayPilot handler show error toast
+    }
+  }
+  
+  const handleCreateFromSlot = (startTime: number, endTime: number) => {
+    const date = new Date(startTime);
+    setSelectedDate(date);
+    setIsAppointmentModalOpen(true);
   }
 
   // Redirect if not authenticated
@@ -214,7 +226,7 @@ export default function CalendarPage() {
     setIsAppointmentModalOpen(true);
   };
 
-  const handleAppointmentClick = (appointment: AppointmentWithPatient): void => {
+  const handleAppointmentClick = (appointment: AppointmentData): void => {
     setSelectedAppointment(appointment);
     // If appointment is confirmed, allow creating session log
     if (appointment.status === 'confirmed' || appointment.status === 'completed') {
@@ -312,18 +324,52 @@ export default function CalendarPage() {
 
           {/* Calendar Content */}
           <div className="flex-1 p-6 min-h-0">
-            <div className="h-full bg-white rounded-lg border shadow-sm">
-              <EnhancedAppointmentCalendar
+            {/* Date Header */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-600 text-white rounded-lg p-2">
+                    <CalendarIcon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">
+                      {viewMode === 'week' 
+                        ? `Week of ${format(startOfWeek(currentWeek, { weekStartsOn: 1 }), 'MMMM d, yyyy')}` 
+                        : format(currentWeek, 'EEEE, MMMM d, yyyy')}
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      Week {format(currentWeek, 'w')} of {format(currentWeek, 'yyyy')} • {viewMode === 'week' ? 'Weekly' : 'Daily'} View
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <div className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
+                    {calendarAppointments.length} appointments
+                  </div>
+                  <div className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full font-medium">
+                    8 AM - 9 PM
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="h-[calc(100%-80px)] bg-white rounded-lg border shadow-sm">
+              <AppointmentCalendar
                 appointments={calendarAppointments}
-                onCreateAppointment={handleCreateAppointment}
-                onAppointmentClick={handleAppointmentClick}
-                onAppointmentUpdate={handleAppointmentUpdate}
                 viewMode={viewMode}
                 currentDate={currentWeek}
+                onCreateAppointment={handleCreateFromSlot}
+                onAppointmentClick={handleAppointmentClick}
+                onAppointmentReschedule={handleAppointmentReschedule}
+                businessHoursStart={8}
+                businessHoursEnd={21}
+                cellDuration={30}
+                loading={appointmentsLoading}
               />
             </div>
           </div>
         </div>
+      </div>
 
         {/* Sidebar */}
         <div className="w-80 bg-white border-l border-gray-200 flex flex-col flex-shrink-0">
@@ -347,23 +393,11 @@ export default function CalendarPage() {
                 serviceType?: string;
                 status: string;
               }>).map((appointment) => (
-                <div
-                  key={appointment._id}
-                  className="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => handleAppointmentClick({
-                    ...appointment,
-                    patientId: appointment.patientId || appointment.patient?._id || '',
-                    physiotherapistId: appointment.physiotherapistId || (currentUserId as string) || '',
-                    status: appointment.status as AppointmentStatus
-                  } as AppointmentWithPatient)}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900 text-sm">
-                        {appointment.patient 
-                          ? `${appointment.patient.firstName} ${appointment.patient.lastName}`
-                          : 'Unknown Patient'
-                        }
+                <div key={appointment._id} className="p-3 bg-gray-50 rounded-lg">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {appointment.patient?.firstName} {appointment.patient?.lastName || 'Unknown Patient'}
                       </p>
                       <p className="text-xs text-gray-600">{appointment.serviceType}</p>
                     </div>
@@ -438,7 +472,6 @@ export default function CalendarPage() {
               View Reports
             </Button>
           </div>
-                  </div>
         </div>
       </div>
 
@@ -461,7 +494,7 @@ export default function CalendarPage() {
           setSelectedAppointment(null);
         }}
         appointmentId={selectedAppointment?._id as Id<"appointments">}
-        patientId={selectedAppointment?.patient?._id}
+        patientId={undefined}
       />
     </div>
   );

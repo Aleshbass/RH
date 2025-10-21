@@ -7,6 +7,8 @@ import { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { initMonitoring, analytics } from "@/lib/monitoring";
+import NextTopLoader from 'nextjs-toploader';
+import ReactCookiebot from 'react-cookiebot';
 
 export default function Providers({ children }: { children: ReactNode }) {
   // Create a client with enhanced configuration
@@ -53,10 +55,38 @@ export default function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {/* Global progress bar (client-only) */}
+      <NextTopLoader
+        color="#00cd0f"
+        initialPosition={0.08}
+        crawlSpeed={200}
+        height={3}
+        crawl={true}
+        showSpinner={true}
+        easing="ease"
+        speed={200}
+        shadow="0 0 10px #00cd0f, 0 0 5px #00cd0f"
+      />
       {children}
       {process.env.NODE_ENV === 'development' && (
         <ReactQueryDevtools initialIsOpen={false} />
       )}
+
+      {/* Cookie Consent Management (client-only) */}
+      <ReactCookiebot
+        domainGroupId={process.env.NEXT_PUBLIC_COOKIEBOT_DOMAIN_GROUP_ID || '00000000-0000-0000-0000-000000000000'}
+        blockingMode="auto"
+        level="strict"
+        culture="en"
+        framework="TCFv2.2"
+        onLoad={() => {
+          if (typeof window !== 'undefined') {
+            console.info('Cookiebot loaded', { groupId: process.env.NEXT_PUBLIC_COOKIEBOT_DOMAIN_GROUP_ID, hasCookiebot: !!(window as any).Cookiebot })
+          }
+        }}
+        onAccept={() => console.info('Cookie consent accepted')}
+        onDecline={() => console.info('Cookie consent declined')}
+      />
     </QueryClientProvider>
   );
 }

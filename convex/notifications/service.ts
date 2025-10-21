@@ -75,12 +75,13 @@ export const sendNotificationWithFallback = mutation({
     type: v.union(
       v.literal("invitation_created"),
       v.literal("onboarding_complete"),
+      v.literal("patient_onboarded"),
       v.literal("invitation_reminder"),
       v.literal("account_approved"),
       v.literal("account_declined"),
       v.literal("appointment_scheduled"),
       v.literal("appointment_reminder"),
-      v.literal("appointment_canceled"),
+      v.literal("appointment_cancelled"),
       v.literal("message_received"),
       v.literal("treatment_updated"),
       v.literal("report_ready"),
@@ -109,7 +110,7 @@ export const sendNotificationWithFallback = mutation({
   },
   handler: async (ctx: MutationCtx, args: {
     userId: Id<"users">,
-    type: "invitation_created" | "onboarding_complete" | "invitation_reminder" | "account_approved" | "account_declined" | "appointment_scheduled" | "appointment_reminder" | "appointment_canceled" | "message_received" | "treatment_updated" | "report_ready" | "system_maintenance" | "billing_reminder" | "session_notes_added" | "video_call_scheduled" | "video_call_started" | "video_call_reminder" | "video_call_missed" | "video_call_cancelled",
+    type: "invitation_created" | "onboarding_complete" | "patient_onboarded" | "invitation_reminder" | "account_approved" | "account_declined" | "appointment_scheduled" | "appointment_reminder" | "appointment_cancelled" | "message_received" | "treatment_updated" | "report_ready" | "system_maintenance" | "billing_reminder" | "session_notes_added" | "video_call_scheduled" | "video_call_started" | "video_call_reminder" | "video_call_missed" | "video_call_cancelled",
     title: string,
     message: string,
     data?: {
@@ -173,9 +174,9 @@ export const sendNotificationWithFallback = mutation({
       
       // Step 2: If email notification is requested, schedule it using Convex scheduler
       if (sendEmail) {
-        // Schedule email sending as a separate operation
+        // Schedule email sending via the email routing module
         // @ts-ignore - Complex Convex type inference issue
-        await ctx.scheduler.runAfter(0, internal.notifications.processEmailForNotification, {
+        await ctx.scheduler.runAfter(0, internal.notifications.email.processEmailForNotification, {
           notificationId,
           retryOnFailure,
           maxRetries

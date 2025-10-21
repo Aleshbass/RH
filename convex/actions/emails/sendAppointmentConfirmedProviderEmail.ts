@@ -19,6 +19,8 @@ export const sendAppointmentConfirmedProviderEmail = action({
   },
   handler: async (_ctx, args) => {
     try {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
+      const viewLink = args.viewLink.startsWith('http') ? args.viewLink : `${baseUrl}${args.viewLink}`;
       const result = await sendEmail({
         to: args.to,
         subject: args.subjectOverride,
@@ -28,7 +30,7 @@ export const sendAppointmentConfirmedProviderEmail = action({
           physiotherapistName: args.physiotherapistName,
           appointmentDate: args.appointmentDate,
           appointmentTime: args.appointmentTime,
-          viewLink: args.viewLink,
+          viewLink,
         },
       });
       return { success: result.success, messageId: result.messageId, error: result.error };

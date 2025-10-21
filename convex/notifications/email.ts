@@ -108,15 +108,123 @@ export const processEmailForNotification = internalAction({
           emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendDeclineEmail"], {
             userEmail: user.email,
             userName: displayName,
-            reason: notification.payload?.data?.reason || "Application requirements not met",
+            reason: (notification.payload?.data as any)?.metadata?.reason || "Application requirements not met",
             supportLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.rehabifyhealth.com'}/support`,
-            requiredDocuments: user.role === "physiotherapist" 
-              ? ["Valid Professional License", "Certification Documents", "Updated Contact Information"]
-              : user.role === "clinic_owner"
-              ? ["Business Registration", "Professional Credentials", "Clinic Documentation"]
-              : ["Required Documentation"],
+            requiredDocuments: ((notification.payload?.data as any)?.metadata?.requiredDocuments as string[] | undefined) || (
+              user.role === "physiotherapist" 
+                ? ["Valid Professional License", "Certification Documents", "Updated Contact Information"]
+                : user.role === "clinic_owner"
+                ? ["Business Registration", "Professional Credentials", "Clinic Documentation"]
+                : ["Required Documentation"]
+            ),
           });
           break;
+
+        case "onboarding_complete": {
+          // Send a welcome/confirmation email to the user who completed onboarding
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
+          const dashboardPath = user.role === "patient"
+            ? "/dashboard/patient"
+            : user.role === "physiotherapist"
+            ? "/dashboard/physiotherapist"
+            : user.role === "clinic_owner"
+            ? "/dashboard/clinic"
+            : "/dashboard";
+
+          const dashboardLink = `${appUrl}${dashboardPath}`;
+
+          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendPatientOnboardingCompleteEmail"], {
+            patientEmail: user.email,
+            patientName: displayName,
+            dashboardLink,
+          });
+          break;
+        }
+
+        case "appointment_cancelled": {
+          // Optional routing: attempt to use dedicated actions for cancellation emails
+          const md = (notification.payload?.data as any)?.metadata || {};
+          const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com').replace(/\/$/, '');
+
+          // Compute best-effort fields
+          const appointmentDate = md.appointmentDate || Date.now();
+          const appointmentTime = md.appointmentTime || new Date(appointmentDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const cancellationReason = md.cancellationReason;
+
+          if (user.role === "patient") {
+            const physiotherapistName = md.physiotherapistName || "your physiotherapist";
+            const rescheduleLink = md.rescheduleLink || `${appUrl}/dashboard/patient/appointments`;
+
+            emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendAppointmentCanceledPatientEmail"], {
+              to: user.email,
+              patientName: displayName,
+              physiotherapistName,
+              appointmentDate,
+              appointmentTime,
+              cancellationReason,
+              rescheduleLink,
+            });
+          } else if (user.role === "physiotherapist") {
+            const patientName = md.patientName || "your patient";
+            const physiotherapistName = displayName || "Physiotherapist";
+            const viewLink = md.viewLink || `${appUrl}/dashboard/physiotherapist/appointments`;
+
+            emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendAppointmentCanceledProviderEmail"], {
+              to: user.email,
+              patientName,
+              physiotherapistName,
+              appointmentDate,
+              appointmentTime,
+              cancellationReason,
+              viewLink,
+            });
+          } else {
+            // For other roles, skip with a no-op success to avoid noise
+            console.log(`Skipping email for appointment_cancelled for role ${user.role}`);
+            return { success: true, message: "No email routing for this role" } as any;
+          }
+
+          break;
+        }
+
+        case "appointment_reminder": {
+          const md = (notification.payload?.data as any)?.metadata || {};
+          const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com').replace(/\/$/, '');
+
+          const patientName = displayName;
+          const physiotherapistName = md.physiotherapistName || "your physiotherapist";
+          const appointmentDate = md.appointmentDate || Date.now();
+          const appointmentTime = md.appointmentTime || new Date(appointmentDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const clinicName = md.clinicName || "Rehabify Health";
+          const confirmLink = md.confirmLink || `${appUrl}/dashboard/patient/appointments`;
+          const rescheduleLink = md.rescheduleLink || `${appUrl}/dashboard/patient/appointments`;
+
+          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendAppointmentReminderEmail"], {
+            to: user.email,
+            patientName,
+            physiotherapistName,
+            appointmentDate,
+            appointmentTime,
+            clinicName,
+            confirmLink,
+            rescheduleLink,
+          });
+          break;
+        }
+
+        case "patient_onboarded": {
+          const patientName = (notification.payload?.data as any)?.metadata?.patientName || "New patient";
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
+          const patientsLink = `${appUrl}/dashboard/physiotherapist/patients`;
+          // Send email to physiotherapist using dedicated action
+          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendPatientOnboardedProviderEmail"], {
+            providerEmail: user.email,
+            providerName: displayName,
+            patientName,
+            patientsLink,
+          });
+          break;
+        }
 
         // Add other notification types as needed
         default:

@@ -47,6 +47,33 @@ type VideoCall = {
   streamCallId?: string;
 };
 
+// Friendly status labels for UI
+const statusLabel = (status: string) => {
+  switch (status) {
+    case 'active': return 'Active (In Progress)';
+    case 'scheduled': return 'Scheduled';
+    case 'ended':
+    case 'completed': return 'Completed';
+    case 'cancelled': return 'Cancelled';
+    case 'missed': return 'Missed';
+    default: return status;
+  }
+};
+
+// Determine if we're within the pre-join window (default 10 minutes before scheduled time)
+const isWithinJoinWindow = (scheduledAt?: number, minutes = 10) => {
+  if (!scheduledAt) return false;
+  const now = Date.now();
+  const windowMs = minutes * 60 * 1000;
+  return now >= (scheduledAt - windowMs);
+};
+
+// CTA label based on whether we are close to the scheduled time
+const joinCtaLabel = (scheduledAt?: number) => {
+  if (!scheduledAt) return 'Starts at TBD';
+  return isWithinJoinWindow(scheduledAt) ? 'Join Now' : `Starts at ${format(new Date(scheduledAt), 'p')}`;
+};
+
 export default function VideoCallsPage() {
   const router = useRouter();
   const [showNewCall, setShowNewCall] = useState(false);
@@ -64,6 +91,13 @@ export default function VideoCallsPage() {
     scheduledAt: '',
     message: ''
   });
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [confirmData, setConfirmData] = useState<{
+    patientName: string;
+    patientEmail: string;
+    scheduledTime: string;
+    title: string;
+  } | null>(null);
 
   const videoCalls = useQuery(api.videoCalls.getMyVideoCalls, {}) as VideoCall[] | undefined;
   const patients = useQuery(api.patients.getMyPatients, {}) as Patient[] | undefined;
@@ -94,6 +128,24 @@ export default function VideoCallsPage() {
       toast.error('Please fill all required fields');
       return;
     }
+
+    // Show confirmation dialog before creating call
+    const patient = (patients || []).find(p => String(p._id) === String(selectedPatient));
+    setConfirmData({
+      patientName: `${patient?.firstName || ''} ${patient?.lastName || ''}`.trim(),
+      patientEmail: patient?.email || 'No email on file',
+      scheduledTime: format(new Date(scheduledAt), 'PPP p'),
+      title
+    });
+    setShowConfirmDialog(true);
+  };
+
+  const confirmScheduleCall = async () => {
+    if (!selectedPatient || !scheduledAt || !title) {
+      return;
+    }
+
+    setShowConfirmDialog(false);
 
     try {
       // Create the video call with Stream
@@ -256,7 +308,7 @@ export default function VideoCallsPage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <Badge variant={call.status === 'scheduled' ? 'default' : 'secondary'}>
-                  {call.status}
+                  {statusLabel(call.status)}
                 </Badge>
                 <Badge variant="outline">stream</Badge>
               </div>
@@ -289,10 +341,10 @@ export default function VideoCallsPage() {
                   <Button
                     className="flex-1"
                     onClick={() => handleStartCall(call)}
-                    disabled={call.status !== 'scheduled'}
+                    disabled={!isWithinJoinWindow(call.scheduledAt, 10)}
                   >
                     <Video className="h-4 w-4 mr-2" />
-                    Start
+                    {joinCtaLabel(call.scheduledAt)}
                   </Button>
                   <Button
                     variant="outline"
@@ -394,6 +446,49 @@ export default function VideoCallsPage() {
           <Button onClick={handleScheduleCall} className="w-full">
             Schedule Call
           </Button>
+      </DialogContent>
+    </Dialog>
+
+    {/* Confirmation Dialog */}
+    <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Confirm Video Call</DialogTitle>
+          <DialogDescription>
+            Please review the call details before scheduling.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+            <div className="flex justify-between">
+              <span className="font-medium text-gray-700">Patient:</span>
+              <span className="text-gray-900">{confirmData?.patientName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-medium text-gray-700">Email:</span>
+              <span className="text-gray-900">{confirmData?.patientEmail}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-medium text-gray-700">Time:</span>
+              <span className="text-gray-900">{confirmData?.scheduledTime}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-medium text-gray-700">Title:</span>
+              <span className="text-gray-900">{confirmData?.title}</span>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600">
+            An email invitation with the join link will be automatically sent to the patient.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button className="flex-1" onClick={confirmScheduleCall}>
+            Confirm & Schedule
+          </Button>
+          <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+            Cancel
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
 

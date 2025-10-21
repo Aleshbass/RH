@@ -15,12 +15,7 @@ export const createNotificationWithDeduplication = mutation({
     payload: v.object({
       title: v.string(),
       body: v.string(),
-      data: v.optional(v.object({
-        entityId: v.optional(v.string()),
-        entityType: v.optional(v.string()),
-        actionUrl: v.optional(v.string()),
-        metadata: v.optional(v.any()),
-      })),
+      data: v.optional(v.any()), // Accept any data structure for flexibility
       link: v.optional(v.string()),
     }),
     deduplicationWindowMs: v.optional(v.number()),
@@ -375,4 +370,34 @@ export const getMyUnreadCount = query({
       .collect();
     return count.length;
   },
-}); 
+});
+
+/**
+ * Mark all notifications for the current authenticated user as read
+ */
+export const markAllMyAsRead = mutation({
+  args: {},
+  // Returns the number of notifications marked as read
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return 0;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q)=>q.eq("clerkId", identity.subject))
+      .unique();
+    if (!user) return 0;
+
+    const unread = await ctx.db
+      .query("notifications")
+      .withIndex("by_user", (q)=> q.eq("userId", user._id))
+      .filter((q) => q.eq(q.field("readAt"), undefined))
+      .collect();
+
+    for (const n of unread) {
+      await ctx.db.patch(n._id, { readAt: Date.now(), status: "read" });
+    }
+
+    return unread.length;
+  },
+});

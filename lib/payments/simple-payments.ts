@@ -83,11 +83,11 @@ export class SimplePaystackService {
       })
 
       const result = await response.json()
-      log.info('Payment verified', { action: 'payment_verified', metadata: { reference, status: result.data?.status } })
+      console.log('Payment verified:', reference, result.data?.status)
       return result
 
     } catch (error) {
-      log.error('Payment verification failed', { error: error as Error })
+      console.error('Payment verification failed:', error)
       throw error
     }
   }
@@ -103,7 +103,7 @@ export class SimplePaystackService {
 
       return await response.json()
     } catch (error) {
-      log.error('Failed to fetch banks', { error: error as Error })
+      console.error('Failed to fetch banks:', error)
       throw error
     }
   }

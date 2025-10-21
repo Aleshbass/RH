@@ -42,7 +42,7 @@ export default function AddPhysiotherapistDirectForm({ onSuccess, onCancel }: Ad
 
   // Use untyped action to avoid deep type instantiation
   const createClinicStaffInvitation = useActionUntyped(
-            api.actions.clinics.createClinicStaffInvitationWithNotification
+    api.actions.clinics.inviteClinicStaff.createClinicStaffInvitationWithNotification
   )
 
   const {

@@ -51,6 +51,19 @@ export const createAppointment = mutation({
     serviceType: v.string(),
     notesForPatient: v.optional(v.string()),
     notesForTherapist: v.optional(v.string()),
+    // Enhanced appointment features
+    priority: v.optional(v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("urgent")
+    )),
+    appointmentType: v.optional(v.union(
+      v.literal("in-person"),
+      v.literal("telehealth")
+    )),
+    isPinned: v.optional(v.boolean()),
+    colorCode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
@@ -94,7 +107,9 @@ export const createAppointment = mutation({
       .collect();
 
     if (conflictingAppointments.length > 0) {
-      throw new Error("Time slot conflicts with existing appointment");
+      const sorted = conflictingAppointments.sort((a, b) => a.startTime - b.startTime);
+      const details = sorted.slice(0, 3).map((a) => `${new Date(a.startTime).toISOString()} - ${new Date(a.endTime).toISOString()}`).join(", ");
+      throw new Error(`Time slot conflicts with existing appointment: ${details}`);
     }
 
     // Create the appointment
@@ -108,6 +123,11 @@ export const createAppointment = mutation({
       status: "scheduled",
       notesForPatient: args.notesForPatient,
       notesForTherapist: args.notesForTherapist,
+      // Enhanced appointment features
+      priority: args.priority || "low",
+      appointmentType: args.appointmentType || "in-person",
+      isPinned: args.isPinned || false,
+      colorCode: args.colorCode || "#3B82F6", // Default blue
     });
 
     // Create notifications for both patient and therapist
@@ -145,10 +165,10 @@ export const createAppointment = mutation({
       createdAt: Date.now(),
     });
 
-    // Email: confirmation to patient
+    // Email: confirmation to patient (schedule as action)
     const patientEmail = patient?.email as string | undefined;
     if (patientEmail) {
-      await ctx.scheduler.runAfter(0, (api as any)["actions/emails/sendAppointmentScheduledEmail"], {
+      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentScheduledEmail"].sendAppointmentScheduledEmail as any, {
         to: patientEmail,
         patientName,
         physiotherapistName,
@@ -161,17 +181,7 @@ export const createAppointment = mutation({
       });
     }
 
-    // Notification for physiotherapist: schedule Google Calendar event creation
-    await ctx.scheduler.runAfter(0, internal.calendar.nodeActions.createEvent as any, {
-      userId: user._id,
-      appointmentId,
-      summary: `Appointment with ${patientName}`,
-      description: `Service: ${args.serviceType}${clinicName ? ` @ ${clinicName}` : ''}`,
-      startTime: args.startTime,
-      endTime: args.endTime,
-      attendees: patientEmail ? [{ email: patientEmail, displayName: patientName }] : undefined,
-      createMeetLink: false,
-    });
+    // External calendar sync disabled: no Google Calendar events scheduled
 
     await ctx.db.insert("notifications", {
       userId: user._id,
@@ -231,15 +241,56 @@ export const getMyAppointments = query({
     }
 
     const limit = args.limit ?? 100;
-    let appointmentsQuery;
 
     if (user.role === "physiotherapist") {
       // For physiotherapists, get their own appointments
-      appointmentsQuery = ctx.db
+      let appointmentsQuery = ctx.db
         .query("appointments")
         .withIndex("by_physiotherapist_id_and_time", (q) => 
           q.eq("physiotherapistId", user._id)
         );
+
+      // Apply date filters if provided
+      if (args.startDate) {
+        appointmentsQuery = appointmentsQuery.filter((q) => 
+          q.gte(q.field("startTime"), args.startDate!)
+        );
+      }
+
+      if (args.endDate) {
+        appointmentsQuery = appointmentsQuery.filter((q) => 
+          q.lte(q.field("startTime"), args.endDate!)
+        );
+      }
+
+      // Apply status filter if provided
+      if (args.status) {
+        appointmentsQuery = appointmentsQuery.filter((q) => 
+          q.eq(q.field("status"), args.status!)
+        );
+      }
+
+      const appointments = await appointmentsQuery.order("desc").take(limit);
+
+      // Get patient details for each appointment
+      const appointmentsWithPatients = await Promise.all(
+        appointments.map(async (appointment) => {
+          const patient = await ctx.db.get(appointment.patientId);
+          return {
+            ...appointment,
+            patient: patient ? {
+              _id: patient._id,
+              firstName: patient.firstName,
+              lastName: patient.lastName,
+              email: patient.email,
+              imageUrl: patient.imageUrl,
+              phoneNumber: patient.phoneNumber,
+            } : null,
+          };
+        })
+      );
+
+      return appointmentsWithPatients;
     } else if (user.role === "clinic_owner") {
       // For clinic owners, get all appointments for their clinic's physiotherapists
       const clinicPhysiotherapists = await ctx.db
@@ -285,55 +336,6 @@ export const getMyAppointments = query({
       // Get patient details for each appointment
       const appointmentsWithPatients = await Promise.all(
         filteredAppointments.map(async (appointment) => {
-          const patient = await ctx.db.get(appointment.patientId);
-          return {
-            ...appointment,
-            patient: patient ? {
-              _id: patient._id,
-              firstName: patient.firstName,
-              lastName: patient.lastName,
-              email: patient.email,
-              imageUrl: patient.imageUrl,
-              phoneNumber: patient.phoneNumber,
-            } : null,
-          };
-        })
-      );
-
-      return appointmentsWithPatients;
-    } else if (user.role && (user.role as string === "physiotherapist" || user.role as string === "clinic_owner")) {
-      // For physiotherapists, get their own appointments
-      appointmentsQuery = ctx.db
-        .query("appointments")
-        .withIndex("by_physiotherapist_id_and_time", (q) => 
-          q.eq("physiotherapistId", user._id)
-        );
-
-      // Apply date filters if provided
-      if (args.startDate) {
-        appointmentsQuery = appointmentsQuery.filter((q) => 
-          q.gte(q.field("startTime"), args.startDate!)
-        );
-      }
-
-      if (args.endDate) {
-        appointmentsQuery = appointmentsQuery.filter((q) => 
-          q.lte(q.field("startTime"), args.endDate!)
-        );
-      }
-
-      // Apply status filter if provided
-      if (args.status) {
-        appointmentsQuery = appointmentsQuery.filter((q) => 
-          q.eq(q.field("status"), args.status!)
-        );
-      }
-
-      const appointments = await appointmentsQuery.order("asc").take(limit);
-
-      // Get patient details for each appointment
-      const appointmentsWithPatients = await Promise.all(
-        appointments.map(async (appointment) => {
           const patient = await ctx.db.get(appointment.patientId);
           return {
             ...appointment,
@@ -422,7 +424,7 @@ export const updateAppointmentStatus = mutation({
 
     await ctx.db.insert("notifications", {
       userId: appointment.patientId,
-      type: "appointment_canceled", // Generic type for now
+      type: "appointment_cancelled", // Generic type for now
       priority: "medium",
       status: "pending",
       payload: {
@@ -436,6 +438,29 @@ export const updateAppointmentStatus = mutation({
       },
       createdAt: Date.now(),
     });
+
+    // If therapist cancelled, send email to patient
+    if (args.status === "cancelled_by_therapist" && patient?.email) {
+      try {
+        // Determine names and timing for email content
+        const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
+        const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
+        const patientNameForEmail = `${patient.firstName} ${patient.lastName}`;
+        const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+        await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentCanceledPatientEmail"].sendAppointmentCanceledPatientEmail as any, {
+          to: patient.email as string,
+          patientName: patientNameForEmail,
+          physiotherapistName,
+          appointmentDate: appointment.startTime,
+          appointmentTime: appointmentTimeStr,
+          cancellationReason: args.cancellationReason,
+          rescheduleLink: "/dashboard/patient/appointments",
+        });
+      } catch (err) {
+        console.error("Failed to schedule patient cancellation email (provider-initiated):", err);
+      }
+    }
 
     return {
       success: true,
@@ -510,7 +535,7 @@ export const rescheduleAppointment = mutation({
     
     await ctx.db.insert("notifications", {
       userId: appointment.patientId,
-      type: "appointment_scheduled",
+      type: "appointment_rescheduled",
       priority: "medium",
       status: "pending",
       payload: {
@@ -533,7 +558,7 @@ export const rescheduleAppointment = mutation({
     const oldTimeStr = `${new Date(oldStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(oldEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     const newTimeStr = `${new Date(args.newStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(args.newEndTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     if (physioEmail) {
-      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledProviderEmail as any, {
+      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRescheduledProviderEmail"].sendAppointmentRescheduledProviderEmail as any, {
         to: physioEmail,
         patientName: patientNameForEmail,
         physiotherapistName,
@@ -546,6 +571,22 @@ export const rescheduleAppointment = mutation({
       });
     }
 
+    // Email: notify patient about reschedule
+    const patientEmail = patient?.email as string | undefined;
+    if (patientEmail) {
+      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRescheduledPatientEmail"].sendAppointmentRescheduledPatientEmail as any, {
+        to: patientEmail,
+        patientName: patientNameForEmail,
+        physiotherapistName,
+        oldDate: oldStart,
+        oldTime: oldTimeStr,
+        newDate: args.newStartTime,
+        newTime: newTimeStr,
+        viewLink: "/dashboard/patient/appointments",
+        subjectOverride: `Appointment rescheduled: ${physiotherapistName}`,
+      });
+    }
+
     return {
       success: true,
       message: "Appointment rescheduled successfully.",
@@ -554,7 +595,7 @@ export const rescheduleAppointment = mutation({
 });
 
 /**
- * Get today's schedule for physiotherapist
+ * Update appointment status
  */
 export const getTodaysSchedule = query({
   args: {},
@@ -963,7 +1004,9 @@ export const requestAppointment = mutation({
       .collect();
 
     if (conflictingAppointments.length > 0) {
-      throw new Error("Time slot is no longer available. Please select a different time.");
+      const sorted = conflictingAppointments.sort((a, b) => a.startTime - b.startTime);
+      const details = sorted.slice(0, 3).map((a) => `${new Date(a.startTime).toISOString()} - ${new Date(a.endTime).toISOString()}`).join(", ");
+      throw new Error(`Time slot is no longer available. Please select a different time. Conflicts: ${details}`);
     }
 
     // Create the appointment
@@ -1032,7 +1075,7 @@ export const requestAppointment = mutation({
     // Send emails: provider notification and patient confirmation
     const physioEmail = physiotherapist.email as string | undefined;
     if (physioEmail) {
-      await ctx.scheduler.runAfter(0, (api as any)["actions/emails/sendAppointmentRequestedEmail"], {
+      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRequestedEmail"].sendAppointmentRequestedEmail as any, {
         to: physioEmail,
         patientName,
         physiotherapistName,
@@ -1048,7 +1091,7 @@ export const requestAppointment = mutation({
 
     const patientEmail = patient.email as string | undefined;
     if (patientEmail) {
-      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentScheduledEmail as any, {
+      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentScheduledEmail"].sendAppointmentScheduledEmail as any, {
         to: patientEmail,
         patientName,
         physiotherapistName,
@@ -1110,7 +1153,7 @@ export const cancelAppointmentAsPatient = mutation({
     // Create notification for physiotherapist
     await ctx.db.insert("notifications", {
       userId: appointment.physiotherapistId,
-      type: "appointment_canceled",
+      type: "appointment_cancelled",
       priority: "medium",
       status: "pending",
       payload: {
@@ -1130,7 +1173,7 @@ export const cancelAppointmentAsPatient = mutation({
     // Create notification for patient
     await ctx.db.insert("notifications", {
       userId: patient._id,
-      type: "appointment_canceled",
+      type: "appointment_cancelled",
       priority: "medium",
       status: "pending",
       payload: {
@@ -1149,7 +1192,7 @@ export const cancelAppointmentAsPatient = mutation({
     const physioEmail = physiotherapist?.email as string | undefined;
     const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     if (physioEmail) {
-      await ctx.scheduler.runAfter(0, (api as any)["actions/emails/sendAppointmentCanceledProviderEmail"], {
+      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentCanceledProviderEmail"].sendAppointmentCanceledProviderEmail as any, {
         to: physioEmail,
         patientName,
         physiotherapistName,
@@ -1159,6 +1202,24 @@ export const cancelAppointmentAsPatient = mutation({
         viewLink: "/dashboard/physiotherapist/appointments",
         subjectOverride: `Appointment canceled: ${patientName}`,
       });
+    }
+
+    // Email: notify patient (patient-facing) about their cancellation
+    const patientEmail = patient.email as string | undefined;
+    if (patientEmail) {
+      try {
+        await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentCanceledPatientEmail"].sendAppointmentCanceledPatientEmail as any, {
+          to: patientEmail,
+          patientName,
+          physiotherapistName,
+          appointmentDate: appointment.startTime,
+          appointmentTime: appointmentTimeStr,
+          cancellationReason: args.cancellationReason,
+          rescheduleLink: "/dashboard/patient/appointments",
+        });
+      } catch (err) {
+        console.error("Failed to schedule patient cancellation email:", err);
+      }
     }
 
     return {
@@ -1236,7 +1297,7 @@ export const confirmAppointmentAsPatient = mutation({
     const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     if (physioEmail) {
       try {
-        await ctx.scheduler.runAfter(0, (api as any)["actions/emails/sendAppointmentConfirmedProviderEmail"], {
+        await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentConfirmedProviderEmail"].sendAppointmentConfirmedProviderEmail as any, {
           to: physioEmail,
           patientName,
           physiotherapistName,
@@ -1247,7 +1308,7 @@ export const confirmAppointmentAsPatient = mutation({
         });
       } catch (err) {
         // Don't fail the mutation if email scheduling fails; log for diagnostics
-        console.error("Failed to schedule provider confirmation email:", err);
+        console.error("Failed to schedule email delivery for confirmation:", err);
       }
     }
 
@@ -1364,10 +1425,165 @@ export const requestAppointmentReschedule = mutation({
       createdAt: Date.now(),
     });
 
+    // 📧 EMAIL: Notify physiotherapist about patient-initiated reschedule
+    const physioEmail = physiotherapist?.email as string | undefined;
+    if (physioEmail) {
+      const oldStartTime = new Date(appointment.startTime);
+      const oldEndTime = new Date(appointment.endTime);
+      const newStartTime = new Date(args.newStartTime);
+      const newEndTime = new Date(args.newEndTime);
+      
+      const oldTimeStr = `${oldStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${oldEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      const newTimeStr = `${newStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${newEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      
+      try {
+        await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRescheduledProviderEmail"].sendAppointmentRescheduledProviderEmail as any, {
+          to: physioEmail,
+          patientName: patientName,
+          physiotherapistName: physiotherapistName,
+          oldDate: appointment.startTime,
+          oldTime: oldTimeStr,
+          newDate: args.newStartTime,
+          newTime: newTimeStr,
+          reason: args.reason || "No reason provided",
+          appointmentId: args.appointmentId,
+        });
+      } catch (err) {
+        console.error("Failed to send reschedule email to physiotherapist:", err);
+      }
+    }
+
+    // 📧 EMAIL: Notify patient about successful reschedule
+    const patientEmail = patient?.email as string | undefined;
+    if (patientEmail) {
+      const newStartTime = new Date(args.newStartTime);
+      const newEndTime = new Date(args.newEndTime);
+      const newTimeStr = `${newStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${newEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      
+      try {
+        await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRescheduledPatientEmail"].sendAppointmentRescheduledPatientEmail as any, {
+          to: patientEmail,
+          patientName: patientName,
+          physiotherapistName: physiotherapistName,
+          newDate: args.newStartTime,
+          newTime: newTimeStr,
+          appointmentId: args.appointmentId,
+        });
+      } catch (err) {
+        console.error("Failed to send reschedule confirmation email to patient:", err);
+      }
+    }
+    
     return {
       success: true,
-      message: "Appointment rescheduled successfully.",
-    };
+      message: "Appointment rescheduled successfully. Your physiotherapist has been notified.",
+    }
+  },
+})
+
+/**
+ * Get all physiotherapists in a clinic (for multi-provider calendar view)
+ */
+export const getClinicPhysiotherapists = query({
+  args: {
+    clinicId: v.id("clinics"),
+  },
+  handler: async (ctx, args) => {
+    // Get all physiotherapist profiles for this clinic
+    const profiles = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", args.clinicId))
+      .collect();
+
+    // Get user details for each physiotherapist
+    const physiotherapists = await Promise.all(
+      profiles.map(async (profile) => {
+        const user = await ctx.db.get(profile.userId);
+        if (!user) return null;
+
+        return {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          imageUrl: user.imageUrl,
+          specializations: profile.specializations || [],
+        };
+      })
+    );
+
+    return physiotherapists.filter(Boolean);
+  },
+});
+
+/**
+ * Get all appointments for a clinic (multi-provider view)
+ */
+export const getClinicAppointments = query({
+  args: {
+    clinicId: v.id("clinics"),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    status: v.optional(
+      v.union(
+        v.literal("scheduled"),
+        v.literal("confirmed"),
+        v.literal("completed"),
+        v.literal("cancelled_by_patient"),
+        v.literal("cancelled_by_therapist"),
+        v.literal("no_show")
+      )
+    ),
+  },
+  handler: async (ctx, args) => {
+    // Get all physiotherapists in the clinic
+    const profiles = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", args.clinicId))
+      .collect();
+
+    const physiotherapistIds = profiles.map(p => p.userId);
+
+    // Get appointments for all clinic physiotherapists
+    const allAppointments = await Promise.all(
+      physiotherapistIds.map(async (physioId) => {
+        let query = ctx.db
+          .query("appointments")
+          .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", physioId));
+
+        if (args.startDate) {
+          query = query.filter((q) => q.gte(q.field("startTime"), args.startDate!));
+        }
+
+        if (args.endDate) {
+          query = query.filter((q) => q.lte(q.field("startTime"), args.endDate!));
+        }
+
+        if (args.status) {
+          query = query.filter((q) => q.eq(q.field("status"), args.status!));
+        }
+
+        return await query.collect();
+      })
+    );
+
+    // Flatten and add patient details
+    const flatAppointments = allAppointments.flat();
+    const appointmentsWithDetails = await Promise.all(
+      flatAppointments.map(async (appointment) => {
+        const patient = await ctx.db.get(appointment.patientId);
+        return {
+          ...appointment,
+          patient: patient ? {
+            firstName: patient.firstName,
+            lastName: patient.lastName,
+            imageUrl: patient.imageUrl,
+          } : null,
+        };
+      })
+    );
+
+    return appointmentsWithDetails;
   },
 });
 

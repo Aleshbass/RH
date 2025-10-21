@@ -26,7 +26,7 @@ export default function OwnerAnalyticsPage() {
   const analyticsData = useQuery(api.clinics.getOwnerAnalytics)
   const revenueData = useQuery(api.clinics.getClinicRevenue)
   const staffMetrics = useQuery(api.clinics.getStaffMetrics)
-  const appointmentStats = useQuery(api.clinics.getAppointmentStats)
+  const appointmentStats = useQuery(api.clinics.getClinicAppointmentStats)
 
   if (analyticsData === undefined || revenueData === undefined || staffMetrics === undefined || appointmentStats === undefined) {
     return (

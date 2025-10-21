@@ -5,21 +5,36 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Calendar, Clock, User, Wrench, MapPin, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, User, AlertCircle } from 'lucide-react';
 import { format, addMinutes } from 'date-fns';
-import { useResourceManagement } from '@/hooks/useResourceManagement';
 import { toast } from 'sonner';
-import { Id } from '@/convex/_generated/dataModel';
+import { api } from '@/convex/_generated/api';
+import { useQueryUntyped } from '@/lib/convexUntyped';
+
+// Payload expected by onSubmit
+type AppointmentSubmitPayload = {
+  patientId?: string;
+  startTime: number;
+  endTime: number;
+  serviceType: string;
+  notesForTherapist?: string;
+  selectedResources?: string[];
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  appointmentType?: 'in-person' | 'telehealth';
+  isPinned?: boolean;
+  colorCode?: string;
+};
 
 interface AppointmentBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (appointmentData: { patientId?: string; startTime: number; endTime: number; serviceType: string; notesForTherapist?: string; selectedResources?: string[] }) => void;
+  onSubmit: (appointmentData: AppointmentSubmitPayload) => void;
   selectedDate?: Date;
   selectedTime?: string;
   clinicId?: string;
   physiotherapistId: string;
+  existingAppointments?: { startTime: number; endTime: number; status?: string }[];
+  providerScheduleReady?: boolean;
 }
 
 export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = ({
@@ -30,8 +45,11 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
   selectedTime,
   clinicId,
   physiotherapistId,
+  existingAppointments,
+  providerScheduleReady: _scheduleReadyProp,
 }) => {
   const [formData, setFormData] = useState({
+    patientId: '',
     patientName: '',
     patientEmail: '',
     patientPhone: '',
@@ -43,16 +61,13 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
     selectedResources: [] as string[],
   });
 
-  const [showResourceConflicts, setShowResourceConflicts] = useState(false);
-  const [resourceConflicts, setResourceConflicts] = useState<{ _id: string; name: string; type: string; resourceId: string; conflictTime: string; conflictReason?: string }[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Get available resources for the clinic
-  const { getResourcesWithAvailability, checkResourceAvailability } = useResourceManagement();
-  const [clinicResources, setClinicResources] = useState<{ _id: string; name: string; type: string; description?: string; location?: string; capacity?: number; isAvailable: boolean }[]>([]);
-  const [loadingResources, setLoadingResources] = useState(false);
-
-  // Get patients for selection - using available API with simplified typing
-  // Removed unused patients variable
+  type PatientOption = { _id: string; firstName?: string; lastName?: string; email?: string; phoneNumber?: string }
+  const apiRoot = api as unknown as Record<string, unknown>
+  const patientsModule = apiRoot['patients'] as Record<string, unknown>
+  const getMyPatientsQuery = patientsModule['getMyPatients']
+  const patients = useQueryUntyped(getMyPatientsQuery, { limit: 100 }) as PatientOption[] | undefined
 
   useEffect(() => {
     if (selectedDate) {
@@ -63,380 +78,302 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
     }
   }, [selectedDate, selectedTime]);
 
-  // Load resources when modal opens and date/time are set
   useEffect(() => {
-    const loadResourcesWithAvailability = async () => {
-      if (!formData.date || !formData.time) return;
-      if (!clinicId) {
-        setClinicResources([]);
-        return;
+    if (formData.patientId && patients) {
+      const selectedPatient = patients.find(p => p._id === formData.patientId);
+      if (selectedPatient) {
+        setFormData(prev => ({
+          ...prev,
+          patientName: `${selectedPatient.firstName || ''} ${selectedPatient.lastName || ''}`.trim(),
+          patientEmail: selectedPatient.email || '',
+          patientPhone: selectedPatient.phoneNumber || '',
+        }));
       }
-
-      setLoadingResources(true);
-      try {
-        const startTime = new Date(`${formData.date}T${formData.time}`).getTime();
-        const endTime = addMinutes(new Date(startTime), formData.duration).getTime();
-
-        const resourcesWithAvailability = await getResourcesWithAvailability({
-          clinicId: clinicId as Id<'clinics'>,
-          startTime,
-          endTime,
-        });
-
-        setClinicResources(resourcesWithAvailability || []);
-      } catch (error) {
-        console.error('Error loading resources:', error);
-        setClinicResources([]);
-      } finally {
-        setLoadingResources(false);
-      }
-    };
-
-    if (isOpen && formData.date && formData.time) {
-      loadResourcesWithAvailability();
     }
-  }, [isOpen, formData.date, formData.time, getResourcesWithAvailability, formData.duration, clinicId]);
+  }, [formData.patientId, patients]);
 
-  // Check resource availability when selected resources change
-  useEffect(() => {
-    const checkAvailability = async () => {
-      if (!formData.date || !formData.time || formData.selectedResources.length === 0) return;
-
-      const startTime: number = new Date(`${formData.date}T${formData.time}`).getTime();
-      const endTime: number = addMinutes(new Date(startTime), formData.duration).getTime();
-
-      const conflicts: { _id: string; name: string; type: string; resourceId: string; conflictTime: string; conflictReason?: string }[] = [];
-
-      for (const resourceId of formData.selectedResources) {
-        try {
-          const isAvailable = await checkResourceAvailability({
-            resourceId: resourceId as Id<'resources'>,
-            startTime,
-            endTime,
-          });
-
-          if (!isAvailable) {
-            const resource = clinicResources.find((r: { _id: string; name: string; type: string }) => r._id === resourceId);
-            if (resource) {
-              conflicts.push({
-                _id: resource._id,
-                name: resource.name,
-                type: resource.type,
-                resourceId: resourceId,
-                conflictTime: format(new Date(startTime), 'HH:mm'),
-                conflictReason: 'Resource unavailable at this time'
-              });
-            }
-          }
-        } catch (error) {
-          console.error('Error checking resource availability:', error);
-        }
-      }
-
-      setResourceConflicts(conflicts);
-      setShowResourceConflicts(conflicts.length > 0);
-    };
-
-    checkAvailability();
-  }, [formData.selectedResources, formData.date, formData.time, formData.duration, clinicResources, checkResourceAvailability, clinicId]);
-
-  const handleResourceToggle = (resourceId: string) => {
-    setFormData(prev => ({
-      ...prev,
-      selectedResources: prev.selectedResources.includes(resourceId)
-        ? prev.selectedResources.filter(id => id !== resourceId)
-        : [...prev.selectedResources, resourceId]
-    }));
-  };
+  // Compute provider time conflicts based on existing appointments
+  const startTimeMs = formData.date && formData.time ? new Date(`${formData.date}T${formData.time}`).getTime() : null;
+  const endTimeMs = startTimeMs ? addMinutes(new Date(startTimeMs), formData.duration).getTime() : null;
+  const providerConflict = !!(startTimeMs && endTimeMs && (existingAppointments || []).some((a: any) => {
+    if (a.status === 'cancelled_by_patient' || a.status === 'cancelled_by_therapist') return false;
+    return (
+      (startTimeMs >= a.startTime && startTimeMs < a.endTime) ||
+      (endTimeMs > a.startTime && endTimeMs <= a.endTime) ||
+      (startTimeMs <= a.startTime && endTimeMs >= a.endTime)
+    );
+  }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isSubmitting) return; // prevent double submit
 
     if (!formData.date || !formData.time) {
       toast.error('Please select date and time');
       return;
     }
 
-    if (resourceConflicts.length > 0) {
-      toast.error('Please resolve resource conflicts before booking');
+    if (!formData.patientId) {
+      toast.error('Please select a patient');
       return;
     }
+
+    // Proceed even if provider schedule hasn't fully loaded; server-side will validate conflicts.
 
     const startTime = new Date(`${formData.date}T${formData.time}`).getTime();
     const endTime = addMinutes(new Date(startTime), formData.duration).getTime();
 
-    const appointmentData = {
-      patientName: formData.patientName,
-      patientEmail: formData.patientEmail,
-      patientPhone: formData.patientPhone,
+    if (providerConflict) {
+      toast.error('Selected time conflicts with an existing appointment. Please choose a different time.');
+      return;
+    }
+
+    // Note: resource conflicts feature removed in this design iteration
+
+    const appointmentData: AppointmentSubmitPayload = {
+      patientId: formData.patientId,
       serviceType: formData.serviceType,
       startTime,
       endTime,
       notesForTherapist: formData.notes,
       selectedResources: formData.selectedResources,
-      clinicId,
-      physiotherapistId,
+      priority: 'low' as 'low',
+      appointmentType: 'telehealth' as 'telehealth',
+      isPinned: false,
     };
 
     try {
+      setIsSubmitting(true);
       await onSubmit(appointmentData);
-      onClose();
-      toast.success('Appointment booked successfully');
+      // Success toast is handled by parent onSubmit caller to avoid duplicates
     } catch (error) {
-      toast.error('Failed to book appointment');
+      // Error toast is handled by parent; keep this as a fallback only
       console.error('Booking error:', error);
-    }
-  };
-
-  const getResourceIcon = (type: string) => {
-    switch (type) {
-      case 'equipment': return <Wrench className="h-4 w-4" />;
-      case 'room': return <MapPin className="h-4 w-4" />;
-      case 'staff': return <User className="h-4 w-4" />;
-      default: return <MapPin className="h-4 w-4" />;
-    }
-  };
-
-  const getResourceTypeColor = (type: string) => {
-    switch (type) {
-      case 'equipment': return 'bg-blue-100 text-blue-800';
-      case 'room': return 'bg-green-100 text-green-800';
-      case 'staff': return 'bg-purple-100 text-purple-800';
-      case 'vehicle': return 'bg-orange-100 text-orange-800';
-      default: return 'bg-gray-100 text-gray-800';
+      toast.error('Failed to book appointment');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Book New Appointment
-          </DialogTitle>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Patient Information */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Patient Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="patientName">Patient Name *</Label>
-                <Input
-                  id="patientName"
-                  value={formData.patientName}
-                  onChange={(e) => setFormData(prev => ({ ...prev, patientName: e.target.value }))}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="patientEmail">Email</Label>
-                <Input
-                  id="patientEmail"
-                  type="email"
-                  value={formData.patientEmail}
-                  onChange={(e) => setFormData(prev => ({ ...prev, patientEmail: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="patientPhone">Phone</Label>
-                <Input
-                  id="patientPhone"
-                  value={formData.patientPhone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, patientPhone: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="serviceType">Service Type *</Label>
-                <Select value={formData.serviceType} onValueChange={(value) => setFormData(prev => ({ ...prev, serviceType: value }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select service" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="physiotherapy">Physiotherapy</SelectItem>
-                    <SelectItem value="massage">Massage Therapy</SelectItem>
-                    <SelectItem value="consultation">Consultation</SelectItem>
-                    <SelectItem value="followup">Follow-up</SelectItem>
-                    <SelectItem value="assessment">Assessment</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="w-full max-w-md sm:max-w-lg md:max-w-2xl lg:max-w-6xl max-h-[90vh] !p-0 !gap-0 rounded-xl overflow-hidden block">
+        {/* Two-column layout: Form on left, Image on right (desktop only) */}
+        <div className="flex flex-col lg:flex-row w-full h-full max-h-[90vh]">
+          
+          {/* LEFT COLUMN - Form */}
+          <div className="flex-1 flex flex-col overflow-hidden lg:w-3/5">
+            {/* Modern Header */}
+            <div className="bg-gradient-to-r from-brand to-brand-dark px-6 py-5 shrink-0">
+              <DialogTitle className="flex items-center gap-3 text-white text-xl font-bold m-0 p-0">
+                <div className="bg-white/20 p-2 rounded-lg">
+                  <Calendar className="h-6 w-6 text-white" />
+                </div>
+                Book Telehealth Appointment
+              </DialogTitle>
+              <p className="text-white/90 text-sm mt-2">Schedule a new appointment with your patient</p>
             </div>
-          </div>
 
-          {/* Appointment Details */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Appointment Details</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="date">Date *</Label>
-                <Input
-                  id="date"
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="time">Time *</Label>
-                <Input
-                  id="time"
-                  type="time"
-                  value={formData.time}
-                  onChange={(e) => setFormData(prev => ({ ...prev, time: e.target.value }))}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="duration">Duration (minutes)</Label>
-                <Select value={formData.duration.toString()} onValueChange={(value) => setFormData(prev => ({ ...prev, duration: parseInt(value) }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="30">30 minutes</SelectItem>
-                    <SelectItem value="45">45 minutes</SelectItem>
-                    <SelectItem value="60">60 minutes</SelectItem>
-                    <SelectItem value="90">90 minutes</SelectItem>
-                    <SelectItem value="120">120 minutes</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          {/* Resource Selection */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Required Resources</h3>
-            {loadingResources ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <span className="ml-2 text-gray-600">Loading resources...</span>
-              </div>
-            ) : clinicResources.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {clinicResources.map((resource) => {
-                  const isSelected = formData.selectedResources.includes(resource._id);
-                  const isAvailable = resource.isAvailable;
-                  
-                  return (
-                    <div
-                      key={resource._id}
-                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                        isSelected
-                          ? 'border-blue-500 bg-blue-50'
-                          : isAvailable
-                          ? 'border-gray-200 hover:border-gray-300'
-                          : 'border-red-200 bg-red-50 opacity-75'
-                      }`}
-                      onClick={() => isAvailable && handleResourceToggle(resource._id)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {getResourceIcon(resource.type)}
-                          <span className={`font-medium ${
-                            isAvailable ? 'text-gray-900' : 'text-red-600'
-                          }`}>
-                            {resource.name}
-                          </span>
-                          {!isAvailable && (
-                            <Badge variant="destructive" className="text-xs">
-                              Unavailable
-                            </Badge>
-                          )}
-                          {isAvailable && (
-                            <Badge variant="outline" className="text-xs text-green-600 border-green-300">
-                              Available
-                            </Badge>
-                          )}
-                        </div>
-                        <Badge className={getResourceTypeColor(resource.type)}>
-                          {resource.type}
-                        </Badge>
-                      </div>
-                      {resource.description && (
-                        <p className="text-sm text-gray-600 mt-1">{resource.description}</p>
-                      )}
-                      {resource.location && (
-                        <p className="text-xs text-gray-500 mt-1">📍 {resource.location}</p>
-                      )}
-                      {resource.capacity && (
-                        <p className="text-xs text-gray-500 mt-1">👥 Capacity: {resource.capacity}</p>
-                      )}
+            {/* Scrollable Content Area */}
+            <div className="overflow-y-auto flex-1 bg-gray-50 px-6 py-6">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-3">
+                    <div className="bg-brand/10 p-2 rounded-lg">
+                      <User className="h-5 w-5 text-brand" />
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <p className="text-gray-500 mb-2">No resources available for the selected time.</p>
-                <p className="text-sm text-gray-400">Try selecting a different date or time.</p>
-              </div>
-            )}
-          </div>
+                    Patient Information
+                  </h3>
+                  <div className="space-y-2">
+                    <Label htmlFor="patientSelect">Patient *</Label>
+                    <Select value={formData.patientId} onValueChange={(value) => setFormData(prev => ({ ...prev, patientId: value }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select existing patient" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(patients || []).map((p) => (
+                          <SelectItem key={p._id} value={p._id}>
+                            {(p.firstName || '') + ' ' + (p.lastName || '')} {p.email ? `(${p.email})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-          {/* Resource Conflicts Warning */}
-          {showResourceConflicts && resourceConflicts.length > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-red-800 mb-2">
-                <AlertCircle className="h-5 w-5" />
-                <h4 className="font-semibold">Resource Conflicts Detected</h4>
-              </div>
-              <p className="text-red-700 mb-3">
-                The following resources are not available at the selected time:
-              </p>
-              <div className="space-y-2">
-                {resourceConflicts.map((resource) => (
-                  <div key={resource._id} className="flex items-center justify-between p-2 bg-red-50 border border-red-200 rounded">
-                    <div className="flex items-center gap-2 text-red-700">
-                      {getResourceIcon(resource.type)}
-                      <span className="font-medium">{resource.name}</span>
-                      <Badge variant="outline" className="text-red-600 border-red-300">
-                        {resource.type}
-                      </Badge>
+                  <div className="space-y-2">
+                    <Label htmlFor="serviceType">Service Type *</Label>
+                    <Select value={formData.serviceType} onValueChange={(value) => setFormData(prev => ({ ...prev, serviceType: value }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select service" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="physiotherapy">Physiotherapy</SelectItem>
+                        <SelectItem value="massage">Massage Therapy</SelectItem>
+                        <SelectItem value="consultation">Consultation</SelectItem>
+                        <SelectItem value="followup">Follow-up</SelectItem>
+                        <SelectItem value="assessment">Assessment</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+                  <h3 className="text-lg font-bold text-gray-900 flex items-center gap-3">
+                    <div className="bg-brand/10 p-2 rounded-lg">
+                      <Clock className="h-5 w-5 text-brand" />
                     </div>
-                    <div className="text-xs text-red-600">
-                      {resource.conflictReason || 'Conflict detected'}
+                    Appointment Details
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="date">Date *</Label>
+                      <Input
+                        id="date"
+                        type="date"
+                        value={formData.date}
+                        onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="time">Time *</Label>
+                      <Input
+                        id="time"
+                        type="time"
+                        value={formData.time}
+                        onChange={(e) => setFormData(prev => ({ ...prev, time: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="duration">Duration (minutes)</Label>
+                      <Select value={formData.duration.toString()} onValueChange={(value) => setFormData(prev => ({ ...prev, duration: parseInt(value) }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="30">30 minutes</SelectItem>
+                          <SelectItem value="45">45 minutes</SelectItem>
+                          <SelectItem value="60">60 minutes</SelectItem>
+                          <SelectItem value="90">90 minutes</SelectItem>
+                          <SelectItem value="120">120 minutes</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
-                ))}
-              </div>
-              <p className="text-red-600 text-sm mt-3">
-                Please select a different time or remove conflicting resources.
-              </p>
+
+                  {providerConflict && (
+                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-amber-700 mt-0.5" />
+                      <div className="text-sm text-amber-800">
+                        <p className="font-medium">Time conflict with an existing appointment.</p>
+                        <p>Pick a different time or duration.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
+                  <Label htmlFor="notes" className="text-gray-900 font-semibold text-base">Notes for Therapist</Label>
+                  <Textarea
+                    id="notes"
+                    value={formData.notes}
+                    onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="Any additional notes or special requirements..."
+                    rows={3}
+                    className="mt-2 focus:border-brand focus:ring-brand border-gray-300"
+                  />
+                </div>
+
+                {/* Action Bar - scrolls with content, not fixed */}
+                <div className="-mx-6 mt-6 px-6 pt-4 pb-4 bg-white border-t border-gray-100 flex flex-col sm:flex-row justify-end gap-3">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={onClose} 
+                    className="w-full sm:w-auto border-gray-300 hover:bg-gray-50 text-gray-700 font-medium cursor-pointer"
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    disabled={providerConflict || !formData.patientId || !formData.date || !formData.time || isSubmitting}
+                    className="flex items-center justify-center gap-2 bg-brand hover:bg-brand-dark text-brand-dark font-semibold px-6 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <Clock className="h-5 w-5" />
+                    {isSubmitting ? 'Booking…' : 'Book Appointment'}
+                  </Button>
+                </div>
+              </form>
             </div>
-          )}
-
-          {/* Notes */}
-          <div>
-            <Label htmlFor="notes">Notes for Therapist</Label>
-            <Textarea
-              id="notes"
-              value={formData.notes}
-              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-              placeholder="Any additional notes or special requirements..."
-              rows={3}
-            />
           </div>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button 
-              type="submit" 
-              disabled={resourceConflicts.length > 0}
-              className="flex items-center gap-2"
-            >
-              <Clock className="h-4 w-4" />
-              Book Appointment
-            </Button>
+          {/* RIGHT COLUMN - Image (Desktop Only) */}
+          <div className="hidden lg:block lg:w-2/5 relative bg-gradient-to-br from-brand to-brand-dark overflow-hidden">
+            {/* Image with overlay */}
+            <div className="absolute inset-0">
+              <img 
+                src="/logos/images/IMG_6328_a4bxtu.webp" 
+                alt="Professional healthcare" 
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-br from-brand/80 to-brand-dark/80"></div>
+            </div>
+            
+            <div className="relative h-full flex flex-col justify-between p-8 text-white">
+              {/* Top Section - Decorative */}
+              <div className="space-y-6">
+                <div className="inline-block bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full text-sm font-medium">
+                  ⚡ Quick & Easy Booking
+                </div>
+                <h2 className="text-3xl font-bold leading-tight tracking-tight text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">
+                  Seamless Appointment Scheduling
+                </h2>
+                <p className="text-white/95 text-lg leading-relaxed drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">
+                  Book appointments with your patients in seconds. Our streamlined process ensures efficient practice management.
+                </p>
+              </div>
+
+              {/* Middle Section - Features */}
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="bg-white/20 p-2 rounded-lg mt-1">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">Smart Scheduling</h4>
+                    <p className="text-sm text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">Automatic conflict detection and resource management</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="bg-white/20 p-2 rounded-lg mt-1">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">Patient Management</h4>
+                    <p className="text-sm text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">Access patient info and history instantly</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="bg-white/20 p-2 rounded-lg mt-1">
+                    <Clock className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">Real-Time Updates</h4>
+                    <p className="text-sm text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">Instant notifications and calendar sync</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom - Logo or branding space */}
+              <div className="flex items-center justify-center opacity-30">
+                <Calendar className="h-20 w-20" />
+              </div>
+            </div>
           </div>
-        </form>
+
+        </div>
       </DialogContent>
     </Dialog>
   );

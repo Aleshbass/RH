@@ -3,11 +3,27 @@
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { DashboardSidebar } from './DashboardSidebar'
-import { LayoutDashboard, Calendar, Clock, Users, FileText, Video, MessageSquare, CreditCard, Settings, User, Activity } from 'lucide-react'
+import { 
+  LayoutDashboard, 
+  Calendar, 
+  Clock, 
+  Users, 
+  FileText, 
+  MessageSquare, 
+  CreditCard, 
+  Settings, 
+  Activity,
+  TrendingUp,
+  Shield,
+  UserCheck,
+  Video,
+  Search
+} from 'lucide-react'
 
 // Navigation configuration for physiotherapists
 const physiotherapistNavItems = [
   { title: 'Dashboard', href: '/dashboard/physiotherapist', icon: LayoutDashboard, roles: ['physiotherapist'] },
+  { title: 'Marketplace Profile', href: '/dashboard/physiotherapist/marketplace', icon: Search, roles: ['physiotherapist'] },
   { title: 'Appointments', href: '/dashboard/physiotherapist/appointments', icon: Calendar, roles: ['physiotherapist'] },
   { title: 'Calendar', href: '/dashboard/physiotherapist/calendar', icon: Clock, roles: ['physiotherapist'] },
   { title: 'Patients', href: '/dashboard/physiotherapist/patients', icon: Users, roles: ['physiotherapist'] },
@@ -22,6 +38,7 @@ const physiotherapistNavItems = [
 // Navigation configuration for patients
 const patientNavItems = [
   { title: 'Dashboard', href: '/dashboard/patient', icon: LayoutDashboard, roles: ['patient'] },
+  { title: 'Find a Physio', href: '/find-a-physio', icon: Search, roles: ['patient'] },
   { title: 'Appointments', href: '/dashboard/patient/appointments', icon: Calendar, roles: ['patient'] },
   { title: 'Treatment Plans', href: '/dashboard/patient/treatment-plans', icon: Activity, roles: ['patient'] },
   { title: 'Video Calls', href: '/dashboard/patient/video-calls', icon: Video, roles: ['patient'] },
@@ -32,16 +49,62 @@ const patientNavItems = [
 ]
 
 // Navigation configuration for clinic owners
+// Focus: Business management, staff oversight, analytics, and compliance
 const clinicOwnerNavItems = [
-  { title: 'Dashboard', href: '/dashboard/clinic', icon: LayoutDashboard, roles: ['clinic_owner'] },
-  { title: 'Staff', href: '/dashboard/clinic/staff', icon: Users, roles: ['clinic_owner'] },
-  { title: 'Patients', href: '/dashboard/clinic/patients', icon: Users, roles: ['clinic_owner'] },
-  { title: 'Appointments', href: '/dashboard/clinic/appointments', icon: Calendar, roles: ['clinic_owner'] },
-  { title: 'Video Calls', href: '/dashboard/clinic/video-calls', icon: Video, roles: ['clinic_owner'] },
-  { title: 'Billing', href: '/dashboard/clinic/billing', icon: CreditCard, roles: ['clinic_owner'] },
-  { title: 'Reports', href: '/dashboard/clinic/reports', icon: FileText, roles: ['clinic_owner'] },
-  { title: 'Settings', href: '/dashboard/clinic/settings', icon: Settings, roles: ['clinic_owner'] },
-  { title: 'Profile', href: '/dashboard/profile', icon: User, roles: ['clinic_owner'] },
+  { 
+    title: 'Dashboard', 
+    href: '/dashboard/clinic', 
+    icon: LayoutDashboard, 
+    roles: ['clinic_owner'] 
+  },
+  { 
+    title: 'Staff Management', 
+    href: '/dashboard/clinic/staff', 
+    icon: Users, 
+    roles: ['clinic_owner'] 
+  },
+  { 
+    title: 'Analytics', 
+    href: '/dashboard/clinic/analytics', 
+    icon: TrendingUp, 
+    roles: ['clinic_owner'] 
+  },
+  { 
+    title: 'Patients', 
+    href: '/dashboard/clinic/patients', 
+    icon: UserCheck, 
+    roles: ['clinic_owner'] 
+  },
+  { 
+    title: 'Appointments', 
+    href: '/dashboard/clinic/appointments', 
+    icon: Calendar, 
+    roles: ['clinic_owner'] 
+  },
+  { 
+    title: 'Billing', 
+    href: '/dashboard/clinic/billing', 
+    icon: CreditCard, 
+    roles: ['clinic_owner'] 
+  },
+  { 
+    title: 'Reports', 
+    href: '/dashboard/clinic/reports', 
+    icon: FileText, 
+    roles: ['clinic_owner'] 
+  },
+  { 
+    title: 'Audit Logs', 
+    href: '/dashboard/clinic/audit', 
+    icon: Shield, 
+    roles: ['clinic_owner'] 
+  },
+  { 
+    title: 'Settings', 
+    href: '/dashboard/clinic/settings', 
+    icon: Settings, 
+    roles: ['clinic_owner'] 
+  },
 ]
 
 

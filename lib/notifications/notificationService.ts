@@ -12,7 +12,7 @@ export type NotificationType =
   | 'account_declined'
   | 'appointment_scheduled'
   | 'appointment_reminder'
-  | 'appointment_canceled'
+  | 'appointment_cancelled'
   | 'new_message'
   | 'exercise_assigned'
   | 'patient_progress_update'

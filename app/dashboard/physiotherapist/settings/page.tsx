@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Loader2, User, Bell, Shield, Palette, Calendar, Check } from 'lucide-react';
+import { Loader2, User, Bell, Shield, Palette, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CalendarIntegration } from '@/components/calendar/CalendarIntegration';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ProfessionalProfileCard } from '@/components/dashboard/physiotherapist/ProfessionalProfileCard';
 
 export default function PhysiotherapistSettingsPage() {
@@ -282,63 +282,15 @@ export default function PhysiotherapistSettingsPage() {
                 Calendar Integration
               </CardTitle>
               <CardDescription>
-                Connect your Google Calendar to sync appointments and enable Google Meet links
+                External calendar integrations are disabled. Your Rehabify calendar works independently.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <CalendarIntegration userId={currentUser?._id} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Connected Calendars</CardTitle>
-              <CardDescription>
-                Your Google Calendar accounts and sync status
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <Check className="h-5 w-5 text-green-600 mt-0.5" />
-                  <div>
-                    <p className="font-medium">Automatic Appointment Sync</p>
-                    <p className="text-sm text-muted-foreground">
-                      New appointments automatically sync to your Google Calendar
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start gap-3">
-                  <Check className="h-5 w-5 text-green-600 mt-0.5" />
-                  <div>
-                    <p className="font-medium">Google Meet Integration</p>
-                    <p className="text-sm text-muted-foreground">
-                      Generate Google Meet links for telehealth appointments
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <Check className="h-5 w-5 text-green-600 mt-0.5" />
-                  <div>
-                    <p className="font-medium">Patient Invitations</p>
-                    <p className="text-sm text-muted-foreground">
-                      Patients receive calendar invites with all appointment details
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <Check className="h-5 w-5 text-green-600 mt-0.5" />
-                  <div>
-                    <p className="font-medium">Real-time Sync</p>
-                    <p className="text-sm text-muted-foreground">
-                      Changes to appointments sync instantly across all devices
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <Alert>
+                <AlertDescription>
+                  Calendar integrations (Google/Outlook) are turned off. Continue to manage appointments directly in the Rehabify calendar.
+                </AlertDescription>
+              </Alert>
             </CardContent>
           </Card>
         </TabsContent>

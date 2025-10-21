@@ -103,6 +103,33 @@ export default function PatientVideoCallsPage() {
     }
   };
 
+  const statusLabel = (status: string) => {
+    switch (status) {
+      case 'active': return 'Active (In Progress)';
+      case 'scheduled': return 'Scheduled';
+      case 'ended': return 'Completed';
+      case 'cancelled': return 'Cancelled';
+      case 'missed': return 'Missed';
+      default: return status;
+    }
+  };
+
+  // Determine if we're within the pre-join window (default: 10 minutes before start)
+  const isWithinJoinWindow = (scheduledAt?: number, minutes = 10) => {
+    if (!scheduledAt) return false;
+    const now = Date.now();
+    const windowMs = minutes * 60 * 1000;
+    return now >= (scheduledAt - windowMs);
+  };
+
+  // Generate CTA label based on schedule time
+  const joinCtaLabel = (scheduledAt?: number) => {
+    if (!scheduledAt) return 'Starts at TBD';
+    return isWithinJoinWindow(scheduledAt) 
+      ? 'Join Now' 
+      : `Starts at ${format(new Date(scheduledAt), 'p')}`;
+  };
+
   if (showVideoManager && selectedCall) {
     return (
       <StreamVideoCallManager
@@ -274,7 +301,7 @@ export default function PatientVideoCallsPage() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <Badge className={getStatusColor(call.status)}>
-                      {call.status}
+                      {statusLabel(call.status)}
                     </Badge>
                     <Badge className={getTypeColor(call.callType)}>
                       {call.callType}
@@ -316,10 +343,10 @@ export default function PatientVideoCallsPage() {
                       <Button
                         className="flex-1"
                         onClick={() => handleJoinCall(call)}
-                        disabled={call.status !== 'scheduled'}
+                        disabled={!isWithinJoinWindow(call.scheduledAt, 10)}
                       >
                         <Video className="h-4 w-4 mr-2" />
-                        Prepare to Join
+                        {joinCtaLabel(call.scheduledAt)}
                       </Button>
                     </div>
                   </div>
@@ -340,7 +367,7 @@ export default function PatientVideoCallsPage() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <Badge className={getStatusColor(call.status)}>
-                      {call.status}
+                      {statusLabel(call.status)}
                     </Badge>
                     <Badge className={getTypeColor(call.callType)}>
                       {call.callType}

@@ -20,7 +20,9 @@ export default function ConditionalLayout({ children }: ConditionalLayoutProps) 
     pathname.startsWith('/onboarding-complete')
   // Hide global header/footer on payment routes (e.g., /payment/callback)
   const isPaymentRoute = pathname.startsWith('/payment')
-  const showHeaderFooter = !isDashboardRoute && !isOnboardingRoute && !isPaymentRoute
+  // Hide header/footer on booking confirmation page to prevent overlap
+  const isBookingConfirmationRoute = pathname.startsWith('/marketplace/booking-confirmation')
+  const showHeaderFooter = !isDashboardRoute && !isOnboardingRoute && !isPaymentRoute && !isBookingConfirmationRoute
   
   return (
     <>

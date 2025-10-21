@@ -9,17 +9,19 @@ import { useAuth } from '@clerk/nextjs';
 import { useSearchParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Calendar, Filter, Plus, Repeat, Settings } from 'lucide-react';
+import { Calendar, Filter, Plus, Repeat, Settings, Pin, Video, Home, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { EnhancedAppointmentCalendar } from '@/components/calendar/EnhancedAppointmentCalendar';
+import { AppointmentCalendar } from '@/components/calendar/AppointmentCalendar';
+import { AppointmentData } from '@/lib/calendar/dayPilotAdapter';
 import { AppointmentBookingModal } from '@/components/appointments/AppointmentBookingModal';
 import { RecurringAppointmentModal } from '@/components/appointments/RecurringAppointmentModal';
 import { RecurringSeriesManager } from '@/components/appointments/RecurringSeriesManager';
 import { ResourceDashboard } from '@/components/resources/ResourceDashboard';
+import { TimeConflictModal } from '@/components/appointments/TimeConflictModal';
 import { toast } from 'sonner';
 import { Id } from '@/convex/_generated/dataModel';
 
@@ -40,6 +42,11 @@ type AppointmentLike = {
   serviceType?: string;
   status?: string;
   notesForTherapist?: string;
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  appointmentType?: 'in-person' | 'telehealth';
+  isPinned?: boolean;
+  isRecurring?: boolean;
+  colorCode?: string;
 };
 
 // Removed unused getStatusColor function
@@ -75,30 +82,57 @@ export default function AppointmentsPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
   const [activeTab, setActiveTab] = useState<'appointments' | 'recurring' | 'resources'>('appointments');
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
   const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [isCreating, setIsCreating] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  
+  // Time conflict modal state
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [conflictData, setConflictData] = useState<{
+    requestedStartTime: number;
+    requestedEndTime: number;
+    conflictingAppointment?: any;
+  } | null>(null);
+
+  // Day window for conflict checks
+  const dayStartMs = selectedDate
+    ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate()).getTime()
+    : undefined;
+  const dayEndMs = dayStartMs ? dayStartMs + (24 * 60 * 60 * 1000) - 1 : undefined;
+  // Broaden conflict window to catch cross-midnight overlaps
+  const conflictStartMs = dayStartMs ? dayStartMs - (24 * 60 * 60 * 1000) : undefined;
+  const conflictEndMs = dayEndMs ? dayEndMs + (24 * 60 * 60 * 1000) : undefined;
 
   // Get current user
   type UserLike = { _id: string; clinicId?: string; role?: string };
 const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined;
   const preselectedPatientId = (searchParams?.get('patient') || '').trim();
 
-  // Get appointments with optional filters
+  // Get appointments
   const appointments = useQuery(api.appointments.getMyAppointments, {
     startDate: undefined,
     endDate: undefined,
-    status: statusFilter === 'all' ? undefined : statusFilter,
-    limit: 100,
+    status: undefined,
+    // Change the limit slightly when reloadKey changes to force a refetch/resubscribe
+    limit: 100 + (reloadKey % 3),
+  });
+
+  // Fetch appointments in a broadened window (unfiltered by status) for conflict checks
+  const appointmentsForConflicts = useQuery(api.appointments.getMyAppointments, {
+    startDate: conflictStartMs,
+    endDate: conflictEndMs,
+    status: undefined,
+    limit: 500,
   });
 
   // Convex mutations - MUST be called before any conditional returns
   const createAppointment = useMutation(api.appointments.createAppointment);
   const bookResource = useMutation(api.resourceManagement.bookResource);
-  const updateAppointmentStatus = useMutation(api.appointments.updateAppointmentStatus);
+  const rescheduleAppointment = useMutation(api.appointments.rescheduleAppointment);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -126,15 +160,29 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
     );
   }
 
-  // Filter appointments based on search term
+  // Simple filtering logic - only search
   const filteredAppointments = (appointments as AppointmentLike[])?.filter((appointment: AppointmentLike) => {
-    if (!searchTerm) return true;
-    const patientName = appointment.patient
-      ? `${appointment.patient.firstName} ${appointment.patient.lastName}`.toLowerCase()
-      : '';
-    return patientName.includes(searchTerm.toLowerCase()) ||
-           (appointment.serviceType || '').toLowerCase().includes(searchTerm.toLowerCase());
+    // Search filter
+    if (searchTerm) {
+      const patientName = appointment.patient
+        ? `${appointment.patient.firstName} ${appointment.patient.lastName}`.toLowerCase()
+        : '';
+      const matchesSearch = patientName.includes(searchTerm.toLowerCase()) ||
+        (appointment.serviceType || '').toLowerCase().includes(searchTerm.toLowerCase());
+      if (!matchesSearch) return false;
+    }
+    
+    return true;
   }) || [];
+
+  // Debug: Log appointments data
+  console.log('📅 Total appointments from query:', appointments?.length || 0);
+  console.log('📅 Filtered appointments:', filteredAppointments.length);
+  console.log('📅 Sample appointment:', filteredAppointments[0]);
+  
+  // Separate pinned and unpinned for display
+  const pinnedAppointments = filteredAppointments.filter(apt => apt.isPinned);
+  const unpinnedAppointments = filteredAppointments.filter(apt => !apt.isPinned);
 
   const handleCreateAppointment = (date?: Date): void => {
     if (date) {
@@ -162,15 +210,28 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
     serviceType: string;
     notesForTherapist?: string;
     selectedResources?: string[];
+    priority?: 'low' | 'medium' | 'high' | 'urgent';
+    appointmentType?: 'in-person' | 'telehealth';
+    isPinned?: boolean;
+    colorCode?: string;
   }) => {
     try {
+      // Guard: a valid patient must be selected; otherwise Convex will reject and can cause runtime errors
+      if (!appointmentData.patientId) {
+        toast.error('Please select or attach a patient before creating an appointment');
+        throw new Error('Missing patientId');
+      }
       // Create the appointment first
       const appointmentResult = await createAppointment({
-        patientId: appointmentData.patientId as Id<'users'> || null as unknown as Id<'users'>, // Handle case where patient might not exist yet
+        patientId: appointmentData.patientId as Id<'users'>,
         startTime: appointmentData.startTime,
         endTime: appointmentData.endTime,
         serviceType: appointmentData.serviceType,
         notesForTherapist: appointmentData.notesForTherapist,
+        priority: appointmentData.priority,
+        appointmentType: appointmentData.appointmentType,
+        isPinned: appointmentData.isPinned,
+        colorCode: appointmentData.colorCode,
       });
 
       // Extract appointment ID from result
@@ -218,35 +279,23 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
         </div>
       </div>
 
-      {/* Filters and Search */}
+      {/* Enhanced Filters and Search */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <Input
-                  placeholder="Search by patient name or service type..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+          <div className="space-y-4">
+            {/* Search and View Mode */}
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    placeholder="Search by patient name or service type..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
               </div>
-            </div>
-            <div className="flex gap-2">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as AppointmentStatus | 'all')}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Status</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled_by_patient">Cancelled by Patient</option>
-                <option value="cancelled_by_therapist">Cancelled by Therapist</option>
-                <option value="no_show">No Show</option>
-              </select>
               <div className="flex rounded-md border border-gray-300">
                 <button
                   onClick={() => setViewMode('calendar')}
@@ -274,7 +323,7 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
         </CardContent>
       </Card>
 
-      {/* Content with Tabs */}
+      {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'appointments' | 'recurring' | 'resources')} className="space-y-6">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="appointments" className="flex items-center gap-2">
@@ -293,91 +342,220 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
 
         <TabsContent value="appointments" className="space-y-4">
           {viewMode === 'calendar' ? (
-            <div className="h-[600px]">
-              <EnhancedAppointmentCalendar
-                appointments={filteredAppointments.map((appointment: AppointmentLike) => ({
-                  _id: appointment._id,
-                  patientId: appointment.patient?._id || '',
-                  physiotherapistId: '',
-                  clinicId: currentUser?.clinicId ? String(currentUser.clinicId) : undefined,
-                  startTime: appointment.startTime,
-                  endTime: appointment.endTime,
-                  serviceType: appointment.serviceType || 'General',
-                  status: (appointment.status || 'scheduled') as AppointmentStatus,
-                  priority: 'low' as 'low' | 'medium' | 'high' | 'urgent' | undefined,
-                  appointmentType: 'in-person' as 'in-person' | 'telehealth' | undefined,
-                  isPinned: false,
-                  colorCode: '',
-                  notesForPatient: '',
-                  notesForTherapist: appointment.notesForTherapist || '',
-                  cancellationReason: '',
-                  seriesId: '',
-                  isRecurring: false,
-                  instanceDate: '',
-                  isException: false,
-                  patient: appointment.patient ? {
-                    _id: appointment.patient._id || '',
-                    firstName: appointment.patient.firstName || 'Unknown',
-                    lastName: appointment.patient.lastName || 'Patient',
-                    email: appointment.patient.email || '',
-                    imageUrl: appointment.patient.imageUrl || '',
-                    phoneNumber: appointment.patient.phoneNumber || '',
-                  } : null
-                }))}
-                onCreateAppointment={handleCreateAppointment}
-                onCreateRecurring={handleCreateRecurring}
-                onEditRecurringSeries={handleEditRecurringSeries}
-                onAppointmentClick={(appointment) => {
-                  // Handle appointment click - could open details modal
-                  console.log('Appointment clicked:', appointment);
-                }}
-                onAppointmentUpdate={async (appointmentId, updates) => {
-                  try {
-                    await updateAppointmentStatus({
-                      appointmentId: appointmentId as Id<'appointments'>,
-                      status: updates.status as 'confirmed' | 'completed' | 'cancelled_by_therapist' | 'no_show',
-                    });
-                    toast.success('Appointment updated successfully');
-                  } catch (error) {
-                    console.error('Error updating appointment:', error);
-                    toast.error('Failed to update appointment');
-                  }
-                }}
-                showRecurringControls={true}
-              />
+            <div className="space-y-4">
+              {/* Date Header */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-blue-600 text-white rounded-lg p-2">
+                      <Calendar className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900">
+                        {format(new Date(), 'EEEE, MMMM d, yyyy')}
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        Week {format(new Date(), 'w')} of {format(new Date(), 'yyyy')} • Today
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
+                      {filteredAppointments.filter(a => {
+                        // Skip cancelled appointments
+                        if (a.status === 'cancelled_by_patient' || a.status === 'cancelled_by_therapist') {
+                          return false;
+                        }
+                        // Check if appointment is today
+                        const appointmentDate = new Date(a.startTime);
+                        const today = new Date();
+                        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                        const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+                        return appointmentDate >= todayStart && appointmentDate <= todayEnd;
+                      }).length} appointments today
+                    </div>
+                    <div className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full font-medium">
+                      8 AM - 9 PM
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="h-[600px]">
+                <AppointmentCalendar
+                  appointments={filteredAppointments.map((appointment: AppointmentLike) => ({
+                    _id: appointment._id as Id<'appointments'>,
+                    patientId: (appointment.patient?._id || '') as Id<'users'>,
+                    physiotherapistId: '' as Id<'users'>,
+                    startTime: appointment.startTime,
+                    endTime: appointment.endTime,
+                    serviceType: appointment.serviceType || 'General',
+                    status: (appointment.status || 'scheduled') as AppointmentStatus,
+                    priority: appointment.priority,
+                    appointmentType: appointment.appointmentType,
+                    isPinned: appointment.isPinned,
+                    isRecurring: appointment.isRecurring,
+                    colorCode: appointment.colorCode,
+                    patient: appointment.patient ? {
+                      firstName: appointment.patient.firstName || 'Unknown',
+                      lastName: appointment.patient.lastName || 'Patient',
+                      imageUrl: appointment.patient.imageUrl,
+                    } : undefined
+                  }))}
+                  viewMode="week"
+                  currentDate={new Date()}
+                  onCreateAppointment={(startTime, endTime) => {
+                    console.log('📅 onCreateAppointment called:', { startTime, endTime });
+                    const date = new Date(startTime);
+                    setSelectedDate(date);
+                    console.log('🔓 Opening modal...');
+                    setIsAppointmentModalOpen(true);
+                  }}
+                  onAppointmentClick={(appointment) => {
+                    console.log('Appointment clicked:', appointment);
+                  }}
+                  onAppointmentReschedule={async (appointmentId, newStartTime, newEndTime) => {
+                    try {
+                      await rescheduleAppointment({
+                        appointmentId: appointmentId as Id<'appointments'>,
+                        newStartTime,
+                        newEndTime,
+                      });
+                    } catch (error) {
+                      console.error('Error rescheduling appointment:', error);
+                      throw error;
+                    }
+                  }}
+                  businessHoursStart={8}
+                  businessHoursEnd={21}
+                  cellDuration={30}
+                />
+              </div>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {filteredAppointments.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <p>No appointments found</p>
                 </div>
               ) : (
-                filteredAppointments.map((appointment: AppointmentLike) => (
-                  <Card key={appointment._id} className="p-4 hover:shadow-md transition-shadow">
+                <>
+                  {/* Pinned Appointments Section */}
+                  {pinnedAppointments.length > 0 && (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <Pin className="h-5 w-5 text-amber-500" />
+                        <h3 className="text-lg font-semibold text-gray-900">Pinned Appointments</h3>
+                        <Badge variant="secondary">{pinnedAppointments.length}</Badge>
+                      </div>
+                      {pinnedAppointments.map((appointment: AppointmentLike) => (
+                        <Card 
+                          key={appointment._id} 
+                          className="p-4 hover:shadow-md transition-shadow border-l-4 bg-amber-50/50"
+                          style={{ borderLeftColor: appointment.colorCode || '#3B82F6' }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div 
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: appointment.colorCode || '#3B82F6' }}
+                              ></div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-medium">
+                                    {appointment.patient?.firstName || 'Unknown'} {appointment.patient?.lastName || 'Patient'}
+                                  </p>
+                                  <Pin className="h-4 w-4 text-amber-500 fill-amber-500" />
+                                  {appointment.appointmentType === 'telehealth' && <Video className="h-4 w-4 text-blue-500" />}
+                                  {appointment.appointmentType === 'in-person' && <Home className="h-4 w-4 text-green-500" />}
+                                </div>
+                                <p className="text-sm text-gray-500">
+                                  {format(new Date(appointment.startTime), 'MMM d, yyyy • h:mm a')}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              {appointment.priority && appointment.priority !== 'low' && (
+                                <Badge 
+                                  variant="outline"
+                                  className={
+                                    appointment.priority === 'urgent' ? 'border-red-500 text-red-700 bg-red-50' :
+                                    appointment.priority === 'high' ? 'border-orange-500 text-orange-700 bg-orange-50' :
+                                    'border-yellow-500 text-yellow-700 bg-yellow-50'
+                                  }
+                                >
+                                  {appointment.priority === 'urgent' && <Zap className="w-3 h-3 mr-1" />}
+                                  {appointment.priority.toUpperCase()}
+                                </Badge>
+                              )}
+                              <Badge variant={appointment.status === 'confirmed' ? 'default' : 'secondary'}>
+                                {getStatusLabel((appointment.status || 'scheduled') as AppointmentStatus)}
+                              </Badge>
+                            </div>
+                          </div>
+                          {appointment.notesForTherapist && (
+                            <div className="mt-3 p-2 bg-white rounded text-sm border border-amber-200">
+                              <strong>Notes:</strong> {appointment.notesForTherapist}
+                            </div>
+                          )}
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Regular Appointments Section */}
+                  {unpinnedAppointments.length > 0 && (
+                    <div className="space-y-4">
+                      {pinnedAppointments.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-semibold text-gray-900">Other Appointments</h3>
+                          <Badge variant="secondary">{unpinnedAppointments.length}</Badge>
+                        </div>
+                      )}
+                      {unpinnedAppointments.map((appointment: AppointmentLike) => (
+                  <Card 
+                    key={appointment._id} 
+                    className="p-4 hover:shadow-md transition-shadow border-l-4"
+                    style={{ borderLeftColor: appointment.colorCode || '#3B82F6' }}
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                        <div 
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: appointment.colorCode || '#3B82F6' }}
+                        ></div>
                         <div>
-                          <p className="font-medium">
-                            {appointment.patient?.firstName || 'Unknown'} {appointment.patient?.lastName || 'Patient'}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">
+                              {appointment.patient?.firstName || 'Unknown'} {appointment.patient?.lastName || 'Patient'}
+                            </p>
+                            {appointment.isPinned && <Pin className="h-4 w-4 text-amber-500" />}
+                            {appointment.appointmentType === 'telehealth' && <Video className="h-4 w-4 text-blue-500" />}
+                            {appointment.appointmentType === 'in-person' && <Home className="h-4 w-4 text-green-500" />}
+                          </div>
                           <p className="text-sm text-gray-500">
                             {format(new Date(appointment.startTime), 'MMM d, yyyy • h:mm a')}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
+                        {appointment.priority && appointment.priority !== 'low' && (
+                          <Badge 
+                            variant="outline"
+                            className={
+                              appointment.priority === 'urgent' ? 'border-red-500 text-red-700 bg-red-50' :
+                              appointment.priority === 'high' ? 'border-orange-500 text-orange-700 bg-orange-50' :
+                              'border-yellow-500 text-yellow-700 bg-yellow-50'
+                            }
+                          >
+                            {appointment.priority === 'urgent' && <Zap className="w-3 h-3 mr-1" />}
+                            {appointment.priority.toUpperCase()}
+                          </Badge>
+                        )}
                         <Badge variant={appointment.status === 'confirmed' ? 'default' : 'secondary'}>
                           {getStatusLabel((appointment.status || 'scheduled') as AppointmentStatus)}
                         </Badge>
-                        {false && (
-                          <Badge variant="outline" className="text-xs">
-                            <Repeat className="w-3 h-3 mr-1" />
-                            Recurring
-                          </Badge>
-                        )}
                       </div>
                     </div>
                     {appointment.notesForTherapist && (
@@ -386,7 +564,10 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
                       </div>
                     )}
                   </Card>
-                ))
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -417,35 +598,101 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
         physiotherapistId={currentUser?._id || ''}
         selectedDate={selectedDate}
         selectedTime={selectedDate ? format(selectedDate, 'HH:mm') : undefined}
+        existingAppointments={((appointmentsForConflicts as AppointmentLike[] | undefined) ?? []).map(a => ({
+          startTime: a.startTime,
+          endTime: a.endTime,
+          status: a.status,
+        }))}
+        providerScheduleReady={appointmentsForConflicts !== undefined}
         onSubmit={async (appointmentData) => {
+          if (isCreating) return; // prevent duplicate submissions
+          
+          // Inject preselected patientId if present (define outside try-catch for error handler access)
+          const merged = {
+            ...appointmentData,
+            patientId: preselectedPatientId || appointmentData.patientId,
+          };
+          
           try {
-            // Inject preselected patientId if present
-            const merged = {
-              ...appointmentData,
-              patientId: preselectedPatientId || appointmentData.patientId,
-            };
+            setIsCreating(true);
 
-            // Create appointment with Convex
-            await handleCreateAppointmentWithResources(merged);
+            // Create appointment with Convex + resources
+            const appointmentId = await handleCreateAppointmentWithResources(merged);
+            console.log('✅ Appointment created:', appointmentId);
 
-            // Best-effort: notify user
-            toast.success('Appointment created successfully');
+            // Clear search so new appointment is visible
+            setSearchTerm('');
+
+            toast.success('🎉 Appointment created successfully!', {
+              description: 'Your new appointment has been added to the calendar',
+              duration: 4000,
+            });
 
             setIsAppointmentModalOpen(false);
-          } catch (error) {
+            
+            // Force appointments query to refetch - multiple approaches
+            setReloadKey((k) => k + 1);
+            
+            // Also force a small delay to ensure Convex propagates the new appointment
+            setTimeout(() => {
+              setReloadKey((k) => k + 1);
+              console.log('🔄 Forced calendar refresh after appointment creation');
+            }, 1000);
+          } catch (error: any) {
             console.error('Failed to create appointment:', error);
-            toast.error('Failed to create appointment. Please try again.');
+            const msg = (error?.message || '').toString();
+            const match = msg.match(/Time slot conflicts.*?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) - (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)/);
+            
+            if (match || msg.includes('Time slot conflicts') || msg.includes('no longer available')) {
+              // Show beautiful conflict modal instead of toast
+              const startTime = match ? new Date(match[1]).getTime() : merged.startTime;
+              const endTime = match ? new Date(match[2]).getTime() : merged.endTime;
+              
+              setConflictData({
+                requestedStartTime: merged.startTime,
+                requestedEndTime: merged.endTime,
+                conflictingAppointment: {
+                  startTime: startTime,
+                  endTime: endTime,
+                  patientName: 'Existing Patient',
+                  serviceType: 'Booked Appointment',
+                },
+              });
+              setShowConflictModal(true);
+              setIsAppointmentModalOpen(false); // Close booking modal
+            } else {
+              toast.error('Failed to create appointment. Please try again.');
+            }
+          } finally {
+            setIsCreating(false);
           }
         }}
       />
-
-      {/* Recurring Appointment Modal */}
       {currentUser && (
         <RecurringAppointmentModal
           isOpen={isRecurringModalOpen}
           onClose={() => setIsRecurringModalOpen(false)}
           userId={currentUser._id as Id<"users">}
           role="physiotherapist"
+        />
+      )}
+
+      {/* Time Conflict Modal */}
+      {conflictData && (
+        <TimeConflictModal
+          open={showConflictModal}
+          onOpenChange={setShowConflictModal}
+          conflictingAppointment={conflictData.conflictingAppointment}
+          requestedStartTime={conflictData.requestedStartTime}
+          requestedEndTime={conflictData.requestedEndTime}
+          onChooseDifferentTime={() => {
+            setShowConflictModal(false);
+            setIsAppointmentModalOpen(true); // Reopen booking modal
+          }}
+          onCancel={() => {
+            setShowConflictModal(false);
+            setConflictData(null);
+          }}
         />
       )}
 

@@ -53,13 +53,11 @@ export default function PatientInvitePage() {
   const completePatientOnboarding = usePatientOnboardingAction()
 
   const handleSignIn = useCallback(() => {
-    const redirectPath = encodeURIComponent(`/patient-invite/${code}`)
-    router.push(`/sign-in?redirect_url=${redirectPath}`)
+    router.push(`/sign-in?redirect_url=${encodeURIComponent(`/patient-invite/${code}`)}`)
   }, [router, code])
 
   const handleSignUp = useCallback(() => {
-    const redirectPath = encodeURIComponent(`/patient-invite/${code}`)
-    router.push(`/sign-up?redirect_url=${redirectPath}`)
+    router.push(`/sign-up?redirect_url=${encodeURIComponent(`/patient-invite/${code}`)}`)
   }, [router, code])
 
   // Handle form submission
@@ -151,38 +149,58 @@ export default function PatientInvitePage() {
   if (!isSignedIn) {
     if (alreadyAccepted) {
       return (
-        <div className="flex min-h-screen items-center justify-center">
-          <Card className="w-[420px]">
-            <CardHeader>
-              <CardTitle className="">You&apos;re already registered</CardTitle>
+        <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-green-50 px-4">
+          <Card className="w-full max-w-md shadow-lg">
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-2xl font-bold text-center">You&apos;re already registered</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-center text-muted-foreground">
                 Sign in to access your patient dashboard.
               </p>
             </CardContent>
             <CardFooter>
-              <Button onClick={handleSignIn} className="w-full">Sign in</Button>
+              <Button 
+                onClick={handleSignIn} 
+                className="w-full bg-[#005b57] hover:bg-[#004843] text-white"
+              >
+                Sign in
+              </Button>
             </CardFooter>
           </Card>
         </div>
       )
     }
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Card className="w-[420px]">
-          <CardHeader>
-            <CardTitle className="">Create your account to continue</CardTitle>
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-green-50 px-4">
+        <Card className="w-full max-w-md shadow-lg">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-2xl font-bold text-center">Create your account to continue</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              You need to sign up to accept your invitation.
-            </p>
+          <CardContent className="space-y-4">
+            <div className="text-center">
+              <p className="text-muted-foreground mb-4">
+                You&apos;ve been invited to join Rehabify Health. Create your account to get started with your personalized treatment plan.
+              </p>
+            </div>
           </CardContent>
           <CardFooter>
-            <div className="flex flex-col gap-2 w-full">
-              <Button onClick={handleSignUp} className="w-full">Sign up</Button>
-              <Button onClick={handleSignIn} variant="outline" className="w-full">I already have an account</Button>
+            <div className="flex flex-col gap-3 w-full">
+              <Button 
+                onClick={handleSignUp} 
+                className="w-full bg-[#005b57] hover:bg-[#004843] text-white"
+                size="lg"
+              >
+                Sign up
+              </Button>
+              <Button 
+                onClick={handleSignIn} 
+                variant="outline" 
+                className="w-full border-[#005b57] text-[#005b57] hover:bg-[#005b57]/10"
+                size="lg"
+              >
+                I already have an account
+              </Button>
             </div>
           </CardFooter>
         </Card>
@@ -204,13 +222,13 @@ export default function PatientInvitePage() {
       )
     }
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Card className="w-[420px]">
-          <CardHeader>
-            <CardTitle className="text-red-600">Error</CardTitle>
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-green-50 px-4">
+        <Card className="w-full max-w-md shadow-lg border-red-200">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-2xl font-bold text-center text-red-600">Error</CardTitle>
           </CardHeader>
           <CardContent>
-            <p>{message}</p>
+            <p className="text-center text-muted-foreground">{message}</p>
           </CardContent>
           <CardFooter>
             <Button
@@ -282,7 +300,8 @@ export default function PatientInvitePage() {
               <div className="border-t pt-6">
                 <Button
                   onClick={handleAcceptInvitation}
-                  className="w-full"
+                  className="w-full bg-[#005b57] hover:bg-[#004843] text-white"
+                  size="lg"
                   disabled={isAccepting}
                 >
                   {isAccepting ? (

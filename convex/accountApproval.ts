@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { mutation, query, action, internalQuery } from "./_generated/server";
 import { getUserByIdOrThrow } from "./users";
 import { Id } from "./_generated/dataModel";
+import { api, internal } from "./_generated/api";
 
 /**
  * Internal query to get account status and user in one call
@@ -300,6 +301,18 @@ export const approveAccount = action({
       comments
     });
 
+    // Auto-enable marketplace for physiotherapists
+    if (user.role === "physiotherapist") {
+      try {
+        await ctx.runMutation(internal.marketplace.migrations.initializeMarketplaceProfile, {
+          userId: status.userId,
+        });
+      } catch (error) {
+        console.error("[approveAccount] Failed to initialize marketplace profile:", error);
+        // Non-fatal, continue with approval
+      }
+    }
+
     // Create notification for the user
     const dashboardLink = `/dashboard`;
     
@@ -317,8 +330,32 @@ export const approveAccount = action({
       retryOnFailure: true
     };
     
-    // Send notification using the sendNotificationWithFallback mutation
+    // Send notification using the sendNotificationWithFallback mutation (in-app + schedule email processing)
     await client(api.notifications.sendNotificationWithFallback, notificationData);
+
+    // Also directly send approval email to ensure delivery
+    try {
+      const roleLabel = user.role === "physiotherapist"
+        ? "Physiotherapist"
+        : user.role === "clinic_owner"
+        ? "Clinic Owner"
+        : "User";
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com";
+      const dashboardPath = user.role === "physiotherapist" ? "/dashboard/physiotherapist" : user.role === "clinic_owner" ? "/dashboard/clinic" : "/dashboard";
+      const dashboardLink = `${appUrl}${dashboardPath}`;
+
+      if (user.email) {
+        await ctx.scheduler.runAfter(0, (internal as any)["actions/emails/sendApprovalEmail"], {
+          userEmail: user.email,
+          userName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || (user.email as string),
+          userRole: roleLabel,
+          dashboardLink,
+        });
+      }
+    } catch (emailErr) {
+      console.error("[approveAccount] Failed to send approval email:", emailErr);
+      // Non-fatal
+    }
 
     return { success: true };
   },
@@ -455,4 +492,4 @@ export const updateStatus = mutation({
 });
 
 // Need to import the API for use in the action handlers
-import { api } from "./_generated/api";
+// (api and internal imported at top)

@@ -135,6 +135,32 @@ export default function ClinicVideoCallsPage() {
     }
   };
 
+  // Friendly status labels for UI
+  const statusLabel = (status: string) => {
+    switch (status) {
+      case 'active': return 'Active (In Progress)';
+      case 'scheduled': return 'Scheduled';
+      case 'ended': return 'Completed';
+      case 'cancelled': return 'Cancelled';
+      case 'missed': return 'Missed';
+      default: return status;
+    }
+  };
+
+  // Determine if we're within the pre-join window (default 10 minutes before scheduled time)
+  const isWithinJoinWindow = (scheduledAt?: number, minutes = 10) => {
+    if (!scheduledAt) return false;
+    const now = Date.now();
+    const windowMs = minutes * 60 * 1000;
+    return now >= (scheduledAt - windowMs);
+  };
+
+  // CTA label based on whether we are close to the scheduled time
+  const joinCtaLabel = (scheduledAt?: number) => {
+    if (!scheduledAt) return 'Starts at TBD';
+    return isWithinJoinWindow(scheduledAt) ? 'Join Now' : `Starts at ${format(new Date(scheduledAt), 'p')}`;
+  };
+
   if (showVideoManager && selectedCall) {
     return (
       <StreamVideoCallManager
@@ -290,7 +316,7 @@ export default function ClinicVideoCallsPage() {
               <div className="flex items-center justify-between">
                 <div className="flex gap-2">
                   <Badge className={getStatusColor(call.status)}>
-                    {call.status}
+                    {statusLabel(call.status)}
                   </Badge>
                   <Badge className={getTypeColor(call.callType)}>
                     {call.callType}
@@ -333,7 +359,6 @@ export default function ClinicVideoCallsPage() {
                   <Users className="h-4 w-4 mr-2" />
                   {call.participants.length} participants
                 </div>
-                
                 <div className="flex space-x-2 mt-4">
                   {call.status === 'active' && (
                     <Button
@@ -349,9 +374,10 @@ export default function ClinicVideoCallsPage() {
                       <Button
                         className="flex-1"
                         onClick={() => handleJoinCall(call)}
+                        disabled={!isWithinJoinWindow(call.scheduledAt, 10)}
                       >
                         <Video className="h-4 w-4 mr-2" />
-                        Start
+                        {joinCtaLabel(call.scheduledAt)}
                       </Button>
                       <Button
                         variant="destructive"

@@ -114,7 +114,10 @@ export default function CustomSignIn() {
     try {
       await signIn?.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: redirectTarget,
+        // Use Clerk's callback route we created to complete the OAuth flow
+        // This prevents 404s when providers redirect back
+        redirectUrl: "/sso-callback",
+        // After Clerk completes, send user to the original destination
         redirectUrlComplete: redirectTarget,
       });
     } catch (err: unknown) {

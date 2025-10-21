@@ -69,6 +69,68 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
   const participantCount = useParticipantCount()
   const [copied, setCopied] = useState(false)
   const [showShareLink, setShowShareLink] = useState(true)
+  const [lastCallingState, setLastCallingState] = useState<CallingState | null>(null)
+
+  // Connection feedback via toasts on state transitions with detailed messages
+  useEffect(() => {
+    if (!callingState || lastCallingState === callingState) return
+    setLastCallingState(callingState)
+    if (callingState === CallingState.RECONNECTING) {
+      toast.warning('Network issue detected: Attempting to reconnect...', {
+        description: 'Please check your internet connection'
+      })
+    } else if (callingState === CallingState.OFFLINE) {
+      toast.error('Call disconnected', {
+        description: 'Weak or no internet connection. You can try to rejoin.'
+      })
+    } else if (callingState === CallingState.JOINED) {
+      toast.success('Connected successfully')
+    }
+  }, [callingState, lastCallingState])
+
+  // Timeout warning for long joining states
+  useEffect(() => {
+    if (callingState === CallingState.JOINING) {
+      const timeout = setTimeout(() => {
+        toast.warning('Taking longer than expected...', {
+          description: 'This may be due to slow internet. Please wait or try again.'
+        })
+      }, 15000) // 15 seconds
+      return () => clearTimeout(timeout)
+    }
+  }, [callingState])
+
+  const connectionLabel = (() => {
+    switch (callingState) {
+      case CallingState.JOINED: return 'Good'
+      case CallingState.JOINING: return 'Connecting'
+      case CallingState.RECONNECTING: return 'Reconnecting'
+      case CallingState.OFFLINE: return 'Disconnected'
+      default: return String(callingState || '')
+    }
+  })()
+
+  const connectionClass = (() => {
+    switch (callingState) {
+      case CallingState.JOINED: return 'bg-green-600/20 text-green-400 ring-1 ring-green-500/30'
+      case CallingState.JOINING: return 'bg-blue-600/20 text-blue-300 ring-1 ring-blue-500/30'
+      case CallingState.RECONNECTING: return 'bg-yellow-600/20 text-yellow-300 ring-1 ring-yellow-500/30'
+      case CallingState.OFFLINE: return 'bg-red-600/20 text-red-300 ring-1 ring-red-500/30'
+      default: return 'bg-gray-600/20 text-gray-300 ring-1 ring-gray-500/30'
+    }
+  })()
+
+  const retryJoin = async () => {
+    try {
+      // Only attempt re-join when offline to avoid duplicate joins
+      if (callingState === CallingState.OFFLINE) {
+        await call?.join({ create: false })
+        toast.message('Rejoin attempt sent')
+      }
+    } catch (e) {
+      toast.error('Failed to rejoin. Please check your connection.')
+    }
+  }
 
   const shareLink = `${window.location.origin}/video-call/${callId}`
 
@@ -108,9 +170,14 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
         <div className="text-center space-y-4">
           <Phone className="h-12 w-12 text-red-600 mx-auto" />
           <p className="text-xl">Call Disconnected</p>
-          <Button onClick={onCallEnd} variant="outline">
-            Go Back
-          </Button>
+          <div className="flex items-center justify-center gap-3">
+            <Button onClick={retryJoin}>
+              Try to Rejoin
+            </Button>
+            <Button onClick={onCallEnd} variant="outline">
+              Go Back
+            </Button>
+          </div>
         </div>
       </div>
     )
@@ -169,6 +236,10 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
           <div className="flex items-center space-x-2">
             <Video className="h-5 w-5 text-emerald-400" />
             <span className="text-emerald-400">Stream Video Active</span>
+          </div>
+          <div className={`hidden sm:flex items-center gap-2 px-2 py-0.5 rounded-full ${connectionClass}`} title="Connection status">
+            <span className="inline-block h-2 w-2 rounded-full bg-current"></span>
+            <span className="text-xs font-medium">{connectionLabel}</span>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -259,6 +330,9 @@ export default function StreamVideoCall({
   const setMyRsvpStatus = useMutationUntyped(videoCallsModule['setMyRsvpStatus']) as unknown as (
     args: { roomId: string; status: 'accepted' | 'declined' | 'maybe' }
   ) => Promise<void>
+  const joinVideoCallMutation = useMutationUntyped(videoCallsModule['joinVideoCall']) as unknown as (
+    args: { roomId: string }
+  ) => Promise<{ callId: string; roomId: string }>
   
   const onCallEndRef = useRef(onCallEnd)
   useEffect(() => {
@@ -350,6 +424,13 @@ export default function StreamVideoCall({
         // Create call handle and join (create if needed) without auto-starting devices
         const streamCall = streamClient.call(callType, callId)
         await streamCall.join({ create: true })
+
+        // Inform backend that this user has joined (for accurate active status & participant tracking)
+        try {
+          await joinVideoCallMutation({ roomId: callId })
+        } catch (e) {
+          console.warn('[stream] joinVideoCall mutation failed (non-fatal):', e)
+        }
 
         // Mark RSVP as accepted for this user
         try {

@@ -71,42 +71,48 @@ export const completePatientOnboardingWithNotification = action({
 
       const patientName = `${args.patientData.firstName} ${args.patientData.lastName}`.trim();
 
-      // Send notification to patient
-      await ctx.runMutation(api.notifications.create, {
+      // Send notification to patient (in-app + email)
+      // @ts-ignore - Convex deep type inference
+      await ctx.runMutation(api.notifications.sendNotificationWithFallback, {
         userId: patientId,
         type: "onboarding_complete",
-        priority: "medium",
-        payload: {
-            title: "Welcome to Rehabify!",
-            body: `Your onboarding is complete, ${patientName}. You can now access your patient dashboard.`,
-            data: {
-                entityType: "user",
-                entityId: patientId,
-                actionUrl: "/dashboard/patient",
-            },
-        }
+        title: "Welcome to Rehabify!",
+        message: `Your onboarding is complete, ${patientName}. You can now access your patient dashboard.`,
+        data: {
+          entityType: "user",
+          entityId: String(patientId),
+          actionUrl: "/dashboard/patient",
+          metadata: {
+            role: "patient",
+          },
+        },
+        sendEmail: true,
+        retryOnFailure: true,
+        maxRetries: 3,
       });
 
       if (physiotherapistIdForNotif) {
         const physiotherapistId = physiotherapistIdForNotif;
 
-        // Create notification for the physiotherapist
-        await ctx.runMutation(api.notifications.create, {
+        // Notify the physiotherapist (in-app + email via fallback processor)
+        // Use the consolidated sendNotificationWithFallback to also schedule email processing
+        // @ts-ignore - Complex Convex type inference
+        await ctx.runMutation(api.notifications.sendNotificationWithFallback, {
           userId: physiotherapistId,
           type: "patient_onboarded",
-          priority: "medium",
-          payload: {
-            title: `${patientName} completed onboarding`,
-            body: `Your patient ${patientName} has completed their account setup and is ready for treatment.`,
-            data: {
-              entityType: "patient_onboarding",
-              entityId: patientId,
-              actionUrl: `/dashboard/physiotherapist/patients`,
-              metadata: {
-                patientName,
-              },
+          title: `${patientName} completed onboarding`,
+          message: `Your patient ${patientName} has completed their account setup and is ready for treatment.`,
+          data: {
+            entityType: "patient_onboarding",
+            entityId: String(patientId),
+            actionUrl: `/dashboard/physiotherapist/patients`,
+            metadata: {
+              patientName,
             },
-          }
+          },
+          sendEmail: true,
+          retryOnFailure: true,
+          maxRetries: 3,
         });
       }
 

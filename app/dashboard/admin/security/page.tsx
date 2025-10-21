@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useSecurityEvents } from "@/hooks/useDashboardData";
+import { useSecurityEvents, useAllUsers, useUserActivityLogs } from "@/hooks/useDashboardData";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -94,6 +94,8 @@ const securityColumns: ColumnDef<SecurityEvent>[] = [
 
 export default function AdminSecurityPage() {
   const securityEvents = useSecurityEvents(20);
+  const allUsers = useAllUsers();
+  const activityLogsQuery = useUserActivityLogs(500);
 
   // Memoize stats calculation to prevent infinite re-renders from Date.now()
   const stats = useMemo(() => {
@@ -109,6 +111,32 @@ export default function AdminSecurityPage() {
       lastHour: events.filter((e: SecurityEvent) => now - e.timestamp < 60 * 60 * 1000).length || 0,
     };
   }, [securityEvents?.data]);
+
+  const roleCounts = useMemo(() => {
+    const users = (allUsers?.data as any[]) ?? [];
+    const admins = users.filter(u => u?.role === 'admin').length;
+    const superAdmins = users.filter(u => u?.role === 'admin' && (u?.adminLevel === 'super' || u?.isSuperAdmin === true)).length;
+    const systemAdmins = users.filter(u => u?.role === 'admin' && (u?.adminLevel === 'system' || u?.isSystemAdmin === true)).length;
+    const clinicOwners = users.filter(u => u?.role === 'clinic_owner').length;
+    const physios = users.filter(u => u?.role === 'physiotherapist').length;
+    const patients = users.filter(u => u?.role === 'patient').length;
+    const premiumPatients = users.filter(u => u?.role === 'patient' && (u?.plan === 'premium' || u?.subscriptionTier === 'premium')).length;
+    return { admins, superAdmins, systemAdmins, clinicOwners, physios, patients, premiumPatients };
+  }, [allUsers?.data]);
+
+  const auditStats = useMemo(() => {
+    const logs = (activityLogsQuery?.data as any[]) ?? [];
+    const sec = (securityEvents?.data as SecurityEvent[]) ?? [];
+    const totalAuditEntries = logs.length;
+    const adminActions = logs.filter(l => (l?.userRole || '').toLowerCase().includes('admin')).length;
+    const failedLoginAttempts = sec.filter(e => (e?.type || '').toLowerCase().includes('failed')).length;
+    const dataAccessEvents = logs.filter(l => {
+      const activity = (l?.activity || '').toLowerCase();
+      const detailsStr = typeof l?.details === 'string' ? l.details.toLowerCase() : JSON.stringify(l?.details || {}).toLowerCase();
+      return activity.includes('access') || detailsStr.includes('access') || detailsStr.includes('data');
+    }).length;
+    return { totalAuditEntries, adminActions, failedLoginAttempts, dataAccessEvents };
+  }, [activityLogsQuery?.data, securityEvents?.data]);
 
   return (
     <div className="space-y-6">
@@ -298,11 +326,11 @@ export default function AdminSecurityPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Super Admin</span>
-                      <Badge variant="secondary">2 users</Badge>
+                      <Badge variant="secondary">{roleCounts.superAdmins} {roleCounts.superAdmins === 1 ? 'user' : 'users'}</Badge>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">System Admin</span>
-                      <Badge variant="secondary">1 user</Badge>
+                      <Badge variant="secondary">{roleCounts.systemAdmins} {roleCounts.systemAdmins === 1 ? 'user' : 'users'}</Badge>
                     </div>
                   </div>
                 </div>
@@ -312,11 +340,11 @@ export default function AdminSecurityPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Clinic Owner</span>
-                      <Badge variant="secondary">5 users</Badge>
+                      <Badge variant="secondary">{roleCounts.clinicOwners} {roleCounts.clinicOwners === 1 ? 'user' : 'users'}</Badge>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Physiotherapist</span>
-                      <Badge variant="secondary">23 users</Badge>
+                      <Badge variant="secondary">{roleCounts.physios} {roleCounts.physios === 1 ? 'user' : 'users'}</Badge>
                     </div>
                   </div>
                 </div>
@@ -326,11 +354,11 @@ export default function AdminSecurityPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Standard Patient</span>
-                      <Badge variant="secondary">156 users</Badge>
+                      <Badge variant="secondary">{roleCounts.patients} {roleCounts.patients === 1 ? 'user' : 'users'}</Badge>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Premium Patient</span>
-                      <Badge variant="secondary">34 users</Badge>
+                      <Badge variant="secondary">{roleCounts.premiumPatients} {roleCounts.premiumPatients === 1 ? 'user' : 'users'}</Badge>
                     </div>
                   </div>
                 </div>
@@ -358,19 +386,19 @@ export default function AdminSecurityPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-sm">Total Audit Entries</span>
-                        <Badge variant="secondary">1,247</Badge>
+                        <Badge variant="secondary">{auditStats.totalAuditEntries}</Badge>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-sm">Admin Actions</span>
-                        <Badge variant="secondary">89</Badge>
+                        <Badge variant="secondary">{auditStats.adminActions}</Badge>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-sm">Failed Login Attempts</span>
-                        <Badge variant="secondary">12</Badge>
+                        <Badge variant="secondary">{auditStats.failedLoginAttempts}</Badge>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-sm">Data Access Events</span>
-                        <Badge variant="secondary">456</Badge>
+                        <Badge variant="secondary">{auditStats.dataAccessEvents}</Badge>
                       </div>
                     </div>
                   </div>

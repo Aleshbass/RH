@@ -23,6 +23,17 @@ export const sendAppointmentScheduledEmail = action({
   },
   handler: async (_ctx, args) => {
     try {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
+      const absolutize = (url?: string) => {
+        if (!url) return '#';
+        if (url.startsWith('http://') || url.startsWith('https://')) return url;
+        if (url.startsWith('/')) return `${baseUrl}${url}`;
+        return url;
+      };
+
+      const calendarLink = absolutize(args.calendarLink);
+      const rescheduleLink = absolutize(args.rescheduleLink);
+
       const result = await sendEmail({
         to: args.to,
         subject: args.subjectOverride,
@@ -34,8 +45,8 @@ export const sendAppointmentScheduledEmail = action({
           appointmentTime: args.appointmentTime,
           clinicName: args.clinicName || 'Rehabify Health',
           clinicAddress: args.clinicAddress || '',
-          calendarLink: args.calendarLink || '#',
-          rescheduleLink: args.rescheduleLink || '#',
+          calendarLink,
+          rescheduleLink,
         },
       });
 

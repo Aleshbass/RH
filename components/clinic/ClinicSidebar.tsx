@@ -25,7 +25,8 @@ interface SidebarProps {
   className?: string
 }
 
-// Grouped sidebar items for better organization
+// Simplified sidebar - Clinic owners focus on staff management
+// Patients, appointments, billing, etc. are managed by individual physiotherapists
 const sidebarGroups = [
   {
     label: 'Main',
@@ -39,36 +40,25 @@ const sidebarGroups = [
     ]
   },
   {
-    label: 'People',
+    label: 'Management',
     items: [
       {
         title: 'Staff',
         href: '/dashboard/clinic/staff',
         icon: UserCheck,
-        description: 'Physiotherapists'
+        description: 'Manage physiotherapists'
       },
       {
         title: 'Patients',
         href: '/dashboard/clinic/patients',
         icon: Users,
-        description: 'All patients'
-      }
-    ]
-  },
-  {
-    label: 'Operations',
-    items: [
+        description: 'View all patients'
+      },
       {
         title: 'Appointments',
         href: '/dashboard/clinic/appointments',
         icon: Calendar,
-        description: 'Schedule'
-      },
-      {
-        title: 'Billing',
-        href: '/dashboard/clinic/billing',
-        icon: Receipt,
-        description: 'Invoices'
+        description: 'Clinic schedule'
       }
     ]
   },

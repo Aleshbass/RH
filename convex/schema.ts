@@ -82,9 +82,59 @@ export default defineSchema({
     yearsOfExperience: v.optional(v.float64()),
     availabilitySchedule: v.optional(v.any()), // More complex availability rules
     languagesSpoken: v.optional(v.array(v.string())),
+
+    // Marketplace Settings
+    isAvailableOnMarketplace: v.optional(v.boolean()), // Toggle marketplace visibility
+    hourlyRate: v.optional(v.number()), // Base rate per session in kobo
+    initialConsultRate: v.optional(v.number()), // First session rate in kobo
+    packageRates: v.optional(v.array(v.object({
+      sessions: v.number(),
+      price: v.number(), // Total package price in kobo
+      description: v.optional(v.string()),
+    }))),
+    
+    // Location
+    location: v.optional(v.string()), // "Lagos", "Abuja", "Online"
+    offersOnlineSessions: v.optional(v.boolean()),
+    offersInPersonSessions: v.optional(v.boolean()),
+    
+    // Verification & Monetization
+    verificationBadge: v.optional(v.object({
+      status: v.union(
+        v.literal("none"), 
+        v.literal("verified"), 
+        v.literal("pro_verified")
+      ),
+      tier: v.optional(v.union(
+        v.literal("monthly"),
+        v.literal("12_month"),
+        v.literal("yearly")
+      )),
+      paidAt: v.optional(v.number()),
+      expiresAt: v.optional(v.number()),
+      verificationFee: v.optional(v.number()),
+      autoRenew: v.optional(v.boolean()),
+    })),
+    
+    // Featured Listing
+    featuredStatus: v.optional(v.object({
+      isFeatured: v.boolean(),
+      featuredUntil: v.optional(v.number()),
+      lastPayment: v.optional(v.number()),
+    })),
+    
+    // Analytics
+    profileViews: v.optional(v.number()),
+    bookingsThroughMarketplace: v.optional(v.number()),
+    totalMarketplaceEarnings: v.optional(v.number()), // Total earned through marketplace
+    averageRating: v.optional(v.number()), // Average rating from reviews
+    reviewCount: v.optional(v.number()), // Total number of reviews
   })
     .index("by_user_id", ["userId"])
-    .index("by_clinic_id", ["clinicId"]),
+    .index("by_clinic_id", ["clinicId"])
+    .index("by_marketplace_availability", ["isAvailableOnMarketplace"])
+    .index("by_verification_status", ["verificationBadge.status"])
+    .index("by_location", ["location"]),
 
   // Patient specific profiles/details
   patientProfiles: defineTable({
@@ -350,6 +400,19 @@ export default defineSchema({
     isRecurring: v.optional(v.boolean()), // Flag for recurring appointments
     instanceDate: v.optional(v.string()), // ISO date for this instance
     isException: v.optional(v.boolean()), // True if modified from series template
+    // Enhanced appointment features
+    priority: v.optional(v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("urgent")
+    )),
+    appointmentType: v.optional(v.union(
+      v.literal("in-person"),
+      v.literal("telehealth")
+    )),
+    isPinned: v.optional(v.boolean()),
+    colorCode: v.optional(v.string()), // Hex color code like "#3B82F6"
   })
     .index("by_patient_id_and_time", ["patientId", "startTime"])
     .index("by_clinic_id_and_time", ["clinicId", "startTime"])
@@ -1848,6 +1911,201 @@ performanceMetrics: defineTable({
     .index("by_physiotherapist", ["physiotherapistId"])
     .index("by_patient_type", ["patientId", "assessmentType"])
     .index("by_clinic", ["clinicId"]),
+
+  // Marketplace Reviews & Ratings
+  marketplaceReviews: defineTable({
+    physiotherapistId: v.id("users"),
+    patientId: v.id("users"),
+    appointmentId: v.optional(v.id("appointments")), // Link to actual session
+    bookingId: v.optional(v.id("marketplaceBookings")), // Link to marketplace booking
+    
+    // Rating breakdown
+    overallRating: v.number(), // 1-5
+    communicationRating: v.optional(v.number()),
+    treatmentEffectivenessRating: v.optional(v.number()),
+    professionalismRating: v.optional(v.number()),
+    valueForMoneyRating: v.optional(v.number()),
+    
+    // Review content
+    reviewTitle: v.optional(v.string()),
+    reviewText: v.string(),
+    
+    // Response
+    response: v.optional(v.object({
+      text: v.string(),
+      respondedAt: v.number(),
+    })),
+    
+    // Metadata
+    isVerifiedBooking: v.boolean(), // Did they actually book through platform?
+    helpfulCount: v.optional(v.number()), // How many found this helpful
+    reportedCount: v.optional(v.number()), // Report spam/abuse
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("hidden")
+    ),
+    
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_physiotherapist", ["physiotherapistId"])
+    .index("by_patient", ["patientId"])
+    .index("by_appointment", ["appointmentId"])
+    .index("by_status", ["status"])
+    .index("by_physio_and_status", ["physiotherapistId", "status"])
+    .index("by_created_date", ["createdAt"]),
+
+  // Marketplace Bookings (separate from regular appointments)
+  marketplaceBookings: defineTable({
+    physiotherapistId: v.id("users"),
+    patientId: v.id("users"),
+    appointmentId: v.optional(v.id("appointments")), // Created after payment
+    
+    // Session details
+    sessionType: v.string(), // "initial_consult", "follow_up", "package"
+    sessionDate: v.optional(v.number()), // Scheduled date
+    sessionDuration: v.number(), // minutes
+    isOnline: v.boolean(),
+    
+    // Pricing
+    serviceAmount: v.number(), // Amount for service (kobo)
+    platformFee: v.number(), // 20% platform fee (kobo)
+    paystackFee: v.number(), // 1.5% + 100 (kobo)
+    totalAmount: v.number(), // Total charged to patient (kobo)
+    physiotherapistEarnings: v.number(), // Amount physio receives (kobo)
+    
+    // Payment
+    paymentStatus: v.union(
+      v.literal("pending"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("refunded")
+    ),
+    paymentReference: v.optional(v.string()),
+    paidAt: v.optional(v.number()),
+    
+    // Booking status
+    bookingStatus: v.union(
+      v.literal("pending_payment"),
+      v.literal("confirmed"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+      v.literal("no_show")
+    ),
+    
+    // Relationship creation
+    relationshipCreated: v.optional(v.boolean()),
+    patientPhysioRelationshipId: v.optional(v.id("patientPhysiotherapistRelationships")),
+    
+    // Notes
+    patientNotes: v.optional(v.string()),
+    cancellationReason: v.optional(v.string()),
+    
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_physiotherapist", ["physiotherapistId"])
+    .index("by_patient", ["patientId"])
+    .index("by_payment_reference", ["paymentReference"])
+    .index("by_booking_status", ["bookingStatus"])
+    .index("by_payment_status", ["paymentStatus"])
+    .index("by_session_date", ["sessionDate"]),
+
+  // Marketplace Transactions (verification badges, featured listings, commissions)
+  marketplaceTransactions: defineTable({
+    userId: v.id("users"), // Physiotherapist
+    
+    type: v.union(
+      v.literal("verification_badge"),
+      v.literal("featured_listing"),
+      v.literal("booking_commission")
+    ),
+    
+    // Verification badge specific
+    badgeTier: v.optional(v.union(
+      v.literal("monthly"),
+      v.literal("12_month"),
+      v.literal("yearly")
+    )),
+    
+    // Featured listing specific
+    featuredDuration: v.optional(v.number()), // days
+    featuredStartDate: v.optional(v.number()),
+    featuredEndDate: v.optional(v.number()),
+    
+    // Commission specific
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    commissionRate: v.optional(v.number()), // percentage
+    
+    // Payment
+    amount: v.number(), // in kobo
+    currency: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("refunded")
+    ),
+    paymentReference: v.optional(v.string()),
+    paymentMethod: v.optional(v.string()),
+    
+    // Metadata
+    description: v.string(),
+    metadata: v.optional(v.any()),
+    
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_type", ["type"])
+    .index("by_status", ["status"])
+    .index("by_payment_reference", ["paymentReference"])
+    .index("by_booking_id", ["bookingId"]),
+
+  // Physiotherapist Reports/Flags (patient feedback for admin review)
+  physiotherapistReports: defineTable({
+    physiotherapistId: v.id("users"),
+    reporterId: v.id("users"), // Patient who reported
+    reporterRole: v.optional(v.string()),
+    reason: v.union(
+      v.literal("unprofessional_behavior"),
+      v.literal("poor_treatment_quality"),
+      v.literal("safety_concern"),
+      v.literal("billing_issue"),
+      v.literal("harassment"),
+      v.literal("breach_of_confidentiality"),
+      v.literal("other")
+    ),
+    description: v.string(),
+    appointmentId: v.optional(v.id("appointments")),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    severity: v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("critical")
+    ),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("under_review"),
+      v.literal("resolved"),
+      v.literal("dismissed")
+    ),
+    adminNotes: v.optional(v.string()),
+    actionTaken: v.optional(v.string()),
+    reviewedBy: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_physiotherapist", ["physiotherapistId"])
+    .index("by_reporter", ["reporterId"])
+    .index("by_status", ["status"])
+    .index("by_severity", ["severity"])
+    .index("by_created_at", ["createdAt"]),
 
   // Health tables from health schema
   ...healthTables,

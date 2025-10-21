@@ -13,18 +13,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Play, CheckCircle2, Target, Activity, MessageSquare, Video, FileText } from 'lucide-react';
+import { Play, CheckCircle2, Target, Activity, MessageSquare, Video, FileText, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/components/ui/use-toast';
 
 // Using any types to avoid deep type instantiation errors with Convex
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-interface PatientTreatmentPlanViewProps {
-  patientId: string;
-}
-
-export function PatientTreatmentPlanView({ patientId }: PatientTreatmentPlanViewProps) {
+export function PatientTreatmentPlanView() {
   const [activeTab, setActiveTab] = useState('today');
   const [selectedExercise, setSelectedExercise] = useState<any>(null);
   const [completionNotes, setCompletionNotes] = useState('');
@@ -33,11 +29,7 @@ export function PatientTreatmentPlanView({ patientId }: PatientTreatmentPlanView
 
   // Query active treatment plan
   const activePlan = useQuery(api.treatmentPlans.getPatientActivePlan);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const treatmentPlans = useQuery(api.treatmentPlans.getPatientTreatmentPlans, { 
-    patientId: patientId as Id<'users'>,
-    status: undefined 
-  });
+  // Removed unused query for listing patient treatment plans; rely on active plan only
   const completionMap = useQuery(api.treatmentPlans.getExerciseCompletionMap, {
     treatmentPlanId: activePlan?._id as Id<'treatmentPlans'>
   });
@@ -141,12 +133,26 @@ export function PatientTreatmentPlanView({ patientId }: PatientTreatmentPlanView
     return completionMap?.[key] || false;
   };
 
+  const getScheduledDays = (frequency: string): string => {
+    if (!frequency) return 'As needed';
+    const freq = frequency.toLowerCase();
+    if (freq.includes('daily')) return 'Every day this week';
+    if (freq.includes('3x') || freq.includes('three times')) return 'Mon, Wed, Fri';
+    if (freq.includes('2x') || freq.includes('twice')) return 'Mon, Thu';
+    if (freq.includes('weekly')) return 'Once per week';
+    return frequency;
+  };
+
   const getTodaysExercises = (): any[] => {
     return currentPlan.phases?.flatMap((phase: any) => 
       phase.exercises.filter((exercise: any) => 
         exercise.frequency?.toLowerCase().includes('daily') || 
         exercise.frequency?.toLowerCase().includes('today')
-      ).map((exercise: any) => ({ ...exercise, phaseOrder: phase.order }))
+      ).map((exercise: any) => ({ 
+        ...exercise, 
+        phaseOrder: phase.order,
+        scheduledDays: getScheduledDays(exercise.frequency)
+      }))
     ) || [];
   };
 
@@ -229,10 +235,15 @@ export function PatientTreatmentPlanView({ patientId }: PatientTreatmentPlanView
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground mb-2">{exercise.description}</p>
-                          <div className="flex gap-4 text-sm">
+                          <div className="flex gap-4 text-sm mb-2">
                             <span><strong>Sets:</strong> {exercise.sets}</span>
                             <span><strong>Reps:</strong> {exercise.reps}</span>
-                            <span><strong>Frequency:</strong> {exercise.frequency}</span>
+                          </div>
+                          <div className="text-sm">
+                            <Badge variant="outline" className="gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {exercise.scheduledDays}
+                            </Badge>
                           </div>
                         </div>
                         

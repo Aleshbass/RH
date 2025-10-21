@@ -67,7 +67,7 @@ function SeriesActionModal({ isOpen, onClose, series, action, onConfirm, isLoadi
   const actionTitle = action === 'edit' ? 'Edit Recurring Series' : 'Delete Recurring Series'
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

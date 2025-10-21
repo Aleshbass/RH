@@ -61,18 +61,54 @@ class ExerciseService {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async makeRequest(endpoint: string): Promise<any> {
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`ExerciseDB API error: ${response.status}`);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    // If an API key is provided, include it in the request headers
+    // Guard against common misconfiguration where a URL is placed in the API key env var
+    const looksLikeUrl = /^https?:\/\//i.test(this.apiKey || '');
+    if (this.apiKey && !looksLikeUrl) {
+      headers['x-api-key'] = this.apiKey;
+    } else if (this.apiKey && looksLikeUrl) {
+      // eslint-disable-next-line no-console
+      console.warn('[ExerciseDB] NEXT_PUBLIC_EXERCISEDB_API_KEY appears to be a URL. Expected an API key/token. Ignoring header.');
     }
 
-    return response.json();
+    const url = `${this.baseUrl}${endpoint}`;
+    const maxAttempts = 2; // 1 retry for transient failures
+    const timeoutMs = 10000; // 10s timeout
+
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          // Retry on 5xx once
+          if (response.status >= 500 && attempt < maxAttempts) {
+            continue;
+          }
+          throw new Error(`ExerciseDB API error: ${response.status}`);
+        }
+
+        return await response.json();
+      } catch (err) {
+        lastError = err;
+        // Retry once for network/abort errors
+        if (attempt < maxAttempts) {
+          continue;
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('ExerciseDB request failed');
   }
 
   /**

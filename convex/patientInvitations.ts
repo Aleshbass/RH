@@ -260,6 +260,24 @@ export const acceptInvitation = mutation({
       patientUserId: ensuredUser._id,
     });
 
+    // Notify physiotherapist that patient accepted invitation
+    await ctx.db.insert("notifications", {
+      userId: invitation.physiotherapistId,
+      type: "invitation_accepted" as any,
+      priority: "high",
+      status: "pending",
+      payload: {
+        title: "Patient Accepted Invitation",
+        body: `${ensuredUser.firstName} ${ensuredUser.lastName} accepted your invitation`,
+        data: {
+          entityId: String(ensuredUser._id),
+          entityType: "patient",
+        },
+        link: `/dashboard/physiotherapist/patients/${ensuredUser._id}`,
+      },
+      createdAt: Date.now(),
+    });
+
     return {
       success: true,
       patientId: ensuredUser._id,
@@ -393,6 +411,24 @@ export const completePatientOnboarding = mutation({
     await ctx.db.patch(invitation._id, {
       status: "accepted",
       patientUserId: ensuredUser._id,
+    });
+
+    // Notify physiotherapist that patient accepted invitation
+    await ctx.db.insert("notifications", {
+      userId: invitation.physiotherapistId,
+      type: "invitation_accepted" as any,
+      priority: "high",
+      status: "pending",
+      payload: {
+        title: "Patient Accepted Invitation",
+        body: `${ensuredUser.firstName} ${ensuredUser.lastName} accepted your invitation`,
+        data: {
+          entityId: String(ensuredUser._id),
+          entityType: "patient",
+        },
+        link: `/dashboard/physiotherapist/patients/${ensuredUser._id}`,
+      },
+      createdAt: Date.now(),
     });
 
     return {
@@ -652,6 +688,7 @@ export const getMyPatients = query({
             isPrimary: relationship.isPrimaryPhysiotherapist,
             startDate: relationship.startDate,
             status: relationship.status,
+            clinicId: relationship.clinicId,
           },
         };
       })

@@ -34,9 +34,9 @@ export default function ClinicReportsPage() {
   const reportsData = useQuery(api.clinics.getClinicReports)
   const performanceMetrics = useQuery(api.clinics.getClinicPerformanceMetrics) as PerformanceMetrics | undefined
   const appointmentStats = useQuery(api.clinics.getClinicAppointmentStats)
-  const staffMetrics = { utilization: 75 } // Default staff metrics
+  const staffMetrics = useQuery(api.clinics.getStaffMetrics)
 
-  if (reportsData === undefined || performanceMetrics === undefined || appointmentStats === undefined) {
+  if (reportsData === undefined || performanceMetrics === undefined || appointmentStats === undefined || staffMetrics === undefined) {
     return (
       <div className="p-8">
         <div className="space-y-6">
@@ -152,36 +152,36 @@ export default function ClinicReportsPage() {
                       <span className="text-sm">18-30 years</span>
                       <div className="flex items-center space-x-2">
                         <div className="w-24 bg-gray-200 rounded-full h-2">
-                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: '25%' }}></div>
+                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${reportsData?.demographics?.['18-30'] || 0}%` }}></div>
                         </div>
-                        <span className="text-sm text-gray-600">25%</span>
+                        <span className="text-sm text-gray-600">{reportsData?.demographics?.['18-30'] || 0}%</span>
                       </div>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm">31-50 years</span>
                       <div className="flex items-center space-x-2">
                         <div className="w-24 bg-gray-200 rounded-full h-2">
-                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: '40%' }}></div>
+                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${reportsData?.demographics?.['31-50'] || 0}%` }}></div>
                         </div>
-                        <span className="text-sm text-gray-600">40%</span>
+                        <span className="text-sm text-gray-600">{reportsData?.demographics?.['31-50'] || 0}%</span>
                       </div>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm">51-70 years</span>
                       <div className="flex items-center space-x-2">
                         <div className="w-24 bg-gray-200 rounded-full h-2">
-                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: '30%' }}></div>
+                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${reportsData?.demographics?.['51-70'] || 0}%` }}></div>
                         </div>
-                        <span className="text-sm text-gray-600">30%</span>
+                        <span className="text-sm text-gray-600">{reportsData?.demographics?.['51-70'] || 0}%</span>
                       </div>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm">70+ years</span>
                       <div className="flex items-center space-x-2">
                         <div className="w-24 bg-gray-200 rounded-full h-2">
-                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: '5%' }}></div>
+                          <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${reportsData?.demographics?.['70+'] || 0}%` }}></div>
                         </div>
-                        <span className="text-sm text-gray-600">5%</span>
+                        <span className="text-sm text-gray-600">{reportsData?.demographics?.['70+'] || 0}%</span>
                       </div>
                     </div>
                   </div>
@@ -199,36 +199,45 @@ export default function ClinicReportsPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium">Individual Sessions</p>
-                        <p className="text-sm text-gray-600">Direct patient payments</p>
+                    {reportsData && reportsData.revenueBreakdown && (reportsData.revenueBreakdown.individualSessions + reportsData.revenueBreakdown.insuranceClaims + reportsData.revenueBreakdown.packageDeals) > 0 ? (
+                      <>
+                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <p className="font-medium">Individual Sessions</p>
+                            <p className="text-sm text-gray-600">Direct patient payments</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-green-600">₦{(reportsData.revenueBreakdown.individualSessions / 100).toLocaleString()}</p>
+                            <p className="text-sm text-gray-600">{Math.round((reportsData.revenueBreakdown.individualSessions / (reportsData.revenueBreakdown.individualSessions + reportsData.revenueBreakdown.insuranceClaims + reportsData.revenueBreakdown.packageDeals)) * 100)}%</p>
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <p className="font-medium">Insurance Claims</p>
+                            <p className="text-sm text-gray-600">Insurance reimbursements</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-green-600">₦{(reportsData.revenueBreakdown.insuranceClaims / 100).toLocaleString()}</p>
+                            <p className="text-sm text-gray-600">{reportsData.revenueBreakdown.insuranceClaims > 0 ? Math.round((reportsData.revenueBreakdown.insuranceClaims / (reportsData.revenueBreakdown.individualSessions + reportsData.revenueBreakdown.insuranceClaims + reportsData.revenueBreakdown.packageDeals)) * 100) : 0}%</p>
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <p className="font-medium">Package Deals</p>
+                            <p className="text-sm text-gray-600">Multi-session packages</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-green-600">₦{(reportsData.revenueBreakdown.packageDeals / 100).toLocaleString()}</p>
+                            <p className="text-sm text-gray-600">{reportsData.revenueBreakdown.packageDeals > 0 ? Math.round((reportsData.revenueBreakdown.packageDeals / (reportsData.revenueBreakdown.individualSessions + reportsData.revenueBreakdown.insuranceClaims + reportsData.revenueBreakdown.packageDeals)) * 100) : 0}%</p>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-gray-600">No revenue data yet</p>
+                        <p className="text-sm text-gray-500">Revenue will appear once payments are received</p>
                       </div>
-                      <div className="text-right">
-                        <p className="font-bold text-green-600">₦12,450</p>
-                        <p className="text-sm text-gray-600">65%</p>
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium">Insurance Claims</p>
-                        <p className="text-sm text-gray-600">Insurance reimbursements</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-green-600">₦5,200</p>
-                        <p className="text-sm text-gray-600">27%</p>
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium">Package Deals</p>
-                        <p className="text-sm text-gray-600">Multi-session packages</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-green-600">₦1,530</p>
-                        <p className="text-sm text-gray-600">8%</p>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -333,8 +342,8 @@ export default function ClinicReportsPage() {
                         <p className="text-sm text-gray-600">Per therapist</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold">8.5</p>
-                        <p className="text-sm text-green-600">+0.5 from last month</p>
+                        <p className="font-bold">{reportsData?.avgDailyAppointments || 0}</p>
+                        <p className="text-sm text-gray-500">This month</p>
                       </div>
                     </div>
                     <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
@@ -343,8 +352,8 @@ export default function ClinicReportsPage() {
                         <p className="text-sm text-gray-600">Missed appointments</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold">{appointmentStats?.noShowRate || 0}%</p>
-                        <p className="text-sm text-red-600">Missed appointments</p>
+                        <p className="font-bold">{appointmentStats?.noShows || 0}</p>
+                        <p className="text-sm text-red-600">No-shows this month</p>
                       </div>
                     </div>
                     <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">

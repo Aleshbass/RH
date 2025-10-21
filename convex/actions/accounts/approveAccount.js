@@ -74,7 +74,7 @@ export const approveAccount = action({
 
       // Send approval email if requested
       if (sendEmail && user.email) {
-        const dashboardLink = user.role === 'clinic_owner' ? '/dashboard/clinic-owner' : 
+        const dashboardLink = user.role === 'clinic_owner' ? '/dashboard/clinic' : 
                              user.role === 'physiotherapist' ? '/dashboard/physiotherapist' : 
                              '/dashboard';
         

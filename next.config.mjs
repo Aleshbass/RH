@@ -150,6 +150,20 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
+      // Convex Cloud Storage
+      {
+        protocol: 'https',
+        hostname: '*.convex.cloud',
+        port: '',
+        pathname: '/api/storage/**',
+      },
+      // Clerk User Images
+      {
+        protocol: 'https',
+        hostname: 'img.clerk.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
 

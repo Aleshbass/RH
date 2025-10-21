@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { PatientTreatmentPlanView } from '@/components/dashboard/patient/PatientTreatmentPlanView';
+import { PatientTreatmentPlanView } from '@/components/dashboard/patient/treatment/PatientTreatmentPlanView';
 import { useUser } from '@clerk/nextjs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -58,7 +58,7 @@ function TreatmentPlansList() {
             </div>
           </CardHeader>
           <CardContent>
-            <PatientTreatmentPlanView treatmentPlanId={plan._id} />
+            <PatientTreatmentPlanView />
           </CardContent>
         </Card>
       ))}

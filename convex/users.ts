@@ -511,8 +511,10 @@ export const completeUserProfile = mutation({
           .collect();
 
         const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || (user.email || "User");
-        const adminActionUrl = `/admin/users/${user._id}`;
         const roleLabel = args.role === "physiotherapist" ? "Physiotherapist" : "Clinic Owner";
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com";
+        const adminActionPath = `/admin/users/${user._id}`;
+        const adminDashboardLink = `${appUrl}${adminActionPath}`;
 
         for (const admin of admins) {
           // In-app notification to admin
@@ -541,7 +543,7 @@ export const completeUserProfile = mutation({
             await ctx.scheduler.runAfter(0, internal.actions.emails.sendOnboardingNotificationEmail as any, {
               adminEmail: admin.email,
               userName: `${displayName} (${roleLabel})`,
-              adminDashboardLink: adminActionUrl,
+              adminDashboardLink,
               userRole: roleLabel,
               submittedAt: Date.now(),
             });

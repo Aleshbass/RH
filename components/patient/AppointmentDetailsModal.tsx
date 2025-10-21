@@ -105,7 +105,7 @@ export function AppointmentDetailsModal({
   const { appointment, physiotherapist, clinic, sessionLog } = appointmentDetails
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">

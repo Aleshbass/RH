@@ -62,9 +62,9 @@ export const sendNotificationWithFallback = action({
       const notificationId = result.notificationId;
 
       if (args.sendEmail) {
-        // Example: Schedule email sending
+        // Example: Schedule email sending via the email routing module
         // @ts-ignore - Complex Convex type inference issue
-        await ctx.scheduler.runAfter(0, internal.notifications.processEmailForNotification, {
+        await ctx.scheduler.runAfter(0, internal.notifications.email.processEmailForNotification, {
           notificationId,
           retryOnFailure: args.retryOnFailure ?? false, // Default to false
           maxRetries: args.maxRetries ?? 3 // Default to 3 retries
@@ -118,7 +118,7 @@ export const sendFormattedNotification = action({
 
       if (sendEmail) {
         // @ts-ignore - Complex Convex type inference issue
-        await ctx.scheduler.runAfter(0, internal.notifications.processEmailForNotification, {
+        await ctx.scheduler.runAfter(0, internal.notifications.email.processEmailForNotification, {
           notificationId,
           retryOnFailure: retryOnFailure ?? false, // Default to false
           maxRetries: maxRetries ?? 3 // Default to 3 retries

@@ -9,8 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Search, Play, Plus } from 'lucide-react';
 import { Exercise as AssessmentExercise } from '@/types/assessments';
 import { exerciseService, Exercise as ExerciseDBExercise } from '@/lib/exercisedb/exerciseService';
-import { useQuery } from 'convex/react';
-import { api } from '@/convex/_generated/api';
 
 interface ExerciseLibraryProps {
   onExerciseSelect?: (exercise: AssessmentExercise) => void;
@@ -26,14 +24,9 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');
   const [selectedMuscle, setSelectedMuscle] = useState('all');
-  const [source, setSource] = useState<'platform' | 'exercisedb'>('platform');
+  const isStandalone = !onExerciseSelect; // When used without a callback, treat as browse-only
 
-  // Platform exercises via Convex (public + clinic scope when available)
-  const platformResults = useQuery(api.exercises.searchExercises, {
-    searchTerm: searchTerm || undefined,
-    includePublic: true,
-    limit: 50,
-  });
+  // Platform source removed: using ExerciseDB exclusively
 
   const categories = ['all', 'strength', 'stretching', 'cardio', 'balance'];
   const difficulties = ['all', 'beginner', 'intermediate', 'advanced'];
@@ -67,48 +60,22 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
     imageUrl: dbExercise.imageUrl
   });
 
+  // Initial load
   useEffect(() => {
-    if (source === 'exercisedb') {
-      fetchFromExerciseDB();
-    }
+    fetchFromExerciseDB();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source]);
+  }, []);
 
-  // Merge and filter depending on source
-  const platformTransformed: AssessmentExercise[] = (
-    (platformResults || []) as Array<{
-      _id: string;
-      name: string;
-      description?: string;
-      instructions?: string[];
-      targetMuscles?: string[];
-      difficultyLevel?: string;
-      equipmentNeeded?: string[];
-      defaultSets?: number;
-      defaultReps?: number;
-      defaultFrequency?: string;
-      precautions?: string[];
-      videoUrl?: string;
-      imageUrl?: string;
-    }>
-  ).map((ex) => ({
-    _id: ex._id,
-    name: ex.name,
-    description: ex.description || '',
-    instructions: ex.instructions || [],
-    targetMuscles: ex.targetMuscles || [],
-    difficulty: sanitizeDifficulty(ex.difficultyLevel),
-    equipment: ex.equipmentNeeded || [],
-    sets: ex.defaultSets || 3,
-    reps: ex.defaultReps || 10,
-    frequency: ex.defaultFrequency || 'Daily',
-    precautions: ex.precautions || [],
-    exerciseDbId: ex._id,
-    videoUrl: ex.videoUrl,
-    imageUrl: ex.imageUrl,
-  }));
+  // Auto-fetch from ExerciseDB when filters/search change
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      fetchFromExerciseDB();
+    }, 300);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, selectedMuscle]);
 
-  const currentList = source === 'platform' ? platformTransformed : exercises;
+  const currentList = exercises;
 
   const filteredExercises = currentList.filter(exercise => {
     const matchesSearch = exercise.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -133,7 +100,15 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
   const fetchFromExerciseDB = async () => {
     setLoading(true);
     try {
-      const dbExercises = await exerciseService.getExercises({ limit: 50 });
+      const term = searchTerm.trim();
+      let dbExercises: ExerciseDBExercise[] = [];
+      if (term.length >= 2) {
+        dbExercises = await exerciseService.searchExercises(term);
+      } else {
+        const params: { limit: number; targetMuscles?: string } = { limit: 50 };
+        if (selectedMuscle !== 'all') params.targetMuscles = selectedMuscle;
+        dbExercises = await exerciseService.getExercises(params as any);
+      }
       console.log('Fetched exercises:', dbExercises); // Debug log
       const transformedExercises = dbExercises.map(transformToExercise);
       setExercises(transformedExercises);
@@ -174,20 +149,16 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
         <CardHeader>
           <CardTitle>Exercise Library</CardTitle>
           <CardDescription>
-            Browse and select exercises from Platform or ExerciseDB, or add a custom link
+            Browse and select exercises from ExerciseDB, or add a custom link
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-            <Select value={source} onValueChange={(v: 'platform' | 'exercisedb') => setSource(v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Source" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="platform">Platform</SelectItem>
-                <SelectItem value="exercisedb">ExerciseDB</SelectItem>
-              </SelectContent>
-            </Select>
+          {isStandalone && (
+            <div className="mb-4 text-sm text-muted-foreground">
+              This page is browse-only. To add exercises to a plan, open a patient's Treatment Plan and click "Add Exercise".
+            </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
@@ -238,16 +209,14 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
             </Select>
           </div>
 
-          {source === 'exercisedb' && (
-            <Button 
-              onClick={fetchFromExerciseDB}
-              disabled={loading}
-              variant="outline"
-              className="mb-4"
-            >
-              {loading ? 'Loading...' : 'Refresh from ExerciseDB'}
-            </Button>
-          )}
+          <Button 
+            onClick={fetchFromExerciseDB}
+            disabled={loading}
+            variant="outline"
+            className="mb-4"
+          >
+            {loading ? 'Loading...' : 'Refresh from ExerciseDB'}
+          </Button>
 
           {/* Manual Add */}
           <div className="border rounded p-3 mb-4">
@@ -257,7 +226,7 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
               <Input id="manual-video" placeholder="Video URL (optional)" />
             </div>
             <div className="flex justify-end mt-2">
-              <Button size="sm" variant="secondary" onClick={() => {
+              <Button size="sm" variant="secondary" disabled={isStandalone} onClick={() => {
                 const nameEl = (document.getElementById('manual-name') as HTMLInputElement);
                 const ytEl = (document.getElementById('manual-youtube') as HTMLInputElement);
                 const vidEl = (document.getElementById('manual-video') as HTMLInputElement);
@@ -378,10 +347,10 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
                       <Button
                         size="sm"
                         onClick={() => handleExerciseSelect(exercise)}
-                        disabled={isSelected(exercise._id)}
+                        disabled={isStandalone || isSelected(exercise._id)}
                       >
                         <Plus className="h-4 w-4 mr-1" />
-                        Add to Plan
+                        {isStandalone ? 'Open from a Treatment Plan to add' : 'Add to Plan'}
                       </Button>
                     </div>
                   </div>

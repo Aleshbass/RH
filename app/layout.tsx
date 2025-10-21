@@ -7,9 +7,7 @@ import SyncUserWithConvex from "@/components/auth/SyncUserWithConvex";
 import AutoOnboardClinicOwner from "@/components/auth/AutoOnboardClinicOwner";
 import Providers from "./providers";
 import '@fortawesome/fontawesome-svg-core/styles.css';
-import NextTopLoader from 'nextjs-toploader';
 import ConditionalLayout from '@/components/layout/ConditionalLayout';
-import ReactCookiebot from 'react-cookiebot';
 
 const pallyRegular = localFont({
   src: '../public/logos/fonts/Pally-Regular.otf',
@@ -52,17 +50,7 @@ export default function RootLayout({
       <body
         className={`${pallyRegular.variable} ${pallyMedium.variable} ${pallyBold.variable} font-sans antialiased`}
       >
-        <NextTopLoader
-          color="#00cd0f" // Highlighter Green
-          initialPosition={0.08}
-          crawlSpeed={200}
-          height={3}
-          crawl={true}
-          showSpinner={true}
-          easing="ease"
-          speed={200}
-          shadow="0 0 10px #00cd0f, 0 0 5px #00cd0f"
-        />
+        {/* Top loader is rendered in app/providers.tsx (client component) */}
         <ClerkProvider dynamic>
           <Providers>
             <ConvexClientProvider>
@@ -78,22 +66,7 @@ export default function RootLayout({
         {/* Paystack Inline Script */}
         <script src="https://js.paystack.co/v1/inline.js" async />
         
-        {/* Cookie Consent Management */}
-        <ReactCookiebot 
-          domainGroupId={cookiebotGroupId}
-          blockingMode="auto"
-          level="strict"
-          culture="en"
-          framework="TCFv2.2"
-          onLoad={() => {
-            if (typeof window !== 'undefined') {
-              // Simple runtime signal that Cookiebot initialized
-              console.info('Cookiebot loaded', { groupId: cookiebotGroupId, hasCookiebot: !!window.Cookiebot })
-            }
-          }}
-          onAccept={() => console.info('Cookie consent accepted')}
-          onDecline={() => console.info('Cookie consent declined')}
-        />
+        {/* Cookiebot is rendered in app/providers.tsx (client component) */}
       </body>
     </html>
   );
