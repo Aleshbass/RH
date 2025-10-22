@@ -44,10 +44,10 @@ crons.weekly(
   {}
 );
 
-// Send appointment reminders for next day (UTC) daily at 09:00
+// Send appointment reminders for next day daily at 08:00 UTC (9:00 AM WAT for Nigeria)
 crons.daily(
   "send-appointment-reminders",
-  { hourUTC: 9, minuteUTC: 0 },
+  { hourUTC: 8, minuteUTC: 0 },
   internal.scheduled.appointment_reminders.sendDailyAppointmentReminders,
   {}
 );
@@ -60,10 +60,10 @@ crons.daily(
   {}
 );
 
-// Send daily exercise reminders to patients at 7:00 UTC (8:00 AM WAT)
+// Send daily exercise reminders to patients at 6:00 UTC (7:00 AM WAT)
 crons.daily(
   "send-daily-exercise-reminders",
-  { hourUTC: 7, minuteUTC: 0 },
+  { hourUTC: 6, minuteUTC: 0 },
   internal.reminders.sendDailyExerciseReminders,
   {}
 );
@@ -76,10 +76,10 @@ crons.daily(
   {}
 );
 
-// Send appointment reminders every 2 hours during business hours
+// Send appointment reminders every hour (more frequent for better coverage)
 crons.interval(
   "send-appointment-reminders-interval",
-  { hours: 2 },
+  { hours: 1 },
   internal.reminderSystem.sendAppointmentReminders,
   {}
 );

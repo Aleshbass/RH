@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { ConnectedCareEcosystem } from "./ConnectedCareEcosystem";
 import { BentoGrid, BentoCard } from "../ui/bento-grid";
 import {
@@ -9,8 +9,6 @@ import {
   Stethoscope,
   User,
   Users,
-  ImageIcon,
-  VideoIcon,
 } from "lucide-react";
 
 const RoleBasedFeatures = () => {
@@ -49,68 +47,18 @@ const RoleBasedFeatures = () => {
   );
 };
 
-// Component for the Physiotherapist card with interchangeable media
+// Component for the Physiotherapist card with video only
 const PhysiotherapistCardHeader = () => {
-  const [isShowingVideo, setIsShowingVideo] = React.useState(false);
-
   return (
     <div className="relative w-full h-full">
-      <AnimatePresence mode="wait">
-        {isShowingVideo ? (
-          <motion.video
-            key="video"
-            src="https://cdn-marketing.acuityscheduling.com/img/marketing/squarespace/v3/frontsite/feature-area/02.mp4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="w-full h-full object-cover rounded-xl absolute inset-0"
-          />
-        ) : (
-          <motion.div
-            key="image"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="w-full h-full absolute inset-0"
-          >
-            <Image
-              src="https://i.pinimg.com/736x/2a/8f/88/2a8f88505ec66597dd0e7cf79de145bc.jpg"
-              alt="Physiotherapist working with a patient"
-              fill
-              style={{ objectFit: 'cover' }}
-              className="rounded-xl"
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <div className="absolute bottom-2 right-2 flex space-x-2 z-10">
-        <button
-          onClick={() => setIsShowingVideo(false)}
-          className={`p-2 rounded-full transition-colors backdrop-blur-sm ${
-            !isShowingVideo
-              ? "bg-white/50 text-black"
-              : "bg-black/20 text-white"
-          }`}
-        >
-          <ImageIcon className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => setIsShowingVideo(true)}
-          className={`p-2 rounded-full transition-colors backdrop-blur-sm ${
-            isShowingVideo
-              ? "bg-white/50 text-black"
-              : "bg-black/20 text-white"
-          }`}
-        >
-          <VideoIcon className="h-4 w-4" />
-        </button>
-      </div>
+      <video
+        src="https://cdn-marketing.acuityscheduling.com/img/marketing/squarespace/v3/frontsite/feature-area/02.mp4"
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="w-full h-full object-cover rounded-xl"
+      />
     </div>
   );
 };
@@ -123,11 +71,11 @@ const features = [
     description: "Streamline operations with a powerful dashboard for managing your entire practice.",
     header: (
       <Image
-        src="https://files.tryflowdrive.com/org-43506c5e-4dec-4c30-bb29-f21a60a6ad91/file-639b768e-e14d-4330-b91f-f442bb521388_form_routing.png"
+        src="/logos/images/clnics.webp"
         alt="Clinic management dashboard"
-        width={500}
-        height={300}
-        className="w-full h-auto object-contain rounded-xl p-4 bg-white/80"
+        width={600}
+        height={400}
+        className="w-full h-auto object-cover rounded-xl"
       />
     ),
     icon: <Briefcase className="h-6 w-6 text-[#005b57]" />,
@@ -145,10 +93,10 @@ const features = [
     description: "Engage in your recovery with personalized plans and progress tracking.",
     header: (
       <Image
-        src="https://cdn.sanity.io/images/599r6htc/regionalized/5ee6b7f438fa1f6a463a8c8f27cfa91f24ddb13f-1560x1248.png?w=908&q=75&fit=max&auto=format&dpr=2"
-        alt="Patient using a tablet for their rehabilitation"
+        src="/logos/images/analytics.webp"
+        alt="Patient analytics and progress tracking"
         width={500}
-        height={500}
+        height={400}
         className="w-full h-full object-cover rounded-xl"
       />
     ),

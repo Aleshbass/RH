@@ -200,6 +200,43 @@ export const createAppointment = mutation({
       createdAt: Date.now(),
     });
 
+    // Auto-create video room for telehealth appointments
+    if (args.appointmentType === 'telehealth') {
+      try {
+        // Check physiotherapist's video platform preference
+        const physioProfile = await ctx.db.get(user.physiotherapistProfileId!);
+        const preferredPlatform = (physioProfile as any)?.videoPlatformPreference || 'stream';
+
+        if (preferredPlatform === 'stream') {
+          // Create Stream video call
+          await ctx.scheduler.runAfter(0, api.videoCalls.createVideoCall as any, {
+            appointmentId: appointmentId,
+            participants: [args.patientId, user._id],
+            callType: "appointment" as const,
+            title: `Appointment: ${patientName}`,
+            settings: {
+              recordingEnabled: false,
+              chatEnabled: true,
+              maxParticipants: 2,
+              waitingRoomEnabled: false,
+            }
+          });
+        } else if (preferredPlatform === 'google_meet') {
+          // Generate Google Meet link (placeholder - actual implementation would use Google Calendar API)
+          const meetingId = `${appointmentId}-${Date.now()}`;
+          const googleMeetLink = `https://meet.google.com/${meetingId}`;
+          
+          // Update appointment with Google Meet link
+          await ctx.db.patch(appointmentId, {
+            googleMeetLink: googleMeetLink,
+          } as any);
+        }
+      } catch (error) {
+        console.error('Failed to create video call for appointment:', error);
+        // Don't fail appointment creation if video call fails
+      }
+    }
+
     return {
       success: true,
       appointmentId,

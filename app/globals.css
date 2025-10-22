@@ -181,7 +181,11 @@ body {
 
 /* DayPicker alignment fixes */
 .rdp { --rdp-cell-size: 40px; }
-.rdp-table { table-layout: fixed; width: 100%; }
-.rdp-day { height: var(--rdp-cell-size); width: var(--rdp-cell-size); display: grid; place-items: center; }
+.rdp-table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+/* Ensure header and rows use table semantics (prevents flex/grid overrides) */
+.rdp-head_row, .rdp-row { display: table-row; }
+.rdp-head_cell, .rdp-cell { display: table-cell; width: calc(100% / 7); }
 .rdp-head_cell, .rdp-day { text-align: center; }
+/* Size and center individual days */
+.rdp-day { height: var(--rdp-cell-size); width: var(--rdp-cell-size); display: grid; place-items: center; }
 

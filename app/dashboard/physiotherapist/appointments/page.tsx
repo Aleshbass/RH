@@ -1,13 +1,15 @@
 'use client';
 
-import { useQuery, useMutation } from 'convex/react';
+import { useMutation } from 'convex/react';
+import { useQuery as useTanStackQuery } from '@tanstack/react-query';
+import { useConvex } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 // Removed unused Appointment import
 
 
 import { useAuth } from '@clerk/nextjs';
 import { useSearchParams } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { Calendar, Filter, Plus, Repeat, Settings, Pin, Video, Home, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,7 @@ import { RecurringAppointmentModal } from '@/components/appointments/RecurringAp
 import { RecurringSeriesManager } from '@/components/appointments/RecurringSeriesManager';
 import { ResourceDashboard } from '@/components/resources/ResourceDashboard';
 import { TimeConflictModal } from '@/components/appointments/TimeConflictModal';
+import { AppointmentQuickActions } from '@/components/appointments/AppointmentQuickActions';
 import { toast } from 'sonner';
 import { Id } from '@/convex/_generated/dataModel';
 
@@ -79,6 +82,7 @@ const getStatusLabel = (status: string): string => {
 };
 
 export default function AppointmentsPage() {
+  const convex = useConvex();
   const { isLoaded, isSignedIn } = useAuth();
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,7 +92,6 @@ export default function AppointmentsPage() {
   const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [isCreating, setIsCreating] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
   
   // Time conflict modal state
   const [showConflictModal, setShowConflictModal] = useState(false);
@@ -107,26 +110,43 @@ export default function AppointmentsPage() {
   const conflictStartMs = dayStartMs ? dayStartMs - (24 * 60 * 60 * 1000) : undefined;
   const conflictEndMs = dayEndMs ? dayEndMs + (24 * 60 * 60 * 1000) : undefined;
 
-  // Get current user
+  // OPTIMIZED: Get current user with caching
   type UserLike = { _id: string; clinicId?: string; role?: string };
-const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined;
+  const { data: currentUser, isLoading: userLoading } = useTanStackQuery({
+    queryKey: ['user', 'profile'],
+    queryFn: () => convex.query(api.users.getMyUser),
+    staleTime: 15 * 60 * 1000, // 15 minutes
+    gcTime: 30 * 60 * 1000,
+    enabled: isLoaded && isSignedIn,
+  }) as { data: UserLike | null | undefined; isLoading: boolean };
   const preselectedPatientId = (searchParams?.get('patient') || '').trim();
 
-  // Get appointments
-  const appointments = useQuery(api.appointments.getMyAppointments, {
-    startDate: undefined,
-    endDate: undefined,
-    status: undefined,
-    // Change the limit slightly when reloadKey changes to force a refetch/resubscribe
-    limit: 100 + (reloadKey % 3),
+  // OPTIMIZED: Get appointments with caching and reduced limit
+  const { data: appointments, isLoading: appointmentsLoading, refetch: refetchAppointments } = useTanStackQuery({
+    queryKey: ['appointments', 'list'],
+    queryFn: () => convex.query(api.appointments.getMyAppointments, {
+      startDate: undefined,
+      endDate: undefined,
+      status: undefined,
+      limit: 50, // REDUCED from 100 for faster loading
+    }),
+    staleTime: 2 * 60 * 1000, // 2 minutes cache
+    gcTime: 5 * 60 * 1000,
+    enabled: !!currentUser,
   });
 
-  // Fetch appointments in a broadened window (unfiltered by status) for conflict checks
-  const appointmentsForConflicts = useQuery(api.appointments.getMyAppointments, {
-    startDate: conflictStartMs,
-    endDate: conflictEndMs,
-    status: undefined,
-    limit: 500,
+  // OPTIMIZED: Lazy load conflict appointments only when modal opens
+  const { data: appointmentsForConflicts } = useTanStackQuery({
+    queryKey: ['appointments', 'conflicts', conflictStartMs, conflictEndMs],
+    queryFn: () => convex.query(api.appointments.getMyAppointments, {
+      startDate: conflictStartMs,
+      endDate: conflictEndMs,
+      status: undefined,
+      limit: 100, // REDUCED from 500
+    }),
+    staleTime: 1 * 60 * 1000,
+    gcTime: 3 * 60 * 1000,
+    enabled: isAppointmentModalOpen && !!conflictStartMs, // ONLY load when modal is open
   });
 
   // Convex mutations - MUST be called before any conditional returns
@@ -148,8 +168,33 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
     }
   }, [currentUser]);
 
-  // Loading state
-  if (!isLoaded || currentUser === undefined || appointments === undefined) {
+  // OPTIMIZED: Memoized filtering to prevent re-computation
+  // MUST be before any conditional returns to maintain hook order
+  const filteredAppointments = useMemo(() => {
+    if (!appointments) return [];
+    
+    return (appointments as AppointmentLike[]).filter((appointment: AppointmentLike) => {
+      if (searchTerm) {
+        const patientName = appointment.patient
+          ? `${appointment.patient.firstName} ${appointment.patient.lastName}`.toLowerCase()
+          : '';
+        const matchesSearch = patientName.includes(searchTerm.toLowerCase()) ||
+          (appointment.serviceType || '').toLowerCase().includes(searchTerm.toLowerCase());
+        if (!matchesSearch) return false;
+      }
+      return true;
+    });
+  }, [appointments, searchTerm]);
+
+  // OPTIMIZED: Memoized pinned/unpinned separation
+  // MUST be before any conditional returns to maintain hook order
+  const { pinnedAppointments, unpinnedAppointments } = useMemo(() => ({
+    pinnedAppointments: filteredAppointments.filter(apt => apt.isPinned),
+    unpinnedAppointments: filteredAppointments.filter(apt => !apt.isPinned),
+  }), [filteredAppointments]);
+
+  // OPTIMIZED: Only block on critical user data
+  if (!isLoaded || userLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -159,30 +204,6 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
       </div>
     );
   }
-
-  // Simple filtering logic - only search
-  const filteredAppointments = (appointments as AppointmentLike[])?.filter((appointment: AppointmentLike) => {
-    // Search filter
-    if (searchTerm) {
-      const patientName = appointment.patient
-        ? `${appointment.patient.firstName} ${appointment.patient.lastName}`.toLowerCase()
-        : '';
-      const matchesSearch = patientName.includes(searchTerm.toLowerCase()) ||
-        (appointment.serviceType || '').toLowerCase().includes(searchTerm.toLowerCase());
-      if (!matchesSearch) return false;
-    }
-    
-    return true;
-  }) || [];
-
-  // Debug: Log appointments data
-  console.log('📅 Total appointments from query:', appointments?.length || 0);
-  console.log('📅 Filtered appointments:', filteredAppointments.length);
-  console.log('📅 Sample appointment:', filteredAppointments[0]);
-  
-  // Separate pinned and unpinned for display
-  const pinnedAppointments = filteredAppointments.filter(apt => apt.isPinned);
-  const unpinnedAppointments = filteredAppointments.filter(apt => !apt.isPinned);
 
   const handleCreateAppointment = (date?: Date): void => {
     if (date) {
@@ -499,6 +520,12 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
                               <strong>Notes:</strong> {appointment.notesForTherapist}
                             </div>
                           )}
+                          <div className="mt-3">
+                            <AppointmentQuickActions 
+                              appointment={appointment as any}
+                              userRole="physiotherapist"
+                            />
+                          </div>
                         </Card>
                       ))}
                     </div>
@@ -563,6 +590,12 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
                         <strong>Notes:</strong> {appointment.notesForTherapist}
                       </div>
                     )}
+                    <div className="mt-3">
+                      <AppointmentQuickActions 
+                        appointment={appointment as any}
+                        userRole="physiotherapist"
+                      />
+                    </div>
                   </Card>
                       ))}
                     </div>
@@ -630,14 +663,8 @@ const currentUser = useQuery(api.users.getMyUser) as UserLike | null | undefined
 
             setIsAppointmentModalOpen(false);
             
-            // Force appointments query to refetch - multiple approaches
-            setReloadKey((k) => k + 1);
-            
-            // Also force a small delay to ensure Convex propagates the new appointment
-            setTimeout(() => {
-              setReloadKey((k) => k + 1);
-              console.log('🔄 Forced calendar refresh after appointment creation');
-            }, 1000);
+            // OPTIMIZED: Refetch using TanStack Query cache invalidation
+            refetchAppointments();
           } catch (error: any) {
             console.error('Failed to create appointment:', error);
             const msg = (error?.message || '').toString();

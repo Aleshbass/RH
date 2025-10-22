@@ -6,7 +6,6 @@ import { DashboardSidebar } from './DashboardSidebar'
 import { 
   LayoutDashboard, 
   Calendar, 
-  Clock, 
   Users, 
   FileText, 
   MessageSquare, 
@@ -25,7 +24,6 @@ const physiotherapistNavItems = [
   { title: 'Dashboard', href: '/dashboard/physiotherapist', icon: LayoutDashboard, roles: ['physiotherapist'] },
   { title: 'Marketplace Profile', href: '/dashboard/physiotherapist/marketplace', icon: Search, roles: ['physiotherapist'] },
   { title: 'Appointments', href: '/dashboard/physiotherapist/appointments', icon: Calendar, roles: ['physiotherapist'] },
-  { title: 'Calendar', href: '/dashboard/physiotherapist/calendar', icon: Clock, roles: ['physiotherapist'] },
   { title: 'Patients', href: '/dashboard/physiotherapist/patients', icon: Users, roles: ['physiotherapist'] },
   { title: 'Reports', href: '/dashboard/physiotherapist/reports', icon: FileText, roles: ['physiotherapist'] },
   { title: 'Templates', href: '/dashboard/physiotherapist/templates', icon: FileText, roles: ['physiotherapist'] },

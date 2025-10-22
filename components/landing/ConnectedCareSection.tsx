@@ -23,11 +23,11 @@ const ConnectedCareSection = () => {
                 Rehabify bridges the gap between clinic administration, physiotherapy expertise, and patient engagement. Our integrated ecosystem ensures everyone is connected, informed, and working towards the same goal: successful rehabilitation.
               </p>
               <NavbarButton
-                href="/platform/clinics"
+                href="/sign-up"
                 variant="secondary"
                 className="group bg-white hover:bg-gray-200 text-[#002e2c] font-semibold py-3 sm:py-4 px-6 sm:px-8 rounded-full inline-flex items-center transition-all duration-300 transform hover:scale-105"
               >
-                <span className="mr-2">Explore the Platform</span>
+                <span className="mr-2">Get Started</span>
                 <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-300 group-hover:translate-x-1" />
               </NavbarButton>
             </div>
@@ -35,11 +35,11 @@ const ConnectedCareSection = () => {
             {/* Right side: Image */}
             <div className="lg:w-1/2 flex justify-center items-center mt-8 lg:mt-0">
                 <Image
-                  src="https://files.tryflowdrive.com/org-43506c5e-4dec-4c30-bb29-f21a60a6ad91/file-639b768e-e14d-4330-b91f-f442bb521388_form_routing.png"
-                  alt="Rehabify Platform Diagram"
-                  width={500}
-                  height={500}
-                  className="rounded-lg shadow-2xl object-contain w-full h-auto"
+                  src="/logos/images/physio-dashboard.webp"
+                  alt="Physiotherapist Dashboard - Rehabify Platform"
+                  width={600}
+                  height={400}
+                  className="rounded-lg shadow-2xl object-cover w-full h-auto"
                 />
             </div>
           </div>

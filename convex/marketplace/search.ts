@@ -106,7 +106,14 @@ export const searchPhysiotherapists = query({
     
     if (args.minPrice !== undefined || args.maxPrice !== undefined) {
       filteredPhysios = filteredPhysios.filter((p) => {
-        const rate = (p.hourlyRate || 0) / 100; // Convert kobo to Naira
+        // Use the lower of hourlyRate or initialConsultRate for filtering
+        const hourlyNaira = (p.hourlyRate || 0) / 100;
+        const initialNaira = (p.initialConsultRate || 0) / 100;
+        const rate = Math.min(
+          hourlyNaira || initialNaira || 0,
+          initialNaira || hourlyNaira || 0
+        ) || hourlyNaira || initialNaira || 0;
+        
         if (args.minPrice !== undefined && rate < args.minPrice) return false;
         if (args.maxPrice !== undefined && rate > args.maxPrice) return false;
         return true;
@@ -143,24 +150,38 @@ export const searchPhysiotherapists = query({
     const sortBy = args.sortBy || "verified";
     
     filteredPhysios.sort((a, b) => {
-      // Primary sort: Verified first
-      const aVerified = a.verificationBadge?.status !== "none" ? 1 : 0;
-      const bVerified = b.verificationBadge?.status !== "none" ? 1 : 0;
-      
-      if (aVerified !== bVerified) {
-        return bVerified - aVerified;
+      // For verified sort, prioritize verified first
+      if (sortBy === "verified") {
+        const aVerified = a.verificationBadge?.status !== "none" ? 1 : 0;
+        const bVerified = b.verificationBadge?.status !== "none" ? 1 : 0;
+        
+        if (aVerified !== bVerified) {
+          return bVerified - aVerified;
+        }
+        
+        // Secondary: highest rated
+        return (b.averageRating || 0) - (a.averageRating || 0);
       }
       
-      // Secondary sort based on sortBy parameter
+      // For other sorts, apply directly
       switch (sortBy) {
-        case "price_low":
-          return (a.hourlyRate || 0) - (b.hourlyRate || 0);
-        case "price_high":
-          return (b.hourlyRate || 0) - (a.hourlyRate || 0);
+        case "price_low": {
+          const aPrice = Math.min(a.hourlyRate || Infinity, a.initialConsultRate || Infinity);
+          const bPrice = Math.min(b.hourlyRate || Infinity, b.initialConsultRate || Infinity);
+          return aPrice - bPrice;
+        }
+        case "price_high": {
+          const aPrice = Math.max(a.hourlyRate || 0, a.initialConsultRate || 0);
+          const bPrice = Math.max(b.hourlyRate || 0, b.initialConsultRate || 0);
+          return bPrice - aPrice;
+        }
         case "experience":
           return (b.yearsOfExperience || 0) - (a.yearsOfExperience || 0);
         case "rating":
-          return (b.averageRating || 0) - (a.averageRating || 0);
+          const ratingDiff = (b.averageRating || 0) - (a.averageRating || 0);
+          if (ratingDiff !== 0) return ratingDiff;
+          // Secondary: more reviews
+          return (b.reviewCount || 0) - (a.reviewCount || 0);
         default:
           return 0;
       }

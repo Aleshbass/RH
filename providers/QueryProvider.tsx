@@ -10,11 +10,12 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            // Global defaults for all queries
-            staleTime: 60 * 1000, // 1 minute
-            gcTime: 5 * 60 * 1000, // 5 minutes
-            refetchOnWindowFocus: false,
-            refetchOnReconnect: true,
+            // OPTIMIZED: Aggressive caching for dashboard performance
+            staleTime: 5 * 60 * 1000, // 5 minutes (data considered fresh)
+            gcTime: 10 * 60 * 1000, // 10 minutes (keep in cache)
+            refetchOnWindowFocus: false, // Don't refetch when user returns to tab
+            refetchOnMount: false, // Don't refetch if data exists in cache
+            refetchOnReconnect: true, // Refetch when internet reconnects
             retry: (failureCount, error) => {
               // Don't retry on 4xx errors (client errors)
               if (error && typeof error === 'object' && 'status' in error) {
@@ -23,7 +24,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
                   return false
                 }
               }
-              return failureCount < 3
+              return failureCount < 2 // Reduced retries for faster failure
             },
           },
           mutations: {

@@ -173,7 +173,10 @@ export default function PhysioCard({ physiotherapist }: PhysioCardProps) {
           </div>
 
           <Link href={`/find-a-physio/${id}`}>
-            <Button className="bg-gradient-to-r from-[#005b57] to-pink-600 hover:from-[#00443e] hover:to-pink-700 text-white shadow-lg group-hover:shadow-xl transition-all">
+            <Button 
+              size="sm"
+              className="bg-gradient-to-r from-[#005b57] to-pink-600 hover:from-[#00443e] hover:to-pink-700 text-white shadow-md group-hover:shadow-lg transition-all text-xs px-4"
+            >
               View Profile
             </Button>
           </Link>

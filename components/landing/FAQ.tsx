@@ -91,7 +91,7 @@ const FAQ = () => {
           ))}
         </div>
         <div className="text-center mt-12">
-            <p className="text-gray-600">Still have more questions? <a href="#" className="text-[#005b57] hover:underline">Contact our help center</a>.</p>
+            <p className="text-gray-600">Still have more questions? <a href="/sign-up" className="text-[#005b57] hover:underline">Contact our help center</a>.</p>
         </div>
       </div>
     </section>

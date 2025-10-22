@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useSignIn, useAuth } from "@clerk/clerk-react";
 import { motion, Variants } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
@@ -53,10 +53,23 @@ export default function CustomSignIn() {
     return fallback;
   };
 
-  // Redirect if already signed in
+  // Redirect if already signed in (using useEffect to avoid setState during render)
+  useEffect(() => {
+    if (isSignedIn) {
+      router.push(redirectTarget);
+    }
+  }, [isSignedIn, router, redirectTarget]);
+
+  // Show loading state while redirecting
   if (isSignedIn) {
-    router.push(redirectTarget);
-    return null;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAF6E7]">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-[#005b57] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Redirecting...</p>
+        </div>
+      </div>
+    );
   }
 
   const handleEmailSubmit = async (e: React.FormEvent) => {

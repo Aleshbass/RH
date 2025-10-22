@@ -1,0 +1,53 @@
+# Vercel CLI Commands to Update Environment Variables
+
+## Prerequisites
+# Install Vercel CLI (if not installed)
+npm install -g vercel
+
+# Login to Vercel
+vercel login
+
+# Link your project
+vercel link
+
+## Update Environment Variables (Production Only)
+
+# 1. Update CONVEX_DEPLOYMENT
+vercel env rm CONVEX_DEPLOYMENT production
+vercel env add CONVEX_DEPLOYMENT production
+# When prompted, enter: prod:adept-horse-443
+
+# 2. Update NEXT_PUBLIC_CONVEX_URL
+vercel env rm NEXT_PUBLIC_CONVEX_URL production
+vercel env add NEXT_PUBLIC_CONVEX_URL production
+# When prompted, enter: https://adept-horse-443.convex.cloud
+
+# 3. Update CALENDAR_WEBHOOK_URL
+vercel env rm CALENDAR_WEBHOOK_URL production
+vercel env add CALENDAR_WEBHOOK_URL production
+# When prompted, enter: https://adept-horse-443.convex.cloud/api/webhooks/google-calendar
+
+# 4. Update GOOGLE_REDIRECT_URI (if needed)
+vercel env rm GOOGLE_REDIRECT_URI production
+vercel env add GOOGLE_REDIRECT_URI production
+# When prompted, enter: https://rehabifyhealth.com/api/calendar/oauth/callback
+
+## Redeploy to Production
+vercel --prod
+
+## Verify Environment Variables
+vercel env ls
+
+## Alternative: One-liner Commands (Windows PowerShell)
+
+# Install Vercel CLI
+npm i -g vercel; vercel login; vercel link
+
+# Set all variables at once (copy each line)
+echo "prod:adept-horse-443" | vercel env add CONVEX_DEPLOYMENT production
+echo "https://adept-horse-443.convex.cloud" | vercel env add NEXT_PUBLIC_CONVEX_URL production
+echo "https://adept-horse-443.convex.cloud/api/webhooks/google-calendar" | vercel env add CALENDAR_WEBHOOK_URL production
+echo "https://rehabifyhealth.com/api/calendar/oauth/callback" | vercel env add GOOGLE_REDIRECT_URI production
+
+# Deploy
+vercel --prod

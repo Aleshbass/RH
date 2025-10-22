@@ -22,7 +22,9 @@ import {
   Loader2,
   Plus,
   Star,
-  Video
+  Video,
+  MessageCircle,
+  Phone
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { User as UserType } from '@/app/types'
@@ -50,6 +52,9 @@ interface Appointment {
   feedbackSubmitted?: boolean
   physiotherapistName?: string
   googleMeetLink?: string
+  streamMeetingLink?: string
+  videoCallId?: string
+  appointmentType?: 'in-person' | 'telehealth'
 }
 
 const getStatusIcon = (status: string) => {
@@ -120,12 +125,39 @@ function AppointmentCard({
   onConfirm: (appointment: Appointment) => void
   onRateVisit?: (appointment: Appointment) => void
 }) {
+  const router = useRouter()
   const startDate = new Date(appointment.startTime)
   const endDate = new Date(appointment.endTime)
 
   const canCancel = appointment.status === 'scheduled' || appointment.status === 'confirmed'
   const canReschedule = appointment.status === 'scheduled'
   const canConfirm = appointment.status === 'scheduled'
+  
+  // Check if appointment is within 30 minutes or in progress
+  const now = Date.now()
+  const thirtyMinutesBefore = appointment.startTime - (30 * 60 * 1000)
+  const canJoinCall = appointment.appointmentType === 'telehealth' && 
+                      now >= thirtyMinutesBefore && 
+                      now <= appointment.endTime &&
+                      (appointment.status === 'scheduled' || appointment.status === 'confirmed')
+  
+  const handleStartVideoCall = () => {
+    if (appointment.streamMeetingLink) {
+      // Use Stream video call
+      window.open(appointment.streamMeetingLink, '_blank')
+    } else if (appointment.googleMeetLink) {
+      // Use Google Meet
+      window.open(appointment.googleMeetLink, '_blank')
+    } else {
+      // Navigate to video calls page
+      router.push(`/dashboard/patient/video-calls`)
+    }
+  }
+  
+  const handleOpenChat = () => {
+    // Navigate to messages with physiotherapist pre-selected
+    router.push(`/dashboard/patient/messages?userId=${appointment.physiotherapistId}`)
+  }
 
   return (
     <Card className="mb-4 hover:shadow-md transition-shadow">
@@ -197,7 +229,49 @@ function AppointmentCard({
           </div>
         )}
 
-        {/* Action Buttons */}
+        {/* Quick Communication Actions */}
+        {(canJoinCall || appointment.status === 'scheduled' || appointment.status === 'confirmed') && (
+          <div className="p-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-100 mb-4">
+            <p className="text-sm font-semibold text-gray-700 mb-2">Quick Actions</p>
+            <div className="flex flex-wrap gap-2">
+              {/* Video Call Button */}
+              {canJoinCall && (
+                <Button 
+                  onClick={handleStartVideoCall}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  size="sm"
+                >
+                  <Video className="h-4 w-4 mr-2" />
+                  {appointment.streamMeetingLink || appointment.googleMeetLink ? 'Join Video Call' : 'Start Call'}
+                </Button>
+              )}
+              
+              {/* Message Button */}
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleOpenChat}
+                className="border-purple-200 text-purple-700 hover:bg-purple-50"
+              >
+                <MessageCircle className="h-4 w-4 mr-2" />
+                Message
+              </Button>
+              
+              {/* Treatment Plan Link */}
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => router.push('/dashboard/patient/treatment-plans')}
+                className="border-green-200 text-green-700 hover:bg-green-50"
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                Treatment Plan
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Standard Action Buttons */}
         <div className="flex flex-wrap gap-2 pt-2">
           {canConfirm && (
             <Button 
@@ -242,10 +316,6 @@ function AppointmentCard({
               Rate Visit
             </Button>
           )}
-          <Button variant="ghost" size="sm">
-            <FileText className="h-4 w-4 mr-2" />
-            View Details
-          </Button>
         </div>
       </CardContent>
     </Card>

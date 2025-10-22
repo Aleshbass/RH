@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useUser } from "@clerk/nextjs";
@@ -10,12 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SmartDatetimeInput } from "@/components/ui/date-time-input";
 import { toast } from "sonner";
-import { CalendarIcon, Loader2, Info, Video, Users } from "lucide-react";
-import { format } from "date-fns";
-import { cn } from "@/lib/utils";
+import { Loader2, Info, Video, Users } from "lucide-react";
 import { Id } from "@/convex/_generated/dataModel";
 
 interface BookingWidgetProps {
@@ -36,44 +33,8 @@ interface BookingWidgetProps {
 
 type SessionType = "initial_consult" | "follow_up" | "package";
 
-interface FeeBreakdown {
-  serviceAmount: number;
-  platformFee: number;
-  paystackFee: number;
-  totalAmount: number;
-  physiotherapistEarnings: number;
-}
-
-// Calculate fees matching backend logic
-function calculateFees(serviceAmountNaira: number): FeeBreakdown {
-  const serviceAmount = Math.round(serviceAmountNaira * 100); // Convert to kobo
-  const platformFeeRate = 0.2; // 20%
-  const paystackPercentage = 0.015; // 1.5%
-  const paystackFlat = 100 * 100; // ₦100 in kobo
-
-  // Platform fee
-  const platformFee = Math.round(serviceAmount * platformFeeRate);
-
-  // Paystack fee on (service + platform fee)
-  const chargeableAmount = serviceAmount + platformFee;
-  const paystackFee = Math.round(
-    chargeableAmount * paystackPercentage + paystackFlat
-  );
-
-  // Total amount to charge patient
-  const totalAmount = chargeableAmount + paystackFee;
-
-  // Physiotherapist earnings (service amount)
-  const physiotherapistEarnings = serviceAmount;
-
-  return {
-    serviceAmount,
-    platformFee,
-    paystackFee,
-    totalAmount,
-    physiotherapistEarnings,
-  };
-}
+// Patient pays only the session fee
+// Fees are deducted from physiotherapist's earnings on the backend
 
 export default function BookingWidget({ profile }: BookingWidgetProps) {
   const { user, isSignedIn } = useUser();
@@ -84,12 +45,10 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
   const [isOnline, setIsOnline] = useState<boolean>(
     profile.offersOnlineSessions ? true : false
   );
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [selectedDateTime, setSelectedDateTime] = useState<Date | undefined>(undefined);
   const [notes, setNotes] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Focus the date picker if user tries to book without selecting a date
-  const dateButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const createBooking = useMutation(api.marketplace.booking.createMarketplaceBooking);
 
@@ -106,7 +65,7 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
   };
 
   const sessionPrice = getSessionPrice();
-  const fees = calculateFees(sessionPrice);
+  const sessionPriceKobo = Math.round(sessionPrice * 100); // Convert to kobo
 
   const handleBooking = async () => {
     // Check authentication
@@ -118,14 +77,11 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
       return;
     }
 
-    // Validate date
-    if (!selectedDate) {
-      toast.error("Select a date", {
-        description: "Please choose a preferred session date to continue.",
+    // Validate date and time
+    if (!selectedDateTime) {
+      toast.error("Select date and time", {
+        description: "Please choose a preferred session date and time to continue.",
       });
-      // Gently guide the user to the date picker
-      dateButtonRef.current?.focus();
-      dateButtonRef.current?.click();
       return;
     }
 
@@ -149,10 +105,10 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
             : sessionType === "follow_up"
             ? "follow_up"
             : "package",
-        sessionDate: selectedDate.getTime(),
+        sessionDate: selectedDateTime.getTime(),
         sessionDuration: 60, // Default 60 minutes
         isOnline,
-        serviceAmount: fees.serviceAmount, // in kobo
+        serviceAmount: sessionPriceKobo, // in kobo
         patientNotes: notes || undefined,
       });
 
@@ -160,8 +116,8 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
         description: "Redirecting to payment...",
       });
 
-      // Initialize Paystack payment
-      initializePaystack(result.bookingId, fees.totalAmount / 100); // Convert back to Naira
+      // Initialize Paystack payment - patient pays session fee only
+      initializePaystack(result.bookingId, sessionPrice);
     } catch (error: any) {
       console.error("Booking error:", error);
       toast.error("Booking failed", {
@@ -333,36 +289,22 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
           </div>
         )}
 
-        {/* Date Selection */}
+        {/* Date & Time Selection */}
         <div>
           <Label className="text-base font-semibold mb-3 block">
-            Preferred Date
+            Preferred Date & Time
           </Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                ref={dateButtonRef}
-                variant="outline"
-                className={cn(
-                  "w-full justify-start text-left font-normal",
-                  !selectedDate && "text-muted-foreground"
-                )}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {selectedDate ? format(selectedDate, "PPP") : "Select a date"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                selected={selectedDate}
-                onSelect={setSelectedDate}
-              />
-            </PopoverContent>
-          </Popover>
-          {!selectedDate && (
+          <SmartDatetimeInput
+            value={selectedDateTime}
+            onValueChange={setSelectedDateTime}
+            placeholder="Select date and time for your session"
+            showCalendar={true}
+            showTimePicker={true}
+            className="w-full"
+          />
+          {!selectedDateTime && (
             <p className="mt-2 text-xs text-gray-500">
-              Select a date to enable Book & Pay
+              Select a date and time to enable Book & Pay
             </p>
           )}
         </div>
@@ -382,32 +324,19 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
           />
         </div>
 
-        {/* Price Breakdown */}
+        {/* Session Fee - Patient pays only the session fee */}
         {sessionPrice > 0 && (
-          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Session Fee</span>
-              <span className="font-medium">
-                ₦{(fees.serviceAmount / 100).toLocaleString()}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Platform Fee (20%)</span>
-              <span className="font-medium">
-                ₦{(fees.platformFee / 100).toLocaleString()}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Payment Processing</span>
-              <span className="font-medium">
-                ₦{(fees.paystackFee / 100).toLocaleString()}
-              </span>
-            </div>
-            <div className="border-t pt-2 flex justify-between font-bold text-lg">
-              <span>Total</span>
-              <span className="text-[#005b57]">
-                ₦{(fees.totalAmount / 100).toLocaleString()}
-              </span>
+          <div className="bg-gradient-to-br from-[#005b57]/5 to-pink-50 rounded-lg p-5 border-2 border-[#005b57]/20">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-sm font-medium text-gray-600 mb-1">Session Fee</p>
+                <p className="text-xs text-gray-500">Pay only the session amount</p>
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-bold bg-gradient-to-r from-[#005b57] to-pink-600 bg-clip-text text-transparent">
+                  ₦{sessionPrice.toLocaleString()}
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -423,7 +352,7 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
         {/* Book Button */}
         <Button
           onClick={handleBooking}
-          disabled={isProcessing || !selectedDate || !sessionPrice || sessionPrice <= 0}
+          disabled={isProcessing || !selectedDateTime || !sessionPrice || sessionPrice <= 0}
           className="w-full h-12 text-base bg-[#005b57] hover:bg-[#00443e]"
         >
           {isProcessing ? (
@@ -432,7 +361,7 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
               Processing...
             </span>
           ) : (
-            `Book & Pay ₦${sessionPrice > 0 ? (fees.totalAmount / 100).toLocaleString() : "0"}`
+            `Book & Pay ₦${sessionPrice.toLocaleString()}`
           )}
         </Button>
 

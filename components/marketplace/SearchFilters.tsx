@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
@@ -55,8 +55,16 @@ export default function SearchFilters({
 }: SearchFiltersProps) {
   const [priceRange, setPriceRange] = useState([
     filters.minPrice || 2000,
-    filters.maxPrice || 60000,
+    filters.maxPrice || 32000,
   ]);
+
+  // Sync price range when filters change externally
+  useEffect(() => {
+    setPriceRange([
+      filters.minPrice || 2000,
+      filters.maxPrice || 32000,
+    ]);
+  }, [filters.minPrice, filters.maxPrice]);
 
   const handleSpecializationToggle = (spec: string) => {
     const current = filters.specializations || [];
@@ -116,7 +124,7 @@ export default function SearchFilters({
             onValueChange={handlePriceChange}
             onValueCommit={handlePriceCommit}
             min={2000}
-            max={60000}
+            max={32000}
             step={1000}
             className="mb-4"
           />

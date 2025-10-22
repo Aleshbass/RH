@@ -1,9 +1,15 @@
-import React from 'react';
+"use client";
+
+import React, { useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faXTwitter, faLinkedin, faInstagram } from '@fortawesome/free-brands-svg-icons';
+import BookDemoModal from './BookDemoModal';
 
 const Footer = () => {
+  const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
+
   return (
     <footer className="bg-[#002e2c] text-white rounded-t-2xl">
       <div className="container mx-auto px-6 lg:px-8">
@@ -12,10 +18,15 @@ const Footer = () => {
           <h2 className="text-4xl md:text-5xl font-bold mb-4">Ready to Elevate Your Practice?</h2>
           <p className="text-gray-300 mb-8 max-w-2xl mx-auto">Join hundreds of clinics and therapists who are streamlining their workflows and improving patient outcomes with Rehabify.</p>
           <div className="flex justify-center gap-4">
-            <button className="bg-white text-[#005b57] font-bold py-3 px-6 rounded-lg hover:bg-gray-200 transition-colors cursor-pointer">
-              Get Started for Free
-            </button>
-            <button className="bg-transparent border border-white text-white font-bold py-3 px-6 rounded-lg hover:bg-white hover:text-[#005b57] transition-colors cursor-pointer">
+            <Link href="/sign-up">
+              <button className="bg-white text-[#005b57] font-bold py-3 px-6 rounded-lg hover:bg-gray-200 transition-colors cursor-pointer">
+                Get Started for Free
+              </button>
+            </Link>
+            <button 
+              onClick={() => setIsDemoModalOpen(true)}
+              className="bg-transparent border border-white text-white font-bold py-3 px-6 rounded-lg hover:bg-white hover:text-[#005b57] transition-colors cursor-pointer"
+            >
               Book a Demo
             </button>
           </div>
@@ -80,6 +91,12 @@ const Footer = () => {
           </div>
         </div>
       </div>
+      
+      {/* Book Demo Modal */}
+      <BookDemoModal
+        isOpen={isDemoModalOpen}
+        onClose={() => setIsDemoModalOpen(false)}
+      />
     </footer>
   );
 };

@@ -1357,3 +1357,23 @@ export const markClinicOwnerOnboarded = mutation({
     return { success: true, message: "Clinic owner marked as onboarded" };
   },
 });
+
+/**
+ * Bootstrap first admin user - INTERNAL ONLY
+ * This is used to create the first admin without authentication checks
+ */
+export const bootstrapAdmin = internalMutation({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    // Update user to admin role
+    await ctx.db.patch(args.userId, {
+      role: "admin",
+      onboarded: true,
+    });
+    
+    console.log(`User ${args.userId} has been set as admin`);
+    return { success: true, userId: args.userId };
+  },
+});

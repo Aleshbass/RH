@@ -331,6 +331,47 @@ export const completeMarketplaceBooking = mutation({
 
     // External calendar sync disabled: no Google Calendar events scheduled
 
+    // Auto-create video room for online sessions
+    if (booking.isOnline) {
+      try {
+        // Check physiotherapist's video platform preference
+        const physioProfile = await ctx.db
+          .query("physiotherapistProfiles")
+          .withIndex("by_user_id", (q) => q.eq("userId", booking.physiotherapistId))
+          .first();
+        
+        const preferredPlatform = (physioProfile as any)?.videoPlatformPreference || 'stream';
+
+        if (preferredPlatform === 'stream') {
+          // Create Stream video call
+          await ctx.scheduler.runAfter(0, api.videoCalls.createVideoCall as any, {
+            appointmentId: appointmentId,
+            participants: [booking.patientId, booking.physiotherapistId],
+            callType: "appointment" as const,
+            title: `Appointment: ${patientName}`,
+            settings: {
+              recordingEnabled: false,
+              chatEnabled: true,
+              maxParticipants: 2,
+              waitingRoomEnabled: false,
+            }
+          });
+        } else if (preferredPlatform === 'google_meet') {
+          // Generate Google Meet link
+          const meetingId = `${appointmentId}-${Date.now()}`;
+          const googleMeetLink = `https://meet.google.com/${meetingId}`;
+          
+          // Update appointment with Google Meet link
+          await ctx.db.patch(appointmentId, {
+            googleMeetLink: googleMeetLink,
+          } as any);
+        }
+      } catch (error) {
+        console.error('Failed to create video call for marketplace booking:', error);
+        // Don't fail booking completion if video call fails
+      }
+    }
+
     return {
       success: true,
       appointmentId,

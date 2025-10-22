@@ -1,13 +1,12 @@
 'use client'
 
 import { DashboardSidebar } from '@/components/dashboard/shared/DashboardSidebar'
-import { LayoutDashboard, Calendar, Clock, Users, FileText, Video, MessageSquare, CreditCard, Settings, Dumbbell, Activity } from 'lucide-react'
+import { LayoutDashboard, Calendar, Users, FileText, Video, MessageSquare, CreditCard, Settings, Dumbbell, Activity } from 'lucide-react'
 
 // Navigation configuration for physiotherapists
 const navItems = [
   { title: 'Dashboard', href: '/dashboard/physiotherapist', icon: LayoutDashboard, roles: ['physiotherapist'] },
   { title: 'Appointments', href: '/dashboard/physiotherapist/appointments', icon: Calendar, roles: ['physiotherapist'] },
-  { title: 'Calendar', href: '/dashboard/physiotherapist/calendar', icon: Clock, roles: ['physiotherapist'] },
   { title: 'Patients', href: '/dashboard/physiotherapist/patients', icon: Users, roles: ['physiotherapist'] },
   { title: 'Exercise Library', href: '/dashboard/physiotherapist/exercise-library', icon: Dumbbell, roles: ['physiotherapist'] },
   { title: 'Assessments', href: '/dashboard/physiotherapist/assessments', icon: Activity, roles: ['physiotherapist'] },
