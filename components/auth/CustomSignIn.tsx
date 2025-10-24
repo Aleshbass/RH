@@ -312,13 +312,24 @@ export default function CustomSignIn() {
             )}
 
             {/* Footer */}
-            <div className="mt-8 text-center">
+            <div className="mt-8 text-center space-y-3">
               <p className="text-sm text-gray-600">
                 Don&apos;t have an account?{" "}
                 <Link href="/sign-up" className="text-[#005b57] hover:text-[#00443e] font-medium">
                   Sign up
                 </Link>
               </p>
+              
+              {/* Legal Links */}
+              <div className="flex items-center justify-center gap-3 text-xs text-gray-500">
+                <Link href="/terms-and-conditions" className="hover:text-[#005b57] hover:underline">
+                  Terms & Conditions
+                </Link>
+                <span>•</span>
+                <Link href="/privacy-policy" className="hover:text-[#005b57] hover:underline">
+                  Privacy Policy
+                </Link>
+              </div>
             </div>
           </div>
         </motion.div>

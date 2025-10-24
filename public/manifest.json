@@ -1,0 +1,28 @@
+{
+  "name": "Rehabify Health",
+  "short_name": "Rehabify",
+  "description": "AI-Powered Physical Therapy & Rehabilitation Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#005b57",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logos/favicon/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/logos/favicon/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["health", "medical", "lifestyle"],
+  "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7",
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "scope": "/"
+}

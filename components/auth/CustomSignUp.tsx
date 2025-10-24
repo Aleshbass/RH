@@ -363,6 +363,18 @@ export default function CustomSignUp() {
                       "Create Account"
                     )}
                   </button>
+                  
+                  {/* Terms and Privacy Policy Links */}
+                  <p className="text-xs text-gray-600 text-center leading-relaxed">
+                    By signing up, you agree to our{" "}
+                    <Link href="/terms-and-conditions" className="text-[#005b57] hover:underline font-medium">
+                      Terms & Conditions
+                    </Link>
+                    {" "}and{" "}
+                    <Link href="/privacy-policy" className="text-[#005b57] hover:underline font-medium">
+                      Privacy Policy
+                    </Link>
+                  </p>
                 </form>
               </>
             )}

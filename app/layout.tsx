@@ -31,11 +31,87 @@ const pallyBold = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Rehabify Health",
-  description: "Revolutionizing physical therapy with AI-powered exercise monitoring",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com'),
+  title: {
+    default: "Rehabify Health - AI-Powered Physical Therapy & Rehabilitation Platform",
+    template: "%s | Rehabify Health",
+  },
+  description: "Revolutionary healthcare platform connecting patients with licensed physiotherapists. AI-powered exercise monitoring, telehealth appointments, treatment plans, and comprehensive rehabilitation services in Nigeria and beyond.",
+  keywords: [
+    'rehabify',
+    'rehabify health',
+    'rehabifyhealth',
+    'Rehabify Health',
+    'RehabifyHealth',
+    'physiotherapy platform',
+    'physical therapy online',
+    'online physiotherapy',
+    'telehealth physical therapy',
+    'virtual rehabilitation',
+    'AI exercise monitoring',
+    'rehabilitation services Nigeria',
+    'book physiotherapist online',
+    'virtual physical therapy sessions',
+    'treatment plans',
+    'licensed physiotherapists',
+  ],
+  authors: [{ name: 'Rehabify Health' }],
+  creator: 'Rehabify Health',
+  publisher: 'Rehabify Health',
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
   icons: {
     icon: '/logos/favicon/favicon.ico',
     apple: '/logos/favicon/apple-touch-icon.png',
+    shortcut: '/logos/favicon/favicon.ico',
+  },
+  manifest: '/manifest.json',
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com',
+    title: 'Rehabify Health - AI-Powered Physical Therapy Platform',
+    description: 'Revolutionary healthcare platform connecting patients with licensed physiotherapists. AI-powered exercise monitoring and telehealth appointments.',
+    siteName: 'Rehabify Health',
+    images: [
+      {
+        url: '/opengraph-image', // Next.js auto-generates from opengraph-image.tsx
+        width: 1200,
+        height: 630,
+        alt: 'Rehabify Health - AI-Powered Physical Therapy Platform',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Rehabify Health - AI-Powered Physical Therapy Platform',
+    description: 'Revolutionary healthcare platform connecting patients with licensed physiotherapists.',
+    creator: '@RehabifyHealth',
+    images: ['/opengraph-image'],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
+  },
+  alternates: {
+    canonical: process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com',
+  },
+  other: {
+    'apple-mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-status-bar-style': 'black-translucent',
   },
 };
 

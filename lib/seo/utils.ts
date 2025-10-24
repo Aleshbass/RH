@@ -1,0 +1,355 @@
+/**
+ * SEO Utility Functions
+ * 
+ * Helper functions for generating SEO-friendly content,
+ * metadata, and handling URL optimization.
+ */
+
+import { Metadata } from 'next';
+import { DEFAULT_METADATA, SITE_CONFIG } from './config';
+
+/**
+ * Generate metadata for a page
+ * Merges default metadata with page-specific metadata
+ */
+export function generateMetadata({
+  title,
+  description,
+  keywords,
+  ogImage,
+  noIndex = false,
+  canonical,
+  alternates,
+}: {
+  title: string;
+  description: string;
+  keywords?: string[];
+  ogImage?: string;
+  noIndex?: boolean;
+  canonical?: string;
+  alternates?: { [key: string]: string };
+}): Metadata {
+  const fullTitle = title.includes(SITE_CONFIG.name) 
+    ? title 
+    : `${title} | ${SITE_CONFIG.name}`;
+
+  return {
+    title: fullTitle,
+    description,
+    keywords: keywords || DEFAULT_METADATA.keywords,
+    openGraph: {
+      title: fullTitle,
+      description,
+      url: canonical || SITE_CONFIG.url,
+      siteName: SITE_CONFIG.name,
+      images: [
+        {
+          url: ogImage || SITE_CONFIG.ogImage,
+          width: 1200,
+          height: 630,
+          alt: fullTitle,
+        },
+      ],
+      locale: 'en_US',
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: fullTitle,
+      description,
+      images: [ogImage || SITE_CONFIG.ogImage],
+      creator: SITE_CONFIG.twitterHandle,
+    },
+    robots: noIndex
+      ? {
+          index: false,
+          follow: false,
+          googleBot: {
+            index: false,
+            follow: false,
+          },
+        }
+      : {
+          index: true,
+          follow: true,
+          googleBot: {
+            index: true,
+            follow: true,
+            'max-video-preview': -1,
+            'max-image-preview': 'large',
+            'max-snippet': -1,
+          },
+        },
+    alternates: {
+      canonical: canonical || SITE_CONFIG.url,
+      ...alternates,
+    },
+  };
+}
+
+/**
+ * Create SEO-friendly URL slugs
+ * Converts text to lowercase, removes special chars, replaces spaces with hyphens
+ */
+export function createSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove special characters
+    .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+}
+
+/**
+ * Generate canonical URL
+ * Ensures consistent URL format (removes trailing slashes, query params)
+ */
+export function getCanonicalUrl(path: string, includeParams = false): string {
+  const baseUrl = SITE_CONFIG.url;
+  let cleanPath = path.replace(/\/$/, ''); // Remove trailing slash
+  
+  if (!includeParams) {
+    cleanPath = cleanPath.split('?')[0]; // Remove query parameters
+  }
+  
+  return `${baseUrl}${cleanPath}`;
+}
+
+/**
+ * Truncate text for meta descriptions
+ * Google shows ~155-160 characters in search results
+ */
+export function truncateDescription(text: string, maxLength = 155): string {
+  if (text.length <= maxLength) return text;
+  
+  // Try to break at last sentence or word boundary
+  const truncated = text.substring(0, maxLength);
+  const lastPeriod = truncated.lastIndexOf('.');
+  const lastSpace = truncated.lastIndexOf(' ');
+  
+  if (lastPeriod > maxLength * 0.8) {
+    return truncated.substring(0, lastPeriod + 1);
+  }
+  
+  if (lastSpace > maxLength * 0.8) {
+    return truncated.substring(0, lastSpace) + '...';
+  }
+  
+  return truncated + '...';
+}
+
+/**
+ * Generate Open Graph image URL
+ * For dynamic OG images, you can use services like Vercel OG
+ */
+export function generateOGImageUrl({
+  title,
+  description,
+}: {
+  title: string;
+  description?: string;
+}): string {
+  // Option 1: Use static image
+  // return `${SITE_CONFIG.url}/og-image.png`;
+  
+  // Option 2: Use Vercel OG (dynamic images)
+  const params = new URLSearchParams({
+    title,
+    ...(description && { description }),
+  });
+  
+  return `${SITE_CONFIG.url}/api/og?${params.toString()}`;
+}
+
+/**
+ * Extract keywords from text content
+ * Simple keyword extraction for auto-generating meta keywords
+ */
+export function extractKeywords(
+  text: string,
+  maxKeywords = 10
+): string[] {
+  // Common stop words to filter out
+  const stopWords = new Set([
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+    'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'been', 'be',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should',
+    'could', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those',
+  ]);
+
+  const words = text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length > 3 && !stopWords.has(word));
+
+  // Count word frequency
+  const wordCount = new Map<string, number>();
+  words.forEach(word => {
+    wordCount.set(word, (wordCount.get(word) || 0) + 1);
+  });
+
+  // Sort by frequency and return top keywords
+  return Array.from(wordCount.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxKeywords)
+    .map(([word]) => word);
+}
+
+/**
+ * Validate URL for SEO best practices
+ */
+export function validateUrlSEO(url: string): {
+  isValid: boolean;
+  issues: string[];
+  suggestions: string[];
+} {
+  const issues: string[] = [];
+  const suggestions: string[] = [];
+
+  // Check length (Google recommends < 75 chars)
+  if (url.length > 75) {
+    issues.push('URL is too long (> 75 characters)');
+    suggestions.push('Shorten URL for better user experience and SEO');
+  }
+
+  // Check for special characters
+  if (/[^a-z0-9-\/]/.test(url)) {
+    issues.push('URL contains special characters');
+    suggestions.push('Use only lowercase letters, numbers, and hyphens');
+  }
+
+  // Check for underscores
+  if (url.includes('_')) {
+    issues.push('URL contains underscores');
+    suggestions.push('Replace underscores with hyphens');
+  }
+
+  // Check for uppercase
+  if (/[A-Z]/.test(url)) {
+    issues.push('URL contains uppercase letters');
+    suggestions.push('Use lowercase for all URLs');
+  }
+
+  // Check for trailing slash consistency
+  if (url.endsWith('/') && url !== '/') {
+    suggestions.push('Consider removing trailing slash for consistency');
+  }
+
+  return {
+    isValid: issues.length === 0,
+    issues,
+    suggestions,
+  };
+}
+
+/**
+ * Generate breadcrumb data from pathname
+ */
+export function generateBreadcrumbs(pathname: string): Array<{
+  name: string;
+  url: string;
+}> {
+  const paths = pathname.split('/').filter(Boolean);
+  const breadcrumbs = [{ name: 'Home', url: SITE_CONFIG.url }];
+
+  let currentPath = '';
+  paths.forEach((path, index) => {
+    currentPath += `/${path}`;
+    const name = path
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, (l) => l.toUpperCase());
+    
+    breadcrumbs.push({
+      name,
+      url: `${SITE_CONFIG.url}${currentPath}`,
+    });
+  });
+
+  return breadcrumbs;
+}
+
+/**
+ * Check if content is duplicate/thin
+ * Returns quality score (0-100)
+ */
+export function analyzeContentQuality(content: string): {
+  score: number;
+  wordCount: number;
+  issues: string[];
+  recommendations: string[];
+} {
+  const wordCount = content.trim().split(/\s+/).length;
+  const charCount = content.length;
+  const issues: string[] = [];
+  const recommendations: string[] = [];
+  let score = 100;
+
+  // Check word count (Google prefers 300+ words for most pages)
+  if (wordCount < 300) {
+    score -= 30;
+    issues.push('Content is too short');
+    recommendations.push('Add at least 300 words of quality content');
+  }
+
+  // Check for keyword stuffing (repetitive words)
+  const words = content.toLowerCase().split(/\s+/);
+  const wordFreq = new Map<string, number>();
+  words.forEach(word => {
+    if (word.length > 3) {
+      wordFreq.set(word, (wordFreq.get(word) || 0) + 1);
+    }
+  });
+
+  const maxFreq = Math.max(...Array.from(wordFreq.values()));
+  if (maxFreq > wordCount * 0.05) {
+    score -= 20;
+    issues.push('Possible keyword stuffing detected');
+    recommendations.push('Vary your vocabulary and avoid repetition');
+  }
+
+  // Check reading difficulty (simple approximation)
+  const avgWordLength = charCount / wordCount;
+  if (avgWordLength > 7) {
+    score -= 10;
+    recommendations.push('Consider using simpler, more accessible language');
+  }
+
+  return {
+    score: Math.max(0, score),
+    wordCount,
+    issues,
+    recommendations,
+  };
+}
+
+/**
+ * Format date for structured data (ISO 8601)
+ */
+export function formatDateForSchema(date: Date): string {
+  return date.toISOString();
+}
+
+/**
+ * Clean and optimize title for SEO
+ * Ensures optimal length and format
+ */
+export function optimizeTitle(title: string, includeBrand = true): string {
+  let optimized = title.trim();
+  
+  // Optimal title length is 50-60 characters
+  const maxLength = includeBrand ? 50 : 60;
+  
+  if (optimized.length > maxLength) {
+    optimized = optimized.substring(0, maxLength - 3) + '...';
+  }
+  
+  if (includeBrand && !optimized.includes(SITE_CONFIG.name)) {
+    const remaining = 60 - optimized.length - 3; // 3 for " | "
+    if (remaining >= SITE_CONFIG.name.length) {
+      optimized = `${optimized} | ${SITE_CONFIG.name}`;
+    }
+  }
+  
+  return optimized;
+}
