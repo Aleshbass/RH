@@ -106,7 +106,6 @@
     "pino-pretty": "^13.1.1",
     "react": "^19.0.0",
     "react-big-calendar": "^1.19.4",
-    "react-cookiebot": "^1.0.10",
     "react-day-picker": "^9.4.2",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",

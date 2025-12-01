@@ -23,17 +23,10 @@ interface BusinessEvent {
   metadata?: Record<string, unknown>
 }
 
-// Runtime check for whether analytics are allowed (env flag + Cookiebot consent)
+// Runtime check for whether analytics are allowed (env flag)
 const canSendAnalytics = (): boolean => {
   if (typeof window === 'undefined') return false
-  const enabled = process.env.NEXT_PUBLIC_ANALYTICS_ENABLED === 'true'
-  // If Cookiebot exists, require statistics consent; otherwise assume allowed
-  type CookiebotWindow = typeof window & { Cookiebot?: { consent?: { statistics?: boolean } } }
-  const cookiebotWin = window as CookiebotWindow
-  const consentOk = cookiebotWin.Cookiebot
-    ? Boolean(cookiebotWin.Cookiebot.consent?.statistics)
-    : false
-  return enabled && consentOk
+  return process.env.NEXT_PUBLIC_ANALYTICS_ENABLED === 'true'
 }
 
 // Analytics class for tracking user behavior
@@ -57,7 +50,7 @@ export class Analytics {
 
   private generateSessionId(): string {
     if (typeof window === 'undefined') return 'server-session'
-    
+
     let sessionId = sessionStorage.getItem('analytics-session-id')
     if (!sessionId) {
       sessionId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -106,7 +99,7 @@ export class Analytics {
   setUser(userId: string): void {
     this.userId = userId
     log.info('Analytics user set', { userId, sessionId: this.sessionId })
-    
+
     // Update Sentry user context
     ErrorTracker.setUserContext(userId)
   }
@@ -145,7 +138,7 @@ export class Analytics {
   trackPageView(path?: string, options: Partial<PageView> = {}): void {
     const currentPath = path || (typeof window !== 'undefined' ? window.location.pathname : 'unknown')
     const referrer = options.referrer || (typeof document !== 'undefined' ? document.referrer : undefined)
-    
+
     // Calculate time on previous page
     const timeOnPage = Date.now() - this.pageStartTime
     if (timeOnPage > 1000) { // Only track if more than 1 second
@@ -157,7 +150,7 @@ export class Analytics {
 
     // Track new page view
     this.pageStartTime = Date.now()
-    
+
     const pageView: PageView = {
       path: currentPath,
       referrer,
@@ -285,17 +278,17 @@ export class Analytics {
 // React hook for analytics
 export const useAnalytics = () => {
   const analytics = Analytics.getInstance()
-  
+
   return {
-    trackEvent: (action: string, options?: Partial<UserEvent>) => 
+    trackEvent: (action: string, options?: Partial<UserEvent>) =>
       analytics.trackEvent(action, options),
-    trackPageView: (path?: string, options?: Partial<PageView>) => 
+    trackPageView: (path?: string, options?: Partial<PageView>) =>
       analytics.trackPageView(path, options),
-    trackBusinessEvent: (event: string, options?: Partial<BusinessEvent>) => 
+    trackBusinessEvent: (event: string, options?: Partial<BusinessEvent>) =>
       analytics.trackBusinessEvent(event, options),
-    trackPerformance: (metric: string, value: number, metadata?: Record<string, unknown>) => 
+    trackPerformance: (metric: string, value: number, metadata?: Record<string, unknown>) =>
       analytics.trackPerformance(metric, value, metadata),
-    trackError: (error: Error | string, metadata?: Record<string, unknown>) => 
+    trackError: (error: Error | string, metadata?: Record<string, unknown>) =>
       analytics.trackError(error, metadata),
     setUser: (userId: string) => analytics.setUser(userId),
     clearUser: () => analytics.clearUser(),

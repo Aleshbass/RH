@@ -126,7 +126,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const cookiebotGroupId = process.env.NEXT_PUBLIC_COOKIEBOT_DOMAIN_GROUP_ID || '00000000-0000-0000-0000-000000000000'
+
   return (
     <html lang="en">
       <body
@@ -148,7 +148,7 @@ export default function RootLayout({
         {/* Paystack Inline Script */}
         <script src="https://js.paystack.co/v1/inline.js" async />
 
-        {/* Cookiebot is rendered in app/providers.tsx (client component) */}
+
       </body>
     </html>
   );
