@@ -889,7 +889,6 @@ export default function PatientDetailsPage() {
         isOpen={isAssessmentModalOpen}
         onClose={() => setIsAssessmentModalOpen(false)}
         patientId={patientId as Id<"users">}
-        mode="create"
       />
     </div>
   );

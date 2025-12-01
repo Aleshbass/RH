@@ -7,7 +7,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Search, UserMd } from 'lucide-react';
+import { Search, User } from 'lucide-react';
+
 import { Skeleton } from '@/components/ui/skeleton';
 import { Id } from '@/convex/_generated/dataModel';
 
@@ -19,7 +20,7 @@ export function PhysiotherapistSelectionStep({ onSelect }: PhysiotherapistSelect
     const [searchTerm, setSearchTerm] = useState('');
     const staff = useQuery(api.clinics.getClinicStaff);
 
-    const filteredStaff = staff?.filter(member => {
+    const filteredStaff = staff?.filter((member: any) => {
         const fullName = `${member.user.firstName} ${member.user.lastName}`.toLowerCase();
         return fullName.includes(searchTerm.toLowerCase()) && member.role === 'physiotherapist';
     }) || [];
@@ -60,7 +61,7 @@ export function PhysiotherapistSelectionStep({ onSelect }: PhysiotherapistSelect
                         No physiotherapists found.
                     </div>
                 ) : (
-                    filteredStaff.map((member) => (
+                    filteredStaff.map((member: any) => (
                         <Card
                             key={member._id}
                             className="p-4 cursor-pointer hover:border-blue-500 transition-colors flex items-center gap-4"

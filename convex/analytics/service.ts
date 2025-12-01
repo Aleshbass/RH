@@ -9,28 +9,28 @@ const AnalyticsEventTypes = {
   USER_LOGOUT: "user_logout",
   USER_SIGNUP: "user_signup",
   USER_SETTINGS_UPDATE: "user_settings_update",
-  
+
   // Appointment events
   APPOINTMENT_CREATED: "appointment_created",
   APPOINTMENT_UPDATED: "appointment_updated",
   APPOINTMENT_CANCELLED: "appointment_cancelled",
   APPOINTMENT_COMPLETED: "appointment_completed",
-  
+
   // Patient events
   PATIENT_CREATED: "patient_created",
   PATIENT_UPDATED: "patient_updated",
   PATIENT_ARCHIVED: "patient_archived",
-  
+
   // Treatment events
   TREATMENT_STARTED: "treatment_started",
   TREATMENT_UPDATED: "treatment_updated",
   TREATMENT_COMPLETED: "treatment_completed",
-  
+
   // Notification events
   NOTIFICATION_SENT: "notification_sent",
   NOTIFICATION_DELIVERED: "notification_delivered",
   NOTIFICATION_FAILED: "notification_failed",
-  
+
   // System events
   API_ERROR: "api_error",
   SYSTEM_ERROR: "system_error",
@@ -106,7 +106,13 @@ export const trackEvent = mutation({
       type,
       userId,
       clinicId,
-      metadata: metadata || {},
+      metadata: {
+        path: metadata?.path,
+        duration: metadata?.duration,
+        error: metadata?.error,
+        status: metadata?.status,
+        details: metadata?.details,
+      },
       timestamp: Date.now(),
     };
 
@@ -125,28 +131,28 @@ export const getSystemMetrics = query({
     const clinics = await ctx.db.query("clinics").collect();
     const appointments = await ctx.db.query("appointments").collect();
     const notifications = await ctx.db.query("notifications").collect();
-    
+
     const totalDocs = users.length + clinics.length + appointments.length + notifications.length;
-    
+
     // Get API metrics from recent analytics events
     const apiEvents = await ctx.db
       .query("analytics_events")
       .filter(q => q.eq(q.field("type"), "performance_metric"))
       .order("desc")
       .take(100);
-    
+
     const apiResponseTimes = apiEvents
       .filter(e => e.metadata?.duration)
       .map(e => e.metadata.duration as number);
-    
+
     const avgResponseTime = apiResponseTimes.length > 0
       ? apiResponseTimes.reduce((sum, time) => sum + time, 0) / apiResponseTimes.length
       : 150; // Default response time
-    
+
     // Get notification metrics
     const notificationEvents = await ctx.db
       .query("analytics_events")
-      .filter(q => 
+      .filter(q =>
         q.or(
           q.eq(q.field("type"), "notification_sent"),
           q.eq(q.field("type"), "notification_delivered"),
@@ -155,13 +161,13 @@ export const getSystemMetrics = query({
       )
       .order("desc")
       .take(1000);
-    
+
     const totalSent = notificationEvents.filter(e => e.type === "notification_sent").length;
     const delivered = notificationEvents.filter(e => e.type === "notification_delivered").length;
     const failed = notificationEvents.filter(e => e.type === "notification_failed").length;
-    
+
     const pendingNotifications = notifications.filter(n => n.status === "pending");
-    
+
     return {
       database: {
         totalDocuments: totalDocs,
@@ -205,13 +211,13 @@ export const getPlatformAnalytics = query({
       month: 30 * 24 * 60 * 60 * 1000,
       year: 365 * 24 * 60 * 60 * 1000,
     }[timeframe];
-    
+
     const startTime = now - timeframeMs;
-    
+
     // Get user metrics
     const userEvents = await ctx.db
       .query("analytics_events")
-      .filter(q => 
+      .filter(q =>
         q.and(
           q.gte(q.field("timestamp"), startTime),
           q.or(
@@ -221,14 +227,14 @@ export const getPlatformAnalytics = query({
         )
       )
       .collect();
-    
+
     const uniqueUsers = new Set(userEvents.map(e => e.userId));
     const newUsers = userEvents.filter(e => e.type === "user_signup").length;
-    
+
     // Get appointment metrics
     const appointmentEvents = await ctx.db
       .query("analytics_events")
-      .filter(q => 
+      .filter(q =>
         q.and(
           q.gte(q.field("timestamp"), startTime),
           q.or(
@@ -238,26 +244,26 @@ export const getPlatformAnalytics = query({
         )
       )
       .collect();
-    
+
     const completed = appointmentEvents.filter(e => e.type === "appointment_completed").length;
     const cancelled = appointmentEvents.filter(e => e.type === "appointment_cancelled").length;
     const total = completed + cancelled;
-    
+
     // Get clinic metrics
     const clinicEvents = await ctx.db
       .query("analytics_events")
-      .filter(q => 
+      .filter(q =>
         q.and(
           q.gte(q.field("timestamp"), startTime),
           q.eq(q.field("type"), "appointment_completed")
         )
       )
       .collect();
-    
+
     const uniqueClinics = new Set(clinicEvents.map(e => e.clinicId).filter(Boolean));
     const activeClinics = uniqueClinics.size;
     const totalAppointments = clinicEvents.length;
-    
+
     return {
       systemHealth: {
         uptime: 99.9, // TODO: Implement actual uptime tracking
@@ -306,48 +312,48 @@ export const getClinicAnalytics = query({
       month: 30 * 24 * 60 * 60 * 1000,
       year: 365 * 24 * 60 * 60 * 1000,
     }[timeframe];
-    
+
     const startTime = now - timeframeMs;
-    
+
     // Get clinic settings to check which metrics to track
     const settings = await ctx.db
       .query("clinicSettings")
       .withIndex("by_clinic", q => q.eq("clinicId", clinicId))
       .first();
-    
+
     if (!settings?.analytics?.trackPatientProgress) {
       return null;
     }
-    
+
     const enabledMetrics = settings.analytics.enabledMetrics;
-    
+
     // Get all relevant events for this clinic
     const events = await ctx.db
       .query("analytics_events")
-      .withIndex("by_clinic_and_timestamp", q => 
+      .withIndex("by_clinic_and_timestamp", q =>
         q.eq("clinicId", clinicId).gte("timestamp", startTime)
       )
       .collect();
-    
+
     // Process events based on enabled metrics
     const metrics: Record<string, number> = {};
-    
+
     for (const metric of enabledMetrics) {
       switch (metric) {
         case "appointments":
-          metrics.totalAppointments = events.filter(e => 
+          metrics.totalAppointments = events.filter(e =>
             e.type === "appointment_created" ||
             e.type === "appointment_completed" ||
             e.type === "appointment_cancelled"
           ).length;
           break;
-          
+
         case "revenue":
           metrics.totalRevenue = events
             .filter(e => e.type === "appointment_completed")
             .reduce((sum, e) => sum + (e.metadata?.details?.revenue || 0), 0);
           break;
-          
+
         case "patient_satisfaction":
           const ratings = events
             .filter(e => e.type === "appointment_completed" && e.metadata?.details?.rating)
@@ -358,17 +364,17 @@ export const getClinicAnalytics = query({
           break;
       }
     }
-    
+
     // Process custom metrics if any
     if (settings.analytics.customMetrics) {
       for (const customMetric of settings.analytics.customMetrics) {
         const relevantEvents = events.filter(e => e.type === customMetric.source);
-        
+
         switch (customMetric.type) {
           case "count":
             metrics[customMetric.name] = relevantEvents.length;
             break;
-            
+
           case "average":
             const values = relevantEvents
               .map(e => e.metadata?.details?.[customMetric.name] as number)
@@ -377,7 +383,7 @@ export const getClinicAnalytics = query({
               ? values.reduce((sum, v) => sum + v, 0) / values.length
               : 0;
             break;
-            
+
           case "sum":
             metrics[customMetric.name] = relevantEvents
               .reduce((sum, e) => sum + ((e.metadata?.details?.[customMetric.name] as number) || 0), 0);
@@ -385,7 +391,7 @@ export const getClinicAnalytics = query({
         }
       }
     }
-    
+
     return metrics;
   },
 });
@@ -399,7 +405,7 @@ export const getSystemHealth = query({
     // Get basic system metrics without using non-existent _stats table
     const now = Date.now();
     const oneHourAgo = now - (60 * 60 * 1000);
-    
+
     // Get recent events for system health assessment
     const recentEvents = await ctx.db
       .query("analytics_events")
@@ -492,7 +498,7 @@ export const getUserActivityLogs = query({
           userEmail = user.email;
         }
       }
-      
+
       return {
         _id: event._id,
         userId: event.userId,

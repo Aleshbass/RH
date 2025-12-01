@@ -3,9 +3,9 @@
 import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Loader2, User, Bell, Shield, Palette, Calendar as CalendarIcon, DollarSign, Store } from 'lucide-react';
+import { Loader2, User, Bell, Shield, Palette, Calendar as CalendarIcon, DollarSign, Store, Clock } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,7 +30,7 @@ export default function PhysiotherapistSettingsPage() {
   // Get current user
   const currentUser = useQuery(api.users.getMyUser);
   const currentUserProfile = useQuery(api.queries.getCurrentUser);
-  const currentUserProfile = useQuery(api.queries.getCurrentUser);
+
   const marketplaceSettings = useQuery(api.marketplace.settings.getMyMarketplaceSettings);
   const updateAvailabilityMutation = useMutation(api.physiotherapists.updateAvailability);
 

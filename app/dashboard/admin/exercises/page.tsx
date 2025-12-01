@@ -114,7 +114,7 @@ export default function AdminExercisesPage() {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {exercises.map((exercise) => (
+                    {exercises.map((exercise: any) => (
                         <Card key={exercise._id} className="group overflow-hidden hover:shadow-lg transition-all duration-200 border-gray-200">
                             <div className="relative aspect-video bg-gray-100 overflow-hidden">
                                 {exercise.imageUrl ? (
@@ -142,7 +142,7 @@ export default function AdminExercisesPage() {
                                 <div className="flex items-start justify-between mb-2">
                                     <div>
                                         <h3 className="font-semibold text-gray-900 line-clamp-1">{exercise.name}</h3>
-                                        <p className="text-sm text-muted-foreground line-clamp-1">{exercise.bodyParts.join(', ')}</p>
+                                        <p className="text-sm text-muted-foreground line-clamp-1">{Array.isArray(exercise.bodyParts) ? exercise.bodyParts.join(', ') : exercise.bodyParts}</p>
                                     </div>
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild>
@@ -164,7 +164,7 @@ export default function AdminExercisesPage() {
                                 </div>
 
                                 <div className="flex flex-wrap gap-1 mt-3">
-                                    {exercise.tags?.slice(0, 3).map((tag) => (
+                                    {(exercise.tags || []).slice(0, 3).map((tag: any) => (
                                         <span key={tag} className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
                                             {tag}
                                         </span>

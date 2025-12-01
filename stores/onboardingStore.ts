@@ -96,6 +96,12 @@ export type PatientData = {
   therapyFor?: string;
   location?: string;
   preferredLanguage?: string;
+  medicalHistory?: string;
+  emergencyContact?: {
+    name: string;
+    relationship: string;
+    phone: string;
+  };
 };
 
 import { Id } from '@/convex/_generated/dataModel'; // Ensure Id is imported

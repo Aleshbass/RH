@@ -60,7 +60,7 @@ export function PatientTreatmentPlanView({ treatmentPlanId }: PatientTreatmentPl
   });
 
   const isCompletedToday = (exerciseId: string) => {
-    return todayProgress?.some((c) => c.exerciseId === exerciseId);
+    return todayProgress?.some((c: any) => c.exerciseId === exerciseId);
   };
 
   const generateUploadUrl = useAction(api.files.generateUploadUrl);

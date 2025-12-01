@@ -95,7 +95,7 @@ export default function VerificationDocumentsForm({
   const defaultValues: VerificationDocumentsData = {
     businessLicense: [],
     taxRegistration: [],
-    taxRegistration: [],
+
     insuranceProof: [],
     ownerIdentification: [],
     additionalDocuments: [],

@@ -33,7 +33,7 @@ export default function PendingApprovalPage({
       >
         <div className="p-8 text-center">
           {/* Icon Section */}
-          <div className="mx-auto mb-6 h-20 w-20 rounded-full flex items-center justify-center transition-colors duration-300"
+          <div
             className={cn(
               "mx-auto mb-6 h-20 w-20 rounded-full flex items-center justify-center",
               isPending ? "bg-yellow-50" : "bg-red-50"

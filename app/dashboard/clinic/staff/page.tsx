@@ -281,7 +281,7 @@ export default function StaffManagementPage() {
           </TabsContent>
         </Tabs>
       </div>
-      </div>
+
 
       <TourGuide
         tourId="clinic-staff-tour"

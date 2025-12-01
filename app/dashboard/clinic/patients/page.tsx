@@ -324,7 +324,7 @@ export default function ClinicPatientsPage() {
         isOpen={!!selectedPatientId}
         onClose={() => setSelectedPatientId(null)}
       />
-    </div>
+
 
       <TourGuide
         tourId="clinic-patients-tour"

@@ -131,7 +131,7 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {exercises.map((exercise) => (
+              {exercises.map((exercise: any) => (
                 <Card
                   key={exercise._id}
                   className={`group overflow-hidden hover:shadow-lg transition-all duration-200 border-gray-200 ${isSelected(exercise._id) ? 'ring-2 ring-green-500 border-green-500' : ''
@@ -174,7 +174,7 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
                     </div>
 
                     <div className="flex flex-wrap gap-1 mb-4">
-                      {exercise.targetMuscles.slice(0, 3).map((muscle) => (
+                      {exercise.targetMuscles.slice(0, 3).map((muscle: any) => (
                         <span key={muscle} className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full capitalize">
                           {muscle}
                         </span>

@@ -38,10 +38,7 @@ export const LazyClinicPages = {
     () => import('@/app/dashboard/clinic/page'),
     'ClinicDashboard'
   ),
-  ClinicAppointments: createLazyPage(
-    () => import('@/app/dashboard/clinic/appointments/page'),
-    'ClinicAppointments'
-  ),
+
   ClinicPatients: createLazyPage(
     () => import('@/app/dashboard/clinic/patients/page'),
     'ClinicPatients'
@@ -50,19 +47,13 @@ export const LazyClinicPages = {
     () => import('@/app/dashboard/clinic/staff/page'),
     'ClinicStaff'
   ),
-  ClinicBilling: createLazyPage(
-    () => import('@/app/dashboard/clinic/billing/page'),
-    'ClinicBilling'
-  ),
+
 
   ClinicSettings: createLazyPage(
     () => import('@/app/dashboard/clinic/settings/page'),
     'ClinicSettings'
   ),
-  ClinicVideoCalls: createLazyPage(
-    () => import('@/app/dashboard/clinic/video-calls/page'),
-    'ClinicVideoCalls'
-  )
+
 }
 
 // Physiotherapist dashboard pages - lazy loaded
@@ -128,34 +119,8 @@ export const LazyOnboardingPages = {
     () => import('@/app/(onboarding)/role-selection/page'),
     'RoleSelection'
   ),
-  ClinicOwnerStep1: createLazyPage(
-    () => import('@/app/(onboarding)/clinic-owner/step1/page'),
-    'ClinicOwnerStep1'
-  ),
-  ClinicOwnerStep2: createLazyPage(
-    () => import('@/app/(onboarding)/clinic-owner/step2/page'),
-    'ClinicOwnerStep2'
-  ),
-  ClinicOwnerStep3: createLazyPage(
-    () => import('@/app/(onboarding)/clinic-owner/step3/page'),
-    'ClinicOwnerStep3'
-  ),
-  ClinicOwnerStep4: createLazyPage(
-    () => import('@/app/(onboarding)/clinic-owner/step4/page'),
-    'ClinicOwnerStep4'
-  ),
-  PhysiotherapistStep1: createLazyPage(
-    () => import('@/app/(onboarding)/physiotherapist/step1/page'),
-    'PhysiotherapistStep1'
-  ),
-  PhysiotherapistStep2: createLazyPage(
-    () => import('@/app/(onboarding)/physiotherapist/step2/page'),
-    'PhysiotherapistStep2'
-  ),
-  PhysiotherapistStep3: createLazyPage(
-    () => import('@/app/(onboarding)/physiotherapist/step3/page'),
-    'PhysiotherapistStep3'
-  ),
+
+
   PatientStep1: createLazyPage(
     () => import('@/app/(onboarding)/patient/step1/page'),
     'PatientStep1'
@@ -183,7 +148,7 @@ export const preloadDashboardPages = (userRole: string) => {
         case 'clinic_owner':
           // Preload clinic pages
           import('@/app/dashboard/clinic/page')
-          import('@/app/dashboard/clinic/appointments/page')
+
           break
         case 'physiotherapist':
           // Preload physiotherapist pages

@@ -187,7 +187,7 @@ export default function OwnerAnalyticsPage() {
                 </div>
                 <Progress value={staffMetrics?.utilization || 0} className="h-2" />
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4 pt-4">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">{staffMetrics?.active || 0}</div>
@@ -268,7 +268,7 @@ export default function OwnerAnalyticsPage() {
                   {getGrowthBadge(revenueData?.growth || 0)}
                 </div>
               </div>
-              
+
               <div className="pt-4 border-t">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">{formatCurrency(revenueData?.total || 0)}</div>
@@ -327,7 +327,7 @@ export default function OwnerAnalyticsPage() {
                   Your clinic is performing well with {formatPercentage(appointmentStats?.completionRate || 0)} appointment completion rate.
                 </p>
               </div>
-              
+
               <div className="bg-blue-50 p-4 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
                   <Users className="h-4 w-4 text-blue-600" />
@@ -337,7 +337,7 @@ export default function OwnerAnalyticsPage() {
                   Staff utilization at {formatPercentage(staffMetrics?.utilization || 0)}. Consider optimizing schedules for better efficiency.
                 </p>
               </div>
-              
+
               <div className="bg-purple-50 p-4 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
                   <Video className="h-4 w-4 text-purple-600" />
@@ -351,7 +351,7 @@ export default function OwnerAnalyticsPage() {
           </CardContent>
         </Card>
       </div>
-      </div>
+
 
       <TourGuide
         tourId="clinic-analytics-tour"

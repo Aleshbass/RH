@@ -20,7 +20,7 @@ import { toast } from 'sonner';
 const exerciseSchema = z.object({
     name: z.string().min(2, 'Name must be at least 2 characters'),
     description: z.string().min(10, 'Description must be at least 10 characters'),
-    bodyParts: z.string().min(1, 'Select at least one body part').transform(val => val.split(',').map(s => s.trim())),
+    bodyParts: z.string().min(1, 'Select at least one body part'),
     difficultyLevel: z.enum(['beginner', 'intermediate', 'advanced']),
     defaultSets: z.coerce.number().optional(),
     defaultReps: z.coerce.number().optional(),
@@ -49,7 +49,7 @@ export function ExerciseForm({ initialData, isEditing = false }: ExerciseFormPro
         resolver: zodResolver(exerciseSchema),
         defaultValues: initialData ? {
             ...initialData,
-            bodyParts: initialData.bodyParts.join(', '),
+            bodyParts: Array.isArray(initialData.bodyParts) ? initialData.bodyParts.join(', ') : initialData.bodyParts,
             instructions: initialData.instructions.map((text: string) => ({ text })),
             category: initialData.tags || [],
         } : {
@@ -76,7 +76,7 @@ export function ExerciseForm({ initialData, isEditing = false }: ExerciseFormPro
             const exerciseData = {
                 name: data.name,
                 description: data.description,
-                bodyParts: Array.isArray(data.bodyParts) ? data.bodyParts : [data.bodyParts], // Handle transform edge case
+                bodyParts: typeof data.bodyParts === 'string' ? data.bodyParts.split(',').map(s => s.trim()) : data.bodyParts,
                 targetMuscles: [], // Optional in form, required in schema - adding empty for now
                 conditions: [],
                 equipmentNeeded: [],

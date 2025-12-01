@@ -104,7 +104,7 @@ export const updateAppointmentWithCalendar = mutation({
   },
   handler: async (ctx, args) => {
     const appointment = await ctx.db.get(args.appointmentId);
-    
+
     if (!appointment) {
       throw new Error("Appointment not found");
     }
@@ -113,7 +113,7 @@ export const updateAppointmentWithCalendar = mutation({
     const updateData: any = {
       ...args,
     };
-    
+
     // Ensure status is properly typed
     if (args.status) {
       const validStatuses = ["scheduled", "confirmed", "completed", "cancelled_by_patient", "cancelled_by_therapist", "no_show"] as const;
@@ -121,7 +121,7 @@ export const updateAppointmentWithCalendar = mutation({
         updateData.status = args.status as typeof validStatuses[number];
       }
     }
-    
+
     await ctx.db.patch(args.appointmentId, updateData);
 
     // Update calendar event if exists
@@ -157,8 +157,8 @@ export const updateAppointmentWithCalendar = mutation({
 export const cancelAppointmentWithCalendar = mutation({
   args: { appointmentId: v.id("appointments") },
   handler: async (ctx, args) => {
-    const appointment = await ctx.db.get(args.appointmentId);
-    
+    const appointment = await ctx.db.get(args.appointmentId) as Doc<"appointments"> | null;
+
     if (!appointment) {
       throw new Error("Appointment not found");
     }
@@ -194,7 +194,7 @@ export const getAppointmentWithCalendar = query({
   args: { appointmentId: v.id("appointments") },
   handler: async (ctx, args) => {
     const appointment = await ctx.db.get(args.appointmentId);
-    
+
     if (!appointment) {
       return null;
     }
@@ -222,15 +222,23 @@ export const getAppointmentsWithCalendarSync = query({
     endDate: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    let appointments = await ctx.db
+    const patientAppointments = await ctx.db
       .query("appointments")
-      .filter((q) => 
-        q.or(
-          q.eq(q.field("patientId"), args.userId),
-          q.eq(q.field("physiotherapistId"), args.userId)
-        )
-      )
+      .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", args.userId))
       .collect();
+
+    const physioAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", args.userId))
+      .collect();
+
+    // Combine and deduplicate (though overlap should be impossible in normal usage)
+    const allAppointments = [...patientAppointments, ...physioAppointments];
+    const uniqueAppointmentsMap = new Map();
+    for (const apt of allAppointments) {
+      uniqueAppointmentsMap.set(apt._id, apt);
+    }
+    let appointments = Array.from(uniqueAppointmentsMap.values());
 
     // Filter by date range if provided
     if (args.startDate || args.endDate) {

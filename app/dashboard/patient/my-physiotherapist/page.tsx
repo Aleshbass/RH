@@ -56,7 +56,7 @@ export default function MyPhysiotherapistPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {careTeam.map((member) => (
+                {careTeam.map((member: any) => (
                     <Card
                         key={member.physiotherapist?._id}
                         className="hover:shadow-md transition-shadow cursor-pointer"

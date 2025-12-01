@@ -84,7 +84,7 @@ export function PayoutSettings({ currentUser }: { currentUser: any }) {
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            {bankAccounts.map((account) => (
+                            {bankAccounts.map((account: any) => (
                                 <div
                                     key={account._id}
                                     className="flex items-center justify-between p-4 border rounded-lg bg-white hover:border-blue-200 transition-colors"

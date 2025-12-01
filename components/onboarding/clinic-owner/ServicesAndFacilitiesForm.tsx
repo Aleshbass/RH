@@ -40,7 +40,9 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
       services: data.clinicOwnerData?.services || [],
       specialties: data.clinicOwnerData?.specialties || [],
       facilities: data.clinicOwnerData?.facilities || [],
-      equipmentAvailable: data.clinicOwnerData?.equipmentAvailable || '',
+      equipmentAvailable: Array.isArray(data.clinicOwnerData?.equipmentAvailable)
+        ? data.clinicOwnerData?.equipmentAvailable.join(', ')
+        : data.clinicOwnerData?.equipmentAvailable || '',
       operatingHours: data.clinicOwnerData?.operatingHours || '',
       additionalNotes: data.clinicOwnerData?.additionalNotes || '',
     },
@@ -55,7 +57,9 @@ export default function ServicesAndFacilitiesForm({ onNext, onBack }: ServicesAn
       services: formData.services,
       specialties: formData.specialties,
       facilities: formData.facilities,
-      equipmentAvailable: formData.equipmentAvailable,
+      equipmentAvailable: formData.equipmentAvailable
+        ? formData.equipmentAvailable.split(',').map(s => s.trim()).filter(Boolean)
+        : [],
       operatingHours: formData.operatingHours,
       additionalNotes: formData.additionalNotes,
     });
