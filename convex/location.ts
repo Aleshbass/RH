@@ -10,11 +10,18 @@ export const searchLocations = action({
             return [];
         }
 
+        const apiKey = process.env.LOCATIONIQ_API_KEY;
+        if (!apiKey) {
+            console.error("LOCATIONIQ_API_KEY is not set");
+            // Fallback to empty or throw error? Better to return empty and log
+            return [];
+        }
+
         try {
             const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+                `https://us1.locationiq.com/v1/search.php?key=${apiKey}&q=${encodeURIComponent(
                     args.query
-                )}&limit=5&addressdetails=1`,
+                )}&format=json&limit=5`,
                 {
                     headers: {
                         "User-Agent": "RehabifyHealth/1.0",
@@ -23,7 +30,7 @@ export const searchLocations = action({
             );
 
             if (!response.ok) {
-                throw new Error(`Nominatim API error: ${response.statusText}`);
+                throw new Error(`LocationIQ API error: ${response.statusText}`);
             }
 
             const data = await response.json();

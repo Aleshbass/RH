@@ -340,7 +340,7 @@ export const logSystemEvent = mutation({
     message: v.string(),
     userId: v.optional(v.string()),
     action: v.optional(v.string()),
-    metadata: v.optional(v.object({}))
+    metadata: v.optional(v.any())
   },
   handler: async (ctx, { level, message, userId, action, metadata }) => {
     try {

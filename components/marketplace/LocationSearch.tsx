@@ -20,7 +20,7 @@ interface LocationSearchProps {
 }
 
 interface LocationResult {
-    place_id: number;
+    place_id: string | number;
     display_name: string;
     lat: string;
     lon: string;
