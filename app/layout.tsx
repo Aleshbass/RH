@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from 'next/font/local';
+import Script from 'next/script';
 import "./globals.css";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 import { ClerkProvider } from "@clerk/nextjs";
@@ -79,7 +80,7 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     url: process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com',
-    title: 'Rehabify Health - AI-Powered Physical Therapy Platform',
+    title: 'Rehabify Health - Expert Physical Therapy & Rehabilitation',
     description: 'Revolutionary healthcare platform connecting patients with licensed physiotherapists. AI-powered exercise monitoring and telehealth appointments.',
     siteName: 'Rehabify Health',
     images: [
@@ -87,13 +88,13 @@ export const metadata: Metadata = {
         url: '/opengraph-image', // Next.js auto-generates from opengraph-image.tsx
         width: 1200,
         height: 630,
-        alt: 'Rehabify Health - AI-Powered Physical Therapy Platform',
+        alt: 'Rehabify Health - Expert Physical Therapy & Rehabilitation',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Rehabify Health - AI-Powered Physical Therapy Platform',
+    title: 'Rehabify Health - Expert Physical Therapy & Rehabilitation',
     description: 'Revolutionary healthcare platform connecting patients with licensed physiotherapists.',
     creator: '@RehabifyHealth',
     images: ['/opengraph-image'],
@@ -147,6 +148,15 @@ export default function RootLayout({
 
         {/* Paystack Inline Script */}
         <script src="https://js.paystack.co/v1/inline.js" async />
+
+        {/* Umami Analytics - Only in production */}
+        {process.env.NODE_ENV === 'production' && (
+          <Script
+            src="https://rehabifyhealth-analytics.vercel.app/script.js"
+            data-website-id={process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID}
+            strategy="afterInteractive"
+          />
+        )}
 
 
       </body>

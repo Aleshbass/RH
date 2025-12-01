@@ -1858,7 +1858,24 @@ export const getClinicAuditLogs = query({
     // Enrich logs with user details
     const enrichedLogs = await Promise.all(
       logs.map(async (log) => {
-        const logUser = log.userId ? await ctx.db.get(log.userId) : null;
+        let logUser: Doc<"users"> | null = null;
+        if (log.userId) {
+          // Try to find by Clerk ID first
+          logUser = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", log.userId!))
+            .unique();
+
+          // If not found, try as Convex ID
+          if (!logUser) {
+            try {
+              logUser = await ctx.db.get(log.userId as Id<"users">);
+            } catch (error) {
+              // Ignore invalid ID format errors
+            }
+          }
+        }
+
         const targetUser = (log.targetEntityType === "user" && log.targetEntityId)
           ? await ctx.db.get(log.targetEntityId as Id<"users">)
           : null;

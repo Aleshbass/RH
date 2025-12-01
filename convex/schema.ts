@@ -1772,7 +1772,7 @@ export default defineSchema({
 
   // System logs for audit trail and debugging
   systemLogs: defineTable({
-    userId: v.optional(v.id("users")),
+    userId: v.optional(v.string()),
     clinicId: v.optional(v.id("clinics")),
     type: v.string(),
     timestamp: v.number(),
@@ -1781,7 +1781,7 @@ export default defineSchema({
     targetEntityId: v.optional(v.string()),
     details: v.optional(v.any()),
     ipAddress: v.optional(v.string()),
-    actorUserId: v.optional(v.id("users")),
+    actorUserId: v.optional(v.string()),
   })
     .index("by_user_id", ["userId"])
     .index("by_clinic_id", ["clinicId"])

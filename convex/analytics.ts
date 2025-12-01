@@ -345,7 +345,7 @@ export const logSystemEvent = mutation({
   handler: async (ctx, { level, message, userId, action, metadata }) => {
     try {
       await ctx.db.insert("systemLogs", {
-        userId: userId ? userId as Id<"users"> : undefined,
+        userId: userId,
         type: level || "info",
         action: action || "unknown",
         details: { message, ...metadata },
