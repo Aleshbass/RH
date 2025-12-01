@@ -296,6 +296,7 @@ const physiotherapistProfileDataValidator = v.object({
   gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
   referralSource: v.optional(v.string()),
   location: v.optional(v.string()),
+  availabilitySchedule: v.optional(v.any()),
 });
 
 const patientProfileDataValidator = v.object({
@@ -414,14 +415,22 @@ export const completeUserProfile = mutation({
 
       case "patient":
         const patientData = args.profileData as typeof patientProfileDataValidator.type;
+
+        // Extract phoneNumber to update the user record, as it's not in patientProfiles
+        const { phoneNumber, ...patientProfileFields } = patientData;
+
+        if (phoneNumber) {
+          userUpdatePayload.phoneNumber = phoneNumber;
+        }
+
         let patientProfileId: Id<"patientProfiles">;
         if (user.patientProfileId) {
-          await ctx.db.patch(user.patientProfileId, { ...patientData });
+          await ctx.db.patch(user.patientProfileId, { ...patientProfileFields });
           patientProfileId = user.patientProfileId;
         } else {
           patientProfileId = await ctx.db.insert("patientProfiles", {
             userId: user._id,
-            ...patientData,
+            ...patientProfileFields,
           });
         }
         userUpdatePayload.patientProfileId = patientProfileId;

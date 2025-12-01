@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Check } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, Loader2 } from 'lucide-react';
 import LocationSearch from '@/components/marketplace/LocationSearch';
 
 import { Button } from '@/components/ui/button';
@@ -454,7 +454,7 @@ export default function PersonalInfoForm({
             className="bg-teal-600 hover:bg-teal-700 text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-600/20"
           >
             {isSubmitting ? (
-              'Saving...'
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : currentStep === steps.length - 1 ? (
               'Complete'
             ) : (

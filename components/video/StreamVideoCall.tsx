@@ -22,6 +22,7 @@ import { StreamChat } from 'stream-chat'
 import { Chat as StreamChatUI, Channel, MessageList, MessageInput, Window as ChatWindow, ChannelHeader, Thread } from 'stream-chat-react'
 import { useQueryUntyped } from '@/lib/convexUntyped'
 import { useActionUntyped, useMutationUntyped } from '@/lib/convexUntyped'
+import { useAction, useMutation, useQuery } from 'convex/react'
 
 interface StreamVideoCallProps {
   callId: string
@@ -68,7 +69,6 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
   const callingState = useCallCallingState()
   const participantCount = useParticipantCount()
   const [copied, setCopied] = useState(false)
-  const [showShareLink, setShowShareLink] = useState(true)
   const [lastCallingState, setLastCallingState] = useState<CallingState | null>(null)
 
   // Connection feedback via toasts on state transitions with detailed messages
@@ -185,47 +185,6 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
 
   return (
     <div className="h-screen flex flex-col bg-neutral-950 text-white">
-      {/* Share Link Banner */}
-      {showShareLink && (
-        <div className="bg-emerald-600 text-white p-3 relative">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-1">
-              <span className="font-medium whitespace-nowrap">Share link:</span>
-              <code className="bg-emerald-700 px-3 py-1 rounded text-sm flex-1 overflow-x-auto">
-                {shareLink}
-              </code>
-            </div>
-            <div className="flex items-center gap-2 ml-4">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={copyLink}
-                    className="whitespace-nowrap"
-                  >
-                    <Copy className="h-3 w-3 mr-1" />
-                    Copy Link
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Copy link</TooltipContent>
-              </Tooltip>
-              {copied && (
-                <span className="text-xs text-white/90 bg-green-700 px-2 py-1 rounded">Copied!</span>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowShareLink(false)}
-                className="text-white hover:text-gray-200"
-              >
-                ✕
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="bg-neutral-900/60 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center space-x-4">
@@ -233,16 +192,21 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
             <Users className="h-5 w-5 text-white" />
             <span className="text-white/90">{participantCount} participant{participantCount !== 1 ? 's' : ''}</span>
           </div>
-          <div className="flex items-center space-x-2">
-            <Video className="h-5 w-5 text-emerald-400" />
-            <span className="text-emerald-400">Stream Video Active</span>
-          </div>
           <div className={`hidden sm:flex items-center gap-2 px-2 py-0.5 rounded-full ${connectionClass}`} title="Connection status">
             <span className="inline-block h-2 w-2 rounded-full bg-current"></span>
             <span className="text-xs font-medium">{connectionLabel}</span>
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="sm" variant="secondary" onClick={copyLink}>
+                <Copy className="h-4 w-4 mr-1" />
+                {copied ? 'Copied!' : 'Copy Link'}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Copy call link</TooltipContent>
+          </Tooltip>
           <Button size="sm" variant="secondary" onClick={onToggleChat}>
             <MessageSquare className="h-4 w-4 mr-1" /> {showChat ? 'Hide Chat' : 'Show Chat'}
           </Button>
@@ -291,10 +255,10 @@ export default function StreamVideoCall({
 }: StreamVideoCallProps) {
   const { user, isLoaded } = useUser()
   // Prefer Convex user's uploaded profile photo (fallback to Clerk)
-  const apiUntypedAll = api as unknown as Record<string, unknown>
-  const usersModule = apiUntypedAll['users'] as Record<string, unknown>
-  const getMyUserQuery = usersModule['getMyUser']
-  const convexUser = useQueryUntyped(getMyUserQuery) as { firstName?: string; imageUrl?: string } | null | undefined
+  // Use typed hooks from convex/react
+
+  const getMyUserQuery = api.users.getMyUser
+  const convexUser = useQuery(getMyUserQuery)
   const [client, setClient] = useState<StreamVideoClient | null>(null)
   type StreamCallHandle = ReturnType<StreamVideoClient['call']>
   const [call, setCall] = useState<StreamCallHandle | null>(null)
@@ -304,36 +268,14 @@ export default function StreamVideoCall({
   const [chatChannel, setChatChannel] = useState<ReturnType<StreamChat['channel']> | null>(null)
   const [showChat, setShowChat] = useState(true)
   const [canEndForAll, setCanEndForAll] = useState(false)
-  
-  // Access Convex API modules via unknown-indexers to avoid deep type instantiation
-  const apiUntyped = api as unknown as Record<string, unknown>
-  const streamModule = apiUntyped['stream'] as Record<string, unknown>
-  const videoCallsModule = apiUntyped['videoCalls'] as Record<string, unknown>
 
-  const getStreamToken = useActionUntyped(streamModule['getStreamToken']) as unknown as (
-    args: { userId: string; userName: string; userImage?: string }
-  ) => Promise<{ token: string; apiKey: string; chatToken?: string }>
-  const createStreamCall = useActionUntyped(streamModule['createStreamCall']) as unknown as (
-    args: {
-      callId: string
-      callType: string
-      participants: Array<{ userId: string; userName: string; userImage?: string; role?: 'host' | 'participant' }>
-      settings?: { recordingEnabled?: boolean; transcriptionEnabled?: boolean; maxDuration?: number; geoFencing?: boolean }
-    }
-  ) => Promise<{ callId: string; callType: string; cid: string; created: boolean }>
-  const endStreamCall = useActionUntyped(streamModule['endStreamCall']) as unknown as (
-    args: { callId: string; callType: string }
-  ) => Promise<void>
-  const ensureChatMembership = useActionUntyped(streamModule['ensureChatMembership']) as unknown as (
-    args: { callId: string; userId: string }
-  ) => Promise<void>
-  const setMyRsvpStatus = useMutationUntyped(videoCallsModule['setMyRsvpStatus']) as unknown as (
-    args: { roomId: string; status: 'accepted' | 'declined' | 'maybe' }
-  ) => Promise<void>
-  const joinVideoCallMutation = useMutationUntyped(videoCallsModule['joinVideoCall']) as unknown as (
-    args: { roomId: string }
-  ) => Promise<{ callId: string; roomId: string }>
-  
+  const getStreamToken = useAction(api.stream.getStreamToken)
+  const createStreamCall = useAction(api.stream.createStreamCall)
+  const endStreamCall = useAction(api.stream.endStreamCall)
+  const ensureChatMembership = useAction(api.stream.ensureChatMembership)
+  const setMyRsvpStatus = useMutation(api.videoCalls.setMyRsvpStatus)
+  const joinVideoCallMutation = useMutation(api.videoCalls.joinVideoCall)
+
   const onCallEndRef = useRef(onCallEnd)
   useEffect(() => {
     onCallEndRef.current = onCallEnd
@@ -458,11 +400,11 @@ export default function StreamVideoCall({
               await channel.watch()
             } catch {
               // If watch fails (likely due to membership), ensure membership server-side then retry
-              try { await ensureChatMembership({ callId, userId: user.id }) } catch {}
+              try { await ensureChatMembership({ callId, userId: user.id }) } catch { }
               try {
                 await channel.watch()
               } catch {
-                try { await channel.create(); await channel.watch() } catch {}
+                try { await channel.create(); await channel.watch() } catch { }
               }
             }
             // Ensure the current user is a channel member even if watch succeeded (non-member watchers can't markRead)
@@ -478,14 +420,14 @@ export default function StreamVideoCall({
                 ? members.get(user.id)
                 : (members as Record<string, unknown> | undefined)?.[user.id]
               if (!meMember) {
-                try { await ensureChatMembership({ callId, userId: user.id }) } catch {}
+                try { await ensureChatMembership({ callId, userId: user.id }) } catch { }
                 // Best-effort client-side addMembers in case server path is slow
-                try { await c.addMembers?.([user.id]) } catch {}
-                try { await channel.watch() } catch {}
+                try { await c.addMembers?.([user.id]) } catch { }
+                try { await channel.watch() } catch { }
               }
               // Best-effort markRead now that membership should be ensured
-              try { await c.markRead?.() } catch {}
-            } catch {}
+              try { await c.markRead?.() } catch { }
+            } catch { }
             setChatClient(sc)
             setChatChannel(channel)
           } catch (error) {
@@ -509,8 +451,8 @@ export default function StreamVideoCall({
   useEffect(() => {
     const handleUnload = () => {
       // Fire-and-forget; the browser may terminate the process quickly
-      try { chatClient?.disconnectUser() } catch {}
-      try { client?.disconnectUser() } catch {}
+      try { chatClient?.disconnectUser() } catch { }
+      try { client?.disconnectUser() } catch { }
     }
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeunload', handleUnload)
@@ -570,11 +512,11 @@ export default function StreamVideoCall({
       <StreamCall call={call}>
         <StreamTheme>
           <div className={`rehabify-stream ${isFullscreen ? 'fixed inset-0 z-50' : 'h-screen'}`}>
-            <CallUI 
-              onCallEnd={onCallEnd} 
-              callId={callId} 
-              showChat={showChat} 
-              onToggleChat={() => setShowChat(!showChat)} 
+            <CallUI
+              onCallEnd={onCallEnd}
+              callId={callId}
+              showChat={showChat}
+              onToggleChat={() => setShowChat(!showChat)}
               chatClient={chatClient}
               chatChannel={chatChannel}
               onEndForAll={async () => {
