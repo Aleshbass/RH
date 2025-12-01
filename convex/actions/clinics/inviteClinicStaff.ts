@@ -15,6 +15,7 @@ export const createClinicStaffInvitationWithNotification = action({
     message: v.optional(v.string()),
     expirationDays: v.optional(v.number()),
     sendEmail: v.optional(v.boolean()),
+    origin: v.optional(v.string()),
   },
   returns: v.object({
     success: v.boolean(),
@@ -78,7 +79,7 @@ export const createClinicStaffInvitationWithNotification = action({
       // Send email if requested (default true)
       if (args.sendEmail !== false) {
         const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://rehabifyhealth.com';
-        const baseUrl = envBase.replace(/\/$/, '');
+        const baseUrl = (args.origin || envBase).replace(/\/$/, '');
         const invitationLink = `${baseUrl}/staff-invite/${result.code}`;
 
         try {

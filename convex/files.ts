@@ -81,7 +81,7 @@ export const savePhysiotherapistDocument = mutation({
       'image/png',
       'image/jpg'
     ];
-    
+
     if (!allowedTypes.includes(args.contentType)) {
       throw new Error("Invalid file type. Only PDF, JPEG, and PNG files are allowed.");
     }
@@ -149,7 +149,7 @@ export const getPhysiotherapistDocuments = query({
     // Get all documents
     const documents = await ctx.db
       .query("physiotherapistDocuments")
-      .withIndex("by_physiotherapist_id", (q) => 
+      .withIndex("by_physiotherapist_id", (q) =>
         q.eq("physiotherapistId", args.physiotherapistId)
       )
       .collect();
@@ -205,10 +205,10 @@ export const deletePhysiotherapistDocument = mutation({
     try {
       // Delete the file from storage
       await ctx.storage.delete(document.storageId);
-      
+
       // Delete the document record from database
       await ctx.db.delete(args.documentId);
-      
+
       return true;
     } catch (error) {
       console.error("Error deleting document:", error);
@@ -256,7 +256,7 @@ export const saveClinicDocument = mutation({
         .query("physiotherapistProfiles")
         .withIndex("by_user_id", (q) => q.eq("userId", user._id))
         .unique();
-      
+
       if (physiotherapistProfile && physiotherapistProfile.clinicId === args.clinicId) {
         hasAccess = true; // Clinic staff member
       }
@@ -416,6 +416,7 @@ export const savePatientDocument = mutation({
       fileSize: fileMetadata.size,
       contentType, // store normalized content type
       uploadedAt: Date.now(),
+      sharedWithPhysiotherapist: true, // Default to shared
     });
   },
 });
@@ -441,6 +442,7 @@ export const getPatientDocuments = query({
     fileSize: v.number(),
     contentType: v.string(),
     uploadedAt: v.number(),
+    sharedWithPhysiotherapist: v.optional(v.boolean()),
     downloadUrl: v.string(),
   })),
   handler: async (ctx, args) => {
@@ -476,6 +478,7 @@ export const getPatientDocuments = query({
           fileSize: doc.fileSize,
           contentType: doc.contentType,
           uploadedAt: doc.uploadedAt,
+          sharedWithPhysiotherapist: doc.sharedWithPhysiotherapist,
           downloadUrl,
         };
       })
@@ -502,6 +505,7 @@ export const getPatientDocumentsForPhysio = query({
     fileSize: v.number(),
     contentType: v.string(),
     uploadedAt: v.number(),
+    sharedWithPhysiotherapist: v.optional(v.boolean()),
     downloadUrl: v.string(),
   })),
   handler: async (ctx, args) => {
@@ -511,9 +515,9 @@ export const getPatientDocumentsForPhysio = query({
     // Check active relationship
     const rel = await ctx.db
       .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient_and_physiotherapist", (q)=>
+      .withIndex("by_patient_and_physiotherapist", (q) =>
         q.eq("patientId", args.patientUserId).eq("physiotherapistId", user._id))
-      .filter((q)=>q.eq(q.field("status"), "active"))
+      .filter((q) => q.eq(q.field("status"), "active"))
       .unique();
 
     if (!rel) throw new Error("No access to this patient");
@@ -524,7 +528,11 @@ export const getPatientDocumentsForPhysio = query({
 
     const docs = await ctx.db
       .query("patientDocuments")
-      .withIndex("by_patient_profile_id", (q)=>q.eq("patientProfileId", patient.patientProfileId!))
+      .withIndex("by_patient_profile_id", (q) => q.eq("patientProfileId", patient.patientProfileId!))
+      .filter((q) => q.or(
+        q.eq(q.field("sharedWithPhysiotherapist"), true),
+        q.eq(q.field("sharedWithPhysiotherapist"), undefined) // Backwards compatibility
+      ))
       .collect();
 
     return await Promise.all(
@@ -537,8 +545,46 @@ export const getPatientDocumentsForPhysio = query({
         fileSize: d.fileSize,
         contentType: d.contentType,
         uploadedAt: d.uploadedAt,
+        sharedWithPhysiotherapist: d.sharedWithPhysiotherapist,
         downloadUrl: (await ctx.storage.getUrl(d.storageId)) || "",
       }))
     );
+  },
+});
+
+/**
+ * Toggle document sharing with physiotherapist
+ * Allows patients to control visibility of their documents
+ */
+export const toggleDocumentSharing = mutation({
+  args: {
+    documentId: v.id("patientDocuments"),
+    shared: v.boolean(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get the document
+    const document = await ctx.db.get(args.documentId);
+    if (!document) {
+      throw new Error("Document not found");
+    }
+
+    // Verify the patient profile belongs to the current user
+    const patientProfile = await ctx.db.get(document.patientProfileId);
+    if (!patientProfile || patientProfile.userId !== user._id) {
+      throw new Error("Not authorized to modify this document");
+    }
+
+    // Update the sharing status
+    await ctx.db.patch(args.documentId, {
+      sharedWithPhysiotherapist: args.shared,
+    });
+
+    return true;
   },
 });

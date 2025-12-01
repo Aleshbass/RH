@@ -102,6 +102,8 @@ export interface Appointment {
   notesForTherapist?: string;
   cancellationReason?: string;
   rescheduledFromAppointmentId?: Id<"appointments">;
+  appointmentType?: "in-person" | "telehealth";
+  googleMeetLink?: string;
   date: number;
   time: string;
   type: string;

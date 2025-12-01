@@ -1,0 +1,858 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { z } from 'zod';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronRight, ChevronLeft, Check, Plus, X, Loader2, Twitter, Instagram, Linkedin, Globe, Users, Search as SearchIcon } from 'lucide-react';
+import { useOnboardingStore } from '@/stores/onboardingStore';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
+
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FileUpload } from '@/components/ui/file-upload';
+import LocationSearch from '@/components/marketplace/LocationSearch';
+import { usePhysiotherapistDocuments } from '@/lib/hooks/usePhysiotherapistDocuments';
+import { cn } from '@/lib/utils';
+import { AvailabilityScheduler } from '@/components/onboarding/common/AvailabilityScheduler';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useFileUpload } from '@/lib/hooks/useFileUpload';
+
+
+// --- Schemas ---
+
+const personalInfoSchema = z.object({
+    firstName: z.string().min(2, "First name must be at least 2 characters"),
+    lastName: z.string().min(2, "Last name must be at least 2 characters"),
+    email: z.string().email("Please enter a valid email address"),
+    phoneNumber: z.string().min(10, "Please enter a valid phone number"),
+});
+
+const demographicsSchema = z.object({
+    age: z.number().min(17, "You must be at least 17 years old").max(99, "Please enter a valid age"),
+    gender: z.enum(["male", "female", "other", "prefer_not_to_say"], {
+        required_error: "Please select your gender",
+    }),
+});
+
+const professionalInfoSchema = z.object({
+    licenseNumber: z.string().min(1, 'License number is required'),
+    yearsOfExperience: z.number().min(0, 'Years of experience must be a positive number'),
+});
+
+const locationSchema = z.object({
+    location: z.string().min(2, 'Location is required'),
+});
+
+const bioSchema = z.object({
+    bio: z.string().min(10, "Please provide a brief professional bio"),
+});
+
+const credentialsSchema = z.object({
+    certificationBoard: z.string().min(2, "Certification board is required"),
+    certificationYear: z.number().min(1900, "Please enter a valid year"),
+    licenseExpiryDate: z.string().min(1, "Expiry date is required"),
+});
+
+const referralSchema = z.object({
+    referralSource: z.string().min(1, "Please tell us how you heard about us"),
+    termsAccepted: z.boolean().refine(val => val === true, {
+        message: "You must accept the terms and conditions"
+    }),
+});
+
+// Combined Schema for type definition
+const fullSchema = z.object({
+    ...personalInfoSchema.shape,
+    ...demographicsSchema.shape,
+    ...professionalInfoSchema.shape,
+    ...locationSchema.shape,
+    ...bioSchema.shape,
+    ...credentialsSchema.shape,
+    ...referralSchema.shape,
+    specializations: z.array(z.string()).min(1, "Select at least one specialization"),
+    operatingHours: z.any(),
+});
+
+type FormValues = z.infer<typeof fullSchema>;
+
+// --- Steps Configuration ---
+
+const steps = [
+    { id: 'personal', title: 'Personal Info' },
+    { id: 'demographics', title: 'Demographics' },
+    { id: 'professional', title: 'Professional Info' },
+    { id: 'location', title: 'Location' },
+    { id: 'specializations', title: 'Specializations' },
+    { id: 'bio', title: 'Bio' },
+    { id: 'credentials', title: 'Credentials' },
+    { id: 'availability', title: 'Availability' },
+    { id: 'documents', title: 'Documents' },
+    { id: 'review', title: 'Review & Submit' },
+];
+
+export default function PhysiotherapistOnboardingWizard() {
+    const router = useRouter();
+    const { data, updatePhysiotherapistData, completeOnboarding } = useOnboardingStore();
+    const { physiotherapistData } = data;
+    const currentUser = useQuery(api.users.getMyUser);
+    const completeUserProfileMutation = useMutation(api.users.completeUserProfile);
+
+    const [currentStep, setCurrentStep] = useState(0);
+    const [direction, setDirection] = useState(0);
+    const [specializations, setSpecializations] = useState<string[]>(physiotherapistData.specializations || []);
+    const [manualSpecialization, setManualSpecialization] = useState('');
+    const [isAvailabilityLoading, setIsAvailabilityLoading] = useState(false);
+
+
+    // Document State
+    const [licenseFile, setLicenseFile] = useState<File | null>(null);
+    const [certificates, setCertificates] = useState<File[]>([]);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+
+    const {
+        uploadDocument,
+        isUploading,
+        uploadProgress,
+    } = usePhysiotherapistDocuments(currentUser?.physiotherapistProfileId);
+
+    // Profile Photo Upload
+    const updateProfileImage = useMutation(api.users.updateProfileImageFromStorage);
+    const { uploadFile: uploadProfilePhoto, isUploading: isProfilePhotoUploading } = useFileUpload();
+
+    const handleProfilePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const { storageId } = await uploadProfilePhoto(file);
+            if (storageId) {
+                await updateProfileImage({ storageId });
+                toast.success("Profile photo updated successfully");
+            }
+        } catch (error) {
+            console.error("Failed to upload profile photo:", error);
+            toast.error("Failed to upload profile photo");
+        }
+    };
+
+    const { control, handleSubmit, trigger, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormValues>({
+        resolver: zodResolver(fullSchema),
+        mode: 'onChange',
+        defaultValues: {
+            firstName: physiotherapistData.firstName || '',
+            lastName: physiotherapistData.lastName || '',
+            email: physiotherapistData.email || '',
+            phoneNumber: physiotherapistData.phoneNumber || '',
+            age: physiotherapistData.age || undefined,
+            gender: physiotherapistData.gender || undefined,
+            licenseNumber: physiotherapistData.licenseNumber || '',
+            yearsOfExperience: physiotherapistData.yearsOfExperience || 0,
+            location: physiotherapistData.location || '',
+            bio: physiotherapistData.bio || '',
+            certificationBoard: physiotherapistData.certificationBoard || '',
+            certificationYear: physiotherapistData.certificationYear || new Date().getFullYear(),
+            licenseExpiryDate: physiotherapistData.licenseExpiryDate || '',
+            referralSource: physiotherapistData.referralSource || '',
+            termsAccepted: physiotherapistData.termsAccepted || false,
+            specializations: physiotherapistData.specializations || [],
+            operatingHours: physiotherapistData.operatingHours || {
+                monday: { isOpen: true, slots: [{ start: '09:00', end: '17:00' }] },
+                tuesday: { isOpen: true, slots: [{ start: '09:00', end: '17:00' }] },
+                wednesday: { isOpen: true, slots: [{ start: '09:00', end: '17:00' }] },
+                thursday: { isOpen: true, slots: [{ start: '09:00', end: '17:00' }] },
+                friday: { isOpen: true, slots: [{ start: '09:00', end: '17:00' }] },
+                saturday: { isOpen: false, slots: [{ start: '09:00', end: '17:00' }] },
+                sunday: { isOpen: false, slots: [{ start: '09:00', end: '17:00' }] },
+            },
+        }
+    });
+
+    // Pre-fill user data
+    useEffect(() => {
+        if (currentUser && !physiotherapistData.firstName) {
+            setValue('firstName', currentUser.firstName || '');
+            setValue('lastName', currentUser.lastName || '');
+            setValue('email', currentUser.email || '');
+        }
+    }, [currentUser, setValue, physiotherapistData.firstName]);
+
+    // Simulate loading for availability step
+    useEffect(() => {
+        if (currentStep === 7) { // Availability step
+            setIsAvailabilityLoading(true);
+            const timer = setTimeout(() => {
+                setIsAvailabilityLoading(false);
+            }, 800);
+            return () => clearTimeout(timer);
+        }
+    }, [currentStep]);
+
+    const nextStep = async () => {
+        let fieldsToValidate: any[] = [];
+
+        switch (currentStep) {
+            case 0: fieldsToValidate = ['firstName', 'lastName', 'email', 'phoneNumber']; break;
+            case 1: fieldsToValidate = ['age', 'gender']; break;
+            case 2: fieldsToValidate = ['licenseNumber', 'yearsOfExperience']; break;
+            case 3: fieldsToValidate = ['location']; break;
+            case 4:
+                if (specializations.length === 0) {
+                    toast.error("Please select at least one specialization");
+                    return;
+                }
+                setValue('specializations', specializations);
+                fieldsToValidate = ['specializations'];
+                break;
+            case 5: fieldsToValidate = ['bio']; break;
+            case 6: fieldsToValidate = ['certificationBoard', 'certificationYear', 'licenseExpiryDate']; break;
+            case 7: fieldsToValidate = ['operatingHours']; break;
+            case 8:
+                if (!licenseFile) {
+                    toast.error("Please upload your license document");
+                    return;
+                }
+                // No zod validation for files here, handled manually
+                break;
+            case 9: fieldsToValidate = ['referralSource', 'termsAccepted']; break;
+        }
+
+        if (currentStep !== 8 && currentStep !== 4) { // Skip trigger for manual validation steps
+            const isStepValid = await trigger(fieldsToValidate);
+            if (!isStepValid) return;
+        }
+
+        if (currentStep < steps.length - 1) {
+            setDirection(1);
+            setCurrentStep(prev => prev + 1);
+        } else {
+            await handleFinalSubmit();
+        }
+    };
+
+    const prevStep = () => {
+        if (currentStep > 0) {
+            setDirection(-1);
+            setCurrentStep(prev => prev - 1);
+        }
+    };
+
+    const handleAddSpecialization = () => {
+        if (manualSpecialization && !specializations.includes(manualSpecialization)) {
+            setSpecializations([...specializations, manualSpecialization]);
+            setManualSpecialization('');
+        }
+    };
+
+    const handleRemoveSpecialization = (spec: string) => {
+        setSpecializations(specializations.filter(s => s !== spec));
+    };
+
+    const handleFinalSubmit = async () => {
+        const formData = watch();
+
+        try {
+            // 1. Create/Update Profile FIRST to get the ID
+            const result = await completeUserProfileMutation({
+                role: "physiotherapist",
+                profileData: {
+                    specializations,
+                    licenseNumber: formData.licenseNumber,
+                    yearsOfExperience: formData.yearsOfExperience,
+                    bio: formData.bio,
+                    location: formData.location,
+                    certificationBoard: formData.certificationBoard,
+                    certificationYear: formData.certificationYear,
+                    licenseExpiryDate: formData.licenseExpiryDate,
+                    dateOfBirth: `${new Date().getFullYear() - (formData.age || 0)}-01-01`,
+                    gender: formData.gender,
+                    referralSource: formData.referralSource,
+                    availabilitySchedule: formData.operatingHours,
+                },
+                firstName: formData.firstName,
+                lastName: formData.lastName,
+                finalStep: false, // Not final yet, we need to upload docs
+            });
+
+            if (!result.success || !result.physiotherapistProfileId) {
+                throw new Error("Failed to create profile: " + result.message);
+            }
+
+            const profileId = result.physiotherapistProfileId;
+
+            // 2. Upload Documents using the profileId
+            if (licenseFile) {
+                const success = await uploadDocument(licenseFile, "licenseDocument", profileId);
+                if (!success) throw new Error("Failed to upload license document");
+            }
+
+            for (const cert of certificates) {
+                await uploadDocument(cert, "additionalCertificate", profileId);
+            }
+
+            // 3. Update Store with all data needed for finalization
+            updatePhysiotherapistData({
+                ...formData,
+                specializations,
+            });
+
+            // 4. Redirect to completion page to handle finalization
+            router.push('/onboarding-complete');
+
+        } catch (error: any) {
+            console.error("Submission error:", error);
+            toast.error(error.message || "Failed to complete onboarding");
+            setUploadError(error.message);
+        }
+    };
+
+    // Animation variants
+    const variants = {
+        enter: (direction: number) => ({ x: direction > 0 ? 20 : -20, opacity: 0 }),
+        center: { zIndex: 1, x: 0, opacity: 1 },
+        exit: (direction: number) => ({ zIndex: 0, x: direction < 0 ? 20 : -20, opacity: 0 }),
+    };
+
+    const socialOptions = [
+        { id: 'twitter', label: 'X (Twitter)', icon: Twitter },
+        { id: 'instagram', label: 'Instagram', icon: Instagram },
+        { id: 'linkedin', label: 'LinkedIn', icon: Linkedin },
+        { id: 'search', label: 'Search Engine', icon: SearchIcon },
+        { id: 'friend', label: 'Friend/Colleague', icon: Users },
+        { id: 'other', label: 'Other', icon: Globe },
+    ];
+
+    return (
+        <div className="w-full max-w-xl mx-auto px-4 py-6">
+
+
+            {/* Progress Bar */}
+            <div className="mb-8">
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <motion.div
+                        className="h-full bg-[#005b57]"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
+                        transition={{ duration: 0.3 }}
+                    />
+                </div>
+                <div className="flex justify-between mt-2 text-xs text-gray-400 font-medium uppercase tracking-wider">
+                    <span>Step {currentStep + 1} of {steps.length}</span>
+                    <span>{steps[currentStep].title}</span>
+                </div>
+            </div>
+
+            <div className="min-h-[400px] relative">
+                <AnimatePresence initial={false} custom={direction} mode="wait">
+                    <motion.div
+                        key={currentStep}
+                        custom={direction}
+                        variants={variants}
+                        initial="enter"
+                        animate="center"
+                        exit="exit"
+                        transition={{ x: { type: "spring", stiffness: 300, damping: 30 }, opacity: { duration: 0.2 } }}
+                        className="w-full"
+                    >
+                        {/* Step 1: Personal Info */}
+                        {currentStep === 0 && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Personal Information</h2>
+                                    <p className="text-gray-500">Let's start with the basics</p>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label>First Name</Label>
+                                            <Input {...control.register('firstName')} placeholder="First Name" />
+                                            {errors.firstName && <p className="text-xs text-red-500">{errors.firstName.message}</p>}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Last Name</Label>
+                                            <Input {...control.register('lastName')} placeholder="Last Name" />
+                                            {errors.lastName && <p className="text-xs text-red-500">{errors.lastName.message}</p>}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Email</Label>
+                                        <Input {...control.register('email')} placeholder="Email" type="email" />
+                                        {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Phone Number</Label>
+                                        <Input {...control.register('phoneNumber')} placeholder="Phone Number" />
+                                        {errors.phoneNumber && <p className="text-xs text-red-500">{errors.phoneNumber.message}</p>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 2: Demographics */}
+                        {currentStep === 1 && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Demographics</h2>
+                                    <p className="text-gray-500">Tell us a bit more about yourself</p>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label>Age</Label>
+                                        <Input
+                                            {...control.register('age', { valueAsNumber: true })}
+                                            type="number"
+                                            min={17}
+                                            max={99}
+                                            placeholder="Age"
+                                            className="h-12"
+                                        />
+                                        {errors.age && <p className="text-xs text-red-500">{errors.age.message}</p>}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Gender</Label>
+                                        <Controller
+                                            control={control}
+                                            name="gender"
+                                            render={({ field }) => (
+                                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                                    <SelectTrigger className="h-12">
+                                                        <SelectValue placeholder="Select gender" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="male">Male</SelectItem>
+                                                        <SelectItem value="female">Female</SelectItem>
+                                                        <SelectItem value="other">Other</SelectItem>
+                                                        <SelectItem value="prefer_not_to_say">Prefer not to say</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            )}
+                                        />
+                                        {errors.gender && <p className="text-xs text-red-500">{errors.gender.message}</p>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 3: Professional Info */}
+                        {currentStep === 2 && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Professional Info</h2>
+                                    <p className="text-gray-500">Your professional background</p>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label>License Number</Label>
+                                        <Input {...control.register('licenseNumber')} placeholder="License Number" className="h-12" />
+                                        {errors.licenseNumber && <p className="text-xs text-red-500">{errors.licenseNumber.message}</p>}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Years of Experience</Label>
+                                        <Input
+                                            {...control.register('yearsOfExperience', { valueAsNumber: true })}
+                                            type="number"
+                                            placeholder="Years"
+                                            className="h-12"
+                                        />
+                                        {errors.yearsOfExperience && <p className="text-xs text-red-500">{errors.yearsOfExperience.message}</p>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 4: Location */}
+                        {currentStep === 3 && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Practice Location</h2>
+                                    <p className="text-gray-500">Where do you practice?</p>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label>Location</Label>
+                                        <Controller
+                                            control={control}
+                                            name="location"
+                                            render={({ field }) => (
+                                                <LocationSearch
+                                                    value={field.value}
+                                                    onChange={field.onChange}
+                                                    className="w-full"
+                                                />
+                                            )}
+                                        />
+                                        {errors.location && <p className="text-xs text-red-500">{errors.location.message}</p>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 5: Specializations */}
+                        {currentStep === 4 && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Specializations</h2>
+                                    <p className="text-gray-500">What are your areas of expertise?</p>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="flex gap-2">
+                                        <Select onValueChange={(val) => {
+                                            if (!specializations.includes(val)) setSpecializations([...specializations, val]);
+                                        }}>
+                                            <SelectTrigger className="h-12 flex-1">
+                                                <SelectValue placeholder="Select specialization" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="Orthopedic">Orthopedic</SelectItem>
+                                                <SelectItem value="Neurological">Neurological</SelectItem>
+                                                <SelectItem value="Pediatric">Pediatric</SelectItem>
+                                                <SelectItem value="Geriatric">Geriatric</SelectItem>
+                                                <SelectItem value="Sports">Sports</SelectItem>
+                                                <SelectItem value="Cardiovascular">Cardiovascular</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <Input
+                                            placeholder="Or type manually..."
+                                            value={manualSpecialization}
+                                            onChange={(e) => setManualSpecialization(e.target.value)}
+                                            className="h-12"
+                                        />
+                                        <Button type="button" onClick={handleAddSpecialization} className="h-12 w-12 p-0 bg-[#005b57]">
+                                            <Plus className="h-5 w-5" />
+                                        </Button>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2 mt-4">
+                                        {specializations.map((spec) => (
+                                            <div key={spec} className="bg-teal-50 text-teal-800 px-3 py-1 rounded-full flex items-center gap-2 text-sm border border-teal-100">
+                                                {spec}
+                                                <button type="button" onClick={() => handleRemoveSpecialization(spec)}>
+                                                    <X className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 6: Bio & Profile Photo */}
+                        {currentStep === 5 && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Professional Profile</h2>
+                                    <p className="text-gray-500">Tell patients about yourself</p>
+                                </div>
+
+                                {/* Profile Photo Section */}
+                                <div className="flex flex-col items-center space-y-4 p-6 bg-gray-50 rounded-xl border border-gray-100">
+                                    <div className="relative group">
+                                        <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-md">
+                                            {currentUser?.imageUrl ? (
+                                                <img
+                                                    src={currentUser.imageUrl}
+                                                    alt="Profile"
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                                    <Users className="w-10 h-10" />
+                                                </div>
+                                            )}
+
+                                            {/* Loading Overlay */}
+                                            {isProfilePhotoUploading && (
+                                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                                    <Loader2 className="w-6 h-6 text-white animate-spin" />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <label
+                                            htmlFor="profile-photo-upload"
+                                            className="absolute bottom-0 right-0 bg-[#005b57] text-white p-2 rounded-full shadow-lg cursor-pointer hover:bg-[#00443e] transition-colors"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                            <input
+                                                id="profile-photo-upload"
+                                                type="file"
+                                                accept="image/*"
+                                                className="hidden"
+                                                onChange={handleProfilePhotoUpload}
+                                                disabled={isProfilePhotoUploading}
+                                            />
+                                        </label>
+                                    </div>
+
+                                    <div className="text-center space-y-1">
+                                        <h3 className="font-medium text-gray-900">Profile Photo</h3>
+                                        <p className="text-xs text-gray-500 max-w-[200px]">
+                                            Please use a professional profile photo. This helps build trust with patients.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label>Professional Bio</Label>
+                                        <Textarea
+                                            {...control.register('bio')}
+                                            placeholder="Write a short bio about your experience, approach to treatment, and what patients can expect..."
+                                            className="min-h-[150px] resize-none"
+                                        />
+                                        {errors.bio && <p className="text-xs text-red-500">{errors.bio.message}</p>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 7: Credentials */}
+                        {currentStep === 6 && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Credentials</h2>
+                                    <p className="text-gray-500">Verify your qualifications</p>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label>Certification Board</Label>
+                                        <Input {...control.register('certificationBoard')} placeholder="Board Name" className="h-12" />
+                                        {errors.certificationBoard && <p className="text-xs text-red-500">{errors.certificationBoard.message}</p>}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label>Certification Year</Label>
+                                            <Input
+                                                {...control.register('certificationYear', { valueAsNumber: true })}
+                                                type="number"
+                                                placeholder="Year"
+                                                className="h-12"
+                                            />
+                                            {errors.certificationYear && <p className="text-xs text-red-500">{errors.certificationYear.message}</p>}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Expiry Date</Label>
+                                            <Input {...control.register('licenseExpiryDate')} type="date" className="h-12" />
+                                            {errors.licenseExpiryDate && <p className="text-xs text-red-500">{errors.licenseExpiryDate.message}</p>}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        )}
+
+                        {/* Step 8: Availability */}
+                        {currentStep === 7 && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Availability</h2>
+                                    <p className="text-gray-500">Set your weekly schedule</p>
+                                </div>
+                                <div className="space-y-4">
+                                    <Controller
+                                        control={control}
+                                        name="operatingHours"
+                                        render={({ field }) => (
+                                            isAvailabilityLoading ? (
+                                                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                                    {[...Array(7)].map((_, i) => (
+                                                        <div key={i} className="flex flex-col py-4 border-b border-gray-200 last:border-0">
+                                                            <div className="flex items-start justify-between">
+                                                                <div className="flex items-center gap-4 w-32 pt-2">
+                                                                    <Skeleton className="h-6 w-10 rounded-full" />
+                                                                    <Skeleton className="h-4 w-16" />
+                                                                </div>
+                                                                <div className="flex-1">
+                                                                    <div className="flex items-center gap-2 justify-end">
+                                                                        <Skeleton className="h-9 w-28" />
+                                                                        <Skeleton className="h-9 w-28" />
+                                                                        <Skeleton className="h-8 w-8 rounded-md" />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <AvailabilityScheduler
+                                                    value={field.value}
+                                                    onChange={field.onChange}
+                                                />
+                                            )
+                                        )}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 9: Documents */}
+                        {currentStep === 8 && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Documents</h2>
+                                    <p className="text-gray-500">Upload your license and certificates</p>
+                                </div>
+                                <div className="space-y-6">
+                                    <div className="space-y-2">
+                                        <Label>License Document *</Label>
+                                        <FileUpload
+                                            id="license-upload"
+                                            label="Upload License"
+                                            accept="application/pdf,image/*"
+                                            onChange={(file) => setLicenseFile(file as File)}
+                                            value={licenseFile}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Additional Certificates (Optional)</Label>
+                                        <FileUpload
+                                            id="certs-upload"
+                                            label="Upload Certificates"
+                                            accept="application/pdf,image/*"
+                                            multiple
+                                            onChange={(files) => {
+                                                const fileArray = Array.isArray(files) ? files : [files];
+                                                setCertificates(fileArray.filter((f): f is File => f !== null));
+                                            }}
+                                            value={certificates}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Step 10: Review & Submit */}
+                        {currentStep === 9 && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Final Step</h2>
+                                    <p className="text-gray-500">How did you hear about us?</p>
+                                </div>
+
+                                <div className="space-y-6">
+                                    <div className="space-y-3">
+                                        <Label>Referral Source</Label>
+                                        <Controller
+                                            control={control}
+                                            name="referralSource"
+                                            render={({ field }) => (
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    {socialOptions.map((option) => {
+                                                        const Icon = option.icon;
+                                                        const isSelected = field.value === option.label || (option.id === 'other' && !socialOptions.slice(0, 5).some(o => o.label === field.value) && field.value !== '');
+
+                                                        return (
+                                                            <div
+                                                                key={option.id}
+                                                                onClick={() => {
+                                                                    if (option.id !== 'other') {
+                                                                        field.onChange(option.label);
+                                                                    } else {
+                                                                        field.onChange(''); // Clear for manual input
+                                                                    }
+                                                                }}
+                                                                className={cn(
+                                                                    "flex flex-col items-center justify-center p-3 rounded-xl border-2 cursor-pointer transition-all hover:border-teal-200 hover:bg-teal-50/50",
+                                                                    isSelected ? "border-[#005b57] bg-teal-50 text-[#005b57]" : "border-gray-100 bg-white text-gray-500"
+                                                                )}
+                                                            >
+                                                                <Icon className="w-6 h-6 mb-2" />
+                                                                <span className="text-xs font-medium text-center">{option.label}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        />
+
+                                        {/* Manual Input if "Other" is selected or value doesn't match predefined options */}
+                                        {(!socialOptions.slice(0, 5).some(o => o.label === watch('referralSource')) && (
+                                            <motion.div
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: 'auto' }}
+                                                className="pt-2"
+                                            >
+                                                <Label className="text-xs text-gray-500 mb-1.5 block">Please specify</Label>
+                                                <Input
+                                                    placeholder="e.g. Conference, Flyer, etc."
+                                                    value={watch('referralSource') === 'Search Engine' || watch('referralSource') === 'Friend/Colleague' || watch('referralSource') === 'X (Twitter)' || watch('referralSource') === 'Instagram' || watch('referralSource') === 'LinkedIn' ? '' : watch('referralSource')}
+                                                    onChange={(e) => setValue('referralSource', e.target.value)}
+                                                    className="h-11"
+                                                />
+                                            </motion.div>
+                                        ))}
+
+                                        {errors.referralSource && <p className="text-xs text-red-500">{errors.referralSource.message}</p>}
+                                    </div>
+
+                                    <div className="flex items-start space-x-3 p-4 bg-gray-50 rounded-xl">
+                                        <Controller
+                                            control={control}
+                                            name="termsAccepted"
+                                            render={({ field }) => (
+                                                <input
+                                                    type="checkbox"
+                                                    checked={field.value}
+                                                    onChange={(e) => field.onChange(e.target.checked)}
+                                                    className="mt-1 h-4 w-4 text-[#005b57] rounded border-gray-300 focus:ring-[#005b57]"
+                                                />
+                                            )}
+                                        />
+                                        <div className="text-sm">
+                                            <Label className="font-medium text-gray-900">I accept the terms and conditions</Label>
+                                            <p className="text-gray-500 text-xs mt-1">By continuing, you agree to our Terms of Service and Privacy Policy.</p>
+                                        </div>
+                                    </div>
+                                    {errors.termsAccepted && <p className="text-xs text-red-500">{errors.termsAccepted.message}</p>}
+                                </div>
+                            </div>
+                        )}
+
+                    </motion.div>
+                </AnimatePresence>
+            </div>
+
+            {/* Navigation Buttons */}
+            <div className="flex justify-between pt-6 mt-6 border-t border-gray-100">
+                <Button
+                    type="button"
+                    onClick={prevStep}
+                    variant="ghost"
+                    className={cn("text-gray-500 hover:text-gray-900", currentStep === 0 && "invisible")}
+                >
+                    <ChevronLeft className="w-4 h-4 mr-2" />
+                    Back
+                </Button>
+
+                <Button
+                    type="button"
+                    onClick={nextStep}
+                    disabled={isSubmitting || isUploading}
+                    className="bg-[#005b57] hover:bg-[#00443e] text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-900/10"
+                >
+                    {isSubmitting || isUploading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : currentStep === steps.length - 1 ? (
+                        'Complete'
+                    ) : (
+                        <>
+                            Next
+                            <ChevronRight className="w-4 h-4 ml-2" />
+                        </>
+                    )}
+                </Button>
+            </div>
+        </div >
+    );
+}

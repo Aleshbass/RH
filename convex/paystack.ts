@@ -161,7 +161,7 @@ export const getBankList = action({
     
     if (!PAYSTACK_SECRET) {
       console.error("Paystack secret key not configured");
-      return [];
+      throw new Error("Paystack configuration missing: PAYSTACK_SECRET_KEY");
     }
 
     try {

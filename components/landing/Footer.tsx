@@ -23,7 +23,7 @@ const Footer = () => {
                 Get Started for Free
               </button>
             </Link>
-            <button 
+            <button
               onClick={() => setIsDemoModalOpen(true)}
               className="bg-transparent border border-white text-white font-bold py-3 px-6 rounded-lg hover:bg-white hover:text-[#005b57] transition-colors cursor-pointer"
             >
@@ -35,7 +35,7 @@ const Footer = () => {
         {/* Links Section */}
         <div className="py-12 border-t border-gray-700 grid grid-cols-2 md:grid-cols-5 gap-8">
           <div className="col-span-2 md:col-span-1">
-             <Image src="/logos/White MainRehabify.svg" width={150} height={40} alt="Rehabify Logo" className="object-contain mb-4" />
+            <Image src="/logos/White MainRehabify.svg" width={150} height={40} alt="Rehabify Logo" className="object-contain mb-4" />
             <p className="text-gray-400">Revolutionizing physiotherapy through technology.</p>
           </div>
           <div>
@@ -45,6 +45,7 @@ const Footer = () => {
               <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Exercise Library</a></li>
               <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Telehealth</a></li>
               <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Analytics</a></li>
+              <li className="mb-2"><Link href="/integrations" className="text-gray-300 hover:text-white">Integrations</Link></li>
             </ul>
           </div>
           <div>
@@ -64,7 +65,7 @@ const Footer = () => {
               <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Contact</a></li>
             </ul>
           </div>
-           <div>
+          <div>
             <h3 className="font-bold mb-4">Legal</h3>
             <ul>
               <li className="mb-2">
@@ -80,6 +81,11 @@ const Footer = () => {
               <li className="mb-2">
                 <Link href="/payment-policy" className="text-gray-300 hover:text-white transition-colors">
                   Payment Policy
+                </Link>
+              </li>
+              <li className="mb-2">
+                <Link href="/payout-policy" className="text-gray-300 hover:text-white transition-colors">
+                  Payout Policy
                 </Link>
               </li>
             </ul>
@@ -103,7 +109,7 @@ const Footer = () => {
           </div>
         </div>
       </div>
-      
+
       {/* Book Demo Modal */}
       <BookDemoModal
         isOpen={isDemoModalOpen}

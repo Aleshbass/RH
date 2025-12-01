@@ -19,7 +19,7 @@ export function LandingHero() {
   const { isSignedIn } = useAuth();
   // Use TanStack Query for prefetching
   const queryClient = useQueryClient();
-  
+
   // Check if user is approved (only if signed in)
   const { isLoaded } = useAuth();
   // Fetch current user only when Clerk auth is fully loaded & the user is signed in
@@ -31,11 +31,11 @@ export function LandingHero() {
     api.users.getUserApprovalStatus,
     isLoaded && isSignedIn && currentUser ? {} : "skip"
   );
-  
+
   // Determine if user can access dashboard
   const canAccessDashboard = isSignedIn && currentUser && (
-    currentUser.role === "patient" || 
-    currentUser.role === "family_member" || 
+    currentUser.role === "patient" ||
+    currentUser.role === "family_member" ||
     currentUser.role === "admin" ||
     (approvalStatus?.status === "approved")
   );
@@ -45,7 +45,7 @@ export function LandingHero() {
     if (!isSignedIn) {
       return { href: "/sign-up", text: "Get Started" };
     }
-    
+
     if (canAccessDashboard) {
       // Determine dashboard URL based on role
       if (currentUser?.role === "physiotherapist") {
@@ -58,21 +58,21 @@ export function LandingHero() {
         return { href: "/dashboard", text: "Go to Dashboard" };
       }
     }
-    
+
     // User is signed in but pending approval or not onboarded
     if (currentUser && !currentUser.onboarded) {
       return { href: "/role-selection", text: "Complete Setup" };
     }
-    
+
     if (approvalStatus?.status === "pending_review") {
       return { href: "/dashboard", text: "View Application Status" };
     }
-    
+
     return { href: "/dashboard", text: "Go to Dashboard" };
   };
 
   const buttonProps = getButtonProps();
-  
+
   // Prefetch the target page on hover
   const prefetchTarget = () => {
     queryClient.prefetchQuery({
@@ -87,28 +87,28 @@ export function LandingHero() {
   return (
     <section className="relative min-h-screen overflow-hidden">
       <HeroBackground />
-      
+
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 pt-16">
-        <div className="flex flex-col lg:flex-row items-center justify-around lg:justify-between min-h-screen max-w-6xl mx-auto">
+        <div className="flex flex-col lg:flex-row items-center justify-around lg:justify-between min-h-screen max-w-7xl mx-auto">
           {/* Left Content Area */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
             className="w-full lg:w-[42%] text-center lg:text-left pt-8 lg:pt-0 mb-8 lg:mb-0 order-2 lg:order-1"
           >
-            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight tracking-tight text-gray-900 mb-4 sm:mb-6 font-pally">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight tracking-tight text-gray-900 mb-4 sm:mb-6">
               Welcome to the Future of Physiotherapy Management
             </h1>
-            <p className="text-base sm:text-lg md:text-xl text-gray-700 mb-6 sm:mb-8 font-pally">
-              Rehabify simplifies clinical physiotherapy management by 
-              connecting clinic owners, physiotherapists, and patients in one 
+            <p className="text-base sm:text-lg md:text-xl text-gray-700 mb-6 sm:mb-8 font-sans">
+              Rehabify simplifies clinical physiotherapy management by
+              connecting clinic owners, physiotherapists, and patients in one
               powerful platform
             </p>
             <Link href={buttonProps.href} passHref>
-              <NavbarButton 
+              <NavbarButton
                 as="span" // Instruct NavbarButton to render as a span
-                variant="primary" 
+                variant="primary"
                 className="group bg-green-500 hover:bg-green-600 text-white font-semibold py-3 sm:py-4 px-6 sm:px-8 rounded-full inline-flex items-center transition-all duration-300 transform hover:scale-105"
                 onMouseEnter={prefetchTarget}
               >
@@ -117,18 +117,18 @@ export function LandingHero() {
               </NavbarButton>
             </Link>
           </motion.div>
-          
+
           {/* Right Image Area - Mobile optimized */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.7, delay: 0.3 }}
             className="w-full lg:w-[50%] relative flex items-center justify-center h-[50vh] sm:h-[55vh] md:h-[60vh] lg:items-end lg:h-[calc(100vh-4rem)] lg:self-end order-1 lg:order-2"
           >
             <div className="relative w-full h-full flex items-end justify-center">
-              <Image 
+              <Image
                 src="/logos/images/rehabify-hero-image.webp"
-                alt="Healthcare professional" 
+                alt="Healthcare professional"
                 fill
                 style={{ objectFit: "contain" }}
                 className="max-h-[90%] max-w-[90%] lg:translate-y-[15vh]"
@@ -137,21 +137,21 @@ export function LandingHero() {
                 placeholder="blur"
                 blurDataURL="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
               />
-              
+
               {/* Feature tags - Mobile optimized */}
               <div className="absolute inset-0">
                 {/* Hide on smallest screens, show on sm and up */}
                 <div className="hidden sm:block">
-                  <FeatureTag 
+                  <FeatureTag
                     text="Clinic Owners"
                     position="top-12 right-8"
                     delay="600"
                     size="md"
                   />
                 </div>
-                
+
                 {/* Feature info card - Mobile optimized */}
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: 0.7 }}
@@ -169,58 +169,58 @@ export function LandingHero() {
                     </li>
                   </ul>
                 </motion.div>
-                
+
                 {/* Mobile-optimized feature tags */}
                 <div className="hidden sm:block">
-                  <FeatureTag 
+                  <FeatureTag
                     text="Physios"
                     position="bottom-32 right-16 sm:bottom-40 sm:right-40"
                     delay="800"
                     size="md"
                   />
-                  
-                  <FeatureTag 
+
+                  <FeatureTag
                     text="Patients"
                     position="bottom-20 right-8 sm:bottom-24 sm:right-24"
                     delay="900"
                     size="md"
                   />
                 </div>
-                
+
                 {/* Mobile-only floating feature tags */}
                 <div className="sm:hidden">
-                  <motion.span 
-                    className="absolute top-[20%] left-[10%] bg-green-100/80 backdrop-blur-sm px-2 py-1 rounded-full shadow-md text-xs font-medium text-green-800 font-pally"
+                  <motion.span
+                    className="absolute top-[20%] left-[10%] bg-green-100/80 backdrop-blur-sm px-2 py-1 rounded-full shadow-md text-xs font-medium text-green-800 font-sans"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.5, delay: 0.6 }}
-                    whileInView={{ 
+                    whileInView={{
                       y: [0, -5, 0],
                       transition: { duration: 3, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }
                     }}
                   >
                     Clinic Owners
                   </motion.span>
-                  
-                  <motion.span 
-                    className="absolute top-[30%] right-[15%] bg-green-100/80 backdrop-blur-sm px-2 py-1 rounded-full shadow-md text-xs font-medium text-green-800 font-pally"
+
+                  <motion.span
+                    className="absolute top-[30%] right-[15%] bg-green-100/80 backdrop-blur-sm px-2 py-1 rounded-full shadow-md text-xs font-medium text-green-800 font-sans"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.5, delay: 0.8 }}
-                    whileInView={{ 
+                    whileInView={{
                       y: [0, -5, 0],
                       transition: { duration: 4, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }
                     }}
                   >
                     Physios
                   </motion.span>
-                  
-                  <motion.span 
-                    className="absolute top-[45%] left-[20%] bg-green-100/80 backdrop-blur-sm px-2 py-1 rounded-full shadow-md text-xs font-medium text-green-800 font-pally"
+
+                  <motion.span
+                    className="absolute top-[45%] left-[20%] bg-green-100/80 backdrop-blur-sm px-2 py-1 rounded-full shadow-md text-xs font-medium text-green-800 font-sans"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.5, delay: 0.9 }}
-                    whileInView={{ 
+                    whileInView={{
                       y: [0, -5, 0],
                       transition: { duration: 3.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }
                     }}

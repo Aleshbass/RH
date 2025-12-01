@@ -46,12 +46,12 @@ export const getStatusAndUser = internalQuery({
     if (!status) {
       return { status: null, user: null };
     }
-    
+
     const user = await ctx.db.get(status.userId);
     if (!user) {
       return { status, user: null };
     }
-    
+
     return { status, user };
   },
 });
@@ -91,6 +91,30 @@ export const submitForReview = mutation({
       status: "pending_review",
       submittedAt: Date.now(),
     });
+
+    // Notify admins
+    const admins = await ctx.db
+      .query("users")
+      .withIndex("by_role", (q) => q.eq("role", "admin"))
+      .collect();
+
+    const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || (user.email || "User");
+    const roleLabel = user.role === "physiotherapist" ? "Physiotherapist" : user.role === "clinic_owner" ? "Clinic Owner" : "User";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com";
+    const adminActionPath = `/admin/users/${user._id}`;
+    const adminDashboardLink = `${appUrl}${adminActionPath}`;
+
+    for (const admin of admins) {
+      if (admin.email) {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendOnboardingNotificationEmail.sendOnboardingNotificationEmail, {
+          adminEmail: admin.email,
+          userName: `${displayName} (${roleLabel})`,
+          adminDashboardLink,
+          userRole: roleLabel,
+          submittedAt: Date.now(),
+        });
+      }
+    }
 
     return statusId;
   },
@@ -147,15 +171,15 @@ export const getApprovalDetails = query({
     if (user.role === "physiotherapist" && user.physiotherapistProfileId) {
       // Get physiotherapist profile
       profileDetails = await ctx.db.get(user.physiotherapistProfileId);
-      
+
       // Get physiotherapist documents
       const physioDocuments = await ctx.db
         .query("physiotherapistDocuments")
-        .withIndex("by_physiotherapist_id", (q) => 
+        .withIndex("by_physiotherapist_id", (q) =>
           q.eq("physiotherapistId", user.physiotherapistProfileId!)
         )
         .collect();
-      
+
       // Add download URLs for documents
       documents = await Promise.all(
         physioDocuments.map(async (doc) => {
@@ -172,16 +196,26 @@ export const getApprovalDetails = query({
         .query("clinics")
         .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
         .unique();
-      
-      profileDetails = clinic;
-      
+
+      // Get clinic owner profile for referral source
+      let clinicOwnerProfile = null;
+      if (user.clinicOwnerProfileId) {
+        clinicOwnerProfile = await ctx.db.get(user.clinicOwnerProfileId);
+      }
+
+      // Merge clinic details with owner profile details
+      profileDetails = {
+        ...clinic,
+        ...clinicOwnerProfile,
+      };
+
       // Get clinic documents if clinic exists
       if (clinic) {
         const clinicDocuments = await ctx.db
           .query("clinicDocuments")
           .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
           .collect();
-        
+
         // Add download URLs for documents
         documents = await Promise.all(
           clinicDocuments.map(async (doc) => {
@@ -226,7 +260,7 @@ export const listPendingApprovals = query({
     const usersWithStatus = await Promise.all(
       statuses.map(async (status) => {
         const user = await ctx.db.get(status.userId);
-        
+
         // Get profile details based on role
         let profileDetails = null;
         if (user?.role === "physiotherapist" && user.physiotherapistProfileId) {
@@ -315,7 +349,7 @@ export const approveAccount = action({
 
     // Create notification for the user
     const dashboardLink = `/dashboard`;
-    
+
     // Send notification using the Convex API directly
     const notificationData = {
       userId: status.userId,
@@ -329,7 +363,7 @@ export const approveAccount = action({
       sendEmail: true,
       retryOnFailure: true
     };
-    
+
     // Send notification using the sendNotificationWithFallback mutation (in-app + schedule email processing)
     await client(api.notifications.sendNotificationWithFallback, notificationData);
 
@@ -338,8 +372,8 @@ export const approveAccount = action({
       const roleLabel = user.role === "physiotherapist"
         ? "Physiotherapist"
         : user.role === "clinic_owner"
-        ? "Clinic Owner"
-        : "User";
+          ? "Clinic Owner"
+          : "User";
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com";
       const dashboardPath = user.role === "physiotherapist" ? "/dashboard/physiotherapist" : user.role === "clinic_owner" ? "/dashboard/clinic" : "/dashboard";
       const dashboardLink = `${appUrl}${dashboardPath}`;
@@ -409,7 +443,7 @@ export const declineAccount = action({
 
     // Create notification for the user
     const supportLink = `/support`;
-    
+
     // Send notification using the Convex API directly
     const notificationData = {
       userId: status.userId,
@@ -427,7 +461,7 @@ export const declineAccount = action({
       sendEmail: true,
       retryOnFailure: true
     };
-    
+
     // Send notification using the sendNotificationWithFallback mutation
     await client(api.notifications.sendNotificationWithFallback, notificationData);
 
@@ -479,14 +513,22 @@ export const updateStatus = mutation({
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const { statusId, ...updates } = args;
-    
+
     const status = await ctx.db.get(statusId);
     if (!status) {
       throw new Error(`Account approval status with ID ${statusId} not found`);
     }
 
     await ctx.db.patch(statusId, updates);
-    
+
+    // If approved, also update the user status to active
+    if (args.status === "approved") {
+      await ctx.db.patch(status.userId, {
+        status: "active",
+        onboarded: true,
+      });
+    }
+
     return true;
   },
 });

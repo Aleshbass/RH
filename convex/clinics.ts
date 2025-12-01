@@ -17,10 +17,10 @@ export const createClinic = mutation({
     contactPhone: v.optional(v.string()),
     logoUrl: v.optional(v.string()),
   },
-  returns: v.object({ 
+  returns: v.object({
     clinicId: v.id("clinics"),
     success: v.boolean(),
-    message: v.string() 
+    message: v.string()
   }),
   handler: async (ctx, args) => {
     // Get the authenticated user
@@ -48,10 +48,10 @@ export const createClinic = mutation({
       }
     });
 
-    return { 
+    return {
       clinicId,
       success: true,
-      message: `Clinic '${args.name}' created successfully` 
+      message: `Clinic '${args.name}' created successfully`
     };
   },
 });
@@ -76,7 +76,7 @@ export const getMyClinic = query({
     try {
       // Get the authenticated user
       const user = await getAuthenticatedUser(ctx);
-      
+
       if (user.role !== "clinic_owner") {
         return null;
       }
@@ -86,7 +86,7 @@ export const getMyClinic = query({
         .query("clinics")
         .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
         .first();
-      
+
       if (!clinic) {
         return null;
       }
@@ -191,7 +191,7 @@ export const invitePhysiotherapist = mutation({
     // Check if there's already a pending invitation for this email
     const existingInvitation = await ctx.db
       .query("clinicStaffInvitations")
-      .filter((q) => 
+      .filter((q) =>
         q.and(
           q.eq(q.field("clinicId"), clinic._id),
           q.eq(q.field("inviteeEmail"), args.inviteeEmail),
@@ -201,7 +201,14 @@ export const invitePhysiotherapist = mutation({
       .unique();
 
     if (existingInvitation) {
-      throw new Error("There is already a pending invitation for this email");
+      // If there's already a pending invitation, return it instead of throwing error
+      // This handles the case where the user clicks invite multiple times
+      return {
+        success: true,
+        invitationId: existingInvitation._id,
+        code: existingInvitation.code,
+        message: "Invitation already sent",
+      };
     }
 
     // Generate unique invitation code
@@ -282,9 +289,11 @@ export const acceptClinicInvitation = mutation({
     }
 
     // Update user role, profile, and assign to clinic
+    // We set onboarded to false so they are forced to go through the onboarding wizard
+    // to fill in their profile details (license, bio, etc.)
     await ctx.db.patch(user._id, {
       role: "physiotherapist",
-      onboarded: true,
+      onboarded: false,
       clinicId: invitation.clinicId, // Assign user to clinic
       status: "active", // Set as active staff member
       joinedAt: Date.now(), // Track when they joined
@@ -301,11 +310,19 @@ export const acceptClinicInvitation = mutation({
       await ctx.db.patch(physiotherapistProfile._id, {
         clinicId: invitation.clinicId,
       });
+      // Ensure user has the profile ID linked
+      await ctx.db.patch(user._id, {
+        physiotherapistProfileId: physiotherapistProfile._id,
+      });
     } else {
       // Create new profile
-      await ctx.db.insert("physiotherapistProfiles", {
+      const newProfileId = await ctx.db.insert("physiotherapistProfiles", {
         userId: user._id,
         clinicId: invitation.clinicId,
+      });
+      // Link profile to user
+      await ctx.db.patch(user._id, {
+        physiotherapistProfileId: newProfileId,
       });
     }
 
@@ -331,6 +348,16 @@ export const acceptClinicInvitation = mutation({
           actionUrl: "/dashboard/clinic/staff",
         }
       }
+    });
+
+    // Create approved account status for the user so they can access the dashboard
+    // This bypasses the manual approval process since they were invited by a clinic owner
+    await ctx.db.insert("accountApprovalStatus", {
+      userId: user._id,
+      status: "approved",
+      submittedAt: Date.now(),
+      reviewedAt: Date.now(),
+      comments: "Automatically approved via clinic invitation",
     });
     // Email notification to clinic owner is handled by the action wrapper
     // (acceptStaffInvitationWithNotification). Avoid sending from the base
@@ -384,7 +411,7 @@ export const getClinicInvitations = query({
       .query("clinics")
       .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
       .unique();
-    
+
     if (!clinic) {
       return [];
     }
@@ -410,11 +437,13 @@ export const getClinicStaff = query({
   args: {},
   returns: v.array(v.object({
     _id: v.id("physiotherapistProfiles"),
+    _creationTime: v.number(),
     userId: v.id("users"),
     clinicId: v.optional(v.id("clinics")),
     specializations: v.optional(v.array(v.string())),
     bio: v.optional(v.string()),
     licenseNumber: v.optional(v.string()),
+    availabilitySchedule: v.optional(v.any()),
     user: v.any(), // Assuming user can be any object
   })),
   handler: async (ctx) => {
@@ -654,7 +683,7 @@ export const getClinicDashboardStats = query({
       physiotherapistIds.map(physioId =>
         ctx.db
           .query("appointments")
-          .withIndex("by_physiotherapist_id_and_time", (q) => 
+          .withIndex("by_physiotherapist_id_and_time", (q) =>
             q.eq("physiotherapistId", physioId).gte("startTime", startOfDay)
           )
           .filter((q) => q.lte(q.field("startTime"), endOfDay))
@@ -670,7 +699,7 @@ export const getClinicDashboardStats = query({
       physiotherapistIds.map(physioId =>
         ctx.db
           .query("appointments")
-          .withIndex("by_physiotherapist_id_and_time", (q) => 
+          .withIndex("by_physiotherapist_id_and_time", (q) =>
             q.eq("physiotherapistId", physioId).gte("startTime", startOfMonth)
           )
           .filter((q) => q.lte(q.field("startTime"), endOfMonth))
@@ -680,7 +709,7 @@ export const getClinicDashboardStats = query({
 
     const allThisMonthAppointments = thisMonthAppointments.flat();
     const completedAppointments = allThisMonthAppointments.filter(apt => apt.status === "completed");
-    const completionRate = allThisMonthAppointments.length > 0 
+    const completionRate = allThisMonthAppointments.length > 0
       ? Math.round((completedAppointments.length / allThisMonthAppointments.length) * 100)
       : 0;
 
@@ -765,7 +794,7 @@ export const getClinicRevenue = query({
     const flatInvoices = allInvoices;
 
     // Calculate this month's revenue
-    const thisMonthInvoices = flatInvoices.filter(invoice => 
+    const thisMonthInvoices = flatInvoices.filter(invoice =>
       invoice._creationTime >= startOfThisMonth && invoice._creationTime <= endOfThisMonth
     );
     const thisMonthRevenue = thisMonthInvoices
@@ -773,7 +802,7 @@ export const getClinicRevenue = query({
       .reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0);
 
     // Calculate last month's revenue
-    const lastMonthInvoices = flatInvoices.filter(invoice => 
+    const lastMonthInvoices = flatInvoices.filter(invoice =>
       invoice._creationTime >= startOfLastMonth && invoice._creationTime <= endOfLastMonth
     );
     const lastMonthRevenue = lastMonthInvoices
@@ -781,7 +810,7 @@ export const getClinicRevenue = query({
       .reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0);
 
     // Calculate growth percentage
-    const growth = lastMonthRevenue > 0 
+    const growth = lastMonthRevenue > 0
       ? Math.round(((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100)
       : thisMonthRevenue > 0 ? 100 : 0;
 
@@ -910,7 +939,7 @@ export const getClinicPerformanceMetrics = query({
       physiotherapistIds.map(physioId =>
         ctx.db
           .query("appointments")
-          .withIndex("by_physiotherapist_id_and_time", (q) => 
+          .withIndex("by_physiotherapist_id_and_time", (q) =>
             q.eq("physiotherapistId", physioId).gte("startTime", startOfWeek)
           )
           .filter((q) => q.lte(q.field("startTime"), endOfWeek))
@@ -919,7 +948,7 @@ export const getClinicPerformanceMetrics = query({
     );
 
     const flatWeeklyAppointments = weeklyAppointments.flat();
-    const totalAppointmentHours = flatWeeklyAppointments.reduce((sum, apt) => 
+    const totalAppointmentHours = flatWeeklyAppointments.reduce((sum, apt) =>
       sum + (apt.endTime - apt.startTime) / (60 * 60 * 1000), 0
     );
 
@@ -958,7 +987,7 @@ export const getClinicRecentActivity = query({
   },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 10;
-    
+
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
@@ -996,7 +1025,7 @@ export const getClinicRecentActivity = query({
       physiotherapistIds.map(physioId =>
         ctx.db
           .query("appointments")
-          .withIndex("by_physiotherapist_id_and_time", (q) => 
+          .withIndex("by_physiotherapist_id_and_time", (q) =>
             q.eq("physiotherapistId", physioId)
           )
           .order("desc")
@@ -1096,7 +1125,7 @@ export const getClinicActivity = query({
     for (const appointment of recentAppointments) {
       const patient = appointment.patientId ? await ctx.db.get(appointment.patientId) : null;
       const physiotherapist = appointment.physiotherapistId ? await ctx.db.get(appointment.physiotherapistId) : null;
-      
+
       activities.push({
         id: appointment._id,
         type: "appointment",
@@ -1144,7 +1173,7 @@ export const getClinicActivity = query({
 
     for (const relationship of recentPatients) {
       const patient = await ctx.db.get(relationship.patientId);
-      
+
       activities.push({
         id: relationship._id,
         type: "patient_registration",
@@ -1254,14 +1283,14 @@ export const getClinicPatientStats = query({
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
-    
+
     const newThisMonth = relationships.filter(rel => rel._creationTime >= startOfMonth.getTime()).length;
 
     // Count appointments today
     const today = new Date();
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
     const endOfDay = startOfDay + (24 * 60 * 60 * 1000);
-    
+
     const appointmentsToday = await ctx.db
       .query("appointments")
       .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
@@ -1306,7 +1335,7 @@ export const getClinicAppointmentsLegacy = query({
     for (const appointment of appointments) {
       const patient = appointment.patientId ? await ctx.db.get(appointment.patientId) : null;
       const physiotherapist = appointment.physiotherapistId ? await ctx.db.get(appointment.physiotherapistId) : null;
-      
+
       enrichedAppointments.push({
         ...appointment,
         patient: patient ? {
@@ -1351,7 +1380,7 @@ export const getClinicAppointmentStats = query({
     // Get this month's appointments for analytics
     const today = new Date();
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
-    
+
     const thisMonthAppointments = await ctx.db
       .query("appointments")
       .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
@@ -1360,7 +1389,7 @@ export const getClinicAppointmentStats = query({
 
     const total = thisMonthAppointments.length;
     const completed = thisMonthAppointments.filter(apt => apt.status === 'completed').length;
-    const cancelled = thisMonthAppointments.filter(apt => 
+    const cancelled = thisMonthAppointments.filter(apt =>
       apt.status === 'cancelled_by_patient' || apt.status === 'cancelled_by_therapist'
     ).length;
     const noShows = thisMonthAppointments.filter(apt => apt.status === 'no_show').length;
@@ -1415,11 +1444,11 @@ export const getStaffMetrics = query({
 
     const validPhysios = physiotherapists.filter(p => p !== null);
     const activePhysios = validPhysios.filter(p => p?.status !== 'suspended' && p?.status !== 'terminated');
-    
+
     // Get this month's new staff (clinic-specific)
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const newThisMonth = physiotherapistProfiles.filter(profile => 
+    const newThisMonth = physiotherapistProfiles.filter(profile =>
       profile._creationTime >= startOfMonth
     ).length;
 
@@ -1436,7 +1465,7 @@ export const getStaffMetrics = query({
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const workingDays = Math.floor(daysInMonth * 0.7); // Assume 70% working days
     const expectedAppointments = activePhysios.length * workingDays * 5; // 5 appointments/day capacity
-    
+
     const utilization = expectedAppointments > 0
       ? Math.min(100, (completedAppointments.length / expectedAppointments) * 100)
       : 0;
@@ -1485,7 +1514,7 @@ export const updateClinic = mutation({
     if (args.specializations !== undefined) updateData.specializations = args.specializations;
 
     await ctx.db.patch(clinic._id, updateData);
-    
+
     return { success: true };
   },
 });
@@ -1506,7 +1535,7 @@ export const updateStaffRole = mutation({
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    
+
     // Only clinic owners can update staff roles
     if (user.role !== "clinic_owner") {
       throw new Error("Only clinic owners can update staff roles");
@@ -1562,7 +1591,7 @@ export const updateStaffStatus = mutation({
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    
+
     // Only clinic owners can update staff status
     if (user.role !== "clinic_owner") {
       throw new Error("Only clinic owners can update staff status");
@@ -1618,7 +1647,7 @@ export const reassignStaffToClinic = mutation({
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    
+
     // Only clinic owners can reassign staff
     if (user.role !== "clinic_owner") {
       throw new Error("Only clinic owners can reassign staff");
@@ -1688,7 +1717,7 @@ export const createStaffDirect = mutation({
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    
+
     // Only clinic owners can create staff directly
     if (user.role !== "clinic_owner") {
       throw new Error("Only clinic owners can create staff members");
@@ -1769,7 +1798,7 @@ export const getClinicAuditLogs = query({
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    
+
     // Only clinic owners can view audit logs
     if (user.role !== "clinic_owner") {
       throw new Error("Only clinic owners can view audit logs");
@@ -1786,7 +1815,7 @@ export const getClinicAuditLogs = query({
     }
 
     const limit = args.limit || 50;
-    
+
     // Build query for system logs
     let logsQuery = ctx.db
       .query("systemLogs")
@@ -1797,7 +1826,7 @@ export const getClinicAuditLogs = query({
     if (args.dateFilter && args.dateFilter !== 'all') {
       const now = Date.now();
       let startTime = 0;
-      
+
       switch (args.dateFilter) {
         case 'today':
           const today = new Date();
@@ -1813,7 +1842,7 @@ export const getClinicAuditLogs = query({
           startTime = now - (90 * 24 * 60 * 60 * 1000);
           break;
       }
-      
+
       if (startTime > 0) {
         logsQuery = logsQuery.filter((q) => q.gte(q.field("timestamp"), startTime));
       }
@@ -1833,7 +1862,7 @@ export const getClinicAuditLogs = query({
         const targetUser = (log.targetEntityType === "user" && log.targetEntityId)
           ? await ctx.db.get(log.targetEntityId as Id<"users">)
           : null;
-        
+
         return {
           ...log,
           user: logUser ? {
@@ -1898,7 +1927,7 @@ export const getOwnerAnalytics = query({
     // Calculate new patients this month
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const newPatientsThisMonth = allPatientRels.filter(r => 
+    const newPatientsThisMonth = allPatientRels.filter(r =>
       r._creationTime >= startOfMonth
     ).length;
 
@@ -1908,7 +1937,7 @@ export const getOwnerAnalytics = query({
       .withIndex("by_clinic_id_and_time", (q) => q.eq("clinicId", clinic._id))
       .collect();
 
-    const telehealthSessions = allAppointments.filter(apt => 
+    const telehealthSessions = allAppointments.filter(apt =>
       apt.serviceType === 'video_call' && apt.status === 'completed'
     );
 
@@ -1917,7 +1946,7 @@ export const getOwnerAnalytics = query({
       return sum + duration;
     }, 0);
 
-    const avgSessionLength = telehealthSessions.length > 0 
+    const avgSessionLength = telehealthSessions.length > 0
       ? Math.round(totalTelehealthMinutes / telehealthSessions.length)
       : 0;
 
@@ -1926,7 +1955,7 @@ export const getOwnerAnalytics = query({
     const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999).getTime();
 
     const thisMonthTelehealth = telehealthSessions.filter(s => s.startTime >= startOfMonth).length;
-    const lastMonthTelehealth = telehealthSessions.filter(s => 
+    const lastMonthTelehealth = telehealthSessions.filter(s =>
       s.startTime >= startOfLastMonth && s.startTime <= endOfLastMonth
     ).length;
 
@@ -1969,16 +1998,16 @@ export const getMyClinicInfo = query({
     if (!identity) {
       return null; // Return null instead of throwing for unauthenticated users
     }
-    
+
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .first();
-    
+
     if (!user) {
       return null;
     }
-    
+
     // Only return clinic info if user is assigned to a clinic
     if (!user.clinicId) {
       return null;
@@ -1986,7 +2015,7 @@ export const getMyClinicInfo = query({
 
     // Get the clinic information
     const clinic = await ctx.db.get(user.clinicId);
-    
+
     if (!clinic) {
       return null;
     }
@@ -2024,7 +2053,7 @@ export const getClinicPatients = query({
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    
+
     if (user.role !== "clinic_owner") {
       throw new Error("Only clinic owners can view clinic patients");
     }
@@ -2078,7 +2107,7 @@ export const getClinicPatients = query({
       paginatedRelationships.map(async (rel) => {
         const patient = await ctx.db.get(rel.patientId) as Doc<"users"> | null;
         const physiotherapist = await ctx.db.get(rel.physiotherapistId) as Doc<"users"> | null;
-        
+
         if (!patient) return null;
 
         // Get patient's appointment count
@@ -2106,7 +2135,7 @@ export const getClinicPatients = query({
           },
           stats: {
             appointmentCount: appointments.length,
-            lastSessionDate: appointments.length > 0 
+            lastSessionDate: appointments.length > 0
               ? Math.max(...appointments.map(a => a.startTime))
               : undefined,
           },
@@ -2129,7 +2158,7 @@ export const getClinicAppointments = query({
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
-    
+
     if (user.role !== "clinic_owner") {
       throw new Error("Only clinic owners can view clinic appointments");
     }
@@ -2158,7 +2187,7 @@ export const getClinicAppointments = query({
         if (args.startDate !== undefined) {
           let query = ctx.db
             .query("appointments")
-            .withIndex("by_physiotherapist_id_and_time", (q) => 
+            .withIndex("by_physiotherapist_id_and_time", (q) =>
               q.eq("physiotherapistId", physioId).gte("startTime", args.startDate!)
             );
 
@@ -2173,11 +2202,11 @@ export const getClinicAppointments = query({
             .query("appointments")
             .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", physioId))
             .collect();
-          
+
           if (args.endDate !== undefined) {
             return allApts.filter(apt => apt.startTime <= args.endDate!);
           }
-          
+
           return allApts;
         }
       })
@@ -2229,12 +2258,12 @@ export const getClinicReports = query({
     if (!identity) {
       return null; // Return null instead of throwing for unauthenticated users
     }
-    
+
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .first();
-    
+
     if (!user || user.role !== "clinic_owner") {
       return null;
     }
@@ -2341,5 +2370,69 @@ export const getClinicReports = query({
       revenueBreakdown,
       avgDailyAppointments: Math.round(avgDailyAppointments * 10) / 10,
     };
+  },
+});
+
+/**
+ * Get all invoices for a clinic
+ */
+export const getClinicInvoices = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user || user.role !== "clinic_owner") {
+      throw new Error("Only clinic owners can view invoices");
+    }
+
+    // Get clinic
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+      .unique();
+
+    if (!clinic) {
+      return [];
+    }
+
+    // Get all invoices for this clinic
+    const invoices = await ctx.db
+      .query("invoices")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+      .order("desc")
+      .collect();
+
+    // Enhance invoices with patient details
+    const enhancedInvoices = await Promise.all(
+      invoices.map(async (invoice) => {
+        let patientDetails = null;
+        if (invoice.patientId) {
+          const patient = await ctx.db.get(invoice.patientId);
+          if (patient) {
+            patientDetails = {
+              user: {
+                firstName: patient.firstName,
+                lastName: patient.lastName,
+                email: patient.email,
+              }
+            };
+          }
+        }
+        return {
+          ...invoice,
+          patient: patientDetails,
+        };
+      })
+    );
+
+    return enhancedInvoices;
   },
 });

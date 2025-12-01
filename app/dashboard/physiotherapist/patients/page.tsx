@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import EnhancedPatientInviteModal from '@/components/dashboard/shared/EnhancedPatientInviteModal';
 import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal';
 import { format } from 'date-fns';
+import { TourGuide } from '@/components/shared/TourGuide';
 
 // Lightweight user type to avoid deep Convex type instantiation
 type CurrentUserLite = {
@@ -67,7 +68,7 @@ export default function PatientsPage() {
 
   // Get current user (narrowed via unknown-cast to avoid deep TS instantiation)
   const currentUser = useQuery(api.users.getMyUser) as unknown as CurrentUserLite | undefined;
-  
+
   // Memoize query params to keep reference stable and lighten TS inference
   const patientParams = useMemo(() => ({
     limit: 50,
@@ -119,17 +120,17 @@ export default function PatientsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Patients</h1>
+          <h1 id="patients-page-header" className="text-2xl font-bold text-gray-900">My Patients</h1>
           <p className="text-gray-600">Manage your patient relationships and care</p>
         </div>
         <div className="flex gap-2">
-          <AddPatientModal 
+          <AddPatientModal
             onSuccess={() => {
               // Refresh the patients list
               window.location.reload();
             }}
           />
-          <Button onClick={() => setIsInviteModalOpen(true)} variant="outline" className="flex items-center gap-2">
+          <Button id="add-new-patient-btn" onClick={() => setIsInviteModalOpen(true)} variant="outline" className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
             Invite Patient
           </Button>
@@ -147,11 +148,12 @@ export default function PatientsPage() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
+                id="patient-search-bar"
               />
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card id="patient-stats-overview">
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-100 rounded-lg">
@@ -175,7 +177,7 @@ export default function PatientsPage() {
                 <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No patients found</h3>
                 <p className="text-gray-600 mb-4">
-                  {searchTerm 
+                  {searchTerm
                     ? 'Try adjusting your search terms'
                     : 'Invite your first patient to get started'
                   }
@@ -210,7 +212,7 @@ export default function PatientsPage() {
                           {patient.relationship.status}
                         </Badge>
                       </div>
-                      
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-600">
                         <div className="flex items-center gap-2">
                           <Mail className="h-4 w-4" />
@@ -283,6 +285,36 @@ export default function PatientsPage() {
       <EnhancedPatientInviteModal
         isOpen={isInviteModalOpen}
         onClose={() => setIsInviteModalOpen(false)}
+      />
+
+      <TourGuide
+        tourId="patient-list-tour"
+        steps={[
+          {
+            target: "#patients-page-header",
+            title: "Patient Management",
+            content: "This is your central hub for managing all your patients. View their status, history, and details.",
+            position: "bottom",
+          },
+          {
+            target: "#add-new-patient-btn",
+            title: "Add New Patients",
+            content: "Click here to invite new patients or manually add them to your practice.",
+            position: "left",
+          },
+          {
+            target: "#patient-search-bar",
+            title: "Search Patients",
+            content: "Quickly find patients by name or email using this search bar.",
+            position: "bottom",
+          },
+          {
+            target: "#patient-stats-overview",
+            title: "Quick Stats",
+            content: "See an overview of your total patient count at a glance.",
+            position: "top",
+          },
+        ]}
       />
     </div>
   );

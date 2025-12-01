@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use node";
 
-import { calendar_v3 } from "@googleapis/calendar";
+import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import type { GoogleCalendarEvent, CalendarCredentials } from "./types";
 import { v } from "convex/values";
@@ -33,8 +33,8 @@ export async function createCalendarEvent(
   calendarId: string,
   event: GoogleCalendarEvent
 ) {
-  const calendar = calendar_v3({ version: "v3", auth: client });
-  
+  const calendar = google.calendar({ version: "v3", auth: client });
+
   const response = await calendar.events.insert({
     calendarId,
     requestBody: {
@@ -53,7 +53,7 @@ export async function createCalendarEvent(
     },
     conferenceDataVersion: 1,
   });
-  
+
   return response.data;
 }
 
@@ -64,13 +64,13 @@ export async function updateCalendarEvent(
   event: Partial<GoogleCalendarEvent>
 ) {
   const calendar = calendar_v3({ version: "v3", auth: client });
-  
+
   const response = await calendar.events.update({
     calendarId,
     eventId,
     requestBody: event,
   });
-  
+
   return response.data;
 }
 
@@ -80,7 +80,7 @@ export async function deleteCalendarEvent(
   eventId: string
 ) {
   const calendar = calendar_v3({ version: "v3", auth: client });
-  
+
   await calendar.events.delete({
     calendarId,
     eventId,
@@ -94,7 +94,7 @@ export async function getCalendarEvents(
   timeMax?: string
 ) {
   const calendar = calendar_v3({ version: "v3", auth: client });
-  
+
   const response = await calendar.events.list({
     calendarId,
     timeMin,
@@ -102,13 +102,13 @@ export async function getCalendarEvents(
     singleEvents: true,
     orderBy: "startTime",
   });
-  
+
   return response.data.items || [];
 }
 
 export async function getCalendarList(client: OAuth2Client) {
   const calendar = calendar_v3({ version: "v3", auth: client });
-  
+
   const response = await calendar.calendarList.list();
   return response.data.items || [];
 }
@@ -116,7 +116,7 @@ export async function getCalendarList(client: OAuth2Client) {
 export async function refreshAccessToken(refreshToken: string) {
   const client = createOAuthClient();
   client.setCredentials({ refresh_token: refreshToken });
-  
+
   const response = await client.refreshAccessToken();
   return response.credentials;
 }
@@ -182,19 +182,25 @@ export const listCalendars = action({
 
 // Helper: Get authenticated OAuth client for a user
 async function getClientForUser(ctx: any, userId: string) {
+  console.log("[GET CLIENT] Fetching credentials for user:", userId);
   let credentials = await ctx.runQuery(internal.calendar.oauth.getCredentials, { userId });
 
   if (!credentials) {
-    throw new Error("Calendar credentials not found");
+    console.error("[GET CLIENT] NO CREDENTIALS FOUND for user:", userId);
+    throw new Error("Calendar credentials not found. Please connect your Google Calendar in Settings.");
   }
+
+  console.log("[GET CLIENT] Credentials found, expiry:", new Date(credentials.expiryDate).toISOString());
 
   // Refresh if expiring soon (5 min buffer)
   if (credentials.expiryDate < Date.now() + 5 * 60 * 1000) {
+    console.log("[GET CLIENT] Token expiring soon, refreshing...");
     await ctx.runAction(internal.calendar.oauth.refreshAccessToken, {
       userId,
     });
     credentials = await ctx.runQuery(internal.calendar.oauth.getCredentials, { userId });
     if (!credentials) throw new Error("Failed to refresh credentials");
+    console.log("[GET CLIENT] Token refreshed successfully");
   }
 
   const client = createOAuthClient();
@@ -202,6 +208,8 @@ async function getClientForUser(ctx: any, userId: string) {
     access_token: credentials.accessToken,
     refresh_token: credentials.refreshToken,
   });
+
+  console.log("[GET CLIENT] OAuth client created successfully");
   return client;
 }
 
@@ -224,56 +232,68 @@ export const createEvent = action({
     timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ eventId: string; meetLink?: string }> => {
-    const client = await getClientForUser(ctx, args.userId);
-    const calendar = calendar_v3({ version: "v3", auth: client });
+    console.log("[NODE ACTIONS] createEvent called");
+    console.log("[NODE ACTIONS] User ID:", args.userId);
+    console.log("[NODE ACTIONS] Create Meet Link:", args.createMeetLink);
 
-    const requestBody: any = {
-      summary: args.summary,
-      description: args.description,
-      start: {
-        dateTime: new Date(args.startTime).toISOString(),
-        timeZone: args.timeZone || "Africa/Lagos",
-      },
-      end: {
-        dateTime: new Date(args.endTime).toISOString(),
-        timeZone: args.timeZone || "Africa/Lagos",
-      },
-      attendees: args.attendees?.map((a) => ({
-        email: a.email,
-        displayName: a.displayName,
-        responseStatus: "needsAction",
-      })),
-      reminders: {
-        useDefault: false,
-        overrides: [
-          { method: "email", minutes: 1440 },
-          { method: "popup", minutes: 60 },
-          { method: "popup", minutes: 15 },
-        ],
-      },
-    };
+    try {
+      const client = await getClientForUser(ctx, args.userId);
+      console.log("[NODE ACTIONS] Got OAuth client successfully");
 
-    if (args.createMeetLink) {
-      requestBody.conferenceData = {
-        createRequest: {
-          conferenceSolutionKey: { type: "hangoutsMeet" },
-          requestId: args.appointmentId.toString(),
+      const calendar = google.calendar({ version: "v3", auth: client });
+
+      const requestBody: any = {
+        summary: args.summary,
+        description: args.description,
+        start: {
+          dateTime: new Date(args.startTime).toISOString(),
+          timeZone: args.timeZone || "Africa/Lagos",
+        },
+        end: {
+          dateTime: new Date(args.endTime).toISOString(),
+          timeZone: args.timeZone || "Africa/Lagos",
+        },
+        attendees: args.attendees?.map((a) => ({
+          email: a.email,
+          displayName: a.displayName,
+          responseStatus: "needsAction",
+        })),
+        reminders: {
+          useDefault: false,
+          overrides: [
+            { method: "email", minutes: 1440 },
+            { method: "popup", minutes: 60 },
+            { method: "popup", minutes: 15 },
+          ],
         },
       };
+
+      if (args.createMeetLink) {
+        requestBody.conferenceData = {
+          createRequest: {
+            conferenceSolutionKey: { type: "hangoutsMeet" },
+            requestId: args.appointmentId.toString(),
+          },
+        };
+      }
+
+      const response = await calendar.events.insert({
+        calendarId: args.calendarId || "primary",
+        requestBody,
+        conferenceDataVersion: 1,
+        sendUpdates: "all",
+      });
+
+      return {
+        id: response.data.id!,
+        hangoutLink: response.data.hangoutLink,
+        htmlLink: response.data.htmlLink,
+        conferenceData: response.data.conferenceData,
+      };
+    } catch (error) {
+      console.error("[NODE ACTIONS] Error creating calendar event:", error);
+      throw error;
     }
-
-    const response = await calendar.events.insert({
-      calendarId: args.calendarId || "primary",
-      requestBody,
-      conferenceDataVersion: 1,
-      sendUpdates: "all",
-    });
-
-    return {
-      id: response.data.id!,
-      hangoutLink: response.data.hangoutLink,
-      conferenceData: response.data.conferenceData,
-    };
   },
 });
 

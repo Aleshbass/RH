@@ -157,7 +157,9 @@ export const refreshAccessToken = action({
     });
 
     if (!tokenResponse.ok) {
-      throw new Error("Failed to refresh access token");
+      const errorText = await tokenResponse.text();
+      console.error("[OAUTH] Token refresh failed:", errorText);
+      throw new Error(`Failed to refresh access token: ${errorText}`);
     }
 
     const newTokens = await tokenResponse.json() as { access_token: string; expires_in: number };
@@ -184,7 +186,7 @@ export const storeOAuthState = mutation({
   },
   handler: async (ctx: any, args: any) => {
     const expiresAt = Date.now() + (10 * 60 * 1000); // 10 minutes
-    
+
     await ctx.db.insert("oauthState", {
       state: args.state,
       userId: args.userId,
@@ -255,5 +257,37 @@ export const cleanupOAuthState = mutation({
     if (oauthState) {
       await ctx.db.delete(oauthState._id);
     }
+  },
+});
+
+// Disconnect Google Calendar
+export const disconnectGoogleCalendar = mutation({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("googleCalendarCredentials")
+      .filter((q: any) => q.eq(q.field("userId"), args.userId))
+      .first();
+
+    if (existing) {
+      await ctx.db.delete(existing._id);
+    }
+  },
+});
+
+// Check if user has Google Calendar connected
+export const hasGoogleCalendarConnected = query({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const credentials = await ctx.db
+      .query("googleCalendarCredentials")
+      .filter((q: any) => q.eq(q.field("userId"), args.userId))
+      .first();
+
+    return !!credentials;
   },
 });

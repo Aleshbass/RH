@@ -9,13 +9,15 @@ import { PhysiotherapistDashboardV2 } from '@/components/dashboard/physiotherapi
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 
+import { OnboardingTour } from '@/components/onboarding/OnboardingTour'
+
 export default function PhysiotherapistDashboardPage() {
   const router = useRouter()
   const { isLoaded, isSignedIn } = useAuth()
   const user = useQuery(api.users.getMyUser)
   const authRedirected = useRef(false)
   const roleRedirected = useRef(false)
-  
+
   // Redirect if not authenticated
   useEffect(() => {
     if (isLoaded && !isSignedIn && !authRedirected.current) {
@@ -55,5 +57,10 @@ export default function PhysiotherapistDashboardPage() {
     )
   }
 
-  return <PhysiotherapistDashboardV2 />
+  return (
+    <>
+      <PhysiotherapistDashboardV2 />
+      <OnboardingTour />
+    </>
+  )
 } 

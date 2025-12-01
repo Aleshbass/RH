@@ -3,11 +3,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { 
-  Calendar, 
-  Users, 
-  FileText, 
-  Clock, 
+import {
+  Calendar,
+  Users,
+  FileText,
+  Clock,
   UserPlus,
   Bell,
   Stethoscope,
@@ -18,13 +18,15 @@ import { format } from 'date-fns'
 import { api } from '@/convex/_generated/api'
 import { useQueryUntyped } from '@/lib/convexUntyped'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { QuickActions } from '@/components/dashboard/shared/QuickActions'
 import { RecentSessions } from '@/components/dashboard/physiotherapist/RecentSessions'
+import { RecentPatients } from '@/components/dashboard/physiotherapist/RecentPatients'
 import EnhancedPatientInviteModal from '@/components/dashboard/shared/EnhancedPatientInviteModal'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
- 
- 
+import { useQuery } from 'convex/react'
+import { InsightsSidebar } from '@/components/dashboard/shared/InsightsSidebar'
+
+
 
 // Type definitions for better type safety
 interface Patient {
@@ -79,13 +81,13 @@ export function PhysiotherapistDashboardV2() {
   const apiAny = api as unknown as any
   // Only the firstName is used in the header; keep a minimal shape
   const user = useQueryUntyped(apiAny.users.getMyUser) as { firstName?: string } | null | undefined
-  
+
   // Use the existing getCurrentUser query to get profile information
   const currentUserWithProfile = useQueryUntyped(apiAny.queries.getCurrentUser) as unknown | null | undefined
-  
+
   // Get clinic information if user is clinic staff
   const clinicInfo = useQueryUntyped(apiAny.clinics.getMyClinicInfo) as ClinicInfo | undefined
-  
+
   // Use direct Convex queries instead of custom hooks that depend on auth store
   const dashboardStats = useQueryUntyped(apiAny.patients.getDashboardStats, {}) as DashboardStats | undefined
   const patientsData = useQueryUntyped(apiAny.patients.getMyPatients, { limit: 10 }) as Patient[] | undefined
@@ -101,7 +103,9 @@ export function PhysiotherapistDashboardV2() {
     sessionDate: number;
     patient?: { firstName?: string; lastName?: string } | null;
   }> | undefined
-  
+
+  const physiotherapistStats = useQuery(api.analytics.getPhysiotherapistStats);
+
   // Transform the data to match the RecentSessions prop type exactly
   type RecentSession = {
     _id: string;
@@ -113,9 +117,9 @@ export function PhysiotherapistDashboardV2() {
     sessionDate: session.sessionDate,
     patient: session.patient
       ? {
-          firstName: session.patient.firstName || '',
-          lastName: session.patient.lastName || '',
-        }
+        firstName: session.patient.firstName || '',
+        lastName: session.patient.lastName || '',
+      }
       : undefined,
   })) || [])
 
@@ -164,305 +168,235 @@ export function PhysiotherapistDashboardV2() {
   const todaysAppointmentCount = dashboardStats?.todaysAppointments || 0
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#005b57]"> 
-            Welcome back, {user?.firstName || 'User'}!
-          </h1>
-          <p className="text-muted-foreground">
-            {isClinicBased ? (
-              <span className="flex items-center gap-2">
-                <Building2 className="h-4 w-4" />
-                Physiotherapist at {clinicInfo?.name || 'Clinic'}
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <Stethoscope className="h-4 w-4" />
-                Independent Physiotherapist
-              </span>
-            )}
-          </p>
+    <div className="flex gap-6">
+      <div className="space-y-6 flex-1 min-w-0">
+        {/* Header */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <h1 id="tour-welcome-header" className="text-2xl sm:text-3xl font-bold tracking-tight text-[#005b57] truncate">
+              Welcome back, {user?.firstName || 'User'}!
+            </h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              {isClinicBased ? (
+                <span className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 flex-shrink-0" />
+                  <span className="truncate">Physiotherapist at {clinicInfo?.name || 'Clinic'}</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Stethoscope className="h-4 w-4 flex-shrink-0" />
+                  <span>Independent Physiotherapist</span>
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:self-auto">
+            <Button variant="outline" className="w-full sm:w-auto">
+              <Bell className="mr-2 h-4 w-4" />
+              <span className="truncate">Notifications</span>
+            </Button>
+            <Button id="tour-add-patient-btn" onClick={handleInvitePatient} className="w-full sm:w-auto">
+              <UserPlus className="mr-2 h-4 w-4" />
+              <span className="truncate">Add Patient</span>
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2 sm:self-auto">
-          <Button variant="outline">
-            <Bell className="mr-2 h-4 w-4" />
-            Notifications
-          </Button>
-          <Button onClick={handleInvitePatient}>
-            <UserPlus className="mr-2 h-4 w-4" />
-            Add Patient
-          </Button>
-        </div>
-      </div>
 
-      
 
-      {/* Enhanced Clinic Context Card for Clinic-based Physiotherapists */}
-      {isClinicBased && clinicInfo && (
-        <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
-              <div className="bg-blue-100 p-2 rounded-full">
-                <Building2 className="h-5 w-5 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <CardTitle className="text-lg text-blue-900">
-                  {clinicInfo.name}
-                </CardTitle>
-                <CardDescription className="text-blue-700">
-                  You are a staff physiotherapist at this clinic
-                </CardDescription>
-              </div>
-              <div className="text-right">
-                <div className="text-sm font-medium text-blue-800 capitalize">
-                  {clinicInfo.staffRole?.replace('_', ' ') || 'Physiotherapist'}
+
+        {/* Enhanced Clinic Context Card for Clinic-based Physiotherapists */}
+        {isClinicBased && clinicInfo && (
+          <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                <div className="bg-blue-100 p-2 rounded-full flex-shrink-0">
+                  <Building2 className="h-5 w-5 text-blue-600" />
                 </div>
-                {clinicInfo.joinedAt && (
-                  <div className="text-xs text-blue-600">
-                    Joined {format(new Date(clinicInfo.joinedAt), 'MMM yyyy')}
+                <div className="flex-1 min-w-0">
+                  <CardTitle className="text-base sm:text-lg text-blue-900 truncate">
+                    {clinicInfo.name}
+                  </CardTitle>
+                  <CardDescription className="text-xs sm:text-sm text-blue-700">
+                    You are a staff physiotherapist at this clinic
+                  </CardDescription>
+                </div>
+                <div className="text-left sm:text-right w-full sm:w-auto">
+                  <div className="text-xs sm:text-sm font-medium text-blue-800 capitalize">
+                    {clinicInfo.staffRole?.replace('_', ' ') || 'Physiotherapist'}
+                  </div>
+                  {clinicInfo.joinedAt && (
+                    <div className="text-xs text-blue-600">
+                      Joined {format(new Date(clinicInfo.joinedAt), 'MMM yyyy')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-xs sm:text-sm">
+                {clinicInfo.address && (
+                  <div className="flex items-start gap-2 text-blue-800 min-w-0">
+                    <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-1.5"></div>
+                    <span className="break-words overflow-hidden"><strong>Location:</strong> {clinicInfo.address}</span>
                   </div>
                 )}
+                {clinicInfo.owner && (
+                  <div className="flex items-start gap-2 text-blue-800 min-w-0">
+                    <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-1.5"></div>
+                    <span className="break-words overflow-hidden"><strong>Clinic Owner:</strong> {clinicInfo.owner.firstName} {clinicInfo.owner.lastName}</span>
+                  </div>
+                )}
+                {clinicInfo.contactEmail && (
+                  <div className="flex items-start gap-2 text-blue-800 min-w-0">
+                    <div className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-1.5"></div>
+                    <span className="break-words overflow-hidden"><strong>Contact:</strong> {clinicInfo.contactEmail}</span>
+                  </div>
+                )}
+                <div className="flex items-start gap-2 text-blue-800 min-w-0">
+                  <div className="w-2 h-2 bg-green-400 rounded-full flex-shrink-0 mt-1.5"></div>
+                  <span className="overflow-hidden"><strong>Status:</strong> Active Staff Member</span>
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              {clinicInfo.address && (
-                <div className="flex items-center gap-2 text-blue-800">
-                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
-                  <span><strong>Location:</strong> {clinicInfo.address}</span>
-                </div>
-              )}
-              {clinicInfo.owner && (
-                <div className="flex items-center gap-2 text-blue-800">
-                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
-                  <span><strong>Clinic Owner:</strong> {clinicInfo.owner.firstName} {clinicInfo.owner.lastName}</span>
-                </div>
-              )}
-              {clinicInfo.contactEmail && (
-                <div className="flex items-center gap-2 text-blue-800">
-                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
-                  <span><strong>Contact:</strong> {clinicInfo.contactEmail}</span>
-                </div>
-              )}
-              <div className="flex items-center gap-2 text-blue-800">
-                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                <span><strong>Status:</strong> Active Staff Member</span>
+              <div className="mt-3 p-3 bg-blue-100 rounded-lg">
+                <p className="text-xs text-blue-800">
+                  <strong>Note:</strong> Your patients, appointments, and treatment plans are managed within this clinic&apos;s system.
+                  You have your own individual dashboard with full access to manage your assigned patients.
+                </p>
               </div>
-            </div>
-            <div className="mt-3 p-3 bg-blue-100 rounded-lg">
-              <p className="text-xs text-blue-800">
-                <strong>Note:</strong> Your patients, appointments, and treatment plans are managed within this clinic&apos;s system. 
-                You have your own individual dashboard with full access to manage your assigned patients.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        )}
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {isClinicBased ? 'My Patients' : 'Total Patients'}
-            </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{patientCount}</div>
-            <p className="text-xs text-muted-foreground">
-              {isClinicBased 
-                ? 'Assigned to you' 
-                : patientCount > 0 ? 'Active patients' : 'No patients yet'
-              }
-            </p>
-          </CardContent>
-        </Card>
+        {/* Key Metrics - Compact Design */}
+        <div id="tour-metrics-grid" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Card>
+            <CardContent className="p-4 flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Patients</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold">{patientCount}</span>
+                <span className="text-xs text-muted-foreground">active</span>
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today&apos;s Schedule</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{todaysAppointmentCount}</div>
-            <p className="text-xs text-muted-foreground">
-              {todaysAppointmentCount === 1 ? 'appointment' : 'appointments'} today
-            </p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardContent className="p-4 flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Today's Schedule</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold">{todaysAppointmentCount}</span>
+                <span className="text-xs text-muted-foreground">appointments</span>
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {isClinicBased ? 'Sessions This Week' : 'Completed Sessions'}
-            </CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {dashboardStats?.completedSessionsThisWeek || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {isClinicBased ? 'This week' : 'Total completed'}
-            </p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardContent className="p-4 flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Sessions</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold">{dashboardStats?.completedSessionsThisWeek || 0}</span>
+                <span className="text-xs text-muted-foreground">this week</span>
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {isClinicBased ? 'Clinic Status' : 'Pending Invites'}
-            </CardTitle>
-            {isClinicBased ? (
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            )}
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {isClinicBased ? (
-                <span className="text-green-600">Active</span>
-              ) : (
-                dashboardStats?.pendingInvitations || 0
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {isClinicBased ? 'Member status' : 'Patient invitations'}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+          <Card>
+            <CardContent className="p-4 flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Invites</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold">{dashboardStats?.pendingInvitations || 0}</span>
+                <span className="text-xs text-muted-foreground">pending</span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Today&apos;s Schedule */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
-              Today&apos;s Schedule
-            </CardTitle>
-            <CardDescription>
-              Your appointments for {format(new Date(), 'EEEE, MMMM do')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {todaysAppointments.length === 0 ? (
-                <div className="text-center py-6">
-                  <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-gray-600 mb-2">No appointments scheduled for today</p>
-                  <p className="text-sm text-muted-foreground mb-4">You&apos;re all caught up! Ready to help your patients.</p>
-                  <Button variant="outline" size="sm" onClick={handleScheduleAppointment}>
-                    Schedule Appointment
-                  </Button>
-                </div>
-              ) : (
-                todaysAppointments.slice(0, 3).map((appointment, index: number) => (
-                  <div key={appointment._id || index} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <p className="font-medium">
-                        {appointment.patient?.firstName} {appointment.patient?.lastName}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {appointment.serviceType}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">
-                        {appointment.startTime ? format(new Date(appointment.startTime), 'HH:mm') : 'TBD'}
-                      </p>
-                      {appointment.endTime && appointment.startTime && (
-                        <p className="text-xs text-muted-foreground">
-                          {Math.round((appointment.endTime - appointment.startTime) / (1000 * 60))}m
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* Today's Schedule */}
+          <Card id="tour-todays-schedule" className="h-full">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <Calendar className="h-4 w-4 sm:h-5 sm:w-5" />
+                Today&apos;s Schedule
+              </CardTitle>
+              <CardDescription className="text-xs sm:text-sm">
+                Your appointments for {format(new Date(), 'EEE, MMM do')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {todaysAppointments.length === 0 ? (
+                  <div className="text-center py-6">
+                    <Calendar className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-sm sm:text-base text-gray-600 mb-2">No appointments scheduled for today</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-4">You&apos;re all caught up! Ready to help your patients.</p>
+                    <Button variant="outline" size="sm" onClick={handleScheduleAppointment}>
+                      Schedule Appointment
+                    </Button>
+                  </div>
+                ) : (
+                  todaysAppointments.slice(0, 3).map((appointment, index: number) => (
+                    <div key={appointment._id || index} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border rounded-lg">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm sm:text-base truncate">
+                          {appointment.patient?.firstName} {appointment.patient?.lastName}
                         </p>
-                      )}
+                        <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                          {appointment.serviceType}
+                        </p>
+                      </div>
+                      <div className="text-left sm:text-right flex-shrink-0">
+                        <p className="text-xs sm:text-sm font-medium">
+                          {appointment.startTime ? format(new Date(appointment.startTime), 'h:mm a') : 'TBD'}
+                        </p>
+                        {appointment.endTime && appointment.startTime && (
+                          <p className="text-xs text-muted-foreground">
+                            {Math.round((appointment.endTime - appointment.startTime) / (1000 * 60))}m
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* Recent Patients */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Recent Patients
-            </CardTitle>
-            <CardDescription>
-              Patients you&apos;ve worked with recently
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {patients.length === 0 ? (
-                <div className="text-center py-6">
-                  <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-gray-600 mb-2">No patients yet</p>
-                  <p className="text-sm text-muted-foreground mb-4">Start building your patient base</p>
-                  <Button variant="outline" size="sm" onClick={handleInvitePatient}>
-                    Invite Patient
-                  </Button>
-                </div>
-              ) : (
-                patients.slice(0, 3).map((patient) => (
-                  <div key={patient._id} className="flex items-center gap-3 p-3 border rounded-lg">
-                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                      <span className="text-sm font-medium text-blue-700">
-                        {patient.firstName?.[0]}{patient.lastName?.[0]}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="font-medium">
-                        {patient.firstName} {patient.lastName}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {patient.stats.appointmentCount} appointments
-                      </p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          {/* Recent Patients */}
+          <div id="tour-recent-patients" className="h-full">
+            <RecentPatients
+              recentPatients={patients}
+              onViewAll={() => router.push('/dashboard/physiotherapist/patients')}
+              onViewPatient={(patientId: string) => router.push(`/dashboard/physiotherapist/patients/${patientId}`)}
+              onInvitePatient={handleInvitePatient}
+            />
+          </div>
+        </div>
 
-      {/* Additional Widgets */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Quick Actions */}
-        <QuickActions
-          onInvitePatient={handleInvitePatient}
-          onScheduleAppointment={handleScheduleAppointment}
-          onCreateSession={handleCreateSession}
-          onManagePatients={handleManagePatients}
-          onExerciseLibrary={handleExerciseLibrary}
-          onTreatmentTemplates={handleTreatmentTemplates}
-          onAssessments={handleAssessments}
-        />
+        {/* Additional Widgets */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* Recent Sessions */}
+          <RecentSessions
+            recentSessions={recentSessions}
+            onViewAll={() => router.push('/dashboard/physiotherapist/patients')}
+            onViewSession={(sessionId: string) => router.push(`/dashboard/physiotherapist/session-logs/${sessionId}`)}
+          />
+        </div>
 
-        {/* Recent Sessions */}
-        <RecentSessions
-          recentSessions={recentSessions}
-          onViewAll={() => router.push('/dashboard/physiotherapist/patients')}
-          onViewSession={(sessionId: string) => router.push(`/dashboard/physiotherapist/session-logs/${sessionId}`)}
+        {/* Patient Invitation Modal - enhanced multi-method */}
+        <EnhancedPatientInviteModal
+          isOpen={isInviteModalOpen}
+          onClose={() => setIsInviteModalOpen(false)}
         />
       </div>
 
-      {/* Patient Invitation Modal - enhanced multi-method */}
-      <EnhancedPatientInviteModal
-        isOpen={isInviteModalOpen}
-        onClose={() => setIsInviteModalOpen(false)}
+      {/* Insights Sidebar */}
+      <InsightsSidebar
+        role="physiotherapist"
+        stats={physiotherapistStats}
+        className="border-l border-gray-200 h-[calc(100vh-4rem)] sticky top-0"
       />
-    </div>
+    </div >
   )
 }
 

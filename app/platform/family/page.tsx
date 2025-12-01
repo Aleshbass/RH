@@ -1,26 +1,50 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
-import { Loader2 } from "lucide-react";
+import PlatformPageLayout from "@/components/platform/PlatformPageLayout";
+import { Users2, BellRing, HeartHandshake, FileHeart, Phone, Clock } from "lucide-react";
 
 export default function FamilyPage() {
-  const router = useRouter();
-  const { isSignedIn } = useAuth();
-
-  useEffect(() => {
-    // Redirect based on auth status
-    if (isSignedIn) {
-      router.push("/");
-    } else {
-      router.push("/sign-up");
-    }
-  }, [isSignedIn, router]);
+  const features = [
+    {
+      title: "Stay Informed",
+      description: "Receive regular updates on your loved one's progress, adherence to their plan, and upcoming appointments.",
+      icon: <BellRing className="h-6 w-6" />,
+    },
+    {
+      title: "Care Coordination",
+      description: "Easily communicate with the care team to ensure everyone is aligned on the recovery goals and treatment plan.",
+      icon: <Users2 className="h-6 w-6" />,
+    },
+    {
+      title: "Support Resources",
+      description: "Access a library of resources designed to help family members provide the best possible support at home.",
+      icon: <HeartHandshake className="h-6 w-6" />,
+    },
+    {
+      title: "Shared Health Records",
+      description: "With patient consent, access important health documents and treatment notes to better understand their needs.",
+      icon: <FileHeart className="h-6 w-6" />,
+    },
+    {
+      title: "Emergency Contact",
+      description: "Quick access to the care team in case of urgent questions or concerns regarding your loved one's condition.",
+      icon: <Phone className="h-6 w-6" />,
+    },
+    {
+      title: "Appointment Reminders",
+      description: "Help your loved one stay on track by receiving notifications for upcoming sessions and exercises.",
+      icon: <Clock className="h-6 w-6" />,
+    },
+  ];
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <Loader2 className="h-8 w-8 animate-spin text-[#005b57]" />
-    </div>
+    <PlatformPageLayout
+      title="For Family Members"
+      subtitle="Support your loved one's recovery"
+      description="Recovery is a team effort. We provide family members with the visibility and tools they need to be an active, supportive part of the rehabilitation journey."
+      features={features}
+      ctaText="Learn More"
+      ctaLink="/contact"
+    />
   );
 }

@@ -12,6 +12,7 @@ export const upsertPhysiotherapistProfessionalDetails = mutation({
     certificationYear: v.optional(v.float64()),
     languagesSpoken: v.optional(v.array(v.string())),
     clinicId: v.optional(v.id("clinics")), // Added optional clinicId
+    location: v.optional(v.string()), // Added location field
     // Add any other fields relevant to professional details here
   },
   handler: async (ctx, args) => {
@@ -35,6 +36,7 @@ export const upsertPhysiotherapistProfessionalDetails = mutation({
       ...(args.certificationYear !== undefined && { certificationYear: args.certificationYear }),
       ...(args.languagesSpoken && { languagesSpoken: args.languagesSpoken }),
       ...(args.clinicId && { clinicId: args.clinicId }), // Include clinicId if provided
+      ...(args.location && { location: args.location }), // Include location if provided
     };
 
     if (existingProfile) {
@@ -59,5 +61,33 @@ export const upsertPhysiotherapistProfessionalDetails = mutation({
       }
       return newProfileId;
     }
+  },
+});
+
+export const updateAvailability = mutation({
+  args: {
+    availabilitySchedule: v.any(),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+
+    if (user.role !== "physiotherapist") {
+      throw new Error("User is not a physiotherapist.");
+    }
+
+    const existingProfile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .unique();
+
+    if (!existingProfile) {
+      throw new Error("Physiotherapist profile not found.");
+    }
+
+    await ctx.db.patch(existingProfile._id, {
+      availabilitySchedule: args.availabilitySchedule,
+    });
+
+    return existingProfile._id;
   },
 });

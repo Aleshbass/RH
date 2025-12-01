@@ -64,14 +64,21 @@ export const createAppointment = mutation({
     )),
     isPinned: v.optional(v.boolean()),
     colorCode: v.optional(v.string()),
+    manualMeetingLink: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    appointmentId: Id<"appointments">;
+    message: string;
+    googleMeetLink?: string;
+    googleCalendarLink?: string;
+  }> => {
     const user = await getAuthenticatedUser(ctx);
 
     // Verify user has access to this patient
     const relationship = await ctx.db
       .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient_and_physiotherapist", (q) => 
+      .withIndex("by_patient_and_physiotherapist", (q) =>
         q.eq("patientId", args.patientId).eq("physiotherapistId", user._id)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
@@ -90,17 +97,17 @@ export const createAppointment = mutation({
     // Check for time conflicts
     const conflictingAppointments = await ctx.db
       .query("appointments")
-      .withIndex("by_physiotherapist_id_and_time", (q) => 
+      .withIndex("by_physiotherapist_id_and_time", (q) =>
         q.eq("physiotherapistId", user._id)
       )
-      .filter((q) => 
+      .filter((q) =>
         q.or(
           q.and(q.lte(q.field("startTime"), args.startTime), q.gt(q.field("endTime"), args.startTime)),
           q.and(q.lt(q.field("startTime"), args.endTime), q.gte(q.field("endTime"), args.endTime)),
           q.and(q.gte(q.field("startTime"), args.startTime), q.lte(q.field("endTime"), args.endTime))
         )
       )
-      .filter((q) => 
+      .filter((q) =>
         q.neq(q.field("status"), "cancelled_by_patient") &&
         q.neq(q.field("status"), "cancelled_by_therapist")
       )
@@ -128,6 +135,7 @@ export const createAppointment = mutation({
       appointmentType: args.appointmentType || "in-person",
       isPinned: args.isPinned || false,
       colorCode: args.colorCode || "#3B82F6", // Default blue
+      manualMeetingLink: args.manualMeetingLink,
     });
 
     // Create notifications for both patient and therapist
@@ -146,7 +154,7 @@ export const createAppointment = mutation({
     }
     // Precompute a friendly time range string for emails
     const appointmentTimeStr = `${new Date(args.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(args.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    
+
     // Notification for patient
     await ctx.db.insert("notifications", {
       userId: args.patientId,
@@ -204,8 +212,13 @@ export const createAppointment = mutation({
     if (args.appointmentType === 'telehealth') {
       try {
         // Check physiotherapist's video platform preference
-        const physioProfile = await ctx.db.get(user.physiotherapistProfileId!);
-        const preferredPlatform = (physioProfile as any)?.videoPlatformPreference || 'stream';
+        let preferredPlatform: 'stream' | 'google_meet' = 'stream';
+        if (user.physiotherapistProfileId) {
+          const physioProfile = await ctx.db.get(user.physiotherapistProfileId);
+          if (physioProfile && 'videoPlatformPreference' in physioProfile) {
+            preferredPlatform = (physioProfile.videoPlatformPreference as 'stream' | 'google_meet') ?? 'stream';
+          }
+        }
 
         if (preferredPlatform === 'stream') {
           // Create Stream video call
@@ -221,15 +234,23 @@ export const createAppointment = mutation({
               waitingRoomEnabled: false,
             }
           });
-        } else if (preferredPlatform === 'google_meet') {
-          // Generate Google Meet link (placeholder - actual implementation would use Google Calendar API)
-          const meetingId = `${appointmentId}-${Date.now()}`;
-          const googleMeetLink = `https://meet.google.com/${meetingId}`;
-          
-          // Update appointment with Google Meet link
-          await ctx.db.patch(appointmentId, {
-            googleMeetLink: googleMeetLink,
-          } as any);
+        } else if (preferredPlatform === 'google_meet' || args.manualMeetingLink === 'google_meet') {
+          // Schedule Google Meet link generation via Google Calendar API
+          console.log("[DEBUG] Scheduling Google Meet link creation for appointment:", appointmentId);
+          console.log("[DEBUG] User ID:", user._id);
+
+          await ctx.scheduler.runAfter(0, internal.calendar.service.createCalendarEventAsync, {
+            userId: user._id,
+            appointmentId: appointmentId,
+            summary: `${args.serviceType} - ${patientName}`,
+            description: args.notesForTherapist || `Telehealth ${args.serviceType} Appointment`,
+            startTime: args.startTime,
+            endTime: args.endTime,
+            attendees: patient?.email ? [{ email: patient.email, displayName: patientName }] : [],
+            createMeetLink: true,
+          });
+
+          console.log("[DEBUG] Calendar event creation scheduled");
         }
       } catch (error) {
         console.error('Failed to create video call for appointment:', error);
@@ -261,6 +282,7 @@ export const getMyAppointments = query({
       v.literal("no_show")
     )),
     limit: v.optional(v.number()),
+    physiotherapistId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -283,26 +305,26 @@ export const getMyAppointments = query({
       // For physiotherapists, get their own appointments
       let appointmentsQuery = ctx.db
         .query("appointments")
-        .withIndex("by_physiotherapist_id_and_time", (q) => 
+        .withIndex("by_physiotherapist_id_and_time", (q) =>
           q.eq("physiotherapistId", user._id)
         );
 
       // Apply date filters if provided
       if (args.startDate) {
-        appointmentsQuery = appointmentsQuery.filter((q) => 
+        appointmentsQuery = appointmentsQuery.filter((q) =>
           q.gte(q.field("startTime"), args.startDate!)
         );
       }
 
       if (args.endDate) {
-        appointmentsQuery = appointmentsQuery.filter((q) => 
+        appointmentsQuery = appointmentsQuery.filter((q) =>
           q.lte(q.field("startTime"), args.endDate!)
         );
       }
 
       // Apply status filter if provided
       if (args.status) {
-        appointmentsQuery = appointmentsQuery.filter((q) => 
+        appointmentsQuery = appointmentsQuery.filter((q) =>
           q.eq(q.field("status"), args.status!)
         );
       }
@@ -334,20 +356,25 @@ export const getMyAppointments = query({
         .query("physiotherapistProfiles")
         .withIndex("by_clinic_id", (q) => q.eq("clinicId", user.clinicId!))
         .collect();
-      
+
       const physiotherapistIds = clinicPhysiotherapists
         .map(profile => profile.userId);
 
       // Get appointments for all clinic physiotherapists
       const allAppointments = await Promise.all(
-        physiotherapistIds.map(physioId =>
-          ctx.db
+        physiotherapistIds.map(physioId => {
+          // If specific physiotherapist requested, skip others
+          if (args.physiotherapistId && args.physiotherapistId !== physioId) {
+            return [];
+          }
+
+          return ctx.db
             .query("appointments")
-            .withIndex("by_physiotherapist_id_and_time", (q) => 
+            .withIndex("by_physiotherapist_id_and_time", (q) =>
               q.eq("physiotherapistId", physioId)
             )
-            .collect()
-        )
+            .collect();
+        })
       );
 
       // Flatten and sort appointments
@@ -449,7 +476,7 @@ export const updateAppointmentStatus = mutation({
         break;
       case "cancelled_by_therapist":
         notificationTitle = "Appointment Cancelled";
-        notificationMessage = args.cancellationReason 
+        notificationMessage = args.cancellationReason
           ? `Your appointment has been cancelled: ${args.cancellationReason}`
           : "Your appointment has been cancelled";
         break;
@@ -499,6 +526,65 @@ export const updateAppointmentStatus = mutation({
       }
     }
 
+    // AUTOMATED PAYOUT GENERATION
+    // If appointment is marked as completed, check for paid invoice and generate payout
+    if (args.status === "completed") {
+      // Find invoice linked to this appointment
+      // Note: Invoices usually link to appointments via relatedAppointmentIds array
+      const invoice = await ctx.db
+        .query("invoices")
+        .withIndex("by_patient_id", (q) => q.eq("patientId", appointment.patientId))
+        .filter((q) => q.eq(q.field("status"), "paid"))
+        .collect()
+        .then((invoices) =>
+          invoices.find((inv) => inv.relatedAppointmentIds?.includes(args.appointmentId))
+        );
+
+      if (invoice) {
+        // Check if payout already exists for this invoice to prevent duplicates
+        const existingPayout = await ctx.db
+          .query("payouts")
+          .withIndex("by_payout_invoice_id", (q) => q.eq("invoiceId", invoice._id))
+          .first();
+
+        if (!existingPayout) {
+          // Calculate split based on invoice fee breakdown or defaults
+          const platformFee = invoice.feeBreakdown?.platformFee || (invoice.platformFeeAmount || 0);
+          const physiotherapistEarning = invoice.feeBreakdown?.physiotherapistEarnings || (invoice.physiotherapistShare || 0);
+
+          // 1. Create Platform Fee Payout
+          if (platformFee > 0) {
+            await ctx.db.insert("payouts", {
+              invoiceId: invoice._id,
+              paymentId: null as any, // Linked later if needed
+              amount: platformFee,
+              status: "pending",
+              type: "platform_fee",
+              userId: (invoice as any).userId, // Technically platform user, using invoice creator for now or system
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+          }
+
+          // 2. Create Physiotherapist Earning Payout
+          if (physiotherapistEarning > 0) {
+            await ctx.db.insert("payouts", {
+              invoiceId: invoice._id,
+              paymentId: null as any,
+              amount: physiotherapistEarning,
+              status: "pending",
+              type: "physiotherapist_earning",
+              userId: appointment.physiotherapistId,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+          }
+
+          console.log(`Generated payouts for appointment ${args.appointmentId} and invoice ${invoice._id}`);
+        }
+      }
+    }
+
     return {
       success: true,
       message: `Appointment ${args.status.replace('_', ' ')}`,
@@ -532,10 +618,10 @@ export const rescheduleAppointment = mutation({
     // Check for time conflicts (excluding the current appointment)
     const conflictingAppointments = await ctx.db
       .query("appointments")
-      .withIndex("by_physiotherapist_id_and_time", (q) => 
+      .withIndex("by_physiotherapist_id_and_time", (q) =>
         q.eq("physiotherapistId", user._id)
       )
-      .filter((q) => 
+      .filter((q) =>
         q.and(
           q.neq(q.field("_id"), args.appointmentId),
           q.or(
@@ -545,7 +631,7 @@ export const rescheduleAppointment = mutation({
           )
         )
       )
-      .filter((q) => 
+      .filter((q) =>
         q.neq(q.field("status"), "cancelled_by_patient") &&
         q.neq(q.field("status"), "cancelled_by_therapist")
       )
@@ -569,7 +655,7 @@ export const rescheduleAppointment = mutation({
 
     // Create notification for patient
     const patient = await ctx.db.get(appointment.patientId);
-    
+
     await ctx.db.insert("notifications", {
       userId: appointment.patientId,
       type: "appointment_rescheduled",
@@ -647,7 +733,7 @@ export const getTodaysSchedule = query({
     // Get appointments for today
     const appointments = await ctx.db
       .query("appointments")
-      .withIndex("by_physiotherapist_id_and_time", (q) => 
+      .withIndex("by_physiotherapist_id_and_time", (q) =>
         q.eq("physiotherapistId", user._id).gte("startTime", startOfDay)
       )
       .filter((q) => q.lte(q.field("startTime"), endOfDay))
@@ -742,6 +828,7 @@ export const updateAppointmentFields = mutation({
         )
       ),
       colorCode: v.optional(v.string()),
+      manualMeetingLink: v.optional(v.string()),
     }),
   },
   handler: async (ctx, { appointmentId, updates }) => {
@@ -807,13 +894,13 @@ export const getPatientAppointments = query({
     }
 
     const results = await appointmentsQuery.order("asc").take(limit);
-    
+
     // Get physiotherapist details and feedback status for each appointment
     const appointmentsWithDetails = await Promise.all(
       results.map(async (appointment) => {
         const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
         if (!physiotherapist) return appointment;
-        
+
         // Check if feedback has been submitted for completed appointments
         let feedbackSubmitted = false;
         if (appointment.status === "completed") {
@@ -823,7 +910,7 @@ export const getPatientAppointments = query({
             .first();
           feedbackSubmitted = !!feedback;
         }
-        
+
         return {
           ...appointment,
           physiotherapistName: `${physiotherapist.firstName} ${physiotherapist.lastName}`,
@@ -832,10 +919,10 @@ export const getPatientAppointments = query({
         };
       })
     );
-    
+
     return appointmentsWithDetails;
   },
-}); 
+});
 
 // ==== Patient-Specific Appointment Management Functions ====
 
@@ -885,7 +972,7 @@ export const getMyPhysiotherapists = query({
         const physiotherapist = await ctx.db.get(relationship.physiotherapistId);
         if (!physiotherapist) return null;
 
-        const physiotherapistProfile = physiotherapist.physiotherapistProfileId 
+        const physiotherapistProfile = physiotherapist.physiotherapistProfileId
           ? await ctx.db.get(physiotherapist.physiotherapistProfileId)
           : null;
 
@@ -921,7 +1008,7 @@ export const getAvailableTimeSlots = query({
     // Verify patient has relationship with this physiotherapist
     const relationship = await ctx.db
       .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient_and_physiotherapist", (q) => 
+      .withIndex("by_patient_and_physiotherapist", (q) =>
         q.eq("patientId", patient._id).eq("physiotherapistId", args.physiotherapistId)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
@@ -939,10 +1026,10 @@ export const getAvailableTimeSlots = query({
     // Get existing appointments for that day
     const existingAppointments = await ctx.db
       .query("appointments")
-      .withIndex("by_physiotherapist_id_and_time", (q) => 
+      .withIndex("by_physiotherapist_id_and_time", (q) =>
         q.eq("physiotherapistId", args.physiotherapistId)
       )
-      .filter((q) => 
+      .filter((q) =>
         q.and(
           q.gte(q.field("startTime"), startOfDay),
           q.lte(q.field("startTime"), endOfDay),
@@ -955,14 +1042,14 @@ export const getAvailableTimeSlots = query({
     // Generate available time slots (9 AM to 5 PM in 30-minute intervals)
     const slots = [];
     const appointmentDuration = 30 * 60 * 1000; // 30 minutes in milliseconds
-    
+
     for (let hour = 9; hour < 17; hour++) {
       for (let minute = 0; minute < 60; minute += 30) {
         const slotStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), hour, minute).getTime();
         const slotEnd = slotStart + appointmentDuration;
 
         // Check if this slot conflicts with existing appointments
-        const hasConflict = existingAppointments.some(appointment => 
+        const hasConflict = existingAppointments.some(appointment =>
           (slotStart >= appointment.startTime && slotStart < appointment.endTime) ||
           (slotEnd > appointment.startTime && slotEnd <= appointment.endTime) ||
           (slotStart <= appointment.startTime && slotEnd >= appointment.endTime)
@@ -994,14 +1081,21 @@ export const requestAppointment = mutation({
     endTime: v.number(),
     serviceType: v.string(),
     notes: v.optional(v.string()),
+    appointmentType: v.optional(v.union(v.literal("in-person"), v.literal("telehealth"))),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    appointmentId: Id<"appointments">;
+    message: string;
+    googleMeetLink?: string;
+    googleCalendarLink?: string;
+  }> => {
     const patient = await getAuthenticatedPatient(ctx);
 
     // Verify patient has relationship with this physiotherapist
     const relationship = await ctx.db
       .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient_and_physiotherapist", (q) => 
+      .withIndex("by_patient_and_physiotherapist", (q) =>
         q.eq("patientId", patient._id).eq("physiotherapistId", args.physiotherapistId)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
@@ -1017,24 +1111,24 @@ export const requestAppointment = mutation({
       throw new Error("Physiotherapist not found");
     }
 
-    const physiotherapistProfile = physiotherapist.physiotherapistProfileId 
+    const physiotherapistProfile = physiotherapist.physiotherapistProfileId
       ? await ctx.db.get(physiotherapist.physiotherapistProfileId)
       : null;
 
     // Check for time conflicts
     const conflictingAppointments = await ctx.db
       .query("appointments")
-      .withIndex("by_physiotherapist_id_and_time", (q) => 
+      .withIndex("by_physiotherapist_id_and_time", (q) =>
         q.eq("physiotherapistId", args.physiotherapistId)
       )
-      .filter((q) => 
+      .filter((q) =>
         q.or(
           q.and(q.lte(q.field("startTime"), args.startTime), q.gt(q.field("endTime"), args.startTime)),
           q.and(q.lt(q.field("startTime"), args.endTime), q.gte(q.field("endTime"), args.endTime)),
           q.and(q.gte(q.field("startTime"), args.startTime), q.lte(q.field("endTime"), args.endTime))
         )
       )
-      .filter((q) => 
+      .filter((q) =>
         q.neq(q.field("status"), "cancelled_by_patient") &&
         q.neq(q.field("status"), "cancelled_by_therapist")
       )
@@ -1057,10 +1151,34 @@ export const requestAppointment = mutation({
       status: "scheduled",
       notesForPatient: undefined,
       notesForTherapist: args.notes,
+      appointmentType: args.appointmentType || "telehealth", // Default to telehealth for patient booking as per design
     });
 
     const patientName = `${patient.firstName} ${patient.lastName}`;
     const physiotherapistName = `${physiotherapist.firstName} ${physiotherapist.lastName}`;
+
+    // Generate Google Meet link if telehealth
+    let googleMeetLink: string | undefined;
+    let googleCalendarLink: string | undefined;
+
+    if (args.appointmentType === 'telehealth' || !args.appointmentType) {
+      // Schedule Google Meet link generation
+      console.log("[DEBUG] Scheduling Google Meet link creation for patient appointment:", appointmentId);
+
+      await ctx.scheduler.runAfter(0, internal.calendar.service.createCalendarEventAsync, {
+        userId: args.physiotherapistId,
+        appointmentId: appointmentId,
+        summary: `${args.serviceType} - ${patientName}`,
+        description: args.notes || `Telehealth ${args.serviceType} Appointment`,
+        startTime: args.startTime,
+        endTime: args.endTime,
+        attendees: patient.email ? [{ email: patient.email }] : [],
+        createMeetLink: true,
+      });
+
+      console.log("[DEBUG] Calendar event creation scheduled for patient appointment");
+    }
+
     // Determine clinic info for emails
     let clinicName = 'Rehabify Health';
     let clinicAddress = '';
@@ -1145,6 +1263,8 @@ export const requestAppointment = mutation({
       success: true,
       appointmentId,
       message: "Appointment requested successfully. You'll be notified when it's confirmed.",
+      googleMeetLink,
+      googleCalendarLink,
     };
   },
 });
@@ -1195,7 +1315,7 @@ export const cancelAppointmentAsPatient = mutation({
       status: "pending",
       payload: {
         title: "Appointment Cancelled",
-        body: args.cancellationReason 
+        body: args.cancellationReason
           ? `${patientName} cancelled their appointment: ${args.cancellationReason}`
           : `${patientName} cancelled their appointment`,
         data: {
@@ -1388,10 +1508,10 @@ export const requestAppointmentReschedule = mutation({
     // Check for time conflicts (excluding the current appointment)
     const conflictingAppointments = await ctx.db
       .query("appointments")
-      .withIndex("by_physiotherapist_id_and_time", (q) => 
+      .withIndex("by_physiotherapist_id_and_time", (q) =>
         q.eq("physiotherapistId", appointment.physiotherapistId)
       )
-      .filter((q) => 
+      .filter((q) =>
         q.and(
           q.neq(q.field("_id"), args.appointmentId),
           q.or(
@@ -1401,7 +1521,7 @@ export const requestAppointmentReschedule = mutation({
           )
         )
       )
-      .filter((q) => 
+      .filter((q) =>
         q.neq(q.field("status"), "cancelled_by_patient") &&
         q.neq(q.field("status"), "cancelled_by_therapist")
       )
@@ -1432,7 +1552,7 @@ export const requestAppointmentReschedule = mutation({
       status: "pending",
       payload: {
         title: "Appointment Rescheduled",
-        body: args.reason 
+        body: args.reason
           ? `${patientName} rescheduled their appointment to ${new Date(args.newStartTime).toLocaleDateString()}: ${args.reason}`
           : `${patientName} rescheduled their appointment to ${new Date(args.newStartTime).toLocaleDateString()}`,
         data: {
@@ -1469,10 +1589,10 @@ export const requestAppointmentReschedule = mutation({
       const oldEndTime = new Date(appointment.endTime);
       const newStartTime = new Date(args.newStartTime);
       const newEndTime = new Date(args.newEndTime);
-      
+
       const oldTimeStr = `${oldStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${oldEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
       const newTimeStr = `${newStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${newEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-      
+
       try {
         await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRescheduledProviderEmail"].sendAppointmentRescheduledProviderEmail as any, {
           to: physioEmail,
@@ -1496,7 +1616,7 @@ export const requestAppointmentReschedule = mutation({
       const newStartTime = new Date(args.newStartTime);
       const newEndTime = new Date(args.newEndTime);
       const newTimeStr = `${newStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${newEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-      
+
       try {
         await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRescheduledPatientEmail"].sendAppointmentRescheduledPatientEmail as any, {
           to: patientEmail,
@@ -1510,7 +1630,7 @@ export const requestAppointmentReschedule = mutation({
         console.error("Failed to send reschedule confirmation email to patient:", err);
       }
     }
-    
+
     return {
       success: true,
       message: "Appointment rescheduled successfully. Your physiotherapist has been notified.",
@@ -1647,14 +1767,14 @@ export const getPatientAppointmentDetails = query({
 
     // Get physiotherapist details
     const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
-    
+
     // Get physiotherapist profile
-    const physiotherapistProfile = physiotherapist?.physiotherapistProfileId 
+    const physiotherapistProfile = physiotherapist?.physiotherapistProfileId
       ? await ctx.db.get(physiotherapist.physiotherapistProfileId)
       : null;
 
     // Get clinic details if applicable
-    const clinic = appointment.clinicId 
+    const clinic = appointment.clinicId
       ? await ctx.db.get(appointment.clinicId)
       : null;
 
@@ -1683,7 +1803,7 @@ export const getPatientAppointmentDetails = query({
       sessionLog,
     };
   },
-}); 
+});
 
 export const submitPatientFeedback = mutation({
   args: {
@@ -1700,32 +1820,32 @@ export const submitPatientFeedback = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) throw new Error("Not authenticated")
-    
+
     const patient = await getAuthenticatedPatient(ctx)
-    
+
     const appointment = await ctx.db.get(args.appointmentId)
     if (!appointment) throw new Error("Appointment not found")
-    
+
     // Verify the appointment belongs to this patient
     if (appointment.patientId !== patient._id) {
       throw new Error("You don't have permission to provide feedback for this appointment")
     }
-    
+
     // Verify the appointment is completed
     if (appointment.status !== "completed") {
       throw new Error("You can only provide feedback for completed appointments")
     }
-    
+
     // Check if feedback already exists
     const existingFeedback = await ctx.db
       .query("appointmentFeedback")
       .withIndex("by_appointment", (q) => q.eq("appointmentId", args.appointmentId))
       .first()
-    
+
     if (existingFeedback) {
       throw new Error("Feedback has already been submitted for this appointment")
     }
-    
+
     // Validate rating values
     const allRatings = [args.rating, ...Object.values(args.categoryRatings)]
     for (const rating of allRatings) {
@@ -1733,7 +1853,7 @@ export const submitPatientFeedback = mutation({
         throw new Error("Ratings must be between 1 and 5")
       }
     }
-    
+
     // Create feedback record
     const feedbackId = await ctx.db.insert("appointmentFeedback", {
       appointmentId: args.appointmentId,
@@ -1744,11 +1864,11 @@ export const submitPatientFeedback = mutation({
       categoryRatings: args.categoryRatings,
       submittedAt: Date.now(),
     })
-    
+
     // Get physiotherapist info for notification
     const physiotherapist = await ctx.db.get(appointment.physiotherapistId)
     if (!physiotherapist) throw new Error("Physiotherapist not found")
-    
+
     // Create notification for physiotherapist
     await ctx.db.insert("notifications", {
       userId: appointment.physiotherapistId,
@@ -1768,7 +1888,7 @@ export const submitPatientFeedback = mutation({
       },
       createdAt: Date.now(),
     })
-    
+
     return { success: true, feedbackId }
   },
 }) 

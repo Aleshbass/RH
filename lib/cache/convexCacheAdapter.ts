@@ -3,7 +3,7 @@
  * Provides server-side caching with Upstash Redis
  */
 
-import { SimpleCache, QueryCache, TTL } from '@/lib/redis/simpleCache'
+import { SimpleCache, QueryCache, TTL } from '@/lib/redis/redisCache'
 
 export interface CacheConfig {
   /**
@@ -130,7 +130,7 @@ export class ConvexCacheAdapter {
    */
   static isRedisAvailable(): boolean {
     return !!(
-      process.env.UPSTASH_REDIS_REST_URL && 
+      process.env.UPSTASH_REDIS_REST_URL &&
       process.env.UPSTASH_REDIS_REST_TOKEN
     )
   }
@@ -148,6 +148,6 @@ export function createCacheKey(
     .sort()
     .map(key => `${key}=${params[key]}`)
     .join('&')
-  
+
   return `${userId}:${queryName}${paramsStr ? `:${paramsStr}` : ''}`
 }

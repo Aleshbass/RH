@@ -95,54 +95,62 @@ export default function FindAPhysioPage() {
   }, [clearStoredFilters]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-pink-50/30 to-purple-50/20">
+    <div className="min-h-screen bg-gray-50/50">
       {/* Hero Section */}
-      <div className="bg-gradient-to-r from-[#005b57] via-[#00766f] to-pink-600 text-white py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">
-            Find a Physiotherapist
-          </h1>
-          <p className="text-xl text-white/90 mb-8">
-            Search and book verified physiotherapists near you
-          </p>
+      <div className="bg-[#005b57] text-white pt-40 pb-16 md:pt-48 md:pb-20 relative overflow-hidden">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute right-0 top-0 w-96 h-96 bg-white rounded-full blur-3xl -mr-20 -mt-20" />
+          <div className="absolute left-0 bottom-0 w-64 h-64 bg-teal-400 rounded-full blur-3xl -ml-10 -mb-10" />
+        </div>
 
-          {/* Search Bar */}
-          <div className="max-w-3xl relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-            <Input
-              type="text"
-              placeholder="Search by condition, specialization, or therapist name..."
-              value={localSearchQuery}
-              onChange={(e) => setLocalSearchQuery(e.target.value)}
-              className="pl-12 h-14 text-lg bg-white shadow-xl border-0 focus:ring-4 focus:ring-pink-300"
-            />
-            {localSearchQuery !== debouncedQuery && (
-              <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
-              </div>
-            )}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="max-w-3xl">
+            <h1 className="text-3xl md:text-5xl font-bold mb-6 tracking-tight leading-tight">
+              Find your Physiotherapist
+            </h1>
+            <p className="text-lg md:text-xl text-teal-50/90 mb-8 font-light max-w-2xl">
+              Connect with verified professionals for your recovery journey.
+            </p>
+
+            {/* Search Bar */}
+            <div className="relative max-w-2xl">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Search by condition, specialization, or name..."
+                value={localSearchQuery}
+                onChange={(e) => setLocalSearchQuery(e.target.value)}
+                className="pl-12 h-14 text-base bg-white shadow-lg border-0 rounded-2xl focus:ring-2 focus:ring-teal-300 text-gray-900 placeholder:text-gray-400"
+              />
+              {localSearchQuery !== debouncedQuery && (
+                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                  <Loader2 className="h-5 w-5 animate-spin text-brand" />
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Mobile Filters Button */}
-          <div className="mt-6 lg:hidden">
+          <div className="mt-8 lg:hidden">
             <Sheet open={showMobileFilters} onOpenChange={setShowMobileFilters}>
               <SheetTrigger asChild>
                 <Button
                   variant="secondary"
-                  className="w-full bg-white text-[#005b57] hover:bg-gray-100"
+                  className="w-full bg-white/10 text-white hover:bg-white/20 border border-white/20 backdrop-blur-sm h-12 text-base"
                 >
                   <SlidersHorizontal className="mr-2 h-4 w-4" />
                   Filters & Sort
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-full sm:w-96 overflow-y-auto">
-                <SheetHeader>
-                  <SheetTitle>Filters</SheetTitle>
+              <SheetContent side="left" className="w-full sm:w-[400px] overflow-y-auto p-0">
+                <SheetHeader className="p-6 border-b border-gray-100 bg-white sticky top-0 z-10">
+                  <SheetTitle className="text-xl font-bold text-gray-900">Filters</SheetTitle>
                   <SheetDescription>
                     Refine your search results
                   </SheetDescription>
                 </SheetHeader>
-                <div className="mt-6">
+                <div className="p-6">
                   <SearchFilters
                     filters={storedFilters}
                     onFiltersChange={setStoredFilters}
@@ -157,21 +165,21 @@ export default function FindAPhysioPage() {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Desktop Filters Sidebar */}
           {showDesktopFilters && (
-            <div className="hidden lg:block w-80 flex-shrink-0 transition-all duration-300">
-              <div className="bg-gradient-to-br from-[#005b57] to-[#00443e] rounded-xl shadow-xl p-6 sticky top-8 text-white">
+            <div className="hidden lg:block w-72 flex-shrink-0">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sticky top-24">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-white">Filters</h2>
+                  <h2 className="text-lg font-bold text-gray-900">Filters</h2>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={clearFilters}
-                    className="text-sm text-white hover:bg-white/20 hover:text-white"
+                    className="text-xs text-gray-500 hover:text-brand h-auto p-0 hover:bg-transparent"
                   >
-                    Clear all
+                    Reset
                   </Button>
                 </div>
                 <SearchFilters
@@ -185,42 +193,32 @@ export default function FindAPhysioPage() {
           )}
 
           {/* Results */}
-          <div className="flex-1 transition-all duration-300">
+          <div className="flex-1 min-w-0">
             <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
               {/* Toggle Filters Button - Desktop */}
               <Button
                 onClick={() => setShowDesktopFilters(!showDesktopFilters)}
                 variant="outline"
-                className="hidden lg:flex items-center gap-2 border-2 border-[#005b57] text-[#005b57] hover:bg-[#005b57] hover:text-white transition-colors"
+                size="sm"
+                className="hidden lg:flex items-center gap-2 border-gray-200 text-gray-600 hover:bg-gray-50"
               >
                 <SlidersHorizontal className="h-4 w-4" />
-                {showDesktopFilters ? 'Hide' : 'Show'} Filters
+                {showDesktopFilters ? 'Hide Filters' : 'Show Filters'}
               </Button>
 
               {/* Results Count */}
               <div className="flex-1">
-                <div className="inline-flex items-center gap-3 px-5 py-2.5 bg-gradient-to-r from-pink-50 to-purple-50 rounded-full border-2 border-pink-200 shadow-sm">
-                  {isLoading ? (
-                    <span className="text-sm font-medium text-gray-600">Loading...</span>
-                  ) : (
-                    <>
-                      <span className="text-3xl font-bold bg-gradient-to-r from-[#005b57] to-pink-600 bg-clip-text text-transparent">
-                        {displayResults?.total || 0}
-                      </span>
-                      <span className="text-sm font-semibold text-gray-700">
-                        {displayResults?.total === 1 ? "physiotherapist" : "physiotherapists"} found
-                      </span>
-                      {cachedData && !results && (
-                        <span className="text-xs text-gray-500">(cached)</span>
-                      )}
-                    </>
+                <p className="text-gray-600">
+                  <span className="font-semibold text-gray-900">{displayResults?.total || 0}</span> results found
+                  {cachedData && !results && (
+                    <span className="text-xs text-gray-400 ml-2">(cached)</span>
                   )}
-                </div>
+                </p>
               </div>
 
               {/* Sort Dropdown */}
               <Select value={storedSortBy} onValueChange={setStoredSortBy}>
-                <SelectTrigger className="w-48 border-2 border-pink-200 focus:ring-pink-500 bg-white">
+                <SelectTrigger className="w-48 border-gray-200 bg-white h-10 rounded-xl">
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
@@ -235,21 +233,18 @@ export default function FindAPhysioPage() {
 
             {/* Loading State */}
             {isLoading && (
-              <div className="flex items-center justify-center py-20">
-                <div className="text-center">
-                  <Loader2 className="h-12 w-12 animate-spin text-[#005b57] mx-auto mb-4" />
-                  <p className="text-gray-600">Finding physiotherapists...</p>
-                </div>
+              <div className="flex flex-col items-center justify-center py-24">
+                <Loader2 className="h-10 w-10 animate-spin text-brand mb-4" />
+                <p className="text-gray-500 text-sm">Finding the best matches...</p>
               </div>
             )}
 
             {/* Physiotherapist Cards */}
             {displayResults && hasResults && (
-              <div className={`grid gap-6 transition-all duration-300 ${
-                showDesktopFilters
-                  ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3'
-                  : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-              }`}>
+              <div className={`grid gap-6 auto-rows-fr ${showDesktopFilters
+                ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+                : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                }`}>
                 {physios.map((physio: any) => (
                   <PhysioCard key={physio.id} physiotherapist={physio} />
                 ))}
@@ -258,35 +253,34 @@ export default function FindAPhysioPage() {
 
             {/* Empty State */}
             {displayResults && !hasResults && (
-              <div className="text-center py-20">
-                <div className="mb-6">
-                  <div className="w-24 h-24 mx-auto bg-gradient-to-br from-pink-100 to-purple-100 rounded-full flex items-center justify-center">
-                    <Search className="h-12 w-12 text-gray-400" />
-                  </div>
+              <div className="text-center py-24 bg-white rounded-3xl border border-dashed border-gray-200">
+                <div className="w-16 h-16 mx-auto bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                  <Search className="h-8 w-8 text-gray-400" />
                 </div>
-                <h3 className="text-2xl font-semibold text-gray-900 mb-2">
-                  No physiotherapists found
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  No matches found
                 </h3>
-                <p className="text-gray-600 mb-6">
-                  Try adjusting your filters or search query
+                <p className="text-gray-500 mb-6 max-w-sm mx-auto">
+                  We couldn't find any physiotherapists matching your criteria. Try adjusting your filters.
                 </p>
                 <Button
                   onClick={clearFilters}
-                  className="bg-gradient-to-r from-[#005b57] to-pink-600 hover:from-[#00443e] hover:to-pink-700"
+                  variant="outline"
+                  className="border-gray-200"
                 >
-                  Clear Filters
+                  Clear All Filters
                 </Button>
               </div>
             )}
 
             {/* Load More */}
             {displayResults && displayResults.hasMore && (
-              <div className="mt-8 text-center">
+              <div className="mt-12 text-center">
                 <Button
                   variant="outline"
-                  className="px-8 py-6 text-lg border-2 border-pink-300 text-[#005b57] hover:bg-gradient-to-r hover:from-[#005b57] hover:to-pink-600 hover:text-white hover:border-transparent transition-all"
+                  className="px-8 h-12 rounded-xl border-gray-200 text-gray-900 hover:bg-gray-50 hover:text-gray-900 transition-all font-medium"
                 >
-                  Load More
+                  Load More Results
                 </Button>
               </div>
             )}

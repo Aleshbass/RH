@@ -17,13 +17,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 
-import { 
-  Check, 
-  X, 
-  Clock, 
-  User, 
-  Stethoscope, 
-  Building2, 
+import {
+  Check,
+  X,
+  Clock,
+  User,
+  Stethoscope,
+  Building2,
   Shield,
   FileText,
   Download,
@@ -42,6 +42,13 @@ interface PhysiotherapistProfile {
   specializations?: string[]
   languagesSpoken?: string[]
   bio?: string
+  referralSource?: string
+  location?: string
+  gender?: string
+  dateOfBirth?: string
+  certificationBoard?: string
+  certificationYear?: number
+  licenseExpiryDate?: string
 }
 
 interface ClinicProfile {
@@ -51,6 +58,7 @@ interface ClinicProfile {
   country?: string
   contactEmail?: string
   contactPhone?: string
+  referralSource?: string
 }
 
 // Removed unused DocumentFile interface - using inline types instead
@@ -63,12 +71,12 @@ interface UserApprovalDialogProps {
   onDecline: (userId: Id<'users'>, comments: string) => Promise<void>
 }
 
-export function UserApprovalDialog({ 
-  userId, 
-  isOpen, 
-  onClose, 
-  onApprove, 
-  onDecline 
+export function UserApprovalDialog({
+  userId,
+  isOpen,
+  onClose,
+  onApprove,
+  onDecline
 }: UserApprovalDialogProps) {
   const [action, setAction] = useState<'approve' | 'decline' | null>(null)
   const [comments, setComments] = useState('')
@@ -221,10 +229,51 @@ export function UserApprovalDialog({
       return (
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
+            {physioProfile.location && (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Location</label>
+                <div className="flex items-center space-x-2 mt-1">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <p className="font-medium">{physioProfile.location}</p>
+                </div>
+              </div>
+            )}
+            {physioProfile.gender && (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Gender</label>
+                <p className="font-medium capitalize">{physioProfile.gender}</p>
+              </div>
+            )}
+            {physioProfile.dateOfBirth && (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Date of Birth</label>
+                <p className="font-medium">{physioProfile.dateOfBirth}</p>
+              </div>
+            )}
+            {user.phoneNumber && (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Phone Number</label>
+                <div className="flex items-center space-x-2 mt-1">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <p className="font-medium">{user.phoneNumber}</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Separator />
+
+          <div className="grid grid-cols-2 gap-4">
             {physioProfile.licenseNumber && (
               <div>
                 <label className="text-sm font-medium text-muted-foreground">License Number</label>
                 <p className="font-medium">{physioProfile.licenseNumber}</p>
+              </div>
+            )}
+            {physioProfile.licenseExpiryDate && (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">License Expiry</label>
+                <p className="font-medium">{physioProfile.licenseExpiryDate}</p>
               </div>
             )}
             {physioProfile.yearsOfExperience && (
@@ -233,8 +282,20 @@ export function UserApprovalDialog({
                 <p className="font-medium">{physioProfile.yearsOfExperience} years</p>
               </div>
             )}
+            {physioProfile.certificationBoard && (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Certification Board</label>
+                <p className="font-medium">{physioProfile.certificationBoard}</p>
+              </div>
+            )}
+            {physioProfile.certificationYear && (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Certification Year</label>
+                <p className="font-medium">{physioProfile.certificationYear}</p>
+              </div>
+            )}
           </div>
-          
+
           {physioProfile.specializations && physioProfile.specializations.length > 0 && (
             <div>
               <label className="text-sm font-medium text-muted-foreground">Specializations</label>
@@ -245,7 +306,7 @@ export function UserApprovalDialog({
               </div>
             </div>
           )}
-          
+
           {physioProfile.languagesSpoken && physioProfile.languagesSpoken.length > 0 && (
             <div>
               <label className="text-sm font-medium text-muted-foreground">Languages Spoken</label>
@@ -259,11 +320,18 @@ export function UserApprovalDialog({
               </div>
             </div>
           )}
-          
+
           {physioProfile.bio && (
             <div>
               <label className="text-sm font-medium text-muted-foreground">Bio</label>
               <p className="mt-2 text-sm leading-relaxed">{physioProfile.bio}</p>
+            </div>
+          )}
+
+          {physioProfile.referralSource && (
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">How did you hear about us?</label>
+              <p className="font-medium">{physioProfile.referralSource}</p>
             </div>
           )}
         </div>
@@ -280,7 +348,7 @@ export function UserApprovalDialog({
               <p className="font-medium">{clinicProfile.name}</p>
             </div>
           </div>
-          
+
           {(clinicProfile.address || clinicProfile.city || clinicProfile.country) && (
             <div>
               <label className="text-sm font-medium text-muted-foreground">Address</label>
@@ -297,7 +365,7 @@ export function UserApprovalDialog({
               </div>
             </div>
           )}
-          
+
           <div className="grid grid-cols-2 gap-4">
             {clinicProfile.contactEmail && (
               <div>
@@ -310,14 +378,30 @@ export function UserApprovalDialog({
             )}
             {clinicProfile.contactPhone && (
               <div>
-                <label className="text-sm font-medium text-muted-foreground">Contact Phone</label>
+                <label className="text-sm font-medium text-muted-foreground">Clinic Phone</label>
                 <div className="flex items-center space-x-2 mt-1">
                   <Phone className="h-4 w-4 text-muted-foreground" />
                   <p className="font-medium">{clinicProfile.contactPhone}</p>
                 </div>
               </div>
             )}
+            {user.phoneNumber && (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Owner Phone</label>
+                <div className="flex items-center space-x-2 mt-1">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <p className="font-medium">{user.phoneNumber}</p>
+                </div>
+              </div>
+            )}
           </div>
+
+          {clinicProfile.referralSource && (
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">How did you hear about us?</label>
+              <p className="font-medium">{clinicProfile.referralSource}</p>
+            </div>
+          )}
         </div>
       )
     }
@@ -376,7 +460,7 @@ export function UserApprovalDialog({
                 </TabsTrigger>
                 <TabsTrigger value="contact">Contact Info</TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="profile" className="space-y-4">
                 <Card>
                   <CardHeader>
@@ -387,7 +471,7 @@ export function UserApprovalDialog({
                   </CardContent>
                 </Card>
               </TabsContent>
-              
+
               <TabsContent value="documents" className="space-y-4">
                 <Card>
                   <CardHeader>
@@ -401,7 +485,7 @@ export function UserApprovalDialog({
                   </CardContent>
                 </Card>
               </TabsContent>
-              
+
               <TabsContent value="contact" className="space-y-4">
                 <Card>
                   <CardHeader>
@@ -445,16 +529,16 @@ export function UserApprovalDialog({
             {/* Action Selection */}
             {!action && (
               <div className="flex space-x-4">
-                <Button 
-                  onClick={() => setAction('approve')} 
+                <Button
+                  onClick={() => setAction('approve')}
                   className="flex-1"
                   variant="default"
                 >
                   <Check className="mr-2 h-4 w-4" />
                   Approve User
                 </Button>
-                <Button 
-                  onClick={() => setAction('decline')} 
+                <Button
+                  onClick={() => setAction('decline')}
                   className="flex-1"
                   variant="destructive"
                 >
@@ -484,7 +568,7 @@ export function UserApprovalDialog({
                     </label>
                     <Textarea
                       placeholder={
-                        action === 'approve' 
+                        action === 'approve'
                           ? "Optional: Add any notes for the user..."
                           : "Required: Please explain why this application is being declined..."
                       }
@@ -505,8 +589,8 @@ export function UserApprovalDialog({
             Cancel
           </Button>
           {action && (
-            <Button 
-              onClick={handleAction} 
+            <Button
+              onClick={handleAction}
               disabled={isLoading || (action === 'decline' && !comments.trim())}
               variant={action === 'approve' ? 'default' : 'destructive'}
             >
@@ -517,4 +601,4 @@ export function UserApprovalDialog({
       </DialogContent>
     </Dialog>
   )
-  }
+}

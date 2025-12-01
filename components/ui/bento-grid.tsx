@@ -104,10 +104,10 @@ export const BentoCard = ({
       </div>
       <div className="group-hover/bento:translate-x-1 transition duration-200 z-10 relative">
         {icon}
-        <div className="font-pally font-bold text-neutral-800 text-xl mt-2 mb-1">
+        <div className="font-sans font-bold text-neutral-800 text-xl mt-2 mb-1">
           {title}
         </div>
-        <div className="font-pally font-normal text-neutral-600 text-sm">
+        <div className="font-sans font-normal text-neutral-600 text-sm">
           {description}
         </div>
       </div>

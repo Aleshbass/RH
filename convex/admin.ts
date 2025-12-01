@@ -1,4 +1,4 @@
- import { v } from "convex/values";
+import { v } from "convex/values";
 import { query, mutation, action } from "./_generated/server";
 import { ensureUserRole } from "./auth";
 import { Id } from "./_generated/dataModel";
@@ -24,6 +24,7 @@ export const getPlatformAnalytics = query({
       newUsersThisWeek: v.number(),
       activeUsersToday: v.number(),
       onboardingCompletionRate: v.number(),
+      tourCompletions: v.number(),
     }),
     systemHealth: v.object({
       uptime: v.number(),
@@ -71,13 +72,22 @@ export const getPlatformAnalytics = query({
     const revenueThisMonth = payments
       .filter(p => p.status === "completed" && p.createdAt >= monthStart)
       .reduce((sum, p) => sum + (p.amount || 0), 0);
-    
+
     const lastMonthStart = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
     const lastMonthRevenue = payments
       .filter(p => p.status === "completed" && p.createdAt >= lastMonthStart && p.createdAt < monthStart)
       .reduce((sum, p) => sum + (p.amount || 0), 0);
-    
+
     const growthRate = lastMonthRevenue > 0 ? ((revenueThisMonth - lastMonthRevenue) / lastMonthRevenue) * 100 : 0;
+
+    // Get tour completion metrics
+    const tourCompletions = await ctx.db
+      .query("performanceMetrics")
+      .withIndex("by_metric", q => q.eq("metric", "onboarding_tour_completed"))
+      .collect();
+
+    // Count unique users who completed the tour
+    const uniqueTourCompletions = new Set(tourCompletions.map(m => m.userId)).size;
 
     return {
       overview: {
@@ -92,7 +102,8 @@ export const getPlatformAnalytics = query({
         byRole,
         newUsersThisWeek,
         activeUsersToday: Math.floor(activeUsers * 0.3), // Mock: 30% daily active
-        onboardingCompletionRate: activeUsers / totalUsers * 100,
+        onboardingCompletionRate: totalUsers > 0 ? (uniqueTourCompletions / totalUsers) * 100 : 0,
+        tourCompletions: uniqueTourCompletions,
       },
       systemHealth: {
         uptime: 99.9,
@@ -136,7 +147,7 @@ export const getAdminDashboardStats = query({
 
     // Get all appointments
     const allAppointments = await ctx.db.query("appointments").collect();
-    const appointmentsToday = allAppointments.filter(apt => 
+    const appointmentsToday = allAppointments.filter(apt =>
       apt.startTime >= todayStart && apt.startTime < todayStart + 24 * 60 * 60 * 1000
     ).length;
 
@@ -293,7 +304,7 @@ export const getSecurityEvents = query({
   })),
   handler: async (ctx) => {
     await ensureUserRole(ctx, ["admin"]);
-    
+
     // Get real activity logs as security events
     const activityLogs = await ctx.db
       .query("analytics_events")
@@ -303,8 +314,8 @@ export const getSecurityEvents = query({
 
     // Filter for security-relevant events
     const securityEvents = activityLogs
-      .filter(event => 
-        event.type === "user_login" || 
+      .filter(event =>
+        event.type === "user_login" ||
         event.type === "user_logout" ||
         event.type === "role_changed" ||
         event.type === "permission_updated" ||
@@ -349,7 +360,7 @@ export const getAnnouncements = query({
   })),
   handler: async (ctx) => {
     await ensureUserRole(ctx, ["admin"]);
-    
+
     // Get and transform notifications as announcements (no index assumptions)
     const notifications = await ctx.db.query("notifications").collect();
     const systemNotifications = notifications
@@ -519,16 +530,16 @@ export const broadcastAnnouncement = mutation({
 
     // Get target users
     let targetUsers = await ctx.db.query("users").collect();
-    
+
     if (args.targetRoles && args.targetRoles.length > 0) {
-      targetUsers = targetUsers.filter(user => 
+      targetUsers = targetUsers.filter(user =>
         args.targetRoles!.includes(user.role || 'unassigned')
       );
     }
 
     // Create notifications for all target users
     const announcementId = `announcement_${Date.now()}`;
-    
+
     for (const user of targetUsers) {
       await ctx.db.insert("notifications", {
         userId: user._id,
@@ -580,7 +591,7 @@ export const exportPlatformData = action({
     // This would generate and store export files
     // Mock implementation
     const exportId = `export_${args.dataType}_${Date.now()}`;
-    
+
     return {
       exportId,
       downloadUrl: `/api/exports/${exportId}`, // Mock URL
@@ -596,7 +607,7 @@ export const getSystemMetrics = query({
   args: {},
   handler: async (ctx) => {
     await ensureUserRole(ctx, ["admin"]);
-    
+
     // Aggregate metrics from available collections
     const [users, appointments, notifications, clinics] = await Promise.all([
       ctx.db.query("users").collect(),
@@ -657,7 +668,7 @@ export const getUserActivityLogs = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit = 50 }) => {
     await ensureUserRole(ctx, ["admin"]);
-    
+
     // Get recent analytics events as activity logs
     const events = await ctx.db
       .query("analytics_events")
@@ -670,7 +681,7 @@ export const getUserActivityLogs = query({
       events.map(async (event) => {
         let userName = "System";
         let userRole = "system";
-        
+
         if (event.userId) {
           const user = await ctx.db.get(event.userId);
           if (user) {
@@ -701,13 +712,13 @@ export const getPlatformRevenue = query({
   args: {},
   handler: async (ctx) => {
     await ensureUserRole(ctx, ["admin"]);
-    
+
     // Calculate real revenue from payments table
     const payments = await ctx.db.query("payments").collect();
     const now = Date.now();
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
     const lastMonthStart = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
-    
+
     const completedPayments = payments.filter(p => p.status === "completed");
     const totalRevenue = completedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
     const monthlyRevenue = completedPayments
@@ -716,20 +727,20 @@ export const getPlatformRevenue = query({
     const lastMonthRevenue = completedPayments
       .filter(p => p.createdAt >= lastMonthStart && p.createdAt < monthStart)
       .reduce((sum, p) => sum + (p.amount || 0), 0);
-    
+
     const growthRate = lastMonthRevenue > 0 ? ((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100 : 0;
-    
+
     const allUsers = await ctx.db.query("users").collect();
     const activeUsers = allUsers.filter(u => u.onboarded).length;
     const averageRevenuePerUser = activeUsers > 0 ? totalRevenue / activeUsers : 0;
-    
+
     // Group by payment method
     const breakdown: Record<string, number> = {};
     completedPayments.forEach(p => {
       const method = p.paymentMethod || "other";
       breakdown[method] = (breakdown[method] || 0) + (p.amount || 0);
     });
-    
+
     return {
       totalRevenue,
       monthlyRevenue,

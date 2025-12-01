@@ -1,367 +1,214 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import React, { useState } from 'react';
+import { useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Play, Plus } from 'lucide-react';
+import { Search, Plus, Dumbbell, Play } from 'lucide-react';
 import { Exercise as AssessmentExercise } from '@/types/assessments';
-import { exerciseService, Exercise as ExerciseDBExercise } from '@/lib/exercisedb/exerciseService';
+import { Loader2 } from 'lucide-react';
 
 interface ExerciseLibraryProps {
   onExerciseSelect?: (exercise: AssessmentExercise) => void;
   selectedExercises?: AssessmentExercise[];
 }
 
-// Removed unused extractYouTubeId helper
-
 export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: ExerciseLibraryProps) {
-  const [exercises, setExercises] = useState<AssessmentExercise[]>([]);
-  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');
-  const [selectedMuscle, setSelectedMuscle] = useState('all');
-  const isStandalone = !onExerciseSelect; // When used without a callback, treat as browse-only
+  const [selectedBodyPart, setSelectedBodyPart] = useState('all');
 
-  // Platform source removed: using ExerciseDB exclusively
+  const isStandalone = !onExerciseSelect;
 
-  const categories = ['all', 'strength', 'stretching', 'cardio', 'balance'];
-  const difficulties = ['all', 'beginner', 'intermediate', 'advanced'];
-  const muscleGroups = [
-    'all', 'abdominals', 'biceps', 'calves', 'chest', 'forearms', 
-    'glutes', 'hamstrings', 'lats', 'lower_back', 'middle_back', 
-    'neck', 'quadriceps', 'shoulders', 'traps', 'triceps'
-  ];
-
-  // Map incoming difficulty to our allowed union
-  const sanitizeDifficulty = (v?: string): 'beginner' | 'intermediate' | 'advanced' => {
-    const low = (v || '').toLowerCase()
-    return (low === 'beginner' || low === 'intermediate' || low === 'advanced') ? low : 'intermediate'
-  }
-
-  // Transform ExerciseDB exercise to our Assessment Exercise type
-  const transformToExercise = (dbExercise: ExerciseDBExercise): AssessmentExercise => ({
-    _id: dbExercise.id,
-    name: dbExercise.name,
-    description: dbExercise.overview || `${dbExercise.bodyParts.join(', ')} exercise using ${dbExercise.equipments.join(', ')}`,
-    instructions: dbExercise.instructions,
-    targetMuscles: dbExercise.targetMuscles,
-    difficulty: 'intermediate' as const, // ExerciseDB doesn't provide difficulty, defaulting
-    equipment: dbExercise.equipments,
-    sets: 3,
-    reps: 12,
-    frequency: '3x per week',
-    precautions: ['Maintain proper form', 'Stop if you feel pain'],
-    exerciseDbId: dbExercise.id,
-    videoUrl: dbExercise.videoUrl,
-    imageUrl: dbExercise.imageUrl
-  });
-
-  // Initial load
-  useEffect(() => {
-    fetchFromExerciseDB();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Auto-fetch from ExerciseDB when filters/search change
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      fetchFromExerciseDB();
-    }, 300);
-    return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, selectedMuscle]);
-
-  const currentList = exercises;
-
-  const filteredExercises = currentList.filter(exercise => {
-    const matchesSearch = exercise.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         exercise.targetMuscles.some(muscle => muscle.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesCategory = selectedCategory === 'all' || exercise.instructions.some(inst => inst.toLowerCase().includes(selectedCategory));
-    const matchesDifficulty = selectedDifficulty === 'all' || exercise.difficulty === selectedDifficulty;
-    const matchesMuscle = selectedMuscle === 'all' || exercise.targetMuscles.includes(selectedMuscle);
-    
-    return matchesSearch && matchesCategory && matchesDifficulty && matchesMuscle;
+  // Fetch exercises from Convex
+  const exercises = useQuery(api.exercises.listExercises, {
+    search: searchTerm || undefined,
+    difficulty: selectedDifficulty !== 'all' ? selectedDifficulty : undefined,
+    bodyPart: selectedBodyPart !== 'all' ? selectedBodyPart : undefined,
   });
 
   const isSelected = (exerciseId: string) => {
     return selectedExercises.some(ex => ex._id === exerciseId);
   };
 
-  const handleExerciseSelect = (exercise: AssessmentExercise) => {
+  const handleExerciseSelect = (convexExercise: any) => {
     if (onExerciseSelect) {
+      // Map Convex exercise to AssessmentExercise type
+      const exercise: AssessmentExercise = {
+        _id: convexExercise._id,
+        name: convexExercise.name,
+        description: convexExercise.description,
+        instructions: convexExercise.instructions,
+        targetMuscles: convexExercise.targetMuscles,
+        difficulty: convexExercise.difficultyLevel,
+        equipment: convexExercise.equipmentNeeded,
+        sets: convexExercise.defaultSets,
+        reps: convexExercise.defaultReps,
+        frequency: convexExercise.defaultFrequency,
+        precautions: convexExercise.precautions || [],
+        videoUrl: convexExercise.videoUrl,
+        imageUrl: convexExercise.imageUrl,
+        exerciseDbId: undefined, // No longer using ExerciseDB ID
+      };
       onExerciseSelect(exercise);
-    }
-  };
-
-  const fetchFromExerciseDB = async () => {
-    setLoading(true);
-    try {
-      const term = searchTerm.trim();
-      let dbExercises: ExerciseDBExercise[] = [];
-      if (term.length >= 2) {
-        dbExercises = await exerciseService.searchExercises(term);
-      } else {
-        const params: { limit: number; targetMuscles?: string } = { limit: 50 };
-        if (selectedMuscle !== 'all') params.targetMuscles = selectedMuscle;
-        dbExercises = await exerciseService.getExercises(params as any);
-      }
-      console.log('Fetched exercises:', dbExercises); // Debug log
-      const transformedExercises = dbExercises.map(transformToExercise);
-      setExercises(transformedExercises);
-    } catch (error) {
-      console.error('Error fetching exercises:', error);
-      // Fallback to basic exercises if API fails
-      setExercises([
-        {
-          _id: 'fallback_001',
-          name: 'Bird Dog',
-          description: 'Core stability exercise for lower back pain',
-          instructions: [
-            'Start on hands and knees in a tabletop position',
-            'Extend your right arm forward and left leg back simultaneously',
-            'Hold for 5 seconds while maintaining balance',
-            'Return to starting position and repeat with opposite arm and leg'
-          ],
-          targetMuscles: ['spine', 'abs', 'glutes'],
-          difficulty: 'beginner' as const,
-          equipment: ['body weight'],
-          sets: 3,
-          reps: 10,
-          frequency: 'Daily',
-          precautions: ['Avoid arching lower back', 'Keep neck neutral'],
-          exerciseDbId: 'fallback_001',
-          videoUrl: 'https://v2.exercisedb.dev/video/0001',
-          imageUrl: 'https://v2.exercisedb.dev/image/0001'
-        }
-      ]);
-    } finally {
-      setLoading(false);
     }
   };
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Exercise Library</CardTitle>
-          <CardDescription>
-            Browse and select exercises from ExerciseDB, or add a custom link
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isStandalone && (
-            <div className="mb-4 text-sm text-muted-foreground">
-              This page is browse-only. To add exercises to a plan, open a patient's Treatment Plan and click "Add Exercise".
+      <Card className="border-none shadow-none bg-transparent">
+        <CardHeader className="px-0 pt-0">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-2xl font-bold">Exercise Library</CardTitle>
+              <CardDescription>
+                Browse and select exercises from the platform library
+              </CardDescription>
             </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            {isStandalone && (
+              <div className="text-sm text-muted-foreground bg-blue-50 text-blue-700 px-3 py-1 rounded-full">
+                Browse Mode
+              </div>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="px-0">
+          {/* Filters */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6 bg-white p-4 rounded-xl border shadow-sm">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
                 placeholder="Search exercises..."
+                className="pl-9"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
               />
             </div>
-            
-            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger>
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map(category => (
-                  <SelectItem key={category} value={category}>
-                    {category.charAt(0).toUpperCase() + category.slice(1)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
 
             <Select value={selectedDifficulty} onValueChange={setSelectedDifficulty}>
-              <SelectTrigger>
+              <SelectTrigger className="w-[160px]">
                 <SelectValue placeholder="Difficulty" />
               </SelectTrigger>
               <SelectContent>
-                {difficulties.map(difficulty => (
-                  <SelectItem key={difficulty} value={difficulty}>
-                    {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
-                  </SelectItem>
-                ))}
+                <SelectItem value="all">All Levels</SelectItem>
+                <SelectItem value="beginner">Beginner</SelectItem>
+                <SelectItem value="intermediate">Intermediate</SelectItem>
+                <SelectItem value="advanced">Advanced</SelectItem>
               </SelectContent>
             </Select>
 
-            <Select value={selectedMuscle} onValueChange={setSelectedMuscle}>
-              <SelectTrigger>
-                <SelectValue placeholder="Muscle Group" />
+            <Select value={selectedBodyPart} onValueChange={setSelectedBodyPart}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Body Part" />
               </SelectTrigger>
               <SelectContent>
-                {muscleGroups.map(muscle => (
-                  <SelectItem key={muscle} value={muscle}>
-                    {muscle.replace('_', ' ').charAt(0).toUpperCase() + muscle.replace('_', ' ').slice(1)}
-                  </SelectItem>
-                ))}
+                <SelectItem value="all">All Body Parts</SelectItem>
+                <SelectItem value="Legs">Legs</SelectItem>
+                <SelectItem value="Arms">Arms</SelectItem>
+                <SelectItem value="Back">Back</SelectItem>
+                <SelectItem value="Core">Core</SelectItem>
+                <SelectItem value="Shoulders">Shoulders</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          <Button 
-            onClick={fetchFromExerciseDB}
-            disabled={loading}
-            variant="outline"
-            className="mb-4"
-          >
-            {loading ? 'Loading...' : 'Refresh from ExerciseDB'}
-          </Button>
-
-          {/* Manual Add */}
-          <div className="border rounded p-3 mb-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <Input id="manual-name" placeholder="Exercise name or ID" />
-              <Input id="manual-youtube" placeholder="YouTube URL (optional)" />
-              <Input id="manual-video" placeholder="Video URL (optional)" />
+          {/* Grid */}
+          {exercises === undefined ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="h-8 w-8 animate-spin text-green-600" />
             </div>
-            <div className="flex justify-end mt-2">
-              <Button size="sm" variant="secondary" disabled={isStandalone} onClick={() => {
-                const nameEl = (document.getElementById('manual-name') as HTMLInputElement);
-                const ytEl = (document.getElementById('manual-youtube') as HTMLInputElement);
-                const vidEl = (document.getElementById('manual-video') as HTMLInputElement);
-                const val = nameEl?.value?.trim();
-                if (!val) return;
-                const youtubeUrl = ytEl?.value?.trim();
-                const videoUrl = vidEl?.value?.trim();
-                const finalVideoUrl = youtubeUrl || videoUrl || '';
-                const custom: AssessmentExercise = {
-                  _id: `custom_${Date.now()}`,
-                  name: val,
-                  description: '',
-                  instructions: [],
-                  targetMuscles: [],
-                  difficulty: 'beginner' as const,
-                  equipment: [],
-                  sets: 3,
-                  reps: 10,
-                  frequency: 'Daily',
-                  precautions: [],
-                  exerciseDbId: val,
-                  videoUrl: finalVideoUrl || undefined,
-                  imageUrl: undefined,
-                };
-                onExerciseSelect?.(custom);
-                nameEl.value = '';
-                ytEl.value = '';
-                vidEl.value = '';
-              }}>Add Manual</Button>
+          ) : exercises.length === 0 ? (
+            <div className="text-center py-20 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+              <div className="w-16 h-16 mx-auto bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
+                <Dumbbell className="w-8 h-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900">No exercises found</h3>
+              <p className="text-muted-foreground mt-1">Try adjusting your search or filters.</p>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredExercises.map((exercise) => (
-              <Card key={exercise._id} className={isSelected(exercise._id) ? 'border-primary' : ''}>
-                {/* Video/Image Display */}
-                <div className="relative w-full h-48 bg-gray-100 rounded-t-lg overflow-hidden">
-                  {exercise.videoUrl && exercise.videoUrl !== '' ? (
-                    <video 
-                      className="w-full h-full object-cover"
-                      poster={exercise.imageUrl || undefined}
-                      controls
-                      preload="metadata"
-                    >
-                      <source src={exercise.videoUrl} type="video/mp4" />
-                      Your browser does not support the video tag.
-                    </video>
-                  ) : exercise.imageUrl && exercise.imageUrl !== '' ? (
-                    <div className="w-full h-full bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-                      <div className="text-center text-sm text-muted-foreground">
-                        <Play className="h-8 w-8 mx-auto mb-2" />
-                        Exercise Image
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {exercises.map((exercise) => (
+                <Card
+                  key={exercise._id}
+                  className={`group overflow-hidden hover:shadow-lg transition-all duration-200 border-gray-200 ${isSelected(exercise._id) ? 'ring-2 ring-green-500 border-green-500' : ''
+                    }`}
+                >
+                  <div className="relative aspect-video bg-gray-100 overflow-hidden">
+                    {exercise.imageUrl ? (
+                      <img
+                        src={exercise.imageUrl}
+                        alt={exercise.name}
+                        className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gray-50">
+                        <Dumbbell className="w-10 h-10 text-gray-300" />
                       </div>
-                    </div>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-                      <div className="text-center">
-                        <Play className="h-12 w-12 mx-auto text-gray-400 mb-2" />
-                        <p className="text-sm text-gray-500">{exercise.name}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <CardTitle className="text-lg">{exercise.name}</CardTitle>
-                      <CardDescription className="text-sm">
-                        {exercise.description}
-                      </CardDescription>
-                    </div>
-                    <div className="flex gap-2">
-                      <Badge variant={exercise.difficulty === 'beginner' ? 'default' : 
-                                     exercise.difficulty === 'intermediate' ? 'secondary' : 'destructive'}>
-                        {exercise.difficulty}
+                    )}
+                    <div className="absolute top-2 right-2">
+                      <Badge className={`
+                        ${exercise.difficultyLevel === 'beginner' ? 'bg-green-100 text-green-700 hover:bg-green-100' : ''}
+                        ${exercise.difficultyLevel === 'intermediate' ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100' : ''}
+                        ${exercise.difficultyLevel === 'advanced' ? 'bg-red-100 text-red-700 hover:bg-red-100' : ''}
+                      `}>
+                        {exercise.difficultyLevel}
                       </Badge>
-                      {isSelected(exercise._id) && (
-                        <Badge variant="outline">Selected</Badge>
+                    </div>
+                    {exercise.videoUrl && (
+                      <div className="absolute bottom-2 right-2 bg-black/50 p-1.5 rounded-full">
+                        <Play className="w-3 h-3 text-white" fill="currentColor" />
+                      </div>
+                    )}
+                  </div>
+
+                  <CardContent className="p-4">
+                    <div className="mb-3">
+                      <h3 className="font-semibold text-gray-900 line-clamp-1 text-lg">{exercise.name}</h3>
+                      <p className="text-sm text-muted-foreground line-clamp-2 mt-1 h-10">
+                        {exercise.description}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 mb-4">
+                      {exercise.targetMuscles.slice(0, 3).map((muscle) => (
+                        <span key={muscle} className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full capitalize">
+                          {muscle}
+                        </span>
+                      ))}
+                      {exercise.targetMuscles.length > 3 && (
+                        <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
+                          +{exercise.targetMuscles.length - 3}
+                        </span>
                       )}
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div>
-                      <span className="text-sm font-medium">Target Muscles:</span>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {exercise.targetMuscles.map((muscle, index) => (
-                          <Badge key={`${muscle}-${index}`} variant="outline" className="text-xs">
-                            {muscle}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <span className="text-sm font-medium">Equipment:</span>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {exercise.equipment.map((equip, index) => (
-                          <Badge key={`${equip}-${index}`} variant="secondary" className="text-xs">
-                            {equip}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <div className="text-sm">
-                      <span className="font-medium">Sets:</span> {exercise.sets} × 
-                      <span className="font-medium"> Reps:</span> {exercise.reps}
-                    </div>
 
-                    <div className="text-sm">
-                      <span className="font-medium">Frequency:</span> {exercise.frequency}
-                    </div>
-
-                    <div className="flex gap-2 mt-4">
+                    <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                      <div className="text-xs text-gray-500">
+                        {exercise.defaultSets} sets × {exercise.defaultReps} reps
+                      </div>
                       <Button
                         size="sm"
                         onClick={() => handleExerciseSelect(exercise)}
                         disabled={isStandalone || isSelected(exercise._id)}
+                        className={isSelected(exercise._id) ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-green-600 hover:bg-green-700'}
                       >
-                        <Plus className="h-4 w-4 mr-1" />
-                        {isStandalone ? 'Open from a Treatment Plan to add' : 'Add to Plan'}
+                        {isSelected(exercise._id) ? (
+                          <>Added</>
+                        ) : (
+                          <>
+                            <Plus className="h-3 w-3 mr-1" />
+                            Add
+                          </>
+                        )}
                       </Button>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {filteredExercises.length === 0 && (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">No exercises found matching your criteria.</p>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
         </CardContent>

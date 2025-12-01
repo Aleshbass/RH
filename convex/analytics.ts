@@ -298,14 +298,14 @@ export const getBusinessMetrics = query({
           total: totalAppointments.length,
           completed: completedAppointments.length,
           cancelled: cancelledAppointments.length,
-          completionRate: totalAppointments.length > 0 
-            ? completedAppointments.length / totalAppointments.length 
+          completionRate: totalAppointments.length > 0
+            ? completedAppointments.length / totalAppointments.length
             : 0
         },
         revenue: {
           total: revenue,
-          averagePerAppointment: completedAppointments.length > 0 
-            ? revenue / completedAppointments.length 
+          averagePerAppointment: completedAppointments.length > 0
+            ? revenue / completedAppointments.length
             : 0
         },
         patients: {
@@ -356,3 +356,196 @@ export const logSystemEvent = mutation({
     }
   }
 })
+
+// Track profile view
+export const trackProfileView = mutation({
+  args: {
+    physiotherapistId: v.id("users"), // The user ID of the physiotherapist being viewed
+  },
+  handler: async (ctx, { physiotherapistId }) => {
+    // 1. Increment the counter on the physiotherapist profile
+    const profile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", physiotherapistId))
+      .unique();
+
+    if (profile) {
+      await ctx.db.patch(profile._id, {
+        profileViews: (profile.profileViews || 0) + 1,
+      });
+    }
+
+    // 2. Log the analytics event for time-series data
+    // We try to get the viewer's ID if they are logged in, but it's not required
+    const identity = await ctx.auth.getUserIdentity();
+    let viewerId: Id<"users"> | undefined;
+
+    if (identity) {
+      const viewer = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+        .unique();
+      viewerId = viewer?._id;
+    }
+
+    await ctx.db.insert("analytics_events", {
+      type: "profile_view",
+      userId: viewerId, // The user viewing the profile (optional)
+      timestamp: Date.now(),
+      metadata: {
+        path: `/find-a-physio/${physiotherapistId}`, // Assuming this path structure
+        details: { physiotherapistId },
+      },
+    });
+  },
+});
+
+export const getPhysiotherapistStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) return null;
+
+    // Fetch physiotherapist profile for views
+    const profile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .unique();
+
+    // Fetch appointments
+    const appointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id))
+      .collect();
+
+    // Fetch invoices
+    const invoices = await ctx.db
+      .query("invoices")
+      .filter((q) => q.eq(q.field("physiotherapistId"), user._id))
+      .collect();
+
+    // Calculate Earnings
+    let totalEarnings = 0;
+    let pendingEarnings = 0;
+    let paidEarnings = 0;
+
+    invoices.forEach((invoice) => {
+      // Amounts are in kobo/cents
+      const amount = invoice.totalAmount / 100;
+      totalEarnings += amount;
+      // Assuming invoice has a status field, though schema showed status in verificationBadge?
+      // Let's use a safe access or just assume it's there for now.
+      if ((invoice as any).status === 'paid') {
+        paidEarnings += amount;
+      } else {
+        pendingEarnings += amount;
+      }
+    });
+
+    // Calculate Appointment Stats
+    const totalAppointments = appointments.length;
+    const completedAppointments = appointments.filter((a) => a.status === "completed").length;
+    const upcomingAppointments = appointments.filter((a) => a.status === "scheduled" || a.status === "confirmed").length;
+    const cancelledAppointments = appointments.filter((a) => a.status === "cancelled_by_patient" || a.status === "cancelled_by_therapist").length;
+
+    // Calculate Monthly Earnings (Simple aggregation for chart)
+    const monthlyEarnings: Record<string, number> = {};
+    invoices.forEach((invoice) => {
+      const date = new Date(invoice.issueDate);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      monthlyEarnings[key] = (monthlyEarnings[key] || 0) + (invoice.totalAmount / 100);
+    });
+
+    const earningsChartData = Object.entries(monthlyEarnings)
+      .map(([date, amount]) => ({ date, amount }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      earnings: {
+        total: totalEarnings,
+        pending: pendingEarnings,
+        paid: paidEarnings,
+        chartData: earningsChartData,
+      },
+      appointments: {
+        total: totalAppointments,
+        completed: completedAppointments,
+        upcoming: upcomingAppointments,
+        cancelled: cancelledAppointments,
+      },
+      profileViews: profile?.profileViews || 0,
+    };
+  },
+});
+
+export const getPatientStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) return null;
+
+    // Fetch appointments
+    const appointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", user._id))
+      .collect();
+
+    // Fetch treatment plans
+    const treatmentPlans = await ctx.db
+      .query("treatmentPlans")
+      .withIndex("by_patient", (q) => q.eq("patientId", user._id))
+      .collect();
+
+    // Calculate Stats
+    const completedSessions = appointments.filter((a) => a.status === "completed").length;
+    const upcomingSessions = appointments.filter((a) => a.status === "scheduled" || a.status === "confirmed").length;
+
+    // Calculate Adherence (Mock logic for now as we need exercise completion data)
+    // We can use exerciseCompletions table if populated.
+    const exerciseCompletions = await ctx.db
+      .query("exerciseCompletions")
+      .withIndex("by_patient", (q) => q.eq("patientId", user._id))
+      .collect();
+
+    const totalExercisesCompleted = exerciseCompletions.length;
+
+    // Monthly Session History
+    const monthlySessions: Record<string, number> = {};
+    appointments.filter(a => a.status === 'completed').forEach((app) => {
+      const date = new Date(app.startTime);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      monthlySessions[key] = (monthlySessions[key] || 0) + 1;
+    });
+
+    const sessionChartData = Object.entries(monthlySessions)
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      sessions: {
+        completed: completedSessions,
+        upcoming: upcomingSessions,
+        total: appointments.length,
+        chartData: sessionChartData,
+      },
+      treatment: {
+        activePlans: treatmentPlans.filter(p => p.status === 'active').length,
+        completedExercises: totalExercisesCompleted,
+      }
+    };
+  },
+});

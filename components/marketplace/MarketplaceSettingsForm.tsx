@@ -26,26 +26,26 @@ interface MarketplaceSettingsFormProps {
 
 // Fee calculation helper - patient pays session fee, fees deducted from physiotherapist
 function calculateFees(sessionFee: number) {
-  if (!sessionFee || sessionFee <= 0) return { 
-    youReceive: 0, 
-    platformFee: 0, 
-    paystackFee: 0, 
-    patientPays: 0 
+  if (!sessionFee || sessionFee <= 0) return {
+    youReceive: 0,
+    platformFee: 0,
+    paystackFee: 0,
+    patientPays: 0
   };
-  
+
   // Patient pays only the session fee
   const patientPays = sessionFee;
-  
-  // Platform takes 20% of session fee
-  const platformFee = Math.round(sessionFee * 0.20);
-  
+
+  // Platform fee is fixed at ₦1,000
+  const platformFee = 1000;
+
   // Paystack charges 1.5% + ₦100 on (session fee + platform fee)
   const chargeableAmount = sessionFee + platformFee;
   const paystackFee = Math.round(chargeableAmount * 0.015) + 100;
-  
+
   // Physiotherapist receives: session fee - platform fee - paystack fee
   const youReceive = sessionFee - platformFee - paystackFee;
-  
+
   return {
     youReceive: Math.max(0, youReceive), // Ensure non-negative
     platformFee,
@@ -177,22 +177,26 @@ export default function MarketplaceSettingsForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Marketplace Visibility */}
-      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-pink-50 to-purple-50 border-2 border-pink-200 rounded-lg">
+      {/* Marketplace Visibility */}
+      <div className="flex items-center justify-between p-6 bg-white border border-gray-200 rounded-xl shadow-sm">
         <div className="flex-1">
           <Label className="text-base font-semibold text-gray-900">
             Show on Marketplace
           </Label>
-          <p className="text-sm text-gray-600 mt-1">
+          <p className="text-sm text-gray-500 mt-1">
             Make your profile visible to patients searching for physiotherapists
           </p>
-          <p className="text-xs text-pink-600 font-medium mt-2">
-            {formData.isAvailableOnMarketplace ? "✓ Your profile is live" : "⚠ Your profile is hidden"}
-          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <div className={`h-2 w-2 rounded-full ${formData.isAvailableOnMarketplace ? 'bg-green-500' : 'bg-gray-300'}`} />
+            <p className="text-xs font-medium text-gray-600">
+              {formData.isAvailableOnMarketplace ? "Your profile is live" : "Your profile is hidden"}
+            </p>
+          </div>
         </div>
         <Switch
           checked={formData.isAvailableOnMarketplace}
           onCheckedChange={handleToggleVisibility}
-          className="data-[state=checked]:bg-pink-600"
+          className="data-[state=checked]:bg-black"
         />
       </div>
 
@@ -246,7 +250,7 @@ export default function MarketplaceSettingsForm({
       {/* Pricing */}
       <div>
         <Label className="text-base font-semibold mb-4 block">Pricing</Label>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <Label htmlFor="initialConsultRate" className="text-sm font-medium">
@@ -295,43 +299,43 @@ export default function MarketplaceSettingsForm({
 
         {/* Fee Breakdown Cards */}
         {(formData.initialConsultRate > 0 || formData.hourlyRate > 0) && (
-          <div className="space-y-4 mt-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
             {formData.initialConsultRate > 0 && (
-              <Card className="border-2 border-pink-200 bg-gradient-to-br from-pink-50 to-purple-50">
-                <CardContent className="pt-4">
-                  <div className="flex items-start gap-2 mb-3">
-                    <Info className="h-5 w-5 text-pink-600 mt-0.5" />
+              <Card className="border border-gray-200 shadow-sm bg-gray-50/50">
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-2 mb-4">
+                    <div className="p-1.5 bg-white rounded-md border border-gray-200 shadow-sm">
+                      <Info className="h-4 w-4 text-gray-700" />
+                    </div>
                     <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900 mb-1">Initial Consultation Fee Breakdown</h4>
-                      <p className="text-xs text-gray-600">When a patient books an initial consultation</p>
+                      <h4 className="font-semibold text-gray-900 text-sm">Initial Consultation</h4>
+                      <p className="text-xs text-gray-500">Fee breakdown</p>
                     </div>
                   </div>
-                  
+
                   {(() => {
                     const fees = calculateFees(formData.initialConsultRate);
                     return (
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between items-center py-3 bg-blue-50 rounded-lg px-3 border-2 border-blue-200">
-                          <span className="font-semibold text-blue-900">Patient Pays (Session Fee)</span>
-                          <span className="text-xl font-bold text-blue-700">₦{fees.patientPays.toLocaleString()}</span>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-600">Patient Pays</span>
+                          <span className="font-medium text-gray-900">₦{fees.patientPays.toLocaleString()}</span>
                         </div>
-                        
-                        <div className="mt-3 mb-2">
-                          <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Deductions from your earnings:</p>
+
+                        <div className="pt-3 border-t border-gray-200 space-y-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500">Platform Fee</span>
+                            <span className="text-gray-500">-₦{fees.platformFee.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500">Processing</span>
+                            <span className="text-gray-500">-₦{fees.paystackFee.toLocaleString()}</span>
+                          </div>
                         </div>
-                        
-                        <div className="flex justify-between items-center py-2 border-b border-pink-200">
-                          <span className="text-gray-700">- Platform Fee (20%)</span>
-                          <span className="font-medium text-red-600">-₦{fees.platformFee.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b border-pink-200">
-                          <span className="text-gray-700">- Payment Processing (1.5% + ₦100)</span>
-                          <span className="font-medium text-red-600">-₦{fees.paystackFee.toLocaleString()}</span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center py-3 bg-green-100 rounded-lg px-3 border-2 border-green-300 mt-3">
-                          <span className="font-bold text-green-900">You Receive (After Deductions)</span>
-                          <span className="text-xl font-bold text-green-700">₦{fees.youReceive.toLocaleString()}</span>
+
+                        <div className="flex justify-between items-center pt-3 border-t border-gray-200">
+                          <span className="font-semibold text-gray-900">You Receive</span>
+                          <span className="font-bold text-green-600">₦{fees.youReceive.toLocaleString()}</span>
                         </div>
                       </div>
                     );
@@ -341,41 +345,41 @@ export default function MarketplaceSettingsForm({
             )}
 
             {formData.hourlyRate > 0 && (
-              <Card className="border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50">
-                <CardContent className="pt-4">
-                  <div className="flex items-start gap-2 mb-3">
-                    <Info className="h-5 w-5 text-purple-600 mt-0.5" />
+              <Card className="border border-gray-200 shadow-sm bg-gray-50/50">
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-2 mb-4">
+                    <div className="p-1.5 bg-white rounded-md border border-gray-200 shadow-sm">
+                      <Info className="h-4 w-4 text-gray-700" />
+                    </div>
                     <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900 mb-1">Follow-up Session Fee Breakdown</h4>
-                      <p className="text-xs text-gray-600">When a patient books a follow-up session</p>
+                      <h4 className="font-semibold text-gray-900 text-sm">Follow-up Session</h4>
+                      <p className="text-xs text-gray-500">Fee breakdown</p>
                     </div>
                   </div>
-                  
+
                   {(() => {
                     const fees = calculateFees(formData.hourlyRate);
                     return (
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between items-center py-3 bg-blue-50 rounded-lg px-3 border-2 border-blue-200">
-                          <span className="font-semibold text-blue-900">Patient Pays (Session Fee)</span>
-                          <span className="text-xl font-bold text-blue-700">₦{fees.patientPays.toLocaleString()}</span>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-600">Patient Pays</span>
+                          <span className="font-medium text-gray-900">₦{fees.patientPays.toLocaleString()}</span>
                         </div>
-                        
-                        <div className="mt-3 mb-2">
-                          <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Deductions from your earnings:</p>
+
+                        <div className="pt-3 border-t border-gray-200 space-y-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500">Platform Fee</span>
+                            <span className="text-gray-500">-₦{fees.platformFee.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500">Processing</span>
+                            <span className="text-gray-500">-₦{fees.paystackFee.toLocaleString()}</span>
+                          </div>
                         </div>
-                        
-                        <div className="flex justify-between items-center py-2 border-b border-purple-200">
-                          <span className="text-gray-700">- Platform Fee (20%)</span>
-                          <span className="font-medium text-red-600">-₦{fees.platformFee.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b border-purple-200">
-                          <span className="text-gray-700">- Payment Processing (1.5% + ₦100)</span>
-                          <span className="font-medium text-red-600">-₦{fees.paystackFee.toLocaleString()}</span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center py-3 bg-green-100 rounded-lg px-3 border-2 border-green-300 mt-3">
-                          <span className="font-bold text-green-900">You Receive (After Deductions)</span>
-                          <span className="text-xl font-bold text-green-700">₦{fees.youReceive.toLocaleString()}</span>
+
+                        <div className="flex justify-between items-center pt-3 border-t border-gray-200">
+                          <span className="font-semibold text-gray-900">You Receive</span>
+                          <span className="font-bold text-green-600">₦{fees.youReceive.toLocaleString()}</span>
                         </div>
                       </div>
                     );
@@ -464,7 +468,7 @@ export default function MarketplaceSettingsForm({
         <Button
           type="submit"
           disabled={isSaving}
-          className="bg-[#005b57] hover:bg-[#00443e]"
+          className="bg-black hover:bg-gray-800 text-white"
         >
           {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Save Changes

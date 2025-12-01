@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useOnboardingStore } from "@/stores/onboardingStore";
+import { ChevronRight } from "lucide-react";
 
 // Form schema
 const personalInfoSchema = z.object({
@@ -43,47 +44,16 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
     onNext();
   });
 
-  const fadeInVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: (i: number) => ({
-      opacity: 1,
-      y: 0,
-      transition: {
-        delay: i * 0.1,
-        duration: 0.5,
-
-      },
-    }),
-  };
+  const inputClasses = "block w-full h-14 px-4 pt-5 pb-2 text-gray-900 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] focus:bg-white transition-all duration-200 peer placeholder-transparent";
+  const labelClasses = "absolute text-sm text-gray-500 duration-200 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] left-4 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 peer-focus:text-[#005b57]";
 
   return (
-    <div className="w-full max-w-3xl mx-auto">
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="space-y-6"
-      >
-        <form onSubmit={onSubmit} className="space-y-6">
-          <div className="text-center mb-4">
-            <h2 className="text-xl sm:text-2xl font-semibold text-[#002e2c]">Personal Information</h2>
-            <p className="text-[#005b57] text-sm sm:text-base">Let&apos;s start with your basic personal details</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-            {/* First Name */}
-            <motion.div
-              custom={0}
-              initial="hidden"
-              animate="visible"
-              variants={fadeInVariants}
-              className="space-y-3"
-            >
-              <label
-                htmlFor="firstName"
-                className="block text-base font-semibold text-[#002e2c]"
-              >
-                First Name *
-              </label>
+    <div className="w-full max-w-3xl mx-auto pb-24 sm:pb-0">
+      <form onSubmit={onSubmit} className="space-y-6 sm:space-y-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6">
+          {/* First Name */}
+          <div className="space-y-1">
+            <div className="relative">
               <Controller
                 control={control}
                 name="firstName"
@@ -92,32 +62,23 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                     id="firstName"
                     type="text"
                     {...field}
-                    placeholder="Enter your first name"
-                    className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 ${errors.firstName ? "border-red-500" : ""}`}
+                    placeholder="First Name"
+                    className={`${inputClasses} ${errors.firstName ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
                   />
                 )}
               />
-              {errors.firstName && (
-                <p className="mt-2 text-sm text-red-500">
-                  {errors.firstName.message}
-                </p>
-              )}
-            </motion.div>
-
-            {/* Last Name */}
-            <motion.div
-              custom={1}
-              initial="hidden"
-              animate="visible"
-              variants={fadeInVariants}
-              className="space-y-3"
-            >
-              <label
-                htmlFor="lastName"
-                className="block text-base font-semibold text-[#002e2c]"
-              >
-                Last Name *
+              <label htmlFor="firstName" className={labelClasses}>
+                First Name
               </label>
+            </div>
+            {errors.firstName && (
+              <p className="text-xs text-red-500 ml-1">{errors.firstName.message}</p>
+            )}
+          </div>
+
+          {/* Last Name */}
+          <div className="space-y-1">
+            <div className="relative">
               <Controller
                 control={control}
                 name="lastName"
@@ -126,32 +87,23 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                     id="lastName"
                     type="text"
                     {...field}
-                    placeholder="Enter your last name"
-                    className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 ${errors.lastName ? "border-red-500" : ""}`}
+                    placeholder="Last Name"
+                    className={`${inputClasses} ${errors.lastName ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
                   />
                 )}
               />
-              {errors.lastName && (
-                <p className="mt-2 text-sm text-red-500">
-                  {errors.lastName.message}
-                </p>
-              )}
-            </motion.div>
-
-            {/* Email */}
-            <motion.div
-              custom={2}
-              initial="hidden"
-              animate="visible"
-              variants={fadeInVariants}
-              className="space-y-3"
-            >
-              <label
-                htmlFor="email"
-                className="block text-base font-semibold text-[#002e2c]"
-              >
-                Email *
+              <label htmlFor="lastName" className={labelClasses}>
+                Last Name
               </label>
+            </div>
+            {errors.lastName && (
+              <p className="text-xs text-red-500 ml-1">{errors.lastName.message}</p>
+            )}
+          </div>
+
+          {/* Email */}
+          <div className="space-y-1 md:col-span-2">
+            <div className="relative">
               <Controller
                 control={control}
                 name="email"
@@ -160,32 +112,23 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                     id="email"
                     type="email"
                     {...field}
-                    placeholder="Enter your email address"
-                    className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 ${errors.email ? "border-red-500" : ""}`}
+                    placeholder="Email Address"
+                    className={`${inputClasses} ${errors.email ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
                   />
                 )}
               />
-              {errors.email && (
-                <p className="mt-2 text-sm text-red-500">
-                  {errors.email.message}
-                </p>
-              )}
-            </motion.div>
-
-            {/* Phone Number */}
-            <motion.div
-              custom={3}
-              initial="hidden"
-              animate="visible"
-              variants={fadeInVariants}
-              className="space-y-3"
-            >
-              <label
-                htmlFor="phoneNumber"
-                className="block text-base font-semibold text-[#002e2c]"
-              >
-                Phone Number *
+              <label htmlFor="email" className={labelClasses}>
+                Email Address
               </label>
+            </div>
+            {errors.email && (
+              <p className="text-xs text-red-500 ml-1">{errors.email.message}</p>
+            )}
+          </div>
+
+          {/* Phone Number */}
+          <div className="space-y-1 md:col-span-2">
+            <div className="relative">
               <Controller
                 control={control}
                 name="phoneNumber"
@@ -194,32 +137,23 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                     id="phoneNumber"
                     type="tel"
                     {...field}
-                    placeholder="Enter your phone number"
-                    className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 ${errors.phoneNumber ? "border-red-500" : ""}`}
+                    placeholder="Phone Number"
+                    className={`${inputClasses} ${errors.phoneNumber ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
                   />
                 )}
               />
-              {errors.phoneNumber && (
-                <p className="mt-2 text-sm text-red-500">
-                  {errors.phoneNumber.message}
-                </p>
-              )}
-            </motion.div>
-
-            {/* Date of Birth */}
-            <motion.div
-              custom={4}
-              initial="hidden"
-              animate="visible"
-              variants={fadeInVariants}
-              className="space-y-3"
-            >
-              <label
-                htmlFor="dateOfBirth"
-                className="block text-base font-semibold text-[#002e2c]"
-              >
-                Date of Birth <span className="text-gray-500">(Optional)</span>
+              <label htmlFor="phoneNumber" className={labelClasses}>
+                Phone Number
               </label>
+            </div>
+            {errors.phoneNumber && (
+              <p className="text-xs text-red-500 ml-1">{errors.phoneNumber.message}</p>
+            )}
+          </div>
+
+          {/* Date of Birth */}
+          <div className="space-y-1">
+            <div className="relative">
               <Controller
                 control={control}
                 name="dateOfBirth"
@@ -229,26 +163,19 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                     type="date"
                     {...field}
                     value={field.value || ""}
-                    className="block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20"
+                    className={`${inputClasses} pt-4`} // Adjust pt for date input
                   />
                 )}
               />
-            </motion.div>
-
-            {/* Gender */}
-            <motion.div
-              custom={5}
-              initial="hidden"
-              animate="visible"
-              variants={fadeInVariants}
-              className="space-y-3"
-            >
-              <label
-                htmlFor="gender"
-                className="block text-base font-semibold text-[#002e2c]"
-              >
-                Gender
+              <label htmlFor="dateOfBirth" className="absolute text-xs text-gray-500 top-2 left-4">
+                Date of Birth <span className="text-gray-400">(Optional)</span>
               </label>
+            </div>
+          </div>
+
+          {/* Gender */}
+          <div className="space-y-1">
+            <div className="relative">
               <Controller
                 control={control}
                 name="gender"
@@ -256,9 +183,9 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                   <select
                     id="gender"
                     {...field}
-                    className="block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20"
+                    className={`${inputClasses} pt-4 appearance-none`}
                   >
-                    <option value="">Select gender</option>
+                    <option value=""></option>
                     <option value="male">Male</option>
                     <option value="female">Female</option>
                     <option value="other">Other</option>
@@ -266,26 +193,38 @@ export default function PersonalInfoForm({ onNext }: PersonalInfoFormProps) {
                   </select>
                 )}
               />
-            </motion.div>
+              <label htmlFor="gender" className={labelClasses}>
+                Gender
+              </label>
+              <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
           </div>
+        </div>
 
-          <motion.div
-            custom={6}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="pt-2"
-          >
+        {/* Sticky Mobile / Regular Desktop Button */}
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 sm:static sm:bg-transparent sm:border-0 sm:p-0 z-40">
+          <div className="max-w-4xl mx-auto w-full">
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full h-12 text-base font-semibold bg-[#005b57] text-white rounded-md hover:bg-[#00443e] transition-colors duration-200 disabled:opacity-50"
+              className="w-full sm:w-auto sm:min-w-[200px] h-14 sm:h-12 flex items-center justify-center gap-2 text-base sm:text-sm font-semibold bg-[#005b57] text-white rounded-xl sm:rounded-lg hover:bg-[#00443e] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:active:scale-100 shadow-lg sm:shadow-none ml-auto"
             >
-              {isSubmitting ? "Saving..." : "Continue to Professional Information"}
+              {isSubmitting ? (
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  Continue
+                  <ChevronRight className="w-5 h-5" />
+                </>
+              )}
             </button>
-          </motion.div>
-        </form>
-      </motion.div>
+          </div>
+        </div>
+      </form>
     </div>
   );
 }

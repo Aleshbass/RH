@@ -6,6 +6,8 @@ import Image from "next/image";
 import { MapPin, Star, BadgeCheck, Video, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 interface PhysioCardProps {
   physiotherapist: {
@@ -28,6 +30,12 @@ interface PhysioCardProps {
 }
 
 export default function PhysioCard({ physiotherapist }: PhysioCardProps) {
+  const trackView = useMutation(api.analytics.trackProfileView);
+
+  const handleProfileClick = () => {
+    trackView({ physiotherapistId: physiotherapist.id as any });
+  };
+
   const {
     id,
     fullName,
@@ -47,22 +55,22 @@ export default function PhysioCard({ physiotherapist }: PhysioCardProps) {
   } = physiotherapist;
 
   return (
-    <div className="bg-white rounded-xl shadow-md border-2 border-transparent hover:border-pink-200 hover:shadow-xl transition-all overflow-hidden group">
-      <div className="p-6">
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all overflow-hidden group flex flex-col h-full">
+      <div className="p-4 flex flex-col h-full">
         {/* Header */}
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-3 mb-3">
           {/* Profile Image */}
           <div className="relative flex-shrink-0">
             {imageUrl ? (
               <Image
                 src={imageUrl}
                 alt={fullName}
-                width={80}
-                height={80}
-                className="rounded-full object-cover"
+                width={64}
+                height={64}
+                className="rounded-full object-cover border border-gray-100"
               />
             ) : (
-              <div className="w-20 h-20 rounded-full bg-[#005b57] flex items-center justify-center text-white text-2xl font-bold">
+              <div className="w-16 h-16 rounded-full bg-brand/5 flex items-center justify-center text-brand text-lg font-bold border border-brand/10">
                 {fullName
                   .split(" ")
                   .map((n) => n[0])
@@ -71,8 +79,8 @@ export default function PhysioCard({ physiotherapist }: PhysioCardProps) {
               </div>
             )}
             {isVerified && (
-              <div className="absolute -bottom-1 -right-1 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full p-1">
-                <BadgeCheck className="h-4 w-4 text-white" />
+              <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-0.5 border-2 border-white">
+                <BadgeCheck className="h-3 w-3 text-white" />
               </div>
             )}
           </div>
@@ -80,102 +88,94 @@ export default function PhysioCard({ physiotherapist }: PhysioCardProps) {
           {/* Name & Credentials */}
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-gray-900 truncate pr-1" title={fullName}>
                   {fullName}
-                  {isVerified && (
-                    <span className="text-blue-500" title="Verified Physiotherapist">
-                      <BadgeCheck className="h-5 w-5" />
-                    </span>
-                  )}
                 </h3>
-                {credentials.length > 0 && (
-                  <p className="text-sm text-gray-600 mt-1">
-                    {credentials.join(" • ")}
-                  </p>
-                )}
+                <p className="text-xs text-gray-500 truncate" title={credentials.join(" • ")}>
+                  {credentials.length > 0 ? credentials.join(" • ") : "Physiotherapist"}
+                </p>
               </div>
-              
+
               {/* Rating */}
               {averageRating > 0 && (
-                <div className="flex items-center gap-1 bg-amber-50 px-2 py-1 rounded">
-                  <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                  <span className="text-sm font-semibold text-gray-900">
-                    {averageRating.toFixed(1)}
-                  </span>
-                  <span className="text-xs text-gray-600">
-                    ({reviewCount})
-                  </span>
+                <div className="flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded flex-shrink-0">
+                  <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                  <span className="text-xs font-bold text-gray-900">{averageRating.toFixed(1)}</span>
                 </div>
               )}
             </div>
 
             {/* Location & Experience */}
-            <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
+            <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
               {location && (
-                <div className="flex items-center gap-1">
-                  <MapPin className="h-4 w-4" />
-                  <span>{location}</span>
+                <div className="flex items-center gap-0.5 min-w-0">
+                  <MapPin className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">{location}</span>
                 </div>
               )}
-              <span>{yearsOfExperience} years exp.</span>
+              <span className="flex-shrink-0">• {yearsOfExperience}y exp.</span>
             </div>
           </div>
         </div>
 
         {/* Specializations */}
-        {specializations.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mb-3">
+          <div className="flex flex-wrap gap-1.5">
             {specializations.slice(0, 3).map((spec, index) => (
-              <Badge key={index} variant="secondary" className="text-xs">
+              <Badge key={index} variant="secondary" className="text-[10px] px-1.5 py-0 bg-gray-50 text-gray-600 hover:bg-gray-100 border-gray-100 font-normal">
                 {spec}
               </Badge>
             ))}
             {specializations.length > 3 && (
-              <Badge variant="outline" className="text-xs">
-                +{specializations.length - 3} more
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-dashed text-gray-400 font-normal">
+                +{specializations.length - 3}
               </Badge>
             )}
           </div>
-        )}
-
-        {/* Bio */}
-        {bio && (
-          <p className="mt-4 text-sm text-gray-600 line-clamp-2">
-            {bio}
-          </p>
-        )}
-
-        {/* Session Types */}
-        <div className="mt-4 flex items-center gap-4 text-sm">
-          {offersOnlineSessions && (
-            <div className="flex items-center gap-1 text-gray-600">
-              <Video className="h-4 w-4" />
-              <span>Online</span>
-            </div>
-          )}
-          {offersInPersonSessions && (
-            <div className="flex items-center gap-1 text-gray-600">
-              <Users className="h-4 w-4" />
-              <span>In-Person</span>
-            </div>
-          )}
         </div>
 
-        {/* Pricing & CTA */}
-        <div className="mt-6 pt-4 border-t-2 border-gradient-to-r from-pink-100 to-purple-100 flex items-center justify-between">
+        {/* Bio */}
+        <div className="flex-1 mb-3">
+          <p className="text-xs text-gray-600 line-clamp-4 leading-relaxed">
+            {bio || "No biography available for this physiotherapist."}
+          </p>
+        </div>
+
+        {/* Footer: Session Types & CTA */}
+        <div className="pt-3 mt-auto border-t border-gray-50 flex items-end justify-between gap-2">
           <div>
-            <p className="text-sm font-medium text-gray-600">Starting from</p>
-            <p className="text-2xl font-bold bg-gradient-to-r from-[#005b57] to-pink-600 bg-clip-text text-transparent">
-              ₦{(initialConsultRate || hourlyRate).toLocaleString()}
-              <span className="text-sm font-normal text-gray-600">/session</span>
-            </p>
+            <div className="flex items-center gap-2 mb-1.5">
+              {offersOnlineSessions && (
+                <div className="flex items-center gap-1 text-[10px] text-gray-500 font-medium bg-gray-50 px-1.5 py-0.5 rounded">
+                  <Video className="h-3 w-3 text-brand" />
+                  <span>Online</span>
+                </div>
+              )}
+              {offersInPersonSessions && (
+                <div className="flex items-center gap-1 text-[10px] text-gray-500 font-medium bg-gray-50 px-1.5 py-0.5 rounded">
+                  <Users className="h-3 w-3 text-brand" />
+                  <span>In-Person</span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Starts from</p>
+              <p className="text-lg font-bold text-gray-900 leading-none">
+                ₦{(initialConsultRate || hourlyRate).toLocaleString()}
+              </p>
+            </div>
           </div>
 
-          <Link href={`/find-a-physio/${id}`}>
-            <Button 
+          <Link
+            href={`/find-a-physio/${id}`}
+            className="w-full max-w-[100px]"
+            onClick={handleProfileClick}
+          >
+            <Button
               size="sm"
-              className="bg-gradient-to-r from-[#005b57] to-pink-600 hover:from-[#00443e] hover:to-pink-700 text-white shadow-md group-hover:shadow-lg transition-all text-xs px-4"
+              className="w-full bg-gray-900 hover:bg-black text-white shadow-sm rounded-lg h-8 text-xs font-medium transition-all"
             >
               View Profile
             </Button>

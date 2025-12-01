@@ -13,7 +13,7 @@ import { ROBOTS_CONFIG } from '@/lib/seo/config';
  */
 export default function robots(): MetadataRoute.Robots {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
-  
+
   return {
     rules: [
       {
@@ -22,7 +22,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: [
           '/api/*',
           '/dashboard/*',
-          '/_next/*',
           '/admin/*',
           '/onboarding/*',
           '/role-selection',

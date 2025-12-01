@@ -29,7 +29,7 @@ export default function DashboardPage() {
   // Handle redirects based on user role and approval status
   useEffect(() => {
     if (!isLoaded || user === undefined || dashboardAccess === undefined) return
-    
+
     if (!isSignedIn) {
       if (!isRedirecting) setIsRedirecting(true)
       router.push('/sign-in')
@@ -65,12 +65,12 @@ export default function DashboardPage() {
       if (dashboardAccess.reason === "Application pending approval" && dashboardAccess.approvalStatus === "pending_review") {
         return // Will show pending approval component below
       }
-      
+
       // For other reasons (like declined), redirect to appropriate page
       if (dashboardAccess.reason === "Application was declined") {
         return // Will show declined message below
       }
-      
+
       // For any other access issues, do not redirect to onboarding to avoid loops
       return
     }
@@ -78,7 +78,7 @@ export default function DashboardPage() {
     // Route to appropriate dashboard based on role - set redirecting state to show user what's happening
     if (!isRedirecting && dashboardAccess.canAccess) {
       setIsRedirecting(true)
-      
+
       switch (effectiveRole) {
         case 'physiotherapist':
           router.replace('/dashboard/physiotherapist')
@@ -134,6 +134,22 @@ export default function DashboardPage() {
   // Check if user needs to complete onboarding (except auto-handled patients with profile)
   const hasPatientProfile = Boolean(user.patientProfileId)
   if (!user.onboarded && !hasPatientProfile) {
+    // If user already has a physiotherapist role (e.g. invited staff), send them directly to the wizard
+    // instead of role selection
+    if (user.role === 'physiotherapist') {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold mb-2">Complete Your Profile</h2>
+            <p className="text-gray-600 mb-4">Please complete your professional profile to access the dashboard</p>
+            <Button onClick={() => router.push('/physiotherapist')}>
+              Continue Setup
+            </Button>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">

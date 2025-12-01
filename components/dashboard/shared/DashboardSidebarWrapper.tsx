@@ -3,33 +3,29 @@
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { DashboardSidebar } from './DashboardSidebar'
-import { 
-  LayoutDashboard, 
-  Calendar, 
-  Users, 
-  FileText, 
-  MessageSquare, 
-  CreditCard, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Calendar,
+  Users,
+  FileText,
+  MessageSquare,
+  CreditCard,
+  Settings,
   Activity,
   TrendingUp,
   Shield,
   UserCheck,
   Video,
-  Search
+  Search,
+  Stethoscope
 } from 'lucide-react'
 
 // Navigation configuration for physiotherapists
 const physiotherapistNavItems = [
   { title: 'Dashboard', href: '/dashboard/physiotherapist', icon: LayoutDashboard, roles: ['physiotherapist'] },
-  { title: 'Marketplace Profile', href: '/dashboard/physiotherapist/marketplace', icon: Search, roles: ['physiotherapist'] },
   { title: 'Appointments', href: '/dashboard/physiotherapist/appointments', icon: Calendar, roles: ['physiotherapist'] },
   { title: 'Patients', href: '/dashboard/physiotherapist/patients', icon: Users, roles: ['physiotherapist'] },
-  { title: 'Reports', href: '/dashboard/physiotherapist/reports', icon: FileText, roles: ['physiotherapist'] },
-  { title: 'Templates', href: '/dashboard/physiotherapist/templates', icon: FileText, roles: ['physiotherapist'] },
-  { title: 'Messages', href: '/dashboard/physiotherapist/messages', icon: MessageSquare, roles: ['physiotherapist'] },
-  { title: 'Billing', href: '/dashboard/physiotherapist/billing', icon: CreditCard, roles: ['physiotherapist'] },
-  { title: 'Video Calls', href: '/dashboard/physiotherapist/video-calls', icon: Video, roles: ['physiotherapist'] },
+  { title: 'Insights', href: '/dashboard/physiotherapist/insights', icon: TrendingUp, roles: ['physiotherapist'] },
   { title: 'Settings', href: '/dashboard/physiotherapist/settings', icon: Settings, roles: ['physiotherapist'] },
 ]
 
@@ -38,70 +34,43 @@ const patientNavItems = [
   { title: 'Dashboard', href: '/dashboard/patient', icon: LayoutDashboard, roles: ['patient'] },
   { title: 'Find a Physio', href: '/find-a-physio', icon: Search, roles: ['patient'] },
   { title: 'Appointments', href: '/dashboard/patient/appointments', icon: Calendar, roles: ['patient'] },
-  { title: 'Treatment Plans', href: '/dashboard/patient/treatment-plans', icon: Activity, roles: ['patient'] },
-  { title: 'Video Calls', href: '/dashboard/patient/video-calls', icon: Video, roles: ['patient'] },
-  { title: 'Messages', href: '/dashboard/patient/messages', icon: MessageSquare, roles: ['patient'] },
-  { title: 'Invoices', href: '/dashboard/patient/invoices', icon: CreditCard, roles: ['patient'] },
-  { title: 'Health Records', href: '/dashboard/patient/records', icon: FileText, roles: ['patient'] },
+  { title: 'My Physiotherapist', href: '/dashboard/patient/my-physiotherapist', icon: Stethoscope, roles: ['patient'] },
+  { title: 'Insights', href: '/dashboard/patient/insights', icon: TrendingUp, roles: ['patient'] },
   { title: 'Settings', href: '/dashboard/patient/settings', icon: Settings, roles: ['patient'] },
 ]
 
 // Navigation configuration for clinic owners
 // Focus: Business management, staff oversight, analytics, and compliance
 const clinicOwnerNavItems = [
-  { 
-    title: 'Dashboard', 
-    href: '/dashboard/clinic', 
-    icon: LayoutDashboard, 
-    roles: ['clinic_owner'] 
+  {
+    title: 'Dashboard',
+    href: '/dashboard/clinic',
+    icon: LayoutDashboard,
+    roles: ['clinic_owner']
   },
-  { 
-    title: 'Staff Management', 
-    href: '/dashboard/clinic/staff', 
-    icon: Users, 
-    roles: ['clinic_owner'] 
+  {
+    title: 'Staff Management',
+    href: '/dashboard/clinic/staff',
+    icon: Users,
+    roles: ['clinic_owner']
   },
-  { 
-    title: 'Analytics', 
-    href: '/dashboard/clinic/analytics', 
-    icon: TrendingUp, 
-    roles: ['clinic_owner'] 
+  {
+    title: 'Patients',
+    href: '/dashboard/clinic/patients',
+    icon: UserCheck,
+    roles: ['clinic_owner']
   },
-  { 
-    title: 'Patients', 
-    href: '/dashboard/clinic/patients', 
-    icon: UserCheck, 
-    roles: ['clinic_owner'] 
+  {
+    title: 'Analytics',
+    href: '/dashboard/clinic/analytics',
+    icon: TrendingUp,
+    roles: ['clinic_owner']
   },
-  { 
-    title: 'Appointments', 
-    href: '/dashboard/clinic/appointments', 
-    icon: Calendar, 
-    roles: ['clinic_owner'] 
-  },
-  { 
-    title: 'Billing', 
-    href: '/dashboard/clinic/billing', 
-    icon: CreditCard, 
-    roles: ['clinic_owner'] 
-  },
-  { 
-    title: 'Reports', 
-    href: '/dashboard/clinic/reports', 
-    icon: FileText, 
-    roles: ['clinic_owner'] 
-  },
-  { 
-    title: 'Audit Logs', 
-    href: '/dashboard/clinic/audit', 
-    icon: Shield, 
-    roles: ['clinic_owner'] 
-  },
-  { 
-    title: 'Settings', 
-    href: '/dashboard/clinic/settings', 
-    icon: Settings, 
-    roles: ['clinic_owner'] 
+  {
+    title: 'Settings',
+    href: '/dashboard/clinic/settings',
+    icon: Settings,
+    roles: ['clinic_owner']
   },
 ]
 
@@ -138,9 +107,8 @@ export function DashboardSidebarWrapper({ defaultCollapsed = false }: DashboardS
       navItems = clinicOwnerNavItems
       break
     case 'admin':
-      // Admin uses its own sidebar layout (AdminLayout), so return empty here
-      navItems = []
-      break
+      // Admin uses its own sidebar layout (AdminLayout), so return null to avoid double sidebar spacing
+      return null
     default:
       navItems = []
   }

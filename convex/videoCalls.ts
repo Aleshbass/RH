@@ -40,7 +40,7 @@ export const createVideoCall = action({
     participants: v.array(v.id("users")),
     callType: v.union(
       v.literal("appointment"),
-      v.literal("consultation"), 
+      v.literal("consultation"),
       v.literal("emergency")
     ),
     settings: v.optional(v.object({
@@ -63,7 +63,7 @@ export const createVideoCall = action({
     const user = await ctx.runQuery(internal.videoCalls.getUserByClerkId, {
       clerkId: identity.subject
     }) as any // Avoid deep type instantiation
-    
+
     if (!user) {
       throw new Error("User not found")
     }
@@ -153,8 +153,8 @@ export const createVideoCall = action({
         }
       }
 
-      return { 
-        callId, 
+      return {
+        callId,
         roomId: streamCallId,
         streamCallId: streamCallId,
         meetingLink: meetingLink,
@@ -304,7 +304,7 @@ export const startVideoCall = mutation({
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique()
-    
+
     if (!user || (!call.participants.includes(user._id) && call.initiatorId !== user._id)) {
       throw new Error("Unauthorized to start this call")
     }
@@ -338,7 +338,7 @@ export const endVideoCall = mutation({
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique()
-    
+
     // Allow initiator to end the entire call; participants should only end their own participation
     if (!user) {
       throw new Error("Unauthorized")
@@ -445,7 +445,7 @@ export const joinVideoCall = mutation({
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique()
-    
+
     if (!user) {
       throw new Error("User not found")
     }
@@ -455,7 +455,7 @@ export const joinVideoCall = mutation({
       .query("videoCalls")
       .withIndex("by_room_id", (q) => q.eq("roomId", args.roomId))
       .unique()
-    
+
     if (!call) {
       // Try to find by Daily room name
       call = await ctx.db
@@ -549,7 +549,7 @@ export const joinVideoCall = mutation({
       console.warn('[joinVideoCall] Failed to evaluate active participants:', e)
     }
 
-    return { 
+    return {
       callId: call._id,
       roomId: call.roomId,
       participants: call.participants,
@@ -583,7 +583,7 @@ export const scheduleVideoCall = mutation({
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique()
-    
+
     if (!user) {
       throw new Error("User not found")
     }
@@ -693,7 +693,7 @@ export const scheduleVideoCall = mutation({
 
     return { callId, roomId }
   },
-}) 
+})
 
 // Internal mutations for Stream integration
 export const createVideoCallRecord = internalMutation({
@@ -717,7 +717,7 @@ export const createVideoCallRecord = internalMutation({
     participants: v.array(v.id("users")),
     callType: v.union(
       v.literal("appointment"),
-      v.literal("consultation"), 
+      v.literal("consultation"),
       v.literal("emergency")
     ),
     title: v.optional(v.string()),
@@ -869,7 +869,7 @@ export const getDailyRoomInfo = query({
   },
   handler: async (ctx, args) => {
     console.log('🔍 getDailyRoomInfo called with:', args)
-    
+
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
       console.error('❌ No user identity found')
@@ -882,7 +882,7 @@ export const getDailyRoomInfo = query({
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique()
-    
+
     if (!user) {
       console.error('❌ User not found in database for clerkId:', identity.subject)
       throw new Error("User not found")
@@ -909,14 +909,14 @@ export const getDailyRoomInfo = query({
     // Check if user is authorized to access this call
     const isParticipant = call.participants.includes(user._id)
     const isInitiator = call.initiatorId === user._id
-    
+
     console.log('🔐 Authorization check:', {
       userId: user._id,
       isParticipant,
       isInitiator,
       authorized: isParticipant || isInitiator
     })
-    
+
     if (!isParticipant && !isInitiator) {
       console.error('❌ User not authorized to access call')
       throw new Error("You are not authorized to access this call")
@@ -944,7 +944,7 @@ export const getDailyRoomInfo = query({
       callStatus: call.status,
       participants: call.participants,
     }
-    
+
     console.log('📊 Returning room info:', result)
     return result
   },
@@ -970,9 +970,9 @@ export const getMyVideoCalls = query({
 
     // Get all calls where user is involved (as initiator, participant, patient, or physiotherapist)
     const allCalls = await ctx.db.query("videoCalls").collect()
-    
+
     // Filter calls where user is involved
-    const myCalls = allCalls.filter(call => 
+    const myCalls = allCalls.filter(call =>
       call.initiatorId === user._id ||
       call.participants?.includes(user._id) ||
       call.patientId === user._id ||
@@ -1027,7 +1027,7 @@ export const getCallByRoomId = query({
   },
   handler: async (ctx, args) => {
     console.log('🔍 getCallByRoomId called with roomId:', args.roomId)
-    
+
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) {
       console.log('❌ No user identity, returning null')
@@ -1040,7 +1040,7 @@ export const getCallByRoomId = query({
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique()
-    
+
     if (!user) {
       console.log('❌ User not found, returning null')
       return null
@@ -1053,16 +1053,16 @@ export const getCallByRoomId = query({
       .query("videoCalls")
       .withIndex("by_room_id", (q) => q.eq("roomId", args.roomId))
       .unique()
-    
+
     console.log('🔍 Search by roomId result:', !!call)
-    
+
     if (!call) {
       // Try to find by Daily room name
       call = await ctx.db
         .query("videoCalls")
         .withIndex("by_daily_room_name", (q) => q.eq("dailyRoomName", args.roomId))
         .unique()
-      
+
       console.log('🔍 Search by dailyRoomName result:', !!call)
     }
 
@@ -1083,14 +1083,14 @@ export const getCallByRoomId = query({
     // Check if user is authorized to access this call
     const isParticipant = call.participants.includes(user._id)
     const isInitiator = call.initiatorId === user._id
-    
+
     console.log('🔐 Authorization check:', {
       userId: user._id,
       isParticipant,
       isInitiator,
       authorized: isParticipant || isInitiator
     })
-    
+
     if (!isParticipant && !isInitiator) {
       console.log('❌ User not authorized, returning null')
       return null
@@ -1119,8 +1119,45 @@ export const getCallByRoomId = query({
       callStatus: call.status,
       participants: call.participants,
     }
-    
+
     console.log('📊 Returning call info:', result)
     return result
   },
 })
+
+export const getClinicVideoCalls = query({
+  args: {
+    clinicId: v.id("clinics"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
+
+    const videoCalls = await ctx.db
+      .query("videoCalls")
+      .withIndex("by_clinic_id_and_scheduled", (q) => q.eq("clinicId", args.clinicId))
+      .order("desc")
+      .collect();
+
+    // Enrich with participant details
+    const enrichedCalls = await Promise.all(
+      videoCalls.map(async (call) => {
+        const participants = await Promise.all(
+          call.participants.map(async (userId) => {
+            const user = await ctx.db.get(userId);
+            return user ? { name: `${user.firstName} ${user.lastName}`, imageUrl: user.imageUrl } : null;
+          })
+        );
+
+        return {
+          ...call,
+          participantDetails: participants.filter(Boolean),
+        };
+      })
+    );
+
+    return enrichedCalls;
+  },
+});

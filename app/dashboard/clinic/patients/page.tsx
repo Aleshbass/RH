@@ -15,9 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { 
-  Users, 
-  Search, 
+import {
+  Users,
+  Search,
   Filter,
   Calendar,
   Activity,
@@ -26,6 +26,9 @@ import {
   Stethoscope,
   ArrowLeftRight
 } from 'lucide-react'
+import PatientClinicalView from '@/components/clinic/patients/PatientClinicalView'
+import { TourGuide } from '@/components/shared/TourGuide'
+
 import { useState, useMemo } from 'react'
 import { format, formatDistanceToNow } from 'date-fns'
 import type { Id } from '@/convex/_generated/dataModel'
@@ -57,6 +60,7 @@ interface ClinicPatient {
 export default function ClinicPatientsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedPhysio, setSelectedPhysio] = useState<string>('all')
+  const [selectedPatientId, setSelectedPatientId] = useState<Id<'users'> | null>(null)
 
   const clinicPatients = useQuery(api.clinics.getClinicPatients) as ClinicPatient[] | undefined
   const patientStats = useQuery(api.clinics.getClinicPatientStats)
@@ -66,7 +70,7 @@ export default function ClinicPatientsPage() {
   const uniquePhysiotherapists = useMemo(() => {
     if (!clinicPatients) return []
     const physioMap = new Map<string, { _id: Id<'users'>, firstName: string, lastName: string }>()
-    
+
     clinicPatients.forEach(patient => {
       if (patient.primaryPhysiotherapist) {
         const id = patient.primaryPhysiotherapist._id
@@ -75,7 +79,7 @@ export default function ClinicPatientsPage() {
         }
       }
     })
-    
+
     return Array.from(physioMap.values())
   }, [clinicPatients])
 
@@ -119,9 +123,11 @@ export default function ClinicPatientsPage() {
     <div className="p-8">
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold">Patients</h1>
-          <p className="text-gray-600">Manage all patients across your clinic</p>
+        <div id="patients-header" className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Patients</h1>
+            <p className="text-gray-600">Manage all patients across your clinic</p>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -136,7 +142,7 @@ export default function ClinicPatientsPage() {
               <p className="text-xs text-muted-foreground">Across all physiotherapists</p>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Per Physiotherapist</CardTitle>
@@ -149,7 +155,7 @@ export default function ClinicPatientsPage() {
               <p className="text-xs text-muted-foreground">Average caseload</p>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Active Patients</CardTitle>
@@ -160,7 +166,7 @@ export default function ClinicPatientsPage() {
               <p className="text-xs text-muted-foreground">This month</p>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">New This Month</CardTitle>
@@ -174,7 +180,7 @@ export default function ClinicPatientsPage() {
         </div>
 
         {/* Search and Filters */}
-        <div className="flex items-center space-x-4">
+        <div id="patients-search" className="flex items-center space-x-4">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
             <Input
@@ -184,7 +190,7 @@ export default function ClinicPatientsPage() {
               className="pl-10"
             />
           </div>
-          
+
           <Select value={selectedPhysio} onValueChange={setSelectedPhysio}>
             <SelectTrigger className="w-[220px]">
               <SelectValue placeholder="All Physiotherapists" />
@@ -202,7 +208,7 @@ export default function ClinicPatientsPage() {
         </div>
 
         {/* Patients List */}
-        <Card>
+        <Card id="patients-list">
           <CardHeader>
             <CardTitle>All Patients</CardTitle>
             <CardDescription>
@@ -213,8 +219,8 @@ export default function ClinicPatientsPage() {
             {filteredPatients.length > 0 ? (
               <div className="space-y-3">
                 {filteredPatients.map((patient) => (
-                  <div 
-                    key={patient._id} 
+                  <div
+                    key={patient._id}
                     className="grid grid-cols-[auto_1fr_1fr_auto] gap-4 items-center p-4 border rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     {/* Patient Info */}
@@ -274,13 +280,19 @@ export default function ClinicPatientsPage() {
 
                     {/* Actions */}
                     <div className="flex items-center space-x-2">
-                      <Badge 
+                      <Badge
                         variant={patient.relationship.status === 'active' ? 'default' : 'secondary'}
                         className="text-xs"
                       >
                         {patient.relationship.status}
                       </Badge>
-                      <Button variant="outline" size="sm">View</Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedPatientId(patient._id)}
+                      >
+                        View
+                      </Button>
                       <Button variant="outline" size="sm">
                         <ArrowLeftRight className="h-3 w-3 mr-1" />
                         Reassign
@@ -296,7 +308,7 @@ export default function ClinicPatientsPage() {
                   {searchTerm ? 'No patients found' : 'No patients yet'}
                 </h3>
                 <p className="text-gray-600">
-                  {searchTerm 
+                  {searchTerm
                     ? 'Try adjusting your search terms'
                     : 'Patients will appear here once they join your clinic'
                   }
@@ -306,6 +318,37 @@ export default function ClinicPatientsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <PatientClinicalView
+        patientId={selectedPatientId}
+        isOpen={!!selectedPatientId}
+        onClose={() => setSelectedPatientId(null)}
+      />
     </div>
+
+      <TourGuide
+        tourId="clinic-patients-tour"
+        steps={[
+          {
+            target: "#patients-header",
+            title: "Patient Directory",
+            content: "Access and manage your entire patient database from this central hub.",
+            position: "bottom"
+          },
+          {
+            target: "#patients-search",
+            title: "Find Patients",
+            content: "Quickly search for patients or filter by assigned physiotherapist.",
+            position: "bottom"
+          },
+          {
+            target: "#patients-list",
+            title: "Patient Records",
+            content: "View patient details, check status, and manage assignments directly from the list.",
+            position: "top"
+          }
+        ]}
+      />
+    </div >
   )
 }

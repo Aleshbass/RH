@@ -4,6 +4,9 @@ import { action, mutation, query } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 
+// Re-export async calendar functions
+export { createCalendarEventAsync, updateAppointmentWithMeetLink } from "./async";
+
 interface CalendarServiceConfig {
   userId: Id<"users">;
   calendarId?: string;
@@ -123,8 +126,31 @@ export const replaceCalendarsCache = mutation({
   },
 });
 
+// Internal mutation to store calendar event link
+export const storeCalendarEventLink = mutation({
+  args: {
+    appointmentId: v.id("appointments"),
+    googleEventId: v.string(),
+    googleMeetLink: v.optional(v.string()),
+    calendarId: v.string(),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("calendarEvents", {
+      appointmentId: args.appointmentId,
+      googleEventId: args.googleEventId,
+      googleMeetLink: args.googleMeetLink,
+      calendarId: args.calendarId,
+      userId: args.userId,
+      syncedAt: Date.now(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 // Create calendar event
-export const createCalendarEvent = mutation({
+export const createCalendarEvent = action({
   args: {
     userId: v.id("users"),
     appointmentId: v.id("appointments"),
@@ -141,6 +167,11 @@ export const createCalendarEvent = mutation({
   },
   handler: async (ctx, args) => {
     try {
+      console.log("[CALENDAR SERVICE] Starting calendar event creation");
+      console.log("[CALENDAR SERVICE] User ID:", args.userId);
+      console.log("[CALENDAR SERVICE] Appointment ID:", args.appointmentId);
+      console.log("[CALENDAR SERVICE] Create Meet Link:", args.createMeetLink);
+
       const created: any = await ctx.runAction(
         internal.calendar.nodeActions.createEvent,
         {
@@ -157,22 +188,20 @@ export const createCalendarEvent = mutation({
         }
       );
 
-      // Store calendar event link
-      await ctx.db.insert("calendarEvents", {
+      // Store calendar event link in database
+      await ctx.runMutation(internal.calendar.service.storeCalendarEventLink, {
         appointmentId: args.appointmentId,
         googleEventId: created.id!,
         googleMeetLink: created.hangoutLink,
         calendarId: args.calendarId || "primary",
         userId: args.userId,
-        syncedAt: Date.now(),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
       });
 
       return {
         success: true,
         eventId: created.id!,
         meetLink: created.hangoutLink,
+        htmlLink: created.htmlLink,
       };
     } catch (error) {
       console.error("Failed to create calendar event:", error);

@@ -1,31 +1,37 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronRight, ChevronLeft, Check } from 'lucide-react';
+import LocationSearch from '@/components/marketplace/LocationSearch';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PatientData } from '@/stores/onboardingStore';
+import { cn } from '@/lib/utils';
 
-// Form schema with Zod validation - matched to PatientData in onboardingStore
+// Form schema with Zod validation
 const patientInfoSchema = z.object({
   firstName: z.string().min(2, 'First name must be at least 2 characters'),
   lastName: z.string().min(2, 'Last name must be at least 2 characters'),
   email: z.string().email('Please enter a valid email address'),
   phoneNumber: z.string().min(10, 'Please enter a valid phone number'),
-  dateOfBirth: z.string().optional(),
-  medicalHistory: z.string().optional(),
-  emergencyContact: z.string().optional(),
+  age: z.coerce.number().min(17, 'You must be at least 17 years old').max(99, 'Please enter a valid age'),
+  gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say'], {
+    required_error: "Please select your gender",
+  }),
+  location: z.string().min(2, 'Location is required'),
+  therapyFor: z.string().min(1, 'Please select who this therapy is for'),
 });
 
 export type PatientInfoValues = z.infer<typeof patientInfoSchema>;
 
 interface PersonalInfoFormProps {
-  initialData?: Partial<PatientData>;
+  initialData?: Partial<PatientData> & { age?: number };
   invitationInfo?: {
     isValid: boolean;
     message: string;
@@ -40,6 +46,14 @@ interface PersonalInfoFormProps {
   onBack: () => void;
 }
 
+const steps = [
+  { id: 'personal', title: 'Personal Info' },
+  { id: 'therapy-for', title: 'Therapy For' },
+  { id: 'gender', title: 'Gender' },
+  { id: 'age', title: 'Age' },
+  { id: 'location', title: 'Location' },
+];
+
 export default function PersonalInfoForm({
   initialData,
   invitationInfo,
@@ -47,41 +61,120 @@ export default function PersonalInfoForm({
   onSubmit,
   onBack
 }: PersonalInfoFormProps) {
-  // Define form with React Hook Form and Zod validation
-  const { control, handleSubmit, formState: { errors, isSubmitting } } = useForm<PatientInfoValues>({
+  const [currentStep, setCurrentStep] = useState(0);
+  const [direction, setDirection] = useState(0);
+
+  const { control, handleSubmit, trigger, watch, setValue, formState: { errors, isSubmitting } } = useForm<PatientInfoValues>({
     resolver: zodResolver(patientInfoSchema),
     defaultValues: {
       firstName: initialData?.firstName || '',
       lastName: initialData?.lastName || '',
       email: initialData?.email || '',
       phoneNumber: initialData?.phoneNumber || '',
-      dateOfBirth: initialData?.dateOfBirth || '',
-      medicalHistory: initialData?.medicalHistory || '',
-      emergencyContact: initialData?.emergencyContact || '',
+      age: initialData?.age || undefined,
+      gender: initialData?.gender || undefined,
+      location: initialData?.location || '',
+      therapyFor: initialData?.therapyFor || '',
     }
   });
 
-  // Animation variants
-  const fadeInVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: (i: number) => ({
-      opacity: 1,
-      y: 0,
-      transition: {
-        delay: i * 0.1,
-        duration: 0.5,
+  // Update form values when initialData changes (e.g. when user data is fetched)
+  useEffect(() => {
+    if (initialData) {
+      const currentValues = control._formValues;
+      // Only reset if we have new data and the fields are currently empty
+      // This prevents overwriting user input if they started typing before data loaded
+      const shouldReset =
+        (initialData.firstName && !currentValues.firstName) ||
+        (initialData.lastName && !currentValues.lastName) ||
+        (initialData.email && !currentValues.email);
 
-      },
+      if (shouldReset) {
+        control._reset({
+          firstName: initialData.firstName || '',
+          lastName: initialData.lastName || '',
+          email: initialData.email || '',
+          phoneNumber: initialData.phoneNumber || '',
+          age: initialData.age || undefined,
+          gender: initialData.gender || undefined,
+          location: initialData.location || '',
+          therapyFor: initialData.therapyFor || '',
+        });
+      }
+    }
+  }, [initialData, control]);
+
+  // Watch values for conditional rendering or auto-advancing (optional)
+  const therapyForValue = watch('therapyFor');
+  const genderValue = watch('gender');
+
+  const nextStep = async () => {
+    let fieldsToValidate: (keyof PatientInfoValues)[] = [];
+
+    switch (currentStep) {
+      case 0: // Personal Info
+        fieldsToValidate = ['firstName', 'lastName', 'email', 'phoneNumber'];
+        break;
+      case 1: // Therapy For
+        fieldsToValidate = ['therapyFor'];
+        break;
+      case 2: // Gender
+        fieldsToValidate = ['gender'];
+        break;
+      case 3: // Age
+        fieldsToValidate = ['age'];
+        break;
+      case 4: // Location
+        fieldsToValidate = ['location'];
+        break;
+    }
+
+    const isStepValid = await trigger(fieldsToValidate);
+
+    if (isStepValid) {
+      if (currentStep < steps.length - 1) {
+        setDirection(1);
+        setCurrentStep(prev => prev + 1);
+      } else {
+        handleSubmit(onSubmit)();
+      }
+    }
+  };
+
+  const prevStep = () => {
+    if (currentStep > 0) {
+      setDirection(-1);
+      setCurrentStep(prev => prev - 1);
+    } else {
+      onBack();
+    }
+  };
+
+  // Animation variants
+  const variants = {
+    enter: (direction: number) => ({
+      x: direction > 0 ? 50 : -50,
+      opacity: 0,
+    }),
+    center: {
+      zIndex: 1,
+      x: 0,
+      opacity: 1,
+    },
+    exit: (direction: number) => ({
+      zIndex: 0,
+      x: direction < 0 ? 50 : -50,
+      opacity: 0,
     }),
   };
 
-  // If invalid invitation, show error
-  if (!invitationInfo?.isValid && !invitationCode) {
+  // If invalid invitation AND code was provided, show error
+  if (invitationCode && !invitationInfo?.isValid) {
     return (
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-xl">
         <div className="p-4 border border-red-300 bg-red-50 rounded-md text-red-800">
           <h3 className="font-bold text-lg">Invalid Invitation</h3>
-          <p>{invitationInfo?.message || 'No invitation code provided.'}</p>
+          <p>{invitationInfo?.message || 'Invalid invitation code.'}</p>
         </div>
         <Button onClick={onBack} className="w-full">Back to Homepage</Button>
       </div>
@@ -89,236 +182,290 @@ export default function PersonalInfoForm({
   }
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="space-y-4"
-    >
-      {/* Referring Physiotherapist Information */}
-      {invitationInfo?.isValid && invitationInfo.physiotherapist && (
-        <div className="p-4 bg-teal-50 border border-teal-200 rounded-lg">
-          <h3 className="text-lg font-medium text-teal-800">You&apos;ve been invited by:</h3>
-          <p className="text-teal-700">
-            <span className="font-bold">{invitationInfo.physiotherapist.name}</span>
-            {invitationInfo.physiotherapist.type === 'clinic' && (
-              <> from {invitationInfo.physiotherapist.clinicName}</>
-            )}
-          </p>
+    <div className="w-full max-w-xl mx-auto">
+      {/* Progress Bar */}
+      <div className="mb-8">
+        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+          <motion.div
+            className="h-full bg-teal-600"
+            initial={{ width: 0 }}
+            animate={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
+            transition={{ duration: 0.3 }}
+          />
         </div>
-      )}
-
-      <div className="text-center mb-8">
-        <h1 className="text-2xl font-semibold text-[#002e2c]">
-          Patient Registration
-        </h1>
-        <p className="text-[#005b57]">
-          Please complete your profile to continue
-        </p>
+        <div className="flex justify-between mt-2 text-xs text-gray-400 font-medium uppercase tracking-wider">
+          <span>Step {currentStep + 1} of {steps.length}</span>
+          <span>{steps[currentStep].title}</span>
+        </div>
       </div>
-      
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-          {/* First Name */}
-          <motion.div
-            custom={0}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-2"
-          >
-            <Label htmlFor="firstName">First Name *</Label>
-            <Controller
-              control={control}
-              name="firstName"
-              render={({ field }) => (
-                <Input
-                  id="firstName"
-                  placeholder="Enter your first name"
-                  {...field}
-                  className={errors.firstName ? "border-red-500" : ""}
-                />
-              )}
-            />
-            {errors.firstName && (
-              <p className="text-sm text-red-500">{errors.firstName.message}</p>
-            )}
-          </motion.div>
 
-          {/* Last Name */}
-          <motion.div
-            custom={1}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-2"
-          >
-            <Label htmlFor="lastName">Last Name *</Label>
-            <Controller
-              control={control}
-              name="lastName"
-              render={({ field }) => (
-                <Input
-                  id="lastName"
-                  placeholder="Enter your last name"
-                  {...field}
-                  className={errors.lastName ? "border-red-500" : ""}
-                />
-              )}
-            />
-            {errors.lastName && (
-              <p className="text-sm text-red-500">{errors.lastName.message}</p>
-            )}
-          </motion.div>
+      <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
+        <div className="min-h-[300px] relative overflow-hidden">
+          <AnimatePresence initial={false} custom={direction} mode="wait">
+            <motion.div
+              key={currentStep}
+              custom={direction}
+              variants={variants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                x: { type: "spring", stiffness: 300, damping: 30 },
+                opacity: { duration: 0.2 }
+              }}
+              className="w-full"
+            >
+              {/* Step 1: Personal Info */}
+              {currentStep === 0 && (
+                <div className="space-y-6">
+                  <div className="text-center mb-6">
+                    <h2 className="text-2xl font-bold text-gray-900">Let's get to know you</h2>
+                    <p className="text-gray-500">Please confirm your personal details</p>
+                  </div>
 
-          {/* Email */}
-          <motion.div
-            custom={2}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-2"
-          >
-            <Label htmlFor="email">Email *</Label>
-            <Controller
-              control={control}
-              name="email"
-              render={({ field }) => (
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  {...field}
-                  className={errors.email ? "border-red-500" : ""}
-                />
-              )}
-            />
-            {errors.email && (
-              <p className="text-sm text-red-500">{errors.email.message}</p>
-            )}
-          </motion.div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="firstName">First Name</Label>
+                      <Controller
+                        control={control}
+                        name="firstName"
+                        render={({ field }) => (
+                          <Input {...field} placeholder="First Name" className={errors.firstName ? "border-red-500" : ""} />
+                        )}
+                      />
+                      {errors.firstName && <p className="text-xs text-red-500">{errors.firstName.message}</p>}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="lastName">Last Name</Label>
+                      <Controller
+                        control={control}
+                        name="lastName"
+                        render={({ field }) => (
+                          <Input {...field} placeholder="Last Name" className={errors.lastName ? "border-red-500" : ""} />
+                        )}
+                      />
+                      {errors.lastName && <p className="text-xs text-red-500">{errors.lastName.message}</p>}
+                    </div>
+                  </div>
 
-          {/* Phone Number */}
-          <motion.div
-            custom={3}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-2"
-          >
-            <Label htmlFor="phoneNumber">Phone Number *</Label>
-            <Controller
-              control={control}
-              name="phoneNumber"
-              render={({ field }) => (
-                <Input
-                  id="phoneNumber"
-                  placeholder="Enter your phone number"
-                  {...field}
-                  className={errors.phoneNumber ? "border-red-500" : ""}
-                />
-              )}
-            />
-            {errors.phoneNumber && (
-              <p className="text-sm text-red-500">{errors.phoneNumber.message}</p>
-            )}
-          </motion.div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Controller
+                      control={control}
+                      name="email"
+                      render={({ field }) => (
+                        <Input {...field} type="email" placeholder="Email Address" className={errors.email ? "border-red-500" : ""} />
+                      )}
+                    />
+                    {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+                  </div>
 
-          {/* Date of Birth */}
-          <motion.div
-            custom={4}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-2"
-          >
-            <Label htmlFor="dateOfBirth">Date of Birth</Label>
-            <Controller
-              control={control}
-              name="dateOfBirth"
-              render={({ field }) => (
-                <Input
-                  id="dateOfBirth"
-                  type="date"
-                  {...field}
-                  className={errors.dateOfBirth ? "border-red-500" : ""}
-                />
+                  <div className="space-y-2">
+                    <Label htmlFor="phoneNumber">Phone Number</Label>
+                    <Controller
+                      control={control}
+                      name="phoneNumber"
+                      render={({ field }) => (
+                        <Input {...field} placeholder="Phone Number" className={errors.phoneNumber ? "border-red-500" : ""} />
+                      )}
+                    />
+                    {errors.phoneNumber && <p className="text-xs text-red-500">{errors.phoneNumber.message}</p>}
+                  </div>
+                </div>
               )}
-            />
-            {errors.dateOfBirth && (
-              <p className="text-sm text-red-500">{errors.dateOfBirth.message}</p>
-            )}
-          </motion.div>
 
-          {/* Medical History */}
-          <motion.div
-            custom={6}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-2 md:col-span-2"
-          >
-            <Label htmlFor="medicalHistory">Medical History</Label>
-            <Controller
-              control={control}
-              name="medicalHistory"
-              render={({ field }) => (
-                <textarea
-                  id="medicalHistory"
-                  placeholder="Enter any relevant medical history"
-                  {...field}
-                  className={`w-full px-3 py-2 border rounded-md ${errors.medicalHistory ? "border-red-500" : "border-gray-300"} focus:outline-none focus:ring-1 focus:ring-sky-500`}
-                  rows={4}
-                />
-              )}
-            />
-            {errors.medicalHistory && (
-              <p className="text-sm text-red-500">{errors.medicalHistory.message}</p>
-            )}
-          </motion.div>
+              {/* Step 2: Therapy For */}
+              {currentStep === 1 && (
+                <div className="space-y-6">
+                  <div className="text-center mb-8">
+                    <h2 className="text-2xl font-bold text-gray-900">Who is this therapy for?</h2>
+                    <p className="text-gray-500">Select the best option that describes your needs</p>
+                  </div>
 
-          {/* Emergency Contact */}
-          <motion.div
-            custom={6}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-2 md:col-span-2"
-          >
-            <Label htmlFor="emergencyContact">Emergency Contact</Label>
-            <Controller
-              control={control}
-              name="emergencyContact"
-              render={({ field }) => (
-                <Input
-                  id="emergencyContact"
-                  placeholder="Name and phone number of emergency contact"
-                  {...field}
-                  className={errors.emergencyContact ? "border-red-500" : ""}
-                />
+                  <Controller
+                    control={control}
+                    name="therapyFor"
+                    render={({ field }) => (
+                      <div className="grid grid-cols-1 gap-3">
+                        {[
+                          { value: 'myself', label: 'For myself', desc: 'I am looking for therapy for myself' },
+                          { value: 'partner', label: 'For me and my partner', desc: 'We are looking for couples therapy' },
+                          { value: 'child', label: 'For my child', desc: 'I am looking for therapy for my child' },
+                          { value: 'family_member', label: 'For a family member', desc: 'I am looking for therapy for a relative' }
+                        ].map((option) => (
+                          <div
+                            key={option.value}
+                            onClick={() => field.onChange(option.value)}
+                            className={cn(
+                              "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 flex items-center justify-between group hover:border-teal-200 hover:bg-teal-50/50",
+                              field.value === option.value
+                                ? "border-teal-600 bg-teal-50 ring-1 ring-teal-600"
+                                : "border-gray-100 bg-white"
+                            )}
+                          >
+                            <div>
+                              <h3 className={cn(
+                                "font-semibold text-lg",
+                                field.value === option.value ? "text-teal-900" : "text-gray-900"
+                              )}>{option.label}</h3>
+                              <p className="text-sm text-gray-500">{option.desc}</p>
+                            </div>
+                            {field.value === option.value && (
+                              <div className="h-6 w-6 bg-teal-600 rounded-full flex items-center justify-center text-white">
+                                <Check className="h-4 w-4" />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  />
+                  {errors.therapyFor && <p className="text-center text-sm text-red-500">{errors.therapyFor.message}</p>}
+                </div>
               )}
-            />
-            {errors.emergencyContact && (
-              <p className="text-sm text-red-500">{errors.emergencyContact.message}</p>
-            )}
-          </motion.div>
+
+              {/* Step 3: Gender */}
+              {currentStep === 2 && (
+                <div className="space-y-6">
+                  <div className="text-center mb-8">
+                    <h2 className="text-2xl font-bold text-gray-900">How do you identify?</h2>
+                    <p className="text-gray-500">This helps us personalize your experience</p>
+                  </div>
+
+                  <Controller
+                    control={control}
+                    name="gender"
+                    render={({ field }) => (
+                      <div className="grid grid-cols-1 gap-3">
+                        {['male', 'female', 'other', 'prefer_not_to_say'].map((option) => (
+                          <div
+                            key={option}
+                            onClick={() => field.onChange(option)}
+                            className={cn(
+                              "p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 flex items-center justify-between hover:border-teal-200 hover:bg-teal-50/50",
+                              field.value === option
+                                ? "border-teal-600 bg-teal-50 ring-1 ring-teal-600"
+                                : "border-gray-100 bg-white"
+                            )}
+                          >
+                            <span className="capitalize font-medium text-lg text-gray-900">
+                              {option.replace(/_/g, ' ')}
+                            </span>
+                            {field.value === option && (
+                              <div className="h-6 w-6 bg-teal-600 rounded-full flex items-center justify-center text-white">
+                                <Check className="h-4 w-4" />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  />
+                  {errors.gender && <p className="text-center text-sm text-red-500">{errors.gender.message}</p>}
+                </div>
+              )}
+
+              {/* Step 4: Age */}
+              {currentStep === 3 && (
+                <div className="space-y-6">
+                  <div className="text-center mb-8">
+                    <h2 className="text-2xl font-bold text-gray-900">How old are you?</h2>
+                    <p className="text-gray-500">We need this to ensure you get age-appropriate care</p>
+                  </div>
+
+                  <div className="max-w-xs mx-auto">
+                    <Controller
+                      control={control}
+                      name="age"
+                      render={({ field }) => (
+                        <div className="relative">
+                          <Input
+                            {...field}
+                            type="number"
+                            min={17}
+                            max={99}
+                            placeholder="Enter your age (17-99)"
+                            className={cn(
+                              "h-14 text-lg text-center border-2 rounded-xl focus:ring-teal-500 focus:border-teal-500",
+                              errors.age ? "border-red-500" : "border-gray-200"
+                            )}
+                            onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                          />
+                        </div>
+                      )}
+                    />
+                    {errors.age && <p className="text-center text-sm text-red-500 mt-2">{errors.age.message}</p>}
+                    <p className="text-xs text-gray-400 text-center mt-4">
+                      Must be between 17 and 99 years old.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 5: Location */}
+              {currentStep === 4 && (
+                <div className="space-y-6">
+                  <div className="text-center mb-8">
+                    <h2 className="text-2xl font-bold text-gray-900">Where are you located?</h2>
+                    <p className="text-gray-500">To find physiotherapists near you</p>
+                  </div>
+
+                  <div className="max-w-sm mx-auto">
+                    <Controller
+                      control={control}
+                      name="location"
+                      render={({ field }) => (
+                        <div className="relative">
+                          <LocationSearch
+                            value={field.value}
+                            onChange={(value) => field.onChange(value)}
+                            className="w-full"
+                          />
+                        </div>
+                      )}
+                    />
+                    {errors.location && <p className="text-center text-sm text-red-500 mt-2">{errors.location.message}</p>}
+                    <p className="text-xs text-gray-400 text-center mt-4">
+                      We'll use this to show you relevant results in your area.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
 
-        <div className="flex justify-between pt-4 mt-6">
+        {/* Navigation Buttons */}
+        <div className="flex justify-between pt-6 mt-6 border-t border-gray-100">
           <Button
-            type="button" 
-            onClick={onBack}
-            variant="outline"
+            type="button"
+            onClick={prevStep}
+            variant="ghost"
+            className="text-gray-500 hover:text-gray-900 hover:bg-gray-50"
           >
+            <ChevronLeft className="w-4 h-4 mr-2" />
             Back
           </Button>
-          <Button 
-            type="submit"
+
+          <Button
+            type="button"
+            onClick={nextStep}
             disabled={isSubmitting}
+            className="bg-teal-600 hover:bg-teal-700 text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-600/20"
           >
-            {isSubmitting ? 'Saving...' : 'Next'}
+            {isSubmitting ? (
+              'Saving...'
+            ) : currentStep === steps.length - 1 ? (
+              'Complete'
+            ) : (
+              <>
+                Next
+                <ChevronRight className="w-4 h-4 ml-2" />
+              </>
+            )}
           </Button>
         </div>
       </form>
-    </motion.div>
+    </div>
   );
 }

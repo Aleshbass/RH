@@ -4,6 +4,9 @@ import { Authenticated, Unauthenticated } from "convex/react";
 import dynamicImport from "next/dynamic";
 
 import { LandingHero } from "@/components/landing/hero";
+import { FoundersCarousel } from "@/components/landing/FoundersCarousel";
+import { HowItWorks } from "@/components/landing/HowItWorks";
+import { TrustSafety } from "@/components/landing/TrustSafety";
 import { HomePageSEO } from "@/components/seo/HomePageSEO";
 
 const RoleBasedFeatures = dynamicImport(() => import("@/components/landing/RoleBasedFeatures"));
@@ -24,20 +27,26 @@ export default function Home() {
         <Authenticated>
           <div className="-mt-12 sm:-mt-16 w-full"> {/* Negative margin to offset header */}
             <LandingHero />
+            <HowItWorks />
             <ConnectedCareSection />
             <RoleBasedFeatures />
+            <FoundersCarousel />
             <RehabifyLearnSection />
+            <TrustSafety />
             <FAQ />
           </div>
         </Authenticated>
-        
+
         <Unauthenticated>
           {/* Show the landing page for unauthenticated users */}
           <div className="-mt-12 sm:-mt-16 w-full"> {/* Negative margin to offset header */}
             <LandingHero />
+            <HowItWorks />
             <ConnectedCareSection />
             <RoleBasedFeatures />
+            <FoundersCarousel />
             <RehabifyLearnSection />
+            <TrustSafety />
             <FAQ />
           </div>
         </Unauthenticated>

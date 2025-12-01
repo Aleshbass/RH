@@ -54,10 +54,7 @@ export const LazyClinicPages = {
     () => import('@/app/dashboard/clinic/billing/page'),
     'ClinicBilling'
   ),
-  ClinicReports: createLazyPage(
-    () => import('@/app/dashboard/clinic/reports/page'),
-    'ClinicReports'
-  ),
+
   ClinicSettings: createLazyPage(
     () => import('@/app/dashboard/clinic/settings/page'),
     'ClinicSettings'
@@ -90,10 +87,7 @@ export const LazyPhysiotherapistPages = {
     () => import('@/app/dashboard/physiotherapist/billing/page'),
     'PhysiotherapistBilling'
   ),
-  PhysiotherapistReports: createLazyPage(
-    () => import('@/app/dashboard/physiotherapist/reports/page'),
-    'PhysiotherapistReports'
-  ),
+
   PhysiotherapistSettings: createLazyPage(
     () => import('@/app/dashboard/physiotherapist/settings/page'),
     'PhysiotherapistSettings'

@@ -22,14 +22,14 @@ const RoleBasedFeatures = () => {
           transition={{ duration: 0.5 }}
           className="text-center mb-16"
         >
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-[#002e2c] font-pally leading-tight">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-[#002e2c] font-sans leading-tight">
             A Platform Built for Everyone
           </h2>
-          <p className="mt-4 text-lg md:text-xl text-gray-700 max-w-3xl mx-auto font-pally">
+          <p className="mt-4 text-lg md:text-xl text-gray-700 max-w-3xl mx-auto font-sans">
             Rehabify is designed to meet the unique needs of every user in the physiotherapy ecosystem, fostering collaboration and better outcomes.
           </p>
         </motion.div>
-        
+
         <BentoGrid className="lg:grid-cols-3">
           {features.map((feature, i) => (
             <BentoCard
@@ -103,7 +103,7 @@ const features = [
     icon: <User className="h-6 w-6 text-yellow-900" />,
     className: "lg:col-span-1 bg-[#FFE682]",
   },
- 
+
   {
     title: "Connected Care Ecosystem",
     description: "A unified platform connecting every stakeholder for seamless collaboration.",

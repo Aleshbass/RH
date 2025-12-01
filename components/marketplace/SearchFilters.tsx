@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import LocationSearch from "./LocationSearch";
 
 interface SearchFiltersProps {
   filters: {
@@ -36,15 +37,6 @@ const COMMON_SPECIALIZATIONS = [
   "Cardiopulmonary Physiotherapy",
   "Women's Health Physiotherapy",
   "Post-Surgery Rehabilitation",
-];
-
-const LOCATIONS = [
-  "Lagos",
-  "Abuja",
-  "Port Harcourt",
-  "Ibadan",
-  "Kano",
-  "Enugu",
 ];
 
 export default function SearchFilters({
@@ -87,35 +79,23 @@ export default function SearchFilters({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Location */}
       <div>
-        <Label className="text-white text-base font-semibold mb-3 block">
+        <Label className="text-gray-900 text-sm font-bold mb-3 block">
           Location
         </Label>
-        <Select
-          value={filters.location || "all"}
-          onValueChange={(value) =>
-            onFiltersChange({ ...filters, location: value === "all" ? "" : value })
+        <LocationSearch
+          value={filters.location || ""}
+          onChange={(value) =>
+            onFiltersChange({ ...filters, location: value })
           }
-        >
-          <SelectTrigger className="bg-white/10 border-white/20 text-white focus:ring-pink-400">
-            <SelectValue placeholder="All locations" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All locations</SelectItem>
-            {LOCATIONS.map((loc) => (
-              <SelectItem key={loc} value={loc}>
-                {loc}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
 
       {/* Price Range */}
       <div>
-        <Label className="text-white text-base font-semibold mb-3 block">
+        <Label className="text-gray-900 text-sm font-bold mb-3 block">
           Price Range
         </Label>
         <div className="px-2">
@@ -128,7 +108,7 @@ export default function SearchFilters({
             step={1000}
             className="mb-4"
           />
-          <div className="flex justify-between text-sm text-white/80">
+          <div className="flex justify-between text-xs font-medium text-gray-500">
             <span>₦{priceRange[0].toLocaleString()}</span>
             <span>₦{priceRange[1].toLocaleString()}</span>
           </div>
@@ -137,38 +117,38 @@ export default function SearchFilters({
 
       {/* Session Type */}
       <div>
-        <Label className="text-white text-base font-semibold mb-3 block">
+        <Label className="text-gray-900 text-sm font-bold mb-3 block">
           Session Type
         </Label>
-        <div className="space-y-2">
-          <div className="flex items-center space-x-2">
+        <div className="space-y-3">
+          <div className="flex items-center space-x-3">
             <Checkbox
               id="online"
               checked={filters.offersOnline === true}
               onCheckedChange={(checked) =>
                 onFiltersChange({ ...filters, offersOnline: checked === true ? true : undefined })
               }
-              className="border-white/40 data-[state=checked]:bg-pink-500 data-[state=checked]:border-pink-500"
+              className="border-gray-300 data-[state=checked]:bg-brand data-[state=checked]:border-brand rounded-md"
             />
             <label
               htmlFor="online"
-              className="text-sm text-white/90 cursor-pointer"
+              className="text-sm text-gray-600 cursor-pointer font-medium"
             >
               Online Sessions
             </label>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-3">
             <Checkbox
               id="in-person"
               checked={filters.offersInPerson === true}
               onCheckedChange={(checked) =>
                 onFiltersChange({ ...filters, offersInPerson: checked === true ? true : undefined })
               }
-              className="border-white/40 data-[state=checked]:bg-pink-500 data-[state=checked]:border-pink-500"
+              className="border-gray-300 data-[state=checked]:bg-brand data-[state=checked]:border-brand rounded-md"
             />
             <label
               htmlFor="in-person"
-              className="text-sm text-white/90 cursor-pointer"
+              className="text-sm text-gray-600 cursor-pointer font-medium"
             >
               In-Person Sessions
             </label>
@@ -178,21 +158,21 @@ export default function SearchFilters({
 
       {/* Specializations */}
       <div>
-        <Label className="text-white text-base font-semibold mb-3 block">
+        <Label className="text-gray-900 text-sm font-bold mb-3 block">
           Specializations
         </Label>
-        <div className="space-y-2 max-h-64 overflow-y-auto">
+        <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
           {COMMON_SPECIALIZATIONS.map((spec) => (
-            <div key={spec} className="flex items-center space-x-2">
+            <div key={spec} className="flex items-center space-x-3">
               <Checkbox
                 id={spec}
                 checked={filters.specializations.includes(spec)}
                 onCheckedChange={() => handleSpecializationToggle(spec)}
-                className="border-white/40 data-[state=checked]:bg-pink-500 data-[state=checked]:border-pink-500"
+                className="border-gray-300 data-[state=checked]:bg-brand data-[state=checked]:border-brand rounded-md"
               />
               <label
                 htmlFor={spec}
-                className="text-sm text-white/90 cursor-pointer"
+                className="text-sm text-gray-600 cursor-pointer font-medium"
               >
                 {spec}
               </label>
@@ -203,7 +183,7 @@ export default function SearchFilters({
 
       {/* Minimum Experience */}
       <div>
-        <Label className="text-white text-base font-semibold mb-3 block">
+        <Label className="text-gray-900 text-sm font-bold mb-3 block">
           Minimum Experience
         </Label>
         <Select
@@ -215,11 +195,11 @@ export default function SearchFilters({
             })
           }
         >
-          <SelectTrigger className="bg-white/10 border-white/20 text-white focus:ring-pink-400">
-            <SelectValue placeholder="Any" />
+          <SelectTrigger className="bg-white border-gray-200 text-gray-900 focus:ring-brand/20 h-10 rounded-xl">
+            <SelectValue placeholder="Any experience" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="any">Any</SelectItem>
+            <SelectItem value="any">Any experience</SelectItem>
             <SelectItem value="1">1+ years</SelectItem>
             <SelectItem value="3">3+ years</SelectItem>
             <SelectItem value="5">5+ years</SelectItem>

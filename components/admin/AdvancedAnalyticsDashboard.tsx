@@ -8,10 +8,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { 
-  TrendingUp, 
-  Users, 
-  Building2, 
+import {
+  TrendingUp,
+  Users,
+  Building2,
   Calendar,
   DollarSign,
   Activity,
@@ -47,7 +47,7 @@ export function AdvancedAnalyticsDashboard() {
   const platformAnalytics = useQuery(api.admin.getPlatformAnalytics)
   const systemMetrics = useQuery(api.admin.getSystemMetrics)
   const platformRevenue = useQuery(api.admin.getPlatformRevenue)
-  
+
   // Create time-series data for the revenue chart (deterministic, no randomness)
   const revenueAnalytics: Array<{ date: number; amount: number }> = platformRevenue ? (() => {
     const days = 30
@@ -71,7 +71,25 @@ export function AdvancedAnalyticsDashboard() {
   } : undefined
 
   if (!platformAnalytics || !systemMetrics || !platformRevenue || !activityLogs || !pendingActions) {
-    return <div>Loading...</div>
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-32" />
+            <Skeleton className="h-9 w-24" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-xl" />
+          ))}
+        </div>
+      </div>
+    )
   }
 
   const userRoleData = Object.entries(platformAnalytics.userStats.byRole).map(([role, count]) => ({
@@ -81,21 +99,23 @@ export function AdvancedAnalyticsDashboard() {
   }))
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20 md:pb-0">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Platform Analytics</h1>
-          <p className="text-muted-foreground">
-            Real-time insights and performance metrics for Rehabify Health
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+            Platform Analytics
+          </h1>
+          <p className="text-sm md:text-base text-muted-foreground">
+            Real-time insights and performance metrics
           </p>
         </div>
-        <div className="flex items-center space-x-2">
-          <Button variant="outline" size="sm">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="flex-1 md:flex-none">
             <Download className="mr-2 h-4 w-4" />
-            Export Data
+            Export
           </Button>
-          <Button size="sm">
+          <Button size="sm" className="flex-1 md:flex-none shadow-lg shadow-primary/20">
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -138,9 +158,21 @@ export function AdvancedAnalyticsDashboard() {
         />
       </div>
 
+      {/* Tour Analytics Row */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard
+          title="Tour Completions"
+          value={platformAnalytics.userStats.tourCompletions.toLocaleString()}
+          change={`${platformAnalytics.userStats.onboardingCompletionRate.toFixed(1)}%`}
+          changeLabel="completion rate"
+          icon={TrendingUp}
+          color="blue"
+        />
+      </div>
+
       {/* Pending Actions Alert */}
       {pendingActions && (pendingActions.pendingApprovals > 0 || pendingActions.failedNotifications > 0) && (
-        <Card className="border-amber-200 bg-amber-50">
+        <Card className="border-amber-200 bg-amber-50/50 backdrop-blur-sm">
           <CardHeader className="pb-3">
             <div className="flex items-center">
               <AlertTriangle className="h-5 w-5 text-amber-600 mr-2" />
@@ -150,27 +182,27 @@ export function AdvancedAnalyticsDashboard() {
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {pendingActions.pendingApprovals > 0 && (
-                <div className="flex items-center space-x-2">
-                  <Badge variant="destructive">{pendingActions.pendingApprovals}</Badge>
-                  <span className="text-sm">Pending Approvals</span>
+                <div className="flex items-center space-x-2 bg-white/50 p-2 rounded-lg">
+                  <Badge variant="destructive" className="h-6 w-6 flex items-center justify-center p-0">{pendingActions.pendingApprovals}</Badge>
+                  <span className="text-sm font-medium text-amber-900">Pending Approvals</span>
                 </div>
               )}
               {pendingActions.failedNotifications > 0 && (
-                <div className="flex items-center space-x-2">
-                  <Badge variant="destructive">{pendingActions.failedNotifications}</Badge>
-                  <span className="text-sm">Failed Notifications</span>
+                <div className="flex items-center space-x-2 bg-white/50 p-2 rounded-lg">
+                  <Badge variant="destructive" className="h-6 w-6 flex items-center justify-center p-0">{pendingActions.failedNotifications}</Badge>
+                  <span className="text-sm font-medium text-amber-900">Failed Notifications</span>
                 </div>
               )}
               {pendingActions.systemAlerts > 0 && (
-                <div className="flex items-center space-x-2">
-                  <Badge variant="destructive">{pendingActions.systemAlerts}</Badge>
-                  <span className="text-sm">System Alerts</span>
+                <div className="flex items-center space-x-2 bg-white/50 p-2 rounded-lg">
+                  <Badge variant="destructive" className="h-6 w-6 flex items-center justify-center p-0">{pendingActions.systemAlerts}</Badge>
+                  <span className="text-sm font-medium text-amber-900">System Alerts</span>
                 </div>
               )}
               {pendingActions.supportTickets > 0 && (
-                <div className="flex items-center space-x-2">
-                  <Badge variant="secondary">{pendingActions.supportTickets}</Badge>
-                  <span className="text-sm">Support Tickets</span>
+                <div className="flex items-center space-x-2 bg-white/50 p-2 rounded-lg">
+                  <Badge variant="secondary" className="h-6 w-6 flex items-center justify-center p-0">{pendingActions.supportTickets}</Badge>
+                  <span className="text-sm font-medium text-amber-900">Support Tickets</span>
                 </div>
               )}
             </div>
@@ -179,82 +211,90 @@ export function AdvancedAnalyticsDashboard() {
       )}
 
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="revenue">Revenue</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
-        </TabsList>
+        <div className="w-full overflow-x-auto pb-2">
+          <TabsList className="w-full justify-start inline-flex min-w-max">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="users">Users</TabsTrigger>
+            <TabsTrigger value="revenue">Revenue</TabsTrigger>
+            <TabsTrigger value="system">System</TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* User Engagement */}
-            <Card>
+            <Card className="border-none shadow-md">
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  <Activity className="mr-2 h-5 w-5" />
+                  <Activity className="mr-2 h-5 w-5 text-primary" />
                   User Engagement
                 </CardTitle>
                 <CardDescription>
                   Daily, weekly, and monthly active users
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">Daily Active Users</span>
-                  <span className="text-2xl font-bold">{platformAnalytics.engagement.dailyActiveUsers}</span>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium">Daily Active Users</span>
+                    <span className="text-2xl font-bold">{platformAnalytics.engagement.dailyActiveUsers}</span>
+                  </div>
+                  <Progress value={platformAnalytics.engagement.dailyActiveUsers / platformAnalytics.engagement.monthlyActiveUsers * 100} className="h-2" />
                 </div>
-                <Progress value={platformAnalytics.engagement.dailyActiveUsers / platformAnalytics.engagement.monthlyActiveUsers * 100} />
-                
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">Weekly Active Users</span>
-                  <span className="text-2xl font-bold">{platformAnalytics.engagement.weeklyActiveUsers}</span>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium">Weekly Active Users</span>
+                    <span className="text-2xl font-bold">{platformAnalytics.engagement.weeklyActiveUsers}</span>
+                  </div>
+                  <Progress value={platformAnalytics.engagement.weeklyActiveUsers / platformAnalytics.engagement.monthlyActiveUsers * 100} className="h-2" />
                 </div>
-                <Progress value={platformAnalytics.engagement.weeklyActiveUsers / platformAnalytics.engagement.monthlyActiveUsers * 100} />
-                
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium">Monthly Active Users</span>
-                  <span className="text-2xl font-bold">{platformAnalytics.engagement.monthlyActiveUsers}</span>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium">Monthly Active Users</span>
+                    <span className="text-2xl font-bold">{platformAnalytics.engagement.monthlyActiveUsers}</span>
+                  </div>
+                  <Progress value={100} className="h-2" />
                 </div>
-                <Progress value={100} />
               </CardContent>
             </Card>
 
             {/* System Health */}
-            <Card>
+            <Card className="border-none shadow-md">
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  <Server className="mr-2 h-5 w-5" />
+                  <Server className="mr-2 h-5 w-5 text-primary" />
                   System Health
                 </CardTitle>
                 <CardDescription>
                   Real-time system performance metrics
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                  <div className="space-y-2 p-3 bg-muted/50 rounded-lg">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">Uptime</span>
-                      <Badge variant="default" className="bg-green-100 text-green-800">
+                      <span className="text-sm text-muted-foreground">Uptime</span>
+                      <Badge variant="default" className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-0">
                         {platformAnalytics.systemHealth.uptime}%
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">Response Time</span>
+                      <span className="text-sm text-muted-foreground">Latency</span>
                       <span className="text-sm font-medium">{platformAnalytics.systemHealth.responseTime}ms</span>
                     </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 p-3 bg-muted/50 rounded-lg">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">Error Rate</span>
-                      <Badge variant="secondary" className="bg-green-100 text-green-800">
+                      <span className="text-sm text-muted-foreground">Errors</span>
+                      <Badge variant="secondary" className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-0">
                         {platformAnalytics.systemHealth.errorRate}%
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">Notifications</span>
+                      <span className="text-sm text-muted-foreground">Delivery</span>
                       <span className="text-sm font-medium">{platformAnalytics.systemHealth.notificationDeliveryRate}%</span>
                     </div>
                   </div>
@@ -267,7 +307,7 @@ export function AdvancedAnalyticsDashboard() {
         <TabsContent value="users" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* User Distribution by Role */}
-            <Card>
+            <Card className="border-none shadow-md">
               <CardHeader>
                 <CardTitle>User Distribution by Role</CardTitle>
                 <CardDescription>
@@ -292,7 +332,9 @@ export function AdvancedAnalyticsDashboard() {
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      />
                     </RechartsPieChart>
                   </ResponsiveContainer>
                 </div>
@@ -300,7 +342,7 @@ export function AdvancedAnalyticsDashboard() {
             </Card>
 
             {/* User Growth Metrics */}
-            <Card>
+            <Card className="border-none shadow-md">
               <CardHeader>
                 <CardTitle>User Growth Metrics</CardTitle>
                 <CardDescription>
@@ -313,15 +355,15 @@ export function AdvancedAnalyticsDashboard() {
                     <span className="text-sm font-medium">Onboarding Completion Rate</span>
                     <span className="text-sm">{platformAnalytics.userStats.onboardingCompletionRate.toFixed(1)}%</span>
                   </div>
-                  <Progress value={platformAnalytics.userStats.onboardingCompletionRate} />
+                  <Progress value={platformAnalytics.userStats.onboardingCompletionRate} className="h-2" />
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-4 bg-muted rounded-lg">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-2xl font-bold">{platformAnalytics.userStats.newUsersThisWeek}</div>
                     <div className="text-sm text-muted-foreground">New Users This Week</div>
                   </div>
-                  <div className="text-center p-4 bg-muted rounded-lg">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-2xl font-bold">{platformAnalytics.userStats.activeUsersToday}</div>
                     <div className="text-sm text-muted-foreground">Active Today</div>
                   </div>
@@ -334,7 +376,7 @@ export function AdvancedAnalyticsDashboard() {
         <TabsContent value="revenue" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Revenue Chart */}
-            <Card className="lg:col-span-2">
+            <Card className="lg:col-span-2 border-none shadow-md">
               <CardHeader>
                 <CardTitle>Revenue Trend (30 Days)</CardTitle>
                 <CardDescription>
@@ -345,24 +387,38 @@ export function AdvancedAnalyticsDashboard() {
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={revenueAnalytics}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="date" 
+                      <defs>
+                        <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#005b57" stopOpacity={0.1} />
+                          <stop offset="95%" stopColor="#005b57" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                      <XAxis
+                        dataKey="date"
                         tickFormatter={(value) => format(new Date(value), 'MMM dd')}
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12, fill: '#6B7280' }}
                       />
-                      <YAxis 
+                      <YAxis
                         tickFormatter={(value) => `₦${(value / 1000).toFixed(0)}K`}
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12, fill: '#6B7280' }}
                       />
-                      <Tooltip 
+                      <Tooltip
                         labelFormatter={(value) => format(new Date(value), 'MMM dd, yyyy')}
                         formatter={(value: number) => [`₦${value.toLocaleString()}`, 'Revenue']}
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                       />
                       <Area
                         type="monotone"
                         dataKey="amount"
                         stroke="#005b57"
-                        fill="#005b57"
-                        fillOpacity={0.25}
+                        strokeWidth={2}
+                        fillOpacity={1}
+                        fill="url(#colorRevenue)"
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -371,42 +427,42 @@ export function AdvancedAnalyticsDashboard() {
             </Card>
 
             {/* Revenue Metrics */}
-            <Card>
+            <Card className="border-none shadow-md">
               <CardHeader>
                 <CardTitle>Revenue Overview</CardTitle>
                 <CardDescription>
                   Key financial metrics
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm">Total Revenue</span>
-                    <span className="font-medium">₦{platformRevenue.totalRevenue.toLocaleString()}</span>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+                    <span className="text-sm text-muted-foreground">Total Revenue</span>
+                    <span className="font-bold">₦{platformRevenue.totalRevenue.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Monthly Revenue</span>
-                    <span className="font-medium">₦{platformRevenue.monthlyRevenue.toLocaleString()}</span>
+                  <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+                    <span className="text-sm text-muted-foreground">Monthly Revenue</span>
+                    <span className="font-bold">₦{platformRevenue.monthlyRevenue.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Avg Revenue/User</span>
-                    <span className="font-medium">₦{platformRevenue.averageRevenuePerUser.toLocaleString()}</span>
+                  <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+                    <span className="text-sm text-muted-foreground">Avg Revenue/User</span>
+                    <span className="font-bold">₦{platformRevenue.averageRevenuePerUser.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm">Growth Rate</span>
-                    <Badge variant="default" className="bg-green-100 text-green-800">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Growth Rate</span>
+                    <Badge variant="default" className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-0">
                       +{platformAnalytics.overview.growthRate}%
                     </Badge>
                   </div>
                 </div>
 
                 <div className="pt-4 border-t">
-                  <h4 className="text-sm font-medium mb-2">Payment Methods</h4>
+                  <h4 className="text-sm font-medium mb-3">Payment Methods</h4>
                   <div className="space-y-2">
                     {Object.entries(platformRevenue.breakdown).map(([method, amount]) => (
-                      <div key={method} className="flex justify-between">
-                        <span className="text-sm">{method}</span>
-                        <span className="text-sm font-medium">₦{(amount as number).toLocaleString()}</span>
+                      <div key={method} className="flex justify-between text-sm">
+                        <span className="capitalize text-muted-foreground">{method}</span>
+                        <span className="font-medium">₦{(amount as number).toLocaleString()}</span>
                       </div>
                     ))}
                   </div>
@@ -419,75 +475,79 @@ export function AdvancedAnalyticsDashboard() {
         <TabsContent value="system" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Database Metrics */}
-            <Card>
+            <Card className="border-none shadow-md">
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  <Database className="mr-2 h-5 w-5" />
+                  <Database className="mr-2 h-5 w-5 text-primary" />
                   Database Performance
                 </CardTitle>
                 <CardDescription>
                   Database health and performance metrics
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-3 bg-muted rounded-lg">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-lg font-bold">{systemMetrics.activeConnections.toLocaleString()}</div>
                     <div className="text-xs text-muted-foreground">Active Connections</div>
                   </div>
-                  <div className="text-center p-3 bg-muted rounded-lg">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-lg font-bold">{systemMetrics.diskUsage.toFixed(1)} GB</div>
                     <div className="text-xs text-muted-foreground">Disk Usage</div>
                   </div>
                 </div>
-                
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm">CPU Usage</span>
-                    <span className="text-sm font-medium">{systemMetrics.cpuUsage.toFixed(1)}%</span>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm font-medium">CPU Usage</span>
+                      <span className="text-sm text-muted-foreground">{systemMetrics.cpuUsage.toFixed(1)}%</span>
+                    </div>
+                    <Progress value={systemMetrics.cpuUsage} className="h-2" />
                   </div>
-                  <Progress value={systemMetrics.cpuUsage} />
-                  
-                  <div className="flex justify-between">
-                    <span className="text-sm">Memory Usage</span>
-                    <span className="text-sm font-medium">{systemMetrics.memoryUsage.toFixed(1)}%</span>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm font-medium">Memory Usage</span>
+                      <span className="text-sm text-muted-foreground">{systemMetrics.memoryUsage.toFixed(1)}%</span>
+                    </div>
+                    <Progress value={systemMetrics.memoryUsage} className="h-2" />
                   </div>
-                  <Progress value={systemMetrics.memoryUsage} />
                 </div>
               </CardContent>
             </Card>
 
             {/* API Performance */}
-            <Card>
+            <Card className="border-none shadow-md">
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  <Zap className="mr-2 h-5 w-5" />
+                  <Zap className="mr-2 h-5 w-5 text-primary" />
                   API Performance
                 </CardTitle>
                 <CardDescription>
                   Real-time API metrics and health
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-3 bg-muted rounded-lg">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-lg font-bold">{systemMetrics.requestsPerSecond.toFixed(1)}</div>
                     <div className="text-xs text-muted-foreground">Requests/sec</div>
                   </div>
-                  <div className="text-center p-3 bg-muted rounded-lg">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-lg font-bold">{systemMetrics.networkLatency.toFixed(0)}ms</div>
                     <div className="text-xs text-muted-foreground">Network Latency</div>
                   </div>
                 </div>
-                
+
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center p-2 rounded-lg bg-muted/30">
                     <span className="text-sm">Error Rate</span>
-                    <Badge variant="secondary" className="bg-green-100 text-green-800">
+                    <Badge variant="secondary" className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-0">
                       {systemMetrics.errorRate.toFixed(2)}%
                     </Badge>
                   </div>
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center p-2 rounded-lg bg-muted/30">
                     <span className="text-sm">Active Connections</span>
                     <span className="text-sm font-medium">{systemMetrics.activeConnections}</span>
                   </div>
@@ -496,10 +556,10 @@ export function AdvancedAnalyticsDashboard() {
             </Card>
 
             {/* Notification System */}
-            <Card className="lg:col-span-2">
+            <Card className="lg:col-span-2 border-none shadow-md">
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  <Bell className="mr-2 h-5 w-5" />
+                  <Bell className="mr-2 h-5 w-5 text-primary" />
                   Notification System
                 </CardTitle>
                 <CardDescription>
@@ -507,20 +567,20 @@ export function AdvancedAnalyticsDashboard() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-xl font-bold">{Math.floor(systemMetrics.uptime / 3600).toLocaleString()}</div>
                     <div className="text-sm text-muted-foreground">Uptime Hours</div>
                   </div>
-                  <div className="text-center p-4 bg-muted rounded-lg">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-xl font-bold">{(100 - systemMetrics.errorRate).toFixed(1)}%</div>
                     <div className="text-sm text-muted-foreground">Success Rate</div>
                   </div>
-                  <div className="text-center p-4 bg-muted rounded-lg">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-xl font-bold">{systemMetrics.errorRate.toFixed(2)}%</div>
                     <div className="text-sm text-muted-foreground">Error Rate</div>
                   </div>
-                  <div className="text-center p-4 bg-muted rounded-lg">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
                     <div className="text-xl font-bold">{systemMetrics.requestsPerSecond.toFixed(0)}</div>
                     <div className="text-sm text-muted-foreground">Requests/sec</div>
                   </div>
@@ -531,10 +591,10 @@ export function AdvancedAnalyticsDashboard() {
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-6">
-          <Card>
+          <Card className="border-none shadow-md">
             <CardHeader>
               <CardTitle className="flex items-center">
-                <Activity className="mr-2 h-5 w-5" />
+                <Activity className="mr-2 h-5 w-5 text-primary" />
                 Recent User Activity
               </CardTitle>
               <CardDescription>
@@ -545,18 +605,18 @@ export function AdvancedAnalyticsDashboard() {
               {activityLogs ? (
                 <div className="space-y-4">
                   {activityLogs.map((log) => (
-                    <div key={log.id} className="flex items-center space-x-4 p-3 rounded-lg border">
+                    <div key={log.id} className="flex items-center space-x-4 p-4 rounded-lg bg-muted/30 border border-transparent hover:border-border transition-colors">
                       <div className="flex-shrink-0">
-                        <div className="h-2 w-2 rounded-full bg-green-500" />
+                        <div className="h-2 w-2 rounded-full bg-green-500 ring-4 ring-green-500/20" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                           <div>
                             <p className="text-sm font-medium">{log.action}</p>
-                            <p className="text-sm text-muted-foreground">{log.details}</p>
+                            <p className="text-sm text-muted-foreground truncate">{log.details}</p>
                           </div>
                           <div className="text-right">
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs text-muted-foreground whitespace-nowrap">
                               {format(new Date(log.timestamp), 'MMM dd, HH:mm')}
                             </p>
                           </div>
@@ -568,7 +628,7 @@ export function AdvancedAnalyticsDashboard() {
               ) : (
                 <div className="space-y-4">
                   {[...Array(5)].map((_, i) => (
-                    <div key={i} className="flex items-center space-x-4 p-3">
+                    <div key={i} className="flex items-center space-x-4 p-4">
                       <Skeleton className="h-2 w-2 rounded-full" />
                       <div className="flex-1 space-y-2">
                         <Skeleton className="h-4 w-32" />
@@ -597,30 +657,46 @@ interface MetricCardProps {
 }
 
 function MetricCard({ title, value, change, changeLabel, icon: Icon, color }: MetricCardProps) {
-  const colorClasses = {
-    blue: 'text-blue-600 bg-blue-100',
-    green: 'text-green-600 bg-green-100',
-    purple: 'text-purple-600 bg-purple-100',
-    orange: 'text-orange-600 bg-orange-100',
+  const colorStyles = {
+    blue: {
+      bg: 'bg-blue-50 dark:bg-blue-900/20',
+      text: 'text-blue-600 dark:text-blue-400',
+      iconBg: 'bg-blue-100 dark:bg-blue-900/40',
+    },
+    green: {
+      bg: 'bg-green-50 dark:bg-green-900/20',
+      text: 'text-green-600 dark:text-green-400',
+      iconBg: 'bg-green-100 dark:bg-green-900/40',
+    },
+    purple: {
+      bg: 'bg-purple-50 dark:bg-purple-900/20',
+      text: 'text-purple-600 dark:text-purple-400',
+      iconBg: 'bg-purple-100 dark:bg-purple-900/40',
+    },
+    orange: {
+      bg: 'bg-orange-50 dark:bg-orange-900/20',
+      text: 'text-orange-600 dark:text-orange-400',
+      iconBg: 'bg-orange-100 dark:bg-orange-900/40',
+    },
   }
 
+  const style = colorStyles[color]
+
   return (
-    <Card>
+    <Card className="border-none shadow-md bg-gradient-to-br from-white to-gray-50/50 dark:from-gray-900 dark:to-gray-900/50">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <div className={`rounded-full p-2 ${colorClasses[color]}`}>
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        <div className={`rounded-full p-2 ${style.iconBg} ${style.text}`}>
           <Icon className="h-4 w-4" />
         </div>
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-bold">{value}</div>
-        <div className="flex items-center text-xs text-muted-foreground">
-          <TrendingUp className="mr-1 h-3 w-3" />
-          {change} {changeLabel}
+        <div className="flex items-center text-xs text-muted-foreground mt-1">
+          <TrendingUp className="mr-1 h-3 w-3 text-green-500" />
+          <span className="text-green-600 font-medium mr-1">{change}</span> {changeLabel}
         </div>
       </CardContent>
     </Card>
   )
 }
-
- 

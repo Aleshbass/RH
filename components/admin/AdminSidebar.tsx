@@ -1,6 +1,7 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
 import { useUser } from '@clerk/nextjs'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
@@ -215,19 +216,19 @@ export function AdminSidebar({ className }: AdminSidebarProps) {
 
   // Get user data from Convex
   const userData = useQuery(api.users.getMyUser)
-  
+
   // Get notification count for current user
   const unreadNotifications = useQuery(
     api.notifications.getUnreadCount,
     userData ? { userId: userData._id } : 'skip'
   )
-  
+
   // Get pending approvals count for admins
   const pendingApprovalsList = useQuery(
     api.users.getPendingApprovals,
     userData?.role === 'admin' ? {} : 'skip'
   )
-  
+
   const pendingApprovals = pendingApprovalsList?.length || 0
 
   // Update badge counts for navigation items
@@ -250,7 +251,7 @@ export function AdminSidebar({ className }: AdminSidebarProps) {
   }
 
   return (
-    <Sidebar variant="inset" className={className}>
+    <Sidebar variant="sidebar" className={cn("top-16 !h-[calc(100vh-4rem)]", className)}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -280,9 +281,9 @@ export function AdminSidebar({ className }: AdminSidebarProps) {
                 <SidebarMenu>
                   {group.items.map((item) => {
                     const Icon = item.icon
-                    const isActive = pathname === item.href || 
+                    const isActive = pathname === item.href ||
                       (item.href !== '/dashboard' && pathname.startsWith(item.href))
-                    
+
                     // Extract tooltip content to avoid deep JSX nesting
                     const tooltipContent = (
                       <div>
@@ -294,7 +295,7 @@ export function AdminSidebar({ className }: AdminSidebarProps) {
                         )}
                       </div>
                     )
-                    
+
                     // Flatten badge logic
                     const showBadge = item.badge && item.badge > 0
                     const badgeText = item.badge && item.badge > 99 ? '99+' : item.badge
@@ -388,7 +389,7 @@ export function AdminSidebar({ className }: AdminSidebarProps) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-      
+
       <SidebarRail />
     </Sidebar>
   )

@@ -50,18 +50,18 @@ export const getCurrentUser = query({
       // Handle physiotherapist role - create profile if it doesn't exist
       if (user.role === "physiotherapist") {
         let profile;
-        
+
         // If profile ID exists, try to fetch the profile
         if (user.physiotherapistProfileId) {
           profile = await ctx.db.get(user.physiotherapistProfileId);
         }
-        
+
         // If no profile exists, return the basic user data
         // Profile creation should be handled by a separate mutation
         if (!profile) {
           return result;
         }
-        
+
         // Add profile data to result
         if (profile) {
           result.profileData = {
@@ -74,8 +74,9 @@ export const getCurrentUser = query({
             licenseExpiryDate: profile.licenseExpiryDate,
             yearsOfExperience: profile.yearsOfExperience || 0,
             languagesSpoken: profile.languagesSpoken || [],
+            availabilitySchedule: profile.availabilitySchedule || {},
           };
-          
+
           if (profile.clinicId) {
             result.clinicId = profile.clinicId;
             const clinic = await ctx.db.get(profile.clinicId);
@@ -115,7 +116,7 @@ export const getCurrentUser = query({
           .query("clinics")
           .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
           .first();
-        
+
         if (clinic) {
           result = {
             ...result,
@@ -156,12 +157,12 @@ export const ensurePhysiotherapistProfile = mutation({
 
       let profileId = user.physiotherapistProfileId;
       let profile;
-      
+
       // If profile ID exists, try to fetch the profile
       if (profileId) {
         profile = await ctx.db.get(profileId);
       }
-      
+
       // If no profile exists, create one
       if (!profile) {
         profileId = await ctx.db.insert("physiotherapistProfiles", {
@@ -171,13 +172,13 @@ export const ensurePhysiotherapistProfile = mutation({
           languagesSpoken: [],
           // clinicId is optional and can be set later
         });
-        
+
         // Update user with the new profile ID
         await ctx.db.patch(user._id, {
           physiotherapistProfileId: profileId
         });
       }
-      
+
       return profileId;
     } catch (error) {
       console.error("Error in ensurePhysiotherapistProfile:", error);
@@ -345,24 +346,24 @@ export const getUsers = query({
 
     // Set defaults
     const limit = args.limit ?? 10;
-    
+
     // Build query - properly chaining query methods to maintain correct types
     const baseQuery = ctx.db.query("users");
-    
+
     // Create properly typed query by conditionally applying filters
     const query = args.role
       ? baseQuery.withIndex("by_role", (q) => q.eq("role", args.role))
       : baseQuery;
-    
+
     // Apply pagination - using proper pagination options pattern
-    const paginationOpts = { 
+    const paginationOpts = {
       numItems: limit,
       cursor: args.cursor || null // Must be string | null, not undefined
     };
-    
+
     // Execute query
     const paginationResult = await query.paginate(paginationOpts);
-    
+
     // Transform results
     const users = paginationResult.page.map((user: any) => ({
       _id: user._id,
@@ -372,7 +373,7 @@ export const getUsers = query({
       onboarded: !!user.onboarded,
       imageUrl: user.imageUrl,
     }));
-    
+
     return {
       users,
       cursor: paginationResult.continueCursor,
@@ -547,6 +548,7 @@ export const getMyPhysiotherapistProfile = query({
       yearsOfExperience: v.float64(),
       languagesSpoken: v.array(v.string()),
       clinicId: v.union(v.null(), v.id("clinics")),
+      availabilitySchedule: v.optional(v.any()),
     })
   ),
   handler: async (ctx) => {
@@ -581,6 +583,7 @@ export const getMyPhysiotherapistProfile = query({
         yearsOfExperience: profile.yearsOfExperience || 0,
         languagesSpoken: profile.languagesSpoken || [],
         clinicId: profile.clinicId || null,
+        availabilitySchedule: profile.availabilitySchedule || {},
       };
     } catch (error) {
       console.error("Error in getMyPhysiotherapistProfile:", error);
@@ -609,6 +612,7 @@ export const getPhysiotherapistDashboardData = query({
       languagesSpoken: v.array(v.string()),
       hasClinic: v.boolean(),
       clinicId: v.union(v.null(), v.id("clinics")),
+      availabilitySchedule: v.optional(v.any()),
     })
   ),
   handler: async (ctx) => {
@@ -643,6 +647,7 @@ export const getPhysiotherapistDashboardData = query({
         languagesSpoken: profile.languagesSpoken || [],
         hasClinic: !!profile.clinicId,
         clinicId: profile.clinicId || null,
+        availabilitySchedule: profile.availabilitySchedule || {},
       };
     } catch (error) {
       console.error("Error in getPhysiotherapistDashboardData:", error);

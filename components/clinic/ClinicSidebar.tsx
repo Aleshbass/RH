@@ -65,12 +65,7 @@ const sidebarGroups = [
   {
     label: 'Insights',
     items: [
-      {
-        title: 'Reports',
-        href: '/dashboard/clinic/reports',
-        icon: BarChart3,
-        description: 'Analytics'
-      }
+      // Removed Reports link
     ]
   }
 ]

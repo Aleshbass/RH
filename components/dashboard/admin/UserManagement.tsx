@@ -33,9 +33,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { 
-  Users, 
-  Shield, 
+import {
+  Users,
+  Shield,
   MoreHorizontal,
   UserCog,
   Crown,
@@ -117,7 +117,7 @@ function RoleChangeDialog({ user, onClose, onRoleChange }: RoleChangeDialogProps
           Update the role for {user.firstName} {user.lastName} ({user.email})
         </DialogDescription>
       </DialogHeader>
-      
+
       <div className="py-4">
         <div className="space-y-4">
           <div className="flex items-center space-x-3">
@@ -187,7 +187,7 @@ export function UserManagement() {
 
   // Get all users
   const users = useQuery(api.users.getAllUsers)
-  
+
   // Get current user to verify admin status
   const currentUser = useQuery(api.users.getMyUser)
 
@@ -210,7 +210,7 @@ export function UserManagement() {
 
   const userColumns: ColumnDef<UserData>[] = [
     {
-      id: 'user',
+      accessorKey: 'email',
       header: 'User',
       cell: ({ row }) => (
         <div className="flex items-center space-x-3">
@@ -234,17 +234,17 @@ export function UserManagement() {
       header: 'Role',
       cell: ({ row }) => {
         const role = row.original.role || 'patient'
-                 const roleConfig = {
-           patient: { label: 'Patient', icon: User, variant: 'secondary' as const },
-           physiotherapist: { label: 'Physiotherapist', icon: Stethoscope, variant: 'default' as const },
-           clinic_owner: { label: 'Clinic Owner', icon: Building2, variant: 'default' as const },
-           family_member: { label: 'Family Member', icon: User, variant: 'secondary' as const },
-           admin: { label: 'Administrator', icon: Shield, variant: 'destructive' as const }
-         }
-        
+        const roleConfig = {
+          patient: { label: 'Patient', icon: User, variant: 'secondary' as const },
+          physiotherapist: { label: 'Physiotherapist', icon: Stethoscope, variant: 'default' as const },
+          clinic_owner: { label: 'Clinic Owner', icon: Building2, variant: 'default' as const },
+          family_member: { label: 'Family Member', icon: User, variant: 'secondary' as const },
+          admin: { label: 'Administrator', icon: Shield, variant: 'destructive' as const }
+        }
+
         const config = roleConfig[role]
         const Icon = config.icon
-        
+
         return (
           <Badge variant={config.variant} className="gap-1">
             <Icon className="h-3 w-3" />
@@ -403,8 +403,8 @@ export function UserManagement() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <DataTable 
-            data={users} 
+          <DataTable
+            data={users}
             columns={userColumns}
             searchKey="email"
           />

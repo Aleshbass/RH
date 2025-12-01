@@ -31,7 +31,7 @@ export default defineSchema({
       v.literal("admin")
     )),
     onboarded: v.boolean(), // Flag to indicate if user has completed initial profile setup
-    
+
     // Links to role-specific profiles
     physiotherapistProfileId: v.optional(v.id("physiotherapistProfiles")),
     patientProfileId: v.optional(v.id("patientProfiles")),
@@ -41,6 +41,11 @@ export default defineSchema({
     // Timestamps
     // _creationTime is automatic
     lastLoginAt: v.optional(v.number()), // Can be updated via a mutation on login
+
+    // First-time Onboarding
+    hasCompletedOnboarding: v.optional(v.boolean()), // True if user has seen the tour
+    onboardingVersion: v.optional(v.number()), // To track which version of the tour they saw
+    toursCompleted: v.optional(v.array(v.string())), // Track specific tours completed by ID
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"])
@@ -57,6 +62,9 @@ export default defineSchema({
     contactEmail: v.optional(v.string()),
     contactPhone: v.optional(v.string()),
     logoUrl: v.optional(v.string()),
+    clinicImageOutside: v.optional(v.id("_storage")),
+    clinicImageInside: v.optional(v.id("_storage")),
+    location: v.optional(v.string()), // Formatted location string from LocationSearch
     description: v.optional(v.string()), // Brief overview of the clinic
     website: v.optional(v.string()), // Public website URL
     specializations: v.optional(v.array(v.string())), // e.g., ['Sports Rehab', 'Pediatrics'],
@@ -82,6 +90,14 @@ export default defineSchema({
     yearsOfExperience: v.optional(v.float64()),
     availabilitySchedule: v.optional(v.any()), // More complex availability rules
     languagesSpoken: v.optional(v.array(v.string())),
+    dateOfBirth: v.optional(v.string()),
+    gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
+
+    // Video Platform Preference
+    videoPlatformPreference: v.optional(v.union(
+      v.literal("stream"),
+      v.literal("google_meet")
+    )),
 
     // Marketplace Settings
     isAvailableOnMarketplace: v.optional(v.boolean()), // Toggle marketplace visibility
@@ -92,17 +108,17 @@ export default defineSchema({
       price: v.number(), // Total package price in kobo
       description: v.optional(v.string()),
     }))),
-    
+
     // Location
     location: v.optional(v.string()), // "Lagos", "Abuja", "Online"
     offersOnlineSessions: v.optional(v.boolean()),
     offersInPersonSessions: v.optional(v.boolean()),
-    
+
     // Verification & Monetization
     verificationBadge: v.optional(v.object({
       status: v.union(
-        v.literal("none"), 
-        v.literal("verified"), 
+        v.literal("none"),
+        v.literal("verified"),
         v.literal("pro_verified")
       ),
       tier: v.optional(v.union(
@@ -115,20 +131,21 @@ export default defineSchema({
       verificationFee: v.optional(v.number()),
       autoRenew: v.optional(v.boolean()),
     })),
-    
+
     // Featured Listing
     featuredStatus: v.optional(v.object({
       isFeatured: v.boolean(),
       featuredUntil: v.optional(v.number()),
       lastPayment: v.optional(v.number()),
     })),
-    
+
     // Analytics
     profileViews: v.optional(v.number()),
     bookingsThroughMarketplace: v.optional(v.number()),
     totalMarketplaceEarnings: v.optional(v.number()), // Total earned through marketplace
     averageRating: v.optional(v.number()), // Average rating from reviews
     reviewCount: v.optional(v.number()), // Total number of reviews
+    referralSource: v.optional(v.string()), // How did you hear about us?
   })
     .index("by_user_id", ["userId"])
     .index("by_clinic_id", ["clinicId"])
@@ -157,6 +174,9 @@ export default defineSchema({
     })),
     referralSource: v.optional(v.string()),
     preferredLanguage: v.optional(v.string()),
+    therapyFor: v.optional(v.string()), // "myself", "partner", "child"
+    therapyType: v.optional(v.string()), // "individual", "couples", "teen"
+    relationshipStatus: v.optional(v.string()), // For couples therapy context
   })
     .index("by_user_id", ["userId"])
     .index("by_clinic_id", ["clinicId"]),
@@ -234,7 +254,7 @@ export default defineSchema({
     .index("by_physiotherapist", ["physiotherapistId"])
     .index("by_patient_and_physiotherapist", ["patientId", "physiotherapistId"])
     .index("by_primary_physiotherapist", ["patientId", "isPrimaryPhysiotherapist"]),
-    
+
   // Family Access Grants: Manages family member access to patient data
   // Documents uploaded by physiotherapists (licenses, certifications, etc.)
   // Notifications: System-wide notifications for all users
@@ -278,7 +298,7 @@ export default defineSchema({
     .index("by_user_and_type", ["userId", "type"])
     .index("by_status", ["status"])
     .index("by_created", ["createdAt"]),
-    
+
   // Email audit logs: track outbound email events for debugging/auditing
   emailAuditLogs: defineTable({
     to: v.string(),
@@ -288,9 +308,9 @@ export default defineSchema({
     messageId: v.optional(v.string()),
     createdAt: v.number(),
   })
-    .index("by_to", ["to"]) 
+    .index("by_to", ["to"])
     .index("by_created", ["createdAt"]),
-  
+
   // User account status tracking for admin approval workflow
   accountApprovalStatus: defineTable({
     userId: v.id("users"),
@@ -344,7 +364,7 @@ export default defineSchema({
 
   // Documents uploaded by patients (referral letters, medical records, etc.)
   patientDocuments: defineTable({
-    patientProfileId: v.id("patientProfiles"), 
+    patientProfileId: v.id("patientProfiles"),
     storageId: v.id("_storage"),
     documentType: v.union(
       v.literal("referralLetter"),
@@ -356,10 +376,11 @@ export default defineSchema({
     fileSize: v.number(),
     contentType: v.string(),
     uploadedAt: v.number(),
+    sharedWithPhysiotherapist: v.optional(v.boolean()), // Privacy control - defaults to true
   })
     .index("by_patient_profile_id", ["patientProfileId"])
     .index("by_document_type", ["patientProfileId", "documentType"]),
-    
+
   familyAccessGrants: defineTable({
     patientUserId: v.id("users"),      // The patient granting access
     familyMemberUserId: v.id("users"), // The family member receiving access
@@ -413,6 +434,9 @@ export default defineSchema({
     )),
     isPinned: v.optional(v.boolean()),
     colorCode: v.optional(v.string()), // Hex color code like "#3B82F6"
+    googleMeetLink: v.optional(v.string()), // Auto-generated Google Meet link
+    googleCalendarLink: v.optional(v.string()), // Link to view event in Google Calendar
+    manualMeetingLink: v.optional(v.string()), // Manually added meeting link (e.g. Google Meet)
   })
     .index("by_patient_id_and_time", ["patientId", "startTime"])
     .index("by_clinic_id_and_time", ["clinicId", "startTime"])
@@ -493,41 +517,41 @@ export default defineSchema({
     name: v.string(),
     description: v.string(),
     instructions: v.array(v.string()), // Changed from string to array for better structure
-    
+
     // Enhanced filtering capabilities
     bodyParts: v.array(v.string()), // Required for filtering
     targetMuscles: v.array(v.string()),
     secondaryMuscles: v.optional(v.array(v.string())),
     conditions: v.array(v.string()), // ['lower_back_pain', 'post_surgery', 'arthritis']
     equipmentNeeded: v.array(v.string()),
-    
+
     // Difficulty and safety
     difficultyLevel: v.union(v.literal("beginner"), v.literal("intermediate"), v.literal("advanced")),
     contraindications: v.optional(v.array(v.string())), // Safety warnings
     precautions: v.optional(v.array(v.string())),
-    
+
     // Media and external integration
     exerciseDbId: v.optional(v.string()), // ExerciseDB integration
     videoUrl: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
     alternativeVideos: v.optional(v.array(v.string())),
-    
+
     // Prescription defaults
     defaultSets: v.number(),
     defaultReps: v.number(),
     defaultDuration: v.optional(v.number()), // seconds
     defaultFrequency: v.string(),
-    
+
     // Metadata
     createdBy: v.optional(v.id("users")),
     isPublic: v.boolean(), // Global vs clinic-specific
     clinicId: v.optional(v.id("clinics")),
     tags: v.optional(v.array(v.string())),
-    
+
     // Usage tracking
     timesAssigned: v.optional(v.number()),
     averageRating: v.optional(v.number()),
-    
+
     // Legacy compatibility
     media: v.optional(v.array(v.object({ type: v.union(v.literal("image"), v.literal("video")), url: v.string() }))),
     translations: v.optional(v.object({ // Key-value for language code and translated instructions
@@ -700,6 +724,31 @@ export default defineSchema({
     .index("by_patient", ["patientId"])
     .index("by_entry_date", ["entryDate"])
     .index("by_progress_type", ["progressType"]),
+
+  // Exercise Completions: Track when patients complete their prescribed exercises
+  exerciseCompletions: defineTable({
+    treatmentPlanId: v.id("treatmentPlans"),
+    patientId: v.id("users"),
+    physiotherapistId: v.id("users"),
+    phaseOrder: v.number(), // Which phase this exercise belongs to
+    exerciseId: v.string(), // The exercise identifier
+    completedAt: v.number(), // Timestamp when completed
+    // Performance data
+    setsCompleted: v.number(),
+    repsCompleted: v.number(),
+    durationSeconds: v.optional(v.number()), // How long the exercise took
+    // Patient feedback
+    difficultyRating: v.optional(v.number()), // 1-5 scale (1=very easy, 5=very hard)
+    painLevel: v.optional(v.number()), // 0-10 scale (0=no pain, 10=severe pain)
+    notes: v.optional(v.string()), // Patient notes about the session
+    // Metadata
+    completionSource: v.optional(v.string()), // 'web', 'mobile', etc.
+  })
+    .index("by_patient_and_plan", ["patientId", "treatmentPlanId"])
+    .index("by_patient", ["patientId"])
+    .index("by_exercise", ["exerciseId"])
+    .index("by_date", ["completedAt"])
+    .index("by_treatment_plan", ["treatmentPlanId"]),
 
   // Prescribed Exercises: Linking exercises to treatment plans
   prescribedExercises: defineTable({
@@ -879,17 +928,17 @@ export default defineSchema({
     // Core call identification
     roomId: v.string(), // Legacy room identifier for backward compatibility
     appointmentId: v.optional(v.id("appointments")), // Associated appointment if any
-    
+
     // Stream.io specific fields
     streamCallId: v.optional(v.string()), // Stream call ID
     streamCallType: v.optional(v.string()), // Stream call type (default, livestream, etc.)
     streamMetadata: v.optional(v.any()), // Stream-specific metadata
-    
+
     // Daily.co specific fields (deprecated but kept for migration)
     dailyRoomName: v.optional(v.string()), // Daily.co room name
     dailyRoomUrl: v.optional(v.string()), // Daily.co room URL
     dailyRoomId: v.optional(v.string()), // Daily.co room ID
-    
+
     // Call metadata
     title: v.optional(v.string()), // Call title/description
     callType: v.union(
@@ -912,21 +961,21 @@ export default defineSchema({
       v.literal("internal"),
       v.literal("google_meet")
     )),
-    
+
     // Participants and ownership
     initiatorId: v.id("users"), // User who created/initiated the call
     participants: v.array(v.id("users")), // All participants in the call
     patientId: v.optional(v.id("users")), // Primary patient (for appointment-based calls)
     physiotherapistId: v.optional(v.id("users")), // Primary physiotherapist (for appointment-based calls)
     clinicId: v.optional(v.id("clinics")), // Associated clinic
-    
+
     // Scheduling and timing
     scheduledAt: v.optional(v.number()), // Scheduled start time (for planned calls)
     startTime: v.number(), // Actual start time
     endTime: v.optional(v.number()), // When call ended
     duration: v.optional(v.number()), // Call duration in seconds
     plannedDuration: v.optional(v.number()), // Planned duration in minutes
-    
+
     // Call settings
     settings: v.optional(v.object({
       recordingEnabled: v.boolean(),
@@ -944,12 +993,12 @@ export default defineSchema({
       geo: v.optional(v.string()),
       durationMinutes: v.optional(v.number()),
     })),
-    
+
     // Recording and notes
     recordingUrl: v.optional(v.string()),
     notes: v.optional(v.string()),
     meetingLink: v.optional(v.string()), // Meeting URL for any platform
-    
+
     // Daily.co config (deprecated but kept for backward compatibility)
     dailyConfig: v.optional(v.object({
       roomExp: v.number(),
@@ -961,13 +1010,13 @@ export default defineSchema({
         isOwner: v.boolean(),
       }))),
     })),
-    
+
     // Cancellation tracking
     cancellationReason: v.optional(v.string()),
     cancelledBy: v.optional(v.id("users")),
     cancelledAt: v.optional(v.number()),
     endedBy: v.optional(v.id("users")),
-    
+
     // Timestamps
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
@@ -1005,7 +1054,7 @@ export default defineSchema({
   })
     .index("by_status_and_next_retry", ["status", "nextRetryAt"])
     .index("by_user_id", ["userId"]),
-    
+
   // Payments table for tracking payment transactions
   payments: defineTable({
     invoiceId: v.id("invoices"),
@@ -1216,6 +1265,11 @@ export default defineSchema({
     lastAppointmentAt: v.optional(v.number()),
     totalSessions: v.optional(v.number()),
     notes: v.optional(v.string()),
+    // Flagging for review
+    isFlagged: v.optional(v.boolean()),
+    flagReason: v.optional(v.string()),
+    flaggedBy: v.optional(v.id("users")),
+    flaggedAt: v.optional(v.number()),
   })
     .index("by_user_id", ["userId"])
     .index("by_clinic_id", ["clinicId"])
@@ -1257,26 +1311,14 @@ export default defineSchema({
       phone: v.string(),
       relationship: v.string(),
     })),
+    dateOfBirth: v.optional(v.string()),
+    gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
+    referralSource: v.optional(v.string()), // How did you hear about us?
   })
     .index("by_user_id", ["userId"])
     .index("by_clinic_id", ["clinicId"]),
 
-  reports: defineTable({
-    type: v.string(),
-    timeframe: v.string(),
-    entityId: v.id("users"),
-    generatedAt: v.number(),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("processing"),
-      v.literal("completed"),
-      v.literal("failed")
-    ),
-    data: v.optional(v.any()),
-  })
-    .index("by_entity", ["entityId"])
-    .index("by_status", ["status"])
-    .index("by_type", ["type"]),
+
 
   settings: defineTable({
     userId: v.id("users"),
@@ -1533,130 +1575,130 @@ export default defineSchema({
 
   // System Logs for monitoring and observability
   userActivity: defineTable({
-  userId: v.string(),
-  action: v.string(),
-  resource: v.optional(v.string()),
-  duration: v.optional(v.number()),
-  metadata: v.optional(v.any()),
-  timestamp: v.number(),
-  sessionId: v.optional(v.string()),
-  userAgent: v.optional(v.string()),
-  ipAddress: v.optional(v.string()),
-  location: v.optional(v.object({
-    country: v.optional(v.string()),
-    city: v.optional(v.string()),
-    timezone: v.optional(v.string()),
-  })),
-})
-  .index("by_user", ["userId"])
-  .index("by_action", ["action"])
-  .index("by_timestamp", ["timestamp"])
-  .index("by_user_timestamp", ["userId", "timestamp"])
-  .index("by_session", ["sessionId"]),
+    userId: v.string(),
+    action: v.string(),
+    resource: v.optional(v.string()),
+    duration: v.optional(v.number()),
+    metadata: v.optional(v.any()),
+    timestamp: v.number(),
+    sessionId: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    ipAddress: v.optional(v.string()),
+    location: v.optional(v.object({
+      country: v.optional(v.string()),
+      city: v.optional(v.string()),
+      timezone: v.optional(v.string()),
+    })),
+  })
+    .index("by_user", ["userId"])
+    .index("by_action", ["action"])
+    .index("by_timestamp", ["timestamp"])
+    .index("by_user_timestamp", ["userId", "timestamp"])
+    .index("by_session", ["sessionId"]),
 
   // Resource Management System
   resources: defineTable({
-  clinicId: v.id("clinics"),
-  name: v.string(),
-  type: v.union(
-    v.literal("equipment"),
-    v.literal("room"),
-    v.literal("staff"),
-    v.literal("vehicle")
-  ),
-  description: v.optional(v.string()),
-  category: v.optional(v.string()), // "Physical Therapy", "Occupational Therapy", etc.
-  location: v.optional(v.string()), // Room number, building, etc.
-  capacity: v.optional(v.number()), // Max people/patients for rooms
-  specifications: v.optional(v.object({
-    brand: v.optional(v.string()),
-    model: v.optional(v.string()),
-    serialNumber: v.optional(v.string()),
-    purchaseDate: v.optional(v.string()),
-    warrantyExpiry: v.optional(v.string()),
-  })),
-  operatingHours: v.optional(v.object({
-    monday: v.optional(v.object({ start: v.string(), end: v.string() })),
-    tuesday: v.optional(v.object({ start: v.string(), end: v.string() })),
-    wednesday: v.optional(v.object({ start: v.string(), end: v.string() })),
-    thursday: v.optional(v.object({ start: v.string(), end: v.string() })),
-    friday: v.optional(v.object({ start: v.string(), end: v.string() })),
-    saturday: v.optional(v.object({ start: v.string(), end: v.string() })),
-    sunday: v.optional(v.object({ start: v.string(), end: v.string() })),
-  })),
-  maintenanceSchedule: v.optional(v.object({
-    frequency: v.union(
-      v.literal("daily"),
-      v.literal("weekly"),
-      v.literal("monthly"),
-      v.literal("quarterly"),
-      v.literal("annually")
+    clinicId: v.id("clinics"),
+    name: v.string(),
+    type: v.union(
+      v.literal("equipment"),
+      v.literal("room"),
+      v.literal("staff"),
+      v.literal("vehicle")
     ),
-    lastMaintenance: v.optional(v.string()),
-    nextMaintenance: v.optional(v.string()),
-  })),
-  isActive: v.boolean(),
-  tags: v.optional(v.array(v.string())),
-  createdAt: v.number(),
-  updatedAt: v.number(),
-  createdBy: v.id("users"),
-})
-  .index("by_clinic", ["clinicId"])
-  .index("by_type", ["type"])
-  .index("by_category", ["category"])
-  .index("by_clinic_type", ["clinicId", "type"]),
+    description: v.optional(v.string()),
+    category: v.optional(v.string()), // "Physical Therapy", "Occupational Therapy", etc.
+    location: v.optional(v.string()), // Room number, building, etc.
+    capacity: v.optional(v.number()), // Max people/patients for rooms
+    specifications: v.optional(v.object({
+      brand: v.optional(v.string()),
+      model: v.optional(v.string()),
+      serialNumber: v.optional(v.string()),
+      purchaseDate: v.optional(v.string()),
+      warrantyExpiry: v.optional(v.string()),
+    })),
+    operatingHours: v.optional(v.object({
+      monday: v.optional(v.object({ start: v.string(), end: v.string() })),
+      tuesday: v.optional(v.object({ start: v.string(), end: v.string() })),
+      wednesday: v.optional(v.object({ start: v.string(), end: v.string() })),
+      thursday: v.optional(v.object({ start: v.string(), end: v.string() })),
+      friday: v.optional(v.object({ start: v.string(), end: v.string() })),
+      saturday: v.optional(v.object({ start: v.string(), end: v.string() })),
+      sunday: v.optional(v.object({ start: v.string(), end: v.string() })),
+    })),
+    maintenanceSchedule: v.optional(v.object({
+      frequency: v.union(
+        v.literal("daily"),
+        v.literal("weekly"),
+        v.literal("monthly"),
+        v.literal("quarterly"),
+        v.literal("annually")
+      ),
+      lastMaintenance: v.optional(v.string()),
+      nextMaintenance: v.optional(v.string()),
+    })),
+    isActive: v.boolean(),
+    tags: v.optional(v.array(v.string())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdBy: v.id("users"),
+  })
+    .index("by_clinic", ["clinicId"])
+    .index("by_type", ["type"])
+    .index("by_category", ["category"])
+    .index("by_clinic_type", ["clinicId", "type"]),
 
-resourceBookings: defineTable({
-  resourceId: v.id("resources"),
-  appointmentId: v.id("appointments"),
-  startTime: v.number(),
-  endTime: v.number(),
-  status: v.union(
-    v.literal("confirmed"),
-    v.literal("pending"),
-    v.literal("cancelled")
-  ),
-  notes: v.optional(v.string()),
-  cancellationReason: v.optional(v.string()),
-  cancelledAt: v.optional(v.number()),
-  createdAt: v.number(),
-  updatedAt: v.number(),
-})
-  .index("by_resource_date", ["resourceId"])
-  .index("by_appointment", ["appointmentId"])
-  .index("by_status", ["status"])
-  .index("by_resource_time", ["resourceId", "startTime"]),
+  resourceBookings: defineTable({
+    resourceId: v.id("resources"),
+    appointmentId: v.id("appointments"),
+    startTime: v.number(),
+    endTime: v.number(),
+    status: v.union(
+      v.literal("confirmed"),
+      v.literal("pending"),
+      v.literal("cancelled")
+    ),
+    notes: v.optional(v.string()),
+    cancellationReason: v.optional(v.string()),
+    cancelledAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_resource_date", ["resourceId"])
+    .index("by_appointment", ["appointmentId"])
+    .index("by_status", ["status"])
+    .index("by_resource_time", ["resourceId", "startTime"]),
 
-// System Health & Monitoring
-systemHealth: defineTable({
-  service: v.string(), // e.g., "database", "auth", "video", "notifications"
-  status: v.union(
-    v.literal("healthy"),
-    v.literal("degraded"),
-    v.literal("down")
-  ),
-  responseTime: v.optional(v.number()), // in milliseconds
-  errorRate: v.optional(v.number()), // percentage
-  lastChecked: v.number(),
-  metadata: v.optional(v.any()),
-})
-  .index("by_service", ["service"])
-  .index("by_status", ["status"])
-  .index("by_last_checked", ["lastChecked"]),
+  // System Health & Monitoring
+  systemHealth: defineTable({
+    service: v.string(), // e.g., "database", "auth", "video", "notifications"
+    status: v.union(
+      v.literal("healthy"),
+      v.literal("degraded"),
+      v.literal("down")
+    ),
+    responseTime: v.optional(v.number()), // in milliseconds
+    errorRate: v.optional(v.number()), // percentage
+    lastChecked: v.number(),
+    metadata: v.optional(v.any()),
+  })
+    .index("by_service", ["service"])
+    .index("by_status", ["status"])
+    .index("by_last_checked", ["lastChecked"]),
 
-// Core Web Vitals & Performance Metrics
-performanceMetrics: defineTable({
-  userId: v.optional(v.string()),
-  sessionId: v.optional(v.string()),
-  page: v.string(), // URL or page identifier
-  metric: v.string(), // "LCP", "FID", "CLS", "TTFB", etc.
-  value: v.number(),
-  timestamp: v.number(),
-  userAgent: v.optional(v.string()),
-  connection: v.optional(v.string()), // "4g", "3g", "wifi", etc.
-  metadata: v.optional(v.any()),
-})
-  ,
+  // Core Web Vitals & Performance Metrics
+  performanceMetrics: defineTable({
+    userId: v.optional(v.string()),
+    sessionId: v.optional(v.string()),
+    page: v.string(), // URL or page identifier
+    metric: v.string(), // "LCP", "FID", "CLS", "TTFB", etc.
+    value: v.number(),
+    timestamp: v.number(),
+    userAgent: v.optional(v.string()),
+    connection: v.optional(v.string()), // "4g", "3g", "wifi", etc.
+    metadata: v.optional(v.any()),
+  })
+    .index("by_metric", ["metric"]),
   // Split Payment Configurations
   splitConfigurations: defineTable({
     physiotherapistId: v.id("users"),
@@ -1918,24 +1960,24 @@ performanceMetrics: defineTable({
     patientId: v.id("users"),
     appointmentId: v.optional(v.id("appointments")), // Link to actual session
     bookingId: v.optional(v.id("marketplaceBookings")), // Link to marketplace booking
-    
+
     // Rating breakdown
     overallRating: v.number(), // 1-5
     communicationRating: v.optional(v.number()),
     treatmentEffectivenessRating: v.optional(v.number()),
     professionalismRating: v.optional(v.number()),
     valueForMoneyRating: v.optional(v.number()),
-    
+
     // Review content
     reviewTitle: v.optional(v.string()),
     reviewText: v.string(),
-    
+
     // Response
     response: v.optional(v.object({
       text: v.string(),
       respondedAt: v.number(),
     })),
-    
+
     // Metadata
     isVerifiedBooking: v.boolean(), // Did they actually book through platform?
     helpfulCount: v.optional(v.number()), // How many found this helpful
@@ -1946,7 +1988,7 @@ performanceMetrics: defineTable({
       v.literal("rejected"),
       v.literal("hidden")
     ),
-    
+
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
   })
@@ -1962,20 +2004,20 @@ performanceMetrics: defineTable({
     physiotherapistId: v.id("users"),
     patientId: v.id("users"),
     appointmentId: v.optional(v.id("appointments")), // Created after payment
-    
+
     // Session details
     sessionType: v.string(), // "initial_consult", "follow_up", "package"
     sessionDate: v.optional(v.number()), // Scheduled date
     sessionDuration: v.number(), // minutes
     isOnline: v.boolean(),
-    
+
     // Pricing
     serviceAmount: v.number(), // Amount for service (kobo)
     platformFee: v.number(), // 20% platform fee (kobo)
     paystackFee: v.number(), // 1.5% + 100 (kobo)
     totalAmount: v.number(), // Total charged to patient (kobo)
     physiotherapistEarnings: v.number(), // Amount physio receives (kobo)
-    
+
     // Payment
     paymentStatus: v.union(
       v.literal("pending"),
@@ -1985,7 +2027,7 @@ performanceMetrics: defineTable({
     ),
     paymentReference: v.optional(v.string()),
     paidAt: v.optional(v.number()),
-    
+
     // Booking status
     bookingStatus: v.union(
       v.literal("pending_payment"),
@@ -1994,15 +2036,15 @@ performanceMetrics: defineTable({
       v.literal("cancelled"),
       v.literal("no_show")
     ),
-    
+
     // Relationship creation
     relationshipCreated: v.optional(v.boolean()),
     patientPhysioRelationshipId: v.optional(v.id("patientPhysiotherapistRelationships")),
-    
+
     // Notes
     patientNotes: v.optional(v.string()),
     cancellationReason: v.optional(v.string()),
-    
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -2016,29 +2058,29 @@ performanceMetrics: defineTable({
   // Marketplace Transactions (verification badges, featured listings, commissions)
   marketplaceTransactions: defineTable({
     userId: v.id("users"), // Physiotherapist
-    
+
     type: v.union(
       v.literal("verification_badge"),
       v.literal("featured_listing"),
       v.literal("booking_commission")
     ),
-    
+
     // Verification badge specific
     badgeTier: v.optional(v.union(
       v.literal("monthly"),
       v.literal("12_month"),
       v.literal("yearly")
     )),
-    
+
     // Featured listing specific
     featuredDuration: v.optional(v.number()), // days
     featuredStartDate: v.optional(v.number()),
     featuredEndDate: v.optional(v.number()),
-    
+
     // Commission specific
     bookingId: v.optional(v.id("marketplaceBookings")),
     commissionRate: v.optional(v.number()), // percentage
-    
+
     // Payment
     amount: v.number(), // in kobo
     currency: v.string(),
@@ -2050,11 +2092,11 @@ performanceMetrics: defineTable({
     ),
     paymentReference: v.optional(v.string()),
     paymentMethod: v.optional(v.string()),
-    
+
     // Metadata
     description: v.string(),
     metadata: v.optional(v.any()),
-    
+
     createdAt: v.number(),
     updatedAt: v.number(),
     completedAt: v.optional(v.number()),

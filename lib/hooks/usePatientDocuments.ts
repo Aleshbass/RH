@@ -4,7 +4,7 @@ import { useFileUpload } from "./useFileUpload";
 import { useConvex } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-export type PatientDocumentType = 
+export type PatientDocumentType =
   | "referralLetter"
   | "medicalRecord"
   | "insuranceCard"
@@ -19,6 +19,7 @@ export interface PatientDocument {
   fileSize: number;
   contentType: string;
   uploadedAt: number;
+  sharedWithPhysiotherapist?: boolean;
   downloadUrl: string;
 }
 
@@ -52,16 +53,30 @@ export function usePatientDocuments({ patientProfileId }: UsePatientDocumentsPro
     unknown
   >({
     mutationFn: async ({ storageId, documentType, fileName, profileIdToSave }) => {
-      return await convex.mutation(api.files.savePatientDocument, { 
-        patientProfileId: profileIdToSave, 
-        storageId, 
-        documentType, 
-        fileName 
+      return await convex.mutation(api.files.savePatientDocument, {
+        patientProfileId: profileIdToSave,
+        storageId,
+        documentType,
+        fileName
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["patientDocuments", patientProfileId] });
-      resetUpload(); 
+      resetUpload();
+    }
+  });
+
+  const toggleSharingMutation = useMutation<
+    boolean,
+    Error,
+    { documentId: Id<"patientDocuments">; shared: boolean },
+    unknown
+  >({
+    mutationFn: async ({ documentId, shared }) => {
+      return await convex.mutation(api.files.toggleDocumentSharing, { documentId, shared });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["patientDocuments", patientProfileId] });
     }
   });
 
@@ -93,5 +108,7 @@ export function usePatientDocuments({ patientProfileId }: UsePatientDocumentsPro
     uploadProgress: progress,
     uploadError: fileUploadError || saveDocumentMutation.error,
     resetUpload,
+    toggleSharing: toggleSharingMutation.mutateAsync,
+    isTogglingSharing: toggleSharingMutation.isPending,
   };
 }

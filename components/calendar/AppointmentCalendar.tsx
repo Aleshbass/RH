@@ -72,6 +72,11 @@ export function AppointmentCalendar({
   loading = false,
 }: AppointmentCalendarProps) {
   const [view, setView] = useState<View>(viewMode === 'day' ? 'day' : 'week');
+
+  // Sync view state with prop
+  React.useEffect(() => {
+    setView(viewMode === 'day' ? 'day' : 'week');
+  }, [viewMode]);
   const [date, setDate] = useState(currentDate);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [pendingRecurringEdit, setPendingRecurringEdit] = useState<{
@@ -86,7 +91,7 @@ export function AppointmentCalendar({
   const events: CalendarEvent[] = useMemo(() => {
     return appointments.map((apt) => ({
       id: apt._id,
-      title: apt.patient 
+      title: apt.patient
         ? `${apt.patient.firstName} ${apt.patient.lastName} - ${apt.serviceType}`
         : apt.serviceType || 'Appointment',
       start: new Date(apt.startTime),
@@ -197,7 +202,7 @@ export function AppointmentCalendar({
     if (!pendingRecurringEdit) return;
 
     const { appointmentId, newStartTime, newEndTime } = pendingRecurringEdit;
-    
+
     // Map 'instance' to 'single' for backend compatibility
     const backendScope = scope === 'instance' ? 'single' : scope;
 
@@ -261,8 +266,8 @@ export function AppointmentCalendar({
         fontSize: '13px',
         fontWeight: '600',
         border: appointment.isPinned ? '2px solid #F59E0B' : undefined,
-        boxShadow: appointment.isPinned 
-          ? '0 0 0 3px rgba(245, 158, 11, 0.2)' 
+        boxShadow: appointment.isPinned
+          ? '0 0 0 3px rgba(245, 158, 11, 0.2)'
           : '0 2px 4px rgba(0, 0, 0, 0.15)',
       },
     };

@@ -55,7 +55,12 @@ export function DashboardSidebar({ items = [], defaultCollapsed = false }: Sideb
       <div className="px-3 py-2">
         <div className="space-y-1">
           {filteredItems.map((item, index) => (
-            <Link key={index} href={item.href} onClick={() => { if (mobileOpen) closeMobile() }}>
+            <Link
+              key={index}
+              href={item.href}
+              onClick={() => { if (mobileOpen) closeMobile() }}
+              id={`nav-item-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+            >
               <Button
                 variant={pathname === item.href ? 'secondary' : 'ghost'}
                 className={cn(
@@ -132,4 +137,3 @@ export function DashboardSidebar({ items = [], defaultCollapsed = false }: Sideb
     </>
   )
 }
- 

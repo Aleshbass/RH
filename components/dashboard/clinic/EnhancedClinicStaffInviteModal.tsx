@@ -22,10 +22,10 @@ type InviteMethod = 'email' | 'direct'
 export default function EnhancedClinicStaffInviteModal({ isOpen, onClose, onSuccess }: EnhancedClinicStaffInviteModalProps) {
   const [method, setMethod] = useState<InviteMethod>('email')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [emailData, setEmailData] = useState({ 
-    inviteeEmail: '', 
-    inviteeName: '', 
-    message: '' 
+  const [emailData, setEmailData] = useState({
+    inviteeEmail: '',
+    inviteeName: '',
+    message: ''
   })
   const [directData, setDirectData] = useState({
     inviteeEmail: '',
@@ -84,19 +84,20 @@ export default function EnhancedClinicStaffInviteModal({ isOpen, onClose, onSucc
       toast.error('Email is required')
       return
     }
-    
+
     // Close modal immediately for better UX
     onClose()
     setIsSubmitting(true)
-    
+
     try {
       const res = await createStaffInvite({
         inviteeEmail: emailData.inviteeEmail,
         inviteeName: emailData.inviteeName || undefined,
         message: emailData.message || undefined,
         sendEmail: true,
+        origin: window.location.origin,
       })
-      
+
       if (!res?.success) {
         // Check if it's a duplicate invitation error
         if (res?.message?.includes('already a pending invitation')) {
@@ -116,17 +117,17 @@ export default function EnhancedClinicStaffInviteModal({ isOpen, onClose, onSucc
         }
         return
       }
-      
+
       const link = buildLink(res?.code)
       await copyAndToast(link)
-      
+
       // Reset form
       setEmailData({ inviteeEmail: '', inviteeName: '', message: '' })
       onSuccess?.()
     } catch (e) {
       console.error(e)
       const errorMessage = e instanceof Error ? e.message : 'Failed to send invitation'
-      
+
       // Check if it's a duplicate invitation error
       if (errorMessage.includes('already a pending invitation')) {
         toast.error('This email already has a pending invitation', {
@@ -153,10 +154,10 @@ export default function EnhancedClinicStaffInviteModal({ isOpen, onClose, onSucc
       toast.error('Email is required')
       return
     }
-    
+
     onClose()
     setIsSubmitting(true)
-    
+
     try {
       // For now, use the invitation method (direct creation can be added later)
       const res = await createStaffInvite({
@@ -164,8 +165,9 @@ export default function EnhancedClinicStaffInviteModal({ isOpen, onClose, onSucc
         inviteeName: directData.inviteeName || undefined,
         message: `Welcome! We're creating your profile with the following details:\n- License: ${directData.licenseNumber || 'Not provided'}\n- Specialization: ${directData.specialization || 'General'}`,
         sendEmail: true,
+        origin: window.location.origin,
       })
-      
+
       if (!res?.success) {
         // Check if it's a duplicate invitation error
         if (res?.message?.includes('already a pending invitation')) {
@@ -185,16 +187,16 @@ export default function EnhancedClinicStaffInviteModal({ isOpen, onClose, onSucc
         }
         return
       }
-      
+
       const link = buildLink(res?.code)
       await copyAndToast(link)
-      
+
       setDirectData({ inviteeEmail: '', inviteeName: '', phoneNumber: '', licenseNumber: '', specialization: '' })
       onSuccess?.()
     } catch (e) {
       console.error(e)
       const errorMessage = e instanceof Error ? e.message : 'Failed to create staff member'
-      
+
       // Check if it's a duplicate invitation error
       if (errorMessage.includes('already a pending invitation')) {
         toast.error('This email already has a pending invitation', {
@@ -252,16 +254,16 @@ export default function EnhancedClinicStaffInviteModal({ isOpen, onClose, onSucc
 
             {/* Method selector */}
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <Button 
-                className="h-12" 
-                variant={method === 'email' ? 'default' : 'outline'} 
+              <Button
+                className="h-12"
+                variant={method === 'email' ? 'default' : 'outline'}
                 onClick={() => setMethod('email')}
               >
                 <Mail className="h-4 w-4 mr-2" /> Email Invitation
               </Button>
-              <Button 
-                className="h-12" 
-                variant={method === 'direct' ? 'default' : 'outline'} 
+              <Button
+                className="h-12"
+                variant={method === 'direct' ? 'default' : 'outline'}
                 onClick={() => setMethod('direct')}
               >
                 <UserPlus className="h-4 w-4 mr-2" /> Create Profile
@@ -415,23 +417,23 @@ export default function EnhancedClinicStaffInviteModal({ isOpen, onClose, onSucc
               {/* Action buttons - always visible at bottom */}
               <div className="mt-8 pt-6 border-t border-gray-200">
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                  <Button 
-                    variant="outline" 
-                    onClick={handleClose} 
-                    disabled={isSubmitting} 
+                  <Button
+                    variant="outline"
+                    onClick={handleClose}
+                    disabled={isSubmitting}
                     className="h-12 w-full sm:w-auto order-2 sm:order-1"
                   >
                     Cancel
                   </Button>
                   <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto order-1 sm:order-2">
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => {
                         // Preview QR with sample URL
                         const sample = (process.env.NEXT_PUBLIC_APP_URL || appBaseUrl || '').replace(/\/$/, '') + '/staff-invite/XXXXXX'
                         const qr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(sample)}`
                         window.open(qr, '_blank')
-                      }} 
+                      }}
                       className="h-12 w-full sm:w-auto"
                       disabled={isSubmitting}
                     >

@@ -13,7 +13,7 @@ export default async function DashboardLayout({
   children: ReactNode
 }) {
   const { userId } = await auth()
-  
+
   if (!userId) {
     redirect('/sign-in')
   }
@@ -23,11 +23,11 @@ export default async function DashboardLayout({
       <div className="min-h-screen bg-[#F5F5DC]"> {/* 60% - Bone background */}
         {/* Dashboard Header */}
         <DashboardHeader />
-        
+
         <div className="flex">
           {/* Sidebar */}
           <DashboardSidebarWrapper />
-          
+
           {/* Main Content */}
           <main className="flex-1 overflow-hidden">
             <div className="h-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -35,10 +35,10 @@ export default async function DashboardLayout({
             </div>
           </main>
         </div>
-        
+
         <NotificationToaster />
         <Toaster position="top-right" />
       </div>
     </DashboardAuthGuard>
   )
-} 
+}

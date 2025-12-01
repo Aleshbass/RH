@@ -12,10 +12,16 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 
+import { CalendarConnectionStatus } from '@/components/settings/CalendarConnectionStatus';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Calendar } from 'lucide-react';
+import { TourGuide } from '@/components/shared/TourGuide';
+
 export default function PatientSettingsPage() {
   const { user } = useUser();
   const patient = useQuery(api.patients.getPatientByUserId, user?.id ? { userId: user.id } : 'skip');
-  
+  const currentUser = useQuery(api.users.getMyUser);
+
   const [profileData, setProfileData] = useState({
     firstName: patient?.firstName || '',
     lastName: patient?.lastName || '',
@@ -52,16 +58,17 @@ export default function PatientSettingsPage() {
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-6xl">
-      <div className="mb-8">
+      <div className="mb-8" id="settings-header">
         <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
         <p className="text-gray-600 mt-2">Manage your account settings and preferences</p>
       </div>
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 lg:max-w-md">
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="privacy">Privacy</TabsTrigger>
+        <TabsList id="settings-tabs" className="grid w-full grid-cols-4 lg:max-w-xl">
+          <TabsTrigger id="tab-profile" value="profile">Profile</TabsTrigger>
+          <TabsTrigger id="tab-notifications" value="notifications">Notifications</TabsTrigger>
+          <TabsTrigger id="tab-privacy" value="privacy">Privacy</TabsTrigger>
+          <TabsTrigger id="tab-calendar" value="calendar">Calendar</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile">
@@ -89,7 +96,7 @@ export default function PatientSettingsPage() {
                   />
                 </div>
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -99,7 +106,7 @@ export default function PatientSettingsPage() {
                   onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone Number</Label>
                 <Input
@@ -109,7 +116,7 @@ export default function PatientSettingsPage() {
                   onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="dateOfBirth">Date of Birth</Label>
                 <Input
@@ -119,7 +126,7 @@ export default function PatientSettingsPage() {
                   onChange={(e) => setProfileData({ ...profileData, dateOfBirth: e.target.value })}
                 />
               </div>
-              
+
               <Button onClick={handleProfileUpdate} className="w-full">
                 Update Profile
               </Button>
@@ -144,7 +151,7 @@ export default function PatientSettingsPage() {
                   onCheckedChange={(checked) => setNotifications({ ...notifications, email: checked })}
                 />
               </div>
-              
+
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>SMS Notifications</Label>
@@ -155,7 +162,7 @@ export default function PatientSettingsPage() {
                   onCheckedChange={(checked) => setNotifications({ ...notifications, sms: checked })}
                 />
               </div>
-              
+
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Push Notifications</Label>
@@ -166,7 +173,7 @@ export default function PatientSettingsPage() {
                   onCheckedChange={(checked) => setNotifications({ ...notifications, push: checked })}
                 />
               </div>
-              
+
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Appointment Reminders</Label>
@@ -177,7 +184,7 @@ export default function PatientSettingsPage() {
                   onCheckedChange={(checked) => setNotifications({ ...notifications, appointmentReminders: checked })}
                 />
               </div>
-              
+
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Medication Reminders</Label>
@@ -188,7 +195,7 @@ export default function PatientSettingsPage() {
                   onCheckedChange={(checked) => setNotifications({ ...notifications, medicationReminders: checked })}
                 />
               </div>
-              
+
               <Button onClick={handleNotificationUpdate} className="w-full">
                 Save Preferences
               </Button>
@@ -210,7 +217,7 @@ export default function PatientSettingsPage() {
                 </div>
                 <Switch />
               </div>
-              
+
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Allow Provider Data Sharing</Label>
@@ -218,7 +225,7 @@ export default function PatientSettingsPage() {
                 </div>
                 <Switch />
               </div>
-              
+
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Anonymous Usage Analytics</Label>
@@ -226,7 +233,7 @@ export default function PatientSettingsPage() {
                 </div>
                 <Switch defaultChecked />
               </div>
-              
+
               <div className="pt-4 space-y-2">
                 <Button variant="outline" className="w-full">
                   Download My Data
@@ -238,7 +245,83 @@ export default function PatientSettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="calendar">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Calendar Integration
+              </CardTitle>
+              <CardDescription>
+                Connect your Google Calendar to automatically generate Google Meet links for telehealth appointments.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {(() => {
+                const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+                const success = searchParams?.get('calendar_success');
+                const error = searchParams?.get('calendar_error');
+
+                if (success) {
+                  return (
+                    <Alert className="bg-green-50 border-green-200 text-green-800 mb-4">
+                      <AlertDescription>Successfully connected to Google Calendar!</AlertDescription>
+                    </Alert>
+                  );
+                }
+                if (error) {
+                  return (
+                    <Alert variant="destructive" className="mb-4">
+                      <AlertDescription>
+                        Failed to connect calendar: {error === 'access_denied' ? 'Access denied' : 'Unknown error'}
+                      </AlertDescription>
+                    </Alert>
+                  );
+                }
+                return null;
+              })()}
+
+              <CalendarConnectionStatus currentUser={currentUser} />
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+      <TourGuide
+        tourId="patient-settings-tour"
+        steps={[
+          {
+            target: "#settings-header",
+            title: "Account Settings",
+            content: "Manage your personal information, preferences, and account security.",
+            position: "bottom",
+          },
+          {
+            target: "#tab-profile",
+            title: "Profile",
+            content: "Update your contact details and personal information.",
+            position: "bottom",
+          },
+          {
+            target: "#tab-notifications",
+            title: "Notifications",
+            content: "Customize how you want to receive updates and reminders.",
+            position: "bottom",
+          },
+          {
+            target: "#tab-privacy",
+            title: "Privacy",
+            content: "Manage data sharing preferences and account privacy.",
+            position: "bottom",
+          },
+          {
+            target: "#tab-calendar",
+            title: "Calendar Integration",
+            content: "Connect your Google Calendar to sync appointments automatically.",
+            position: "bottom",
+          },
+        ]}
+      />
     </div>
   );
 }

@@ -11,7 +11,8 @@ import {
   Calendar, 
   Clock, 
   User, 
-  FileText
+  FileText,
+  Video
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
@@ -36,7 +37,7 @@ interface PatientOption {
   email: string
 }
 
-// Lightweight types to safely read getAppointmentDetails response without deep generics
+  // Lightweight types to safely read getAppointmentDetails response without deep generics
 type AppointmentCore = {
   patientId: string
   startTime: number
@@ -44,6 +45,7 @@ type AppointmentCore = {
   serviceType: string
   notesForPatient?: string | null
   notesForTherapist?: string | null
+  manualMeetingLink?: string | null
 }
 
 type ExistingAppointmentResult = {
@@ -77,6 +79,7 @@ export function AppointmentModal({
     serviceType: '',
     notesForPatient: '',
     notesForTherapist: '',
+    manualMeetingLink: '',
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -108,6 +111,7 @@ export function AppointmentModal({
         date: format(selectedDate, 'yyyy-MM-dd'),
         startTime: format(selectedDate, 'HH:mm'),
         endTime: format(new Date(selectedDate.getTime() + 60 * 60 * 1000), 'HH:mm'),
+        manualMeetingLink: '',
       }))
     }
   }, [selectedDate, appointmentId])
@@ -124,6 +128,7 @@ export function AppointmentModal({
         serviceType: apt.serviceType,
         notesForPatient: apt.notesForPatient || '',
         notesForTherapist: apt.notesForTherapist || '',
+        manualMeetingLink: apt.manualMeetingLink || '',
       })
     }
   }, [existingAppointment])
@@ -184,6 +189,7 @@ export function AppointmentModal({
         serviceType: formData.serviceType,
           notesForPatient: formData.notesForPatient || undefined,
           notesForTherapist: formData.notesForTherapist || undefined,
+          manualMeetingLink: formData.manualMeetingLink || undefined,
         })
 
         toast.success('Appointment created successfully')
@@ -325,6 +331,24 @@ export function AppointmentModal({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Meeting Link */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium mb-2 block">
+              Meeting Link (Optional)
+            </label>
+            <div className="relative">
+              <Video className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                id="manualMeetingLink"
+                placeholder="e.g., Google Meet or Zoom link"
+                value={formData.manualMeetingLink}
+                onChange={(e) => handleInputChange('manualMeetingLink', e.target.value)}
+                disabled={isSubmitting}
+                className="pl-10"
+              />
+            </div>
           </div>
 
           {/* Notes */}

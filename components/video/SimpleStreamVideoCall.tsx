@@ -36,6 +36,8 @@ export default function SimpleStreamVideoCall({
   useEffect(() => {
     if (!isLoaded || !user) return
 
+    let isMounted = true
+
     const initializeStream = async () => {
       try {
         console.log('Initializing Stream client...')
@@ -72,6 +74,11 @@ export default function SimpleStreamVideoCall({
           token,
         })
 
+        if (!isMounted) {
+          streamClient.disconnectUser().catch(console.error)
+          return
+        }
+
         setClient(streamClient)
         console.log('Stream client created')
 
@@ -79,18 +86,26 @@ export default function SimpleStreamVideoCall({
         const streamCall = streamClient.call('default', callId)
         await streamCall.join({ create: true })
         
+        if (!isMounted) {
+          streamCall.leave().catch(console.error)
+          return
+        }
+
         setCall(streamCall)
         console.log('Joined call successfully')
         toast.success('Video call started!')
       } catch (error) {
         console.error('Stream initialization error:', error)
-        toast.error('Failed to start video call. Please check your connection.')
+        if (isMounted) {
+          toast.error('Failed to start video call. Please check your connection.')
+        }
       }
     }
 
     initializeStream()
 
     return () => {
+      isMounted = false
       if (call) {
         call.leave().catch(console.error)
       }
@@ -98,7 +113,9 @@ export default function SimpleStreamVideoCall({
         client.disconnectUser().catch(console.error)
       }
     }
-  }, [isLoaded, user, callId, apiKey, client, call])
+    // Only depend on isLoaded, user, callId, and apiKey - NOT on client or call
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, user, callId, apiKey])
 
   const copyLink = () => {
     navigator.clipboard.writeText(shareLink)

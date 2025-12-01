@@ -6,8 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
-import { 
-  Users, 
+import {
+  Users,
   DollarSign,
   Calendar,
   Video,
@@ -18,6 +18,7 @@ import {
   XCircle,
   AlertTriangle
 } from 'lucide-react'
+import { TourGuide } from '@/components/shared/TourGuide'
 
 // Removed unused AnalyticsData interface - data is accessed directly from queries
 
@@ -88,13 +89,13 @@ export default function OwnerAnalyticsPage() {
     <div className="p-8">
       <div className="space-y-6">
         {/* Header */}
-        <div>
+        <div id="analytics-header">
           <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
           <p className="text-gray-600">Comprehensive insights into your clinic&apos;s performance</p>
         </div>
 
         {/* Key Metrics Cards */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div id="analytics-key-metrics" className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           {/* Revenue */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -168,7 +169,7 @@ export default function OwnerAnalyticsPage() {
         </div>
 
         {/* Detailed Analytics */}
-        <div className="grid gap-6 md:grid-cols-2">
+        <div id="analytics-detailed" className="grid gap-6 md:grid-cols-2">
           {/* Staff Performance */}
           <Card>
             <CardHeader>
@@ -310,7 +311,7 @@ export default function OwnerAnalyticsPage() {
         </div>
 
         {/* Quick Actions */}
-        <Card>
+        <Card id="analytics-insights">
           <CardHeader>
             <CardTitle>Quick Insights</CardTitle>
             <CardDescription>Key takeaways and recommendations</CardDescription>
@@ -350,6 +351,37 @@ export default function OwnerAnalyticsPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+      </div>
+
+      <TourGuide
+        tourId="clinic-analytics-tour"
+        steps={[
+          {
+            target: "#analytics-header",
+            title: "Analytics Dashboard",
+            content: "Gain comprehensive insights into your clinic's performance, revenue, and growth.",
+            position: "bottom"
+          },
+          {
+            target: "#analytics-key-metrics",
+            title: "Key Metrics",
+            content: "Track vital stats like total revenue, active staff, appointment volume, and telehealth sessions.",
+            position: "bottom"
+          },
+          {
+            target: "#analytics-detailed",
+            title: "Deep Dive",
+            content: "Explore detailed breakdowns of staff performance, appointment outcomes, and revenue trends.",
+            position: "top"
+          },
+          {
+            target: "#analytics-insights",
+            title: "Smart Insights",
+            content: "Get AI-driven recommendations and highlights to optimize your clinic's operations.",
+            position: "top"
+          }
+        ]}
+      />
+    </div >
   )
 }

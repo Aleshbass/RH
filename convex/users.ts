@@ -18,12 +18,12 @@ export const getMyUser = query({
     if (!identity) {
       return null;
     }
-    
+
     const user = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique();
-    
+
     return user;
   },
 });
@@ -119,13 +119,13 @@ export const updateOrCreateUser = internalMutation({
   },
   returns: v.id("users"),
   handler: async (ctx, args) => {
-    const { 
-      id: clerkId, 
-      email_addresses, 
-      primary_email_address_id, 
-      first_name, 
-      last_name, 
-      image_url 
+    const {
+      id: clerkId,
+      email_addresses,
+      primary_email_address_id,
+      first_name,
+      last_name,
+      image_url
     } = args.clerkUserData as any; // Cast to any or a more specific Clerk User type
 
     if (!clerkId) {
@@ -174,8 +174,10 @@ export const updateOrCreateUser = internalMutation({
       firstName: first_name || undefined,
       lastName: last_name || undefined,
       imageUrl: image_url || undefined,
-      role: undefined, 
-      onboarded: false, 
+      role: undefined,
+      onboarded: false,
+      hasCompletedOnboarding: false,
+      onboardingVersion: 1,
     });
 
     return userId;
@@ -193,13 +195,13 @@ export const storeUserFromClerk = mutation({
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
-    
+
     // Enhanced debugging for authentication issues
     if (!identity) {
       console.error("No authentication identity found in storeUserFromClerk");
       throw new Error("Unauthorized: No authentication identity found. Please ensure you are logged in.");
     }
-    
+
     if (identity.subject !== args.clerkId) {
       console.error("Clerk ID mismatch in storeUserFromClerk:", {
         authIdentitySubject: identity.subject,
@@ -230,7 +232,7 @@ export const storeUserFromClerk = mutation({
       if (args.imageUrl && existingUser.imageUrl !== args.imageUrl) {
         updates.imageUrl = args.imageUrl;
       }
-      
+
       if (Object.keys(updates).length > 0) {
         await ctx.db.patch(existingUser._id, updates);
       }
@@ -245,6 +247,8 @@ export const storeUserFromClerk = mutation({
         lastName: args.lastName,
         imageUrl: args.imageUrl,
         onboarded: false, // Default value
+        hasCompletedOnboarding: false,
+        onboardingVersion: 1,
         // role: undefined, // Set a default role if applicable or leave as undefined
       });
     }
@@ -280,29 +284,44 @@ export const updateProfileImageFromStorage = mutation({
 
 // Profile data validators (subset of fields from schema, excluding userId)
 const physiotherapistProfileDataValidator = v.object({
-  clinicId: v.optional(v.id("clinics")), 
-  specializations: v.optional(v.array(v.string())), 
+  clinicId: v.optional(v.id("clinics")),
+  specializations: v.optional(v.array(v.string())),
   licenseNumber: v.optional(v.string()),
   certificationBoard: v.optional(v.string()),
   certificationYear: v.optional(v.float64()),
   licenseExpiryDate: v.optional(v.string()),
   yearsOfExperience: v.optional(v.float64()),
   bio: v.optional(v.string()),
+  dateOfBirth: v.optional(v.string()),
+  gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
+  referralSource: v.optional(v.string()),
+  location: v.optional(v.string()),
 });
 
 const patientProfileDataValidator = v.object({
-  dateOfBirth: v.optional(v.string()), 
+  dateOfBirth: v.optional(v.string()),
   gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
   address: v.optional(v.string()),
-  phoneNumber: v.optional(v.string()), 
+  phoneNumber: v.optional(v.string()),
   emergencyContactName: v.optional(v.string()),
   emergencyContactPhone: v.optional(v.string()),
   medicalHistorySummary: v.optional(v.string()),
+  preferredLanguage: v.optional(v.string()),
+  therapyFor: v.optional(v.string()),
+  therapyType: v.optional(v.string()),
+  relationshipStatus: v.optional(v.string()),
 });
 
-const clinicOwnerProfileDataValidator = v.object({}); 
-const familyMemberProfileDataValidator = v.object({ 
-    relationshipToPatient: v.optional(v.string()), 
+const clinicOwnerProfileDataValidator = v.object({
+  referralSource: v.optional(v.string()),
+  yearsInBusiness: v.optional(v.number()),
+  clinicLocation: v.optional(v.string()),
+  clinicImageOutside: v.optional(v.id("_storage")),
+  clinicImageInside: v.optional(v.id("_storage")),
+  gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
+});
+const familyMemberProfileDataValidator = v.object({
+  relationshipToPatient: v.optional(v.string()),
 });
 
 export const completeUserProfile = mutation({
@@ -314,23 +333,29 @@ export const completeUserProfile = mutation({
       v.literal("family_member")
     ),
     profileData: v.union(
-        physiotherapistProfileDataValidator,
-        patientProfileDataValidator,
-        clinicOwnerProfileDataValidator,
-        familyMemberProfileDataValidator
+      physiotherapistProfileDataValidator,
+      patientProfileDataValidator,
+      clinicOwnerProfileDataValidator,
+      familyMemberProfileDataValidator
     ),
-    firstName: v.optional(v.string()), 
+    firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
     finalStep: v.optional(v.boolean()), // Add this parameter
   },
-  returns: v.object({ success: v.boolean(), message: v.optional(v.string()) }),
+  returns: v.object({
+    success: v.boolean(),
+    message: v.optional(v.string()),
+    physiotherapistProfileId: v.optional(v.id("physiotherapistProfiles")),
+    clinicOwnerProfileId: v.optional(v.id("clinicOwnerProfiles")),
+    patientProfileId: v.optional(v.id("patientProfiles"))
+  }),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       console.error("[completeUserProfile] Error: User not authenticated.");
       throw new Error("User not authenticated.");
     }
-    const clerkId = identity.subject; 
+    const clerkId = identity.subject;
     console.log("[completeUserProfile] Authenticated user clerkId:", clerkId);
 
     const user = await ctx.db
@@ -391,40 +416,45 @@ export const completeUserProfile = mutation({
         const patientData = args.profileData as typeof patientProfileDataValidator.type;
         let patientProfileId: Id<"patientProfiles">;
         if (user.patientProfileId) {
-            await ctx.db.patch(user.patientProfileId, { ...patientData });
-            patientProfileId = user.patientProfileId;
+          await ctx.db.patch(user.patientProfileId, { ...patientData });
+          patientProfileId = user.patientProfileId;
         } else {
-            patientProfileId = await ctx.db.insert("patientProfiles", {
-              userId: user._id,
-              ...patientData,
-            });
+          patientProfileId = await ctx.db.insert("patientProfiles", {
+            userId: user._id,
+            ...patientData,
+          });
         }
         userUpdatePayload.patientProfileId = patientProfileId;
         break;
 
       case "clinic_owner":
         console.log("[completeUserProfile] Processing clinic_owner role.");
-        
+
         // Get the clinic owned by this user
         const clinic = await ctx.db
           .query("clinics")
           .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
           .first();
-        
+
         if (!clinic) {
           console.error("[completeUserProfile] Error: No clinic found for clinic owner:", user._id);
           throw new Error("No clinic found for this clinic owner. Please complete clinic setup first.");
         }
-        
+
         // Create or update clinic owner profile
         let clinicOwnerProfileId: Id<"clinicOwnerProfiles">;
-        
+        const clinicOwnerData = args.profileData as typeof clinicOwnerProfileDataValidator.type;
+
+        // Extract fields that belong to clinicOwnerProfiles
+        // We need to exclude clinicImageOutside, clinicImageInside, clinicLocation as they go to the clinic table
+        const { clinicImageOutside, clinicImageInside, clinicLocation, ...profileFields } = clinicOwnerData;
+
         if (user.clinicOwnerProfileId) {
           // Update existing profile
           console.log("[completeUserProfile] Updating existing clinic owner profile:", user.clinicOwnerProfileId);
           await ctx.db.patch(user.clinicOwnerProfileId, {
             clinicId: clinic._id,
-            // Add any other profile data from args.profileData if needed
+            ...profileFields,
           });
           clinicOwnerProfileId = user.clinicOwnerProfileId;
         } else {
@@ -433,11 +463,21 @@ export const completeUserProfile = mutation({
           clinicOwnerProfileId = await ctx.db.insert("clinicOwnerProfiles", {
             userId: user._id,
             clinicId: clinic._id,
-            // Add any other profile data from args.profileData if needed
+            ...profileFields,
           });
           console.log("[completeUserProfile] New clinic owner profile created. ID:", clinicOwnerProfileId);
         }
-        
+
+        // Update Clinic with Location and Images
+        const clinicUpdates: any = {};
+        if ((args.profileData as any).clinicLocation) clinicUpdates.location = (args.profileData as any).clinicLocation;
+        if ((args.profileData as any).clinicImageOutside) clinicUpdates.clinicImageOutside = (args.profileData as any).clinicImageOutside;
+        if ((args.profileData as any).clinicImageInside) clinicUpdates.clinicImageInside = (args.profileData as any).clinicImageInside;
+
+        if (Object.keys(clinicUpdates).length > 0) {
+          await ctx.db.patch(clinic._id, clinicUpdates);
+        }
+
         userUpdatePayload.clinicOwnerProfileId = clinicOwnerProfileId;
         console.log("[completeUserProfile] clinicOwnerProfileId set in userUpdatePayload:", clinicOwnerProfileId);
         break;
@@ -464,7 +504,7 @@ export const completeUserProfile = mutation({
     // For physiotherapists and clinic owners, create approval request after final step
     if (args.finalStep && (args.role === "physiotherapist" || args.role === "clinic_owner")) {
       console.log("[completeUserProfile] Creating approval request for", args.role);
-      
+
       // Check if approval request already exists
       const existingApproval = await ctx.db
         .query("accountApprovalStatus")
@@ -476,7 +516,7 @@ export const completeUserProfile = mutation({
           userId: user._id,
           status: "pending_review",
           submittedAt: Date.now(),
-          requiredDocuments: args.role === "physiotherapist" 
+          requiredDocuments: args.role === "physiotherapist"
             ? ["Professional License", "Certification Documents"]
             : ["Business License", "Tax Registration", "Owner Identification"]
         });
@@ -516,6 +556,8 @@ export const completeUserProfile = mutation({
         const adminActionPath = `/admin/users/${user._id}`;
         const adminDashboardLink = `${appUrl}${adminActionPath}`;
 
+        console.log(`[completeUserProfile] Notifying ${admins.length} admin(s) about ${roleLabel} onboarding completion for ${displayName}`);
+
         for (const admin of admins) {
           // In-app notification to admin
           await ctx.db.insert("notifications", {
@@ -529,7 +571,7 @@ export const completeUserProfile = mutation({
               data: {
                 entityId: String(user._id),
                 entityType: "user",
-                actionUrl: adminActionUrl,
+                actionUrl: adminActionPath,
                 metadata: {
                   role: args.role,
                 },
@@ -540,21 +582,39 @@ export const completeUserProfile = mutation({
 
           // Email to admin (if email exists)
           if (admin.email) {
-            await ctx.scheduler.runAfter(0, internal.actions.emails.sendOnboardingNotificationEmail as any, {
+            console.log(`[completeUserProfile] Scheduling email to admin ${admin.email} for ${displayName} onboarding approval`);
+            await ctx.scheduler.runAfter(0, internal.actions.emails.sendOnboardingNotificationEmail.sendOnboardingNotificationEmail, {
               adminEmail: admin.email,
               userName: `${displayName} (${roleLabel})`,
               adminDashboardLink,
               userRole: roleLabel,
               submittedAt: Date.now(),
             });
+          } else {
+            console.warn(`[completeUserProfile] Admin ${admin._id} has no email address, skipping email notification`);
           }
         }
+
+        console.log(`[completeUserProfile] Admin notifications complete for ${displayName}`);
       } catch (notifyError) {
         console.error("[completeUserProfile] Failed to notify admins of onboarding completion:", notifyError);
+        // Log the error details for debugging
+        if (notifyError instanceof Error) {
+          console.error("[completeUserProfile] Error details:", {
+            message: notifyError.message,
+            stack: notifyError.stack,
+          });
+        }
       }
     }
 
-    return { success: true, message: "Profile completed successfully." };
+    return {
+      success: true,
+      message: "Profile completed successfully.",
+      physiotherapistProfileId: userUpdatePayload.physiotherapistProfileId,
+      clinicOwnerProfileId: userUpdatePayload.clinicOwnerProfileId,
+      patientProfileId: userUpdatePayload.patientProfileId
+    };
   },
 });
 
@@ -775,6 +835,32 @@ export const createAdminUser = mutation({
   },
 });
 
+export const completeTour = mutation({
+  args: { tourId: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const currentTours = user.toursCompleted || [];
+    if (!currentTours.includes(args.tourId)) {
+      await ctx.db.patch(user._id, {
+        toursCompleted: [...currentTours, args.tourId],
+      });
+    }
+  },
+});
+
 /**
  * Promote an existing user to admin
  */
@@ -817,6 +903,41 @@ export const promoteToAdmin = mutation({
   },
 });
 
+/**
+ * Get the onboarding status of the current user
+ */
+export const getOnboardingStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) return null;
+
+    return {
+      hasCompletedOnboarding: user.hasCompletedOnboarding ?? false,
+      onboardingVersion: user.onboardingVersion ?? 0,
+    };
+  },
+});
+
+/**
+ * Mark the onboarding tour as complete for the current user
+ */
+export const completeOnboarding = mutation({
+  args: {
+    version: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) throw new Error("Unauthenticated");
+
+    await ctx.db.patch(user._id, {
+      hasCompletedOnboarding: true,
+      onboardingVersion: args.version,
+    });
+  },
+});
+
+
 // ==== ADMIN APPROVAL WORKFLOW ====
 
 /**
@@ -830,10 +951,10 @@ export const testNotificationEmail = action({
   handler: async (ctx, args) => {
     // For testing, we'll use the Resend registered email or the provided test email
     const testEmail = args.testEmail || "onboarding@resend.dev";
-    
+
     // Create a test user ID for the notification (or use a real admin user)
     const adminUser = await ctx.runQuery(api.users.getMyUser);
-    
+
     if (!adminUser) {
       throw new Error("No authenticated user found");
     }
@@ -1013,11 +1134,17 @@ export const approveUser = mutation({
       comments: args.comments,
     });
 
+    // Update user status to active and onboarded so they can access the dashboard immediately
+    await ctx.db.patch(user._id, {
+      status: "active",
+      onboarded: true,
+    });
+
     // Create notification for user with email
     const userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'User';
-    const dashboardLink = user.role === "physiotherapist" ? "/dashboard/physiotherapist" 
-                         : user.role === "clinic_owner" ? "/dashboard/clinic" 
-                         : "/dashboard";
+    const dashboardLink = user.role === "physiotherapist" ? "/dashboard/physiotherapist"
+      : user.role === "clinic_owner" ? "/dashboard/clinic"
+        : "/dashboard";
 
     // Create approval notification and send email
     const notificationId = await ctx.db.insert("notifications", {
@@ -1089,14 +1216,14 @@ Welcome to Rehabify Health!
     // Send approval email using existing email service
     if (user.email) {
       console.log(`Approval email would be sent to: ${user.email}`);
-      
+
       // Schedule email sending using the approval email action
       try {
-        const roleDisplayName = user.role === "physiotherapist" ? "Physiotherapist" 
-                              : user.role === "clinic_owner" ? "Clinic Owner" 
-                              : "User";
-        
-                        // Send approval notification with email using integrated system
+        const roleDisplayName = user.role === "physiotherapist" ? "Physiotherapist"
+          : user.role === "clinic_owner" ? "Clinic Owner"
+            : "User";
+
+        // Send approval notification with email using integrated system
         await ctx.scheduler.runAfter(0, internal.notifications.email.sendApprovalNotificationWithEmail, {
           userId: args.userId,
           comments: args.comments,
@@ -1184,13 +1311,13 @@ export const declineUser = mutation({
     // Send decline email using existing email service
     if (user.email) {
       console.log(`Decline email would be sent to: ${user.email} with comments: ${args.comments}`);
-      
+
       // Schedule email sending using the decline email action
       try {
-        const roleDisplayName = user.role === "physiotherapist" ? "Physiotherapist" 
-                              : user.role === "clinic_owner" ? "Clinic Owner" 
-                              : "User";
-        
+        const roleDisplayName = user.role === "physiotherapist" ? "Physiotherapist"
+          : user.role === "clinic_owner" ? "Clinic Owner"
+            : "User";
+
         // Send decline notification with email using integrated system
         await ctx.scheduler.runAfter(0, internal.notifications.email.sendDeclineNotificationWithEmail, {
           userId: args.userId,
@@ -1214,7 +1341,7 @@ export const getUserApprovalStatus = query({
   args: {},
   handler: async (ctx) => {
     const user = await getAuthenticatedUser(ctx);
-    
+
     const approvalStatus = await ctx.db
       .query("accountApprovalStatus")
       .withIndex("by_user_id", (q) => q.eq("userId", user._id))
@@ -1314,28 +1441,28 @@ export const markClinicOwnerOnboarded = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getAuthenticatedUser(ctx);
-    
+
     if (user.role !== "clinic_owner") {
       throw new Error("Only clinic owners can use this function");
     }
-    
+
     if (user.onboarded) {
       return { success: true, message: "User is already onboarded" };
     }
-    
+
     // Check if user has a clinic
     const clinic = await ctx.db
       .query("clinics")
       .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
       .first();
-    
+
     if (!clinic) {
       throw new Error("No clinic found. Please complete clinic setup first.");
     }
-    
+
     // Create or update clinic owner profile
     let clinicOwnerProfileId: Id<"clinicOwnerProfiles">;
-    
+
     if (user.clinicOwnerProfileId) {
       await ctx.db.patch(user.clinicOwnerProfileId, {
         clinicId: clinic._id,
@@ -1347,13 +1474,13 @@ export const markClinicOwnerOnboarded = mutation({
         clinicId: clinic._id,
       });
     }
-    
+
     // Mark user as onboarded
     await ctx.db.patch(user._id, {
       onboarded: true,
       clinicOwnerProfileId,
     });
-    
+
     return { success: true, message: "Clinic owner marked as onboarded" };
   },
 });
@@ -1372,7 +1499,7 @@ export const bootstrapAdmin = internalMutation({
       role: "admin",
       onboarded: true,
     });
-    
+
     console.log(`User ${args.userId} has been set as admin`);
     return { success: true, userId: args.userId };
   },

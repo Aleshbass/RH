@@ -1,10 +1,14 @@
- 'use client'
+'use client'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Calendar, CalendarDays, Plus } from 'lucide-react'
 import { format } from 'date-fns'
+import { useMutation } from 'convex/react'
+import { api } from '@/convex/_generated/api'
+import { CheckCircle } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface Appointment {
   _id: string
@@ -24,6 +28,21 @@ interface TodaysScheduleProps {
 }
 
 export function TodaysSchedule({ todaysSchedule, onViewCalendar }: TodaysScheduleProps) {
+  const updateStatus = useMutation(api.appointments.updateAppointmentStatus);
+
+  const handleMarkCompleted = async (appointmentId: string) => {
+    try {
+      await updateStatus({
+        appointmentId: appointmentId as any,
+        status: 'completed'
+      });
+      toast.success('Appointment marked as completed');
+    } catch (error) {
+      toast.error('Failed to update appointment status');
+      console.error(error);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -40,15 +59,14 @@ export function TodaysSchedule({ todaysSchedule, onViewCalendar }: TodaysSchedul
           todaysSchedule.map((appointment) => (
             <div key={appointment._id} className="flex items-center justify-between p-4 border rounded-lg">
               <div className="flex items-center space-x-3">
-                <div className={`w-2 h-12 rounded-full ${
-                  appointment.status === 'completed' ? 'bg-green-500' :
+                <div className={`w-2 h-12 rounded-full ${appointment.status === 'completed' ? 'bg-green-500' :
                   appointment.status === 'confirmed' ? 'bg-blue-500' :
-                  appointment.status === 'scheduled' ? 'bg-yellow-500' : 'bg-gray-400'
-                }`}></div>
+                    appointment.status === 'scheduled' ? 'bg-yellow-500' : 'bg-gray-400'
+                  }`}></div>
                 <div>
                   <h4 className="font-medium">
-                    {appointment.patient ? 
-                      `${appointment.patient.firstName} ${appointment.patient.lastName}` : 
+                    {appointment.patient ?
+                      `${appointment.patient.firstName} ${appointment.patient.lastName}` :
                       'Unknown Patient'
                     }
                   </h4>
@@ -62,6 +80,17 @@ export function TodaysSchedule({ todaysSchedule, onViewCalendar }: TodaysSchedul
                 <Badge variant="secondary" className="capitalize">
                   {appointment.status.replace('_', ' ')}
                 </Badge>
+                {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-2 h-6 w-6 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                    title="Mark as Completed"
+                    onClick={() => handleMarkCompleted(appointment._id)}
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
           ))
@@ -69,9 +98,9 @@ export function TodaysSchedule({ todaysSchedule, onViewCalendar }: TodaysSchedul
           <div className="text-center py-8 text-gray-500">
             <CalendarDays className="h-12 w-12 mx-auto mb-4 text-gray-300" />
             <p>No appointments scheduled for today</p>
-            <Button 
-              size="sm" 
-              variant="outline" 
+            <Button
+              size="sm"
+              variant="outline"
               className="mt-2"
               onClick={onViewCalendar}
             >

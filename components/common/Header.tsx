@@ -79,9 +79,9 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
   // For normal links
   if (item.type === "link") {
     return (
-      <Link 
+      <Link
         href={item.href || '#'}
-        className="px-4 py-2 text-sm font-medium text-[#002e2c] hover:text-blue-600 transition-colors font-pally"
+        className="px-4 py-2 text-sm font-medium text-[#002e2c] hover:text-gray-500 transition-colors font-sans"
         onClick={onClick}
         onMouseEnter={onMouseEnter}
         onMouseLeave={() => onMouseLeave(item.name)}
@@ -104,26 +104,26 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
   };
 
   return (
-    <div 
+    <div
       className="relative"
       onMouseEnter={handleItemMouseEnter}
       onMouseLeave={handleItemMouseLeave}
     >
-      <button 
-        className="px-4 py-2 text-sm font-medium text-[#002e2c] hover:text-blue-600 transition-colors flex items-center gap-1 font-pally"
+      <button
+        className="px-4 py-2 text-sm font-medium text-[#002e2c] hover:text-gray-500 transition-colors flex items-center gap-1 font-sans"
         onClick={onClick}
       >
         {item.name}
 
-        <svg 
-          xmlns="http://www.w3.org/2000/svg" 
-          width="16" 
-          height="16" 
-          viewBox="0 0 24 24" 
-          fill="none" 
-          stroke="currentColor" 
-          strokeWidth="2" 
-          strokeLinecap="round" 
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
           strokeLinejoin="round"
           className={`ml-1 h-3 w-3 transition-transform duration-200 ${isActive ? 'rotate-180' : ''}`}
         >
@@ -132,7 +132,7 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
       </button>
 
       {isActive && (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
@@ -159,14 +159,14 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
                     href={subItem.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block px-4 py-2 mb-3 rounded-md hover:bg-[#F2EFE0] hover:text-blue-600 hover:translate-x-1 transition-all duration-200"
+                    className="block px-4 py-2 mb-3 rounded-md hover:bg-[#F2EFE0] hover:text-gray-500 hover:translate-x-1 transition-all duration-200"
                     onClick={onClick}
                   >
-                    <div className="text-sm font-medium text-[#002e2c] font-pally">
+                    <div className="text-sm font-medium text-[#002e2c] font-sans">
                       {subItem.name}
                     </div>
                     {subItem.subtitle && (
-                      <div className="text-xs text-[#002e2c]/70 mt-0.5 font-pally">
+                      <div className="text-xs text-[#002e2c]/70 mt-0.5 font-sans">
                         {subItem.subtitle}
                       </div>
                     )}
@@ -175,14 +175,14 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
                   <Link
                     key={idx}
                     href={subItem.href}
-                    className="block px-4 py-2 mb-3 rounded-md hover:bg-[#F2EFE0] hover:text-blue-600 hover:translate-x-1 transition-all duration-200"
+                    className="block px-4 py-2 mb-3 rounded-md hover:bg-[#F2EFE0] hover:text-gray-500 hover:translate-x-1 transition-all duration-200"
                     onClick={onClick}
                   >
-                    <div className="text-sm font-medium text-[#002e2c] font-pally">
+                    <div className="text-sm font-medium text-[#002e2c] font-sans">
                       {subItem.name}
                     </div>
                     {subItem.subtitle && (
-                      <div className="text-xs text-[#002e2c]/70 mt-0.5 font-pally">
+                      <div className="text-xs text-[#002e2c]/70 mt-0.5 font-sans">
                         {subItem.subtitle}
                       </div>
                     )}
@@ -194,7 +194,7 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
               <div className="w-full h-[170px] overflow-hidden rounded-lg">
                 {item.name === "CPD" ? (
                   <a href="https://www.rehabifylearn.com" target="_blank" rel="noopener noreferrer" className="block w-full h-full cursor-pointer transition-transform duration-200 hover:scale-105">
-                    <Image 
+                    <Image
                       src="/logos/images/www.rehabifylearn.com_(Nest Hub Max).webp"
                       alt="Rehabify Learn"
                       width={500}
@@ -204,11 +204,11 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
                     />
                   </a>
                 ) : (
-                  <Image 
+                  <Image
                     src={
-                      item.name === "Platform" ? "/logos/images/platform.jpeg" : 
-                      item.name === "Resources" ? "/logos/images/IMG_6328_a4bxtu.webp" : 
-                      "/logos/MainRehabify.svg"
+                      item.name === "Platform" ? "/logos/images/platform.jpeg" :
+                        item.name === "Resources" ? "/logos/images/IMG_6328_a4bxtu.webp" :
+                          "/logos/MainRehabify.svg"
                     }
                     alt={item.name}
                     width={item.name === "Platform" || item.name === "Resources" ? 500 : 200}
@@ -232,25 +232,25 @@ const navLinks: NavItem[] = [
     name: "Platform",
     type: "dropdown",
     items: [
-      { 
-        name: "For Clinics", 
+      {
+        name: "For Clinics",
         href: "/platform/clinics",
-        subtitle: "Complete practice management solution" 
+        subtitle: "Complete practice management solution"
       },
-      { 
-        name: "For Physiotherapists", 
+      {
+        name: "For Physiotherapists",
         href: "/platform/physiotherapists",
-        subtitle: "Tools to streamline patient care" 
+        subtitle: "Tools to streamline patient care"
       },
-      { 
-        name: "For Patients", 
+      {
+        name: "For Patients",
         href: "/platform/patients",
-        subtitle: "Personalized rehabilitation programs" 
+        subtitle: "Personalized rehabilitation programs"
       },
-      { 
-        name: "For Family Members", 
+      {
+        name: "For Family Members",
         href: "/platform/family",
-        subtitle: "Support your loved one's recovery" 
+        subtitle: "Support your loved one's recovery"
       },
     ],
   },
@@ -261,20 +261,20 @@ const navLinks: NavItem[] = [
     name: "CPD",
     type: "dropdown",
     items: [
-      { 
-        name: "Courses", 
+      {
+        name: "Courses",
         href: "https://www.rehabifylearn.com",
-        subtitle: "Continuing professional development" 
+        subtitle: "Continuing professional development"
       },
-      { 
-        name: "Workshops", 
+      {
+        name: "Workshops",
         href: "https://www.rehabifylearn.com/courses",
-        subtitle: "Hands-on learning opportunities" 
+        subtitle: "Hands-on learning opportunities"
       },
-      { 
-        name: "Certificates", 
+      {
+        name: "Certificates",
         href: "https://www.rehabifylearn.com/about",
-        subtitle: "Track your professional development" 
+        subtitle: "Track your professional development"
       },
     ],
   },
@@ -282,20 +282,20 @@ const navLinks: NavItem[] = [
     name: "Resources",
     type: "dropdown",
     items: [
-      { 
-        name: "Blog", 
+      {
+        name: "Blog",
         href: "/blog",
-        subtitle: "Latest rehabilitation insights" 
+        subtitle: "Latest rehabilitation insights"
       },
-      { 
-        name: "FAQs", 
+      {
+        name: "FAQs",
         href: "/faqs",
-        subtitle: "Common questions answered" 
+        subtitle: "Common questions answered"
       },
-      { 
-        name: "Support", 
+      {
+        name: "Support",
         href: "/support",
-        subtitle: "Get help with our platform" 
+        subtitle: "Get help with our platform"
       },
     ],
   },
@@ -323,7 +323,7 @@ export default function Header() {
 
   // Use motion's useScroll hook for better animation integration
   const [visible, setVisible] = useState(false);
-  
+
   // Use window scroll events for more reliable scroll detection
   useEffect(() => {
     const handleScroll = () => {
@@ -337,17 +337,17 @@ export default function Header() {
 
     // Add scroll event listener
     window.addEventListener('scroll', handleScroll);
-    
+
     // Initial check
     handleScroll();
-    
+
     // Clean up
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   // Use TanStack Query for prefetching
   const queryClient = useQueryClient();
-  
+
   // Prefetch function for navigation links
   const prefetchRoute = (route: string) => {
     queryClient.prefetchQuery({
@@ -374,7 +374,7 @@ export default function Header() {
           duration: 0.3,
         }}
         className={cn(
-          "relative z-[60] mx-auto hidden w-[90%] max-w-[1100px] flex-row items-center justify-between px-4 py-3 lg:flex text-[#002e2c] font-pally rounded-2xl",
+          "relative z-[60] mx-auto hidden w-[90%] max-w-[1100px] flex-row items-center justify-between px-4 py-3 lg:flex text-[#002e2c] font-sans rounded-2xl",
           "sm:px-6 md:px-8", // Responsive padding
         )}
       >
@@ -424,7 +424,7 @@ export default function Header() {
           duration: 0.3,
         }}
         className={cn(
-          "relative z-[60] mx-auto flex w-[90%] max-w-md flex-row items-center justify-between px-4 py-2 lg:hidden text-[#002e2c] font-pally rounded-xl",
+          "relative z-[60] mx-auto flex w-[90%] max-w-md flex-row items-center justify-between px-4 py-2 lg:hidden text-[#002e2c] font-sans rounded-xl",
         )}
       >
         <div className="flex-shrink-0">
@@ -440,9 +440,9 @@ export default function Header() {
           </SignedIn>
           <div className="relative z-[70]">
             <div className="cursor-pointer">
-              <MobileNavToggle 
-                isOpen={isMobileMenuOpen} 
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+              <MobileNavToggle
+                isOpen={isMobileMenuOpen}
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               />
             </div>
           </div>
@@ -452,17 +452,17 @@ export default function Header() {
       {/* Mobile Menu Dropdown */}
       {isMobileMenuOpen && (
         <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.2 }}
-          className="absolute inset-x-0 top-16 z-50 flex w-full flex-col items-start justify-start gap-4 rounded-xl bg-[#FAF6E7] px-6 py-8 shadow-[0_8px_30px_rgba(0,0,0,0.1)] border border-[#002e2c]/10 lg:hidden max-h-[80vh] overflow-y-auto"
+          initial={{ opacity: 0, y: -20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -20, scale: 0.95 }}
+          transition={{ type: "spring", duration: 0.4, bounce: 0 }}
+          className="absolute inset-x-0 top-16 z-50 flex w-full flex-col items-start justify-start gap-4 rounded-xl bg-white px-6 py-8 shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-gray-100 lg:hidden max-h-[80vh] overflow-y-auto"
         >
           {navLinks.map((item, idx) => (
             <div key={idx} className="py-2 w-full">
               {item.type === 'dropdown' ? (
                 <div>
-                  <button 
+                  <button
                     onClick={() => {
                       // Toggle the visibility of this dropdown's content
                       const currentActive = activeItem;
@@ -472,18 +472,18 @@ export default function Header() {
                         setActiveItem(item.name); // expand this one
                       }
                     }}
-                    className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium text-[#002e2c] font-pally"
+                    className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium text-[#002e2c] font-sans"
                   >
                     <span>{item.name}</span>
-                    <svg 
-                      xmlns="http://www.w3.org/2000/svg" 
-                      width="16" 
-                      height="16" 
-                      viewBox="0 0 24 24" 
-                      fill="none" 
-                      stroke="currentColor" 
-                      strokeWidth="2" 
-                      strokeLinecap="round" 
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
                       strokeLinejoin="round"
                       className={`ml-1 h-3 w-3 transition-transform duration-200 ${activeItem === item.name ? 'rotate-180' : ''}`}
                     >
@@ -492,53 +492,53 @@ export default function Header() {
                   </button>
                   {activeItem === item.name && (
                     <div className="ml-4 space-y-2">
-                    {item.items?.map((subItem, subIdx) => {
-                      const isExternalLink = subItem.href.startsWith('http');
-                      
-                      return isExternalLink ? (
-                        <a
-                          key={subIdx}
-                          href={subItem.href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block hover:text-blue-600 hover:translate-x-1 transition-all duration-200 py-2 px-2 rounded-md hover:bg-[#F2EFE0] font-pally"
-                          onClick={() => setIsMobileMenuOpen(false)}
-                        >
-                          <div className="text-sm font-medium text-[#002e2c]">
-                            {subItem.name}
-                          </div>
-                          {subItem.subtitle && (
-                            <div className="text-xs text-[#002e2c]/70 mt-0.5">
-                              {subItem.subtitle}
+                      {item.items?.map((subItem, subIdx) => {
+                        const isExternalLink = subItem.href.startsWith('http');
+
+                        return isExternalLink ? (
+                          <a
+                            key={subIdx}
+                            href={subItem.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block hover:text-gray-500 hover:translate-x-1 transition-all duration-200 py-2 px-2 rounded-md hover:bg-[#F2EFE0] font-sans"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                          >
+                            <div className="text-sm font-medium text-[#002e2c]">
+                              {subItem.name}
                             </div>
-                          )}
-                        </a>
-                      ) : (
-                        <Link
-                          key={subIdx}
-                          href={subItem.href}
-                          className="block hover:text-blue-600 hover:translate-x-1 transition-all duration-200 py-2 px-2 rounded-md hover:bg-[#F2EFE0] font-pally"
-                          onClick={() => setIsMobileMenuOpen(false)}
-                          onMouseEnter={() => prefetchRoute(subItem.href)}
-                        >
-                          <div className="text-sm font-medium text-[#002e2c]">
-                            {subItem.name}
-                          </div>
-                          {subItem.subtitle && (
-                            <div className="text-xs text-[#002e2c]/70 mt-0.5">
-                              {subItem.subtitle}
+                            {subItem.subtitle && (
+                              <div className="text-xs text-[#002e2c]/70 mt-0.5">
+                                {subItem.subtitle}
+                              </div>
+                            )}
+                          </a>
+                        ) : (
+                          <Link
+                            key={subIdx}
+                            href={subItem.href}
+                            className="block hover:text-gray-500 hover:translate-x-1 transition-all duration-200 py-2 px-2 rounded-md hover:bg-[#F2EFE0] font-sans"
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            onMouseEnter={() => prefetchRoute(subItem.href)}
+                          >
+                            <div className="text-sm font-medium text-[#002e2c]">
+                              {subItem.name}
                             </div>
-                          )}
-                        </Link>
-                      );
-                    })}
+                            {subItem.subtitle && (
+                              <div className="text-xs text-[#002e2c]/70 mt-0.5">
+                                {subItem.subtitle}
+                              </div>
+                            )}
+                          </Link>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
               ) : (
-                <Link 
-                  href={item.href || '#'} 
-                  className="block px-4 py-2 text-sm font-medium text-[#002e2c] hover:text-blue-600 transition-colors font-pally"
+                <Link
+                  href={item.href || '#'}
+                  className="block px-4 py-2 text-sm font-medium text-[#002e2c] hover:text-gray-500 transition-colors font-sans"
                   onClick={() => setIsMobileMenuOpen(false)}
                   onMouseEnter={() => item.href ? prefetchRoute(item.href) : null}
                 >
@@ -547,12 +547,12 @@ export default function Header() {
               )}
             </div>
           ))}
-          
+
           <SignedOut>
             <div className="w-full pt-4 border-t border-[#002e2c]/10">
-              <NavbarButton 
-                href="/sign-up" 
-                variant="secondary" 
+              <NavbarButton
+                href="/sign-up"
+                variant="secondary"
                 className="w-full justify-center"
                 onClick={() => setIsMobileMenuOpen(false)}
               >

@@ -28,6 +28,7 @@ interface BookingWidgetProps {
     }>;
     offersOnlineSessions: boolean;
     offersInPersonSessions: boolean;
+    availabilitySchedule?: any;
   };
 }
 
@@ -103,8 +104,8 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
           sessionType === "initial_consult"
             ? "initial_consult"
             : sessionType === "follow_up"
-            ? "follow_up"
-            : "package",
+              ? "follow_up"
+              : "package",
         sessionDate: selectedDateTime.getTime(),
         sessionDuration: 60, // Default 60 minutes
         isOnline,
@@ -190,6 +191,35 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
     });
 
     handler.openIframe();
+  };
+
+  const formatAvailability = (schedule: any) => {
+    if (!schedule) return null;
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const availableDays = days.filter(day => schedule[day]?.isOpen);
+
+    if (availableDays.length === 0) return <p className="text-sm text-gray-500">No availability set</p>;
+
+    return (
+      <div className="space-y-1">
+        {availableDays.map(day => {
+          const slots = schedule[day].slots;
+          return (
+            <div key={day} className="flex justify-between text-sm">
+              <span className="capitalize text-gray-600">{day}</span>
+              <span className="font-medium text-gray-900">
+                {slots.map((slot: any, i: number) => (
+                  <span key={i}>
+                    {slot.start} - {slot.end}
+                    {i < slots.length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -286,6 +316,16 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
                 </Label>
               </div>
             </RadioGroup>
+          </div>
+        )}
+
+        {/* Availability Display */}
+        {profile.availabilitySchedule && (
+          <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+            <Label className="text-xs font-semibold text-gray-500 uppercase mb-2 block">
+              Weekly Availability
+            </Label>
+            {formatAvailability(profile.availabilitySchedule)}
           </div>
         )}
 

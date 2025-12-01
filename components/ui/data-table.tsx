@@ -65,8 +65,8 @@ export function DataTable<TData, TValue>({
           </div>
         </div>
       )}
-      
-      <div className="rounded-md border">
+
+      <div className="rounded-md border overflow-x-auto">
         <table className="w-full">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -74,14 +74,14 @@ export function DataTable<TData, TValue>({
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-4 py-3 text-left font-medium text-muted-foreground"
+                    className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap"
                   >
                     {header.isPlaceholder
                       ? null
                       : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )}
+                        header.column.columnDef.header,
+                        header.getContext()
+                      )}
                   </th>
                 ))}
               </tr>
@@ -117,13 +117,13 @@ export function DataTable<TData, TValue>({
           </tbody>
         </table>
       </div>
-      
-      <div className="flex items-center justify-between space-x-2">
-        <div className="text-sm text-muted-foreground">
+
+      <div className="flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-muted-foreground text-center sm:text-left">
           {table.getFilteredSelectedRowModel().rows.length} of{" "}
           {table.getFilteredRowModel().rows.length} row(s) selected.
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center justify-center space-x-2">
           <Button
             variant="outline"
             size="sm"

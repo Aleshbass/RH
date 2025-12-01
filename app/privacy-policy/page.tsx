@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 import { MedicalWebPageSchema } from '@/components/seo/StructuredData';
 
 export const metadata: Metadata = {
@@ -21,9 +22,19 @@ export default function PrivacyPolicyPage() {
         description="Our commitment to protecting your health data and personal information"
         url="https://rehabifyhealth.com/privacy-policy"
       />
-      
-      <div className="min-h-screen bg-gray-50 py-12">
-        <div className="max-w-4xl mx-auto px-6">
+
+      <div className="min-h-screen bg-gray-50">
+        {/* Breadcrumb Header */}
+        <header className="border-b border-gray-200 bg-white">
+          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+            <Link href="/" className="inline-flex lg:hidden items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Home
+            </Link>
+          </div>
+        </header>
+
+        <div className="max-w-4xl mx-auto px-6 py-12">
           {/* Header */}
           <div className="bg-white rounded-lg shadow-sm p-8 mb-8">
             <h1 className="text-4xl font-bold text-[#005b57] mb-4">Privacy Policy</h1>
@@ -32,10 +43,10 @@ export default function PrivacyPolicyPage() {
               <span className="hidden sm:block">•</span>
               <p><strong>Data Protection Officer:</strong> <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline">rehabify.app@gmail.com</a></p>
             </div>
-            
+
             {/* Download Option */}
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <a 
+            <div className="mt-6">
+              <a
                 href="/docs/Rehabify Health – Privacy Policy 2_10_25.docx"
                 download
                 className="inline-flex items-center gap-2 text-[#005b57] hover:text-[#00877e] transition-colors"
@@ -50,7 +61,7 @@ export default function PrivacyPolicyPage() {
 
           {/* Content */}
           <div className="bg-white rounded-lg shadow-sm p-8 prose prose-lg max-w-none">
-            
+
             <section id="introduction" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">1. Introduction</h2>
               <p className="text-gray-700 leading-relaxed">
@@ -63,7 +74,7 @@ export default function PrivacyPolicyPage() {
 
             <section id="data-collection" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">2. Data We Collect</h2>
-              
+
               <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">For Patients</h3>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
                 <li><strong>Personal Information:</strong> Name, email, phone number, date of birth, address</li>
@@ -90,7 +101,7 @@ export default function PrivacyPolicyPage() {
 
             <section id="data-usage" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">3. How We Use Your Data</h2>
-              
+
               <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Service Delivery</h3>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
                 <li>Facilitate appointments and treatment sessions</li>
@@ -134,7 +145,7 @@ export default function PrivacyPolicyPage() {
 
             <section id="data-sharing" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">5. Data Sharing & Disclosure</h2>
-              
+
               <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">With Care Providers</h3>
               <p className="text-gray-700 leading-relaxed">
                 Patient health information is shared with assigned physiotherapists and clinics for treatment purposes.
@@ -164,7 +175,7 @@ export default function PrivacyPolicyPage() {
 
             <section id="data-storage" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">6. Data Storage & Security</h2>
-              
+
               <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Storage Location</h3>
               <p className="text-gray-700 leading-relaxed">
                 Data is stored securely in cloud infrastructure with industry-leading security standards.
@@ -198,7 +209,7 @@ export default function PrivacyPolicyPage() {
               <p className="text-gray-700 leading-relaxed mb-4">
                 Under the Nigeria Data Protection Regulation (NDPR), you have the following rights:
               </p>
-              
+
               <ul className="list-disc pl-6 text-gray-700 space-y-3">
                 <li>
                   <strong>Right to Access:</strong> Request a copy of your personal data
@@ -271,7 +282,7 @@ export default function PrivacyPolicyPage() {
 
               <div className="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
                 <p className="text-blue-900">
-                  <strong>Nigeria Data Protection Bureau (NDPB)</strong><br/>
+                  <strong>Nigeria Data Protection Bureau (NDPB)</strong><br />
                   If you wish to file a complaint about our data practices, you may contact the NDPB through their official channels.
                 </p>
               </div>

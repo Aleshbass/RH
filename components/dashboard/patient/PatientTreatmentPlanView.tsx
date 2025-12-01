@@ -13,6 +13,11 @@ import { formatDistanceToNow, format } from "date-fns";
 import { TreatmentPlanSyncIndicator, SyncStatusIndicator } from "./TreatmentPlanSyncIndicator";
 import { VideoEmbed } from "@/components/media/VideoEmbed";
 import { StorageImage } from "@/components/media/StorageImage";
+import { ExerciseCompletionModal } from "./treatment/ExerciseCompletionModal";
+import { Button } from "@/components/ui/button";
+import { CheckCircle2, Play, CalendarDays, TrendingUp, Upload } from "lucide-react";
+import { useAction } from "convex/react";
+import { useToast } from "@/components/ui/use-toast";
 
 interface PatientTreatmentPlanViewProps {
   treatmentPlanId: string;
@@ -34,6 +39,80 @@ export function PatientTreatmentPlanView({ treatmentPlanId }: PatientTreatmentPl
 
   // Mark changes as read when viewing
   const markAsRead = useMutation(api.treatmentPlanSync.markTreatmentChangesAsRead);
+
+  // Completion tracking state
+  const [selectedExercise, setSelectedExercise] = useState<{
+    id: string;
+    name: string;
+    phaseOrder: number;
+    sets: number;
+    reps: number;
+  } | null>(null);
+
+  // Fetch today's progress
+  const todayProgress = useQuery(api.exerciseCompletions.getTodayProgress, {
+    treatmentPlanId: treatmentPlanId as any,
+  });
+
+  // Fetch weekly stats
+  const weeklyStats = useQuery(api.exerciseCompletions.getWeeklyProgress, {
+    treatmentPlanId: treatmentPlanId as any,
+  });
+
+  const isCompletedToday = (exerciseId: string) => {
+    return todayProgress?.some((c) => c.exerciseId === exerciseId);
+  };
+
+  const generateUploadUrl = useAction(api.files.generateUploadUrl);
+  const updateTreatmentPlan = useMutation(api.treatmentPlans.updateTreatmentPlan);
+  const { toast } = useToast();
+  const [uploadingImages, setUploadingImages] = useState<Record<string, { before: boolean; after: boolean }>>({});
+
+  const handleUploadExerciseImage = async (
+    phaseOrder: number,
+    exerciseId: string,
+    which: 'before' | 'after',
+    file: File | null
+  ) => {
+    if (!treatmentPlan || !file) return;
+    const key = `${phaseOrder}-${exerciseId}`;
+    setUploadingImages((prev) => ({ ...prev, [key]: { ...prev[key], [which]: true } }));
+    try {
+      const uploadUrl = await generateUploadUrl({ fileType: file.type || 'application/octet-stream', fileName: file.name });
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      });
+      const { storageId } = await res.json();
+
+      const updatedPhases: any[] = (treatmentPlan.phases ? [...treatmentPlan.phases] : []).map((p: any) => ({ ...p, exercises: [...p.exercises] }));
+      const targetPhase = updatedPhases.find((p) => p.order === phaseOrder);
+      if (!targetPhase) throw new Error('Phase not found');
+      const targetExercise = targetPhase.exercises.find((e: any) => e.exerciseId === exerciseId);
+      if (!targetExercise) throw new Error('Exercise not found in phase');
+      if (which === 'before') targetExercise.beforeImageStorageId = storageId;
+      if (which === 'after') targetExercise.afterImageStorageId = storageId;
+
+      await updateTreatmentPlan({
+        treatmentPlanId: treatmentPlan._id as any,
+        phases: updatedPhases,
+      });
+
+      toast({
+        title: 'Image Uploaded',
+        description: `${which === 'before' ? 'Before' : 'After'} image saved for this exercise.`,
+      });
+    } catch (e) {
+      toast({
+        title: 'Upload failed',
+        description: 'Could not upload the image. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setUploadingImages((prev) => ({ ...prev, [key]: { ...prev[key], [which]: false } }));
+    }
+  };
 
   useEffect(() => {
     if (treatmentPlan && changeHistory) {
@@ -202,8 +281,8 @@ export function PatientTreatmentPlanView({ treatmentPlanId }: PatientTreatmentPl
                       </div>
                     </div>
                   )) || (
-                    <p className="text-sm text-muted-foreground">No goals set</p>
-                  )}
+                      <p className="text-sm text-muted-foreground">No goals set</p>
+                    )}
                 </div>
               </CardContent>
             </Card>
@@ -237,35 +316,78 @@ export function PatientTreatmentPlanView({ treatmentPlanId }: PatientTreatmentPl
                               {exercise.notes}
                             </p>
                           )}
-                          {(exercise as { beforeImageStorageId?: string; afterImageStorageId?: string }).beforeImageStorageId || (exercise as { beforeImageStorageId?: string; afterImageStorageId?: string }).afterImageStorageId ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                              {(exercise as { beforeImageStorageId?: string }).beforeImageStorageId && (
-                                <div>
-                                  <div className="text-xs text-muted-foreground mb-1">Before</div>
-                                  <StorageImage storageId={(exercise as { beforeImageStorageId?: string }).beforeImageStorageId || ''} className="w-full h-48 object-cover rounded" />
-                                </div>
-                              )}
-                              {(exercise as { afterImageStorageId?: string }).afterImageStorageId && (
-                                <div>
-                                  <div className="text-xs text-muted-foreground mb-1">After</div>
-                                  <StorageImage storageId={(exercise as { afterImageStorageId?: string }).afterImageStorageId || ''} className="w-full h-48 object-cover rounded" />
-                                </div>
-                              )}
+                          <div className="mt-4 pt-4 border-t border-gray-100">
+                            <h5 className="text-xs font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                              <Target className="w-3.5 h-3.5 text-green-600" />
+                              Progress Tracking
+                            </h5>
+                            <div className="grid grid-cols-2 gap-3">
+                              {/* Before Photo */}
+                              <div>
+                                <div className="text-xs font-medium text-gray-600 mb-1.5">Before</div>
+                                {(exercise as { beforeImageStorageId?: string }).beforeImageStorageId ? (
+                                  <div className="relative rounded-md overflow-hidden border border-gray-200 aspect-[4/3]">
+                                    <StorageImage storageId={(exercise as { beforeImageStorageId?: string }).beforeImageStorageId || ''} />
+                                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] py-1 text-center backdrop-blur-sm">Before</div>
+                                  </div>
+                                ) : (
+                                  <div className="border border-dashed border-gray-200 rounded-md p-2 flex flex-col items-center justify-center gap-1 bg-gray-50 aspect-[4/3]">
+                                    <div className="text-center text-[10px] text-gray-400">No photo uploaded yet</div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* After Photo */}
+                              <div>
+                                <div className="text-xs font-medium text-gray-600 mb-1.5">After</div>
+                                {(exercise as { afterImageStorageId?: string }).afterImageStorageId ? (
+                                  <div className="relative rounded-md overflow-hidden border border-gray-200 aspect-[4/3]">
+                                    <StorageImage storageId={(exercise as { afterImageStorageId?: string }).afterImageStorageId || ''} />
+                                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] py-1 text-center backdrop-blur-sm">After</div>
+                                  </div>
+                                ) : (
+                                  <div className="border border-dashed border-gray-200 rounded-md p-2 flex flex-col items-center justify-center gap-1 bg-gray-50 aspect-[4/3]">
+                                    <div className="text-center text-[10px] text-gray-400">No photo uploaded yet</div>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          ) : null}
+                          </div>
+
+                          <div className="pt-2">
+                            {isCompletedToday(exercise.exerciseId || '') ? (
+                              <Button variant="outline" className="w-full bg-green-50 text-green-700 border-green-200 hover:bg-green-100" disabled>
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                Completed Today
+                              </Button>
+                            ) : (
+                              <Button
+                                className="w-full bg-green-600 hover:bg-green-700"
+                                onClick={() => setSelectedExercise({
+                                  id: exercise.exerciseId || '',
+                                  name: (exercise as { name?: string }).name || exercise.exerciseId || 'Exercise',
+                                  phaseOrder: phase.order,
+                                  sets: exercise.sets || 3,
+                                  reps: exercise.reps || 10,
+                                })}
+                              >
+                                Mark as Complete
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       )) || (
-                        <p className="text-sm text-muted-foreground col-span-2">
-                          No exercises assigned to this phase
-                        </p>
-                      )}
+                          <p className="text-sm text-muted-foreground col-span-2">
+                            No exercises assigned to this phase
+                          </p>
+                        )}
                     </div>
                   </div>
                 )) || (
-                  <p className="text-center text-muted-foreground py-8">
-                    No exercise phases defined
-                  </p>
-                )}
+                    <p className="text-center text-muted-foreground py-8">
+                      No exercise phases defined
+                    </p>
+                  )}
               </div>
             </CardContent>
           </Card>
@@ -280,10 +402,75 @@ export function PatientTreatmentPlanView({ treatmentPlanId }: PatientTreatmentPl
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                <Activity className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>Progress tracking will be displayed here</p>
-                <p className="text-sm">Complete exercises to see your progress</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <Card className="bg-green-50 border-green-100">
+                  <CardContent className="p-6 flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center text-green-600">
+                      <CheckCircle2 className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Completed Today</p>
+                      <p className="text-2xl font-bold text-green-700">{todayProgress?.length || 0}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-blue-50 border-blue-100">
+                  <CardContent className="p-6 flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                      <TrendingUp className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Weekly Adherence</p>
+                      <p className="text-2xl font-bold text-blue-700">{Math.round(weeklyStats?.completionRate || 0)}%</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-purple-50 border-purple-100">
+                  <CardContent className="p-6 flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                      <CalendarDays className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Sessions</p>
+                      <p className="text-2xl font-bold text-purple-700">{weeklyStats?.actualCompletions || 0}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg">Recent Activity</h3>
+                {weeklyStats?.completions && weeklyStats.completions.length > 0 ? (
+                  <div className="space-y-3">
+                    {weeklyStats.completions.map((completion: any) => (
+                      <div key={completion._id} className="flex items-center justify-between p-4 border rounded-lg bg-gray-50">
+                        <div className="flex items-center gap-3">
+                          <CheckCircle2 className="h-5 w-5 text-green-500" />
+                          <div>
+                            <p className="font-medium">{completion.exerciseId}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(completion.completedAt), "PPP p")}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right text-sm">
+                          <span className="block font-medium">{completion.setsCompleted} sets × {completion.repsCompleted} reps</span>
+                          {completion.painLevel > 0 && (
+                            <span className="text-xs text-orange-600">Pain Level: {completion.painLevel}/10</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground border rounded-lg border-dashed">
+                    <Activity className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No exercises completed yet this week</p>
+                    <p className="text-sm">Start your exercises to see progress!</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -340,6 +527,19 @@ export function PatientTreatmentPlanView({ treatmentPlanId }: PatientTreatmentPl
           </Card>
         </TabsContent>
       </Tabs>
+
+      {selectedExercise && (
+        <ExerciseCompletionModal
+          isOpen={!!selectedExercise}
+          onClose={() => setSelectedExercise(null)}
+          treatmentPlanId={treatmentPlanId}
+          exerciseId={selectedExercise.id}
+          exerciseName={selectedExercise.name}
+          phaseOrder={selectedExercise.phaseOrder}
+          defaultSets={selectedExercise.sets}
+          defaultReps={selectedExercise.reps}
+        />
+      )}
     </div>
   );
 }

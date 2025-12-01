@@ -1,6 +1,8 @@
 "use client";
 
 import React, { ChangeEvent, DragEvent, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Upload, X, FileText, CheckCircle2, AlertCircle } from "lucide-react";
 
 export interface FileUploadProps {
   id: string;
@@ -16,7 +18,6 @@ export interface FileUploadProps {
   className?: string;
 }
 
-// Aceternity-inspired FileUpload UI with drag & drop + click to select
 export function FileUpload({
   id,
   label,
@@ -75,8 +76,9 @@ export function FileUpload({
       return;
     }
     const files = Array.from(filesList).filter(validateFile);
+    if (files.length === 0) return;
+
     if (multiple) {
-      // Merge with existing value if present
       const existing = Array.isArray(value) ? value : value ? [value] : [];
       onChange([...existing, ...files]);
     } else {
@@ -86,7 +88,6 @@ export function FileUpload({
 
   const onInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     handleFiles(e.target.files);
-    // Reset to allow re-selecting same file
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -120,50 +121,35 @@ export function FileUpload({
     }
   };
 
+  const files = Array.isArray(value) ? value : value ? [value] : [];
+
   return (
     <div className={className}>
       {label && (
-        <label htmlFor={id} className="block text-sm font-medium text-[#002e2c]">
+        <label htmlFor={id} className="block text-sm font-semibold text-[#002e2c] mb-2">
           {label} {required && <span className="text-red-500">*</span>}
         </label>
       )}
-      {helpText && <p className="mt-1 text-sm text-gray-500">{helpText}</p>}
 
-      <div
+      <motion.div
+        layout
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onClick={() => inputRef.current?.click()}
-        className={[
-          "mt-2 w-full min-h-40 rounded-lg border border-dashed",
-          "bg-white dark:bg-black border-neutral-200 dark:border-neutral-800",
-          "flex flex-col items-center justify-center text-center",
-          "px-4 py-6 md:py-8 cursor-pointer transition-colors",
-          isDragging ? "bg-neutral-50 dark:bg-neutral-900" : "",
-        ].join(" ")}
-        aria-label="File upload dropzone"
+        animate={{
+          scale: isDragging ? 1.02 : 1,
+          borderColor: isDragging ? "#005b57" : error ? "#ef4444" : "#e5e7eb",
+          backgroundColor: isDragging ? "rgba(0, 91, 87, 0.05)" : "rgba(255, 255, 255, 1)",
+        }}
+        transition={{ duration: 0.2 }}
+        className={`
+          relative w-full min-h-[160px] rounded-xl border-2 border-dashed
+          flex flex-col items-center justify-center text-center
+          px-6 py-8 cursor-pointer overflow-hidden group
+          ${error ? "border-red-300 bg-red-50/30" : "border-gray-200 bg-white"}
+        `}
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          className="h-8 w-8 text-neutral-500 mb-3"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M12 16v-8m0 0l-3 3m3-3l3 3M20 16.5v1.125A2.625 2.625 0 0117.375 20.25H6.625A2.625 2.625 0 014 17.625V16.5"
-          />
-        </svg>
-        <p className="text-sm text-neutral-700 dark:text-neutral-300">
-          Drag and drop files here or <span className="text-[#005b57] font-medium">click to upload</span>
-        </p>
-        <p className="mt-1 text-xs text-neutral-500">
-          {accept ? `Accepted: ${accept}` : "Any file"} • Max {maxSizeInMB}MB
-        </p>
-
         <input
           ref={inputRef}
           id={id}
@@ -172,92 +158,117 @@ export function FileUpload({
           multiple={multiple}
           onChange={onInputChange}
           className="hidden"
-          aria-hidden="true"
         />
-      </div>
 
-      {error && (
-        <div className="mt-2 text-sm text-red-600" role="alert">
-          {error}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="relative z-10 flex flex-col items-center"
+        >
+          <div className={`
+            w-12 h-12 rounded-full flex items-center justify-center mb-4
+            transition-colors duration-200
+            ${isDragging ? "bg-[#005b57] text-white" : "bg-[#005b57]/10 text-[#005b57] group-hover:bg-[#005b57] group-hover:text-white"}
+          `}>
+            <Upload className="w-6 h-6" />
+          </div>
+
+          <p className="text-base font-medium text-gray-900 mb-1">
+            <span className="text-[#005b57]">Click to upload</span> or drag and drop
+          </p>
+          <p className="text-sm text-gray-500">
+            {accept ? `${accept.split(',').length > 3 ? 'Supported files' : accept.replace(/application\//g, '').replace(/image\//g, '').toUpperCase()}` : "Any file"}
+            {' '}• Max {maxSizeInMB}MB
+          </p>
+        </motion.div>
+
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
+          <svg width="100%" height="100%">
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="1" />
+            </pattern>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+          </svg>
         </div>
+      </motion.div>
+
+      {helpText && !error && (
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-2 text-sm text-gray-500"
+        >
+          {helpText}
+        </motion.p>
       )}
 
-      {value && (
-        <ul className="mt-3 space-y-2" aria-live="polite">
-          {Array.isArray(value) ? (
-            value.map((file, i) => (
-              <li
+      <AnimatePresence mode="wait">
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-2 flex items-center gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg"
+          >
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {files.length > 0 && (
+          <motion.ul
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mt-4 space-y-2"
+          >
+            {files.map((file, i) => (
+              <motion.li
                 key={`${file.name}-${i}`}
-                className="flex items-center justify-between rounded-md bg-neutral-50 p-2"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ delay: i * 0.1 }}
+                className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl shadow-sm group hover:border-[#005b57]/30 transition-colors"
               >
-                <div className="flex items-center gap-2">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="h-4 w-4 text-[#005b57]"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                  <span className="text-sm truncate max-w-[14rem] sm:max-w-xs">
-                    {file.name}
-                  </span>
-                  <span className="text-xs text-neutral-500">({formatSize(file.size)})</span>
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="w-10 h-10 rounded-lg bg-[#005b57]/10 flex items-center justify-center flex-shrink-0 text-[#005b57]">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-medium text-gray-900 truncate">
+                      {file.name}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {formatSize(file.size)}
+                    </span>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => removeFile(file)}
-                  className="text-neutral-500 hover:text-red-600 px-2 py-1"
-                  aria-label={`Remove ${file.name}`}
-                >
-                  Remove
-                </button>
-              </li>)
-            )
-          ) : (
-            <li className="flex items-center justify-between rounded-md bg-neutral-50 p-2">
-              <div className="flex items-center gap-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  className="h-4 w-4 text-[#005b57]"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-                <span className="text-sm truncate max-w-[14rem] sm:max-w-xs">
-                  {(value as File).name}
-                </span>
-                <span className="text-xs text-neutral-500">
-                  ({formatSize((value as File).size)})
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => removeFile(value as File)}
-                className="text-neutral-500 hover:text-red-600 px-2 py-1"
-                aria-label={`Remove ${(value as File).name}`}
-              >
-                Remove
-              </button>
-            </li>
-          )}
-        </ul>
-      )}
+
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-green-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeFile(file);
+                    }}
+                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    aria-label={`Remove ${file.name}`}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.li>
+            ))}
+          </motion.ul>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-export default FileUpload
+export default FileUpload;

@@ -11,12 +11,14 @@ import { api } from "@/convex/_generated/api";
 import { useMutationUntyped } from "@/lib/convexUntyped";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { ProfilePhotoUploader } from "@/components/dashboard/shared/ProfilePhotoUploader";
+import LocationSearch from "@/components/marketplace/LocationSearch";
 
 export type ProfessionalProfileValues = {
   licenseNumber?: string;
   certificationBoard?: string;
   certificationYear?: number | string;
   bio?: string;
+  location?: string;
 };
 
 type ProfessionalProfileCardProps = {
@@ -31,6 +33,7 @@ export function ProfessionalProfileCard({ initialValues, currentImageUrl }: Prof
     initialValues?.certificationYear ? String(initialValues.certificationYear) : ""
   );
   const [bio, setBio] = useState(initialValues?.bio || "");
+  const [location, setLocation] = useState(initialValues?.location || "");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -39,6 +42,7 @@ export function ProfessionalProfileCard({ initialValues, currentImageUrl }: Prof
     setCertBoard(initialValues.certificationBoard || "");
     setCertYear(initialValues.certificationYear ? String(initialValues.certificationYear) : "");
     setBio(initialValues.bio || "");
+    setLocation(initialValues.location || "");
   }, [initialValues]);
 
   const currentYear = useMemo(() => new Date().getFullYear(), []);
@@ -51,6 +55,7 @@ export function ProfessionalProfileCard({ initialValues, currentImageUrl }: Prof
       certificationBoard?: string;
       certificationYear?: number;
       bio?: string;
+      location?: string;
     }
   ) => Promise<string>;
 
@@ -71,6 +76,7 @@ export function ProfessionalProfileCard({ initialValues, currentImageUrl }: Prof
         certificationBoard: certBoard || undefined,
         certificationYear: certYear ? Number(certYear) : undefined,
         bio: bio || undefined,
+        location: location || undefined,
       });
       toast.success("Professional profile saved");
     } catch (e) {
@@ -143,6 +149,14 @@ export function ProfessionalProfileCard({ initialValues, currentImageUrl }: Prof
                 placeholder="e.g., 2020"
                 value={certYear}
                 onChange={(e) => setCertYear(e.target.value.replace(/[^0-9]/g, ""))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Practice Location</Label>
+              <LocationSearch
+                value={location}
+                onChange={setLocation}
+                className="w-full"
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">

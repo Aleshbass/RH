@@ -5,18 +5,20 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import PersonalInfoForm, { PatientInfoValues } from '@/components/onboarding/patient/PersonalInfoForm';
 import { useValidateInvitationCode } from '@/lib/api/patientInvitations';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 
 export default function PatientStep1Page() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data, setRoleAndStep, updatePatientData } = useOnboardingStore();
-  
+
   // Extract invitation code from URL parameters (if any)
   const invitationCode = searchParams ? searchParams.get('invitationCode') : null;
-  
+
   // Use the backend API hook to validate the invitation code
   const { isLoading, isValid, invitation, message } = useValidateInvitationCode(invitationCode);
-  
+
   // State to track invitation validation status
   const [invitationStatus, setInvitationStatus] = useState<{
     isValid: boolean;
@@ -36,9 +38,10 @@ export default function PatientStep1Page() {
         message: 'Validating invitation...'
       });
     } else if (!invitationCode) {
+      // Allow self-signup if no code provided
       setInvitationStatus({
-        isValid: false,
-        message: 'No invitation code provided. You need an invitation from a physiotherapist to continue.'
+        isValid: true,
+        message: 'Self-signup mode'
       });
     } else if (isValid && invitation) {
       // Real validation successful - use the invitation data directly
@@ -54,7 +57,7 @@ export default function PatientStep1Page() {
 
       // Set role to patient in the onboarding store
       setRoleAndStep('patient', 1);
-      
+
       // Pre-fill patient data if provided in the invitation
       if (invitation.patientEmail || invitation.patientName) {
         const names = invitation.patientName ? invitation.patientName.split(' ') : ['', ''];
@@ -73,27 +76,67 @@ export default function PatientStep1Page() {
     }
   }, [isLoading, isValid, invitation, message, invitationCode, setRoleAndStep, updatePatientData]);
 
-  const handleSubmit = (formData: PatientInfoValues) => {
-    // Store the form data in Zustand store - only use fields that exist in PatientData
+  const completeProfile = useMutation(api.users.completeUserProfile);
+
+  const handleSubmit = async (formData: PatientInfoValues) => {
+    // Store the form data in Zustand store
     updatePatientData({
       ...formData,
-      // Store invitation info in a comment field if needed
-      medicalHistory: `Invited by: ${invitationCode || 'Unknown'} \n\n${formData.medicalHistory || ''}`,
+      // medicalHistory removed from form, so we don't append invitation info here anymore
+      // or we can just store the invitation info if needed, but formData doesn't have medicalHistory
     });
 
-    // Navigate to the next step
-    router.push('/patient/step2');
+    try {
+      // Calculate approximate date of birth from age
+      // We set it to January 1st of the birth year
+      const currentYear = new Date().getFullYear();
+      const birthYear = currentYear - (formData.age || 0);
+      const dateOfBirth = `${birthYear}-01-01`;
+
+      // Save to backend
+      await completeProfile({
+        role: 'patient',
+        profileData: {
+          dateOfBirth: dateOfBirth,
+          gender: formData.gender,
+          address: formData.location, // Mapping location to address
+          phoneNumber: formData.phoneNumber,
+          therapyFor: formData.therapyFor,
+          // Removed: therapyType, relationshipStatus, medicalHistorySummary, emergencyContactName
+        },
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        finalStep: true,
+      });
+
+      // Navigate to Find a Physio page
+      router.push('/find-a-physio');
+    } catch (error) {
+      console.error("Failed to complete profile:", error);
+      // Handle error (maybe show toast)
+    }
   };
 
   const handleBack = () => {
     router.push('/');
   };
 
+  const currentUser = useQuery(api.users.getMyUser);
+
+  // Merge store data with current user data for auto-fill
+  const initialData = {
+    ...data.patientData,
+    firstName: data.patientData.firstName || currentUser?.name?.split(' ')[0] || '',
+    lastName: data.patientData.lastName || currentUser?.name?.split(' ').slice(1).join(' ') || '',
+    email: data.patientData.email || currentUser?.email || '',
+    // Phone might not be in currentUser depending on schema, but if it is, add it here
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-emerald-50 to-teal-100">
+    <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-[#002e2c]">
       <div className="w-full max-w-2xl p-8 space-y-6 bg-white/90 backdrop-blur-sm rounded-xl shadow-xl">
-        <PersonalInfoForm 
-          initialData={data.patientData}
+        <PersonalInfoForm
+          initialData={initialData}
           invitationInfo={invitationStatus}
           invitationCode={invitationCode}
           onSubmit={handleSubmit}

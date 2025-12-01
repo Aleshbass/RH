@@ -16,10 +16,10 @@ const ConnectedCareSection = () => {
           <div className="flex flex-col lg:flex-row items-center justify-between gap-12 p-4 md:p-8">
             {/* Left side: Text content */}
             <div className="lg:w-1/2 text-center lg:text-left">
-              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white font-pally mb-6">
+              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white font-sans mb-6">
                 One Platform. Seamless Collaboration. Better Outcomes.
               </h2>
-              <p className="text-lg text-gray-300 font-pally mb-10">
+              <p className="text-lg text-gray-300 font-sans mb-10">
                 Rehabify bridges the gap between clinic administration, physiotherapy expertise, and patient engagement. Our integrated ecosystem ensures everyone is connected, informed, and working towards the same goal: successful rehabilitation.
               </p>
               <NavbarButton
@@ -31,16 +31,16 @@ const ConnectedCareSection = () => {
                 <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-300 group-hover:translate-x-1" />
               </NavbarButton>
             </div>
-            
+
             {/* Right side: Image */}
             <div className="lg:w-1/2 flex justify-center items-center mt-8 lg:mt-0">
-                <Image
-                  src="/logos/images/physio-dashboard.webp"
-                  alt="Physiotherapist Dashboard - Rehabify Platform"
-                  width={600}
-                  height={400}
-                  className="rounded-lg shadow-2xl object-cover w-full h-auto"
-                />
+              <Image
+                src="/logos/images/physio-dashboard.webp"
+                alt="Physiotherapist Dashboard - Rehabify Platform"
+                width={600}
+                height={400}
+                className="rounded-lg shadow-2xl object-cover w-full h-auto"
+              />
             </div>
           </div>
         </WobbleCard>

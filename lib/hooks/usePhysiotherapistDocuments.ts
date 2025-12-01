@@ -44,8 +44,8 @@ export function usePhysiotherapistDocuments(physiotherapistId: Id<"physiotherapi
       if (!physiotherapistId) return [];
 
       try {
-        const documents = await convex.query(api.files.getPhysiotherapistDocuments, { 
-          physiotherapistId 
+        const documents = await convex.query(api.files.getPhysiotherapistDocuments, {
+          physiotherapistId
         });
         return documents || [];
       } catch (err) {
@@ -62,26 +62,29 @@ export function usePhysiotherapistDocuments(physiotherapistId: Id<"physiotherapi
 
   // Save document reference in the database
   const saveDocument = useMutation({
-    mutationFn: async ({ 
-      storageId, 
-      documentType, 
+    mutationFn: async ({
+      storageId,
+      documentType,
       fileName,
       fileSize,
-      contentType
-    }: { 
-      storageId: Id<"_storage">, 
-      documentType: "licenseDocument" | "additionalCertificate", 
+      contentType,
+      targetPhysiotherapistId
+    }: {
+      storageId: Id<"_storage">,
+      documentType: "licenseDocument" | "additionalCertificate",
       fileName: string,
       fileSize: number,
-      contentType: string
+      contentType: string,
+      targetPhysiotherapistId?: Id<"physiotherapistProfiles">
     }) => {
-      if (!physiotherapistId) {
+      const idToUse = targetPhysiotherapistId || physiotherapistId;
+      if (!idToUse) {
         throw new Error('Physiotherapist profile ID is required');
       }
 
       try {
         const result = await convex.mutation(api.files.savePhysiotherapistDocument, {
-          physiotherapistId,
+          physiotherapistId: idToUse,
           storageId,
           documentType,
           fileName,
@@ -104,11 +107,13 @@ export function usePhysiotherapistDocuments(physiotherapistId: Id<"physiotherapi
   /**
    * Upload a document and save the reference in the database
    */
-  const uploadDocument = async (file: File, documentType: "licenseDocument" | "additionalCertificate") => {
+  const uploadDocument = async (file: File, documentType: "licenseDocument" | "additionalCertificate", overridePhysiotherapistId?: Id<"physiotherapistProfiles">) => {
     setError(null);
     const fileKey = `${file.name}-${file.size}-${documentType}`;
-    
-    if (!physiotherapistId) {
+
+    const targetPhysiotherapistId = overridePhysiotherapistId || physiotherapistId;
+
+    if (!targetPhysiotherapistId) {
       setError("Physiotherapist profile ID is required");
       return false;
     }
@@ -151,6 +156,7 @@ export function usePhysiotherapistDocuments(physiotherapistId: Id<"physiotherapi
         fileName: file.name,
         fileSize: file.size,
         contentType: file.type,
+        targetPhysiotherapistId,
       });
 
       // Success - the query will automatically refetch due to onSuccess

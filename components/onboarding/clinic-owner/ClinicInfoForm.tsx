@@ -1,11 +1,10 @@
 import { z } from "zod";
-import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useOnboardingStore } from "@/stores/onboardingStore";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import OnboardingProgress from "@/components/onboarding/OnboardingProgress";
+import { ChevronRight, ChevronLeft } from "lucide-react";
 
 // Form schema
 const clinicInfoSchema = z.object({
@@ -37,11 +36,10 @@ export default function ClinicInfoForm({ onNext, onBack }: ClinicInfoFormProps) 
   const existingClinic = useQuery(api.clinics.getMyClinic, actualClinicId ? "skip" : undefined);
   const createClinicMutation = useMutation(api.clinics.createClinic);
 
-  const { 
-    register, 
-    handleSubmit, 
-    formState,
-    formState: { errors }
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting }
   } = useForm<ClinicInfoValues>({
     resolver: zodResolver(clinicInfoSchema),
     defaultValues: {
@@ -51,8 +49,8 @@ export default function ClinicInfoForm({ onNext, onBack }: ClinicInfoFormProps) 
       address: clinicOwnerData?.address || "",
       city: clinicOwnerData?.city || "",
       state: clinicOwnerData?.state || "",
-      phoneNumber: clinicOwnerData?.clinicPhone || "", 
-      email: clinicOwnerData?.clinicEmail || "",       
+      phoneNumber: clinicOwnerData?.clinicPhone || "",
+      email: clinicOwnerData?.clinicEmail || "",
       website: clinicOwnerData?.website || "",
       yearEstablished: clinicOwnerData?.yearEstablished || new Date().getFullYear(),
     },
@@ -105,18 +103,6 @@ export default function ClinicInfoForm({ onNext, onBack }: ClinicInfoFormProps) 
     }
   };
 
-  const fadeInVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: (i: number) => ({
-      opacity: 1,
-      y: 0,
-      transition: {
-        delay: i * 0.1,
-        duration: 0.5,
-      },
-    }),
-  };
-
   const clinicTypes = [
     "Hospital",
     "Private Clinic",
@@ -132,355 +118,267 @@ export default function ClinicInfoForm({ onNext, onBack }: ClinicInfoFormProps) 
   const currentYear = new Date().getFullYear();
   const yearOptions = Array.from({ length: 100 }, (_, i) => currentYear - i);
 
+  const inputClasses = "block w-full h-14 px-4 pt-5 pb-2 text-gray-900 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] focus:bg-white transition-all duration-200 peer placeholder-transparent";
+  const labelClasses = "absolute text-sm text-gray-500 duration-200 transform -translate-y-3 scale-75 top-4 z-10 origin-[0] left-4 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 peer-focus:text-[#005b57]";
+
   return (
-    <div className="max-w-4xl mx-auto">
-      <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
+    <div className="w-full max-w-3xl mx-auto pb-24 sm:pb-0">
+      <form className="space-y-6 sm:space-y-8" onSubmit={handleSubmit(onSubmit)}>
         <div className="text-center mb-4">
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#005b57]">Clinic Information</h2>
-          <p className="text-gray-600 mt-2">Tell us about your healthcare facility</p>
-          <OnboardingProgress current={data.currentStep} total={4} className="mt-4" />
+          <h2 className="text-xl sm:text-2xl font-semibold text-[#002e2c]">Clinic Information</h2>
+          <p className="text-gray-600">Tell us about your healthcare facility</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6">
           {/* Clinic Name */}
-          <motion.div
-            custom={0}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-3"
-          >
-            <label
-              htmlFor="clinicName"
-              className="block text-base font-semibold text-[#002e2c]"
-            >
-              Clinic Name *
-            </label>
-            <input
-              id="clinicName"
-              {...register("clinicName")}
-              placeholder="Enter your clinic name"
-              className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 transition-colors ${
-                errors.clinicName ? "border-red-500" : ""
-              }`}
-            />
+          <div className="space-y-1">
+            <div className="relative">
+              <input
+                id="clinicName"
+                type="text"
+                placeholder="Clinic Name"
+                className={`${inputClasses} ${errors.clinicName ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
+                {...register('clinicName')}
+              />
+              <label htmlFor="clinicName" className={labelClasses}>
+                Clinic Name
+              </label>
+            </div>
             {errors.clinicName && (
-              <p className="mt-2 text-sm text-red-500">
-                {errors.clinicName.message}
-              </p>
+              <p className="text-xs text-red-500 ml-1">{errors.clinicName.message}</p>
             )}
-          </motion.div>
+          </div>
 
           {/* Registration Number */}
-          <motion.div
-            custom={1}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-3"
-          >
-            <label
-              htmlFor="registrationNumber"
-              className="block text-base font-semibold text-[#002e2c]"
-            >
-              Registration Number *
-            </label>
-            <input
-              id="registrationNumber"
-              placeholder="Medical licensing authority registration number"
-              {...register("registrationNumber")}
-              className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 transition-colors ${
-                errors.registrationNumber ? "border-red-500" : ""
-              }`}
-            />
+          <div className="space-y-1">
+            <div className="relative">
+              <input
+                id="registrationNumber"
+                type="text"
+                placeholder="Registration Number"
+                className={`${inputClasses} ${errors.registrationNumber ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
+                {...register('registrationNumber')}
+              />
+              <label htmlFor="registrationNumber" className={labelClasses}>
+                Registration Number
+              </label>
+            </div>
             {errors.registrationNumber && (
-              <p className="mt-2 text-sm text-red-500">
-                {errors.registrationNumber.message}
-              </p>
+              <p className="text-xs text-red-500 ml-1">{errors.registrationNumber.message}</p>
             )}
-          </motion.div>
+          </div>
 
           {/* Clinic Type */}
-          <motion.div
-            custom={2}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-3"
-          >
-            <label
-              htmlFor="clinicType"
-              className="block text-base font-semibold text-[#002e2c]"
-            >
-              Clinic Type *
-            </label>
-            <select
-              id="clinicType"
-              {...register("clinicType")}
-              className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 transition-colors ${
-                errors.clinicType ? "border-red-500" : ""
-              }`}
-            >
-              <option value="">Select clinic type</option>
-              {clinicTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
+          <div className="space-y-1">
+            <div className="relative">
+              <select
+                id="clinicType"
+                className={`${inputClasses} pt-4 appearance-none`}
+                {...register('clinicType')}
+              >
+                <option value="">Select clinic type</option>
+                {clinicTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="clinicType" className={labelClasses}>
+                Clinic Type
+              </label>
+              <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
             {errors.clinicType && (
-              <p className="mt-2 text-sm text-red-500">
-                {errors.clinicType.message}
-              </p>
+              <p className="text-xs text-red-500 ml-1">{errors.clinicType.message}</p>
             )}
-          </motion.div>
+          </div>
 
           {/* Year Established */}
-          <motion.div
-            custom={3}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-3"
-          >
-            <label
-              htmlFor="yearEstablished"
-              className="block text-base font-semibold text-[#002e2c]"
-            >
-              Year Established *
-            </label>
-            <select
-              id="yearEstablished"
-              {...register("yearEstablished", {
-                valueAsNumber: true
-              })}
-              className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 transition-colors ${
-                errors.yearEstablished ? "border-red-500" : ""
-              }`}
-            >
-              <option value="">Select year</option>
-              {yearOptions.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
+          <div className="space-y-1">
+            <div className="relative">
+              <select
+                id="yearEstablished"
+                className={`${inputClasses} pt-4 appearance-none`}
+                {...register('yearEstablished', { valueAsNumber: true })}
+              >
+                <option value="">Select year</option>
+                {yearOptions.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="yearEstablished" className={labelClasses}>
+                Year Established
+              </label>
+              <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
             {errors.yearEstablished && (
-              <p className="mt-2 text-sm text-red-500">
-                {errors.yearEstablished.message}
-              </p>
+              <p className="text-xs text-red-500 ml-1">{errors.yearEstablished.message}</p>
             )}
-          </motion.div>
+          </div>
 
           {/* Email */}
-          <motion.div
-            custom={4}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-3"
-          >
-            <label
-              htmlFor="email"
-              className="block text-base font-semibold text-[#002e2c]"
-            >
-              Clinic Email *
-            </label>
-            <input
-              id="email"
-              type="email"
-              placeholder="Enter clinic email address"
-              {...register("email")}
-              className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 transition-colors ${
-                errors.email ? "border-red-500" : ""
-              }`}
-            />
+          <div className="space-y-1">
+            <div className="relative">
+              <input
+                id="email"
+                type="email"
+                placeholder="Clinic Email"
+                className={`${inputClasses} ${errors.email ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
+                {...register('email')}
+              />
+              <label htmlFor="email" className={labelClasses}>
+                Clinic Email
+              </label>
+            </div>
             {errors.email && (
-              <p className="mt-2 text-sm text-red-500">
-                {errors.email.message}
-              </p>
+              <p className="text-xs text-red-500 ml-1">{errors.email.message}</p>
             )}
-          </motion.div>
+          </div>
 
           {/* Phone Number */}
-          <motion.div
-            custom={5}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-3"
-          >
-            <label
-              htmlFor="phoneNumber"
-              className="block text-base font-semibold text-[#002e2c]"
-            >
-              Clinic Phone Number *
-            </label>
-            <input
-              id="phoneNumber"
-              type="tel"
-              placeholder="Enter clinic phone number"
-              {...register("phoneNumber")}
-              className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 transition-colors ${
-                errors.phoneNumber ? "border-red-500" : ""
-              }`}
-            />
+          <div className="space-y-1">
+            <div className="relative">
+              <input
+                id="phoneNumber"
+                type="tel"
+                placeholder="Clinic Phone Number"
+                className={`${inputClasses} ${errors.phoneNumber ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
+                {...register('phoneNumber')}
+              />
+              <label htmlFor="phoneNumber" className={labelClasses}>
+                Clinic Phone Number
+              </label>
+            </div>
             {errors.phoneNumber && (
-              <p className="mt-2 text-sm text-red-500">
-                {errors.phoneNumber.message}
-              </p>
+              <p className="text-xs text-red-500 ml-1">{errors.phoneNumber.message}</p>
             )}
-          </motion.div>
+          </div>
 
           {/* Website */}
-          <motion.div
-            custom={6}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-3 col-span-1 md:col-span-2"
-          >
-            <label
-              htmlFor="website"
-              className="block text-base font-semibold text-[#002e2c]"
-            >
-              Website <span className="text-gray-500">(Optional)</span>
-            </label>
-            <input
-              id="website"
-              type="url"
-              placeholder="https://example.com"
-              {...register("website")}
-              className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 transition-colors ${
-                errors.website ? "border-red-500" : ""
-              }`}
-            />
+          <div className="space-y-1 col-span-1 md:col-span-2">
+            <div className="relative">
+              <input
+                id="website"
+                type="url"
+                placeholder="Website (Optional)"
+                className={`${inputClasses} ${errors.website ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
+                {...register('website')}
+              />
+              <label htmlFor="website" className={labelClasses}>
+                Website (Optional)
+              </label>
+            </div>
             {errors.website && (
-              <p className="mt-2 text-sm text-red-500">
-                {errors.website.message}
-              </p>
+              <p className="text-xs text-red-500 ml-1">{errors.website.message}</p>
             )}
-          </motion.div>
+          </div>
 
           {/* Address */}
-          <motion.div
-            custom={7}
-            initial="hidden"
-            animate="visible"
-            variants={fadeInVariants}
-            className="space-y-3 col-span-1 md:col-span-2"
-          >
-            <label
-              htmlFor="address"
-              className="block text-base font-semibold text-[#002e2c]"
-            >
-              Full Address *
-            </label>
-            <input
-              id="address"
-              placeholder="Enter complete clinic address"
-              {...register("address")}
-              className={`block w-full h-12 text-base px-4 rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 transition-colors ${
-                errors.address ? "border-red-500" : ""
-              }`}
-            />
+          <div className="space-y-1 col-span-1 md:col-span-2">
+            <div className="relative">
+              <input
+                id="address"
+                type="text"
+                placeholder="Full Address"
+                className={`${inputClasses} ${errors.address ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
+                {...register('address')}
+              />
+              <label htmlFor="address" className={labelClasses}>
+                Full Address
+              </label>
+            </div>
             {errors.address && (
-              <p className="mt-2 text-sm text-red-500">
-                {errors.address.message}
-              </p>
+              <p className="text-xs text-red-500 ml-1">{errors.address.message}</p>
             )}
-          </motion.div>
-        </div>
-        
-        {/* Location Details */}
-        <div className="mt-8">
-          <h3 className="text-lg font-semibold text-[#002e2c] mb-6">Location Details</h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-            {/* City */}
-            <motion.div
-              custom={8}
-              initial="hidden"
-              animate="visible"
-              variants={fadeInVariants}
-              className="space-y-3"
-            >
-              <label
-                htmlFor="city"
-                className="block text-base font-semibold text-[#002e2c]"
-              >
-                City *
-              </label>
-              <input
-                id="city"
-                placeholder="Enter city"
-                {...register("city")}
-                className={`w-full h-12 text-base px-4 border rounded-md focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] transition-colors ${errors.city ? 'border-red-500' : 'border-gray-300'}`}
-              />
-              {errors.city && (
-                <p className="mt-2 text-sm text-red-500">
-                  {errors.city.message}
-                </p>
-              )}
-            </motion.div>
-            
-            {/* State */}
-            <motion.div
-              custom={9}
-              initial="hidden"
-              animate="visible"
-              variants={fadeInVariants}
-              className="space-y-3"
-            >
-              <label
-                htmlFor="state"
-                className="block text-base font-semibold text-[#002e2c]"
-              >
-                State *
-              </label>
-              <input
-                id="state"
-                placeholder="Enter state"
-                {...register("state")}
-                className={`w-full h-12 text-base px-4 border rounded-md focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] transition-colors ${errors.state ? 'border-red-500' : 'border-gray-300'}`}
-              />
-              {errors.state && (
-                <p className="mt-2 text-sm text-red-500">
-                  {errors.state.message}
-                </p>
-              )}
-            </motion.div>
           </div>
         </div>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
-          className="flex justify-between mt-6 pt-4 border-t border-gray-200"
-        >
-          <button
-            type="button"
-            onClick={onBack}
-            className="px-8 py-3 text-base font-medium text-[#005b57] rounded-md border-2 border-[#005b57] hover:bg-[#005b57] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 transition-all duration-200"
-          >
-            Back
-          </button>
-          <button
-            type="submit"
-            disabled={formState.isSubmitting}
-            className="px-8 py-3 text-base font-semibold text-white rounded-md bg-[#005b57] hover:bg-[#00443e] focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 transition-all duration-200 disabled:opacity-60"
-          >
-            {formState.isSubmitting ? (
-              <div className="flex items-center">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                <span>Creating Clinic...</span>
+        {/* Location Details */}
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold text-[#002e2c] mb-6">Location Details</h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6">
+            {/* City */}
+            <div className="space-y-1">
+              <div className="relative">
+                <input
+                  id="city"
+                  type="text"
+                  placeholder="City"
+                  className={`${inputClasses} ${errors.city ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
+                  {...register('city')}
+                />
+                <label htmlFor="city" className={labelClasses}>
+                  City
+                </label>
               </div>
-            ) : (
-              "Complete Setup"
-            )}
-          </button>
-        </motion.div>
+              {errors.city && (
+                <p className="text-xs text-red-500 ml-1">{errors.city.message}</p>
+              )}
+            </div>
+
+            {/* State */}
+            <div className="space-y-1">
+              <div className="relative">
+                <input
+                  id="state"
+                  type="text"
+                  placeholder="State"
+                  className={`${inputClasses} ${errors.state ? "border-red-300 focus:border-red-500 focus:ring-red-200" : ""}`}
+                  {...register('state')}
+                />
+                <label htmlFor="state" className={labelClasses}>
+                  State
+                </label>
+              </div>
+              {errors.state && (
+                <p className="text-xs text-red-500 ml-1">{errors.state.message}</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Sticky Mobile / Regular Desktop Buttons */}
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 sm:static sm:bg-transparent sm:border-0 sm:p-0 z-40">
+          <div className="max-w-4xl mx-auto w-full flex gap-4">
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={isSubmitting}
+              className="hidden sm:flex h-12 px-6 items-center justify-center text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              Previous
+            </button>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 h-14 sm:h-12 flex items-center justify-center gap-2 text-base sm:text-sm font-semibold bg-[#005b57] text-white rounded-xl sm:rounded-lg hover:bg-[#00443e] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:active:scale-100 shadow-lg sm:shadow-none"
+            >
+              {isSubmitting ? (
+                <>
+                  Creating Clinic...
+                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                </>
+              ) : (
+                <>
+                  Complete Setup
+                  <ChevronRight className="w-5 h-5" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </form>
     </div>
   );

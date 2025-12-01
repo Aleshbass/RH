@@ -2,8 +2,8 @@
 // Integrated with Resend for email delivery
 import { Resend } from 'resend';
 
-export type EmailTemplate = 
-  | 'INVITATION_CREATED' 
+export type EmailTemplate =
+  | 'INVITATION_CREATED'
   | 'ONBOARDING_COMPLETE'
   | 'ADMIN_APPROVAL_REQUIRED'
   | 'INVITATION_REMINDER'
@@ -22,7 +22,8 @@ export type EmailTemplate =
   | 'VIDEO_CALL_INVITATION'
   | 'PATIENT_ONBOARDED_PROVIDER'
   | 'CLINIC_STAFF_INVITE_ACCEPTED_OWNER'
-  | 'CLINIC_STAFF_INVITE_DECLINED_OWNER';
+  | 'CLINIC_STAFF_INVITE_DECLINED_OWNER'
+  | 'GOOGLE_MEET_LINK';
 
 // Data interfaces for each email template
 export interface InvitationCreatedData {
@@ -186,8 +187,15 @@ export interface ClinicStaffInviteOwnerNoticeData {
   staffLink: string;
 }
 
+export interface GoogleMeetLinkData {
+  recipientName: string;
+  meetingLink: string;
+  calendarLink: string;
+  appointmentDate: string | number | Date;
+}
+
 // Discriminated union for EmailOptions
-export type EmailOptions = 
+export type EmailOptions =
   | { to: string; subject?: string; template: 'INVITATION_CREATED'; data: InvitationCreatedData }
   | { to: string; subject?: string; template: 'ONBOARDING_COMPLETE'; data: OnboardingCompleteData }
   | { to: string; subject?: string; template: 'ADMIN_APPROVAL_REQUIRED'; data: AdminApprovalRequiredData }
@@ -207,7 +215,8 @@ export type EmailOptions =
   | { to: string; subject?: string; template: 'VIDEO_CALL_INVITATION'; data: VideoCallInvitationData }
   | { to: string; subject?: string; template: 'PATIENT_ONBOARDED_PROVIDER'; data: PatientOnboardedProviderData }
   | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_ACCEPTED_OWNER'; data: ClinicStaffInviteOwnerNoticeData }
-  | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_DECLINED_OWNER'; data: ClinicStaffInviteOwnerNoticeData };
+  | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_DECLINED_OWNER'; data: ClinicStaffInviteOwnerNoticeData }
+  | { to: string; subject?: string; template: 'GOOGLE_MEET_LINK'; data: GoogleMeetLinkData };
 
 /**
  * Send an email using the specified template and data
@@ -219,7 +228,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
   console.log(`[EMAIL SERVICE] Sending email to ${options.to}`);
   console.log(`[EMAIL SERVICE] Subject: ${options.subject || finalSubject}`);
   console.log(`[EMAIL SERVICE] Template: ${options.template}`);
-  
+
   // Check if we have the Resend API key
   if (!process.env.RESEND_API_KEY) {
     console.error('[EMAIL SERVICE] RESEND_API_KEY not configured');
@@ -236,12 +245,12 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
       subject: options.subject || finalSubject,
       html: emailBody,
     });
-    
+
     if (error) {
       console.error('[EMAIL SERVICE] Error sending email:', error);
       return { success: false, error: error.message };
     }
-    
+
     console.log(`[EMAIL SERVICE] Email sent successfully to ${options.to}, messageId: ${resendData?.id}`);
     return { success: true, messageId: resendData?.id };
   } catch (e: unknown) {
@@ -275,7 +284,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           </div>
         `
       };
-    
+
     case 'PATIENT_ONBOARDED_PROVIDER':
       return {
         subject: options.subject || `New Patient Onboarded: ${options.data.patientName}`,
@@ -321,7 +330,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
       };
     case 'APPOINTMENT_RESCHEDULED':
       return {
-        subject: options.subject || `Your Appointment has been rescheduled` ,
+        subject: options.subject || `Your Appointment has been rescheduled`,
         body: `
           <h1>Appointment Rescheduled</h1>
           <p>Hello ${options.data.patientName},</p>
@@ -388,7 +397,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>If you have any questions, please contact your physiotherapist directly.</p>
         `
       };
-    
+
     case 'ONBOARDING_COMPLETE':
       return {
         subject: `Welcome to Rehabify Health - Your Registration is Complete`,
@@ -420,7 +429,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>If you have any questions, please contact support.</p>
         `
       };
-      
+
     case 'INVITATION_REMINDER':
       return {
         subject: `Reminder: Complete Your Rehabify Health Registration`,
@@ -506,39 +515,122 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           </a>
         `
       };
-    
+
     case 'ACCOUNT_APPROVED':
       return {
         subject: `Your Rehabify Health Account is Approved!`,
         body: `
-          <h1>Account Approved!</h1>
-          <p>Hello ${options.data.userName},</p>
-          <p>Great news! Your Rehabify Health account as a ${options.data.userRole} ${options.data.clinicName ? `for ${options.data.clinicName}` : ''} has been approved.</p>
-          <p>You can now log in and access all the features available to you:</p>
-          <a href="${options.data.dashboardLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin: 16px 0;">
-            Log In to Your Account
-          </a>
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e5e7eb;">
+            <!-- Header with Logo -->
+            <div style="background-color: #ffffff; padding: 24px; text-align: center; border-bottom: 1px solid #f3f4f6;">
+              <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 40px; width: auto;" />
+            </div>
+            
+            <!-- Content -->
+            <div style="padding: 32px 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; background-color: #d1fae5; border-radius: 50%; margin-bottom: 16px;">
+                  <span style="font-size: 32px;">🎉</span>
+                </div>
+                <h1 style="color: #065f46; font-size: 24px; font-weight: 700; margin: 0;">Account Approved!</h1>
+              </div>
+              
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">Hello ${options.data.userName},</p>
+              
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+                Great news! Your Rehabify Health account as a <strong>${options.data.userRole}</strong> ${options.data.clinicName ? `for <strong>${options.data.clinicName}</strong>` : ''} has been approved.
+              </p>
+
+              <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                <p style="margin: 0; color: #166534; font-size: 15px; line-height: 1.5;">
+                  You now have full access to the platform. You can manage your profile, connect with patients, and start using all our features immediately.
+                </p>
+              </div>
+              
+              <!-- CTA Button -->
+              <div style="text-align: center; margin-bottom: 32px;">
+                <a href="${options.data.dashboardLink}" style="display: inline-block; background-color: #059669; color: white; font-weight: 600; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-size: 16px; box-shadow: 0 4px 6px rgba(5, 150, 105, 0.2); transition: background-color 0.2s;">
+                  Go to Dashboard
+                </a>
+              </div>
+              
+              <p style="color: #6b7280; font-size: 14px; text-align: center;">
+                If you have any questions, feel free to reply to this email.
+              </p>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background-color: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #f3f4f6;">
+              <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                &copy; ${new Date().getFullYear()} Rehabify Health. All rights reserved.
+              </p>
+            </div>
+          </div>
         `
       };
-    
+
     case 'ACCOUNT_DECLINED':
       return {
         subject: `Important: Your Rehabify Health Account Application`,
         body: `
-          <h1>Account Application Update</h1>
-          <p>Hello ${options.data.userName},</p>
-          <p>We regret to inform you that your Rehabify Health account application could not be approved at this time.</p>
-          <p>Reason: ${options.data.reason || 'Our administration team has determined that additional information is needed.'}</p>
-          <p>To resolve this issue, please contact our support team or update your application with the following information:</p>
-          <ul>
-            ${options.data.requiredInfo ? options.data.requiredInfo.map((info: string) => `<li>${info}</li>`).join('') : '<li>Additional verification documents</li>'}
-          </ul>
-          <a href="${options.data.supportLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin: 16px 0;">
-            Contact Support
-          </a>
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e5e7eb;">
+            <!-- Header with Logo -->
+            <div style="background-color: #ffffff; padding: 24px; text-align: center; border-bottom: 1px solid #f3f4f6;">
+              <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 40px; width: auto;" />
+            </div>
+            
+            <!-- Content -->
+            <div style="padding: 32px 24px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <div style="display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; background-color: #fee2e2; border-radius: 50%; margin-bottom: 16px;">
+                  <span style="font-size: 32px;">⚠️</span>
+                </div>
+                <h1 style="color: #991b1b; font-size: 24px; font-weight: 700; margin: 0;">Action Required</h1>
+              </div>
+              
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">Hello ${options.data.userName},</p>
+              
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+                Thank you for your interest in Rehabify Health. We have reviewed your application, but we need some additional information before we can approve your account.
+              </p>
+
+              <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                <h3 style="color: #991b1b; font-size: 16px; font-weight: 600; margin-top: 0; margin-bottom: 8px;">Reason for decline:</h3>
+                <p style="margin: 0; color: #7f1d1d; font-size: 15px; line-height: 1.5;">
+                  ${options.data.reason || 'Our administration team has determined that additional information is needed.'}
+                </p>
+                ${options.data.requiredInfo && options.data.requiredInfo.length > 0 ? `
+                  <div style="margin-top: 16px;">
+                    <p style="margin: 0 0 8px 0; color: #991b1b; font-size: 14px; font-weight: 600;">Required Information:</p>
+                    <ul style="margin: 0; padding-left: 20px; color: #7f1d1d; font-size: 14px;">
+                      ${options.data.requiredInfo.map((info: string) => `<li>${info}</li>`).join('')}
+                    </ul>
+                  </div>
+                ` : ''}
+              </div>
+              
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+                Please contact our support team to resolve this issue or update your application details.
+              </p>
+              
+              <!-- CTA Button -->
+              <div style="text-align: center; margin-bottom: 32px;">
+                <a href="${options.data.supportLink}" style="display: inline-block; background-color: #4b5563; color: white; font-weight: 600; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-size: 16px; box-shadow: 0 4px 6px rgba(75, 85, 99, 0.2); transition: background-color 0.2s;">
+                  Contact Support
+                </a>
+              </div>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background-color: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #f3f4f6;">
+              <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                &copy; ${new Date().getFullYear()} Rehabify Health. All rights reserved.
+              </p>
+            </div>
+          </div>
         `
       };
-    
+
     case 'APPOINTMENT_SCHEDULED':
       return {
         subject: `Your Appointment with ${options.data.physiotherapistName} has been scheduled`,
@@ -563,7 +655,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           </div>
         `
       };
-    
+
     case 'APPOINTMENT_REMINDER':
       return {
         subject: `Reminder: Your Appointment Tomorrow with ${options.data.physiotherapistName}`,
@@ -588,7 +680,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           </div>
         `
       };
-    
+
     case 'APPOINTMENT_CANCELED':
       return {
         subject: `Your Appointment with ${options.data.physiotherapistName} has been canceled`,
@@ -604,7 +696,76 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>If you have any questions, please contact the clinic directly.</p>
         `
       };
-      
+
+    case 'GOOGLE_MEET_LINK':
+      return {
+        subject: options.subject || `Your Google Meet Link is Ready`,
+        body: `
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e5e7eb;">
+            <!-- Header with Logo -->
+            <div style="background-color: #ffffff; padding: 24px; text-align: center; border-bottom: 1px solid #f3f4f6;">
+              <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 40px; width: auto;" />
+            </div>
+            
+            <!-- Content -->
+            <div style="padding: 32px 24px;">
+              <h1 style="color: #111827; font-size: 24px; font-weight: 600; margin-top: 0; margin-bottom: 16px; text-align: center;">Video Call Ready</h1>
+              
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.5; margin-bottom: 24px;">Hello ${options.data.recipientName},</p>
+              
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.5; margin-bottom: 24px;">
+                Your secure video consultation link has been generated. You can join the call at the scheduled time using the button below.
+              </p>
+              
+              <!-- Meeting Details Box -->
+              <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                <p style="margin: 0; color: #6b7280; font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em;">Scheduled for</p>
+                <p style="margin: 8px 0 0 0; color: #111827; font-size: 18px; font-weight: 600;">
+                  ${new Date(options.data.appointmentDate).toLocaleString(undefined, {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit'
+        })}
+                </p>
+              </div>
+              
+              <!-- CTA Button -->
+              <div style="text-align: center; margin-bottom: 32px;">
+                <a href="${options.data.meetingLink}" style="display: inline-block; background-color: #059669; color: white; font-weight: 600; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-size: 16px; box-shadow: 0 4px 6px rgba(5, 150, 105, 0.2);">
+                  Join Google Meet
+                </a>
+              </div>
+              
+              <p style="color: #6b7280; font-size: 14px; text-align: center; margin-bottom: 8px;">
+                Or copy and paste this link:
+              </p>
+              <div style="background-color: #f3f4f6; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; color: #4b5563; word-break: break-all; text-align: center; margin-bottom: 24px;">
+                ${options.data.meetingLink}
+              </div>
+              
+              <div style="text-align: center;">
+                <a href="${options.data.calendarLink}" style="color: #059669; text-decoration: none; font-size: 14px; font-weight: 500;">
+                  View in Google Calendar &rarr;
+                </a>
+              </div>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background-color: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #f3f4f6;">
+              <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                &copy; ${new Date().getFullYear()} Rehabify Health. All rights reserved.
+              </p>
+              <p style="color: #9ca3af; font-size: 12px; margin: 8px 0 0 0;">
+                This is an automated message, please do not reply directly to this email.
+              </p>
+            </div>
+          </div>
+        `
+      };
+
     default:
       return {
         subject: 'Rehabify Health Notification',

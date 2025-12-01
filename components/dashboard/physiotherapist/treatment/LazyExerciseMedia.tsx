@@ -52,39 +52,32 @@ export function LazyExerciseMedia({ exerciseDetail, exerciseId }: LazyExerciseMe
         <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
           <div className="text-center">
             <Play className="h-8 w-8 mx-auto text-gray-300 mb-2" />
-            <p className="text-xs text-gray-400">Loading...</p>
           </div>
         </div>
       ) : exerciseDetail?.imageUrl && exerciseDetail.imageUrl !== '' && !imageError ? (
         // Display image with loading state
         <div className="relative w-full h-full">
-          {!imageLoaded && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-              <div className="text-center">
-                <Play className="h-8 w-8 mx-auto text-gray-300 mb-2 animate-pulse" />
-                <p className="text-xs text-gray-400">Loading image...</p>
-              </div>
-            </div>
-          )}
-          <div 
-            className={`w-full h-full bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center cursor-pointer transition-opacity duration-300 ${
-              imageLoaded ? 'opacity-100' : 'opacity-0'
-            }`}
+          <img
+            src={exerciseDetail.imageUrl}
+            alt={exerciseDetail.name}
+            className={`w-full h-full object-contain p-2 transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+            onLoad={handleImageLoad}
+            onError={() => setImageLoaded(false)}
             onClick={() => {
-              handleImageLoad();
-              // Open image in new tab for better viewing
               if (exerciseDetail.imageUrl) {
                 window.open(exerciseDetail.imageUrl, '_blank');
               }
             }}
-          >
-            <div className="text-center text-sm text-muted-foreground">
-              <div className="h-8 w-8 mx-auto mb-2 bg-gray-300 rounded" />
-              Exercise Image
+          />
+          {!imageLoaded && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+              <div className="text-center">
+                <Play className="h-8 w-8 mx-auto text-gray-300 mb-2 animate-pulse" />
+              </div>
             </div>
-          </div>
+          )}
           {imageLoaded && (
-            <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center opacity-0 hover:opacity-100">
+            <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none">
               <Play className="h-12 w-12 text-white drop-shadow-lg" />
             </div>
           )}
@@ -98,7 +91,8 @@ export function LazyExerciseMedia({ exerciseDetail, exerciseId }: LazyExerciseMe
             <p className="text-xs text-gray-400 mt-1">No media available</p>
           </div>
         </div>
-      )}
+      )
+      }
     </div>
   );
 }

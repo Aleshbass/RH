@@ -1,42 +1,35 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-// Badge component not used in this component
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import TemplateBuilder, { TemplatePhase } from '@/components/dashboard/physiotherapist/treatment/TemplateBuilder';
 
 export default function CreateTreatmentTemplatePage() {
   const router = useRouter();
   const createTemplate = useMutation(api.treatmentPlans.createTreatmentTemplate);
-  const [builderPhases, setBuilderPhases] = useState<TemplatePhase[]>([]);
-  
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     category: '',
     duration: '',
     difficulty: 'Beginner',
-    exercises: [],
-    phases: [''],
-    goals: ['']
   });
 
-  const [newPhase, setNewPhase] = useState('');
-  const [newGoal, setNewGoal] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    setIsSubmitting(true);
+
     try {
       const createdId = await createTemplate({
         title: formData.title,
@@ -44,14 +37,13 @@ export default function CreateTreatmentTemplatePage() {
         category: formData.category,
         duration: formData.duration,
         difficulty: formData.difficulty,
-        exercises: formData.exercises,
-        phases: formData.phases.filter(p => p.trim() !== ''),
-        goals: formData.goals.filter(g => g.trim() !== ''),
-        builderPhases: (builderPhases && builderPhases.length > 0) ? builderPhases : undefined,
+        exercises: [],
+        phases: [],
+        goals: [],
       });
-      
-      toast.success('Treatment template created successfully');
-      // Continue directly to the builder on the edit page
+
+      toast.success('Template created! Add exercises in the next step.');
+
       if (createdId) {
         router.push(`/dashboard/physiotherapist/treatment-templates/${createdId}/edit`);
       } else {
@@ -59,85 +51,79 @@ export default function CreateTreatmentTemplatePage() {
       }
     } catch {
       toast.error('Failed to create template');
+      setIsSubmitting(false);
     }
-  };
-
-  // Removed unused addExercise function
-
-  const addPhase = () => {
-    if (newPhase.trim()) {
-      setFormData(prev => ({
-        ...prev,
-        phases: [...prev.phases, newPhase.trim()]
-      }));
-      setNewPhase('');
-    }
-  };
-
-  const addGoal = () => {
-    if (newGoal.trim()) {
-      setFormData(prev => ({
-        ...prev,
-        goals: [...prev.goals, newGoal.trim()]
-      }));
-      setNewGoal('');
-    }
-  };
-
-  const removeItem = (type: 'exercises' | 'phases' | 'goals', index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      [type]: prev[type].filter((_, i) => i !== index)
-    }));
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <div className="mb-6">
-        <Button variant="ghost" asChild>
-          <Link href="/dashboard/physiotherapist/treatment-templates">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Templates
-          </Link>
-        </Button>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="container mx-auto px-4 sm:px-6 max-w-3xl">
+          <div className="flex items-center justify-between h-14 sm:h-16">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/dashboard/physiotherapist/treatment-templates">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Link>
+            </Button>
+            <h1 className="text-base sm:text-lg font-semibold text-gray-900">New Template</h1>
+            <div className="w-16"></div> {/* Spacer for alignment */}
+          </div>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Create Treatment Template</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Template Title</label>
+      {/* Form */}
+      <div className="container mx-auto px-4 sm:px-6 max-w-3xl py-6 sm:py-8">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Basic Info Section */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 space-y-5">
+            <div>
+              <label htmlFor="title" className="block text-sm font-medium text-gray-900 mb-1.5">
+                Template Name
+              </label>
               <Input
+                id="title"
                 value={formData.title}
                 onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                 placeholder="e.g., Lower Back Pain Protocol"
                 required
+                className="text-base"
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Description</label>
+            <div>
+              <label htmlFor="description" className="block text-sm font-medium text-gray-900 mb-1.5">
+                Description
+              </label>
               <Textarea
+                id="description"
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Describe the treatment protocol and its purpose"
+                placeholder="Brief overview of this treatment protocol"
                 required
+                rows={3}
+                className="text-base resize-none"
               />
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Category</label>
+          {/* Details Section */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 space-y-5">
+            <h2 className="text-sm font-semibold text-gray-900">Details</h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="category" className="block text-sm font-medium text-gray-900 mb-1.5">
+                  Body Part
+                </label>
                 <Select
                   value={formData.category}
                   onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
                   required
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
+                  <SelectTrigger id="category" className="text-base">
+                    <SelectValue placeholder="Select" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Spine">Spine</SelectItem>
@@ -152,23 +138,15 @@ export default function CreateTreatmentTemplatePage() {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Duration</label>
-                <Input
-                  value={formData.duration}
-                  onChange={(e) => setFormData(prev => ({ ...prev, duration: e.target.value }))}
-                  placeholder="e.g., 6-8 weeks"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Difficulty</label>
+              <div>
+                <label htmlFor="difficulty" className="block text-sm font-medium text-gray-900 mb-1.5">
+                  Difficulty
+                </label>
                 <Select
                   value={formData.difficulty}
                   onValueChange={(value) => setFormData(prev => ({ ...prev, difficulty: value }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="difficulty" className="text-base">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -180,99 +158,42 @@ export default function CreateTreatmentTemplatePage() {
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Treatment Phases</label>
-                <div className="space-y-2">
-                  {formData.phases.map((phase, index) => (
-                    <div key={index} className="flex gap-2">
-                      <Input
-                        value={phase}
-                        onChange={(e) => {
-                          const newPhases = [...formData.phases];
-                          newPhases[index] = e.target.value;
-                          setFormData(prev => ({ ...prev, phases: newPhases }));
-                        }}
-                        placeholder={`Phase ${index + 1}`}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeItem('phases', index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                  <div className="flex gap-2">
-                    <Input
-                      value={newPhase}
-                      onChange={(e) => setNewPhase(e.target.value)}
-                      placeholder="Add new phase"
-                    />
-                    <Button type="button" variant="outline" onClick={addPhase}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-2 block">Treatment Goals</label>
-                <div className="space-y-2">
-                  {formData.goals.map((goal, index) => (
-                    <div key={index} className="flex gap-2">
-                      <Input
-                        value={goal}
-                        onChange={(e) => {
-                          const newGoals = [...formData.goals];
-                          newGoals[index] = e.target.value;
-                          setFormData(prev => ({ ...prev, goals: newGoals }));
-                        }}
-                        placeholder={`Goal ${index + 1}`}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeItem('goals', index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                  <div className="flex gap-2">
-                    <Input
-                      value={newGoal}
-                      onChange={(e) => setNewGoal(e.target.value)}
-                      placeholder="Add new goal"
-                    />
-                    <Button type="button" variant="outline" onClick={addGoal}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
+            <div>
+              <label htmlFor="duration" className="block text-sm font-medium text-gray-900 mb-1.5">
+                Duration
+              </label>
+              <Input
+                id="duration"
+                value={formData.duration}
+                onChange={(e) => setFormData(prev => ({ ...prev, duration: e.target.value }))}
+                placeholder="e.g., 6-8 weeks"
+                required
+                className="text-base"
+              />
             </div>
+          </div>
 
-            <div className="flex gap-4">
-              <Button type="submit" className="flex-1">
-                Create Template
-              </Button>
-              <Button type="button" variant="outline" asChild>
-                <Link href="/dashboard/physiotherapist/treatment-templates">
-                  Cancel
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </form>
-
-      {/* Phases & Exercises Builder (Create Mode) */}
-      <div className="mt-6">
-        <TemplateBuilder mode="create" onPhasesChange={(phases) => setBuilderPhases(phases)} />
+          {/* Actions */}
+          <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              asChild
+              className="w-full sm:w-auto"
+            >
+              <Link href="/dashboard/physiotherapist/treatment-templates">
+                Cancel
+              </Link>
+            </Button>
+            <Button
+              type="submit"
+              className="w-full sm:w-auto bg-[#005b57] hover:bg-[#00443e]"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Creating...' : 'Continue to Add Exercises'}
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );

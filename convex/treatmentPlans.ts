@@ -61,7 +61,7 @@ export const createTreatmentPlan = mutation({
     // Verify patient relationship
     const relationship = await ctx.db
       .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient_and_physiotherapist", q => 
+      .withIndex("by_patient_and_physiotherapist", q =>
         q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
       )
       .unique();
@@ -163,7 +163,7 @@ export const getPatientTreatmentPlans = query({
     if (currentUser.role === "physiotherapist") {
       const relationship = await ctx.db
         .query("patientPhysiotherapistRelationships")
-        .withIndex("by_patient_and_physiotherapist", q => 
+        .withIndex("by_patient_and_physiotherapist", q =>
           q.eq("patientId", args.patientId).eq("physiotherapistId", currentUser._id)
         )
         .unique();
@@ -585,7 +585,7 @@ export const duplicateTreatmentPlan = mutation({
     // Verify patient relationship for new patient
     const relationship = await ctx.db
       .query("patientPhysiotherapistRelationships")
-      .withIndex("by_patient_and_physiotherapist", q => 
+      .withIndex("by_patient_and_physiotherapist", q =>
         q.eq("patientId", newPatientId).eq("physiotherapistId", physiotherapist._id)
       )
       .unique();
@@ -1043,6 +1043,56 @@ export const deleteTreatmentTemplate = mutation({
     if (!tpl) return { success: true };
     if (tpl.createdBy !== user._id) throw new Error("Access denied");
     await ctx.db.delete(args.templateId);
+    return { success: true };
+  },
+});
+
+/**
+ * Delete a treatment plan
+ */
+export const deleteTreatmentPlan = mutation({
+  args: { treatmentPlanId: v.id("treatmentPlans") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const physiotherapist = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!physiotherapist || physiotherapist.role !== "physiotherapist") {
+      throw new Error("Only physiotherapists can delete treatment plans");
+    }
+
+    const plan = await ctx.db.get(args.treatmentPlanId);
+    if (!plan) return { success: true }; // Already deleted
+
+    if (plan.physiotherapistId !== physiotherapist._id) {
+      throw new Error("Access denied");
+    }
+
+    // Delete the treatment plan
+    await ctx.db.delete(args.treatmentPlanId);
+
+    // Notify patient about the deleted plan
+    await ctx.db.insert("notifications", {
+      userId: plan.patientId,
+      type: "treatment_plan_deleted" as any,
+      priority: "medium",
+      status: "pending",
+      payload: {
+        title: "Treatment Plan Removed",
+        body: `${physiotherapist.firstName || "Your physiotherapist"} removed the treatment plan: ${plan.title}`,
+        data: {
+          entityId: String(args.treatmentPlanId),
+          entityType: "treatmentPlan",
+        },
+        link: `/dashboard/patient/treatment-plan`,
+      },
+      createdAt: Date.now(),
+    });
+
     return { success: true };
   },
 });

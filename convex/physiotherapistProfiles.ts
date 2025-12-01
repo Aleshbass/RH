@@ -34,7 +34,7 @@ export const updateVideoPlatformPreference = mutation({
     // Update the physiotherapist profile
     await ctx.db.patch(user.physiotherapistProfileId, {
       videoPlatformPreference: args.platform,
-    } as any);
+    });
 
     return {
       success: true,
@@ -63,6 +63,6 @@ export const getVideoPlatformPreference = query({
     }
 
     const profile = await ctx.db.get(user.physiotherapistProfileId);
-    return (profile as any)?.videoPlatformPreference || "stream";
+    return profile?.videoPlatformPreference || "stream";
   },
 });

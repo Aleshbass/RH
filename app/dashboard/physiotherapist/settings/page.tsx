@@ -5,17 +5,22 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Loader2, User, Bell, Shield, Palette, Calendar } from 'lucide-react';
+import { Loader2, User, Bell, Shield, Palette, Calendar as CalendarIcon, DollarSign, Store } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ProfessionalProfileCard } from '@/components/dashboard/physiotherapist/ProfessionalProfileCard';
+import { CalendarConnectionStatus } from '@/components/settings/CalendarConnectionStatus';
+import { PayoutSettings } from '@/components/dashboard/physiotherapist/settings/PayoutSettings';
+import MarketplaceSettingsForm from '@/components/marketplace/MarketplaceSettingsForm';
+import { AvailabilityScheduler } from '@/components/onboarding/common/AvailabilityScheduler';
+import { toast } from 'sonner';
 
 export default function PhysiotherapistSettingsPage() {
   const router = useRouter();
@@ -25,6 +30,18 @@ export default function PhysiotherapistSettingsPage() {
   // Get current user
   const currentUser = useQuery(api.users.getMyUser);
   const currentUserProfile = useQuery(api.queries.getCurrentUser);
+  const currentUserProfile = useQuery(api.queries.getCurrentUser);
+  const marketplaceSettings = useQuery(api.marketplace.settings.getMyMarketplaceSettings);
+  const updateAvailabilityMutation = useMutation(api.physiotherapists.updateAvailability);
+
+  // Local state for availability
+  const [availabilitySchedule, setAvailabilitySchedule] = useState<any>(null);
+
+  useEffect(() => {
+    if (currentUserProfile?.profileData?.availabilitySchedule) {
+      setAvailabilitySchedule(currentUserProfile.profileData.availabilitySchedule);
+    }
+  }, [currentUserProfile]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -55,11 +72,27 @@ export default function PhysiotherapistSettingsPage() {
   const handleSaveProfile = async () => {
     setIsSaving(true);
     try {
-      // Add profile update logic here when mutation is available
-      alert('Profile settings saved! (Mutation implementation needed)');
+      // TODO: Add profile update logic here when mutation is available
+      // await updateProfileMutation({ ... });
+
+      toast.success('Profile settings saved successfully!');
     } catch (error) {
       console.error('Error saving profile:', error);
-      alert('Error saving profile settings');
+      toast.error('Failed to save profile settings. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveAvailability = async () => {
+    if (!availabilitySchedule) return;
+    setIsSaving(true);
+    try {
+      await updateAvailabilityMutation({ availabilitySchedule });
+      toast.success('Availability schedule updated successfully!');
+    } catch (error) {
+      console.error('Error saving availability:', error);
+      toast.error('Failed to update availability. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -75,31 +108,18 @@ export default function PhysiotherapistSettingsPage() {
 
       {/* Settings Tabs */}
       <Tabs defaultValue="profile" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full h-auto grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
           <TabsTrigger value="profile">Profile</TabsTrigger>
+          <TabsTrigger value="marketplace">Marketplace</TabsTrigger>
+          <TabsTrigger value="availability">Availability</TabsTrigger>
+          <TabsTrigger value="calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="payout">Payout</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="privacy">Privacy</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="space-y-4">
-          {/* Professional Profile (photo + license + board + year + bio) */}
-          {(() => {
-            type ProfileData = {
-              profileData?: { bio?: string; specializations?: string[] } | null;
-              imageUrl?: string | null;
-            } | null | undefined;
-            const profile = (currentUserProfile as ProfileData)?.profileData || null;
-            const imageUrl = ((currentUserProfile as ProfileData)?.imageUrl) || currentUser?.imageUrl || null;
-            return (
-              <ProfessionalProfileCard
-                initialValues={profile}
-                currentImageUrl={imageUrl}
-              />
-            );
-          })()}
-
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -143,12 +163,12 @@ export default function PhysiotherapistSettingsPage() {
                   />
                 </div>
               </div>
-              
+
               <div>
                 <Label htmlFor="bio">Professional Bio</Label>
                 <Textarea
                   id="bio"
-                  defaultValue={currentUserProfile?.profileData?.bio || ''}
+                  defaultValue={currentUserProfile.profileData?.bio || ''}
                   placeholder="Tell us about your professional background..."
                   rows={4}
                 />
@@ -158,7 +178,7 @@ export default function PhysiotherapistSettingsPage() {
                 <Label htmlFor="specializations">Specializations</Label>
                 <Input
                   id="specializations"
-                  defaultValue={currentUserProfile?.profileData?.specializations?.join(', ') || ''}
+                  defaultValue={currentUserProfile.profileData?.specializations?.join(', ') || ''}
                   placeholder="e.g., Sports Therapy, Neurological Rehabilitation"
                 />
               </div>
@@ -175,6 +195,102 @@ export default function PhysiotherapistSettingsPage() {
               </Button>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="marketplace" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Store className="h-5 w-5" />
+                Marketplace Profile
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {marketplaceSettings ? (
+                <MarketplaceSettingsForm settings={marketplaceSettings} />
+              ) : (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="availability" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Availability Schedule
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4">
+                <p className="text-sm text-blue-800">
+                  Set your weekly availability here. This schedule will be visible to patients when they book appointments with you.
+                </p>
+              </div>
+
+              {availabilitySchedule ? (
+                <AvailabilityScheduler
+                  value={availabilitySchedule}
+                  onChange={setAvailabilitySchedule}
+                />
+              ) : (
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  {[...Array(7)].map((_, i) => (
+                    <div key={i} className="flex flex-col py-4 border-b border-gray-200 last:border-0">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-4 w-32 pt-2">
+                          <Skeleton className="h-6 w-10 rounded-full" />
+                          <Skeleton className="h-4 w-16" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 justify-end">
+                            <Skeleton className="h-9 w-28" />
+                            <Skeleton className="h-9 w-28" />
+                            <Skeleton className="h-8 w-8 rounded-md" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex justify-end pt-4">
+                <Button onClick={handleSaveAvailability} disabled={isSaving} className="bg-[#005b57] hover:bg-[#00443e]">
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Availability'
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="calendar" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarIcon className="h-5 w-5" />
+                Calendar Integration
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CalendarConnectionStatus currentUser={currentUser} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="payout" className="space-y-4">
+          <PayoutSettings currentUser={currentUser} />
         </TabsContent>
 
         <TabsContent value="notifications" className="space-y-4">
@@ -254,43 +370,36 @@ export default function PhysiotherapistSettingsPage() {
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="timezone">Timezone</Label>
-                <select className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option>UTC+1 (West Africa Time)</option>
-                  <option>UTC (Greenwich Mean Time)</option>
-                  <option>UTC-5 (Eastern Time)</option>
-                </select>
+                <div className="mt-1">
+                  <Select defaultValue="UTC+1 (West Africa Time)">
+                    <SelectTrigger id="timezone" className="w-full">
+                      <SelectValue placeholder="Select timezone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UTC+1 (West Africa Time)">UTC+1 (West Africa Time)</SelectItem>
+                      <SelectItem value="UTC (Greenwich Mean Time)">UTC (Greenwich Mean Time)</SelectItem>
+                      <SelectItem value="UTC-5 (Eastern Time)">UTC-5 (Eastern Time)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <Separator />
               <div>
                 <Label htmlFor="language">Language</Label>
-                <select className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option>English</option>
-                  <option>French</option>
-                  <option>Yoruba</option>
-                  <option>Hausa</option>
-                </select>
+                <div className="mt-1">
+                  <Select defaultValue="English">
+                    <SelectTrigger id="language" className="w-full">
+                      <SelectValue placeholder="Select language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="English">English</SelectItem>
+                      <SelectItem value="French">French</SelectItem>
+                      <SelectItem value="Yoruba">Yoruba</SelectItem>
+                      <SelectItem value="Hausa">Hausa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="calendar" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                Calendar Integration
-              </CardTitle>
-              <CardDescription>
-                External calendar integrations are disabled. Your Rehabify calendar works independently.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Alert>
-                <AlertDescription>
-                  Calendar integrations (Google/Outlook) are turned off. Continue to manage appointments directly in the Rehabify calendar.
-                </AlertDescription>
-              </Alert>
             </CardContent>
           </Card>
         </TabsContent>

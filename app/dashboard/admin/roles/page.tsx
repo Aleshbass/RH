@@ -1,14 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
+import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { Id } from "convex/_generated/dataModel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/data-table";
-import { 
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -17,16 +18,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { 
-  Shield, 
-  Users, 
+import {
+  Shield,
+  Users,
   UserPlus,
   Edit,
   Trash2,
@@ -87,7 +88,7 @@ const roleColumns: ColumnDef<UserWithRole>[] = [
         patient: User,
       };
       const Icon = roleIcons[role as keyof typeof roleIcons] || User;
-      
+
       return (
         <Badge className={roleColors[role as keyof typeof roleColors] || "bg-gray-100 text-gray-800"}>
           <Icon className="h-3 w-3 mr-1" />
@@ -139,10 +140,18 @@ const roleColumns: ColumnDef<UserWithRole>[] = [
 
 export default function AdminRolesPage() {
   const allUsers = useQuery(api.users.getAllUsers);
-  const [selectedRole, setSelectedRole] = useState<string>("all");
+  const setUserRole = useMutation(api.users.setUserRole);
 
-  const filteredUsers = allUsers?.filter((user: UserWithRole) => 
-    selectedRole === "all" || user.role === selectedRole
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>("all");
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Form state
+  const [selectedUserId, setSelectedUserId] = useState<Id<"users"> | "">("");
+  const [selectedRole, setSelectedRole] = useState<string>("");
+
+  const filteredUsers = allUsers?.filter((user: UserWithRole) =>
+    selectedRoleFilter === "all" || user.role === selectedRoleFilter
   ) || [];
 
   const roleStats = allUsers ? {
@@ -152,6 +161,67 @@ export default function AdminRolesPage() {
     patient: allUsers.filter((u: UserWithRole) => u.role === 'patient').length,
     unassigned: allUsers.filter((u: UserWithRole) => !u.role).length,
   } : null;
+
+  const handleAssignRole = async () => {
+    if (!selectedUserId || !selectedRole) return;
+
+    setIsLoading(true);
+    try {
+      await setUserRole({
+        userId: selectedUserId as Id<"users">,
+        role: selectedRole as any
+      });
+      toast.success("User role updated successfully");
+      setIsDialogOpen(false);
+      // Reset form
+      setSelectedUserId("");
+      setSelectedRole("");
+    } catch (error) {
+      console.error("Failed to update role:", error);
+      toast.error("Failed to update user role");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const openAssignDialog = (user?: UserWithRole) => {
+    if (user) {
+      setSelectedUserId(user._id);
+      setSelectedRole(user.role || "patient");
+    } else {
+      setSelectedUserId("");
+      setSelectedRole("");
+    }
+    setIsDialogOpen(true);
+  };
+
+  // Update columns to use the openAssignDialog
+  const columnsWithActions: ColumnDef<UserWithRole>[] = [
+    ...roleColumns.filter(col => col.id !== "actions"),
+    {
+      id: "actions",
+      header: "Actions",
+      cell: ({ row }) => {
+        const user = row.original;
+        return (
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openAssignDialog(user)}
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+            {user.role !== 'admin' && (
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        );
+      },
+    }
+  ];
 
   return (
     <div className="space-y-6">
@@ -163,55 +233,69 @@ export default function AdminRolesPage() {
             Manage user roles and permissions across the platform
           </p>
         </div>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Assign Role
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Assign User Role</DialogTitle>
-              <DialogDescription>
-                Select a user and assign them a new role
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="user">Select User</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a user" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allUsers?.map((user: UserWithRole) => (
-                      <SelectItem key={user._id} value={user._id}>
-                        {user.firstName} {user.lastName} ({user.email})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="role">New Role</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Administrator</SelectItem>
-                    <SelectItem value="clinic_owner">Clinic Owner</SelectItem>
-                    <SelectItem value="physiotherapist">Physiotherapist</SelectItem>
-                    <SelectItem value="patient">Patient</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button className="w-full">Assign Role</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => openAssignDialog()}>
+          <UserPlus className="mr-2 h-4 w-4" />
+          Assign Role
+        </Button>
       </div>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign User Role</DialogTitle>
+            <DialogDescription>
+              Select a user and assign them a new role
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="user">Select User</Label>
+              <Select
+                value={selectedUserId}
+                onValueChange={(val) => setSelectedUserId(val as Id<"users">)}
+                disabled={isLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a user" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allUsers?.map((user: UserWithRole) => (
+                    <SelectItem key={user._id} value={user._id}>
+                      {user.firstName} {user.lastName} ({user.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="role">New Role</Label>
+              <Select
+                value={selectedRole}
+                onValueChange={setSelectedRole}
+                disabled={isLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Administrator</SelectItem>
+                  <SelectItem value="clinic_owner">Clinic Owner</SelectItem>
+                  <SelectItem value="physiotherapist">Physiotherapist</SelectItem>
+                  <SelectItem value="patient">Patient</SelectItem>
+                  <SelectItem value="family_member">Family Member</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              className="w-full"
+              onClick={handleAssignRole}
+              disabled={isLoading || !selectedUserId || !selectedRole}
+            >
+              {isLoading ? "Updating..." : "Assign Role"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Role Statistics */}
       <div className="grid gap-4 md:grid-cols-5">
@@ -300,7 +384,7 @@ export default function AdminRolesPage() {
                 View and manage user role assignments
               </CardDescription>
             </div>
-            <Select value={selectedRole} onValueChange={setSelectedRole}>
+            <Select value={selectedRoleFilter} onValueChange={setSelectedRoleFilter}>
               <SelectTrigger className="w-48">
                 <SelectValue />
               </SelectTrigger>
@@ -316,9 +400,9 @@ export default function AdminRolesPage() {
         </CardHeader>
         <CardContent>
           {allUsers ? (
-            <DataTable 
-              data={filteredUsers} 
-              columns={roleColumns}
+            <DataTable
+              data={filteredUsers}
+              columns={columnsWithActions}
               searchKey="firstName"
             />
           ) : (

@@ -3,7 +3,7 @@
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import PendingApprovalPage from '@/components/dashboard/shared/PendingApprovalPage'
 
 interface DashboardAuthGuardProps {
@@ -17,13 +17,16 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
     api.accountApproval.getStatus,
     currentUser ? { userId: currentUser._id } : "skip"
   )
+  const [isRedirecting, setIsRedirecting] = useState(false)
 
   useEffect(() => {
     // Wait for user data to load
     if (currentUser === undefined) return
+    if (isRedirecting) return
 
     // If no user found, redirect to sign-in
     if (!currentUser) {
+      setIsRedirecting(true)
       router.replace('/sign-in')
       return
     }
@@ -31,30 +34,35 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
     // If user hasn't selected a role yet, but they already have a profile, route to their dashboard
     if (!currentUser.role) {
       if (currentUser.patientProfileId) {
+        setIsRedirecting(true)
         router.replace('/dashboard/patient')
         return
       }
       if (currentUser.physiotherapistProfileId) {
+        setIsRedirecting(true)
         router.replace('/dashboard/physiotherapist')
         return
       }
       if (currentUser.clinicOwnerProfileId) {
+        setIsRedirecting(true)
         router.replace('/dashboard/clinic')
         return
       }
       // No role and no profile: go to role selection
+      setIsRedirecting(true)
       router.replace('/role-selection')
       return
     }
 
     // If user hasn't completed onboarding, redirect to appropriate onboarding flow
     if (!currentUser.onboarded) {
+      setIsRedirecting(true)
       switch (currentUser.role) {
         case 'physiotherapist':
-          router.replace('/physiotherapist/step1')
+          router.replace('/physiotherapist')
           break
         case 'clinic_owner':
-          router.replace('/clinic-owner/step1')
+          router.replace('/clinic-owner')
           break
         case 'patient':
           // Patients typically complete onboarding via invitation. If a patient profile exists, allow dashboard access.
@@ -95,33 +103,37 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
         return
       }
 
-      // If approved, allow access to dashboard (continue to render children)
+      // If approved, we allow access to the dashboard layout.
+      // Specific dashboard redirection (e.g. /dashboard -> /dashboard/physiotherapist)
+      // is handled by app/dashboard/page.tsx
     }
 
     // Admin and patient roles don't require approval, allow access
     // Approved physiotherapists and clinic owners also reach here
-  }, [currentUser, approvalStatus, router])
+  }, [currentUser, approvalStatus, router, isRedirecting])
 
-  // Show loading state while checking authentication
-  if (currentUser === undefined || 
-      (currentUser?.role === 'physiotherapist' || currentUser?.role === 'clinic_owner') && approvalStatus === undefined) {
+  // Show loading state while checking authentication or redirecting
+  if (isRedirecting || currentUser === undefined ||
+    (currentUser?.role === 'physiotherapist' || currentUser?.role === 'clinic_owner') && approvalStatus === undefined) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600 mx-auto"></div>
-          <p className="mt-2 text-gray-600">Loading...</p>
+          <p className="mt-2 text-gray-600">
+            {isRedirecting ? 'Redirecting...' : 'Loading...'}
+          </p>
         </div>
       </div>
     )
   }
 
   // If user needs approval and status is pending or declined, show pending approval page
-  if (currentUser && 
-      (currentUser.role === 'physiotherapist' || currentUser.role === 'clinic_owner') && 
-      approvalStatus && 
-      (approvalStatus.status === 'pending_review' || approvalStatus.status === 'declined')) {
+  if (currentUser &&
+    (currentUser.role === 'physiotherapist' || currentUser.role === 'clinic_owner') &&
+    approvalStatus &&
+    (approvalStatus.status === 'pending_review' || approvalStatus.status === 'declined')) {
     return (
-      <PendingApprovalPage 
+      <PendingApprovalPage
         userRole={currentUser.role}
         approvalStatus={approvalStatus.status}
         declineReason={approvalStatus.comments}

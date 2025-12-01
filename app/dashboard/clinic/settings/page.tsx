@@ -12,20 +12,25 @@ import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
-import { 
-  Building2, 
+import {
+  Building2,
   Bell,
   Shield,
   CreditCard,
   Users,
   MapPin,
-  Save
+  Save,
+  Calendar
 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import ClinicBillingView from '@/components/dashboard/clinic/ClinicBillingView'
+import ClinicAuditView from '@/components/dashboard/clinic/ClinicAuditView'
+import { CalendarConnectionStatus } from '@/components/settings/CalendarConnectionStatus'
 
 export default function ClinicSettingsPage() {
-  const clinic = useQuery(api.clinics.getCurrentClinic)
+  const clinic = useQuery(api.clinics.getMyClinic)
+  const currentUser = useQuery(api.users.getMyUser)
   const updateClinic = useMutation(api.clinics.updateClinic)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -69,12 +74,15 @@ export default function ClinicSettingsPage() {
 
         {/* Settings Tabs */}
         <Tabs defaultValue="general" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="billing-invoicing">Billing & Invoicing</TabsTrigger>
+            <TabsTrigger value="audit-logs">Audit Logs</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
-            <TabsTrigger value="billing">Billing</TabsTrigger>
+
             <TabsTrigger value="security">Security</TabsTrigger>
             <TabsTrigger value="team">Team</TabsTrigger>
+            <TabsTrigger value="integrations">Integrations</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general">
@@ -90,26 +98,26 @@ export default function ClinicSettingsPage() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="clinicName">Clinic Name</Label>
-                    <Input 
-                      id="clinicName" 
-                      defaultValue={clinic?.name || ''} 
+                    <Input
+                      id="clinicName"
+                      defaultValue={clinic?.name || ''}
                       placeholder="Enter clinic name"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="description">Description</Label>
-                    <Textarea 
-                      id="description" 
-                      defaultValue={clinic?.description || ''} 
+                    <Textarea
+                      id="description"
+                      defaultValue={clinic?.description || ''}
                       placeholder="Brief description of your clinic"
                       rows={3}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="specializations">Specializations</Label>
-                    <Input 
-                      id="specializations" 
-                      defaultValue={clinic?.specializations?.join(', ') || ''} 
+                    <Input
+                      id="specializations"
+                      defaultValue={clinic?.specializations?.join(', ') || ''}
                       placeholder="e.g., Sports Therapy, Orthopedic Rehab"
                     />
                   </div>
@@ -131,9 +139,9 @@ export default function ClinicSettingsPage() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="address">Address</Label>
-                    <Textarea 
-                      id="address" 
-                      defaultValue={clinic?.address || ''} 
+                    <Textarea
+                      id="address"
+                      defaultValue={clinic?.address || ''}
                       placeholder="Full clinic address"
                       rows={2}
                     />
@@ -141,26 +149,26 @@ export default function ClinicSettingsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="phone">Phone</Label>
-                      <Input 
-                        id="phone" 
-                        defaultValue={clinic?.contactPhone || ''} 
+                      <Input
+                        id="phone"
+                        defaultValue={clinic?.contactPhone || ''}
                         placeholder="+234 123-4564567"
                       />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="email">Email</Label>
-                      <Input 
-                        id="email" 
-                        defaultValue={clinic?.contactEmail || ''} 
+                      <Input
+                        id="email"
+                        defaultValue={clinic?.contactEmail || ''}
                         placeholder="contact@clinic.com"
                       />
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="website">Website</Label>
-                    <Input 
-                      id="website" 
-                      defaultValue={clinic?.website || ''} 
+                    <Input
+                      id="website"
+                      defaultValue={clinic?.website || ''}
                       placeholder="https://www.yourclinic.com"
                     />
                   </div>
@@ -171,6 +179,14 @@ export default function ClinicSettingsPage() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="billing-invoicing">
+            <ClinicBillingView />
+          </TabsContent>
+
+          <TabsContent value="audit-logs">
+            <ClinicAuditView />
           </TabsContent>
 
           <TabsContent value="notifications">
@@ -236,58 +252,7 @@ export default function ClinicSettingsPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="billing">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <CreditCard className="h-5 w-5" />
-                  <span>Billing Settings</span>
-                </CardTitle>
-                <CardDescription>Configure billing and payment options</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="currency">Default Currency</Label>
-                    <Input id="currency" defaultValue="USD" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="taxRate">Tax Rate (%)</Label>
-                    <Input id="taxRate" defaultValue="8.5" type="number" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="paymentTerms">Payment Terms</Label>
-                  <Input id="paymentTerms" defaultValue="Net 30" placeholder="e.g., Net 30, Due on Receipt" />
-                </div>
-                <div className="space-y-4">
-                  <Label>Accepted Payment Methods</Label>
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Switch defaultChecked />
-                      <Label>Credit/Debit Cards</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch defaultChecked />
-                      <Label>Bank Transfers</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch />
-                      <Label>Cash Payments</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch />
-                      <Label>Insurance Direct Billing</Label>
-                    </div>
-                  </div>
-                </div>
-                <Button disabled={isLoading}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Settings
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
+
 
           <TabsContent value="security">
             <Card>
@@ -393,6 +358,21 @@ export default function ClinicSettingsPage() {
                   <Save className="h-4 w-4 mr-2" />
                   Save Team Settings
                 </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="integrations">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Calendar className="h-5 w-5" />
+                  <span>Calendar Integrations</span>
+                </CardTitle>
+                <CardDescription>Connect your external calendars for seamless scheduling</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <CalendarConnectionStatus currentUser={currentUser} />
               </CardContent>
             </Card>
           </TabsContent>

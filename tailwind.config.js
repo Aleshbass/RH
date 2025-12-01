@@ -8,7 +8,10 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        pally: ['Pally', 'sans-serif'],
+
+        cal: ['var(--font-cal)', 'sans-serif'],
+        matter: ['var(--font-matter)', 'sans-serif'],
+        sans: ['var(--font-matter)', 'sans-serif'],
       },
       backgroundColor: {
         'cream': '#FAF6E7',

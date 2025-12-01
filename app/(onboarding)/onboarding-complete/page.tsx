@@ -4,6 +4,8 @@
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useUserProfileMutation } from "@/lib/onboardingHelpers";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 
 import { useOnboardingStore } from '@/stores/onboardingStore';
@@ -24,7 +26,7 @@ export default function OnboardingCompletePage() {
     const runOnboarding = async () => {
       try {
         const userRole = data.role;
-        
+
         if (!userRole) {
           throw new Error("User role not found");
         }
@@ -55,6 +57,10 @@ export default function OnboardingCompletePage() {
                 certificationBoard: data.physiotherapistData.certificationBoard || "",
                 certificationYear: data.physiotherapistData.certificationYear || new Date().getFullYear(),
                 licenseExpiryDate: data.physiotherapistData.licenseExpiryDate || "",
+                referralSource: data.physiotherapistData.referralSource || "",
+                location: data.physiotherapistData.location || "",
+                dateOfBirth: data.physiotherapistData.dateOfBirth || "",
+                gender: data.physiotherapistData.gender,
               },
               firstName: data.physiotherapistData.firstName,
               lastName: data.physiotherapistData.lastName,
@@ -77,6 +83,7 @@ export default function OnboardingCompletePage() {
               role: "clinic_owner",
               profileData: {
                 // Add clinic owner specific data here
+                referralSource: data.clinicOwnerData.referralSource || "",
               },
               firstName: data.clinicOwnerData.firstName,
               lastName: data.clinicOwnerData.lastName,
@@ -102,6 +109,16 @@ export default function OnboardingCompletePage() {
     runOnboarding();
   }, [completeUserProfile, router, data]);
 
+  // Real-time check for approval status
+  const dashboardAccess = useQuery(api.queries.checkDashboardAccess);
+
+  useEffect(() => {
+    if (dashboardAccess?.canAccess) {
+      // If approved, redirect immediately
+      router.replace('/dashboard');
+    }
+  }, [dashboardAccess, router]);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-green-50">
       <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-lg">
@@ -119,7 +136,7 @@ export default function OnboardingCompletePage() {
             {status === "success" ? "Onboarding Complete!" : "Completing Onboarding"}
           </h2>
           <p className="text-gray-600">{message}</p>
-          
+
           {status === "error" && (
             <div className="mt-4 space-y-2">
               <button
