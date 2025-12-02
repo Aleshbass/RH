@@ -12,8 +12,7 @@ export const searchLocations = action({
 
         const apiKey = process.env.LOCATIONIQ_API_KEY;
         if (!apiKey) {
-            console.error("LOCATIONIQ_API_KEY is not set");
-            // Fallback to empty or throw error? Better to return empty and log
+            console.error("LOCATIONIQ_API_KEY is not set in environment variables. Location search will fail.");
             return [];
         }
 
