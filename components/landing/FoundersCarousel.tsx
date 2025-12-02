@@ -33,8 +33,8 @@ export function FoundersCarousel() {
             image: '/founders/Ademola.jpg',
         },
         {
-            name: 'David',
-            role: 'Founder',
+            name: 'David Olukayode',
+            role: 'Executive and Clinical Head',
             quote: 'Driving innovation in healthcare technology to create sustainable solutions for physiotherapy clinics.',
             image: '/founders/David.jpeg',
         },
