@@ -149,14 +149,12 @@ export default function RootLayout({
         {/* Paystack Inline Script */}
         <script src="https://js.paystack.co/v1/inline.js" async />
 
-        {/* Umami Analytics - Only in production */}
-        {process.env.NODE_ENV === 'production' && (
-          <Script
-            src="https://rehabifyhealth-analytics.vercel.app/script.js"
-            data-website-id={process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID}
-            strategy="afterInteractive"
-          />
-        )}
+        {/* Umami Analytics */}
+        <Script
+          src="https://rehabifyhealth-analytics.vercel.app/script.js"
+          data-website-id={process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID || "051e7953-f174-41aa-a2b7-96106c6f3d0d"}
+          strategy="afterInteractive"
+        />
 
 
       </body>
