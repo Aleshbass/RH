@@ -92,14 +92,13 @@ export const processEmailForNotification = internalAction({
           emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendApprovalEmail"], {
             userEmail: user.email,
             userName: displayName,
-            userRole: user.role === "physiotherapist" ? "Physiotherapist" 
-                    : user.role === "clinic_owner" ? "Clinic Owner" 
-                    : "User",
-            dashboardLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.rehabifyhealth.com'}/dashboard/${
-              user.role === "physiotherapist" ? "physiotherapist" 
-              : user.role === "clinic_owner" ? "clinic" 
-              : "patient"
-            }`,
+            userRole: user.role === "physiotherapist" ? "Physiotherapist"
+              : user.role === "clinic_owner" ? "Clinic Owner"
+                : "User",
+            dashboardLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.rehabifyhealth.com'}/dashboard/${user.role === "physiotherapist" ? "physiotherapist"
+                : user.role === "clinic_owner" ? "clinic"
+                  : "patient"
+              }`,
           });
           break;
 
@@ -111,11 +110,11 @@ export const processEmailForNotification = internalAction({
             reason: (notification.payload?.data as any)?.metadata?.reason || "Application requirements not met",
             supportLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.rehabifyhealth.com'}/support`,
             requiredDocuments: ((notification.payload?.data as any)?.metadata?.requiredDocuments as string[] | undefined) || (
-              user.role === "physiotherapist" 
+              user.role === "physiotherapist"
                 ? ["Valid Professional License", "Certification Documents", "Updated Contact Information"]
                 : user.role === "clinic_owner"
-                ? ["Business Registration", "Professional Credentials", "Clinic Documentation"]
-                : ["Required Documentation"]
+                  ? ["Business Registration", "Professional Credentials", "Clinic Documentation"]
+                  : ["Required Documentation"]
             ),
           });
           break;
@@ -126,10 +125,10 @@ export const processEmailForNotification = internalAction({
           const dashboardPath = user.role === "patient"
             ? "/dashboard/patient"
             : user.role === "physiotherapist"
-            ? "/dashboard/physiotherapist"
-            : user.role === "clinic_owner"
-            ? "/dashboard/clinic"
-            : "/dashboard";
+              ? "/dashboard/physiotherapist"
+              : user.role === "clinic_owner"
+                ? "/dashboard/clinic"
+                : "/dashboard";
 
           const dashboardLink = `${appUrl}${dashboardPath}`;
 
@@ -199,6 +198,12 @@ export const processEmailForNotification = internalAction({
           const confirmLink = md.confirmLink || `${appUrl}/dashboard/patient/appointments`;
           const rescheduleLink = md.rescheduleLink || `${appUrl}/dashboard/patient/appointments`;
 
+          // Skip sending reminder if appointment has already passed
+          if (appointmentDate < Date.now()) {
+            console.log(`Skipping appointment reminder - appointment ${notification.payload?.data?.appointmentId} has already passed`);
+            return { success: true, message: "Appointment has already passed, skipping reminder" } as any;
+          }
+
           emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendAppointmentReminderEmail"], {
             to: user.email,
             patientName,
@@ -239,12 +244,12 @@ export const processEmailForNotification = internalAction({
           status: "delivered",
           deliveredAt: Date.now(),
         });
-        
+
         console.log(`Email sent successfully for notification ${args.notificationId}`);
         return { success: true, messageId: emailResult.messageId || undefined };
       } else {
         console.error(`Email failed for notification ${args.notificationId}:`, emailResult.error);
-        
+
         // Handle retry logic if enabled
         if (args.retryOnFailure) {
           await ctx.runMutation(api.notifications.retry.scheduleNotificationRetry, {
@@ -253,12 +258,12 @@ export const processEmailForNotification = internalAction({
             error: emailResult.error || "Email sending failed",
           });
         }
-        
+
         return { success: false, error: emailResult.error };
       }
     } catch (error) {
       console.error(`Error processing email for notification ${args.notificationId}:`, error);
-      
+
       // Handle retry logic if enabled
       if (args.retryOnFailure) {
         await ctx.runMutation(api.notifications.retry.scheduleNotificationRetry, {
@@ -267,7 +272,7 @@ export const processEmailForNotification = internalAction({
           error: error instanceof Error ? error.message : "Unknown error",
         });
       }
-      
+
       return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
     }
   },

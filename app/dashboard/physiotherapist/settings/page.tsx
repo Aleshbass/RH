@@ -1,11 +1,11 @@
 'use client';
 
-import { useAuth } from '@clerk/nextjs';
+import { useAuth, SignOutButton } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Loader2, User, Bell, Shield, Palette, Calendar as CalendarIcon, DollarSign, Store, Clock } from 'lucide-react';
+import { Loader2, User, Bell, Shield, Palette, Calendar as CalendarIcon, DollarSign, Store, Clock, LogOut, Key, Camera, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -127,7 +127,34 @@ export default function PhysiotherapistSettingsPage() {
                 Profile Information
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
+              {/* Profile Picture */}
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="h-20 w-20 rounded-full bg-gray-200 overflow-hidden">
+                    {currentUser?.imageUrl ? (
+                      <img src={currentUser.imageUrl} alt="Profile" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-2xl font-semibold text-gray-500">
+                        {currentUser?.firstName?.[0]}{currentUser?.lastName?.[0]}
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full p-0"
+                    onClick={() => window.open('/user', '_blank')}
+                  >
+                    <Camera className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div>
+                  <h4 className="font-medium">Profile Picture</h4>
+                  <p className="text-sm text-gray-600">Click the camera icon to change your photo</p>
+                </div>
+              </div>
+              <Separator />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="firstName">First Name</Label>
@@ -351,8 +378,64 @@ export default function PhysiotherapistSettingsPage() {
                   <h4 className="font-medium">Two-Factor Authentication</h4>
                   <p className="text-sm text-gray-600">Add an extra layer of security to your account</p>
                 </div>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={() => window.open('/user', '_blank')}>
+                  <Key className="h-4 w-4 mr-2" />
                   Configure
+                </Button>
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium">Change Password</h4>
+                  <p className="text-sm text-gray-600">Update your account password</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => window.open('/user', '_blank')}>
+                  <Key className="h-4 w-4 mr-2" />
+                  Change Password
+                </Button>
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium">Sign Out</h4>
+                  <p className="text-sm text-gray-600">Sign out of your account on this device</p>
+                </div>
+                <SignOutButton>
+                  <Button variant="outline" size="sm">
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sign Out
+                  </Button>
+                </SignOutButton>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Danger Zone */}
+          <Card className="border-red-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-red-600">
+                <Trash2 className="h-5 w-5" />
+                Danger Zone
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium text-red-600">Deactivate Account</h4>
+                  <p className="text-sm text-gray-600">Temporarily disable your account. You can reactivate it later.</p>
+                </div>
+                <Button variant="outline" size="sm" className="border-red-300 text-red-600 hover:bg-red-50">
+                  Deactivate
+                </Button>
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium text-red-600">Delete Account</h4>
+                  <p className="text-sm text-gray-600">Permanently delete your account and all associated data.</p>
+                </div>
+                <Button variant="destructive" size="sm">
+                  Delete Account
                 </Button>
               </div>
             </CardContent>

@@ -8,11 +8,6 @@
  * @module
  */
 
-import type {
-  ApiFromModules,
-  FilterApi,
-  FunctionReference,
-} from "convex/server";
 import type * as accountApproval from "../accountApproval.js";
 import type * as actions_accounts_approveAccount from "../actions/accounts/approveAccount.js";
 import type * as actions_accounts_declineAccount from "../actions/accounts/declineAccount.js";
@@ -51,12 +46,12 @@ import type * as actions_patients_completeOnboarding from "../actions/patients/c
 import type * as actions_patients_index from "../actions/patients/index.js";
 import type * as actions_patients_invitePatient from "../actions/patients/invitePatient.js";
 import type * as actions_patients_simpleCompleteOnboarding from "../actions/patients/simpleCompleteOnboarding.js";
-import type * as admin_marketplaceEarnings from "../admin/marketplaceEarnings.js";
 import type * as admin from "../admin.js";
-import type * as analytics_service from "../analytics/service.js";
+import type * as admin_marketplaceEarnings from "../admin/marketplaceEarnings.js";
 import type * as analytics from "../analytics.js";
-import type * as appointments_withCalendar from "../appointments/withCalendar.js";
+import type * as analytics_service from "../analytics/service.js";
 import type * as appointments from "../appointments.js";
+import type * as appointments_withCalendar from "../appointments/withCalendar.js";
 import type * as assessments from "../assessments.js";
 import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
@@ -79,6 +74,7 @@ import type * as exerciseCompletions from "../exerciseCompletions.js";
 import type * as exerciseTemplates from "../exerciseTemplates.js";
 import type * as exercises from "../exercises.js";
 import type * as files from "../files.js";
+import type * as flutterwave from "../flutterwave.js";
 import type * as health from "../health.js";
 import type * as helpers_triggerRetryProcessing from "../helpers/triggerRetryProcessing.js";
 import type * as http from "../http.js";
@@ -95,18 +91,16 @@ import type * as marketplace_settings from "../marketplace/settings.js";
 import type * as marketplace_verification from "../marketplace/verification.js";
 import type * as messages from "../messages.js";
 import type * as notesTemplates from "../notesTemplates.js";
+import type * as notifications from "../notifications.js";
 import type * as notifications_core from "../notifications/core.js";
 import type * as notifications_email from "../notifications/email.js";
 import type * as notifications_production from "../notifications/production.js";
 import type * as notifications_retry from "../notifications/retry.js";
 import type * as notifications_service from "../notifications/service.js";
-import type * as notifications from "../notifications.js";
 import type * as patientInvitations from "../patientInvitations.js";
 import type * as patients from "../patients.js";
 import type * as payments from "../payments.js";
 import type * as payouts from "../payouts.js";
-import type * as paystack from "../paystack.js";
-import type * as paystackVerify from "../paystackVerify.js";
 import type * as physiotherapistProfiles from "../physiotherapistProfiles.js";
 import type * as physiotherapists from "../physiotherapists.js";
 import type * as queries from "../queries.js";
@@ -123,8 +117,8 @@ import type * as scheduledTasks from "../scheduledTasks.js";
 import type * as schema_calendar from "../schema/calendar.js";
 import type * as schema_health from "../schema/health.js";
 import type * as sessionLogs from "../sessionLogs.js";
-import type * as settings_service from "../settings/service.js";
 import type * as settings from "../settings.js";
+import type * as settings_service from "../settings/service.js";
 import type * as stream from "../stream.js";
 import type * as stream_mutations from "../stream_mutations.js";
 import type * as stream_queries from "../stream_queries.js";
@@ -135,17 +129,14 @@ import type * as treatmentPlanSync from "../treatmentPlanSync.js";
 import type * as treatmentPlans from "../treatmentPlans.js";
 import type * as users from "../users.js";
 import type * as videoCalls from "../videoCalls.js";
-import type * as webhooks_paystack from "../webhooks/paystack.js";
-import type * as webhooks_paystackHandlers from "../webhooks/paystackHandlers.js";
+import type * as webhooks_flutterwaveHandlers from "../webhooks/flutterwaveHandlers.js";
 
-/**
- * A utility for referencing Convex functions in your app's API.
- *
- * Usage:
- * ```js
- * const myFunctionReference = api.myModule.myFunction;
- * ```
- */
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
+
 declare const fullApi: ApiFromModules<{
   accountApproval: typeof accountApproval;
   "actions/accounts/approveAccount": typeof actions_accounts_approveAccount;
@@ -185,12 +176,12 @@ declare const fullApi: ApiFromModules<{
   "actions/patients/index": typeof actions_patients_index;
   "actions/patients/invitePatient": typeof actions_patients_invitePatient;
   "actions/patients/simpleCompleteOnboarding": typeof actions_patients_simpleCompleteOnboarding;
-  "admin/marketplaceEarnings": typeof admin_marketplaceEarnings;
   admin: typeof admin;
-  "analytics/service": typeof analytics_service;
+  "admin/marketplaceEarnings": typeof admin_marketplaceEarnings;
   analytics: typeof analytics;
-  "appointments/withCalendar": typeof appointments_withCalendar;
+  "analytics/service": typeof analytics_service;
   appointments: typeof appointments;
+  "appointments/withCalendar": typeof appointments_withCalendar;
   assessments: typeof assessments;
   auth: typeof auth;
   billing: typeof billing;
@@ -213,6 +204,7 @@ declare const fullApi: ApiFromModules<{
   exerciseTemplates: typeof exerciseTemplates;
   exercises: typeof exercises;
   files: typeof files;
+  flutterwave: typeof flutterwave;
   health: typeof health;
   "helpers/triggerRetryProcessing": typeof helpers_triggerRetryProcessing;
   http: typeof http;
@@ -229,18 +221,16 @@ declare const fullApi: ApiFromModules<{
   "marketplace/verification": typeof marketplace_verification;
   messages: typeof messages;
   notesTemplates: typeof notesTemplates;
+  notifications: typeof notifications;
   "notifications/core": typeof notifications_core;
   "notifications/email": typeof notifications_email;
   "notifications/production": typeof notifications_production;
   "notifications/retry": typeof notifications_retry;
   "notifications/service": typeof notifications_service;
-  notifications: typeof notifications;
   patientInvitations: typeof patientInvitations;
   patients: typeof patients;
   payments: typeof payments;
   payouts: typeof payouts;
-  paystack: typeof paystack;
-  paystackVerify: typeof paystackVerify;
   physiotherapistProfiles: typeof physiotherapistProfiles;
   physiotherapists: typeof physiotherapists;
   queries: typeof queries;
@@ -257,8 +247,8 @@ declare const fullApi: ApiFromModules<{
   "schema/calendar": typeof schema_calendar;
   "schema/health": typeof schema_health;
   sessionLogs: typeof sessionLogs;
-  "settings/service": typeof settings_service;
   settings: typeof settings;
+  "settings/service": typeof settings_service;
   stream: typeof stream;
   stream_mutations: typeof stream_mutations;
   stream_queries: typeof stream_queries;
@@ -269,14 +259,33 @@ declare const fullApi: ApiFromModules<{
   treatmentPlans: typeof treatmentPlans;
   users: typeof users;
   videoCalls: typeof videoCalls;
-  "webhooks/paystack": typeof webhooks_paystack;
-  "webhooks/paystackHandlers": typeof webhooks_paystackHandlers;
+  "webhooks/flutterwaveHandlers": typeof webhooks_flutterwaveHandlers;
 }>;
+
+/**
+ * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
 export declare const api: FilterApi<
   typeof fullApi,
   FunctionReference<any, "public">
 >;
+
+/**
+ * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
+ */
 export declare const internal: FilterApi<
   typeof fullApi,
   FunctionReference<any, "internal">
 >;
+
+export declare const components: {};

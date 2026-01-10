@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
     // Send email via Resend (using verified domain)
     const result = await resend.emails.send({
-      from: `RehabifyHealth <${process.env.FROM_EMAIL || 'noreply@rehabifyhealth.com'}>`,
+      from: `RehabifyHealth <${process.env.FROM_EMAIL || 'info@rehabifyhealth.com'}>`,
       to: typeof to === 'string' ? to : emailData.to,
       subject: emailData.subject,
       html: emailData.html

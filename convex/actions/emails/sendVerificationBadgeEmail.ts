@@ -107,7 +107,7 @@ export const sendVerificationBadgeConfirmation = actionGeneric(async (ctx: any, 
         Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: "RehabifyHealth <noreply@rehabifyhealth.com>",
+        from: "RehabifyHealth <info@rehabifyhealth.com>",
         to: [userEmail],
         subject: `🎉 Your Verification Badge is Active!`,
         html: emailHtml,

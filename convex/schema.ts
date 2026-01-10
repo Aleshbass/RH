@@ -197,6 +197,7 @@ export default defineSchema({
     createdAt: v.number(), // Timestamp when invitation was created
     expiresAt: v.number(), // Timestamp when invitation expires
     notes: v.optional(v.string()), // Optional notes from physiotherapist
+    lastReminderSentAt: v.optional(v.number()), // Timestamp of last reminder email sent (prevents duplicate reminders)
   })
     .index("by_code", ["code"])
     .index("by_patient_email", ["patientEmail"])
@@ -1909,7 +1910,8 @@ export default defineSchema({
   // Physiotherapist bank accounts for split payments
   physiotherapistBankAccounts: defineTable({
     physiotherapistId: v.id("users"),
-    subaccountCode: v.string(), // Paystack subaccount code
+    subaccountCode: v.string(), // Paystack subaccount code (kept for backward compatibility)
+    subaccountId: v.optional(v.string()), // Flutterwave subaccount ID
     bankCode: v.string(),
     accountNumber: v.string(),
     bankName: v.string(),
@@ -1918,6 +1920,7 @@ export default defineSchema({
     isVerified: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
+    paymentProvider: v.optional(v.union(v.literal("paystack"), v.literal("flutterwave"))), // Which provider this account uses
   })
     .index("by_physiotherapist_id", ["physiotherapistId"])
     .index("by_subaccount_code", ["subaccountCode"]),

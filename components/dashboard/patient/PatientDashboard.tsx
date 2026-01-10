@@ -20,11 +20,14 @@ import {
   ChevronRight,
   MapPin,
   Phone,
-  Mail
+  Mail,
+  Send,
+  Share2,
+  Check
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useRouter } from 'next/navigation'
-import { usePatientDocuments } from '@/lib/hooks/usePatientDocuments'
+import { usePatientDocuments, PatientDocument } from '@/lib/hooks/usePatientDocuments'
 import FileUpload from '@/components/ui/FileUpload'
 import { TourGuide } from '@/components/shared/TourGuide'
 import { InsightsSidebar } from '@/components/dashboard/shared/InsightsSidebar'
@@ -55,7 +58,9 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
   const {
     documents,
     uploadPatientDocument,
-    isLoadingDocuments
+    isLoadingDocuments,
+    toggleSharing,
+    isTogglingSharing
   } = usePatientDocuments({ patientProfileId: patientProfileId as Id<"patientProfiles"> | undefined })
 
   // Loading state
@@ -393,29 +398,56 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
                       <Skeleton className="h-20 w-full" />
                     </div>
                   ) : documents && documents.length > 0 ? (
-                    documents.map((doc) => (
+                    documents.map((doc: PatientDocument) => (
                       <div
                         key={doc._id}
                         className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
                       >
                         <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="p-2 bg-blue-100 rounded-lg shrink-0">
-                            <FileText className="h-5 w-5 text-blue-600" />
+                          <div className={`p-2 rounded-lg shrink-0 ${doc.sharedWithPhysiotherapist ? 'bg-green-100' : 'bg-blue-100'}`}>
+                            <FileText className={`h-5 w-5 ${doc.sharedWithPhysiotherapist ? 'text-green-600' : 'text-blue-600'}`} />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="font-medium text-gray-900 truncate">{doc.fileName}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-gray-900 truncate">{doc.fileName}</p>
+                              {doc.sharedWithPhysiotherapist && (
+                                <Badge className="bg-green-100 text-green-700 text-xs">
+                                  <Check className="h-3 w-3 mr-1" />
+                                  Sent
+                                </Badge>
+                              )}
+                            </div>
                             <p className="text-sm text-gray-500">
                               {format(new Date(doc.uploadedAt), 'MMM d, yyyy')}
                             </p>
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="ml-2 shrink-0"
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-2 ml-2 shrink-0">
+                          <Button
+                            variant={doc.sharedWithPhysiotherapist ? "outline" : "default"}
+                            size="sm"
+                            onClick={() => toggleSharing({ documentId: doc._id, shared: !doc.sharedWithPhysiotherapist })}
+                            disabled={isTogglingSharing}
+                            className={doc.sharedWithPhysiotherapist ? "" : "bg-brand hover:bg-brand-dark text-white"}
+                            title={doc.sharedWithPhysiotherapist ? "Unshare from physiotherapist" : "Send to physiotherapist"}
+                          >
+                            {doc.sharedWithPhysiotherapist ? (
+                              <Share2 className="h-4 w-4" />
+                            ) : (
+                              <>
+                                <Send className="h-4 w-4 mr-1" />
+                                Send
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => doc.downloadUrl && window.open(doc.downloadUrl, '_blank')}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     ))
                   ) : (

@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const physiotherapistEmail = `physio-${userId}@temp.com` // Temporary
 
     const emailResult = await resend.emails.send({
-      from: `RehabifyHealth <${process.env.FROM_EMAIL || 'noreply@rehabifyhealth.com'}>`,
+      from: `RehabifyHealth <${process.env.FROM_EMAIL || 'info@rehabifyhealth.com'}>`,
       to: physiotherapistEmail,
       subject: 'Bank Account Connected Successfully',
       html: `

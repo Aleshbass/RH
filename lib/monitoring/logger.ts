@@ -51,6 +51,8 @@ interface LogContext {
   reference?: string
   event?: string
   data?: unknown
+  tags?: Record<string, unknown>
+  component?: string
   // Allow any additional custom properties
   [key: string]: unknown
 }
@@ -85,10 +87,10 @@ export class Logger {
       ...(context.resource && { resource: context.resource }),
       ...(context.duration && { duration: context.duration }),
       ...(context.metadata && { metadata: context.metadata }),
-      ...(context.error && { 
-        error: context.error instanceof Error 
+      ...(context.error && {
+        error: context.error instanceof Error
           ? { name: context.error.name, message: context.error.message, stack: context.error.stack }
-          : context.error 
+          : context.error
       })
     }
   }

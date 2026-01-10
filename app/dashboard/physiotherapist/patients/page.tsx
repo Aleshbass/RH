@@ -123,25 +123,28 @@ export default function PatientsPage() {
           <h1 id="patients-page-header" className="text-2xl font-bold text-gray-900">My Patients</h1>
           <p className="text-gray-600">Manage your patient relationships and care</p>
         </div>
-        <div className="flex gap-2">
-          <AddPatientModal
-            onSuccess={() => {
-              // Refresh the patients list
-              window.location.reload();
-            }}
-          />
-          <Button id="add-new-patient-btn" onClick={() => setIsInviteModalOpen(true)} variant="outline" className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            Invite Patient
-          </Button>
-        </div>
+        <AddPatientModal
+          onSuccess={() => {
+            // Refresh the patients list
+            window.location.reload();
+          }}
+        />
       </div>
 
-      {/* Search and Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="md:col-span-3">
-          <CardContent className="pt-6">
-            <div className="relative">
+      {/* Stats Card with Integrated Search */}
+      <Card id="patient-stats-overview">
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            <div className="flex items-center gap-3 md:border-r md:pr-6">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Users className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total Patients</p>
+                <p className="text-2xl font-bold text-gray-900">{patients.length}</p>
+              </div>
+            </div>
+            <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
                 placeholder="Search patients by name or email..."
@@ -151,22 +154,9 @@ export default function PatientsPage() {
                 id="patient-search-bar"
               />
             </div>
-          </CardContent>
-        </Card>
-        <Card id="patient-stats-overview">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Users className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Patients</p>
-                <p className="text-2xl font-bold text-gray-900">{patients.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Patients List */}
       <div className="space-y-4">

@@ -15,43 +15,98 @@ export default function PaymentCallbackPage() {
   const [status, setStatus] = useState<'loading' | 'success' | 'failed'>('loading')
   const [message, setMessage] = useState('')
   const [invoiceId, setInvoiceId] = useState<string | null>(null)
-  
+
+  // Use Flutterwave verification
+  const verifyFlutterwaveTransaction = useAction(api.flutterwave.verifyTransactionByRef)
+  // Keep Paystack for backward compatibility during transition
   const verifyPaystackTransaction = useAction(api.payments.verifyPaystackTransaction)
 
   useEffect(() => {
+    // Flutterwave parameters
+    const flwStatus = searchParams.get('status')
+    const transactionId = searchParams.get('transaction_id')
+    const txRef = searchParams.get('tx_ref')
+
+    // Paystack parameters (backward compatibility)
     const reference = searchParams.get('reference')
     const trxref = searchParams.get('trxref')
-    
-    if (!reference && !trxref) {
+
+    // Check if this is a Flutterwave callback
+    const isFlutterwave = (flwStatus && txRef) || (txRef && !reference && !trxref)
+
+    // Determine payment reference
+    const paymentRef = txRef || reference || trxref
+
+    if (!paymentRef && !transactionId) {
       setStatus('failed')
       setMessage('No payment reference found')
       return
     }
 
-    // Use reference or trxref (Paystack sends trxref)
-    const paymentRef = reference || trxref
-
-    // Verify payment with Paystack
     const verifyPayment = async () => {
       try {
-        const result = await verifyPaystackTransaction({
-          reference: paymentRef
-        })
+        if (isFlutterwave) {
+          // Flutterwave verification
+          // If status is already 'successful', we can trust it but still verify
+          if (flwStatus === 'successful' && transactionId) {
+            // Verify by transaction ID for extra security
+            const result = await verifyFlutterwaveTransaction({
+              txRef: txRef!
+            })
 
-        if (result.success && result.status === 'success') {
-          setStatus('success')
-          setMessage('Payment completed successfully! Your balance has been updated.')
-          
-          // Extract invoice ID from metadata if available
-          if (result.metadata?.invoiceId) {
-            setInvoiceId(result.metadata.invoiceId)
+            if (result.success && result.status === 'successful') {
+              setStatus('success')
+              setMessage('Payment completed successfully! Your balance has been updated.')
+              toast.success('Payment successful!')
+            } else {
+              setStatus('failed')
+              setMessage(result.error || 'Payment verification failed')
+              toast.error('Payment failed')
+            }
+          } else if (flwStatus === 'cancelled') {
+            setStatus('failed')
+            setMessage('Payment was cancelled')
+            toast.error('Payment cancelled')
+          } else if (flwStatus === 'failed') {
+            setStatus('failed')
+            setMessage('Payment failed. Please try again.')
+            toast.error('Payment failed')
+          } else {
+            // Verify by tx_ref
+            const result = await verifyFlutterwaveTransaction({
+              txRef: txRef!
+            })
+
+            if (result.success && result.status === 'successful') {
+              setStatus('success')
+              setMessage('Payment completed successfully! Your balance has been updated.')
+              toast.success('Payment successful!')
+            } else {
+              setStatus('failed')
+              setMessage(result.error || 'Payment verification failed')
+              toast.error('Payment failed')
+            }
           }
-          
-          toast.success('Payment successful!')
         } else {
-          setStatus('failed')
-          setMessage(result.error || 'Payment verification failed')
-          toast.error('Payment failed')
+          // Paystack verification (backward compatibility)
+          const result = await verifyPaystackTransaction({
+            reference: paymentRef!
+          })
+
+          if (result.success && result.status === 'success') {
+            setStatus('success')
+            setMessage('Payment completed successfully! Your balance has been updated.')
+
+            if (result.metadata?.invoiceId) {
+              setInvoiceId(result.metadata.invoiceId)
+            }
+
+            toast.success('Payment successful!')
+          } else {
+            setStatus('failed')
+            setMessage(result.error || 'Payment verification failed')
+            toast.error('Payment failed')
+          }
         }
       } catch (error) {
         console.error('Payment verification error:', error)
@@ -62,7 +117,7 @@ export default function PaymentCallbackPage() {
     }
 
     verifyPayment()
-  }, [searchParams, verifyPaystackTransaction])
+  }, [searchParams, verifyFlutterwaveTransaction, verifyPaystackTransaction])
 
   const handleContinue = () => {
     // Redirect to invoices page or dashboard
@@ -95,20 +150,20 @@ export default function PaymentCallbackPage() {
           </CardTitle>
           <CardDescription>{message}</CardDescription>
         </CardHeader>
-        
+
         <CardContent>
           {status !== 'loading' && (
             <div className="space-y-4">
-              <Button 
+              <Button
                 onClick={handleContinue}
                 className="w-full"
                 variant={status === 'success' ? 'default' : 'outline'}
               >
                 {status === 'success' ? 'Continue to Dashboard' : 'Return to Dashboard'}
               </Button>
-              
+
               {status === 'failed' && (
-                <Button 
+                <Button
                   onClick={() => router.back()}
                   variant="ghost"
                   className="w-full"

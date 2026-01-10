@@ -7,9 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Receipt, 
-  DollarSign, 
+import {
+  Receipt,
+  DollarSign,
   Plus,
   Download,
   Search,
@@ -77,7 +77,7 @@ export default function BillingPage() {
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  
+
   const [invoiceForm, setInvoiceForm] = useState({
     patientId: '',
     dueDate: '',
@@ -93,10 +93,10 @@ export default function BillingPage() {
     billingStats: BillingStats | undefined;
   };
   // Connected payout account status
-  const bankAccounts = useQuery(api.paystack.getMyBankAccounts as never);
+  const bankAccounts = useQuery(api.flutterwave.getMyBankAccounts as never);
   const accounts: BankAccount[] = Array.isArray(bankAccounts) ? (bankAccounts as unknown as BankAccount[]) : [];
   const defaultAccount: BankAccount | undefined = accounts.find((a) => a?.isDefault) || accounts[0];
-  
+
   // Mutations
   const createInvoice = useMutation(api.billing.createInvoice);
   const sendInvoice = useMutation(api.billing.sendInvoice);
@@ -106,13 +106,13 @@ export default function BillingPage() {
   const filteredInvoices = useMemo(() => {
     return invoices?.filter((invoice: InvoiceFromQuery) => {
       const patientName = invoice.patientName.toLowerCase();
-      
-      const matchesSearch = 
+
+      const matchesSearch =
         invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         patientName.includes(searchTerm.toLowerCase());
-      
+
       const matchesStatus = statusFilter === 'all' || invoice.status === statusFilter;
-      
+
       return matchesSearch && matchesStatus;
     });
   }, [invoices, searchTerm, statusFilter]);
@@ -231,7 +231,7 @@ export default function BillingPage() {
   const formatCurrency = useCallback((amount: number, currency = 'NGN') => {
     return (amount / 100).toLocaleString('en-NG', { style: 'currency', currency });
   }, []);
-  
+
   if (!patients || !invoices || !billingStats) {
     return <div>Loading...</div>; // Or a skeleton loader
   }
@@ -240,7 +240,7 @@ export default function BillingPage() {
     const fullInvoiceDetails = {
       ...invoice,
       // We don't have this from the list view, so we'll pass what we have
-      patient: { 
+      patient: {
         firstName: invoice.patientName.split(' ')[0],
         lastName: invoice.patientName.split(' ').slice(1).join(' '),
       },
@@ -294,179 +294,179 @@ export default function BillingPage() {
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Create New Invoice</DialogTitle>
-              <DialogDescription>
-                Create and send an invoice to a patient. Platform fees and Paystack fees are calculated automatically at checkout.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Patient *</label>
-                  <Select 
-                    value={invoiceForm.patientId} 
-                    onValueChange={(value) => setInvoiceForm(prev => ({ ...prev, patientId: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a patient" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {patients?.map((patient: Patient) => (
-                        <SelectItem key={patient._id} value={patient._id}>
-                          {patient?.firstName || 'Unknown'} {patient?.lastName || 'Patient'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <DialogHeader>
+                <DialogTitle>Create New Invoice</DialogTitle>
+                <DialogDescription>
+                  Create and send an invoice to a patient. Platform fees and Paystack fees are calculated automatically at checkout.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">Patient *</label>
+                    <Select
+                      value={invoiceForm.patientId}
+                      onValueChange={(value) => setInvoiceForm(prev => ({ ...prev, patientId: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a patient" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {patients?.map((patient: Patient) => (
+                          <SelectItem key={patient._id} value={patient._id}>
+                            {patient?.firstName || 'Unknown'} {patient?.lastName || 'Patient'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium">Due Date *</label>
+                    <Input
+                      type="date"
+                      value={invoiceForm.dueDate}
+                      onChange={(e) => setInvoiceForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
                 </div>
-                
+
+                {/* Invoice Items */}
                 <div>
-                  <label className="text-sm font-medium">Due Date *</label>
-                  <Input
-                    type="date"
-                    value={invoiceForm.dueDate}
-                    onChange={(e) => setInvoiceForm(prev => ({ ...prev, dueDate: e.target.value }))}
-                    min={new Date().toISOString().split('T')[0]}
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-sm font-medium">Invoice Items *</label>
+                    <Button size="sm" variant="outline" onClick={addInvoiceItem}>
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add Item
+                    </Button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {invoiceForm.items.map((item, index) => (
+                      <div key={index} className="grid grid-cols-12 gap-2 items-end">
+                        <div className="col-span-5">
+                          <Input
+                            placeholder="Description"
+                            value={item.description}
+                            onChange={(e) => updateInvoiceItem(index, 'description', e.target.value)}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <Input
+                            type="number"
+                            placeholder="Qty"
+                            value={item.quantity}
+                            onChange={(e) => updateInvoiceItem(index, 'quantity', parseInt(e.target.value) || 1)}
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <Input
+                            type="number"
+                            placeholder="Unit Price (₦)"
+                            value={item.unitPrice}
+                            onChange={(e) => updateInvoiceItem(index, 'unitPrice', parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="col-span-2 flex items-center justify-between">
+                          <span className="text-sm font-medium">
+                            ₦{(item.quantity * item.unitPrice).toLocaleString()}
+                          </span>
+                          {invoiceForm.items.length > 1 && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => removeInvoiceItem(index)}
+                              className="h-6 w-6 p-0 text-red-500"
+                            >
+                              ×
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Totals and Tax */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">Tax Rate (%)</label>
+                    <Input
+                      type="number"
+                      value={invoiceForm.taxRate}
+                      onChange={(e) => setInvoiceForm(prev => ({ ...prev, taxRate: parseFloat(e.target.value) || 0 }))}
+                      step="0.1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Discount (₦)</label>
+                    <Input
+                      type="number"
+                      value={invoiceForm.discountAmount}
+                      onChange={(e) => setInvoiceForm(prev => ({ ...prev, discountAmount: parseFloat(e.target.value) || 0 }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Calculation Summary */}
+                <div className="border-t pt-4">
+                  {(() => {
+                    const subtotal = invoiceForm.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+                    const taxAmount = subtotal * (invoiceForm.taxRate / 100);
+                    const total = subtotal + taxAmount - invoiceForm.discountAmount;
+
+                    return (
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Subtotal:</span>
+                          <span>₦{subtotal.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Tax ({invoiceForm.taxRate}%):</span>
+                          <span>₦{taxAmount.toLocaleString()}</span>
+                        </div>
+                        {invoiceForm.discountAmount > 0 && (
+                          <div className="flex justify-between">
+                            <span>Discount:</span>
+                            <span>-₦{invoiceForm.discountAmount.toLocaleString()}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-sm text-blue-600 bg-blue-50 p-2 rounded">
+                          <span>Platform Fee:</span>
+                          <span>₦1,000</span>
+                        </div>
+                        <div className="text-xs text-gray-500 px-2">
+                          Platform fee includes payment processing and secure hosting
+                        </div>
+                        <div className="flex justify-between font-bold text-base border-t pt-2">
+                          <span>Total (incl. platform fee):</span>
+                          <span>₦{(total + 1000).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Notes</label>
+                  <textarea
+                    placeholder="Additional notes or payment terms..."
+                    value={invoiceForm.notes}
+                    onChange={(e) => setInvoiceForm(prev => ({ ...prev, notes: e.target.value }))}
                   />
                 </div>
-              </div>
 
-              {/* Invoice Items */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <label className="text-sm font-medium">Invoice Items *</label>
-                  <Button size="sm" variant="outline" onClick={addInvoiceItem}>
-                    <Plus className="h-3 w-3 mr-1" />
-                    Add Item
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleCreateInvoice}>
+                    Create Invoice
                   </Button>
                 </div>
-                
-                <div className="space-y-3">
-                  {invoiceForm.items.map((item, index) => (
-                    <div key={index} className="grid grid-cols-12 gap-2 items-end">
-                      <div className="col-span-5">
-                        <Input
-                          placeholder="Description"
-                          value={item.description}
-                          onChange={(e) => updateInvoiceItem(index, 'description', e.target.value)}
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <Input
-                          type="number"
-                          placeholder="Qty"
-                          value={item.quantity}
-                          onChange={(e) => updateInvoiceItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                        />
-                      </div>
-                      <div className="col-span-3">
-                        <Input
-                          type="number"
-                          placeholder="Unit Price (₦)"
-                          value={item.unitPrice}
-                          onChange={(e) => updateInvoiceItem(index, 'unitPrice', parseFloat(e.target.value) || 0)}
-                        />
-                      </div>
-                      <div className="col-span-2 flex items-center justify-between">
-                        <span className="text-sm font-medium">
-                          ₦{(item.quantity * item.unitPrice).toLocaleString()}
-                        </span>
-                        {invoiceForm.items.length > 1 && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => removeInvoiceItem(index)}
-                            className="h-6 w-6 p-0 text-red-500"
-                          >
-                            ×
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
-
-              {/* Totals and Tax */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Tax Rate (%)</label>
-                  <Input
-                    type="number"
-                    value={invoiceForm.taxRate}
-                    onChange={(e) => setInvoiceForm(prev => ({ ...prev, taxRate: parseFloat(e.target.value) || 0 }))}
-                    step="0.1"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Discount (₦)</label>
-                  <Input
-                    type="number"
-                    value={invoiceForm.discountAmount}
-                    onChange={(e) => setInvoiceForm(prev => ({ ...prev, discountAmount: parseFloat(e.target.value) || 0 }))}
-                  />
-                </div>
-              </div>
-
-              {/* Calculation Summary */}
-              <div className="border-t pt-4">
-                {(() => {
-                  const subtotal = invoiceForm.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
-                  const taxAmount = subtotal * (invoiceForm.taxRate / 100);
-                  const total = subtotal + taxAmount - invoiceForm.discountAmount;
-                  
-                  return (
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span>Subtotal:</span>
-                        <span>₦{subtotal.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Tax ({invoiceForm.taxRate}%):</span>
-                        <span>₦{taxAmount.toLocaleString()}</span>
-                      </div>
-                      {invoiceForm.discountAmount > 0 && (
-                        <div className="flex justify-between">
-                          <span>Discount:</span>
-                          <span>-₦{invoiceForm.discountAmount.toLocaleString()}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-sm text-blue-600 bg-blue-50 p-2 rounded">
-                        <span>Platform Fee:</span>
-                        <span>₦1,000</span>
-                      </div>
-                      <div className="text-xs text-gray-500 px-2">
-                        Platform fee includes payment processing and secure hosting
-                      </div>
-                      <div className="flex justify-between font-bold text-base border-t pt-2">
-                        <span>Total (incl. platform fee):</span>
-                        <span>₦{(total + 1000).toLocaleString()}</span>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Notes</label>
-                <textarea
-                  placeholder="Additional notes or payment terms..."
-                  value={invoiceForm.notes}
-                  onChange={(e) => setInvoiceForm(prev => ({ ...prev, notes: e.target.value }))}
-                />
-              </div>
-              
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleCreateInvoice}>
-                  Create Invoice
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
+            </DialogContent>
           </Dialog>
         </div>
       </div>

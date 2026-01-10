@@ -67,26 +67,26 @@ export function InvoicePaymentModal({
   const [isProcessing, setIsProcessing] = useState(false)
   const [paymentReference, setPaymentReference] = useState('')
   const [manualPayment, setManualPayment] = useState(false)
-  
+
   // @ts-nocheck
-  const initializePayment = useAction(api.paystack.initializePaymentWithSplit)
+  const initializePayment = useAction(api.flutterwave.initializePaymentWithSplit)
   // @ts-nocheck
   const processPayment = useMutation(api.billing.processPayment)
 
-  const handlePaystackPayment = async () => {
+  const handleFlutterwavePayment = async () => {
     if (!invoice) return
 
     setIsProcessing(true)
     try {
-      // Initialize payment with Paystack split payment
+      // Initialize payment with Flutterwave split payment
       const result = await initializePayment({
         invoiceId: invoice._id,
         redirectUrl: `${process.env.NEXT_PUBLIC_APP_URL}/payment/callback`
       })
 
-      if (result.success && result.authorizationUrl) {
-        // Redirect to Paystack payment page
-        window.location.href = result.authorizationUrl
+      if (result.success && result.paymentLink) {
+        // Redirect to Flutterwave payment page
+        window.location.href = result.paymentLink
       } else {
         throw new Error(result.error || 'Failed to initialize payment')
       }
@@ -151,8 +151,9 @@ export function InvoicePaymentModal({
             {(() => {
               const base = invoice?.totalAmount ?? 0
               const platform = invoice?.platformFeeAmount ?? 100000
-              const paystack = Math.round((base + platform) * 0.015) + 10000
-              const payable = base + platform + paystack
+              // Flutterwave fee: 1.4% capped at ₦2,000
+              const flutterwaveFee = Math.min(Math.round((base + platform) * 0.014), 200000)
+              const payable = base + platform + flutterwaveFee
               return (
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
@@ -164,8 +165,8 @@ export function InvoicePaymentModal({
                     <span>₦{(platform / 100).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Paystack Fee</span>
-                    <span>₦{(paystack / 100).toLocaleString()}</span>
+                    <span className="text-gray-600">Processing Fee</span>
+                    <span>₦{(flutterwaveFee / 100).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between font-semibold text-lg pt-2 border-t">
                     <span>Total Payable</span>
@@ -188,7 +189,7 @@ export function InvoicePaymentModal({
               </span>
             </div>
             <Separator />
-            
+
             {/* Line Items */}
             {invoice?.items && invoice.items.length > 0 && (
               <>
@@ -205,7 +206,7 @@ export function InvoicePaymentModal({
                 <Separator />
               </>
             )}
-            
+
             {/* Totals */}
             {invoice?.subtotalAmount && (
               <div className="flex justify-between text-sm">
@@ -244,7 +245,7 @@ export function InvoicePaymentModal({
                   <CreditCard className="h-5 w-5 text-gray-600" />
                   <span>Card Payment</span>
                 </Label>
-                
+
                 <Label
                   htmlFor="bank_transfer"
                   className="flex items-center space-x-3 border rounded-lg p-3 cursor-pointer hover:bg-gray-50"
@@ -253,7 +254,7 @@ export function InvoicePaymentModal({
                   <Building2 className="h-5 w-5 text-gray-600" />
                   <span>Bank Transfer</span>
                 </Label>
-                
+
                 <Label
                   htmlFor="ussd"
                   className="flex items-center space-x-3 border rounded-lg p-3 cursor-pointer hover:bg-gray-50"
@@ -262,7 +263,7 @@ export function InvoicePaymentModal({
                   <Smartphone className="h-5 w-5 text-gray-600" />
                   <span>USSD</span>
                 </Label>
-                
+
                 <Label
                   htmlFor="mobile_money"
                   className="flex items-center space-x-3 border rounded-lg p-3 cursor-pointer hover:bg-gray-50"
@@ -289,7 +290,7 @@ export function InvoicePaymentModal({
                 I have already made payment (enter reference)
               </Label>
             </div>
-            
+
             {manualPayment && (
               <div className="space-y-2">
                 <Label htmlFor="reference">Payment Reference</Label>
@@ -310,7 +311,7 @@ export function InvoicePaymentModal({
           <Alert>
             <Shield className="h-4 w-4" />
             <AlertDescription>
-              Your payment is secured by Paystack. We do not store your card details.
+              Your payment is secured by Flutterwave. We do not store your card details.
               All transactions are encrypted and processed securely.
             </AlertDescription>
           </Alert>
@@ -331,10 +332,10 @@ export function InvoicePaymentModal({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isProcessing}>
             Cancel
           </Button>
-          
+
           {manualPayment ? (
-            <Button 
-              onClick={handleManualPayment} 
+            <Button
+              onClick={handleManualPayment}
               disabled={isProcessing || !paymentReference.trim()}
             >
               {isProcessing ? (
@@ -350,8 +351,8 @@ export function InvoicePaymentModal({
               )}
             </Button>
           ) : (
-            <Button 
-              onClick={handlePaystackPayment} 
+            <Button
+              onClick={handleFlutterwavePayment}
               disabled={isProcessing}
               className="bg-green-600 hover:bg-green-700"
             >
@@ -367,8 +368,8 @@ export function InvoicePaymentModal({
                     {(() => {
                       const base = invoice?.totalAmount ?? 0
                       const platform = invoice?.platformFeeAmount ?? 100000
-                      const paystack = Math.round((base + platform) * 0.015) + 10000
-                      const payable = base + platform + paystack
+                      const flutterwaveFee = Math.min(Math.round((base + platform) * 0.014), 200000)
+                      const payable = base + platform + flutterwaveFee
                       return `Proceed to Payment (₦${(payable / 100).toLocaleString()})`
                     })()}
                   </span>

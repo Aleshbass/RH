@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Search, Plus, Dumbbell, Play } from 'lucide-react';
 import { Exercise as AssessmentExercise } from '@/types/assessments';
 import { Loader2 } from 'lucide-react';
+import { CreateExerciseDialog } from './CreateExerciseDialog';
 
 interface ExerciseLibraryProps {
   onExerciseSelect?: (exercise: AssessmentExercise) => void;
@@ -21,6 +22,7 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');
   const [selectedBodyPart, setSelectedBodyPart] = useState('all');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const isStandalone = !onExerciseSelect;
 
@@ -69,11 +71,14 @@ export function ExerciseLibrary({ onExerciseSelect, selectedExercises = [] }: Ex
                 Browse and select exercises from the platform library
               </CardDescription>
             </div>
-            {isStandalone && (
-              <div className="text-sm text-muted-foreground bg-blue-50 text-blue-700 px-3 py-1 rounded-full">
-                Browse Mode
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <CreateExerciseDialog onSuccess={() => setRefreshKey(k => k + 1)} />
+              {isStandalone && (
+                <div className="text-sm text-muted-foreground bg-blue-50 text-blue-700 px-3 py-1 rounded-full">
+                  Browse Mode
+                </div>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="px-0">

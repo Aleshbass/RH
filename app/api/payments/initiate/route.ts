@@ -18,11 +18,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Dynamically import Convex API to avoid heavy type instantiation
-    // Dynamically import API to avoid heavy type instantiation
     const { api } = await import('@/convex/_generated/api') as any;
+
     // Get invoice details from Convex
-    const invoice = await convex.query((api.billing.getInvoiceById as any), { 
-      invoiceId: invoiceId as Id<'invoices'> 
+    const invoice = await convex.query((api.billing.getInvoiceById as any), {
+      invoiceId: invoiceId as Id<'invoices'>
     }) as {
       _id: Id<'invoices'>;
       invoiceNumber: string;
@@ -32,7 +32,6 @@ export async function POST(request: NextRequest) {
       physiotherapistId?: Id<'users'>;
       patientEmail?: string;
       platformFeeAmount?: number;
-      paystackFeeAmount?: number;
       feeBreakdown?: { total: number };
     };
 
@@ -53,91 +52,100 @@ export async function POST(request: NextRequest) {
     // Calculate amounts (all in kobo)
     const baseAmount = invoice.totalAmount || 0;
     const platformFee = invoice.platformFeeAmount || 100000; // ₦1,000 in kobo
-    const paystackFee = invoice.paystackFeeAmount || (Math.round((baseAmount + platformFee) * 0.015) + 10000);
+    // Flutterwave fee: 1.4% capped at ₦2,000
+    const flutterwaveFee = Math.min(Math.round((baseAmount + platformFee) * 0.014), 200000);
     // Prefer using feeBreakdown.total when available
     const totalPayable = (invoice.feeBreakdown && typeof invoice.feeBreakdown.total === 'number')
       ? invoice.feeBreakdown.total
-      : (baseAmount + platformFee + paystackFee);
-    const physiotherapistShare = baseAmount;
+      : (baseAmount + platformFee + flutterwaveFee);
 
-    // Generate unique payment reference
+    // Generate unique payment reference (tx_ref for Flutterwave)
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 15);
-    const reference = `INV_${invoice.invoiceNumber}_${timestamp}_${random}`;
+    const txRef = `INV_${invoice.invoiceNumber}_${timestamp}_${random}`;
 
     // Get physiotherapist's subaccount if available
-    let subaccountCode = null;
+    let subaccountId = null;
     if (invoice.physiotherapistId) {
       try {
-        const bankDetails = await convex.query(api.paystack.getPhysiotherapistBankDetails, {
+        const bankDetails = await convex.query(api.flutterwave.getPhysiotherapistBankDetails, {
           physiotherapistId: invoice.physiotherapistId
         });
-        subaccountCode = bankDetails?.subaccountCode || null;
+        subaccountId = bankDetails?.subaccountId || null;
       } catch {
         console.log('No subaccount found for physiotherapist');
       }
     }
 
-    // Determine absolute origin from the incoming request to avoid env misconfig (e.g. localhost in prod)
+    // Determine absolute origin from the incoming request
     const url = new URL(request.url);
     const origin = url.origin;
 
-    // Prepare Paystack payment data
-    const patientNameForMeta = invoice.patientEmail
+    // Prepare Flutterwave payment data
+    const patientName = invoice.patientEmail
       ? (invoice.patientEmail.split('@')[0] || 'Patient')
       : 'Patient';
+
     const paymentData: {
-      reference: string;
+      tx_ref: string;
       amount: number;
-      email: string;
       currency: string;
-      metadata: Record<string, unknown>;
-      callback_url: string;
-      channels: string[];
-      subaccount?: string;
-      transaction_charge?: number;
-      bearer?: string;
+      redirect_url: string;
+      customer: {
+        email: string;
+        name: string;
+      };
+      customizations: {
+        title: string;
+        description: string;
+        logo: string;
+      };
+      meta: Record<string, unknown>;
+      payment_options: string;
+      subaccounts?: Array<{
+        id: string;
+        transaction_charge_type: string;
+        transaction_charge: number;
+      }>;
     } = {
-      reference,
-      amount: totalPayable, // Amount in kobo
-      email: invoice.patientEmail || 'patient@rehabify.com',
+      tx_ref: txRef,
+      amount: totalPayable / 100, // Flutterwave uses Naira, not kobo
       currency: 'NGN',
-      metadata: {
+      redirect_url: `${origin}/payment/callback`,
+      customer: {
+        email: invoice.patientEmail || 'patient@rehabify.com',
+        name: patientName
+      },
+      customizations: {
+        title: 'Rehabify Health',
+        description: `Payment for Invoice #${invoice.invoiceNumber}`,
+        logo: 'https://rehabifyhealth.com/logo.png'
+      },
+      meta: {
         invoiceId: invoiceId,
         invoiceNumber: invoice.invoiceNumber,
         patientId: invoice.patientId,
         physiotherapistId: invoice.physiotherapistId || null,
-        physiotherapistShare,
-        platformShare: platformFee,
-        custom_fields: [
-          {
-            display_name: "Invoice Number",
-            variable_name: "invoice_number",
-            value: invoice.invoiceNumber
-          },
-          {
-            display_name: "Patient Name",
-            variable_name: "patient_name",
-            value: patientNameForMeta
-          }
-        ]
+        physiotherapistShare: baseAmount / 100, // Convert to Naira
+        platformShare: platformFee / 100
       },
-      callback_url: `${origin}/payment/callback`,
-      channels: ['card', 'bank', 'ussd', 'mobile_money', 'bank_transfer']
+      payment_options: 'card, banktransfer, ussd'
     };
 
     // Add split payment configuration if subaccount exists
-    if (subaccountCode) {
-      paymentData.subaccount = subaccountCode;
-      paymentData.transaction_charge = 0; // Let Paystack calculate
-      paymentData.bearer = 'subaccount'; // Subaccount bears the Paystack charge
+    if (subaccountId) {
+      paymentData.subaccounts = [{
+        id: subaccountId,
+        transaction_charge_type: 'flat',
+        transaction_charge: platformFee / 100 // Platform fee in Naira
+      }];
     }
 
-    // Initialize payment with Paystack
-    const response = await fetch('https://api.paystack.co/transaction/initialize', {
+    // Initialize payment with Flutterwave
+    const response = await fetch('https://api.flutterwave.com/v3/payments', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        'Authorization': `Bearer ${process.env.FLUTTERWAVE_SECRET_KEY}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(paymentData)
@@ -145,20 +153,21 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
 
-    if (data.status) {
+    if (data.status === 'success') {
       // Save payment reference to database via Convex
       await convex.mutation(api.payments.createPaymentRecord, {
         invoiceId: invoiceId as Id<'invoices'>,
-        reference,
+        reference: txRef,
         amount: totalPayable,
-        paymentMethod: 'paystack'
+        paymentMethod: 'flutterwave'
       });
 
       return NextResponse.json({
         success: true,
-        authorization_url: data.data.authorization_url,
-        access_code: data.data.access_code,
-        reference: data.data.reference
+        authorization_url: data.data.link,
+        payment_link: data.data.link,
+        reference: txRef,
+        tx_ref: txRef
       });
     } else {
       return NextResponse.json(

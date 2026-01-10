@@ -1,12 +1,15 @@
 // @ts-nocheck
-import { internalAction, internalQuery } from "../_generated/server";
+import { internalAction, internalQuery, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
-import { api } from "../_generated/api";
-import { internal } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 
 /**
  * Send reminder emails for pending patient invitations that are approaching expiry.
- * Criteria: status === 'pending' AND expiresAt within next 3 days AND createdAt older than 24h.
+ * Criteria: 
+ * - status === 'pending' 
+ * - expiresAt within next 3 days 
+ * - createdAt older than 24h
+ * - lastReminderSentAt is NOT set (only send ONE reminder per invitation)
  */
 export const sendPendingInvitationReminders = internalAction({
   args: {
@@ -18,7 +21,7 @@ export const sendPendingInvitationReminders = internalAction({
     const soonCutoff = now + lookaheadMs;
     const createdBefore = now - (24 * 60 * 60 * 1000); // at least 24h old
 
-    // Collect pending invitations expiring soon
+    // Collect pending invitations expiring soon that haven't received a reminder yet
     const pending = await ctx.runQuery(internal.scheduled.invitation_reminders.getPendingInvitations, {
       soonCutoff,
       createdBefore,
@@ -44,6 +47,12 @@ export const sendPendingInvitationReminders = internalAction({
           invitationLink,
           expiresAt: inv.expiresAt,
         });
+
+        // Mark the invitation as reminded to prevent duplicate sends
+        await ctx.runMutation(internal.scheduled.invitation_reminders.markReminderSent, {
+          invitationId: inv._id,
+        });
+
         sent += 1;
       } catch (e) {
         console.error('Failed to send invitation reminder for code', inv.code, e);
@@ -55,7 +64,7 @@ export const sendPendingInvitationReminders = internalAction({
 });
 
 /**
- * Helper query to get pending invitations
+ * Helper query to get pending invitations that haven't received a reminder yet
  */
 export const getPendingInvitations = internalQuery({
   args: {
@@ -69,10 +78,26 @@ export const getPendingInvitations = internalQuery({
         q.and(
           q.eq(q.field("status"), "pending"),
           q.lte(q.field("expiresAt"), args.soonCutoff),
-          q.lt(q.field("createdAt"), args.createdBefore)
+          q.lt(q.field("createdAt"), args.createdBefore),
+          // Only get invitations that haven't received a reminder yet
+          q.eq(q.field("lastReminderSentAt"), undefined)
         )
       )
       .collect();
+  },
+});
+
+/**
+ * Mark an invitation as having received a reminder
+ */
+export const markReminderSent = internalMutation({
+  args: {
+    invitationId: v.id("patientInvitations"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.invitationId, {
+      lastReminderSentAt: Date.now(),
+    });
   },
 });
 

@@ -4,12 +4,12 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  
+
   // Disable TypeScript errors during build for production deployment
   typescript: {
     ignoreBuildErrors: true,
   },
-  
+
   // Bundle optimization
   experimental: {
     optimizePackageImports: [
@@ -21,15 +21,6 @@ const nextConfig = {
       'date-fns',
       'recharts'
     ],
-    // Enable modern bundling
-    turbo: {
-      rules: {
-        '*.svg': {
-          loaders: ['@svgr/webpack'],
-          as: '*.js',
-        },
-      },
-    },
   },
 
   // Webpack optimizations

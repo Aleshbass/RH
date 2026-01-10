@@ -193,7 +193,7 @@ export async function POST(request: NextRequest) {
     };
 
     const emailData = {
-      from: 'RehabifyHealth <noreply@rehabifyhealth.com>',
+      from: 'RehabifyHealth <info@rehabifyhealth.com>',
       to: [clinicEmail],
       subject: getSubject(),
       html: getEmailContent(),

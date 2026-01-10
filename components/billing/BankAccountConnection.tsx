@@ -15,7 +15,6 @@ import { Id } from '@/convex/_generated/dataModel'
 interface Bank {
   name: string
   code: string
-  slug: string
 }
 
 interface BankConnectionProps {
@@ -31,14 +30,14 @@ export function BankAccountConnection({ onConnectionSuccess }: BankConnectionPro
   const [isVerifying, setIsVerifying] = useState(false)
   const [verifiedAccount, setVerifiedAccount] = useState<string | null>(null)
   const [error, setError] = useState('')
-  
-  // Convex hooks
-  const getBankList = useAction(api.paystack.getBankList)
-  const verifyBankAccount = useAction(api.paystack.verifyBankAccount)
-  const createSubaccount = useAction(api.paystack.createPhysiotherapistSubaccount)
-  const existingAccounts = useQuery(api.paystack.getMyBankAccounts)
+
+  // Convex hooks - Using Flutterwave
+  const getBankList = useAction(api.flutterwave.getBankList)
+  const verifyBankAccount = useAction(api.flutterwave.verifyBankAccount)
+  const createSubaccount = useAction(api.flutterwave.createPhysiotherapistSubaccount)
+  const existingAccounts = useQuery(api.flutterwave.getMyBankAccounts)
   const currentUser = useQuery(api.users.getMyUser)
-  const deleteBankAccount = useMutation(api.paystack.deleteBankAccount)
+  const deleteBankAccount = useMutation(api.flutterwave.deleteBankAccount)
 
   // Derived state for selected bank name
   const selectedBankName = banks.find(bank => bank.code === selectedBank)?.name || ''
@@ -67,7 +66,7 @@ export function BankAccountConnection({ onConnectionSuccess }: BankConnectionPro
         bankCode: selectedBank,
         accountNumber
       })
-      
+
       if (result.success && result.accountName) {
         setVerifiedAccount(result.accountName)
         setBusinessName(result.accountName) // Pre-fill business name
@@ -110,16 +109,16 @@ export function BankAccountConnection({ onConnectionSuccess }: BankConnectionPro
         bankCode: selectedBank,
         accountNumber,
       })
-      
+
       if (result.success) {
         toast.success('Bank account connected successfully! You can now receive payments.')
-        
+
         // Reset form
         setSelectedBank('')
         setAccountNumber('')
         setBusinessName('')
         setVerifiedAccount(null)
-        
+
         // Call success callback
         onConnectionSuccess?.()
       } else {
@@ -155,7 +154,7 @@ export function BankAccountConnection({ onConnectionSuccess }: BankConnectionPro
         <Alert>
           <Shield className="h-4 w-4" />
           <AlertDescription>
-            Your banking information is encrypted and secure. We use Paystack&#39;s enterprise-grade security to protect your data.
+            Your banking information is encrypted and secure. We use Flutterwave&apos;s enterprise-grade security to protect your data.
           </AlertDescription>
         </Alert>
 
@@ -215,7 +214,7 @@ export function BankAccountConnection({ onConnectionSuccess }: BankConnectionPro
               </SelectTrigger>
               <SelectContent>
                 {banks.map((bank) => (
-                  <SelectItem key={`${bank.code}-${bank.slug}`} value={bank.code}>
+                  <SelectItem key={bank.code} value={bank.code}>
                     {bank.name}
                   </SelectItem>
                 ))}
@@ -261,7 +260,7 @@ export function BankAccountConnection({ onConnectionSuccess }: BankConnectionPro
             onChange={(e) => setBusinessName(e.target.value)}
           />
           <p className="text-sm text-gray-500">
-            This will appear on your Paystack subaccount and payment records.
+            This will appear on your Flutterwave subaccount and payment records.
           </p>
         </div>
 
@@ -282,8 +281,8 @@ export function BankAccountConnection({ onConnectionSuccess }: BankConnectionPro
           <h4 className="font-medium text-gray-900 mb-2">💰 Fee Structure</h4>
           <div className="space-y-1 text-sm text-gray-700">
             <p><strong>Platform Fee:</strong> ₦1,000 per transaction</p>
-            <p><strong>Payment Processing:</strong> 1.5% + ₦100 (Paystack fees)</p>
-            <p><strong>Transfer Time:</strong> Within 24 hours</p>
+            <p><strong>Payment Processing:</strong> 1.4% (capped at ₦2,000) via Flutterwave</p>
+            <p><strong>Transfer Time:</strong> Instant split payments</p>
             <p><strong>Your Share:</strong> Total amount - Platform fee - Processing fees</p>
           </div>
         </div>

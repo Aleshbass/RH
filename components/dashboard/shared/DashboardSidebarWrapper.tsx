@@ -17,7 +17,8 @@ import {
   UserCheck,
   Video,
   Search,
-  Stethoscope
+  Stethoscope,
+  Receipt
 } from 'lucide-react'
 
 // Navigation configuration for physiotherapists
@@ -25,6 +26,8 @@ const physiotherapistNavItems = [
   { title: 'Dashboard', href: '/dashboard/physiotherapist', icon: LayoutDashboard, roles: ['physiotherapist'] },
   { title: 'Appointments', href: '/dashboard/physiotherapist/appointments', icon: Calendar, roles: ['physiotherapist'] },
   { title: 'Patients', href: '/dashboard/physiotherapist/patients', icon: Users, roles: ['physiotherapist'] },
+  { title: 'Messages', href: '/dashboard/physiotherapist/messages', icon: MessageSquare, roles: ['physiotherapist'] },
+  { title: 'Billing', href: '/dashboard/physiotherapist/billing', icon: Receipt, roles: ['physiotherapist'] },
   { title: 'Insights', href: '/dashboard/physiotherapist/insights', icon: TrendingUp, roles: ['physiotherapist'] },
   { title: 'Settings', href: '/dashboard/physiotherapist/settings', icon: Settings, roles: ['physiotherapist'] },
 ]

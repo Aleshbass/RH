@@ -253,6 +253,8 @@ export const getPatientDetails = query({
         (patientProfile as any)?.currentMedications ?? (patientRecord as any)?.medications ?? [],
       allergies:
         (patientProfile as any)?.allergies ?? (patientRecord as any)?.allergies ?? [],
+      referralSource:
+        (patientProfile as any)?.referralSource ?? (patientRecord as any)?.referralSource ?? null,
     } : null;
 
     // Get recent appointments

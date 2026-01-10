@@ -39,7 +39,7 @@ export const sendPatientInvitationEmail = action({
       const resend = new Resend(RESEND_API_KEY);
       
       // Use your verified domain email
-      const fromEmail = 'noreply@rehabifyhealth.com';
+      const fromEmail = 'info@rehabifyhealth.com';
       const fromName = process.env.FROM_NAME || 'Rehabify Health';
       
       console.log('[EMAIL ACTION] Using email:', `${fromName} <${fromEmail}>`);
@@ -189,7 +189,7 @@ export const sendInvitationReminderEmail = action({
       }
 
       const resend = new Resend(RESEND_API_KEY);
-      const fromEmail = 'noreply@rehabifyhealth.com';
+      const fromEmail = 'info@rehabifyhealth.com';
       const fromName = 'Rehabify Health';
       
       // Normalize invitation link for reminder as well

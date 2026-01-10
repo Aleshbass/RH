@@ -48,6 +48,7 @@ interface PatientProfile {
   medicalHistory?: string[];
   currentMedications?: string[];
   allergies?: string[];
+  referralSource?: string;
 }
 
 interface Appointment {
@@ -146,6 +147,7 @@ export default function PatientDetailsPage() {
       currentMedications?: string[];
       medications?: string[];
       allergies?: string[];
+      referralSource?: string;
     };
     relationship?: unknown;
     appointments?: unknown[];
@@ -358,9 +360,19 @@ export default function PatientDetailsPage() {
                     <span className="text-xs sm:text-sm truncate">{patientDetails.phoneNumber}</span>
                   </div>
                 )}
-                {patientDetails.patientProfile?.dateOfBirth && (
+                {patientDetails.patientProfile?.gender && (
                   <div className="flex items-center gap-2 text-gray-600 min-w-0">
                     <User className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-xs sm:text-sm truncate capitalize">
+                      {patientDetails.patientProfile.gender === 'prefer_not_to_say'
+                        ? 'Prefer not to say'
+                        : patientDetails.patientProfile.gender}
+                    </span>
+                  </div>
+                )}
+                {patientDetails.patientProfile?.dateOfBirth && (
+                  <div className="flex items-center gap-2 text-gray-600 min-w-0">
+                    <Calendar className="h-4 w-4 flex-shrink-0" />
                     <span className="text-xs sm:text-sm truncate">
                       Born: {format(new Date(patientDetails.patientProfile.dateOfBirth), 'MMM dd, yyyy')}
                     </span>
@@ -372,6 +384,14 @@ export default function PatientDetailsPage() {
                     Since: {format(new Date(patientDetails.relationship.startDate), 'MMM dd, yyyy')}
                   </span>
                 </div>
+                {patientDetails.patientProfile?.referralSource && (
+                  <div className="flex items-center gap-2 text-gray-600 min-w-0">
+                    <User className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-xs sm:text-sm truncate">
+                      Referral: {patientDetails.patientProfile.referralSource}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -250,50 +250,61 @@ export default function MarketplaceSettingsForm({
       {/* Pricing */}
       <div>
         <Label className="text-base font-semibold mb-4 block">Pricing</Label>
+        <p className="text-sm text-gray-600 mb-4">
+          Set your session rates. Prices are in Nigerian Naira (₦).
+        </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <Label htmlFor="initialConsultRate" className="text-sm font-medium">
-              Initial Consultation Rate (₦)
+              Initial Consultation Rate
             </Label>
             <p className="text-xs text-gray-600 mb-2">First session price</p>
-            <Input
-              id="initialConsultRate"
-              type="number"
-              value={formData.initialConsultRate}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  initialConsultRate: parseFloat(e.target.value) || 0,
-                }))
-              }
-              placeholder="10000"
-              min={0}
-              step={100}
-              className="text-lg font-semibold"
-            />
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">₦</span>
+              <Input
+                id="initialConsultRate"
+                type="number"
+                value={formData.initialConsultRate}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    initialConsultRate: parseFloat(e.target.value) || 0,
+                  }))
+                }
+                placeholder="10,000"
+                min={0}
+                step={500}
+                className="text-lg font-semibold pl-8"
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Suggested: ₦8,000 - ₦25,000</p>
           </div>
 
           <div>
             <Label htmlFor="hourlyRate" className="text-sm font-medium">
-              Follow-up Rate (₦)
+              Follow-up Rate
             </Label>
             <p className="text-xs text-gray-600 mb-2">Subsequent sessions</p>
-            <Input
-              id="hourlyRate"
-              type="number"
-              value={formData.hourlyRate}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  hourlyRate: parseFloat(e.target.value) || 0,
-                }))
-              }
-              placeholder="8000"
-              min={0}
-              step={100}
-              className="text-lg font-semibold"
-            />
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">₦</span>
+              <Input
+                id="hourlyRate"
+                type="number"
+                value={formData.hourlyRate}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    hourlyRate: parseFloat(e.target.value) || 0,
+                  }))
+                }
+                placeholder="8,000"
+                min={0}
+                step={500}
+                className="text-lg font-semibold pl-8"
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Suggested: ₦5,000 - ₦20,000</p>
           </div>
         </div>
 

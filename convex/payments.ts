@@ -16,6 +16,7 @@ const paymentStatus = v.union(
 // Payment method enum
 const paymentMethod = v.union(
   v.literal("paystack"),
+  v.literal("flutterwave"),
   v.literal("bank_transfer"),
   v.literal("cash")
 );
@@ -43,10 +44,10 @@ export const initializeInvoicePayment = action({
     error?: string;
   }> => {
     // Get invoice details
-    const invoice = await ctx.runQuery(api.billing.getInvoiceById, { 
-      invoiceId: args.invoiceId 
+    const invoice = await ctx.runQuery(api.billing.getInvoiceById, {
+      invoiceId: args.invoiceId
     });
-    
+
     if (!invoice) {
       return { success: false, error: "Invoice not found" };
     }
@@ -170,7 +171,8 @@ export const createPaymentRecord = mutation({
 });
 
 /**
- * Initialize Paystack payment (Server Action)
+ * Initialize Flutterwave payment (Server Action)
+ * @deprecated Use flutterwave.initializePaymentWithSplit instead
  */
 export const initializePaystackPayment = action({
   args: {
@@ -187,54 +189,62 @@ export const initializePaystackPayment = action({
     error: v.optional(v.string())
   }),
   handler: async (ctx, args) => {
-    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-    
-    if (!PAYSTACK_SECRET) {
-      console.error("Paystack secret key not configured");
+    const FLUTTERWAVE_SECRET = process.env.FLUTTERWAVE_SECRET_KEY;
+
+    if (!FLUTTERWAVE_SECRET) {
+      console.error("Flutterwave secret key not configured");
       return { success: false, error: "Payment service not configured" };
     }
 
     try {
       // Optional split to physiotherapist subaccount
-      let subaccountCode: string | null = null;
+      let subaccountId: string | null = null;
       let platformShare = 0;
       try {
         const invoiceId = (args.metadata as any)?.invoiceId;
         if (invoiceId) {
           const invoice = await ctx.runQuery(api.billing.getInvoiceById, { invoiceId });
           if (invoice && invoice.physiotherapistId) {
-            const bankDetails = await ctx.runQuery(api.paystack.getPhysiotherapistBankDetails as any, {
+            const bankDetails = await ctx.runQuery(api.flutterwave.getPhysiotherapistBankDetails as any, {
               physiotherapistId: invoice.physiotherapistId,
             });
-            subaccountCode = bankDetails?.subaccountCode || null;
+            subaccountId = bankDetails?.subaccountId || null;
           }
           // Determine platform fee (kobo)
           platformShare = (invoice as any)?.feeBreakdown?.platformFee || (invoice as any)?.platformFeeAmount || 0;
         }
       } catch (e) {
-        console.warn("initializePaystackPayment: could not resolve subaccount/platform fee", e);
+        console.warn("initializePayment: could not resolve subaccount/platform fee", e);
       }
 
-      // Build Paystack payload
+      // Build Flutterwave payload
       const payload: any = {
-        reference: args.reference,
-        amount: args.amount, // Already in kobo
-        email: args.email,
-        metadata: args.metadata,
-        callback_url: args.callback_url,
-        channels: ["card", "bank", "ussd", "mobile_money", "bank_transfer"],
+        tx_ref: args.reference,
+        amount: args.amount / 100, // Convert kobo to Naira
+        currency: "NGN",
+        redirect_url: args.callback_url,
+        customer: {
+          email: args.email
+        },
+        meta: args.metadata,
+        customizations: {
+          title: "Rehabify Health",
+          description: "Payment for healthcare services"
+        }
       };
 
-      if (subaccountCode) {
-        payload.subaccount = subaccountCode;
-        payload.transaction_charge = platformShare > 0 ? platformShare : 0;
-        payload.bearer = "subaccount"; // Subaccount bears Paystack fees
+      if (subaccountId) {
+        payload.subaccounts = [{
+          id: subaccountId,
+          transaction_charge_type: "flat",
+          transaction_charge: platformShare / 100
+        }];
       }
 
-      const response = await fetch("https://api.paystack.co/transaction/initialize", {
+      const response = await fetch("https://api.flutterwave.com/v3/payments", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${PAYSTACK_SECRET}`,
+          "Authorization": `Bearer ${FLUTTERWAVE_SECRET}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify(payload)
@@ -242,21 +252,21 @@ export const initializePaystackPayment = action({
 
       const data = await response.json();
 
-      if (data.status) {
+      if (data.status === "success") {
         return {
           success: true,
-          authorizationUrl: data.data.authorization_url,
-          reference: data.data.reference
+          authorizationUrl: data.data.link,
+          reference: args.reference
         };
       } else {
-        console.error("Paystack initialization failed:", data);
+        console.error("Flutterwave initialization failed:", data);
         return {
           success: false,
           error: data.message || "Payment initialization failed"
         };
       }
     } catch (error) {
-      console.error("Paystack API error:", error);
+      console.error("Flutterwave API error:", error);
       return {
         success: false,
         error: "Payment service unavailable"
@@ -266,7 +276,8 @@ export const initializePaystackPayment = action({
 });
 
 /**
- * Verify Paystack transaction
+ * Verify Flutterwave transaction
+ * @deprecated Use flutterwave.verifyTransactionByRef instead
  */
 export const verifyPaystackTransaction = action({
   args: {
@@ -280,39 +291,40 @@ export const verifyPaystackTransaction = action({
     error: v.optional(v.string())
   }),
   handler: async (ctx, args) => {
-    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-    
-    if (!PAYSTACK_SECRET) {
-      console.error("Paystack secret key not configured");
+    const FLUTTERWAVE_SECRET = process.env.FLUTTERWAVE_SECRET_KEY;
+
+    if (!FLUTTERWAVE_SECRET) {
+      console.error("Flutterwave secret key not configured");
       return { success: false, error: "Payment service not configured" };
     }
 
     try {
-      const response = await fetch(`https://api.paystack.co/transaction/verify/${args.reference}`, {
+      // Verify by tx_ref
+      const response = await fetch(`https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${args.reference}`, {
         method: "GET",
         headers: {
-          "Authorization": `Bearer ${PAYSTACK_SECRET}`
+          "Authorization": `Bearer ${FLUTTERWAVE_SECRET}`
         }
       });
 
       const data = await response.json();
 
-      if (data.status && data.data) {
+      if (data.status === "success" && data.data) {
         const transaction = data.data;
-        
+
         // Update payment and invoice status based on transaction status
-        if (transaction.status === "success") {
+        if (transaction.status === "successful") {
           await ctx.runMutation(internal.payments.updatePaymentStatus, {
             paystackReference: args.reference,
             status: "completed",
             paystackData: transaction
           })
-          
+
           // Update patient balance automatically
-          if (transaction.metadata?.invoiceId) {
+          if (transaction.meta?.invoiceId) {
             await ctx.runMutation(internal.payments.updatePatientBalance, {
-              invoiceId: transaction.metadata.invoiceId,
-              amountPaid: transaction.amount
+              invoiceId: transaction.meta.invoiceId,
+              amountPaid: transaction.amount * 100 // Convert Naira to kobo
             })
           }
         } else if (transaction.status === "failed") {
@@ -325,9 +337,9 @@ export const verifyPaystackTransaction = action({
 
         return {
           success: true,
-          status: transaction.status,
-          amount: transaction.amount,
-          metadata: transaction.metadata
+          status: transaction.status === "successful" ? "success" : transaction.status,
+          amount: transaction.amount * 100, // Convert to kobo for consistency
+          metadata: transaction.meta
         };
       } else {
         return {
@@ -336,7 +348,7 @@ export const verifyPaystackTransaction = action({
         };
       }
     } catch (error) {
-      console.error("Paystack verification error:", error);
+      console.error("Flutterwave verification error:", error);
       return {
         success: false,
         error: "Verification service unavailable"
@@ -370,7 +382,7 @@ export const updatePatientBalance = mutation({
     if (patientProfile) {
       const currentBalance = (patientProfile as any).accountBalance || 0;
       const newBalance = currentBalance - args.amountPaid;
-      
+
       await ctx.db.patch(patientProfile._id, {
         accountBalance: newBalance,
         lastPaymentDate: Date.now(),
@@ -652,7 +664,7 @@ export const connectBankAccount = mutation({
 
     // Create or update bank account record
     const status = args.subaccountCode ? "active" : "pending" as const;
-    
+
     let bankAccountId: Id<"bankAccounts">;
     if (existingAccount) {
       await ctx.db.patch(existingAccount._id, {
@@ -752,7 +764,7 @@ export const getPaymentHistory = query({
 
     // Query payments based on user role
     let payments: any[];
-    
+
     if (user.role === "patient") {
       payments = await ctx.db.query("payments")
         .withIndex("by_user_id", (q: any) => q.eq("userId", targetUserId))
@@ -770,7 +782,7 @@ export const getPaymentHistory = query({
     }
 
     // Filter by status if provided
-    const filteredPayments = args.status 
+    const filteredPayments = args.status
       ? payments.filter(p => p.status === args.status)
       : payments;
 
@@ -808,7 +820,7 @@ export const getPaymentHistory = query({
 async function getPhysiotherapistFromInvoice(ctx: any, invoiceId: Id<"invoices">) {
   const invoice = await ctx.db.get(invoiceId);
   if (!invoice) return undefined;
-  
+
   // Return physiotherapist ID if exists
   return (invoice as any).physiotherapistId;
 }

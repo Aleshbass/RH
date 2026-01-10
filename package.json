@@ -137,7 +137,7 @@
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",
     "chai": "^5.2.1",
-    "convex": "^1.25.0",
+    "convex": "^1.31.3",
     "cross-env": "^10.0.0",
     "dotenv": "^16.6.1",
     "eslint": "^9",
