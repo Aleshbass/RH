@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Image from 'next/image';
-import { SignUp } from "@clerk/clerk-react";
+import { SignUp } from "@clerk/nextjs";
 import { motion } from "framer-motion";
 
 interface SignUpModalProps {
@@ -27,18 +27,18 @@ export function SignUpModal({ onSwitchToSignIn }: SignUpModalProps) {
           />
         </div>
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-black/20 h-[600px] w-full" aria-hidden="true" />
-        
+
         {/* Logo overlay on image */}
         <div className="absolute top-8 left-8 right-8">
-          <Image 
-            src="/logos/favicon/apple-touch-icon.png" 
-            alt="Rehabify Health" 
-            width={48} 
-            height={48} 
+          <Image
+            src="/logos/favicon/apple-touch-icon.png"
+            alt="Rehabify Health"
+            width={48}
+            height={48}
             className="bg-white/10 backdrop-blur-sm rounded-lg p-2"
           />
         </div>
-        
+
         <div className="absolute bottom-8 left-8 right-8 text-white">
           <h2 className="text-3xl font-bold">Create Your Account</h2>
           <p className="mt-2 text-lg text-white/90">Your rehabilitation journey starts here</p>
@@ -50,19 +50,19 @@ export function SignUpModal({ onSwitchToSignIn }: SignUpModalProps) {
         {/* Mobile-only branding */}
         <div className="w-full mb-8 lg:hidden">
           <div className="flex items-center justify-center gap-3 mb-2">
-            <Image 
-              src="/logos/favicon/apple-touch-icon.png" 
-              alt="Rehabify Health" 
-              width={48} 
-              height={48} 
+            <Image
+              src="/logos/favicon/apple-touch-icon.png"
+              alt="Rehabify Health"
+              width={48}
+              height={48}
             />
             <h1 className="text-2xl font-bold text-[#002e2c]">Join Rehabify Health</h1>
           </div>
           <p className="text-center text-sm text-[#005b57]">Start your journey today</p>
         </div>
-        
+
         {/* Form container with consistent height */}
-        <motion.div 
+        <motion.div
           className="relative w-full max-w-sm mx-auto"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -70,15 +70,15 @@ export function SignUpModal({ onSwitchToSignIn }: SignUpModalProps) {
         >
           {/* Clerk SignUp component with stable container */}
           <div className="h-[400px] flex flex-col justify-center">
-            <SignUp 
+            <SignUp
               appearance={{
                 elements: {
                   card: "bg-transparent shadow-none p-0 w-full",
                   headerTitle: "text-[#002e2c] text-2xl font-bold mb-2",
                   headerSubtitle: "text-[#005b57] mb-6",
-                  formButtonPrimary: 
+                  formButtonPrimary:
                     "h-12 bg-gradient-to-r from-[#002e2c] to-[#005b57] hover:opacity-90 text-white font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-[#005b57]/30 transition-all duration-200",
-                  formFieldInput: 
+                  formFieldInput:
                     "h-12 text-base block w-full rounded-md border border-gray-300 focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 transition-all duration-200",
                   formFieldLabel: "text-[#002e2c] font-medium mb-2",
                   socialButtonsBlockButton: "h-12 transition-all duration-200 hover:scale-[1.02]",
@@ -109,7 +109,7 @@ export function SignUpModal({ onSwitchToSignIn }: SignUpModalProps) {
               afterSignInUrl="/dashboard"
             />
           </div>
-          
+
           {/* Custom switch to sign in link */}
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
