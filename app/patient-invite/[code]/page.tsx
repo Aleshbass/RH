@@ -28,12 +28,21 @@ interface PatientData {
   emergencyContact?: string
 }
 
+const PENDING_INVITE_KEY = 'rehabify_pending_invite'
+
 export default function PatientInvitePage() {
   const router = useRouter()
   const params = useParams()
   const code = params.code as string
 
   const { isLoaded, isSignedIn } = useAuth()
+
+  // Store invitation code in localStorage so DashboardAuthGuard can redirect back here
+  useEffect(() => {
+    if (code) {
+      localStorage.setItem(PENDING_INVITE_KEY, code)
+    }
+  }, [code])
   const { user } = useUser()
   const [isAccepting, setIsAccepting] = useState(false)
   const [autoAcceptTriggered, setAutoAcceptTriggered] = useState(false)
@@ -85,6 +94,8 @@ export default function PatientInvitePage() {
       })
 
       if (result.success) {
+        // Clear pending invite from localStorage
+        localStorage.removeItem(PENDING_INVITE_KEY)
         toast.success('Welcome to Rehabify Health!')
         setShowConfetti(true)
         // Briefly show confetti before redirecting
@@ -160,8 +171,8 @@ export default function PatientInvitePage() {
               </p>
             </CardContent>
             <CardFooter>
-              <Button 
-                onClick={handleSignIn} 
+              <Button
+                onClick={handleSignIn}
                 className="w-full bg-[#005b57] hover:bg-[#004843] text-white"
               >
                 Sign in
@@ -186,16 +197,16 @@ export default function PatientInvitePage() {
           </CardContent>
           <CardFooter>
             <div className="flex flex-col gap-3 w-full">
-              <Button 
-                onClick={handleSignUp} 
+              <Button
+                onClick={handleSignUp}
                 className="w-full bg-[#005b57] hover:bg-[#004843] text-white"
                 size="lg"
               >
                 Sign up
               </Button>
-              <Button 
-                onClick={handleSignIn} 
-                variant="outline" 
+              <Button
+                onClick={handleSignIn}
+                variant="outline"
                 className="w-full border-[#005b57] text-[#005b57] hover:bg-[#005b57]/10"
                 size="lg"
               >

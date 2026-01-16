@@ -69,7 +69,13 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
           if (currentUser.patientProfileId) {
             router.replace('/dashboard/patient')
           } else {
-            router.replace('/role-selection')
+            // Check if there's a pending invitation in localStorage
+            const pendingInvite = typeof window !== 'undefined' ? localStorage.getItem('rehabify_pending_invite') : null
+            if (pendingInvite) {
+              router.replace(`/patient-invite/${pendingInvite}`)
+            } else {
+              router.replace('/role-selection')
+            }
           }
           break
         default:

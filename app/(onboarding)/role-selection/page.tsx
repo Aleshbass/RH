@@ -23,6 +23,14 @@ export default function RoleSelectionPage() {
 
   // If user already completed onboarding, check their approval status
   useEffect(() => {
+    // Check for pending patient invitation first
+    const pendingInvite = typeof window !== 'undefined' ? localStorage.getItem('rehabify_pending_invite') : null
+    if (pendingInvite) {
+      // User has a pending invitation, redirect to complete it
+      router.replace(`/patient-invite/${pendingInvite}`)
+      return
+    }
+
     if (currentUser && currentUser.onboarded) {
       // Only redirect if the user also has a role assigned
       // This prevents an infinite loop where DashboardAuthGuard redirects to /role-selection
