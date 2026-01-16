@@ -19,16 +19,19 @@ import { CheckCircle2, Play, CalendarDays, TrendingUp, Upload } from "lucide-rea
 import { useAction } from "convex/react";
 import { useToast } from "@/components/ui/use-toast";
 
+import { Id } from "@/convex/_generated/dataModel";
+
 interface PatientTreatmentPlanViewProps {
   treatmentPlanId: string;
 }
 
 export function PatientTreatmentPlanView({ treatmentPlanId }: PatientTreatmentPlanViewProps) {
-  const [activeTab, setActiveTab] = useState("overview");
+  const activeTabState = useState("overview");
+  const [activeTab, setActiveTab] = activeTabState;
 
   // Fetch treatment plan with real-time updates
   const treatmentPlan = useQuery(api.treatmentPlans.getTreatmentPlan, {
-    treatmentPlanId,
+    treatmentPlanId: treatmentPlanId as Id<"treatmentPlans">,
   });
 
   // Fetch change history

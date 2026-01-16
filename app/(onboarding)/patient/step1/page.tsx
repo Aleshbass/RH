@@ -126,8 +126,8 @@ export default function PatientStep1Page() {
   // Merge store data with current user data for auto-fill
   const initialData = {
     ...data.patientData,
-    firstName: data.patientData.firstName || currentUser?.name?.split(' ')[0] || '',
-    lastName: data.patientData.lastName || currentUser?.name?.split(' ').slice(1).join(' ') || '',
+    firstName: data.patientData.firstName || currentUser?.firstName || '',
+    lastName: data.patientData.lastName || currentUser?.lastName || '',
     email: data.patientData.email || currentUser?.email || '',
     // Phone might not be in currentUser depending on schema, but if it is, add it here
   };

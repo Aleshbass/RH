@@ -466,9 +466,9 @@ export default function ClinicOwnerOnboardingWizard() {
                                 <div className="flex flex-col items-center space-y-4 p-6 bg-gray-50 rounded-xl border border-gray-100 mb-6">
                                     <div className="relative group">
                                         <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-md">
-                                            {currentUser?.data?.imageUrl ? (
+                                            {currentUser?.imageUrl ? (
                                                 <img
-                                                    src={currentUser.data.imageUrl}
+                                                    src={currentUser.imageUrl}
                                                     alt="Profile"
                                                     className="w-full h-full object-cover"
                                                 />

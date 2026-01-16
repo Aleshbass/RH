@@ -14,14 +14,15 @@ type Invoice = {
     status: string
     paidAt?: number
     _creationTime: number
-    patient?: {
-        user?: {
+    patient: {
+        user: {
             firstName?: string
             lastName?: string
             email?: string
         }
-    }
+    } | null
 }
+
 import { InvoiceModal } from '@/components/billing/InvoiceModal'
 import { SimpleInvoiceModal } from '@/components/billing/SimpleInvoiceModal'
 import { InvoicePaymentModal } from '@/components/billing/InvoicePaymentModal'
@@ -90,6 +91,9 @@ export default function ClinicBillingView() {
     const overdueInvoices = Array.isArray(invoices) ? invoices.filter((inv: { status: string, dueDate: number }) =>
         (inv.status === 'pending' || inv.status === 'sent') && new Date(inv.dueDate) < new Date()
     ) : []
+
+    const overdueAmount = overdueInvoices.reduce((sum: number, inv: any) => sum + (inv.totalAmount || 0), 0)
+
 
     const getStatusColor = (status: string, dueDate?: number) => {
         if (status === 'paid') return 'default'
@@ -260,7 +264,7 @@ export default function ClinicBillingView() {
                         <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">₦{(billingData?.thisMonthRevenue || 0).toLocaleString()}</div>
+                        <div className="text-2xl font-bold">₦{(billingData?.thisMonth || 0).toLocaleString()}</div>
                         <p className="text-xs text-muted-foreground">+12% from last month</p>
                     </CardContent>
                 </Card>
@@ -271,7 +275,7 @@ export default function ClinicBillingView() {
                         <Clock className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">₦{(billingData?.pendingAmount || 0).toLocaleString()}</div>
+                        <div className="text-2xl font-bold">₦{(billingData?.pendingPayments || 0).toLocaleString()}</div>
                         <p className="text-xs text-muted-foreground">{pendingInvoices.length} invoices</p>
                     </CardContent>
                 </Card>
@@ -282,7 +286,7 @@ export default function ClinicBillingView() {
                         <AlertCircle className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">₦{(billingData?.overdueAmount || 0).toLocaleString()}</div>
+                        <div className="text-2xl font-bold">₦{(overdueAmount || 0).toLocaleString()}</div>
                         <p className="text-xs text-muted-foreground">{overdueInvoices.length} invoices</p>
                     </CardContent>
                 </Card>

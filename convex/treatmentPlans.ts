@@ -1253,6 +1253,18 @@ export const getTreatmentPlan = query({
     const canAccess =
       plan.patientId === user._id || plan.physiotherapistId === user._id;
     if (!canAccess) throw new Error("Access denied");
-    return plan;
+
+    // Calculate derived fields
+    const estimatedDuration = plan.endDate
+      ? Math.round((plan.endDate - plan.startDate) / (1000 * 60 * 60 * 24 * 7))
+      : 0;
+
+    const currentPhase = 1; // Default to phase 1, can be improved later based on progress
+
+    return {
+      ...plan,
+      estimatedDuration,
+      currentPhase
+    };
   },
 });
