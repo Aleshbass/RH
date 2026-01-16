@@ -48,6 +48,7 @@ import type * as actions_patients_invitePatient from "../actions/patients/invite
 import type * as actions_patients_simpleCompleteOnboarding from "../actions/patients/simpleCompleteOnboarding.js";
 import type * as admin from "../admin.js";
 import type * as admin_marketplaceEarnings from "../admin/marketplaceEarnings.js";
+import type * as admin_fix from "../admin_fix.js";
 import type * as analytics from "../analytics.js";
 import type * as analytics_service from "../analytics/service.js";
 import type * as appointments from "../appointments.js";
@@ -178,6 +179,7 @@ declare const fullApi: ApiFromModules<{
   "actions/patients/simpleCompleteOnboarding": typeof actions_patients_simpleCompleteOnboarding;
   admin: typeof admin;
   "admin/marketplaceEarnings": typeof admin_marketplaceEarnings;
+  admin_fix: typeof admin_fix;
   analytics: typeof analytics;
   "analytics/service": typeof analytics_service;
   appointments: typeof appointments;
