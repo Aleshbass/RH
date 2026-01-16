@@ -24,8 +24,17 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
     if (currentUser === undefined) return
     if (isRedirecting) return
 
-    // If no user found, redirect to sign-in
+    // If no user found, check for pending invite first
     if (!currentUser) {
+      // Check if there's a pending patient invitation
+      const pendingInvite = typeof window !== 'undefined' ? localStorage.getItem('rehabify_pending_invite') : null
+      if (pendingInvite) {
+        // User is authenticated but not in Convex yet - redirect to invitation to complete onboarding
+        setIsRedirecting(true)
+        router.replace(`/patient-invite/${pendingInvite}`)
+        return
+      }
+      // No pending invite, redirect to sign-in (will handle the case properly)
       setIsRedirecting(true)
       router.replace('/sign-in')
       return
