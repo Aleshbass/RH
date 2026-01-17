@@ -1,14 +1,15 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import PersonalInfoForm, { PatientInfoValues } from '@/components/onboarding/patient/PersonalInfoForm';
 import { useValidateInvitationCode } from '@/lib/api/patientInvitations';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import { Loader2 } from 'lucide-react';
 
-export default function PatientStep1Page() {
+function PatientStep1Content() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data, setRoleAndStep, updatePatientData } = useOnboardingStore();
@@ -144,5 +145,17 @@ export default function PatientStep1Page() {
         />
       </div>
     </div>
+  );
+}
+
+export default function PatientStep1Page() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-[#002e2c]">
+        <Loader2 className="h-8 w-8 animate-spin text-white" />
+      </div>
+    }>
+      <PatientStep1Content />
+    </Suspense>
   );
 }

@@ -134,7 +134,7 @@ export default function RootLayout({
         className={`${calSans.variable} ${matter.variable} font-sans antialiased`}
       >
         {/* Top loader is rendered in app/providers.tsx (client component) */}
-        <ClerkProvider dynamic>
+        <ClerkProvider>
           <Providers>
             <ConvexClientProvider>
               <SyncUserWithConvex />
@@ -151,7 +151,7 @@ export default function RootLayout({
 
         {/* Umami Analytics */}
         <Script
-          src="https://rehabifyhealth-analytics.vercel.app/script.js"
+          src="https://yoursiteanalytics.vercel.app/script.js"
           data-website-id={process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID || "051e7953-f174-41aa-a2b7-96106c6f3d0d"}
           strategy="afterInteractive"
         />

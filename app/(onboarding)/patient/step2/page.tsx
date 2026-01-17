@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import HealthInfoForm, { PatientHealthInfoValues } from '@/components/onboarding/patient/HealthInfoForm';
 import { useCompletePatientOnboarding } from '@/lib/api/patientInvitations';
 import { toast } from 'sonner';
+import { Loader2 } from 'lucide-react';
 
-export default function PatientStep2Page() {
+function PatientStep2Content() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data, updatePatientData } = useOnboardingStore();
@@ -114,5 +115,17 @@ export default function PatientStep2Page() {
         />
       </div>
     </div>
+  );
+}
+
+export default function PatientStep2Page() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-emerald-50 to-teal-100">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+      </div>
+    }>
+      <PatientStep2Content />
+    </Suspense>
   );
 }

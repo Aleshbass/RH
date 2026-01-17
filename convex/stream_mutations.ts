@@ -14,13 +14,13 @@ async function resolveUserId(ctx: any, maybeId: string): Promise<Id<"users"> | n
       .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", maybeId))
       .unique()
     if (byClerk) return byClerk._id as Id<"users">
-  } catch {}
+  } catch { }
   // Try direct Convex Id
   try {
     const asConvexId = maybeId as unknown as Id<"users">
     const doc = await ctx.db.get(asConvexId)
     if (doc) return asConvexId
-  } catch {}
+  } catch { }
   return null as any
 }
 
@@ -101,6 +101,21 @@ export const updateCallStatus = internalMutation({
         endTime: args.endedAt,
         ...(endedById ? { endedBy: endedById as Id<"users"> } : {}),
       })
+
+      // If call ended, also update the associated appointment status
+      if (args.status === 'ended' && call.appointmentId) {
+        try {
+          const appointment = await ctx.db.get(call.appointmentId)
+          if (appointment && appointment.status !== 'completed' && appointment.status !== 'cancelled') {
+            await ctx.db.patch(call.appointmentId, {
+              status: 'completed',
+            })
+            console.log(`Marked appointment ${call.appointmentId} as completed after Stream call ended`)
+          }
+        } catch (error) {
+          console.error('Failed to update appointment status:', error)
+        }
+      }
     }
   },
 })

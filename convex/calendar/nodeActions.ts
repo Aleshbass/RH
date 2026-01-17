@@ -284,10 +284,28 @@ export const createEvent = action({
         sendUpdates: "all",
       });
 
+      const eventId = response.data.id!;
+      const hangoutLink = response.data.hangoutLink;
+      const htmlLink = response.data.htmlLink;
+
+      console.log("[NODE ACTIONS] Event created:", eventId);
+      console.log("[NODE ACTIONS] Hangout Link:", hangoutLink);
+      console.log("[NODE ACTIONS] Calendar Link:", htmlLink);
+
+      // Save the meet link to the appointment
+      if (hangoutLink) {
+        await ctx.runMutation(internal.calendar.mutations.updateAppointmentMeetLink, {
+          appointmentId: args.appointmentId,
+          googleMeetLink: hangoutLink,
+          googleCalendarEventId: eventId,
+          googleCalendarLink: htmlLink || undefined,
+        });
+      }
+
       return {
-        id: response.data.id!,
-        hangoutLink: response.data.hangoutLink,
-        htmlLink: response.data.htmlLink,
+        id: eventId,
+        hangoutLink,
+        htmlLink,
         conferenceData: response.data.conferenceData,
       };
     } catch (error) {
@@ -439,5 +457,42 @@ export const getEvents = action({
     });
 
     return response.data.items || [];
+  },
+});
+
+// Get free/busy information from Google Calendar
+// This is used to check for conflicts with personal calendar events
+export const getFreeBusy = action({
+  args: {
+    userId: v.id("users"),
+    timeMin: v.number(), // Unix timestamp
+    timeMax: v.number(), // Unix timestamp
+    calendarId: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<Array<{ start: number; end: number }>> => {
+    try {
+      const client = await getClientForUser(ctx, args.userId);
+      const calendar = google.calendar({ version: "v3", auth: client });
+
+      const response = await calendar.freebusy.query({
+        requestBody: {
+          timeMin: new Date(args.timeMin).toISOString(),
+          timeMax: new Date(args.timeMax).toISOString(),
+          items: [{ id: args.calendarId || "primary" }],
+        },
+      });
+
+      const calendarId = args.calendarId || "primary";
+      const busyBlocks = response.data.calendars?.[calendarId]?.busy || [];
+
+      return busyBlocks.map((block) => ({
+        start: new Date(block.start!).getTime(),
+        end: new Date(block.end!).getTime(),
+      }));
+    } catch (error) {
+      console.error("[FREEBUSY] Error fetching busy times:", error);
+      // Return empty array on error - don't block booking
+      return [];
+    }
   },
 });

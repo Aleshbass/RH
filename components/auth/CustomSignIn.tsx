@@ -14,7 +14,7 @@ export default function CustomSignIn() {
   const { isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTarget = searchParams?.get("redirect_url") || "/dashboard";
+  const redirectTarget = searchParams?.get("redirect") || searchParams?.get("redirect_url") || "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -72,6 +72,7 @@ export default function CustomSignIn() {
     );
   }
 
+  // Step 1: Check what verification methods are available for this email
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
@@ -80,20 +81,47 @@ export default function CustomSignIn() {
     setError("");
 
     try {
+      // First, create sign-in to check what verification methods are available
       const result = await signIn?.create({
         identifier: email,
       });
 
-      if (result?.status === "needs_identifier") {
-        setIsEmailStep(false);
+      if (result?.status === "needs_first_factor") {
+        // Check if password is a supported first factor
+        const hasPasswordStrategy = result.supportedFirstFactors?.some(
+          (factor: { strategy: string }) => factor.strategy === "password"
+        );
+
+        if (hasPasswordStrategy) {
+          // Show password field
+          setIsEmailStep(false);
+        } else {
+          // Account exists but was created with OAuth (Google)
+          setError("This account uses Google sign-in. Please click 'Continue with Google' above.");
+        }
+      } else if (result?.status === "complete") {
+        // Already signed in
+        await setActive?.({ session: result.createdSessionId });
+        router.push(redirectTarget);
+      } else {
+        console.log("Clerk signIn status:", result?.status, result);
+        setError("Unexpected authentication state. Please try again.");
       }
     } catch (err: unknown) {
-      setError(extractErrorMessage(err, "An error occurred"));
+      console.error("Email submit error:", err);
+      const errorMessage = extractErrorMessage(err, "An error occurred");
+
+      if (errorMessage.toLowerCase().includes("not found") || errorMessage.toLowerCase().includes("identifier")) {
+        setError("No account found with this email. Please sign up first.");
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Step 2: Submit password for accounts that have password auth
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!password) return;
@@ -108,13 +136,17 @@ export default function CustomSignIn() {
       });
 
       if (result?.status === "complete") {
-        if (setActive) {
-          await setActive({ session: result.createdSessionId });
-        }
+        await setActive?.({ session: result.createdSessionId });
         router.push(redirectTarget);
+      } else if (result?.status === "needs_second_factor") {
+        setError("Two-factor authentication is required. Please use a different method.");
+      } else {
+        console.log("Password submit status:", result?.status);
+        setError("Sign-in failed. Please try again.");
       }
     } catch (err: unknown) {
-      setError(extractErrorMessage(err, "Invalid password"));
+      console.error("Password submit error:", err);
+      setError(extractErrorMessage(err, "Incorrect password. Please try again."));
     } finally {
       setIsLoading(false);
     }
@@ -125,6 +157,11 @@ export default function CustomSignIn() {
     setError("");
 
     try {
+      // Store redirect target in localStorage as backup for SSO callback
+      if (redirectTarget && redirectTarget !== '/dashboard') {
+        localStorage.setItem('authRedirectUrl', redirectTarget);
+      }
+
       await signIn?.authenticateWithRedirect({
         strategy: "oauth_google",
         // Use Clerk's callback route we created to complete the OAuth flow
@@ -134,6 +171,7 @@ export default function CustomSignIn() {
         redirectUrlComplete: redirectTarget,
       });
     } catch (err: unknown) {
+      console.error("Google sign-in error:", err);
       setError(extractErrorMessage(err, "Google sign-in failed"));
       setIsLoading(false);
     }
@@ -245,7 +283,7 @@ export default function CustomSignIn() {
               </div>
             </div>
 
-            {/* Email/Password Form */}
+            {/* Email/Password Form - Two step */}
             {isEmailStep ? (
               <form onSubmit={handleEmailSubmit} className="space-y-4">
                 <div>
@@ -276,6 +314,9 @@ export default function CustomSignIn() {
               </form>
             ) : (
               <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                <div className="text-sm text-gray-600 mb-2">
+                  Signing in as <strong>{email}</strong>
+                </div>
                 <div>
                   <label htmlFor="password" className="block text-sm font-medium text-[#002e2c] mb-1">
                     Password
@@ -288,6 +329,7 @@ export default function CustomSignIn() {
                     placeholder="Enter your password"
                     className="h-12 w-full px-3 border border-gray-300 rounded-md focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 focus:outline-none"
                     required
+                    autoFocus
                   />
                 </div>
                 <button
@@ -303,10 +345,14 @@ export default function CustomSignIn() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsEmailStep(true)}
+                  onClick={() => {
+                    setIsEmailStep(true);
+                    setPassword("");
+                    setError("");
+                  }}
                   className="w-full text-sm text-[#005b57] hover:text-[#00443e] underline"
                 >
-                  ← Back to email
+                  ← Use a different email
                 </button>
               </form>
             )}
@@ -315,7 +361,7 @@ export default function CustomSignIn() {
             <div className="mt-8 text-center space-y-3">
               <p className="text-sm text-gray-600">
                 Don&apos;t have an account?{" "}
-                <Link href="/sign-up" className="text-[#005b57] hover:text-[#00443e] font-medium">
+                <Link href={`/sign-up${redirectTarget !== '/dashboard' ? `?redirect=${encodeURIComponent(redirectTarget)}` : ''}`} className="text-[#005b57] hover:text-[#00443e] font-medium">
                   Sign up
                 </Link>
               </p>

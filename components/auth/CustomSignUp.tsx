@@ -15,7 +15,7 @@ export default function CustomSignUp() {
   const { isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTarget = searchParams?.get("redirect_url") || "/role-selection";
+  const redirectTarget = searchParams?.get("redirect") || searchParams?.get("redirect_url") || "/role-selection";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -133,6 +133,11 @@ export default function CustomSignUp() {
     setError("");
 
     try {
+      // Store redirect target in localStorage as backup for SSO callback
+      if (redirectTarget && redirectTarget !== '/role-selection') {
+        localStorage.setItem('authRedirectUrl', redirectTarget);
+      }
+
       // Use signIn flow for OAuth; Clerk will create or reuse accounts automatically
       await signIn?.authenticateWithRedirect({
         strategy: "oauth_google",
@@ -142,6 +147,7 @@ export default function CustomSignUp() {
         redirectUrlComplete: redirectTarget,
       });
     } catch (err: unknown) {
+      console.error("Google sign-up error:", err);
       setError(extractErrorMessage(err, "Google sign-up failed"));
       setIsLoading(false);
     }
@@ -383,7 +389,7 @@ export default function CustomSignUp() {
             <div className="mt-8 text-center">
               <p className="text-sm text-gray-600">
                 Already have an account?{" "}
-                <Link href="/sign-in" className="text-[#005b57] hover:text-[#00443e] font-medium">
+                <Link href={`/sign-in${redirectTarget !== '/role-selection' ? `?redirect=${encodeURIComponent(redirectTarget)}` : ''}`} className="text-[#005b57] hover:text-[#00443e] font-medium">
                   Sign in
                 </Link>
               </p>

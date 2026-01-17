@@ -134,7 +134,47 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
 
   const shareLink = `${window.location.origin}/video-call/${callId}`
 
-  // Do not auto-navigate on transient LEFT/OFFLINE states; only navigate on explicit user actions.
+  // Auto-redirect when call ends - use multiple detection methods
+  const hasRedirectedRef = useRef(false)
+
+  // Method 1: Listen to Stream's call.ended event directly
+  useEffect(() => {
+    if (!call) return
+
+    const handleCallEnded = () => {
+      console.log('Stream call.ended event received')
+      if (!hasRedirectedRef.current) {
+        hasRedirectedRef.current = true
+        toast.info('Call has ended')
+        setTimeout(() => onCallEnd(), 500) // Short delay for toast to show
+      }
+    }
+
+    // Subscribe to call.ended event
+    call.on('call.ended', handleCallEnded)
+
+    return () => {
+      call.off('call.ended', handleCallEnded)
+    }
+  }, [call, onCallEnd])
+
+  // Method 2: Detect LEFT or IDLE state (backup for when event doesn't fire)
+  useEffect(() => {
+    const isCallEnded = callingState === CallingState.LEFT || callingState === CallingState.IDLE
+
+    if (isCallEnded && !hasRedirectedRef.current) {
+      console.log('Call state is ended:', callingState)
+      // Give a small delay to distinguish from transient states
+      const timeout = setTimeout(() => {
+        if (!hasRedirectedRef.current) {
+          hasRedirectedRef.current = true
+          console.log('Auto-redirecting after call ended...')
+          onCallEnd()
+        }
+      }, 2000)
+      return () => clearTimeout(timeout)
+    }
+  }, [callingState, onCallEnd])
 
   const handleLeave = async () => {
     try {
@@ -178,6 +218,22 @@ const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatCha
               Go Back
             </Button>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  // If participant count is 0 (everyone left), show call ended screen
+  if (participantCount === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+        <div className="text-center space-y-4">
+          <Phone className="h-12 w-12 text-gray-400 mx-auto" />
+          <p className="text-xl">Call Ended</p>
+          <p className="text-gray-400">All participants have left the call.</p>
+          <Button onClick={onCallEnd} variant="outline" className="border-white/20 hover:bg-white/10">
+            Go Back to Dashboard
+          </Button>
         </div>
       </div>
     )

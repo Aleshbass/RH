@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { format, isBefore, isAfter, startOfDay, addDays } from 'date-fns';
-import { Calendar, Clock, AlertCircle, CheckCircle2, History, Repeat, Video, MessageCircle, FileText, XCircle, Star, TrendingUp, Activity, CalendarDays, ChevronRight } from 'lucide-react';
+import { Calendar, Clock, AlertCircle, CheckCircle2, History, Repeat, Video, MessageCircle, FileText, XCircle, Star, TrendingUp, Activity, CalendarDays, ChevronRight, Copy, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -54,16 +54,18 @@ export function PatientAppointmentDashboard({
     const streak = completedCount > 0 ? Math.min(completedCount, 5) : 0;
 
     const AppointmentCard = ({ appointment, type }: { appointment: any, type: 'unconfirmed' | 'upcoming' | 'past' }) => {
-        const canJoinCall = appointment.appointmentType === 'telehealth' &&
+        // Check both appointmentType === 'telehealth' AND isOnline === true (for marketplace bookings)
+        const canJoinCall = (appointment.appointmentType === 'telehealth' || appointment.isOnline === true) &&
             appointment.status !== 'cancelled_by_patient' &&
             appointment.status !== 'cancelled_by_therapist';
 
+        // Get the meeting link from any of the possible fields
+        const meetingLink = appointment.meetingLink || appointment.streamMeetingLink || appointment.googleMeetLink;
+
         const handleStartVideoCall = (e: React.MouseEvent) => {
             e.stopPropagation();
-            if (appointment.streamMeetingLink) {
-                window.open(appointment.streamMeetingLink, '_blank');
-            } else if (appointment.googleMeetLink) {
-                window.open(appointment.googleMeetLink, '_blank');
+            if (meetingLink) {
+                window.open(meetingLink, '_blank');
             } else {
                 router.push(`/dashboard/patient/video-calls`);
             }
@@ -102,10 +104,14 @@ export function PatientAppointmentDashboard({
                             Confirm
                         </Badge>
                     )}
-                    {type === 'upcoming' && (
-                        <div className="bg-blue-50 text-blue-700 p-2 rounded-full">
+                    {type === 'upcoming' && canJoinCall && (
+                        <button
+                            onClick={handleStartVideoCall}
+                            className="bg-blue-50 text-blue-700 p-2 rounded-full hover:bg-blue-100 transition-colors cursor-pointer"
+                            title="Join Video Call"
+                        >
                             <Video className="h-4 w-4" />
-                        </div>
+                        </button>
                     )}
                 </div>
 
@@ -124,6 +130,50 @@ export function PatientAppointmentDashboard({
                     </div>
                 </div>
 
+                {/* Meeting Link Section - Always visible for online appointments */}
+                {canJoinCall && meetingLink && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <Video className="h-4 w-4 text-blue-600 shrink-0" />
+                                <span className="text-sm font-medium text-blue-700">Video Call</span>
+                            </div>
+                            <button
+                                onClick={handleStartVideoCall}
+                                className="text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-full transition-colors flex items-center gap-1"
+                            >
+                                <ExternalLink className="h-3 w-3" />
+                                Join
+                            </button>
+                        </div>
+                        {/* Show actual meeting link with copy button */}
+                        <div className="flex items-center gap-2 bg-white rounded-md p-2 border border-blue-100">
+                            <a
+                                href={meetingLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-600 hover:text-blue-800 truncate flex-1 underline"
+                            >
+                                {meetingLink}
+                            </a>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigator.clipboard.writeText(meetingLink);
+                                    // Optional: Show a toast notification
+                                    const btn = e.currentTarget;
+                                    btn.classList.add('text-green-600');
+                                    setTimeout(() => btn.classList.remove('text-green-600'), 1500);
+                                }}
+                                className="p-1.5 hover:bg-blue-100 rounded transition-colors shrink-0"
+                                title="Copy meeting link"
+                            >
+                                <Copy className="h-3.5 w-3.5 text-blue-600" />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Actions */}
                 <div className="mt-auto pt-2 flex flex-wrap gap-2">
                     {type === 'unconfirmed' && (
@@ -136,6 +186,17 @@ export function PatientAppointmentDashboard({
                                 <CheckCircle2 className="h-4 w-4 mr-2" />
                                 Confirm
                             </Button>
+                            {canJoinCall && meetingLink && (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleStartVideoCall}
+                                    className="flex-1 rounded-xl h-10 border-blue-200 text-blue-700 hover:bg-blue-50"
+                                >
+                                    <Video className="h-4 w-4 mr-2" />
+                                    Join Call
+                                </Button>
+                            )}
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -148,26 +209,24 @@ export function PatientAppointmentDashboard({
                     )}
 
                     {type === 'upcoming' && (
-                        <>
-                            {canJoinCall && (
-                                <Button
-                                    size="sm"
-                                    onClick={handleStartVideoCall}
-                                    className="bg-brand hover:bg-brand-dark text-white flex-1 rounded-xl h-10 font-medium shadow-md shadow-brand/20"
-                                >
-                                    <Video className="h-4 w-4 mr-2" />
-                                    Join Call
-                                </Button>
-                            )}
+                        <div className="flex gap-2 w-full">
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => onReschedule(appointment)}
+                                className="flex-1 rounded-xl h-10 border-gray-200"
+                            >
+                                Reschedule
+                            </Button>
                             <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => onCancel(appointment)}
-                                className={cn("rounded-xl h-10 border-gray-200 text-gray-600 hover:text-red-600 hover:bg-red-50 hover:border-red-100", !canJoinCall && "flex-1")}
+                                className="flex-1 rounded-xl h-10 border-gray-200 text-gray-600 hover:text-red-600 hover:bg-red-50 hover:border-red-100"
                             >
                                 Cancel
                             </Button>
-                        </>
+                        </div>
                     )}
 
                     {type === 'past' && appointment.status === 'completed' && !appointment.feedbackSubmitted && (

@@ -437,7 +437,12 @@ export default defineSchema({
     colorCode: v.optional(v.string()), // Hex color code like "#3B82F6"
     googleMeetLink: v.optional(v.string()), // Auto-generated Google Meet link
     googleCalendarLink: v.optional(v.string()), // Link to view event in Google Calendar
+    googleCalendarEventId: v.optional(v.string()), // Google Calendar event ID
     manualMeetingLink: v.optional(v.string()), // Manually added meeting link (e.g. Google Meet)
+    // Video call integration
+    isOnline: v.optional(v.boolean()), // True for online/telehealth appointments
+    meetingLink: v.optional(v.string()), // GetStream or other video platform meeting link
+    videoCallId: v.optional(v.id("videoCalls")), // Link to videoCalls table
   })
     .index("by_patient_id_and_time", ["patientId", "startTime"])
     .index("by_clinic_id_and_time", ["clinicId", "startTime"])

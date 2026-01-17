@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SmartDatetimeInput } from "@/components/ui/date-time-input";
 import { toast } from "sonner";
-import { Loader2, Info, Video, Users } from "lucide-react";
+import { Loader2, Info, Video, Users, Calendar, ExternalLink } from "lucide-react";
 import { Id } from "@/convex/_generated/dataModel";
 
 interface BookingWidgetProps {
@@ -229,6 +229,17 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
         <CardDescription>Choose your session type and schedule</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Calendar Booking Link */}
+        <Button
+          variant="outline"
+          onClick={() => router.push(`/book/${profile.id}/60`)}
+          className="w-full border-[#005b57] text-[#005b57] hover:bg-[#005b57] hover:text-white"
+        >
+          <Calendar className="w-4 h-4 mr-2" />
+          View Full Calendar
+          <ExternalLink className="w-3 h-3 ml-2" />
+        </Button>
+
         {/* Session Type Selection */}
         <div>
           <Label className="text-base font-semibold mb-3 block">

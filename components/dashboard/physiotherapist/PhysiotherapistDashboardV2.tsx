@@ -25,6 +25,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { InsightsSidebar } from '@/components/dashboard/shared/InsightsSidebar'
+import ShareableBookingLink from '@/components/booking/ShareableBookingLink'
+
 
 
 
@@ -79,8 +81,8 @@ export function PhysiotherapistDashboardV2() {
   // Avoid deep generic instantiation by routing through an any-cast handle
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const apiAny = api as unknown as any
-  // Only the firstName is used in the header; keep a minimal shape
-  const user = useQueryUntyped(apiAny.users.getMyUser) as { firstName?: string } | null | undefined
+  // Get user with _id for booking link
+  const user = useQueryUntyped(apiAny.users.getMyUser) as { _id?: string; firstName?: string } | null | undefined
 
   // Use the existing getCurrentUser query to get profile information
   const currentUserWithProfile = useQueryUntyped(apiAny.queries.getCurrentUser) as unknown | null | undefined
@@ -202,7 +204,13 @@ export function PhysiotherapistDashboardV2() {
           </div>
         </div>
 
-
+        {/* Shareable Booking Link - Cal.com Style */}
+        {user?._id && (
+          <ShareableBookingLink
+            physiotherapistId={user._id as any}
+            physiotherapistName={user.firstName}
+          />
+        )}
 
         {/* Enhanced Clinic Context Card for Clinic-based Physiotherapists */}
         {isClinicBased && clinicInfo && (

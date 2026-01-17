@@ -641,10 +641,10 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
             <p style="margin: 0; font-weight: bold;">Date: ${new Date(options.data.appointmentDate).toLocaleDateString()}</p>
             <p style="margin: 8px 0 0 0; font-weight: bold;">Time: ${options.data.appointmentTime}</p>
-            <p style="margin: 8px 0 0 0;">Location: ${options.data.clinicName}</p>
-            <p style="margin: 8px 0 0 0;">Address: ${options.data.clinicAddress}</p>
+            <p style="margin: 8px 0 0 0;">Location: ${options.data.clinicName || 'Online Video Call'}</p>
+            ${options.data.clinicAddress ? `<p style="margin: 8px 0 0 0;">Address: ${options.data.clinicAddress}</p>` : ''}
           </div>
-          <p>Please arrive 10 minutes before your scheduled appointment time.</p>
+          <p>${options.data.clinicAddress ? 'Please arrive 10 minutes before your scheduled appointment time.' : 'Click the button below to join the video call at the scheduled time.'}</p>
           <div style="margin: 20px 0;">
             <a href="${options.data.calendarLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; margin-right: 12px;">
               View in Dashboard

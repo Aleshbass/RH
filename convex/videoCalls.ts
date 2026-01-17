@@ -389,6 +389,21 @@ export const endVideoCall = mutation({
       }
     }
 
+    // Also update the associated appointment status to 'completed'
+    if (call.appointmentId) {
+      try {
+        const appointment = await ctx.db.get(call.appointmentId)
+        if (appointment && appointment.status !== 'completed' && appointment.status !== 'cancelled') {
+          await ctx.db.patch(call.appointmentId, {
+            status: 'completed',
+          })
+          console.log(`Marked appointment ${call.appointmentId} as completed after video call ended`)
+        }
+      } catch (error) {
+        console.error('Failed to update appointment status after call end:', error)
+      }
+    }
+
     return { success: true, status: "ended" as const }
   },
 })
