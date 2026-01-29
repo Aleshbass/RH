@@ -146,6 +146,7 @@ export function DashboardHeader() {
         <div className="flex items-center gap-3 sm:gap-4 flex-1">
           {/* Mobile hamburger */}
           <Button
+            id="mobile-menu-trigger"
             variant="ghost"
             size="icon"
             onClick={toggleMobile}

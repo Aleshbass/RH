@@ -22,17 +22,18 @@ interface NavItem {
     label: string;
     href: string;
     icon: React.ElementType;
+    id: string; // Tour target ID
 }
 
 const navItems: NavItem[] = [
-    { label: 'Profile', href: '/dashboard/physiotherapist/settings/profile', icon: User },
-    { label: 'Marketplace', href: '/dashboard/physiotherapist/settings/marketplace', icon: Store },
-    { label: 'Availability', href: '/dashboard/physiotherapist/settings/availability', icon: Clock },
-    { label: 'Calendar', href: '/dashboard/physiotherapist/settings/calendar', icon: Calendar },
-    { label: 'Payout', href: '/dashboard/physiotherapist/settings/payout', icon: DollarSign },
-    { label: 'Notifications', href: '/dashboard/physiotherapist/settings/notifications', icon: Bell },
-    { label: 'Privacy', href: '/dashboard/physiotherapist/settings/privacy', icon: Shield },
-    { label: 'Preferences', href: '/dashboard/physiotherapist/settings/preferences', icon: Settings },
+    { label: 'Profile', href: '/dashboard/physiotherapist/settings/profile', icon: User, id: 'settings-nav-profile' },
+    { label: 'Marketplace', href: '/dashboard/physiotherapist/settings/marketplace', icon: Store, id: 'settings-nav-marketplace' },
+    { label: 'Availability', href: '/dashboard/physiotherapist/settings/availability', icon: Clock, id: 'settings-nav-availability' },
+    { label: 'Calendar', href: '/dashboard/physiotherapist/settings/calendar', icon: Calendar, id: 'settings-nav-calendar' },
+    { label: 'Payout', href: '/dashboard/physiotherapist/settings/payout', icon: DollarSign, id: 'settings-nav-payout' },
+    { label: 'Notifications', href: '/dashboard/physiotherapist/settings/notifications', icon: Bell, id: 'settings-nav-notifications' },
+    { label: 'Privacy', href: '/dashboard/physiotherapist/settings/privacy', icon: Shield, id: 'settings-nav-privacy' },
+    { label: 'Preferences', href: '/dashboard/physiotherapist/settings/preferences', icon: Settings, id: 'settings-nav-preferences' },
 ];
 
 interface SettingsSidebarProps {
@@ -88,6 +89,7 @@ export function SettingsSidebar({ onItemClick }: SettingsSidebarProps) {
                         <Link
                             key={item.href}
                             href={item.href}
+                            id={item.id}
                             onClick={onItemClick}
                             className={cn(
                                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',

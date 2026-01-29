@@ -9,7 +9,7 @@ import { PhysiotherapistDashboardV2 } from '@/components/dashboard/physiotherapi
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 
-import { OnboardingTour } from '@/components/onboarding/OnboardingTour'
+import { PhysiotherapistTour } from '@/components/onboarding/PhysiotherapistTour'
 
 export default function PhysiotherapistDashboardPage() {
   const router = useRouter()
@@ -60,7 +60,7 @@ export default function PhysiotherapistDashboardPage() {
   return (
     <>
       <PhysiotherapistDashboardV2 />
-      <OnboardingTour />
+      <PhysiotherapistTour />
     </>
   )
-} 
+}
