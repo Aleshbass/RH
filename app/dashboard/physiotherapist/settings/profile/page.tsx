@@ -3,7 +3,7 @@
 import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { Loader2, User, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,31 +19,51 @@ import { useMutationUntyped } from '@/lib/convexUntyped';
 // Convert an image File to WebP on the client for faster loading
 async function convertImageToWebp(file: File, quality = 0.85): Promise<File> {
     return new Promise<File>((resolve, reject) => {
+        let objectUrl: string | null = null;
         try {
             const img = new Image();
+            objectUrl = URL.createObjectURL(file);
+
             img.onload = () => {
-                const canvas = document.createElement("canvas");
-                canvas.width = img.naturalWidth;
-                canvas.height = img.naturalHeight;
-                const ctx = canvas.getContext("2d");
-                if (!ctx) return reject(new Error("Canvas not supported"));
-                ctx.drawImage(img, 0, 0);
-                canvas.toBlob(
-                    (blob) => {
-                        if (!blob) return reject(new Error("Failed to create WebP blob"));
-                        const webpFile = new File([blob], file.name.replace(/\.[^.]+$/, ".webp"), {
-                            type: "image/webp",
-                            lastModified: Date.now(),
-                        });
-                        resolve(webpFile);
-                    },
-                    "image/webp",
-                    quality
-                );
+                try {
+                    const canvas = document.createElement("canvas");
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext("2d");
+                    if (!ctx) {
+                        if (objectUrl) URL.revokeObjectURL(objectUrl);
+                        return reject(new Error("Canvas not supported"));
+                    }
+                    ctx.drawImage(img, 0, 0);
+                    canvas.toBlob(
+                        (blob) => {
+                            // Revoke the object URL after we're done with it
+                            if (objectUrl) URL.revokeObjectURL(objectUrl);
+
+                            if (!blob) return reject(new Error("Failed to create WebP blob"));
+                            const webpFile = new File([blob], file.name.replace(/\.[^.]+$/, ".webp"), {
+                                type: "image/webp",
+                                lastModified: Date.now(),
+                            });
+                            resolve(webpFile);
+                        },
+                        "image/webp",
+                        quality
+                    );
+                } catch (e) {
+                    if (objectUrl) URL.revokeObjectURL(objectUrl);
+                    reject(e as Error);
+                }
             };
-            img.onerror = () => reject(new Error("Failed to load image for conversion"));
-            img.src = URL.createObjectURL(file);
+
+            img.onerror = () => {
+                if (objectUrl) URL.revokeObjectURL(objectUrl);
+                reject(new Error("Failed to load image for conversion"));
+            };
+
+            img.src = objectUrl;
         } catch (e) {
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
             reject(e as Error);
         }
     });
@@ -53,10 +73,20 @@ export default function ProfileSettingsPage() {
     const router = useRouter();
     const { isLoaded, isSignedIn } = useAuth();
     const [isSaving, setIsSaving] = useState(false);
+    const [isRemovingPhoto, setIsRemovingPhoto] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Form state (controlled inputs)
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
+    const [email, setEmail] = useState('');
+    const [phone, setPhone] = useState('');
+    const [bio, setBio] = useState('');
+    const [specializations, setSpecializations] = useState('');
 
     const currentUser = useQuery(api.users.getMyUser);
     const currentUserProfile = useQuery(api.queries.getCurrentUser);
+    const updateProfileMutation = useMutation(api.users.updatePhysiotherapistProfile);
 
     const { uploadFile, isUploading, progress } = useFileUpload();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,6 +94,26 @@ export default function ProfileSettingsPage() {
     const updateProfileImage = useMutationUntyped(
         apiAny["users"]["updateProfileImageFromStorage"]
     ) as (args: { storageId: string }) => Promise<{ imageUrl: string }>;
+    const removeProfileImage = useMutationUntyped(
+        apiAny["users"]["removeProfileImage"]
+    ) as () => Promise<{ success: boolean }>;
+
+    // Initialize form state from fetched user data
+    useEffect(() => {
+        if (currentUser) {
+            setFirstName(currentUser.firstName || '');
+            setLastName(currentUser.lastName || '');
+            setEmail(currentUser.email || '');
+            setPhone(currentUser.phoneNumber || '');
+        }
+    }, [currentUser]);
+
+    useEffect(() => {
+        if (currentUserProfile?.profileData) {
+            setBio(currentUserProfile.profileData.bio || '');
+            setSpecializations(currentUserProfile.profileData.specializations?.join(', ') || '');
+        }
+    }, [currentUserProfile]);
 
     useEffect(() => {
         if (isLoaded && !isSignedIn) {
@@ -72,7 +122,7 @@ export default function ProfileSettingsPage() {
     }, [isLoaded, isSignedIn, router]);
 
     useEffect(() => {
-        if (currentUser && currentUser.role !== 'physiotherapist') {
+        if (currentUser === null || (currentUser && currentUser.role !== 'physiotherapist')) {
             router.push('/dashboard');
         }
     }, [currentUser, router]);
@@ -99,6 +149,7 @@ export default function ProfileSettingsPage() {
             toast.success("Profile photo updated");
         } catch (error) {
             const err = error as Error;
+            console.error('Error uploading profile photo:', err);
             toast.error(err.message || "Failed to upload profile photo");
         }
 
@@ -112,6 +163,25 @@ export default function ProfileSettingsPage() {
         fileInputRef.current?.click();
     };
 
+    const handleRemoveProfilePicture = async () => {
+        if (!currentUser?.imageUrl) {
+            toast.error('No profile picture to remove');
+            return;
+        }
+
+        setIsRemovingPhoto(true);
+        try {
+            await removeProfileImage();
+            toast.success('Profile picture removed');
+        } catch (error) {
+            const err = error as Error;
+            console.error('Error removing profile photo:', err);
+            toast.error(err.message || 'Failed to remove profile picture');
+        } finally {
+            setIsRemovingPhoto(false);
+        }
+    };
+
     if (!isLoaded || currentUser === undefined || currentUserProfile === undefined) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
@@ -123,9 +193,34 @@ export default function ProfileSettingsPage() {
         );
     }
 
+    // Handle null currentUser (no Convex record)
+    if (currentUser === null) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-center">
+                    <p className="text-gray-400">User profile not found</p>
+                </div>
+            </div>
+        );
+    }
+
     const handleSaveProfile = async () => {
         setIsSaving(true);
         try {
+            // Parse specializations from comma-separated string to array
+            const specializationsArray = specializations
+                .split(',')
+                .map(s => s.trim())
+                .filter(s => s.length > 0);
+
+            await updateProfileMutation({
+                firstName: firstName.trim(),
+                lastName: lastName.trim(),
+                phoneNumber: phone.trim(),
+                bio: bio.trim(),
+                specializations: specializationsArray,
+            });
+
             toast.success('Profile settings saved successfully!');
         } catch (error) {
             console.error('Error saving profile:', error);
@@ -202,8 +297,18 @@ export default function ProfileSettingsPage() {
                                         'Upload avatar'
                                     )}
                                 </Button>
-                                <Button size="sm" variant="ghost" className="text-gray-400 hover:text-white">
-                                    Remove
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-gray-400 hover:text-white"
+                                    onClick={handleRemoveProfilePicture}
+                                    disabled={isRemovingPhoto || !currentUser?.imageUrl}
+                                >
+                                    {isRemovingPhoto ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        'Remove'
+                                    )}
                                 </Button>
                             </div>
                         </div>
@@ -211,13 +316,14 @@ export default function ProfileSettingsPage() {
 
                     <Separator className="bg-white/10" />
 
-                    {/* Form Fields */}
+                    {/* Form Fields - Now controlled */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <Label htmlFor="firstName" className="text-gray-300">First Name</Label>
                             <Input
                                 id="firstName"
-                                defaultValue={currentUser?.firstName || ''}
+                                value={firstName}
+                                onChange={(e) => setFirstName(e.target.value)}
                                 placeholder="Enter your first name"
                                 className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500"
                             />
@@ -226,7 +332,8 @@ export default function ProfileSettingsPage() {
                             <Label htmlFor="lastName" className="text-gray-300">Last Name</Label>
                             <Input
                                 id="lastName"
-                                defaultValue={currentUser?.lastName || ''}
+                                value={lastName}
+                                onChange={(e) => setLastName(e.target.value)}
                                 placeholder="Enter your last name"
                                 className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500"
                             />
@@ -236,16 +343,19 @@ export default function ProfileSettingsPage() {
                             <Input
                                 id="email"
                                 type="email"
-                                defaultValue={currentUser?.email || ''}
+                                value={email}
+                                disabled
                                 placeholder="Enter your email"
-                                className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500"
+                                className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500 opacity-60"
                             />
+                            <p className="text-xs text-gray-500 mt-1">Email cannot be changed here</p>
                         </div>
                         <div>
                             <Label htmlFor="phone" className="text-gray-300">Phone Number</Label>
                             <Input
                                 id="phone"
-                                defaultValue={currentUser?.phoneNumber || ''}
+                                value={phone}
+                                onChange={(e) => setPhone(e.target.value)}
                                 placeholder="Enter your phone number"
                                 className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500"
                             />
@@ -256,7 +366,8 @@ export default function ProfileSettingsPage() {
                         <Label htmlFor="bio" className="text-gray-300">About</Label>
                         <Textarea
                             id="bio"
-                            defaultValue={currentUserProfile?.profileData?.bio || ''}
+                            value={bio}
+                            onChange={(e) => setBio(e.target.value)}
                             placeholder="Tell us about your professional background..."
                             rows={4}
                             className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500 resize-none"
@@ -267,10 +378,12 @@ export default function ProfileSettingsPage() {
                         <Label htmlFor="specializations" className="text-gray-300">Specializations</Label>
                         <Input
                             id="specializations"
-                            defaultValue={currentUserProfile?.profileData?.specializations?.join(', ') || ''}
+                            value={specializations}
+                            onChange={(e) => setSpecializations(e.target.value)}
                             placeholder="e.g., Sports Therapy, Neurological Rehabilitation"
                             className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500"
                         />
+                        <p className="text-xs text-gray-500 mt-1">Separate multiple specializations with commas</p>
                     </div>
 
                     <div className="flex justify-end">

@@ -1514,3 +1514,100 @@ export const bootstrapAdmin = internalMutation({
     return { success: true, userId: args.userId };
   },
 });
+
+// ==== PUBLIC MUTATION: Update User Preferences ====
+export const updateUserPreferences = mutation({
+  args: {
+    preferences: v.object({
+      timezone: v.optional(v.string()),
+      language: v.optional(v.string()),
+      dateFormat: v.optional(v.string()),
+      timeFormat: v.optional(v.string()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) throw new Error("Unauthenticated");
+
+    await ctx.db.patch(user._id, {
+      preferences: {
+        ...user.preferences,
+        ...args.preferences,
+      },
+    });
+  },
+});
+
+export const updateNotificationPreferences = mutation({
+  args: {
+    notificationPreferences: v.object({
+      appointmentReminders: v.optional(v.boolean()),
+      newPatientRegistrations: v.optional(v.boolean()),
+      emailNotifications: v.optional(v.boolean()),
+      pushNotifications: v.optional(v.boolean()),
+      marketingCommunications: v.optional(v.boolean()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) throw new Error("Unauthenticated");
+
+    await ctx.db.patch(user._id, {
+      notificationPreferences: {
+        ...user.notificationPreferences,
+        ...args.notificationPreferences,
+      },
+    });
+  },
+});
+
+// ==== PUBLIC MUTATION: Update Physiotherapist Profile ====
+export const updatePhysiotherapistProfile = mutation({
+  args: {
+    // User fields
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    phoneNumber: v.optional(v.string()),
+
+    // Profile fields
+    specializations: v.optional(v.array(v.string())),
+    bio: v.optional(v.string()),
+    yearsOfExperience: v.optional(v.number()),
+    languagesSpoken: v.optional(v.array(v.string())),
+    location: v.optional(v.string()),
+    isAvailableOnMarketplace: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (!user || user.role !== "physiotherapist") {
+      throw new Error("Unauthorized or not a physiotherapist");
+    }
+
+    // Update User fields if provided
+    const userUpdates: any = {};
+    if (args.firstName !== undefined) userUpdates.firstName = args.firstName;
+    if (args.lastName !== undefined) userUpdates.lastName = args.lastName;
+    if (args.phoneNumber !== undefined) userUpdates.phoneNumber = args.phoneNumber;
+
+    if (Object.keys(userUpdates).length > 0) {
+      await ctx.db.patch(user._id, userUpdates);
+    }
+
+    // Update Profile fields
+    if (!user.physiotherapistProfileId) {
+      throw new Error("Physiotherapist profile not found");
+    }
+
+    const profileUpdates: any = {};
+    if (args.specializations !== undefined) profileUpdates.specializations = args.specializations;
+    if (args.bio !== undefined) profileUpdates.bio = args.bio;
+    if (args.yearsOfExperience !== undefined) profileUpdates.yearsOfExperience = args.yearsOfExperience;
+    if (args.languagesSpoken !== undefined) profileUpdates.languagesSpoken = args.languagesSpoken;
+    if (args.location !== undefined) profileUpdates.location = args.location;
+    if (args.isAvailableOnMarketplace !== undefined) profileUpdates.isAvailableOnMarketplace = args.isAvailableOnMarketplace;
+
+    if (Object.keys(profileUpdates).length > 0) {
+      await ctx.db.patch(user.physiotherapistProfileId, profileUpdates);
+    }
+  },
+});

@@ -46,6 +46,21 @@ export default defineSchema({
     hasCompletedOnboarding: v.optional(v.boolean()), // True if user has seen the tour
     onboardingVersion: v.optional(v.number()), // To track which version of the tour they saw
     toursCompleted: v.optional(v.array(v.string())), // Track specific tours completed by ID
+
+    // User Preferences
+    notificationPreferences: v.optional(v.object({
+      appointmentReminders: v.optional(v.boolean()),
+      newPatientRegistrations: v.optional(v.boolean()),
+      emailNotifications: v.optional(v.boolean()),
+      pushNotifications: v.optional(v.boolean()),
+      marketingCommunications: v.optional(v.boolean()),
+    })),
+    preferences: v.optional(v.object({
+      timezone: v.optional(v.string()),
+      language: v.optional(v.string()),
+      dateFormat: v.optional(v.string()),
+      timeFormat: v.optional(v.string()),
+    })),
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"])

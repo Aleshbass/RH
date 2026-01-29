@@ -27,7 +27,7 @@ export default function BookingWidget({ profile }: BookingWidgetProps) {
   const router = useRouter();
 
   // Determine session price for display
-  const sessionPrice = profile.initialConsultRate || profile.hourlyRate || 0;
+  const sessionPrice = profile.initialConsultRate ?? profile.hourlyRate ?? 0;
 
   return (
     <Card className="shadow-lg">

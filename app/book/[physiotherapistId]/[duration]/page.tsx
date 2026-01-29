@@ -125,6 +125,46 @@ export default function BookingPage() {
         }
     };
 
+    const initializeFlutterwavePayment = async (
+        bookingId: Id<"marketplaceBookings">,
+        amount: number
+    ) => {
+        // Validate email before proceeding
+        const userEmail = user?.primaryEmailAddress?.emailAddress;
+        if (!userEmail) {
+            throw new Error("Email address is required for payment");
+        }
+
+        // Call our API to create a Flutterwave payment link
+        const response = await fetch("/api/payments/flutterwave/initialize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                bookingId,
+                amount,
+                email: userEmail,
+                name: user?.fullName || user?.firstName || "Customer",
+                redirectUrl: `${window.location.origin}/payment/callback`,
+            }),
+        });
+
+        // Check HTTP status before parsing JSON
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("Payment initialization failed:", response.status, errorText);
+            throw new Error(`Payment initialization failed: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (data.success && data.paymentUrl) {
+            // Redirect to Flutterwave payment page
+            window.location.href = data.paymentUrl;
+        } else {
+            throw new Error(data.error || "Failed to initialize payment");
+        }
+    };
+
     const handleBooking = async () => {
         if (!isSignedIn) {
             // Save booking state to localStorage and redirect to sign in
@@ -148,12 +188,16 @@ export default function BookingPage() {
             return;
         }
 
+        // Validate email before proceeding with paid sessions
+        const sessionPrice = profile.initialConsultRate || profile.hourlyRate || 0;
+        if (sessionPrice > 0 && !user?.primaryEmailAddress?.emailAddress) {
+            toast.error("Email address is required for payment");
+            return;
+        }
+
         setIsProcessing(true);
 
         try {
-            // Calculate session price - use initialConsultRate or hourlyRate, allow free if not set
-            const sessionPrice = profile.initialConsultRate || profile.hourlyRate || 0;
-
             const result = await createBooking({
                 physiotherapistId,
                 sessionType: "follow_up",
@@ -177,48 +221,13 @@ export default function BookingPage() {
                 return;
             }
 
-            // Initialize Flutterwave payment for paid sessions
-            initializeFlutterwavePayment(result.bookingId, sessionPrice);
+            // Initialize Flutterwave payment for paid sessions - AWAIT the call
+            await initializeFlutterwavePayment(result.bookingId, sessionPrice);
         } catch (error: any) {
             console.error("Booking error:", error);
             toast.error("Booking failed", {
                 description:
                     error.message || "Failed to create booking. Please try again.",
-            });
-            setIsProcessing(false);
-        }
-    };
-
-    const initializeFlutterwavePayment = async (
-        bookingId: Id<"marketplaceBookings">,
-        amount: number
-    ) => {
-        try {
-            // Call our API to create a Flutterwave payment link
-            const response = await fetch("/api/payments/flutterwave/initialize", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    bookingId,
-                    amount,
-                    email: user?.primaryEmailAddress?.emailAddress,
-                    name: user?.fullName || user?.firstName || "Customer",
-                    redirectUrl: `${window.location.origin}/payment/callback`,
-                }),
-            });
-
-            const data = await response.json();
-
-            if (data.success && data.paymentUrl) {
-                // Redirect to Flutterwave payment page
-                window.location.href = data.paymentUrl;
-            } else {
-                throw new Error(data.error || "Failed to initialize payment");
-            }
-        } catch (error: any) {
-            console.error("Flutterwave error:", error);
-            toast.error("Payment failed", {
-                description: error.message || "Failed to initialize payment",
             });
             setIsProcessing(false);
         }

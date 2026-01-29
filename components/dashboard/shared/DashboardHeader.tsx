@@ -298,7 +298,7 @@ export function DashboardHeader() {
                         }}
                       >
                         <div className="flex items-start gap-3">
-                          <div className={`h-2 w-2 rounded-full mt-2 ${notification.readAt ? 'bg-gray-300' : 'bg-blue-600'
+                          <div className={`h-2 w-2 rounded-full mt-2 ${(notification.readAt || notification.status === 'read') ? 'bg-gray-300' : 'bg-blue-600'
                             }`} />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-900">

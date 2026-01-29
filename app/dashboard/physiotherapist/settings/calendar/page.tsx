@@ -27,12 +27,24 @@ export default function CalendarSettingsPage() {
         }
     }, [currentUser, router]);
 
+    // Show loading while auth or user data is loading (undefined = loading)
     if (!isLoaded || currentUser === undefined) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
                     <p className="text-gray-400">Loading calendar settings...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Handle null currentUser (no Convex record - user not found)
+    if (currentUser === null) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-center">
+                    <p className="text-gray-400">User profile not found</p>
                 </div>
             </div>
         );

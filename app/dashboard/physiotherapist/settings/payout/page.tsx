@@ -26,7 +26,20 @@ export default function PayoutSettingsPage() {
         }
     }, [currentUser, router]);
 
-    if (!isLoaded || currentUser === undefined) {
+    // Show loading while auth or user data is loading
+    // Check for both undefined (loading) and null (no record) to avoid passing null to PayoutSettings
+    if (!isLoaded || !currentUser) {
+        // If currentUser is null (not undefined), show not found message
+        if (currentUser === null) {
+            return (
+                <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="text-center">
+                        <p className="text-gray-400">User profile not found</p>
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="text-center">

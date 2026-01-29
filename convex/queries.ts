@@ -75,6 +75,7 @@ export const getCurrentUser = query({
             yearsOfExperience: profile.yearsOfExperience || 0,
             languagesSpoken: profile.languagesSpoken || [],
             availabilitySchedule: profile.availabilitySchedule || {},
+            isAvailableOnMarketplace: profile.isAvailableOnMarketplace,
           };
 
           if (profile.clinicId) {

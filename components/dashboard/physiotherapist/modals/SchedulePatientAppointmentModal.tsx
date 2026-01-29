@@ -62,6 +62,7 @@ interface SchedulePatientAppointmentModalProps {
     physiotherapistId: Id<"users">;
     physiotherapistName: string;
     physiotherapistImage?: string;
+    offersOnlineSessions?: boolean;
 }
 
 type BookingStep = "select-type" | "select-time" | "details" | "confirm";
@@ -74,6 +75,7 @@ export default function SchedulePatientAppointmentModal({
     physiotherapistId,
     physiotherapistName,
     physiotherapistImage,
+    offersOnlineSessions = true,
 }: SchedulePatientAppointmentModalProps) {
     const [step, setStep] = useState<BookingStep>("select-type");
     const [selectedSessionType, setSelectedSessionType] = useState(SESSION_TYPES[0]);
@@ -81,6 +83,8 @@ export default function SchedulePatientAppointmentModal({
     const [sessionMode, setSessionMode] = useState<"telehealth" | "in-person">("telehealth");
     const [notes, setNotes] = useState("");
     const [isProcessing, setIsProcessing] = useState(false);
+
+    const userTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
     const createAppointment = useMutation(api.appointments.createAppointment);
 
@@ -251,8 +255,8 @@ export default function SchedulePatientAppointmentModal({
                             sessionDuration={selectedSessionType.duration}
                             sessionTitle={selectedSessionType.title}
                             sessionDescription={selectedSessionType.description}
-                            offersOnlineSessions={true}
-                            timezone="Africa/Lagos"
+                            offersOnlineSessions={offersOnlineSessions}
+                            timezone={userTimezone}
                             onSlotSelect={handleSlotSelect}
                         />
 

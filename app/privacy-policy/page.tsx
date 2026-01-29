@@ -123,8 +123,8 @@ export default function PrivacyPolicyPage() {
                 We do not sell or rent user data. However, data may be shared in the following cases:
               </p>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li>With physiotherapists/clinics, patients can receive care.</li>
-                <li>With patients, physiotherapists can provide progress updates.</li>
+                <li>Physiotherapists and clinics: to provide care and treatment to patients.</li>
+                <li>Patients: to receive progress updates and treatment information from physiotherapists.</li>
                 <li>With partners – only where referrals are made, with user consent.</li>
                 <li>With regulators – if required by Nigerian law or court orders.</li>
                 <li>With service providers – payment processors, hosting providers, analytics tools (bound by confidentiality obligations).</li>

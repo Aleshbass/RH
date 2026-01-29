@@ -8,25 +8,39 @@ import { api } from '@/convex/_generated/api';
 import { Loader2, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import { AvailabilityScheduler } from '@/components/onboarding/common/AvailabilityScheduler';
 import { toast } from 'sonner';
+
+// Default empty schedule for new users
+const DEFAULT_SCHEDULE = {
+    monday: { enabled: false, slots: [] },
+    tuesday: { enabled: false, slots: [] },
+    wednesday: { enabled: false, slots: [] },
+    thursday: { enabled: false, slots: [] },
+    friday: { enabled: false, slots: [] },
+    saturday: { enabled: false, slots: [] },
+    sunday: { enabled: false, slots: [] },
+};
 
 export default function AvailabilitySettingsPage() {
     const router = useRouter();
     const { isLoaded, isSignedIn } = useAuth();
     const [isSaving, setIsSaving] = useState(false);
+    const [isDataLoading, setIsDataLoading] = useState(true);
 
     const currentUser = useQuery(api.users.getMyUser);
     const currentUserProfile = useQuery(api.queries.getCurrentUser);
     const updateAvailabilityMutation = useMutation(api.physiotherapists.updateAvailability);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [availabilitySchedule, setAvailabilitySchedule] = useState<any>(null);
+    const [availabilitySchedule, setAvailabilitySchedule] = useState<any>(DEFAULT_SCHEDULE);
 
     useEffect(() => {
-        if (currentUserProfile?.profileData?.availabilitySchedule) {
-            setAvailabilitySchedule(currentUserProfile.profileData.availabilitySchedule);
+        if (currentUserProfile !== undefined) {
+            setIsDataLoading(false);
+            if (currentUserProfile?.profileData?.availabilitySchedule) {
+                setAvailabilitySchedule(currentUserProfile.profileData.availabilitySchedule);
+            }
         }
     }, [currentUserProfile]);
 
@@ -37,10 +51,16 @@ export default function AvailabilitySettingsPage() {
     }, [isLoaded, isSignedIn, router]);
 
     useEffect(() => {
-        if (currentUser && currentUser.role !== 'physiotherapist') {
+        // Wait for auth to load before checking user
+        if (!isLoaded) return;
+
+        // Handle null (no Convex record) or wrong role
+        if (currentUser === null) {
+            router.push('/sign-in');
+        } else if (currentUser && currentUser.role !== 'physiotherapist') {
             router.push('/dashboard');
         }
-    }, [currentUser, router]);
+    }, [isLoaded, currentUser, router]);
 
     if (!isLoaded || currentUser === undefined || currentUserProfile === undefined) {
         return (
@@ -48,6 +68,17 @@ export default function AvailabilitySettingsPage() {
                 <div className="text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
                     <p className="text-gray-400">Loading availability...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Handle null currentUser
+    if (currentUser === null) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-center">
+                    <p className="text-gray-400">User profile not found</p>
                 </div>
             </div>
         );
@@ -87,37 +118,21 @@ export default function AvailabilitySettingsPage() {
                         </p>
                     </div>
 
-                    {availabilitySchedule ? (
+                    {isDataLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                        </div>
+                    ) : (
                         <AvailabilityScheduler
                             value={availabilitySchedule}
                             onChange={setAvailabilitySchedule}
                         />
-                    ) : (
-                        <div className="bg-[#0a0a0a] p-4 rounded-xl border border-white/10">
-                            {[...Array(7)].map((_, i) => (
-                                <div key={i} className="flex flex-col py-4 border-b border-white/10 last:border-0">
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex items-center gap-4 w-32 pt-2">
-                                            <Skeleton className="h-6 w-10 rounded-full bg-white/10" />
-                                            <Skeleton className="h-4 w-16 bg-white/10" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 justify-end">
-                                                <Skeleton className="h-9 w-28 bg-white/10" />
-                                                <Skeleton className="h-9 w-28 bg-white/10" />
-                                                <Skeleton className="h-8 w-8 rounded-md bg-white/10" />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
                     )}
 
                     <div className="flex justify-end pt-4">
                         <Button
                             onClick={handleSaveAvailability}
-                            disabled={isSaving}
+                            disabled={isSaving || isDataLoading}
                             className="bg-[#005b57] hover:bg-[#00443e] text-white"
                         >
                             {isSaving ? (
