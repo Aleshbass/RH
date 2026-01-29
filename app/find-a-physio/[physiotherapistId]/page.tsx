@@ -376,7 +376,7 @@ export default function PhysiotherapistProfilePage() {
                 </div>
                 <div className="flex items-center gap-3 text-sm text-gray-600">
                   <CreditCard className="w-5 h-5 text-[#005b57]" />
-                  <span>Secure Payments via Paystack</span>
+                  <span>Secure Payments via Flutterwave</span>
                 </div>
               </div>
             </div>

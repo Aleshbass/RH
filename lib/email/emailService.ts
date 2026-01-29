@@ -518,52 +518,138 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
 
     case 'ACCOUNT_APPROVED':
       return {
-        subject: `Your Rehabify Health Account is Approved!`,
+        subject: `🎉 Welcome to Rehabify Health - Your Account is Approved!`,
         body: `
-          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e5e7eb;">
-            <!-- Header with Logo -->
-            <div style="background-color: #ffffff; padding: 24px; text-align: center; border-bottom: 1px solid #f3f4f6;">
-              <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 40px; width: auto;" />
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.1);">
+            
+            <!-- Gradient Header with Logo -->
+            <div style="background: linear-gradient(135deg, #005b57 0%, #00857f 50%, #00a89d 100%); padding: 40px 24px; text-align: center;">
+              <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 50px; width: auto; margin-bottom: 20px;" />
+              <div style="background-color: rgba(255,255,255,0.15); backdrop-filter: blur(10px); border-radius: 100px; padding: 12px 24px; display: inline-block; margin-bottom: 16px;">
+                <span style="font-size: 28px;">🎉</span>
+              </div>
+              <h1 style="color: #ffffff; font-size: 28px; font-weight: 700; margin: 0; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">Welcome to Rehabify Health!</h1>
+              <p style="color: rgba(255,255,255,0.9); font-size: 16px; margin: 12px 0 0 0;">Your account has been approved</p>
             </div>
             
-            <!-- Content -->
-            <div style="padding: 32px 24px;">
-              <div style="text-align: center; margin-bottom: 24px;">
-                <div style="display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; background-color: #d1fae5; border-radius: 50%; margin-bottom: 16px;">
-                  <span style="font-size: 32px;">🎉</span>
-                </div>
-                <h1 style="color: #065f46; font-size: 24px; font-weight: 700; margin: 0;">Account Approved!</h1>
-              </div>
+            <!-- Main Content -->
+            <div style="padding: 40px 32px;">
               
-              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">Hello ${options.data.userName},</p>
+              <!-- Personalized Greeting -->
+              <p style="color: #1f2937; font-size: 18px; line-height: 1.6; margin: 0 0 16px 0;">
+                Hello <strong>${options.data.userName}</strong>,
+              </p>
               
-              <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-                Great news! Your Rehabify Health account as a <strong>${options.data.userRole}</strong> ${options.data.clinicName ? `for <strong>${options.data.clinicName}</strong>` : ''} has been approved.
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.7; margin: 0 0 24px 0;">
+                Congratulations! Your Rehabify Health account as a <strong style="color: #005b57;">${options.data.userRole}</strong>${options.data.clinicName ? ` for <strong style="color: #005b57;">${options.data.clinicName}</strong>` : ''} has been approved by our team. You now have full access to our comprehensive healthcare platform.
               </p>
 
-              <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-                <p style="margin: 0; color: #166534; font-size: 15px; line-height: 1.5;">
-                  You now have full access to the platform. You can manage your profile, connect with patients, and start using all our features immediately.
-                </p>
+              <!-- Success Message Box -->
+              <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 1px solid #a7f3d0; border-radius: 12px; padding: 24px; margin-bottom: 32px;">
+                <div style="display: flex; align-items: flex-start;">
+                  <span style="font-size: 24px; margin-right: 12px;">✅</span>
+                  <div>
+                    <p style="margin: 0; color: #065f46; font-size: 16px; font-weight: 600; line-height: 1.5;">
+                      You're all set!
+                    </p>
+                    <p style="margin: 8px 0 0 0; color: #047857; font-size: 14px; line-height: 1.5;">
+                      Your dashboard is ready and you can start connecting with patients immediately.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Feature Highlights -->
+              <div style="margin-bottom: 32px;">
+                <h2 style="color: #1f2937; font-size: 18px; font-weight: 600; margin: 0 0 20px 0; text-align: center;">
+                  🚀 What You Can Do Now
+                </h2>
+                
+                <table style="width: 100%; border-collapse: separate; border-spacing: 0 12px;">
+                  <tr>
+                    <td style="background-color: #f8fafc; border-radius: 10px; padding: 16px; width: 50%; vertical-align: top;">
+                      <div style="text-align: center;">
+                        <span style="font-size: 28px; display: block; margin-bottom: 8px;">👥</span>
+                        <p style="margin: 0; color: #1f2937; font-size: 14px; font-weight: 600;">Patient Management</p>
+                        <p style="margin: 4px 0 0 0; color: #6b7280; font-size: 12px;">Invite & manage patients</p>
+                      </div>
+                    </td>
+                    <td style="width: 12px;"></td>
+                    <td style="background-color: #f8fafc; border-radius: 10px; padding: 16px; width: 50%; vertical-align: top;">
+                      <div style="text-align: center;">
+                        <span style="font-size: 28px; display: block; margin-bottom: 8px;">📅</span>
+                        <p style="margin: 0; color: #1f2937; font-size: 14px; font-weight: 600;">Appointments</p>
+                        <p style="margin: 4px 0 0 0; color: #6b7280; font-size: 12px;">Schedule & track sessions</p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="background-color: #f8fafc; border-radius: 10px; padding: 16px; width: 50%; vertical-align: top;">
+                      <div style="text-align: center;">
+                        <span style="font-size: 28px; display: block; margin-bottom: 8px;">📹</span>
+                        <p style="margin: 0; color: #1f2937; font-size: 14px; font-weight: 600;">Video Consultations</p>
+                        <p style="margin: 4px 0 0 0; color: #6b7280; font-size: 12px;">Secure telehealth calls</p>
+                      </div>
+                    </td>
+                    <td style="width: 12px;"></td>
+                    <td style="background-color: #f8fafc; border-radius: 10px; padding: 16px; width: 50%; vertical-align: top;">
+                      <div style="text-align: center;">
+                        <span style="font-size: 28px; display: block; margin-bottom: 8px;">📋</span>
+                        <p style="margin: 0; color: #1f2937; font-size: 14px; font-weight: 600;">Treatment Plans</p>
+                        <p style="margin: 4px 0 0 0; color: #6b7280; font-size: 12px;">Create & assign plans</p>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
               </div>
               
-              <!-- CTA Button -->
+              <!-- Primary CTA Button -->
               <div style="text-align: center; margin-bottom: 32px;">
-                <a href="${options.data.dashboardLink}" style="display: inline-block; background-color: #059669; color: white; font-weight: 600; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-size: 16px; box-shadow: 0 4px 6px rgba(5, 150, 105, 0.2); transition: background-color 0.2s;">
-                  Go to Dashboard
+                <a href="${options.data.dashboardLink}" style="display: inline-block; background: linear-gradient(135deg, #005b57 0%, #00857f 100%); color: white; font-weight: 600; padding: 16px 48px; border-radius: 12px; text-decoration: none; font-size: 16px; box-shadow: 0 8px 20px rgba(0, 91, 87, 0.3); transition: all 0.3s ease;">
+                  🚀 Access Your Dashboard
                 </a>
               </div>
+
+              <!-- Quick Start Guide -->
+              <div style="background-color: #fefce8; border: 1px solid #fde047; border-radius: 12px; padding: 24px; margin-bottom: 24px;">
+                <h3 style="color: #854d0e; font-size: 16px; font-weight: 600; margin: 0 0 16px 0;">
+                  ⚡ Quick Start Guide
+                </h3>
+                <ol style="margin: 0; padding-left: 20px; color: #713f12;">
+                  <li style="margin-bottom: 8px; font-size: 14px; line-height: 1.5;">Complete your professional profile</li>
+                  <li style="margin-bottom: 8px; font-size: 14px; line-height: 1.5;">Set up your availability schedule</li>
+                  <li style="margin-bottom: 8px; font-size: 14px; line-height: 1.5;">Invite your first patients</li>
+                  <li style="margin-bottom: 0; font-size: 14px; line-height: 1.5;">Start your telehealth journey!</li>
+                </ol>
+              </div>
               
-              <p style="color: #6b7280; font-size: 14px; text-align: center;">
-                If you have any questions, feel free to reply to this email.
-              </p>
+              <!-- Support Section -->
+              <div style="text-align: center; padding: 20px; background-color: #f9fafb; border-radius: 12px;">
+                <p style="color: #6b7280; font-size: 14px; margin: 0 0 8px 0;">
+                  Need help getting started?
+                </p>
+                <a href="mailto:support@rehabifyhealth.com" style="color: #005b57; font-size: 14px; font-weight: 500; text-decoration: none;">
+                  Contact our support team →
+                </a>
+              </div>
             </div>
             
             <!-- Footer -->
-            <div style="background-color: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #f3f4f6;">
+            <div style="background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%); padding: 32px 24px; text-align: center; border-top: 1px solid #e5e7eb;">
+              <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 28px; width: auto; margin-bottom: 16px; opacity: 0.7;" />
+              <p style="color: #9ca3af; font-size: 12px; margin: 0 0 8px 0;">
+                You're receiving this email because your Rehabify Health account was approved.
+              </p>
               <p style="color: #9ca3af; font-size: 12px; margin: 0;">
                 &copy; ${new Date().getFullYear()} Rehabify Health. All rights reserved.
               </p>
+              <div style="margin-top: 16px;">
+                <a href="https://rehabifyhealth.com" style="color: #6b7280; font-size: 12px; text-decoration: none; margin: 0 8px;">Website</a>
+                <span style="color: #d1d5db;">•</span>
+                <a href="https://rehabifyhealth.com/privacy" style="color: #6b7280; font-size: 12px; text-decoration: none; margin: 0 8px;">Privacy</a>
+                <span style="color: #d1d5db;">•</span>
+                <a href="mailto:support@rehabifyhealth.com" style="color: #6b7280; font-size: 12px; text-decoration: none; margin: 0 8px;">Support</a>
+              </div>
             </div>
           </div>
         `

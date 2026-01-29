@@ -20,6 +20,7 @@ import { CreateVideoCallModal } from '@/components/dashboard/physiotherapist/mod
 import { StartConversationModal } from '@/components/dashboard/physiotherapist/modals/StartConversationModal';
 import { UploadDocumentModal } from '@/components/dashboard/physiotherapist/modals/UploadDocumentModal';
 import { SessionLogModal } from '@/components/dashboard/physiotherapist/SessionLogModal';
+import SchedulePatientAppointmentModal from '@/components/dashboard/physiotherapist/modals/SchedulePatientAppointmentModal';
 import { toast } from 'sonner';
 import { TourGuide } from '@/components/shared/TourGuide';
 
@@ -121,6 +122,7 @@ export default function PatientDetailsPage() {
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isAssessmentModalOpen, setIsAssessmentModalOpen] = useState(false);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
   // Get current user
   const currentUser = useQuery(api.users.getMyUser) as User | undefined;
@@ -305,7 +307,7 @@ export default function PatientDetailsPage() {
           </h1>
           <p className="text-sm sm:text-base text-gray-600">Patient Details & Treatment History</p>
         </div>
-        <Button id="schedule-appointment-btn" className="flex items-center gap-2 w-full sm:w-auto" onClick={() => router.push(`/dashboard/physiotherapist/appointments?patient=${patientId}`)}>
+        <Button id="schedule-appointment-btn" className="flex items-center gap-2 w-full sm:w-auto" onClick={() => setIsScheduleModalOpen(true)}>
           <Calendar className="h-4 w-4" />
           <span className="sm:inline">Schedule Appointment</span>
         </Button>
@@ -400,14 +402,16 @@ export default function PatientDetailsPage() {
 
       {/* Detailed Information Tabs */}
       <Tabs defaultValue="appointments" className="space-y-4" id="patient-sections-tabs">
-        <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6 bg-gray-100/50 p-1 rounded-xl h-auto gap-1">
-          <TabsTrigger id="tab-appointments" value="appointments" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">Appointments</TabsTrigger>
-          <TabsTrigger id="tab-clinical" value="clinical" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">Clinical</TabsTrigger>
-          <TabsTrigger id="tab-treatment" value="treatment" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">Treatment</TabsTrigger>
-          <TabsTrigger id="tab-communication" value="communication" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">Communication</TabsTrigger>
-          <TabsTrigger id="tab-billing" value="billing" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">Billing</TabsTrigger>
-          <TabsTrigger id="tab-documents" value="documents" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57]">Documents</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto scrollbar-hide -mx-1 px-1">
+          <TabsList className="inline-flex min-w-max gap-1 bg-gray-100/50 p-1 rounded-xl h-auto">
+            <TabsTrigger id="tab-appointments" value="appointments" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57] px-3 py-2 text-sm whitespace-nowrap">Appointments</TabsTrigger>
+            <TabsTrigger id="tab-clinical" value="clinical" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57] px-3 py-2 text-sm whitespace-nowrap">Clinical</TabsTrigger>
+            <TabsTrigger id="tab-treatment" value="treatment" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57] px-3 py-2 text-sm whitespace-nowrap">Treatment</TabsTrigger>
+            <TabsTrigger id="tab-communication" value="communication" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57] px-3 py-2 text-sm whitespace-nowrap">Communication</TabsTrigger>
+            <TabsTrigger id="tab-billing" value="billing" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57] px-3 py-2 text-sm whitespace-nowrap">Billing</TabsTrigger>
+            <TabsTrigger id="tab-documents" value="documents" className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#005b57] px-3 py-2 text-sm whitespace-nowrap">Documents</TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Appointments Tab */}
         <TabsContent value="appointments" className="space-y-4">
@@ -910,6 +914,18 @@ export default function PatientDetailsPage() {
         onClose={() => setIsAssessmentModalOpen(false)}
         patientId={patientId as Id<"users">}
       />
+
+      {currentUser && (
+        <SchedulePatientAppointmentModal
+          open={isScheduleModalOpen}
+          onOpenChange={setIsScheduleModalOpen}
+          patientId={patientId as Id<"users">}
+          patientName={`${patientDetails.firstName} ${patientDetails.lastName}`}
+          physiotherapistId={currentUser._id as Id<"users">}
+          physiotherapistName={`${currentUser.firstName} ${currentUser.lastName}`}
+          physiotherapistImage={currentUser.imageUrl}
+        />
+      )}
     </div>
   );
 } 

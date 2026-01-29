@@ -78,6 +78,7 @@ export const getUserById = query({
     patientProfileId: v.optional(v.id("patientProfiles")),
     clinicOwnerProfileId: v.optional(v.id("clinicOwnerProfiles")),
     lastLoginAt: v.optional(v.number()),
+    toursCompleted: v.optional(v.array(v.string())),
   })),
   handler: async (ctx, args) => {
     return await ctx.db.get(args.userId);

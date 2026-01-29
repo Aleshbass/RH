@@ -92,12 +92,6 @@ export function DashboardHeader() {
       href: '/dashboard/sessions/new',
       roles: ['physiotherapist', 'clinic_owner'],
     },
-    {
-      title: 'Book Appointment',
-      icon: Calendar,
-      href: '/dashboard/appointments/book',
-      roles: ['patient'],
-    },
   ]
 
   // Note: userData is not available in this component, so showing all actions for now
@@ -117,7 +111,7 @@ export function DashboardHeader() {
               console.log('[TOAST CLICK] Toast notification payload:', latest.payload)
               let url = latest.payload?.data?.actionUrl || latest.payload?.link
               console.log('[TOAST CLICK] Extracted URL:', url)
-              
+
               // Fix old clinic-owner routes to new clinic routes
               if (url && url.includes('/dashboard/clinic-owner')) {
                 url = url.replace('/dashboard/clinic-owner', '/dashboard/clinic/staff')
@@ -128,7 +122,7 @@ export function DashboardHeader() {
                 url = '/dashboard/clinic/staff'
                 console.log('[TOAST CLICK] Using fallback URL:', url)
               }
-              
+
               console.log('[TOAST CLICK] Final URL:', url)
               if (url) {
                 console.log('[TOAST CLICK] Navigating to:', url)
@@ -170,8 +164,8 @@ export function DashboardHeader() {
 
           {/* Clinic Badge for Clinic Physiotherapists */}
           {user?.role === 'physiotherapist' && clinicInfo && (
-            <Badge 
-              variant="secondary" 
+            <Badge
+              variant="secondary"
               className="hidden lg:flex items-center gap-1.5 bg-white/10 text-white border-white/20 hover:bg-white/20 px-3 py-1.5"
             >
               <Building2 className="h-3.5 w-3.5" />
@@ -230,7 +224,7 @@ export function DashboardHeader() {
               >
                 <Bell className="h-5 w-5" />
                 {unreadCount && unreadCount > 0 && (
-                  <Badge 
+                  <Badge
                     className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs bg-[#00cd0f] text-white border-0"> {/* 10% - Highlighter accent */}
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </Badge>
@@ -248,7 +242,7 @@ export function DashboardHeader() {
                     onClick={async () => {
                       try {
                         await markAllMyAsRead({})
-                      } catch {}
+                      } catch { }
                     }}
                   >
                     Mark all read
@@ -277,11 +271,11 @@ export function DashboardHeader() {
                           } catch (e) {
                             console.error('Failed to mark notification as read', e)
                           }
-                          
+
                           console.log('[NOTIFICATION CLICK] Notification payload:', notification.payload)
                           let url = notification.payload?.data?.actionUrl || notification.payload?.link
                           console.log('[NOTIFICATION CLICK] Extracted URL:', url)
-                          
+
                           // Fix old clinic-owner routes to new clinic routes
                           if (url && url.includes('/dashboard/clinic-owner')) {
                             url = url.replace('/dashboard/clinic-owner', '/dashboard/clinic/staff')
@@ -292,7 +286,7 @@ export function DashboardHeader() {
                             url = '/dashboard/clinic/staff'
                             console.log('[NOTIFICATION CLICK] Using fallback URL:', url)
                           }
-                          
+
                           console.log('[NOTIFICATION CLICK] Final URL:', url)
                           if (url) {
                             console.log('[NOTIFICATION CLICK] Navigating to:', url)
@@ -304,9 +298,8 @@ export function DashboardHeader() {
                         }}
                       >
                         <div className="flex items-start gap-3">
-                          <div className={`h-2 w-2 rounded-full mt-2 ${
-                            notification.readAt ? 'bg-gray-300' : 'bg-blue-600'
-                          }`} />
+                          <div className={`h-2 w-2 rounded-full mt-2 ${notification.readAt ? 'bg-gray-300' : 'bg-blue-600'
+                            }`} />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-900">
                               {notification.payload?.title}
@@ -343,13 +336,18 @@ export function DashboardHeader() {
 
           {/* Settings */}
           <Button variant="ghost" size="sm" asChild className="p-2 text-white hover:bg-white/10">
-            <Link prefetch={false} href="/dashboard/settings/calendars">
+            <Link prefetch={false} href={
+              user?.role === 'physiotherapist' ? '/dashboard/physiotherapist/settings' :
+                user?.role === 'patient' ? '/dashboard/patient/settings' :
+                  user?.role === 'clinic_owner' ? '/dashboard/clinic/settings' :
+                    '/dashboard/settings'
+            }>
               <Settings className="h-5 w-5" />
             </Link>
           </Button>
 
           {/* User Menu */}
-          <UserButton 
+          <UserButton
             afterSignOutUrl="/"
             appearance={{
               elements: {

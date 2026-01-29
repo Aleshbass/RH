@@ -37,25 +37,9 @@ export default function PrivacyPolicyPage() {
         <div className="max-w-4xl mx-auto px-6 py-12">
           {/* Header */}
           <div className="bg-white rounded-lg shadow-sm p-8 mb-8">
-            <h1 className="text-4xl font-bold text-[#005b57] mb-4">Privacy Policy</h1>
+            <h1 className="text-4xl font-bold text-[#005b57] mb-4">Rehabify Health – Privacy Policy</h1>
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-sm text-gray-600">
-              <p><strong>Effective Date:</strong> October 2, 2025</p>
-              <span className="hidden sm:block">•</span>
-              <p><strong>Data Protection Officer:</strong> <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline">rehabify.app@gmail.com</a></p>
-            </div>
-
-            {/* Download Option */}
-            <div className="mt-6">
-              <a
-                href="/docs/Rehabify Health – Privacy Policy 2_10_25.docx"
-                download
-                className="inline-flex items-center gap-2 text-[#005b57] hover:text-[#00877e] transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Download as Word Document
-              </a>
+              <p><strong>Effective Date:</strong> 10 January 2026</p>
             </div>
           </div>
 
@@ -65,106 +49,86 @@ export default function PrivacyPolicyPage() {
             <section id="introduction" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">1. Introduction</h2>
               <p className="text-gray-700 leading-relaxed">
-                At <strong>Rehabify Health</strong> ("Rehabify," "we," "our," or "us"), we are committed to protecting the privacy and security of your personal and health information. This Privacy Policy explains how we collect, use, store, and share your data when you use our platform.
+                Rehabify Health ("Rehabify", "we", "our", "us") is committed to protecting the privacy and confidentiality of all users who interact with our digital health platform, including clinics, physiotherapists, patients, and partners.
               </p>
               <p className="text-gray-700 leading-relaxed mt-4">
-                By using Rehabify, you consent to the practices described in this policy. If you do not agree, please discontinue use of our services.
+                This Privacy Policy explains how we collect, use, store, and protect your personal information when you access our website, mobile applications, or related services (collectively, the "Platform"). By using Rehabify, you consent to the practices described in this Policy.
               </p>
             </section>
 
             <section id="data-collection" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">2. Data We Collect</h2>
+              <p className="text-gray-700 leading-relaxed mb-4">
+                We collect different categories of information depending on your role:
+              </p>
 
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">For Patients</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">a) For Patients</h3>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li><strong>Personal Information:</strong> Name, email, phone number, date of birth, address</li>
-                <li><strong>Health Information:</strong> Medical history, treatment records, exercise progress, pain levels</li>
-                <li><strong>Payment Information:</strong> Billing details (processed securely through Paystack)</li>
-                <li><strong>Usage Data:</strong> Appointment history, communication logs, platform interactions</li>
+                <li>Personal details: name, date of birth, gender, contact information.</li>
+                <li>Medical documents you upload (e.g., scans, prescriptions).</li>
+                <li>Treatment plans, assigned exercises, and progress logs.</li>
+                <li>Billing and payment information (processed securely through Paystack).</li>
               </ul>
 
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">For Physiotherapists & Clinics</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">b) For Physiotherapists</h3>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li><strong>Professional Information:</strong> Licenses, qualifications, certifications, specializations</li>
-                <li><strong>Business Details:</strong> Clinic information, staff data, service offerings</li>
-                <li><strong>Verification Documents:</strong> ID proof, professional credentials</li>
-                <li><strong>Financial Information:</strong> Bank account details for payouts</li>
+                <li>Professional details: name, license number, years of practice, specialties.</li>
+                <li>Verification documents (license, tax certificate, insurance proof, etc.).</li>
+                <li>Clinical notes, exercise prescriptions, and patient communication logs.</li>
               </ul>
 
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">For All Users</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">c) For Clinics</h3>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li><strong>Device Information:</strong> IP address, browser type, device ID</li>
-                <li><strong>Cookies & Analytics:</strong> Usage patterns, session data, preferences</li>
-                <li><strong>Communications:</strong> Chat messages, video call metadata, email correspondence</li>
+                <li>Facility details: registration number, contact details, and location.</li>
+                <li>Staff details for assigned physiotherapists.</li>
+                <li>Uploaded business documents (licenses, tax documents).</li>
+              </ul>
+
+              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">d) For All Users</h3>
+              <ul className="list-disc pl-6 text-gray-700 space-y-2">
+                <li>Device information: browser type, operating system, and IP address.</li>
+                <li>Usage data: login times, features accessed, errors encountered.</li>
+                <li>Communication data: messages, calls, notifications.</li>
               </ul>
             </section>
 
             <section id="data-usage" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">3. How We Use Your Data</h2>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Service Delivery</h3>
+              <p className="text-gray-700 leading-relaxed mb-4">We use the collected information to:</p>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li>Facilitate appointments and treatment sessions</li>
-                <li>Enable secure communication between users</li>
-                <li>Provide access to treatment plans and exercise programs</li>
-                <li>Generate invoices and process payments</li>
-              </ul>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Verification & Compliance</h3>
-              <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li>Verify professional credentials</li>
-                <li>Ensure platform safety and quality</li>
-                <li>Comply with legal and regulatory requirements</li>
-              </ul>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Platform Improvement</h3>
-              <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li>Analyze usage patterns to enhance features</li>
-                <li>Develop AI-powered tools and recommendations</li>
-                <li>Improve user experience and platform performance</li>
-              </ul>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Research & Development</h3>
-              <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li>Conduct anonymized research to advance physiotherapy practices</li>
-                <li>Generate aggregated insights and statistics</li>
-                <li>Develop new healthcare solutions</li>
+                <li>Provide access to the Platform and its features.</li>
+                <li>Enable secure communication between patients and physiotherapists.</li>
+                <li>Process billing, payments, and payouts.</li>
+                <li>Verify the credentials of physiotherapists and clinics.</li>
+                <li>Track treatment progress and generate reports.</li>
+                <li>Improve platform functionality, security, and user experience.</li>
+                <li>Generate anonymized, aggregated insights to support healthcare research and system improvements.</li>
               </ul>
             </section>
 
             <section id="legal-basis" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">4. Legal Basis for Processing</h2>
-              <p className="text-gray-700 leading-relaxed mb-4">We process your data based on:</p>
+              <p className="text-gray-700 leading-relaxed mb-4">We process personal data under the following legal grounds:</p>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li><strong>Consent:</strong> You explicitly agree to data collection and use</li>
-                <li><strong>Contractual Necessity:</strong> Required to provide our services</li>
-                <li><strong>Legal Obligations:</strong> Compliance with healthcare regulations</li>
-                <li><strong>Legitimate Interest:</strong> Platform security, fraud prevention, and improvements</li>
+                <li><strong>Consent</strong> – when patients upload documents or share personal information.</li>
+                <li><strong>Contractual necessity</strong> – to deliver the services users sign up for.</li>
+                <li><strong>Legal obligations</strong> – compliance with NDPR, taxation, or regulatory requirements.</li>
+                <li><strong>Legitimate interest</strong> – improving platform safety, preventing fraud, and conducting research.</li>
               </ul>
             </section>
 
             <section id="data-sharing" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">5. Data Sharing & Disclosure</h2>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">With Care Providers</h3>
-              <p className="text-gray-700 leading-relaxed">
-                Patient health information is shared with assigned physiotherapists and clinics for treatment purposes.
+              <p className="text-gray-700 leading-relaxed mb-4">
+                We do not sell or rent user data. However, data may be shared in the following cases:
               </p>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">With Partners</h3>
-              <p className="text-gray-700 leading-relaxed">
-                Limited data may be shared with integrated third-party platforms (e.g., referral partners) with your consent.
-              </p>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">With Regulators</h3>
-              <p className="text-gray-700 leading-relaxed">
-                We may disclose information to comply with legal requirements or regulatory requests.
-              </p>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">With Service Providers</h3>
-              <p className="text-gray-700 leading-relaxed">
-                We work with trusted providers for payment processing (Paystack), cloud storage, and analytics. These providers are bound by confidentiality agreements.
-              </p>
+              <ul className="list-disc pl-6 text-gray-700 space-y-2">
+                <li>With physiotherapists/clinics, patients can receive care.</li>
+                <li>With patients, physiotherapists can provide progress updates.</li>
+                <li>With partners – only where referrals are made, with user consent.</li>
+                <li>With regulators – if required by Nigerian law or court orders.</li>
+                <li>With service providers – payment processors, hosting providers, analytics tools (bound by confidentiality obligations).</li>
+              </ul>
 
               <div className="mt-6 p-4 bg-green-50 border-l-4 border-green-500 rounded">
                 <p className="text-green-900 font-semibold">
@@ -175,67 +139,37 @@ export default function PrivacyPolicyPage() {
 
             <section id="data-storage" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">6. Data Storage & Security</h2>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Storage Location</h3>
-              <p className="text-gray-700 leading-relaxed">
-                Data is stored securely in cloud infrastructure with industry-leading security standards.
-              </p>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Security Measures</h3>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li><strong>Encryption:</strong> Data is encrypted in transit (SSL/TLS) and at rest</li>
-                <li><strong>Access Controls:</strong> Role-based access with multi-factor authentication</li>
-                <li><strong>Regular Audits:</strong> Security assessments and vulnerability testing</li>
-                <li><strong>Monitoring:</strong> 24/7 system monitoring for suspicious activity</li>
-                <li><strong>Backups:</strong> Regular data backups for disaster recovery</li>
+                <li>All data is stored securely on cloud servers with 99.9% uptime.</li>
+                <li>Encryption is applied to sensitive health and payment data in transit and at rest.</li>
+                <li>Access is role-based, ensuring only authorized users (e.g., assigned physiotherapist) can view specific patient records.</li>
+                <li>Regular security audits and penetration testing are conducted.</li>
               </ul>
             </section>
 
             <section id="data-retention" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">7. Data Retention</h2>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li><strong>Patient Records:</strong> Retained for 5 years after the last care interaction (as required by healthcare regulations)</li>
-                <li><strong>Verification Documents:</strong> Retained while account is active and for compliance purposes</li>
-                <li><strong>Financial Records:</strong> Retained for 7 years for tax and audit purposes</li>
-                <li><strong>Communications:</strong> Retained as necessary for service delivery and dispute resolution</li>
+                <li>Patient records are retained for the duration of care plus 5 years in compliance with medical record standards.</li>
+                <li>Physiotherapist/clinic verification documents are retained as long as the accounts remain active.</li>
+                <li>Users may request account deletion; however, some data may be retained for regulatory compliance purposes.</li>
               </ul>
-              <p className="text-gray-700 leading-relaxed mt-4">
-                Data may be anonymized for research purposes after the retention period.
-              </p>
             </section>
 
             <section id="user-rights" className="mb-8">
-              <h2 className="text-2xl font-bold text-[#005b57] mb-4">8. Your Rights (NDPR Compliance)</h2>
+              <h2 className="text-2xl font-bold text-[#005b57] mb-4">8. User Rights</h2>
               <p className="text-gray-700 leading-relaxed mb-4">
-                Under the Nigeria Data Protection Regulation (NDPR), you have the following rights:
+                Under NDPR (and GDPR-style protection for future expansion), you have the right to:
               </p>
-
               <ul className="list-disc pl-6 text-gray-700 space-y-3">
-                <li>
-                  <strong>Right to Access:</strong> Request a copy of your personal data
-                </li>
-                <li>
-                  <strong>Right to Correction:</strong> Update inaccurate or incomplete information
-                </li>
-                <li>
-                  <strong>Right to Deletion:</strong> Request deletion of your data (subject to legal retention requirements)
-                </li>
-                <li>
-                  <strong>Right to Withdraw Consent:</strong> Revoke consent for data processing at any time
-                </li>
-                <li>
-                  <strong>Right to Data Portability:</strong> Request your data in a machine-readable format
-                </li>
-                <li>
-                  <strong>Right to Object:</strong> Object to certain types of data processing
-                </li>
-                <li>
-                  <strong>Right to Complain:</strong> File a complaint with the Nigeria Data Protection Bureau (NDPB)
-                </li>
+                <li>Access the personal data we hold about you.</li>
+                <li>Correct inaccuracies in your personal data.</li>
+                <li>Request deletion of your personal data ("right to be forgotten").</li>
+                <li>Withdraw consent at any time.</li>
+                <li>Request a copy of your data in a portable format.</li>
               </ul>
-
               <p className="text-gray-700 leading-relaxed mt-6">
-                To exercise these rights, contact our Data Protection Officer at{' '}
+                Requests can be made via email to{' '}
                 <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline font-semibold">
                   rehabify.app@gmail.com
                 </a>
@@ -245,45 +179,35 @@ export default function PrivacyPolicyPage() {
             <section id="children" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">9. Children's Privacy</h2>
               <p className="text-gray-700 leading-relaxed">
-                Rehabify is not intended for children under 18 without parental or guardian consent. If you are a minor, you must have your parent or guardian create and manage your account. We do not knowingly collect data from children without appropriate consent.
+                Rehabify does not knowingly collect data from individuals under 18 without the consent of their guardian. Parents or guardians are responsible for supervising child accounts.
               </p>
             </section>
 
             <section id="third-party" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">10. Third-Party Links & Services</h2>
               <p className="text-gray-700 leading-relaxed">
-                Our platform may contain links to third-party websites or services (e.g., payment gateways, exercise databases). We are not responsible for the privacy practices of these external platforms. Please review their privacy policies before sharing your information.
+                Rehabify may contain links to third-party platforms (e.g., referral partners). This Privacy Policy does not cover those platforms, and we are not responsible for their practices.
               </p>
             </section>
 
             <section id="policy-changes" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">11. Changes to This Policy</h2>
               <p className="text-gray-700 leading-relaxed">
-                We may update this Privacy Policy to reflect changes in our practices or legal requirements. Significant changes will be communicated via email or platform notifications. Continued use of Rehabify after updates constitutes acceptance of the revised policy.
+                We reserve the right to update this Privacy Policy from time to time. Updates will be communicated via email or platform notification, and continued use of the Platform indicates acceptance.
               </p>
             </section>
 
             <section id="contact" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">12. Contact Us</h2>
               <p className="text-gray-700 leading-relaxed mb-4">
-                For questions, concerns, or requests regarding your privacy or data:
+                For privacy-related inquiries or complaints, please contact:
               </p>
               <div className="mt-4 p-6 bg-gray-50 rounded-lg">
                 <p className="text-gray-700">
-                  <strong>Data Protection Officer</strong>
+                  <strong>Rehabify Health – Data Protection Officer</strong>
                 </p>
                 <p className="text-gray-700 mt-2">
-                  <strong>Email:</strong> <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline">rehabify.app@gmail.com</a>
-                </p>
-                <p className="text-gray-700 mt-2">
-                  <strong>Platform:</strong> <a href="https://rehabifyhealth.com" className="text-[#005b57] hover:underline">https://rehabifyhealth.com</a>
-                </p>
-              </div>
-
-              <div className="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
-                <p className="text-blue-900">
-                  <strong>Nigeria Data Protection Bureau (NDPB)</strong><br />
-                  If you wish to file a complaint about our data practices, you may contact the NDPB through their official channels.
+                  <strong>Email:</strong> <a href="mailto:support@rehabifyhealth.com" className="text-[#005b57] hover:underline">support@rehabifyhealth.com</a>
                 </p>
               </div>
             </section>

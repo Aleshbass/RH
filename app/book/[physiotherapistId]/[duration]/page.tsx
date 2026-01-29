@@ -151,8 +151,8 @@ export default function BookingPage() {
         setIsProcessing(true);
 
         try {
-            // Calculate session price - allow free if not set
-            const sessionPrice = profile.hourlyRate || 0;
+            // Calculate session price - use initialConsultRate or hourlyRate, allow free if not set
+            const sessionPrice = profile.initialConsultRate || profile.hourlyRate || 0;
 
             const result = await createBooking({
                 physiotherapistId,
@@ -177,8 +177,8 @@ export default function BookingPage() {
                 return;
             }
 
-            // Initialize Paystack payment for paid sessions
-            initializePaystack(result.bookingId, sessionPrice);
+            // Initialize Flutterwave payment for paid sessions
+            initializeFlutterwavePayment(result.bookingId, sessionPrice);
         } catch (error: any) {
             console.error("Booking error:", error);
             toast.error("Booking failed", {
@@ -189,64 +189,39 @@ export default function BookingPage() {
         }
     };
 
-    const initializePaystack = (
+    const initializeFlutterwavePayment = async (
         bookingId: Id<"marketplaceBookings">,
         amount: number
     ) => {
-        const paystackKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
+        try {
+            // Call our API to create a Flutterwave payment link
+            const response = await fetch("/api/payments/flutterwave/initialize", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    bookingId,
+                    amount,
+                    email: user?.primaryEmailAddress?.emailAddress,
+                    name: user?.fullName || user?.firstName || "Customer",
+                    redirectUrl: `${window.location.origin}/payment/callback`,
+                }),
+            });
 
-        if (!paystackKey) {
-            toast.error("Payment system is not configured");
+            const data = await response.json();
+
+            if (data.success && data.paymentUrl) {
+                // Redirect to Flutterwave payment page
+                window.location.href = data.paymentUrl;
+            } else {
+                throw new Error(data.error || "Failed to initialize payment");
+            }
+        } catch (error: any) {
+            console.error("Flutterwave error:", error);
+            toast.error("Payment failed", {
+                description: error.message || "Failed to initialize payment",
+            });
             setIsProcessing(false);
-            return;
         }
-
-        // @ts-ignore - Paystack is loaded via script tag
-        const handler = PaystackPop.setup({
-            key: paystackKey,
-            email: user?.primaryEmailAddress?.emailAddress || "",
-            amount: Math.round(amount * 100),
-            currency: "NGN",
-            ref: `BOOKING_${bookingId}_${Date.now()}`,
-            metadata: {
-                custom_fields: [
-                    {
-                        display_name: "Booking ID",
-                        variable_name: "booking_id",
-                        value: bookingId,
-                    },
-                    {
-                        display_name: "Booking Type",
-                        variable_name: "booking_type",
-                        value: "marketplace",
-                    },
-                ],
-            },
-            callback: (response: any) => {
-                toast.success("Payment successful! Finalizing booking...");
-
-                fetch("/api/payments/verify", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ reference: response?.reference }),
-                })
-                    .then(() => {
-                        setStep("confirm");
-                    })
-                    .catch(() => {
-                        setStep("confirm");
-                    })
-                    .finally(() => {
-                        setIsProcessing(false);
-                    });
-            },
-            onClose: () => {
-                toast.info("Payment cancelled");
-                setIsProcessing(false);
-            },
-        });
-
-        handler.openIframe();
     };
 
     const formatDate = (timestamp: number) => {
@@ -395,7 +370,7 @@ export default function BookingPage() {
                                 <div className="flex justify-between items-center">
                                     <span className="text-gray-400">Session Fee</span>
                                     <span className="text-xl font-bold text-white">
-                                        {profile.hourlyRate ? `₦${profile.hourlyRate.toLocaleString()}` : 'Free'}
+                                        {(profile.initialConsultRate || profile.hourlyRate) ? `₦${(profile.initialConsultRate || profile.hourlyRate).toLocaleString()}` : 'Free'}
                                     </span>
                                 </div>
                             </div>
@@ -420,7 +395,7 @@ export default function BookingPage() {
                                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                                             Processing...
                                         </>
-                                    ) : !profile.hourlyRate ? (
+                                    ) : !(profile.initialConsultRate || profile.hourlyRate) ? (
                                         isSignedIn ? "Book Now" : "Sign In & Book"
                                     ) : isSignedIn ? (
                                         "Confirm & Pay"
