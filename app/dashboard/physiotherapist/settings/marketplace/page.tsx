@@ -44,8 +44,8 @@ export default function MarketplaceSettingsPage() {
         );
     }
 
-    // Handle null currentUser (no Convex record)
-    if (currentUser === null) {
+    // Handle null currentUser (no Convex record) or incorrect role
+    if (currentUser === null || (currentUser && currentUser.role !== 'physiotherapist')) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="text-center">

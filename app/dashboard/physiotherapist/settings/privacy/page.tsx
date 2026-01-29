@@ -60,8 +60,8 @@ export default function PrivacySettingsPage() {
     }, [isLoaded, isSignedIn, router]);
 
     useEffect(() => {
-        // Handle null (no Convex record) and wrong role
-        if (currentUser === null || (currentUser && currentUser.role !== 'physiotherapist')) {
+        // Only redirect if user exists but has the wrong role
+        if (currentUser && currentUser.role !== 'physiotherapist') {
             router.push('/dashboard');
         }
     }, [currentUser, router]);

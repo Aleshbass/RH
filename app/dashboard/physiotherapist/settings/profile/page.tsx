@@ -74,6 +74,7 @@ export default function ProfileSettingsPage() {
     const { isLoaded, isSignedIn } = useAuth();
     const [isSaving, setIsSaving] = useState(false);
     const [isRemovingPhoto, setIsRemovingPhoto] = useState(false);
+    const [isRedirecting, setIsRedirecting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Form state (controlled inputs)
@@ -123,6 +124,7 @@ export default function ProfileSettingsPage() {
 
     useEffect(() => {
         if (currentUser === null || (currentUser && currentUser.role !== 'physiotherapist')) {
+            setIsRedirecting(true);
             router.push('/dashboard');
         }
     }, [currentUser, router]);
@@ -194,11 +196,16 @@ export default function ProfileSettingsPage() {
     }
 
     // Handle null currentUser (no Convex record)
-    if (currentUser === null) {
+    if (currentUser === null || isRedirecting) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="text-center">
-                    <p className="text-gray-400">User profile not found</p>
+                    {/* Show spinner if redirecting, otherwise standard not found message */}
+                    {isRedirecting ? (
+                        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
+                    ) : (
+                        <p className="text-gray-400">User profile not found</p>
+                    )}
                 </div>
             </div>
         );
