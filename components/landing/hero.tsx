@@ -2,12 +2,11 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, PlayCircle } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { NavbarButton } from '@/components/ui/resizable-navbar';
 import HeroBackground from './HeroBackground';
-import FeatureTag from './FeatureTag';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@clerk/nextjs';
@@ -43,7 +42,7 @@ export function LandingHero() {
   // Determine button text and href
   const getButtonProps = () => {
     if (!isSignedIn) {
-      return { href: "/sign-up", text: "Get Started" };
+      return { href: "/find-a-physio", text: "Start Treatments" };
     }
 
     if (canAccessDashboard) {
@@ -98,24 +97,30 @@ export function LandingHero() {
             className="w-full lg:w-[42%] text-center lg:text-left pt-8 lg:pt-0 mb-8 lg:mb-0 order-2 lg:order-1"
           >
             <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-tight tracking-tight text-gray-900 mb-4 sm:mb-6">
-              Welcome to the Future of Physiotherapy Management
+              Move better. Live fully. Feel whole again.
             </h1>
             <p className="text-base sm:text-lg md:text-xl text-gray-700 mb-6 sm:mb-8 font-sans">
-              Rehabify simplifies clinical physiotherapy management by
-              connecting clinic owners, physiotherapists, and patients in one
-              powerful platform
+              Quality health care shouldn&apos;t mean choosing between your health and your wallet. If you&apos;re recovering from injury, managing chronic pain, or improving performance, we connect you with verified physiotherapists in 60 seconds.
             </p>
-            <Link href={buttonProps.href} passHref>
-              <NavbarButton
-                as="span" // Instruct NavbarButton to render as a span
-                variant="primary"
-                className="group bg-green-500 hover:bg-green-600 text-white font-semibold py-3 sm:py-4 px-6 sm:px-8 rounded-full inline-flex items-center transition-all duration-300 transform hover:scale-105"
-                onMouseEnter={prefetchTarget}
-              >
-                <span className="mr-2">{buttonProps.text}</span>
-                <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-300 group-hover:translate-x-1" />
-              </NavbarButton>
-            </Link>
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              <Link href={buttonProps.href} passHref>
+                <NavbarButton
+                  as="span"
+                  variant="primary"
+                  className="group bg-green-500 hover:bg-green-600 text-white font-semibold py-3 sm:py-4 px-6 sm:px-8 rounded-full inline-flex items-center transition-all duration-300 transform hover:scale-105"
+                  onMouseEnter={prefetchTarget}
+                >
+                  <span className="mr-2">{buttonProps.text}</span>
+                  <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-300 group-hover:translate-x-1" />
+                </NavbarButton>
+              </Link>
+              <Link href="#how-it-works" passHref>
+                <span className="group inline-flex items-center gap-2 text-[#005b57] font-semibold py-3 px-6 rounded-full border-2 border-[#005b57]/20 hover:border-[#005b57]/40 transition-all duration-300 hover:bg-[#005b57]/5 cursor-pointer">
+                  <PlayCircle className="w-5 h-5" />
+                  <span>Learn How It Works</span>
+                </span>
+              </Link>
+            </div>
           </motion.div>
 
           {/* Right Image Area - Mobile optimized */}
@@ -137,98 +142,6 @@ export function LandingHero() {
                 placeholder="blur"
                 blurDataURL="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
               />
-
-              {/* Feature tags - Mobile optimized */}
-              <div className="absolute inset-0">
-                {/* Hide on smallest screens, show on sm and up */}
-                <div className="hidden sm:block">
-                  <FeatureTag
-                    text="Clinic Owners"
-                    position="top-12 right-8"
-                    delay="600"
-                    size="md"
-                  />
-                </div>
-
-                {/* Feature info card - Mobile optimized */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.7 }}
-                  className="absolute bottom-0 left-0 right-0 sm:left-auto sm:right-4 sm:bottom-auto sm:top-1/3 bg-white/90 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-4 mx-auto sm:mx-0 max-w-[90%] sm:max-w-xs shadow-lg"
-                >
-                  <ul className="space-y-1 sm:space-y-2 text-xs sm:text-sm">
-                    <li className="text-gray-800 font-medium">
-                      <span className="text-green-600 font-semibold">Simplified management</span> for clinic owners
-                    </li>
-                    <li className="text-gray-800 font-medium">
-                      <span className="text-green-600 font-semibold">Multilingual accessibility</span> for patients
-                    </li>
-                    <li className="text-gray-800 font-medium">
-                      <span className="text-green-600 font-semibold">Better tools</span> for patient care by PTs
-                    </li>
-                  </ul>
-                </motion.div>
-
-                {/* Mobile-optimized feature tags */}
-                <div className="hidden sm:block">
-                  <FeatureTag
-                    text="Physios"
-                    position="bottom-32 right-16 sm:bottom-40 sm:right-40"
-                    delay="800"
-                    size="md"
-                  />
-
-                  <FeatureTag
-                    text="Patients"
-                    position="bottom-20 right-8 sm:bottom-24 sm:right-24"
-                    delay="900"
-                    size="md"
-                  />
-                </div>
-
-                {/* Mobile-only floating feature tags */}
-                <div className="sm:hidden">
-                  <motion.span
-                    className="absolute top-[20%] left-[10%] bg-green-100/80 backdrop-blur-sm px-2 py-1 rounded-full shadow-md text-xs font-medium text-green-800 font-sans"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.5, delay: 0.6 }}
-                    whileInView={{
-                      y: [0, -5, 0],
-                      transition: { duration: 3, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }
-                    }}
-                  >
-                    Clinic Owners
-                  </motion.span>
-
-                  <motion.span
-                    className="absolute top-[30%] right-[15%] bg-green-100/80 backdrop-blur-sm px-2 py-1 rounded-full shadow-md text-xs font-medium text-green-800 font-sans"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.5, delay: 0.8 }}
-                    whileInView={{
-                      y: [0, -5, 0],
-                      transition: { duration: 4, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }
-                    }}
-                  >
-                    Physios
-                  </motion.span>
-
-                  <motion.span
-                    className="absolute top-[45%] left-[20%] bg-green-100/80 backdrop-blur-sm px-2 py-1 rounded-full shadow-md text-xs font-medium text-green-800 font-sans"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.5, delay: 0.9 }}
-                    whileInView={{
-                      y: [0, -5, 0],
-                      transition: { duration: 3.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }
-                    }}
-                  >
-                    Patients
-                  </motion.span>
-                </div>
-              </div>
             </div>
           </motion.div>
         </div>

@@ -6,24 +6,28 @@ import { Plus, Minus } from 'lucide-react';
 
 const faqData = [
   {
-    question: "What is Rehabify and who is it for?",
-    answer: "Rehabify is a comprehensive platform designed for physiotherapy clinics and individual therapists. It provides tools for patient management, personalized exercise prescription, telehealth consultations, and progress tracking to enhance patient care and streamline clinic operations."
+    question: "How quickly can I get an appointment?",
+    answer: "Most patients get matched and booked within 24 hours. Urgent cases often same-day."
   },
   {
-    question: "How does the AI-powered exercise monitoring work?",
-    answer: "Our platform uses advanced computer vision to monitor patients performing their prescribed exercises through their device's camera. The AI provides real-time feedback on form and adherence, ensuring patients perform exercises correctly and safely, while providing valuable data to therapists."
+    question: "Do you work with my doctor?",
+    answer: "Yes! If you're referred by a doctor, we send them progress updates with your permission. You can also share your session notes and recovery data."
   },
   {
-    question: "Is Rehabify compliant with health data regulations like HIPAA?",
-    answer: "Yes, we take data privacy and security very seriously. Rehabify is designed to be HIPAA compliant, with all patient data encrypted in transit and at rest. We follow industry best practices to ensure the confidentiality and integrity of all sensitive information."
+    question: "What if I need to cancel?",
+    answer: "Cancel or reschedule up to 6 hours before your session with no penalty. Less than 6 hours = one-time warning, repeat cancellations may forfeit package discounts."
   },
   {
-    question: "Can I integrate Rehabify with my existing clinic management software?",
-    answer: "We are continuously working on expanding our integration capabilities. Currently, we offer API access for custom integrations and are developing direct integrations with popular clinic management systems. Please contact our support team to discuss your specific needs."
+    question: "How do packages work?",
+    answer: "Book 4, 6, or 8 sessions together and save. Pay upfront, and lock in your schedule."
   },
   {
-    question: "What kind of support do you offer?",
-    answer: "We offer comprehensive support to all our users. This includes a detailed help center, email support, and live chat. For enterprise clients, we also provide dedicated account managers and personalized onboarding sessions to ensure a smooth transition."
+    question: "Can I switch physiotherapists?",
+    answer: "Absolutely. If it's not the right fit after your first session, we'll rematch you at no extra cost."
+  },
+  {
+    question: "Do you accept HMO coverage?",
+    answer: "Yes! However, we are working on bringing this to you soon."
   }
 ];
 
@@ -77,7 +81,7 @@ const FAQ = () => {
             FAQs
           </span>
           <h2 className="text-4xl md:text-5xl font-bold mt-2">
-            We&apos;ve got the answers
+            Frequently Asked Questions
           </h2>
         </div>
         <div>
@@ -91,7 +95,7 @@ const FAQ = () => {
           ))}
         </div>
         <div className="text-center mt-12">
-            <p className="text-gray-600">Still have more questions? <a href="/sign-up" className="text-[#005b57] hover:underline">Contact our help center</a>.</p>
+          <p className="text-gray-600">Visit our full <a href="/faqs" className="text-[#005b57] hover:underline font-medium">FAQ page</a> if you have more questions.</p>
         </div>
       </div>
     </section>

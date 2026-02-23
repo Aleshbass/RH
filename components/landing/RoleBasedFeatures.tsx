@@ -1,15 +1,53 @@
 "use client";
 import React from "react";
-import Image from "next/image";
 import { motion } from "framer-motion";
-import { ConnectedCareEcosystem } from "./ConnectedCareEcosystem";
-import { BentoGrid, BentoCard } from "../ui/bento-grid";
 import {
-  Briefcase,
+  BadgePercent,
+  ShieldCheck,
+  Clock,
+  Activity,
+  Package,
   Stethoscope,
-  User,
-  Users,
 } from "lucide-react";
+
+const benefits = [
+  {
+    title: "40-60% Cheaper",
+    description: "Fair, transparent pricing based on your location, condition complexity, and provider experience.",
+    icon: BadgePercent,
+    color: "bg-green-50 text-green-600",
+  },
+  {
+    title: "Verified Physiotherapists Only",
+    description: "Every provider passes our 3-tier verification: document check, clinical interview, and peer review. Licensed by MRTBN, experienced, and rated by real patients.",
+    icon: ShieldCheck,
+    color: "bg-blue-50 text-blue-600",
+  },
+  {
+    title: "Book in Under 24 Hours",
+    description: "No more 2-6 week hospital waiting lists. Get matched today, start treatment immediately.",
+    icon: Clock,
+    color: "bg-orange-50 text-orange-600",
+  },
+  {
+    title: "Track Your Recovery",
+    description: "Digital progress tracking, exercise videos, session notes, and direct messaging with your physiotherapist — all in one place.",
+    icon: Activity,
+    color: "bg-purple-50 text-purple-600",
+  },
+  {
+    title: "Packages That Save You Money",
+    description: "Book 4-8 sessions together and save. Prepay, lock in your schedule, and focus on getting better.",
+    icon: Package,
+    color: "bg-yellow-50 text-yellow-700",
+  },
+  {
+    title: "For Physiotherapists Too",
+    description: "Turn your empty calendar into a thriving practice. Get consistent patient referrals, practice management tools, and full pricing control.",
+    icon: Stethoscope,
+    color: "bg-pink-50 text-pink-600",
+  },
+];
 
 const RoleBasedFeatures = () => {
   return (
@@ -23,94 +61,38 @@ const RoleBasedFeatures = () => {
           className="text-center mb-16"
         >
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-[#002e2c] font-sans leading-tight">
-            A Platform Built for Everyone
+            Why Patients Choose Rehabify
           </h2>
           <p className="mt-4 text-lg md:text-xl text-gray-700 max-w-3xl mx-auto font-sans">
-            Rehabify is designed to meet the unique needs of every user in the physiotherapy ecosystem, fostering collaboration and better outcomes.
+            We&apos;re solving the impossible choice between expensive treatment and living with pain. Here&apos;s how.
           </p>
         </motion.div>
 
-        <BentoGrid className="lg:grid-cols-3">
-          {features.map((feature, i) => (
-            <BentoCard
-              key={i}
-              title={feature.title}
-              description={feature.description}
-              header={feature.header}
-              icon={feature.icon}
-              className={feature.className}
-            />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+          {benefits.map((benefit, index) => (
+            <motion.div
+              key={benefit.title}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: index * 0.1 }}
+              className="group relative bg-white rounded-2xl p-8 border border-gray-100 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+            >
+              <div className={`w-14 h-14 rounded-xl ${benefit.color} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
+                <benefit.icon className="w-7 h-7" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-3 group-hover:text-[#005b57] transition-colors">
+                {benefit.title}
+              </h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                {benefit.description}
+              </p>
+            </motion.div>
           ))}
-        </BentoGrid>
+        </div>
       </div>
     </section>
   );
 };
-
-// Component for the Physiotherapist card with video only
-const PhysiotherapistCardHeader = () => {
-  return (
-    <div className="relative w-full h-full">
-      <video
-        src="https://cdn-marketing.acuityscheduling.com/img/marketing/squarespace/v3/frontsite/feature-area/02.mp4"
-        autoPlay
-        loop
-        muted
-        playsInline
-        className="w-full h-full object-cover rounded-xl"
-      />
-    </div>
-  );
-};
-
-
-
-const features = [
-  {
-    title: "For Clinic Owners",
-    description: "Streamline operations with a powerful dashboard for managing your entire practice.",
-    header: (
-      <Image
-        src="/logos/images/clnics.webp"
-        alt="Clinic management dashboard"
-        width={600}
-        height={400}
-        className="w-full h-auto object-cover rounded-xl"
-      />
-    ),
-    icon: <Briefcase className="h-6 w-6 text-[#005b57]" />,
-    className: "lg:col-span-2 bg-green-50",
-  },
-  {
-    title: "For Physiotherapists",
-    description: "Deliver exceptional care with tools that streamline exercise prescription.",
-    header: <PhysiotherapistCardHeader />,
-    icon: <Stethoscope className="h-6 w-6 text-pink-900" />,
-    className: "lg:col-span-1 bg-[#FFCFDC]",
-  },
-  {
-    title: "For Patients",
-    description: "Engage in your recovery with personalized plans and progress tracking.",
-    header: (
-      <Image
-        src="/logos/images/analytics.webp"
-        alt="Patient analytics and progress tracking"
-        width={500}
-        height={400}
-        className="w-full h-full object-cover rounded-xl"
-      />
-    ),
-    icon: <User className="h-6 w-6 text-yellow-900" />,
-    className: "lg:col-span-1 bg-[#FFE682]",
-  },
-
-  {
-    title: "Connected Care Ecosystem",
-    description: "A unified platform connecting every stakeholder for seamless collaboration.",
-    header: <ConnectedCareEcosystem />,
-    icon: <Users className="h-6 w-6 text-teal-900" />,
-    className: "lg:col-span-2 bg-[#F1FFE9]",
-  },
-];
 
 export default RoleBasedFeatures;

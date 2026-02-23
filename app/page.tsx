@@ -8,6 +8,9 @@ import { FoundersCarousel } from "@/components/landing/FoundersCarousel";
 import { HowItWorks } from "@/components/landing/HowItWorks";
 import { TrustSafety } from "@/components/landing/TrustSafety";
 import { HomePageSEO } from "@/components/seo/HomePageSEO";
+import { ProblemSection } from "@/components/landing/ProblemSection";
+import { DoctorsClinicsSection } from "@/components/landing/DoctorsClinicsSection";
+import { SpeakToAPhysio } from "@/components/landing/SpeakToAPhysio";
 
 const RoleBasedFeatures = dynamicImport(() => import("@/components/landing/RoleBasedFeatures"));
 const ConnectedCareSection = dynamicImport(() => import("@/components/landing/ConnectedCareSection"));
@@ -18,6 +21,21 @@ const FAQ = dynamicImport(() => import('@/components/landing/FAQ'));
 
 export const dynamic = 'force-static';
 
+const PageContent = () => (
+  <div className="-mt-12 sm:-mt-16 w-full">
+    <LandingHero />
+    <ProblemSection />
+    <HowItWorks />
+    <RoleBasedFeatures />
+    <ConnectedCareSection />
+    <DoctorsClinicsSection />
+    <FoundersCarousel />
+    <SpeakToAPhysio />
+    <RehabifyLearnSection />
+    <TrustSafety />
+    <FAQ />
+  </div>
+);
 
 export default function Home() {
   return (
@@ -25,30 +43,12 @@ export default function Home() {
       <HomePageSEO />
       <main className="flex min-h-screen flex-col w-full">
         <Authenticated>
-          <div className="-mt-12 sm:-mt-16 w-full"> {/* Negative margin to offset header */}
-            <LandingHero />
-            <HowItWorks />
-            <ConnectedCareSection />
-            <RoleBasedFeatures />
-            <FoundersCarousel />
-            <RehabifyLearnSection />
-            <TrustSafety />
-            <FAQ />
-          </div>
+          <PageContent />
         </Authenticated>
 
         <Unauthenticated>
           {/* Show the landing page for unauthenticated users */}
-          <div className="-mt-12 sm:-mt-16 w-full"> {/* Negative margin to offset header */}
-            <LandingHero />
-            <HowItWorks />
-            <ConnectedCareSection />
-            <RoleBasedFeatures />
-            <FoundersCarousel />
-            <RehabifyLearnSection />
-            <TrustSafety />
-            <FAQ />
-          </div>
+          <PageContent />
         </Unauthenticated>
       </main>
     </>

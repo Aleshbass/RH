@@ -1,52 +1,37 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import Image from 'next/image';
+import { motion } from 'framer-motion';
+import { Quote } from 'lucide-react';
+
+const testimonials = [
+    {
+        name: 'Amaka O.',
+        role: 'Teacher, Ikeja',
+        quote: 'I spent ₦85,000 on pain medications that didn\'t work. Four hospitals, three different diagnoses. When my doctor finally referred me through Rehabify, I got matched with a physiotherapist the same day. Six sessions later, I\'m back to teaching without pain — and it cost less than one private clinic visit.',
+    },
+    {
+        name: 'Dr. Chidera N.',
+        role: 'Physiotherapist, Lekki',
+        quote: 'Before Rehabify, I was seeing maybe 2 patients a week. Now I\'m fully booked. The upfront package payments mean I actually have cash flow. And I don\'t spend a kobo on marketing.',
+    },
+    {
+        name: 'Dr. Efe A.',
+        role: 'General Practitioner, Gbagada',
+        quote: 'I used to scribble physio referrals on prescription pads and hope for the best. Now I click once, my patient gets verified options, and I actually know if they followed through. Game changer.',
+    },
+];
 
 export function FoundersCarousel() {
     const [currentIndex, setCurrentIndex] = useState(0);
 
-    // Update roles based on user feedback
-    const testimonials = [
-        {
-            name: 'Mary Akinwola',
-            role: 'Co-Founder | MSc HSIE Candidate University of Oxford',
-            quote: 'We\'re building the technology infrastructure that empowers physiotherapists to deliver better patient outcomes.',
-            image: '/founders/Mary.jpeg',
-        },
-        {
-            name: 'Paul Francis',
-            role: 'SWE & Chief Technology Officer',
-            quote: 'Our platform bridges the gap between physiotherapists and patients, creating seamless experiences for all.',
-            image: '/founders/Paul.jpeg',
-        },
-        {
-            name: 'Zeenat',
-            role: 'Product Manager',
-            quote: 'Rehabify is more than a platform – it\'s a movement towards democratizing access to physiotherapy care.',
-        },
-        {
-            name: 'Ademola Abass',
-            role: 'Co-Founder',
-            quote: 'Rehabify is transforming physiotherapy in Nigeria by making quality care accessible to everyone, everywhere.',
-            image: '/founders/Ademola.jpg',
-        },
-        {
-            name: 'David Olukayode',
-            role: 'Executive and Clinical Head',
-            quote: 'Driving innovation in healthcare technology to create sustainable solutions for physiotherapy clinics.',
-            image: '/founders/David.jpeg',
-        },
-    ];
-
     useEffect(() => {
         const interval = setInterval(() => {
             setCurrentIndex((prevIndex) => (prevIndex + 1) % testimonials.length);
-        }, 10000); // 10 seconds delay
+        }, 8000);
 
         return () => clearInterval(interval);
-    }, [testimonials.length]);
+    }, []);
 
     const getVisibleIndices = () => {
         const prev = (currentIndex - 1 + testimonials.length) % testimonials.length;
@@ -62,13 +47,13 @@ export function FoundersCarousel() {
                 {/* Section Header */}
                 <div className="text-center mb-10">
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-gray-200 shadow-sm mb-4">
-                        <span className="text-xs font-medium text-[#005b57]">Leadership</span>
+                        <span className="text-xs font-medium text-[#005b57]">Testimonials</span>
                     </div>
                     <h2 className="text-3xl sm:text-4xl font-bold text-[#005b57] tracking-tight">
-                        Meet the Minds Behind Rehabify
+                        Trusted by Nigerians
                     </h2>
                     <p className="mt-3 text-base text-gray-600 max-w-2xl mx-auto">
-                        Driven by passion, expertise, and a commitment to transforming healthcare in Nigeria.
+                        Real stories from real patients, physiotherapists, and doctors using Rehabify.
                     </p>
                 </div>
 
@@ -90,19 +75,10 @@ export function FoundersCarousel() {
                             transition={{ duration: 0.5 }}
                         >
                             <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm h-full">
-                                <p className="text-base text-gray-800 font-medium mb-4 line-clamp-3">"{testimonials[prev].quote}"</p>
+                                <p className="text-base text-gray-800 font-medium mb-4 line-clamp-3">&ldquo;{testimonials[prev].quote}&rdquo;</p>
                                 <div className="flex items-center gap-3">
-                                    <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center text-[#005b57] font-bold text-sm overflow-hidden relative">
-                                        {testimonials[prev].image ? (
-                                            <Image
-                                                src={testimonials[prev].image}
-                                                alt={testimonials[prev].name}
-                                                fill
-                                                className="object-cover"
-                                            />
-                                        ) : (
-                                            testimonials[prev].name.charAt(0)
-                                        )}
+                                    <div className="h-8 w-8 rounded-full bg-[#e6f0ef] flex items-center justify-center text-[#005b57] font-bold text-sm">
+                                        {testimonials[prev].name.charAt(0)}
                                     </div>
                                     <div>
                                         <p className="font-bold text-gray-900 text-xs">{testimonials[prev].name}</p>
@@ -121,6 +97,9 @@ export function FoundersCarousel() {
                             transition={{ duration: 0.5 }}
                         >
                             <div className="bg-white rounded-2xl p-8 shadow-[0_8px_30px_rgba(0,0,0,0.08)] border border-gray-100 relative">
+                                {/* Quote Icon */}
+                                <Quote className="w-8 h-8 text-[#005b57]/20 mb-4" />
+
                                 {/* Card Corner Markers */}
                                 <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-gray-200 rounded-tl-2xl" />
                                 <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-gray-200 rounded-tr-2xl" />
@@ -129,22 +108,13 @@ export function FoundersCarousel() {
 
                                 <blockquote className="text-left">
                                     <p className="text-lg sm:text-xl text-gray-900 font-bold leading-relaxed mb-6">
-                                        "{testimonials[current].quote}"
+                                        &ldquo;{testimonials[current].quote}&rdquo;
                                     </p>
                                     <div className="flex items-center gap-4">
-                                        <div className="h-12 w-12 rounded-xl bg-[#e6f0ef] flex items-center justify-center overflow-hidden border border-[#005b57]/10 relative">
-                                            {testimonials[current].image ? (
-                                                <Image
-                                                    src={testimonials[current].image}
-                                                    alt={testimonials[current].name}
-                                                    fill
-                                                    className="object-cover"
-                                                />
-                                            ) : (
-                                                <span className="text-xl font-bold text-[#005b57]">
-                                                    {testimonials[current].name.charAt(0)}
-                                                </span>
-                                            )}
+                                        <div className="h-12 w-12 rounded-xl bg-[#e6f0ef] flex items-center justify-center border border-[#005b57]/10">
+                                            <span className="text-xl font-bold text-[#005b57]">
+                                                {testimonials[current].name.charAt(0)}
+                                            </span>
                                         </div>
                                         <div>
                                             <p className="font-bold text-gray-900 text-base">
@@ -168,19 +138,10 @@ export function FoundersCarousel() {
                             transition={{ duration: 0.5 }}
                         >
                             <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm h-full">
-                                <p className="text-base text-gray-800 font-medium mb-4 line-clamp-3">"{testimonials[next].quote}"</p>
+                                <p className="text-base text-gray-800 font-medium mb-4 line-clamp-3">&ldquo;{testimonials[next].quote}&rdquo;</p>
                                 <div className="flex items-center gap-3">
-                                    <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center text-[#005b57] font-bold text-sm overflow-hidden relative">
-                                        {testimonials[next].image ? (
-                                            <Image
-                                                src={testimonials[next].image}
-                                                alt={testimonials[next].name}
-                                                fill
-                                                className="object-cover"
-                                            />
-                                        ) : (
-                                            testimonials[next].name.charAt(0)
-                                        )}
+                                    <div className="h-8 w-8 rounded-full bg-[#e6f0ef] flex items-center justify-center text-[#005b57] font-bold text-sm">
+                                        {testimonials[next].name.charAt(0)}
                                     </div>
                                     <div>
                                         <p className="font-bold text-gray-900 text-xs">{testimonials[next].name}</p>
