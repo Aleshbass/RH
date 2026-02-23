@@ -27,7 +27,7 @@ const faqData = [
   },
   {
     question: "Do you accept HMO coverage?",
-    answer: "Yes! However, we are working on bringing this to you soon."
+    answer: "Currently, we do not accept HMO coverage. We are actively working on bringing this to you soon."
   }
 ];
 

@@ -27,7 +27,7 @@ const Footer = () => {
               onClick={() => setIsDemoModalOpen(true)}
               className="bg-transparent border border-white text-white font-bold py-3 px-6 rounded-lg hover:bg-white hover:text-[#005b57] transition-colors cursor-pointer"
             >
-              Book a Session
+              Book a Demo
             </button>
           </div>
           <p className="text-gray-400 text-sm mt-6">Trusted by 500+ patients. Verified by medical professionals.</p>
