@@ -42,7 +42,7 @@ export function LandingHero() {
   // Determine button text and href
   const getButtonProps = () => {
     if (!isSignedIn) {
-      return { href: "/find-a-physio", text: "Start Treatments" };
+      return { href: "/start-treatment", text: "Start Treatments" };
     }
 
     if (canAccessDashboard) {

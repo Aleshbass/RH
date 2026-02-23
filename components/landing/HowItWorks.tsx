@@ -107,7 +107,7 @@ export function HowItWorks() {
                         transition={{ duration: 0.5, delay: 0.3 }}
                         className="text-center mt-12"
                     >
-                        <Link href="/find-a-physio" className="group inline-flex items-center gap-2 bg-[#005b57] hover:bg-[#004a46] text-white font-semibold py-3.5 px-8 rounded-full transition-all duration-300 transform hover:scale-105 shadow-lg shadow-[#005b57]/20">
+                        <Link href="/start-treatment" className="group inline-flex items-center gap-2 bg-[#005b57] hover:bg-[#004a46] text-white font-semibold py-3.5 px-8 rounded-full transition-all duration-300 transform hover:scale-105 shadow-lg shadow-[#005b57]/20">
                             <span>Get Matched Now</span>
                             <ArrowRight className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1" />
                         </Link>
