@@ -129,6 +129,20 @@ const clinicalChecks = [
 export default function AboutPage() {
     const [email, setEmail] = useState("");
     const [activeTab, setActiveTab] = useState<"patients" | "physios" | "doctors">("patients");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [subscribeStatus, setSubscribeStatus] = useState<"success" | "error" | null>(null);
+
+    const handleSubscribe = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        setSubscribeStatus(null);
+        // TODO: Replace with real subscribe API
+        setTimeout(() => {
+            setIsSubmitting(false);
+            setSubscribeStatus("success");
+            setEmail("");
+        }, 1500);
+    };
 
     return (
         <div className="bg-white">
@@ -334,9 +348,11 @@ export default function AboutPage() {
                             <button
                                 key={key}
                                 onClick={() => setActiveTab(key)}
+                                aria-label={`Tab: ${label}`}
+                                aria-pressed={activeTab === key}
                                 className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-all cursor-pointer ${activeTab === key
-                                        ? "bg-[#005b57] text-white shadow-lg shadow-[#005b57]/20"
-                                        : "bg-white text-gray-600 border border-gray-200 hover:border-[#005b57]"
+                                    ? "bg-[#005b57] text-white shadow-lg shadow-[#005b57]/20"
+                                    : "bg-white text-gray-600 border border-gray-200 hover:border-[#005b57]"
                                     }`}
                             >
                                 <Icon className="w-4 h-4" />
@@ -568,10 +584,7 @@ export default function AboutPage() {
                                 healthcare system insights.
                             </p>
                             <form
-                                onSubmit={(e) => {
-                                    e.preventDefault();
-                                    setEmail("");
-                                }}
+                                onSubmit={handleSubscribe}
                                 className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto"
                             >
                                 <input
@@ -580,15 +593,32 @@ export default function AboutPage() {
                                     placeholder="your@email.com"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="flex-1 px-4 py-3 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] text-sm"
+                                    disabled={isSubmitting}
+                                    className="flex-1 px-4 py-3 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] text-sm disabled:opacity-70 disabled:bg-gray-50"
                                 />
                                 <button
                                     type="submit"
-                                    className="bg-[#005b57] text-white font-semibold px-6 py-3 rounded-full hover:bg-[#004a46] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                    disabled={isSubmitting}
+                                    className="bg-[#005b57] text-white font-semibold px-6 py-3 rounded-full hover:bg-[#004a46] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
                                 >
-                                    <Send className="w-4 h-4" /> Subscribe
+                                    {isSubmitting ? (
+                                        <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                                    ) : (
+                                        <Send className="w-4 h-4" />
+                                    )}
+                                    {isSubmitting ? "Subscribing..." : "Subscribe"}
                                 </button>
                             </form>
+                            {subscribeStatus === "success" && (
+                                <p className="text-sm mt-3 text-green-600 font-medium tracking-wide">
+                                    Thanks for subscribing!
+                                </p>
+                            )}
+                            {subscribeStatus === "error" && (
+                                <p className="text-sm mt-3 text-red-600 font-medium tracking-wide">
+                                    Subscription failed. Please try again.
+                                </p>
+                            )}
                             <div className="flex justify-center gap-5 mt-6">
                                 {[
                                     { icon: faLinkedin, href: "#", label: "LinkedIn" },
@@ -596,14 +626,15 @@ export default function AboutPage() {
                                     { icon: faInstagram, href: "#", label: "Instagram" },
                                     { icon: faYoutube, href: "#", label: "YouTube" },
                                 ].map((s) => (
-                                    <a
+                                    <button
                                         key={s.label}
-                                        href={s.href}
+                                        type="button"
                                         aria-label={s.label}
-                                        className="text-gray-400 hover:text-[#005b57] transition-colors"
+                                        onClick={(e) => { e.preventDefault(); /* TODO: Add real social links */ }}
+                                        className="text-gray-400 hover:text-[#005b57] transition-colors cursor-pointer"
                                     >
                                         <FontAwesomeIcon icon={s.icon} size="lg" />
-                                    </a>
+                                    </button>
                                 ))}
                             </div>
                         </div>

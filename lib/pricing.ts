@@ -261,7 +261,7 @@ export function calculatePackagePrice(
     if (!Number.isInteger(sessions) || sessions <= 0) {
         throw new RangeError('sessions must be a positive integer');
     }
-    if (typeof discountPercent !== 'number' || discountPercent < 0 || discountPercent > 100) {
+    if (typeof discountPercent !== 'number' || !Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
         throw new RangeError('discountPercent must be between 0 and 100 inclusive');
     }
 
