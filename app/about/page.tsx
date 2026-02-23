@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import {
     ArrowRight,
@@ -132,16 +132,40 @@ export default function AboutPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [subscribeStatus, setSubscribeStatus] = useState<"success" | "error" | null>(null);
 
+    const isMounted = useRef(true);
+
+    useEffect(() => {
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
+
     const handleSubscribe = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isSubmitting) return;
+
         setIsSubmitting(true);
         setSubscribeStatus(null);
-        // TODO: Replace with real subscribe API
-        setTimeout(() => {
-            setIsSubmitting(false);
-            setSubscribeStatus("success");
-            setEmail("");
-        }, 1500);
+
+        try {
+            // TODO: Replace with real subscribe API
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            // Simulate random failure 10% of the time for testing, switch to real logic when API exists
+            if (Math.random() > 0.9) throw new Error("Subscription failed");
+
+            if (isMounted.current) {
+                setSubscribeStatus("success");
+                setEmail("");
+            }
+        } catch (error) {
+            if (isMounted.current) {
+                setSubscribeStatus("error");
+            }
+        } finally {
+            if (isMounted.current) {
+                setIsSubmitting(false);
+            }
+        }
     };
 
     return (
