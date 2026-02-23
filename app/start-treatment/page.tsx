@@ -47,10 +47,10 @@ function StepIndicator({ current }: { current: number }) {
                         <div className="flex items-center gap-2">
                             <div
                                 className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${done
-                                        ? "bg-[#005b57] text-white"
-                                        : active
-                                            ? "bg-[#005b57] text-white ring-4 ring-[#005b57]/20"
-                                            : "bg-gray-200 text-gray-500"
+                                    ? "bg-[#005b57] text-white"
+                                    : active
+                                        ? "bg-[#005b57] text-white ring-4 ring-[#005b57]/20"
+                                        : "bg-gray-200 text-gray-500"
                                     }`}
                             >
                                 {done ? <CheckCircle2 className="w-5 h-5" /> : <Icon className="w-4 h-4" />}
@@ -175,8 +175,8 @@ export default function StartTreatmentPage() {
                                                     setSelectedAreaIdx(null);
                                                 }}
                                                 className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer border ${selectedCity === key
-                                                        ? "bg-[#005b57] text-white border-[#005b57] shadow-lg shadow-[#005b57]/20"
-                                                        : "bg-gray-50 text-gray-700 border-gray-200 hover:border-[#005b57] hover:text-[#005b57]"
+                                                    ? "bg-[#005b57] text-white border-[#005b57] shadow-lg shadow-[#005b57]/20"
+                                                    : "bg-gray-50 text-gray-700 border-gray-200 hover:border-[#005b57] hover:text-[#005b57]"
                                                     }`}
                                             >
                                                 📍 {city.label}
@@ -199,8 +199,8 @@ export default function StartTreatmentPage() {
                                                     key={idx}
                                                     onClick={() => setSelectedAreaIdx(idx)}
                                                     className={`w-full text-left px-5 py-4 rounded-2xl border transition-all duration-200 cursor-pointer ${selectedAreaIdx === idx
-                                                            ? "bg-[#e6f0ef] border-[#005b57] ring-2 ring-[#005b57]/20"
-                                                            : "bg-gray-50 border-gray-200 hover:border-[#005b57]/50"
+                                                        ? "bg-[#e6f0ef] border-[#005b57] ring-2 ring-[#005b57]/20"
+                                                        : "bg-gray-50 border-gray-200 hover:border-[#005b57]/50"
                                                         }`}
                                                 >
                                                     <span className="font-medium text-gray-900">{area.label}</span>
@@ -221,8 +221,8 @@ export default function StartTreatmentPage() {
                                             onClick={goNext}
                                             disabled={!canAdvanceStep1}
                                             className={`group flex items-center gap-2 py-3 px-8 rounded-full font-semibold transition-all duration-300 cursor-pointer ${canAdvanceStep1
-                                                    ? "bg-[#005b57] text-white hover:bg-[#004a46] shadow-lg shadow-[#005b57]/20 hover:scale-105"
-                                                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                                ? "bg-[#005b57] text-white hover:bg-[#004a46] shadow-lg shadow-[#005b57]/20 hover:scale-105"
+                                                : "bg-gray-200 text-gray-400 cursor-not-allowed"
                                                 }`}
                                         >
                                             Continue
@@ -264,8 +264,8 @@ export default function StartTreatmentPage() {
                                                             key={opt.label}
                                                             onClick={() => setSelectedCondition(opt)}
                                                             className={`text-left px-4 py-3.5 rounded-2xl border transition-all duration-200 cursor-pointer ${selectedCondition?.label === opt.label
-                                                                    ? "bg-[#e6f0ef] border-[#005b57] ring-2 ring-[#005b57]/20"
-                                                                    : "bg-gray-50 border-gray-200 hover:border-[#005b57]/50"
+                                                                ? "bg-[#e6f0ef] border-[#005b57] ring-2 ring-[#005b57]/20"
+                                                                : "bg-gray-50 border-gray-200 hover:border-[#005b57]/50"
                                                                 }`}
                                                         >
                                                             <span className="font-medium text-gray-900 text-sm">
@@ -290,8 +290,8 @@ export default function StartTreatmentPage() {
                                             onClick={goNext}
                                             disabled={!canAdvanceStep2}
                                             className={`group flex items-center gap-2 py-3 px-8 rounded-full font-semibold transition-all duration-300 cursor-pointer ${canAdvanceStep2
-                                                    ? "bg-[#005b57] text-white hover:bg-[#004a46] shadow-lg shadow-[#005b57]/20 hover:scale-105"
-                                                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                                ? "bg-[#005b57] text-white hover:bg-[#004a46] shadow-lg shadow-[#005b57]/20 hover:scale-105"
+                                                : "bg-gray-200 text-gray-400 cursor-not-allowed"
                                                 }`}
                                         >
                                             See My Price
@@ -359,9 +359,7 @@ export default function StartTreatmentPage() {
                                             {price.conditionAdjustment > 0 && (
                                                 <div className="flex justify-between text-sm">
                                                     <span className="text-gray-600">
-                                                        {price.conditionLevel === "moderate"
-                                                            ? "Advanced care"
-                                                            : "Specialized care"}
+                                                        {{ standard: "Standard care", moderate: "Advanced care", complex: "Specialized care" }[price.conditionLevel]}
                                                     </span>
                                                     <span className="font-semibold text-gray-900">
                                                         +{formatNaira(price.conditionAdjustment)}

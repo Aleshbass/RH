@@ -124,6 +124,9 @@ export function getPhysioLevelAdjustment(level: PhysioLevel): number {
 
 // ── Platform Fee ──────────────────────────────────
 export function getPlatformFee(sessionRate: number): number {
+    if (typeof sessionRate !== 'number' || !Number.isFinite(sessionRate) || sessionRate < 0) {
+        throw new RangeError('sessionRate must be a non-negative finite number');
+    }
     if (sessionRate <= 25_000) return 1_000;
     return 1_000 + Math.round((sessionRate - 25_000) * 0.05);
 }
@@ -189,6 +192,15 @@ export function calculatePackagePrice(
     sessions: number,
     discountPercent: number,
 ): PackageBreakdown {
+    if (typeof sessionRate !== 'number' || !Number.isFinite(sessionRate) || sessionRate < 0) {
+        throw new RangeError('sessionRate must be a non-negative finite number');
+    }
+    if (!Number.isInteger(sessions) || sessions <= 0) {
+        throw new RangeError('sessions must be a positive integer');
+    }
+    if (typeof discountPercent !== 'number' || discountPercent < 0 || discountPercent > 100) {
+        throw new RangeError('discountPercent must be between 0 and 100 inclusive');
+    }
     const discountPerSession = Math.round(sessionRate * (discountPercent / 100));
     const discountedRate = sessionRate - discountPerSession;
     const platformFee = getPlatformFee(discountedRate);

@@ -53,7 +53,7 @@ export function DoctorsClinicsSection() {
                                 ))}
                             </ul>
                             <Link
-                                href="/find-a-physio"
+                                href="/sign-up"
                                 className="group inline-flex items-center gap-2 bg-[#002e2c] hover:bg-[#004a46] text-white font-semibold py-3.5 px-8 rounded-full transition-all duration-300 hover:scale-105 shadow-lg shadow-[#002e2c]/20"
                             >
                                 <span>Become a Partner</span>
