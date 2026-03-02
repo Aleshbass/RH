@@ -137,7 +137,7 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
           transition={{ type: "spring", stiffness: 400, damping: 25 }}
-          className="absolute left-1/2 z-50 mt-2 w-[380px] -translate-x-1/2 rounded-xl bg-[#FAF6E7] p-4 shadow-[0_8px_30px_rgba(0,0,0,0.1)] border border-[#002e2c]/10 focus:outline-none"
+          className="absolute left-1/2 z-50 mt-2 w-[520px] -translate-x-1/2 rounded-2xl bg-white p-0 shadow-[0_16px_48px_rgba(0,0,0,0.12)] border border-gray-100 overflow-hidden focus:outline-none"
           ref={dropdownRef}
           onMouseEnter={() => {
             clearCloseTimeout();
@@ -148,10 +148,27 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
             scheduleClose();
           }}
         >
-          <div className="flex min-h-[180px]">
-            <div className="w-1/2 py-1 pr-4">
+          <div className="flex">
+            {/* Links Section */}
+            <div className="flex-1 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-3 mb-2">{item.name}</p>
               {item.items?.map((subItem, idx) => {
                 const isExternalLink = subItem.href.startsWith('http');
+                const linkContent = (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-[#e6f0ef] flex items-center justify-center shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#005b57" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-gray-900 whitespace-nowrap">{subItem.name}</div>
+                        {subItem.subtitle && (
+                          <div className="text-xs text-gray-500 mt-0.5 whitespace-nowrap">{subItem.subtitle}</div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                );
 
                 return isExternalLink ? (
                   <a
@@ -159,65 +176,49 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
                     href={subItem.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block px-4 py-2 mb-3 rounded-md hover:bg-[#F2EFE0] hover:text-gray-500 hover:translate-x-1 transition-all duration-200"
+                    className="flex items-start px-3 py-2.5 mb-1 rounded-xl hover:bg-[#f0f8f7] transition-all duration-150 group"
                     onClick={onClick}
                   >
-                    <div className="text-sm font-medium text-[#002e2c] font-sans">
-                      {subItem.name}
-                    </div>
-                    {subItem.subtitle && (
-                      <div className="text-xs text-[#002e2c]/70 mt-0.5 font-sans">
-                        {subItem.subtitle}
-                      </div>
-                    )}
+                    {linkContent}
                   </a>
                 ) : (
                   <Link
                     key={idx}
                     href={subItem.href}
-                    className="block px-4 py-2 mb-3 rounded-md hover:bg-[#F2EFE0] hover:text-gray-500 hover:translate-x-1 transition-all duration-200"
+                    className="flex items-start px-3 py-2.5 mb-1 rounded-xl hover:bg-[#f0f8f7] transition-all duration-150 group"
                     onClick={onClick}
                   >
-                    <div className="text-sm font-medium text-[#002e2c] font-sans">
-                      {subItem.name}
-                    </div>
-                    {subItem.subtitle && (
-                      <div className="text-xs text-[#002e2c]/70 mt-0.5 font-sans">
-                        {subItem.subtitle}
-                      </div>
-                    )}
+                    {linkContent}
                   </Link>
                 );
               })}
             </div>
-            <div className="w-1/2 flex items-center justify-center pl-2">
-              <div className="w-full h-[170px] overflow-hidden rounded-lg">
-                {item.name === "CPD" ? (
-                  <a href="https://www.rehabifylearn.com" target="_blank" rel="noopener noreferrer" className="block w-full h-full cursor-pointer transition-transform duration-200 hover:scale-105">
-                    <Image
-                      src="/logos/images/www.rehabifylearn.com_(Nest Hub Max).webp"
-                      alt="Rehabify Learn"
-                      width={500}
-                      height={500}
-                      className="w-full h-full object-cover rounded-lg shadow-md"
-                      priority
-                    />
-                  </a>
-                ) : (
+
+            {/* Image Panel */}
+            <div className="w-[180px] shrink-0 relative">
+              {item.name === "CPD" ? (
+                <a href="https://www.rehabifylearn.com" target="_blank" rel="noopener noreferrer" className="block w-full h-full">
                   <Image
-                    src={
-                      item.name === "Platform" ? "/logos/images/platform.jpeg" :
-                        item.name === "Resources" ? "/logos/images/IMG_6328_a4bxtu.webp" :
-                          "/logos/MainRehabify.svg"
-                    }
-                    alt={item.name}
-                    width={item.name === "Platform" || item.name === "Resources" ? 500 : 200}
-                    height={item.name === "Platform" || item.name === "Resources" ? 500 : 200}
-                    className={item.name === "Platform" || item.name === "Resources" ? "w-full h-full object-cover rounded-lg shadow-md" : "w-full h-full object-contain opacity-70"}
+                    src="/logos/images/www.rehabifylearn.com_(Nest Hub Max).webp"
+                    alt="Rehabify Learn"
+                    fill
+                    className="object-cover"
                     priority
                   />
-                )}
-              </div>
+                </a>
+              ) : (
+                <Image
+                  src={
+                    item.name === "Professionals" ? "/logos/images/platform.jpeg" :
+                      item.name === "Resources" ? "/logos/images/IMG_6328_a4bxtu.webp" :
+                        "/logos/MainRehabify.svg"
+                  }
+                  alt={item.name}
+                  fill
+                  className="object-cover"
+                  priority
+                />
+              )}
             </div>
           </div>
         </motion.div>
@@ -229,7 +230,7 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
 // Navigation link data with subtitles
 const navLinks: NavItem[] = [
   {
-    name: "Platform",
+    name: "Professionals",
     type: "dropdown",
     items: [
       {
@@ -254,9 +255,7 @@ const navLinks: NavItem[] = [
       },
     ],
   },
-  { name: "Find a Physio", href: "/find-a-physio", type: "link" },
-  { name: "Forum", href: "/forum", type: "link" },
-  { name: "Pricing", href: "/#pricing", type: "link" },
+  { name: "Physio Register", href: "/find-a-physio", type: "link" },
   {
     name: "CPD",
     type: "dropdown",
@@ -299,7 +298,6 @@ const navLinks: NavItem[] = [
       },
     ],
   },
-
 ];
 
 export default function Header() {
@@ -375,7 +373,8 @@ export default function Header() {
         }}
         className={cn(
           "relative z-[60] mx-auto hidden w-[90%] max-w-[1100px] flex-row items-center justify-between px-4 py-3 lg:flex text-[#002e2c] font-sans rounded-2xl",
-          "sm:px-6 md:px-8", // Responsive padding
+          "sm:px-6 md:px-8",
+          "bg-white/70 backdrop-blur-xl border border-white/20 shadow-[0_4px_30px_rgba(0,0,0,0.06)]",
         )}
       >
         <div className="flex-shrink-0">
@@ -399,12 +398,9 @@ export default function Header() {
           ))}
         </nav>
 
-        <div className="flex items-center justify-end space-x-2 sm:space-x-4 flex-shrink-0 min-w-48 sm:min-w-56">
+        <div className="flex items-center justify-end space-x-2 sm:space-x-4 flex-shrink-0">
           <SignedOut>
             <NavbarButton href="/sign-in" className="text-sm px-3 py-1.5 sm:px-4 sm:py-2">Sign In</NavbarButton>
-            <NavbarButton href="/sign-up" variant="secondary" className="text-sm px-3 py-1.5 sm:px-4 sm:py-2">
-              Get Started
-            </NavbarButton>
           </SignedOut>
           <SignedIn>
             <UserButton />
@@ -425,6 +421,7 @@ export default function Header() {
         }}
         className={cn(
           "relative z-[60] mx-auto flex w-[90%] max-w-md flex-row items-center justify-between px-4 py-2 lg:hidden text-[#002e2c] font-sans rounded-xl",
+          "bg-white/70 backdrop-blur-xl border border-white/20 shadow-[0_4px_30px_rgba(0,0,0,0.06)]",
         )}
       >
         <div className="flex-shrink-0">
@@ -548,18 +545,7 @@ export default function Header() {
             </div>
           ))}
 
-          <SignedOut>
-            <div className="w-full pt-4 border-t border-[#002e2c]/10">
-              <NavbarButton
-                href="/sign-up"
-                variant="secondary"
-                className="w-full justify-center"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                Get Started
-              </NavbarButton>
-            </div>
-          </SignedOut>
+
         </motion.div>
       )}
     </div>

@@ -1,57 +1,36 @@
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { User, Search, Calendar, Activity, Stethoscope, CheckCircle, CreditCard, TrendingUp } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { MessageCircleQuestion, Zap, CalendarCheck, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 
-const steps = {
-    patients: [
-        {
-            id: 1,
-            title: 'Create Your Profile',
-            description: 'Sign up in seconds and tell us about your physiotherapy needs.',
-            icon: User,
-        },
-        {
-            id: 2,
-            title: 'Find a Specialist',
-            description: 'Browse verified physiotherapists filtered by location and specialty.',
-            icon: Search,
-        },
-        {
-            id: 3,
-            title: 'Book & Recover',
-            description: 'Schedule appointments and track your recovery journey seamlessly.',
-            icon: Activity,
-        },
-    ],
-    physios: [
-        {
-            id: 1,
-            title: 'Join the Network',
-            description: 'Create your professional profile and upload your credentials.',
-            icon: Stethoscope,
-        },
-        {
-            id: 2,
-            title: 'Get Verified',
-            description: 'Pass our vetting process to earn the trust of thousands of patients.',
-            icon: CheckCircle,
-        },
-        {
-            id: 3,
-            title: 'Grow Your Practice',
-            description: 'Manage bookings, payments, and patient records all in one place.',
-            icon: TrendingUp,
-        },
-    ],
-};
+const steps = [
+    {
+        id: 1,
+        number: '01',
+        title: 'Tell us what hurts',
+        description: 'Quick 60-second questionnaire about your condition, location, and needs.',
+        icon: MessageCircleQuestion,
+    },
+    {
+        id: 2,
+        number: '02',
+        title: 'We match you instantly',
+        description: 'Our smart algorithm finds verified physiotherapists near you who specialise in exactly what you need.',
+        icon: Zap,
+    },
+    {
+        id: 3,
+        number: '03',
+        title: 'Book and recover',
+        description: 'Choose your physio, book sessions (or save with packages), and track your progress digitally. Your physio gets updates. You get better.',
+        icon: CalendarCheck,
+    },
+];
 
 export function HowItWorks() {
-    const [activeTab, setActiveTab] = useState<'patients' | 'physios'>('patients');
-
     return (
-        <section className="py-24 bg-white relative overflow-hidden">
+        <section id="how-it-works" className="py-24 bg-white relative overflow-hidden">
             {/* Background Decor */}
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-7xl pointer-events-none">
                 <div className="absolute top-20 left-10 w-72 h-72 bg-green-50 rounded-full blur-3xl opacity-50" />
@@ -68,50 +47,11 @@ export function HowItWorks() {
                         transition={{ duration: 0.5 }}
                     >
                         <h2 className="text-4xl sm:text-5xl font-bold text-gray-900 tracking-tight mb-6">
-                            Healthcare Made <span className="text-[#005b57]">Simple</span>
+                            How Rehabify <span className="text-[#005b57]">Works</span>
                         </h2>
                         <p className="text-lg text-gray-600 mb-8">
-                            Whether you're seeking care or providing it, Rehabify streamlines the entire process so you can focus on what matters most.
+                            Three simple steps to get you on the path to recovery. No waiting lists, no confusion, just care.
                         </p>
-                    </motion.div>
-
-                    {/* Toggle */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.5, delay: 0.2 }}
-                        className="inline-flex bg-gray-100 p-1.5 rounded-full relative"
-                    >
-                        <div className="absolute inset-0 rounded-full pointer-events-none" />
-                        <button
-                            onClick={() => setActiveTab('patients')}
-                            className={`relative px-8 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 z-10 ${activeTab === 'patients' ? 'text-white' : 'text-gray-600 hover:text-gray-900'
-                                }`}
-                        >
-                            {activeTab === 'patients' && (
-                                <motion.div
-                                    layoutId="activeTab"
-                                    className="absolute inset-0 bg-[#005b57] rounded-full shadow-md"
-                                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                                />
-                            )}
-                            <span className="relative z-10">For Patients</span>
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('physios')}
-                            className={`relative px-8 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 z-10 ${activeTab === 'physios' ? 'text-white' : 'text-gray-600 hover:text-gray-900'
-                                }`}
-                        >
-                            {activeTab === 'physios' && (
-                                <motion.div
-                                    layoutId="activeTab"
-                                    className="absolute inset-0 bg-[#005b57] rounded-full shadow-md"
-                                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                                />
-                            )}
-                            <span className="relative z-10">For Specialists</span>
-                        </button>
                     </motion.div>
                 </div>
 
@@ -129,38 +69,49 @@ export function HowItWorks() {
                     </div>
 
                     <div className="relative">
-                        <AnimatePresence mode="wait">
-                            <motion.div
-                                key={activeTab}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -20 }}
-                                transition={{ duration: 0.5 }}
-                                className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8"
-                            >
-                                {steps[activeTab].map((step) => (
-                                    <div
-                                        key={step.id}
-                                        className="relative group"
-                                    >
-                                        {/* Step Number Badge */}
-                                        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-white px-3 py-1 rounded-full border border-gray-100 shadow-sm text-xs font-bold text-[#005b57] z-20">
-                                            Step 0{step.id}
-                                        </div>
-
-                                        {/* Card */}
-                                        <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] transition-all duration-300 h-full text-center group-hover:-translate-y-1">
-                                            <div className="w-16 h-16 mx-auto bg-[#e6f0ef] rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
-                                                <step.icon className="w-8 h-8 text-[#005b57]" />
-                                            </div>
-                                            <h3 className="text-xl font-bold text-gray-900 mb-3">{step.title}</h3>
-                                            <p className="text-gray-600 leading-relaxed">{step.description}</p>
-                                        </div>
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ duration: 0.5 }}
+                            className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8"
+                        >
+                            {steps.map((step) => (
+                                <div
+                                    key={step.id}
+                                    className="relative group"
+                                >
+                                    {/* Step Number Badge */}
+                                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-[#005b57] px-4 py-1.5 rounded-full text-xs font-bold text-white z-20 shadow-md">
+                                        {step.number}
                                     </div>
-                                ))}
-                            </motion.div>
-                        </AnimatePresence>
+
+                                    {/* Card */}
+                                    <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] transition-all duration-300 h-full text-center group-hover:-translate-y-1">
+                                        <div className="w-16 h-16 mx-auto bg-[#e6f0ef] rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                                            <step.icon className="w-8 h-8 text-[#005b57]" />
+                                        </div>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-3">{step.title}</h3>
+                                        <p className="text-gray-600 leading-relaxed">{step.description}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </motion.div>
                     </div>
+
+                    {/* CTA */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5, delay: 0.3 }}
+                        className="text-center mt-12"
+                    >
+                        <Link href="/start-treatment" className="group inline-flex items-center gap-2 bg-[#005b57] hover:bg-[#004a46] text-white font-semibold py-3.5 px-8 rounded-full transition-all duration-300 transform hover:scale-105 shadow-lg shadow-[#005b57]/20">
+                            <span>Get Matched Now</span>
+                            <ArrowRight className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1" />
+                        </Link>
+                    </motion.div>
                 </div>
             </div>
         </section>
