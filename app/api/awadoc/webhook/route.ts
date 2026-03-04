@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import crypto from "crypto";
 import {
     verifyInboundSignature,
@@ -21,7 +22,13 @@ import {
     toDayString,
 } from "@/lib/awadoc/awadoc";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+// ── Convex client (validated) ───────────────────────────
+
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+if (!convexUrl) {
+    throw new Error("[AwaDoc] NEXT_PUBLIC_CONVEX_URL must be set");
+}
+const convex = new ConvexHttpClient(convexUrl);
 
 // ── POST handler ────────────────────────────────────────
 
@@ -73,10 +80,14 @@ export async function POST(request: NextRequest) {
         await logEvent(eventId, eventType, "inbound", body, response, "success");
         return NextResponse.json(response);
     } catch (err) {
+        // Log full error details internally
         const message = err instanceof Error ? err.message : "Internal error";
-        console.error(`[AwaDoc] Error handling ${eventType}:`, message);
+        const stack = err instanceof Error ? err.stack : undefined;
+        console.error(`[AwaDoc] Error handling ${eventType}:`, err);
+        if (stack) console.error("[AwaDoc] Stack:", stack);
         await logEvent(eventId, eventType, "inbound", body, null, "error", message);
-        return NextResponse.json({ error: message }, { status: 500 });
+        // Return generic message to client — never leak internals
+        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
 }
 
@@ -115,7 +126,7 @@ async function handleAvailabilityQuery(body: any) {
             availability_mode: availabilityMode,
             scheduling_mode: "patient_choice" as const,
             pricing: {
-                amount: p.hourlyRate / 100, // Convert from kobo to Naira if stored in kobo
+                amount: p.hourlyRate / 100, // Convert from kobo to Naira
                 currency: "NGN",
             },
             ...(doctorTime.length > 0 ? { doctor_time: doctorTime } : {}),
@@ -211,27 +222,38 @@ async function handleConsultationConfirmed(body: any) {
     const requestId: string = body.meta?.request_id ?? "";
     const consultationId: string = body.context?.consultation?.id ?? "";
 
+    // Reject if consultationId is missing — don't silently acknowledge
+    if (!consultationId) {
+        console.warn("[AwaDoc] consultation.confirmed received without consultationId", {
+            requestId,
+            payload: body.context,
+        });
+        return {
+            status: "error",
+            error: "Missing consultation ID in payload",
+            acknowledged_at: new Date().toISOString(),
+        };
+    }
+
     // Update session to confirmed
-    if (consultationId) {
-        await convex.mutation(api.awadoc.updateSessionStatus, {
-            consultationId,
-            status: "confirmed",
-            grossAmount: body.context?.consultation?.pricing?.amount
-                ? Math.round(body.context.consultation.pricing.amount * 100) // Naira → kobo
-                : undefined,
-        });
+    await convex.mutation(api.awadoc.updateSessionStatus, {
+        consultationId,
+        status: "confirmed",
+        grossAmount: body.context?.consultation?.pricing?.amount
+            ? Math.round(body.context.consultation.pricing.amount * 100) // Naira → kobo
+            : undefined,
+    });
 
-        // Retrieve the session to get physio details
-        const session = await convex.query(api.awadoc.getSessionByConsultationId, {
-            consultationId,
-        });
+    // Retrieve the session to get physio details
+    const session = await convex.query(api.awadoc.getSessionByConsultationId, {
+        consultationId,
+    });
 
-        // Send doctor_assigned callback to AwaDoc (async, don't block response)
-        if (session?.physiotherapistId) {
-            sendDoctorAssignedCallback(consultationId, session).catch((err) =>
-                console.error("[AwaDoc] Failed to send doctor_assigned callback:", err)
-            );
-        }
+    // Send doctor_assigned callback to AwaDoc (async, don't block response)
+    if (session?.physiotherapistId) {
+        sendDoctorAssignedCallback(consultationId, session).catch((err) =>
+            console.error("[AwaDoc] Failed to send doctor_assigned callback:", err)
+        );
     }
 
     return {
@@ -271,16 +293,50 @@ function buildDoctorTime(
             days: g.days,
             hours: { start: g.start, end: g.end },
         }));
-    } catch {
+    } catch (err) {
+        console.warn("[AwaDoc] Failed to parse availability schedule:", {
+            error: err instanceof Error ? err.message : String(err),
+            scheduleType: typeof schedule,
+            scheduleLength: Array.isArray(schedule) ? schedule.length : "N/A",
+        });
         return [];
     }
 }
 
 /**
- * Send the consultation.doctor_assigned callback to AwaDoc.
+ * Fetch real physiotherapist details for the doctor_assigned callback.
+ */
+async function getPhysioDetails(physiotherapistId: string) {
+    try {
+        const user = await convex.query(api.awadoc.getUserById, {
+            userId: physiotherapistId as Id<"users">,
+        });
+        if (user) {
+            return {
+                id: physiotherapistId,
+                name: `${user.firstName} ${user.lastName}`.trim() || null,
+                email: user.email || null,
+                avatar_url: user.imageUrl || undefined,
+            };
+        }
+    } catch (err) {
+        // TODO: If getUserById fails, we fall back to placeholders
+        console.warn("[AwaDoc] Failed to fetch physio details:", err);
+    }
+    return {
+        id: physiotherapistId,
+        name: null,
+        email: null,
+    };
+}
+
+/**
+ * Send the consultation.doctor_assigned and consultation.scheduled callbacks to AwaDoc.
  */
 async function sendDoctorAssignedCallback(consultationId: string, session: any) {
-    // Look up physio details — we just use what we have from the session
+    // Fetch real physio details
+    const doctor = await getPhysioDetails(session.physiotherapistId);
+
     await sendCallbackEvent("consultation.doctor_assigned", {
         context: {
             consultation: {
@@ -296,11 +352,7 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
                     currency: session.currency ?? "NGN",
                 },
             },
-            doctor: {
-                id: session.physiotherapistId ?? "unknown",
-                name: "Rehabify Physiotherapist",
-                email: "support@rehabifyhealth.com",
-            },
+            doctor,
         },
     });
 
@@ -336,10 +388,18 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
         },
     });
 
-    // Log outbound events
+    // Log both outbound events
     await logEvent(
         `evt-rh-assigned-${consultationId}`,
         "consultation.doctor_assigned",
+        "outbound",
+        { consultationId },
+        null,
+        "success"
+    );
+    await logEvent(
+        `evt-rh-scheduled-${consultationId}`,
+        "consultation.scheduled",
         "outbound",
         { consultationId },
         null,

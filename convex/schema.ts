@@ -2268,23 +2268,28 @@ export default defineSchema({
     .index("by_query_id", ["queryId"])
     .index("by_status", ["status"])
     .index("by_physiotherapist", ["physiotherapistId"])
-    .index("by_awadoc_user", ["awadocUserId"]),
+    .index("by_awadoc_user", ["awadocUserId"])
+    .index("by_physiotherapist_and_status", ["physiotherapistId", "status"])
+    .index("by_awadoc_user_and_status", ["awadocUserId", "status"]),
 
   // Audit trail for all AwaDoc webhook events (inbound and outbound)
+  // Retention policy: purge records older than 90 days via scheduled job
   awadocEventLog: defineTable({
     eventId: v.string(),
     eventType: v.string(),
     direction: v.union(v.literal("inbound"), v.literal("outbound")),
-    payload: v.any(),
-    responsePayload: v.optional(v.any()),
+    payload: v.any(),              // Sanitized via sanitizeWebhookPayload before insert
+    responsePayload: v.optional(v.any()), // Sanitized via sanitizeWebhookPayload before insert
     status: v.union(v.literal("success"), v.literal("error")),
     errorMessage: v.optional(v.string()),
-    processedAt: v.number(),
+    createdAt: v.number(),         // When the event was first recorded
+    processedAt: v.number(),       // When last processed/updated
   })
     .index("by_event_id", ["eventId"])
     .index("by_event_type", ["eventType"])
     .index("by_direction", ["direction"])
-    .index("by_processed_at", ["processedAt"]),
+    .index("by_processed_at", ["processedAt"])
+    .index("by_created_at", ["createdAt"]),
 
   // Health tables from health schema
   ...healthTables,

@@ -13,11 +13,52 @@ import {
     Clock,
     AlertTriangle,
     ExternalLink,
+    RefreshCw,
 } from 'lucide-react'
+
+// ── Types ───────────────────────────────────────────────
+
+interface WebhookEvent {
+    eventId: string
+    eventType: string
+    direction: 'inbound' | 'outbound'
+    status: 'success' | 'error'
+    processedAt: number
+    errorMessage?: string
+}
+
+// ── Constants ───────────────────────────────────────────
+
+/** Commission rate — single source of truth, must match convex/awadoc.ts */
+const COMMISSION_RATE = 0.2
+const COMMISSION_PERCENT = `${COMMISSION_RATE * 100}%`
+
+// ── Helpers (module-level, not recreated every render) ──
+
+const dateFormatter = new Intl.DateTimeFormat('en-NG', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+})
+
+function formatCurrency(amount: number) {
+    // Amount is in kobo, convert to Naira
+    return new Intl.NumberFormat('en-NG', {
+        style: 'currency',
+        currency: 'NGN',
+        minimumFractionDigits: 0,
+    }).format(amount / 100)
+}
+
+// ── Component ───────────────────────────────────────────
 
 export default function AwadocDashboardPage() {
     const stats = useQuery(api.awadoc.getDashboardStats)
 
+    // Loading state
     if (stats === undefined) {
         return (
             <div className="p-8">
@@ -34,13 +75,26 @@ export default function AwadocDashboardPage() {
         )
     }
 
-    const formatCurrency = (amount: number) => {
-        // Amount is in kobo, convert to Naira
-        return new Intl.NumberFormat('en-NG', {
-            style: 'currency',
-            currency: 'NGN',
-            minimumFractionDigits: 0,
-        }).format(amount / 100)
+    // Error state (Convex returns null on query failure in some cases)
+    if (stats === null) {
+        return (
+            <div className="p-8">
+                <div className="text-center py-16">
+                    <AlertTriangle className="h-12 w-12 text-orange-400 mx-auto mb-4" />
+                    <h2 className="text-xl font-semibold mb-2">Failed to load AwaDoc data</h2>
+                    <p className="text-gray-500 mb-4">
+                        There was a problem fetching dashboard statistics. This may be a temporary issue.
+                    </p>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-[#005b57] text-white rounded-lg hover:bg-[#004a47] transition-colors"
+                    >
+                        <RefreshCw className="h-4 w-4" />
+                        Retry
+                    </button>
+                </div>
+            </div>
+        )
     }
 
     return (
@@ -101,7 +155,7 @@ export default function AwadocDashboardPage() {
                                 {formatCurrency(stats.totalGross)}
                             </div>
                             <p className="text-xs text-red-500">
-                                -{formatCurrency(stats.totalCommission)} AwaDoc commission (20%)
+                                -{formatCurrency(stats.totalCommission)} AwaDoc commission ({COMMISSION_PERCENT})
                             </p>
                         </CardContent>
                     </Card>
@@ -117,7 +171,7 @@ export default function AwadocDashboardPage() {
                                 {formatCurrency(stats.totalNet)}
                             </div>
                             <p className="text-xs text-muted-foreground">
-                                After 20% AwaDoc commission
+                                After {COMMISSION_PERCENT} AwaDoc commission
                             </p>
                         </CardContent>
                     </Card>
@@ -128,27 +182,27 @@ export default function AwadocDashboardPage() {
                     <CardHeader>
                         <CardTitle>Revenue Split</CardTitle>
                         <CardDescription>
-                            AwaDoc deducts 20% commission from each session. An additional 4% service fee is charged to the patient by AwaDoc (not deducted from your earnings).
+                            AwaDoc deducts {COMMISSION_PERCENT} commission from each session. An additional 4% service fee is charged to the patient by AwaDoc (not deducted from your earnings).
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="space-y-4">
                             <div className="flex items-center justify-between text-sm">
-                                <span className="font-medium">Rehabify Earnings (80%)</span>
+                                <span className="font-medium">Rehabify Earnings ({100 - COMMISSION_RATE * 100}%)</span>
                                 <span className="font-bold text-green-600">{formatCurrency(stats.totalNet)}</span>
                             </div>
                             <div className="w-full h-4 bg-gray-100 rounded-full overflow-hidden flex">
                                 <div
                                     className="bg-[#005b57] h-full rounded-l-full transition-all"
-                                    style={{ width: stats.totalGross > 0 ? '80%' : '0%' }}
+                                    style={{ width: stats.totalGross > 0 ? `${(1 - COMMISSION_RATE) * 100}%` : '0%' }}
                                 />
                                 <div
                                     className="bg-orange-400 h-full rounded-r-full transition-all"
-                                    style={{ width: stats.totalGross > 0 ? '20%' : '0%' }}
+                                    style={{ width: stats.totalGross > 0 ? `${COMMISSION_RATE * 100}%` : '0%' }}
                                 />
                             </div>
                             <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-500">AwaDoc Commission (20%)</span>
+                                <span className="text-gray-500">AwaDoc Commission ({COMMISSION_PERCENT})</span>
                                 <span className="text-orange-500">{formatCurrency(stats.totalCommission)}</span>
                             </div>
                         </div>
@@ -166,9 +220,9 @@ export default function AwadocDashboardPage() {
                     <CardContent>
                         {stats.recentEvents.length > 0 ? (
                             <div className="space-y-2">
-                                {stats.recentEvents.map((event: any, idx: number) => (
+                                {stats.recentEvents.map((event: WebhookEvent, idx: number) => (
                                     <div
-                                        key={idx}
+                                        key={`${event.eventId}-${idx}`}
                                         className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
                                     >
                                         <div className="flex items-center gap-3">
@@ -179,7 +233,7 @@ export default function AwadocDashboardPage() {
                                                     {event.eventType}
                                                 </p>
                                                 <p className="text-xs text-gray-500">
-                                                    {new Date(event.processedAt).toLocaleString()}
+                                                    {dateFormatter.format(new Date(event.processedAt))}
                                                 </p>
                                             </div>
                                         </div>
@@ -231,7 +285,7 @@ export default function AwadocDashboardPage() {
                             </div>
                             <div className="space-y-2">
                                 <p className="text-sm font-medium text-gray-500">Commission Rate</p>
-                                <p className="text-sm">20% (AwaDoc Merchant Commission)</p>
+                                <p className="text-sm">{COMMISSION_PERCENT} (AwaDoc Merchant Commission)</p>
                             </div>
                             <div className="space-y-2">
                                 <p className="text-sm font-medium text-gray-500">AwaDoc Docs</p>

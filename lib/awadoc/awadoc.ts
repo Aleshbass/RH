@@ -11,13 +11,23 @@ import crypto from "crypto";
 
 // ── Config ──────────────────────────────────────────────
 
+const VALID_ENVIRONMENTS = ["test", "production"] as const;
+type AwadocEnvironment = (typeof VALID_ENVIRONMENTS)[number];
+
+function parseEnvironment(value: string | undefined): AwadocEnvironment {
+    if (value && VALID_ENVIRONMENTS.includes(value as AwadocEnvironment)) {
+        return value as AwadocEnvironment;
+    }
+    return "test";
+}
+
 export function getAwadocConfig() {
     return {
         apiKey: process.env.AWADOC_API_KEY ?? "",
         secretKey: process.env.AWADOC_SECRET_KEY ?? "",
         partnerId: process.env.AWADOC_PARTNER_ID ?? "rehabify",
         baseUrl: process.env.AWADOC_BASE_URL ?? "https://partners-staging.awadoc.com",
-        environment: (process.env.AWADOC_ENVIRONMENT ?? "test") as "test" | "production",
+        environment: parseEnvironment(process.env.AWADOC_ENVIRONMENT),
     };
 }
 
@@ -93,6 +103,9 @@ export function signOutboundPayload(
 
 // ── Outbound HTTP ───────────────────────────────────────
 
+/** Default timeout for outbound requests (15 seconds). */
+const DEFAULT_TIMEOUT_MS = 15_000;
+
 export interface AwadocCallbackResult {
     success: boolean;
     status?: number;
@@ -114,14 +127,20 @@ export async function sendCallbackEvent(
 
     const timestamp = Math.floor(Date.now() / 1000);
 
+    // Spread payload first, then override core fields so they cannot be spoofed
+    const { event_id: _eid, event_type: _et, timestamp: _ts, ...safePayload } = payload;
     const body = {
         event_id: `evt-rh-${crypto.randomUUID()}`,
         event_type: eventType,
         timestamp: new Date().toISOString(),
-        ...payload,
+        ...safePayload,
     };
 
     const signature = signOutboundPayload(body, timestamp);
+
+    // Set up abort controller for timeout
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
     try {
         const response = await fetch(url, {
@@ -132,7 +151,10 @@ export async function sendCallbackEvent(
                 "x-signature": signature,
             },
             body: JSON.stringify(body),
+            signal: controller.signal,
         });
+
+        clearTimeout(timer);
 
         const data = await response.json().catch(() => null);
 
@@ -153,6 +175,11 @@ export async function sendCallbackEvent(
         console.log("[AwaDoc] Callback sent:", { eventType, status: response.status });
         return { success: true, status: response.status, data };
     } catch (err) {
+        clearTimeout(timer);
+        if (err instanceof Error && err.name === "AbortError") {
+            console.error("[AwaDoc] Callback timed out:", { eventType, timeoutMs: DEFAULT_TIMEOUT_MS });
+            return { success: false, error: `Request timed out after ${DEFAULT_TIMEOUT_MS}ms` };
+        }
         const message = err instanceof Error ? err.message : "Unknown error";
         console.error("[AwaDoc] Callback error:", message);
         return { success: false, error: message };
@@ -181,6 +208,7 @@ export function toAwadocAvailabilityMode(
 
 /**
  * Map day-of-week number (0=Sun … 6=Sat) to AwaDoc day string.
+ * Throws RangeError for invalid inputs instead of silently defaulting.
  */
 const DAY_MAP: Record<number, string> = {
     0: "SUN",
@@ -193,5 +221,8 @@ const DAY_MAP: Record<number, string> = {
 };
 
 export function toDayString(dayOfWeek: number): string {
-    return DAY_MAP[dayOfWeek] ?? "MON";
+    if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+        throw new RangeError(`Invalid dayOfWeek: ${dayOfWeek}. Expected 0-6.`);
+    }
+    return DAY_MAP[dayOfWeek];
 }
