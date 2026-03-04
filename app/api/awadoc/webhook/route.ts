@@ -249,8 +249,20 @@ async function handleConsultationConfirmed(body: any) {
         consultationId,
     });
 
+    if (!session) {
+        console.error("[AwaDoc] Session not found after confirmation", {
+            consultationId,
+            requestId,
+        });
+        return {
+            status: "error",
+            error: "Session not found after confirmation",
+            acknowledged_at: new Date().toISOString(),
+        };
+    }
+
     // Send doctor_assigned callback to AwaDoc (async, don't block response)
-    if (session?.physiotherapistId) {
+    if (session.physiotherapistId) {
         sendDoctorAssignedCallback(consultationId, session).catch((err) =>
             console.error("[AwaDoc] Failed to send doctor_assigned callback:", err)
         );
@@ -307,6 +319,12 @@ function buildDoctorTime(
  * Fetch real physiotherapist details for the doctor_assigned callback.
  */
 async function getPhysioDetails(physiotherapistId: string) {
+    // Validate Convex ID format (alphanumeric + common Convex ID chars) before casting
+    if (!physiotherapistId || !/^[a-zA-Z0-9_-]+$/.test(physiotherapistId)) {
+        console.warn("[AwaDoc] Invalid physiotherapist ID format, skipping lookup:", physiotherapistId);
+        return { id: physiotherapistId, name: null, email: null };
+    }
+
     try {
         const user = await convex.query(api.awadoc.getUserById, {
             userId: physiotherapistId as Id<"users">,
@@ -320,8 +338,10 @@ async function getPhysioDetails(physiotherapistId: string) {
             };
         }
     } catch (err) {
-        // TODO: If getUserById fails, we fall back to placeholders
-        console.warn("[AwaDoc] Failed to fetch physio details:", err);
+        console.warn("[AwaDoc] Failed to fetch physio details:", {
+            physiotherapistId,
+            error: err instanceof Error ? err.message : String(err),
+        });
     }
     return {
         id: physiotherapistId,

@@ -2282,7 +2282,7 @@ export default defineSchema({
     responsePayload: v.optional(v.any()), // Sanitized via sanitizeWebhookPayload before insert
     status: v.union(v.literal("success"), v.literal("error")),
     errorMessage: v.optional(v.string()),
-    createdAt: v.number(),         // When the event was first recorded
+    createdAt: v.optional(v.number()),  // When the event was first recorded (optional for backcompat)
     processedAt: v.number(),       // When last processed/updated
   })
     .index("by_event_id", ["eventId"])
