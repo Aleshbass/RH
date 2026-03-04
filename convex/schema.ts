@@ -2214,6 +2214,78 @@ export default defineSchema({
     .index("by_physio", ["physiotherapistId"])
     .index("by_level", ["currentLevel"]),
 
+  // ─── AwaDoc Integration ───────────────────────────────────────
+  // Tracks each AwaDoc-initiated consultation from discovery to completion
+  awadocSessions: defineTable({
+    // AwaDoc identifiers
+    queryId: v.optional(v.string()),        // From availability.query
+    requestId: v.optional(v.string()),      // From consultation.request
+    consultationId: v.string(),             // Our generated ID (e.g., "cns-xxx")
+    eventId: v.optional(v.string()),        // AwaDoc event UUID
+
+    // AwaDoc user
+    awadocUserId: v.string(),
+    awadocUserName: v.string(),
+
+    // Rehabify mapping
+    physiotherapistId: v.optional(v.id("users")),
+    appointmentId: v.optional(v.id("appointments")),
+
+    // Status lifecycle
+    status: v.union(
+      v.literal("queried"),
+      v.literal("requested"),
+      v.literal("confirmed"),
+      v.literal("doctor_assigned"),
+      v.literal("scheduled"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+      v.literal("failed")
+    ),
+
+    // Session details
+    mode: v.optional(v.union(v.literal("virtual"), v.literal("physical"))),
+    specialistType: v.optional(v.string()),
+    scheduledTime: v.optional(v.number()),
+    endTime: v.optional(v.number()),
+    serviceArea: v.optional(v.string()),
+    preferredLang: v.optional(v.string()),
+
+    // Financial
+    grossAmount: v.optional(v.number()),     // Total before AwaDoc commission
+    awadocCommission: v.optional(v.number()), // 20% of gross
+    netAmount: v.optional(v.number()),        // 80% — what Rehabify receives
+    currency: v.optional(v.string()),         // "NGN"
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    confirmedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_consultation_id", ["consultationId"])
+    .index("by_request_id", ["requestId"])
+    .index("by_query_id", ["queryId"])
+    .index("by_status", ["status"])
+    .index("by_physiotherapist", ["physiotherapistId"])
+    .index("by_awadoc_user", ["awadocUserId"]),
+
+  // Audit trail for all AwaDoc webhook events (inbound and outbound)
+  awadocEventLog: defineTable({
+    eventId: v.string(),
+    eventType: v.string(),
+    direction: v.union(v.literal("inbound"), v.literal("outbound")),
+    payload: v.any(),
+    responsePayload: v.optional(v.any()),
+    status: v.union(v.literal("success"), v.literal("error")),
+    errorMessage: v.optional(v.string()),
+    processedAt: v.number(),
+  })
+    .index("by_event_id", ["eventId"])
+    .index("by_event_type", ["eventType"])
+    .index("by_direction", ["direction"])
+    .index("by_processed_at", ["processedAt"]),
+
   // Health tables from health schema
   ...healthTables,
 });
