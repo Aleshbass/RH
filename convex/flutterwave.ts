@@ -1,4 +1,15 @@
 // @ts-nocheck
+/**
+ * @deprecated — Payment processing has been migrated to Paystack.
+ * See: lib/payments/paystack.ts, app/api/payments/initiate/route.ts
+ *
+ * This file is KEPT because the bank account management functions
+ * (savePhysiotherapistBankDetails, getPhysiotherapistBankDetails,
+ * getMyBankAccounts, deleteBankAccount) are still actively used.
+ *
+ * TODO: Migrate bank account functions to a dedicated file and
+ * switch subaccount creation to Paystack's subaccount API.
+ */
 import { action, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";

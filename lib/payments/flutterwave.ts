@@ -1,3 +1,8 @@
+/**
+ * @deprecated — Payment processing has been migrated to Paystack.
+ * See: lib/payments/paystack.ts
+ * This file is kept for reference only. All new payment code should use PaystackService.
+ */
 import crypto from 'crypto'
 import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'

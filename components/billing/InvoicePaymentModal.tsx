@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useAction, useMutation } from 'convex/react'
+import { useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
 import {
@@ -69,24 +69,25 @@ export function InvoicePaymentModal({
   const [manualPayment, setManualPayment] = useState(false)
 
   // @ts-nocheck
-  const initializePayment = useAction(api.flutterwave.initializePaymentWithSplit)
-  // @ts-nocheck
   const processPayment = useMutation(api.billing.processPayment)
 
-  const handleFlutterwavePayment = async () => {
+  const handlePaystackPayment = async () => {
     if (!invoice) return
 
     setIsProcessing(true)
     try {
-      // Initialize payment with Flutterwave split payment
-      const result = await initializePayment({
-        invoiceId: invoice._id,
-        redirectUrl: `${process.env.NEXT_PUBLIC_APP_URL}/payment/callback`
+      // Initialize payment with Paystack via API route
+      const response = await fetch('/api/payments/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceId: invoice._id }),
       })
 
-      if (result.success && result.paymentLink) {
-        // Redirect to Flutterwave payment page
-        window.location.href = result.paymentLink
+      const result = await response.json()
+
+      if (result.success && result.authorization_url) {
+        // Redirect to Paystack payment page
+        window.location.href = result.authorization_url
       } else {
         throw new Error(result.error || 'Failed to initialize payment')
       }
@@ -151,9 +152,9 @@ export function InvoicePaymentModal({
             {(() => {
               const base = invoice?.totalAmount ?? 0
               const platform = invoice?.platformFeeAmount ?? 100000
-              // Flutterwave fee: 1.4% capped at ₦2,000
-              const flutterwaveFee = Math.min(Math.round((base + platform) * 0.014), 200000)
-              const payable = base + platform + flutterwaveFee
+              // Paystack fee: 1.5% + ₦100, capped at ₦2,000
+              const paystackFee = Math.min(Math.round((base + platform) * 0.015) + 10000, 200000)
+              const payable = base + platform + paystackFee
               return (
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
@@ -166,7 +167,7 @@ export function InvoicePaymentModal({
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Processing Fee</span>
-                    <span>₦{(flutterwaveFee / 100).toLocaleString()}</span>
+                    <span>₦{(paystackFee / 100).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between font-semibold text-lg pt-2 border-t">
                     <span>Total Payable</span>
@@ -311,7 +312,7 @@ export function InvoicePaymentModal({
           <Alert>
             <Shield className="h-4 w-4" />
             <AlertDescription>
-              Your payment is secured by Flutterwave. We do not store your card details.
+              Your payment is secured by Paystack. We do not store your card details.
               All transactions are encrypted and processed securely.
             </AlertDescription>
           </Alert>
@@ -352,7 +353,7 @@ export function InvoicePaymentModal({
             </Button>
           ) : (
             <Button
-              onClick={handleFlutterwavePayment}
+              onClick={handlePaystackPayment}
               disabled={isProcessing}
               className="bg-green-600 hover:bg-green-700"
             >
@@ -368,8 +369,8 @@ export function InvoicePaymentModal({
                     {(() => {
                       const base = invoice?.totalAmount ?? 0
                       const platform = invoice?.platformFeeAmount ?? 100000
-                      const flutterwaveFee = Math.min(Math.round((base + platform) * 0.014), 200000)
-                      const payable = base + platform + flutterwaveFee
+                      const paystackFee = Math.min(Math.round((base + platform) * 0.015) + 10000, 200000)
+                      const payable = base + platform + paystackFee
                       return `Proceed to Payment (₦${(payable / 100).toLocaleString()})`
                     })()}
                   </span>
