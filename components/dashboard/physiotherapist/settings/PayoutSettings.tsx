@@ -29,8 +29,8 @@ import { toast } from 'sonner';
 import Link from 'next/link';
 
 export function PayoutSettings({ currentUser }: { currentUser: any }) {
-    const bankAccounts = useQuery(api.flutterwave.getMyBankAccounts);
-    const deleteBankAccount = useMutation(api.flutterwave.deleteBankAccount);
+    const bankAccounts = useQuery(api.paystack.getMyBankAccounts);
+    const deleteBankAccount = useMutation(api.paystack.deleteBankAccount);
 
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
@@ -163,9 +163,9 @@ function AddBankAccountDialog({
     onOpenChange: (open: boolean) => void;
     currentUser: any;
 }) {
-    const getBankList = useAction(api.flutterwave.getBankList);
-    const verifyBankAccount = useAction(api.flutterwave.verifyBankAccount);
-    const createSubaccount = useAction(api.flutterwave.createPhysiotherapistSubaccount);
+    const getBankList = useAction(api.paystack.getBankList);
+    const verifyBankAccount = useAction(api.paystack.verifyBankAccount);
+    const createSubaccount = useAction(api.paystack.createPhysiotherapistSubaccount);
 
     const [step, setStep] = useState<'details' | 'confirm'>('details');
     const [isLoading, setIsLoading] = useState(false);

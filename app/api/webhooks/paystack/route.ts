@@ -219,9 +219,8 @@ async function sendPaymentEmails(params: {
     metadata?: Record<string, unknown>
 }) {
     try {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-            ? `https://${process.env.VERCEL_URL}`
-            : 'http://localhost:3000'
+        // Generate invoice
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
 
         const endpoint = params.type === 'success'
             ? '/api/emails/payment-notification'

@@ -36,7 +36,7 @@ export default function DoctorDashboardOverview() {
                 <p className="text-gray-500">Track your patient referrals and earnings.</p>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Referrals</CardTitle>
@@ -57,11 +57,21 @@ export default function DoctorDashboardOverview() {
                 </Card>
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Completed Sessions</CardTitle>
+                        <CardTitle className="text-sm font-medium">Completed Patients</CardTitle>
                         <CheckCircle className="h-4 w-4 text-green-500" />
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{stats.completed}</div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Sessions Attended</CardTitle>
+                        <Users className="h-4 w-4 text-indigo-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{stats.totalSessionsAttended || 0}</div>
+                        <p className="text-xs text-gray-500 mt-1">across all patients</p>
                     </CardContent>
                 </Card>
                 <Card>

@@ -2052,6 +2052,23 @@ export default defineSchema({
     .index("by_physiotherapist_id", ["physiotherapistId"])
     .index("by_subaccount_code", ["subaccountCode"]),
 
+  // Doctor bank accounts for referral commission payouts
+  doctorBankAccounts: defineTable({
+    doctorId: v.id("users"),
+    subaccountCode: v.string(), // Paystack subaccount code
+    bankCode: v.string(),
+    accountNumber: v.string(),
+    bankName: v.string(),
+    accountName: v.string(),
+    isDefault: v.boolean(),
+    isVerified: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    paymentProvider: v.optional(v.union(v.literal("paystack"), v.literal("flutterwave"))),
+  })
+    .index("by_doctor_id", ["doctorId"])
+    .index("by_subaccount_code", ["subaccountCode"]),
+
   assessments: defineTable({
     patientId: v.id("users"),
     physiotherapistId: v.id("users"),

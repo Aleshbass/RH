@@ -161,7 +161,29 @@ export const getMyReferrals = query({
             .order("desc") // newest first
             .collect();
 
-        return referrals;
+        // Enhance with session counts
+        const enhancedReferrals = await Promise.all(
+            referrals.map(async (referral) => {
+                let sessionCount = 0;
+
+                if (referral.patientId) {
+                    const sessions = await ctx.db
+                        .query("sessionLogs")
+                        .withIndex("by_patient", (q) => q.eq("patientId", referral.patientId!))
+                        .collect();
+
+                    // We can count all created logs, or filter by a specific status if sessionLogs had one
+                    sessionCount = sessions.length;
+                }
+
+                return {
+                    ...referral,
+                    sessionCount,
+                };
+            })
+        );
+
+        return enhancedReferrals;
     },
 });
 
@@ -215,6 +237,18 @@ export const getDashboardStats = query({
             .withIndex("by_referring_doctor", (q) => q.eq("referringDoctorId", user._id))
             .collect();
 
+        let totalSessionsAttended = 0;
+
+        await Promise.all(allReferrals.map(async (referral) => {
+            if (referral.patientId) {
+                const sessions = await ctx.db
+                    .query("sessionLogs")
+                    .withIndex("by_patient", (q) => q.eq("patientId", referral.patientId!))
+                    .collect();
+                totalSessionsAttended += sessions.length;
+            }
+        }));
+
         const totalReferrals = allReferrals.length;
         const booked = allReferrals.filter(r => r.status === "booked" || r.status === "completed" || r.status === "paid_out").length;
         const completed = allReferrals.filter(r => r.status === "completed" || r.status === "paid_out").length;
@@ -225,6 +259,7 @@ export const getDashboardStats = query({
             booked,
             completed,
             totalEarned,
+            totalSessionsAttended,
         };
     },
 });

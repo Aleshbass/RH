@@ -111,6 +111,8 @@ import type * as patientInvitations from "../patientInvitations.js";
 import type * as patients from "../patients.js";
 import type * as payments from "../payments.js";
 import type * as payouts from "../payouts.js";
+import type * as paystack from "../paystack.js";
+import type * as paystackDoctor from "../paystackDoctor.js";
 import type * as physiotherapistProfiles from "../physiotherapistProfiles.js";
 import type * as physiotherapists from "../physiotherapists.js";
 import type * as queries from "../queries.js";
@@ -251,6 +253,8 @@ declare const fullApi: ApiFromModules<{
   patients: typeof patients;
   payments: typeof payments;
   payouts: typeof payouts;
+  paystack: typeof paystack;
+  paystackDoctor: typeof paystackDoctor;
   physiotherapistProfiles: typeof physiotherapistProfiles;
   physiotherapists: typeof physiotherapists;
   queries: typeof queries;

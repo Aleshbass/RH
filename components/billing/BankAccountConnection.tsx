@@ -31,12 +31,12 @@ export function BankAccountConnection({ onConnectionSuccess }: BankConnectionPro
   const [error, setError] = useState('')
 
   // Convex hooks
-  const getBankList = useAction(api.flutterwave.getBankList)
-  const verifyBankAccount = useAction(api.flutterwave.verifyBankAccount)
-  const createSubaccount = useAction(api.flutterwave.createPhysiotherapistSubaccount)
-  const existingAccounts = useQuery(api.flutterwave.getMyBankAccounts)
+  const getBankList = useAction(api.paystack.getBankList)
+  const verifyBankAccount = useAction(api.paystack.verifyBankAccount)
+  const createSubaccount = useAction(api.paystack.createPhysiotherapistSubaccount)
+  const existingAccounts = useQuery(api.paystack.getMyBankAccounts)
   const currentUser = useQuery(api.users.getMyUser)
-  const deleteBankAccount = useMutation(api.flutterwave.deleteBankAccount)
+  const deleteBankAccount = useMutation(api.paystack.deleteBankAccount)
 
   const selectedBankName = banks.find(bank => bank.code === selectedBank)?.name || ''
 

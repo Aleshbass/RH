@@ -40,23 +40,37 @@ export default function ShareableBookingLink({
 }: ShareableBookingLinkProps) {
     const [copied, setCopied] = useState(false);
     const [bookingUrl, setBookingUrl] = useState("");
+    const [isLoading, setIsLoading] = useState(true);
     const ensureSlug = useMutation(api.marketplace.search.ensureBookingSlug);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
 
+        let active = true;
+        setIsLoading(true);
+
         // Try to get/create a short slug, fall back to raw ID
         ensureSlug({ userId: physiotherapistId })
             .then((slug) => {
+                if (!active) return;
                 const path = slug || physiotherapistId;
                 setBookingUrl(`${window.location.origin}/book/${path}`);
             })
             .catch(() => {
+                if (!active) return;
                 setBookingUrl(`${window.location.origin}/book/${physiotherapistId}`);
+            })
+            .finally(() => {
+                if (active) setIsLoading(false);
             });
+
+        return () => {
+            active = false;
+        };
     }, [physiotherapistId, ensureSlug]);
 
     const copyToClipboard = async () => {
+        if (!bookingUrl || isLoading) return;
         try {
             await navigator.clipboard.writeText(bookingUrl);
             setCopied(true);
@@ -104,12 +118,18 @@ export default function ShareableBookingLink({
                 onClick={copyToClipboard}
                 variant="outline"
                 size="sm"
+                disabled={isLoading || !bookingUrl}
                 className={cn(
                     "gap-2 border-teal-600 text-teal-600 hover:bg-teal-50",
                     className
                 )}
             >
-                {copied ? (
+                {isLoading ? (
+                    <>
+                        <Link2 className="w-4 h-4 animate-pulse" />
+                        Loading...
+                    </>
+                ) : copied ? (
                     <>
                         <Check className="w-4 h-4" />
                         Copied!
@@ -133,18 +153,19 @@ export default function ShareableBookingLink({
                     variant="outline"
                     size="sm"
                     className="gap-2"
+                    disabled={isLoading || !bookingUrl}
                 >
                     {copied ? (
                         <Check className="w-4 h-4 text-green-600" />
                     ) : (
                         <Copy className="w-4 h-4" />
                     )}
-                    {copied ? "Copied!" : "Copy Link"}
+                    {isLoading ? "Wait..." : (copied ? "Copied!" : "Copy Link")}
                 </Button>
 
                 <Popover>
                     <PopoverTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isLoading || !bookingUrl}>
                             <Share2 className="w-4 h-4" />
                         </Button>
                     </PopoverTrigger>
@@ -209,9 +230,11 @@ export default function ShareableBookingLink({
                     readOnly
                     value={bookingUrl}
                     className="font-mono text-sm bg-white border-teal-200 focus:border-teal-400"
+                    disabled={isLoading}
                 />
                 <Button
                     onClick={copyToClipboard}
+                    disabled={isLoading || !bookingUrl}
                     className={cn(
                         "shrink-0 gap-2 transition-all",
                         copied
@@ -227,7 +250,7 @@ export default function ShareableBookingLink({
                     ) : (
                         <>
                             <Copy className="w-4 h-4" />
-                            Copy
+                            {isLoading ? "Wait" : "Copy"}
                         </>
                     )}
                 </Button>
@@ -242,6 +265,7 @@ export default function ShareableBookingLink({
                         size="icon"
                         className="h-8 w-8 hover:bg-teal-100"
                         onClick={() => shareVia("email")}
+                        disabled={isLoading || !bookingUrl}
                     >
                         <Mail className="w-4 h-4 text-gray-600" />
                     </Button>
@@ -250,6 +274,7 @@ export default function ShareableBookingLink({
                         size="icon"
                         className="h-8 w-8 hover:bg-teal-100"
                         onClick={() => shareVia("whatsapp")}
+                        disabled={isLoading || !bookingUrl}
                     >
                         <MessageCircle className="w-4 h-4 text-gray-600" />
                     </Button>
@@ -258,6 +283,7 @@ export default function ShareableBookingLink({
                         size="icon"
                         className="h-8 w-8 hover:bg-teal-100"
                         onClick={() => shareVia("twitter")}
+                        disabled={isLoading || !bookingUrl}
                     >
                         <Twitter className="w-4 h-4 text-gray-600" />
                     </Button>
@@ -268,6 +294,7 @@ export default function ShareableBookingLink({
                         size="sm"
                         className="text-teal-600 hover:text-teal-700 hover:bg-teal-100 gap-1"
                         onClick={() => window.open(bookingUrl, "_blank")}
+                        disabled={isLoading || !bookingUrl}
                     >
                         Preview
                         <ExternalLink className="w-3 h-3" />

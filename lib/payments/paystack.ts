@@ -58,10 +58,18 @@ export class PaystackService {
     private baseUrl = 'https://api.paystack.co'
 
     constructor() {
+        const secretKey = process.env.PAYSTACK_SECRET_KEY || ''
+        const publicKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || ''
+        const webhookSecret = process.env.PAYSTACK_WEBHOOK_SECRET || ''
+
+        if (!webhookSecret) {
+            console.warn('PAYSTACK_WEBHOOK_SECRET is not set. Webhook signature verification will fail securely.');
+        }
+
         this.config = {
-            secretKey: process.env.PAYSTACK_SECRET_KEY!,
-            publicKey: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!,
-            webhookSecret: process.env.PAYSTACK_WEBHOOK_SECRET || '',
+            secretKey,
+            publicKey,
+            webhookSecret
         }
 
         if (!this.config.secretKey || !this.config.publicKey) {
@@ -85,61 +93,67 @@ export class PaystackService {
      */
     async initializePayment(data: PaystackPaymentInitData): Promise<PaystackResponse> {
         try {
+            // Mask email for logs
+            const maskedEmail = data.email ? `${data.email.split('@')[0].slice(0, 3)}***@${data.email.split('@')[1]}` : 'unknown';
+
             log.info('Initializing Paystack payment', {
-                action: 'paystack_init_payment',
+                action: 'paystack_initiate',
                 metadata: {
-                    amount: data.amount,
-                    email: data.email,
                     reference: data.reference,
+                    amount: data.amount,
+                    email: maskedEmail,
                     hasSubaccount: !!data.subaccount
                 }
             })
 
-            const payload: Record<string, unknown> = {
-                email: data.email,
-                amount: data.amount, // Paystack uses kobo
-                reference: data.reference,
-                callback_url: data.callback_url,
-                currency: data.currency || 'NGN',
-                metadata: {
-                    ...data.metadata,
-                    platform: 'RehabifyHealth',
-                    timestamp: Date.now()
-                },
-                channels: data.channels || ['card', 'bank', 'ussd', 'bank_transfer'],
-            }
-
-            // Add split payment configuration if subaccount exists
-            if (data.subaccount) {
-                payload.subaccount = data.subaccount
-                payload.bearer = data.bearer || 'account' // Rehabify pays Paystack fees
-                if (data.transaction_charge) {
-                    payload.transaction_charge = data.transaction_charge // Platform fee in kobo
-                }
-            }
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 10000)
 
             const response = await fetch(`${this.baseUrl}/transaction/initialize`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${this.config.secretKey}`,
+                    Authorization: `Bearer ${this.config.secretKey}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    email: data.email,
+                    amount: data.amount,
+                    reference: data.reference,
+                    callback_url: data.callback_url,
+                    subaccount: data.subaccount,
+                    bearer: data.bearer,
+                    transaction_charge: data.transaction_charge,
+                    metadata: {
+                        ...data.metadata,
+                        platform: 'RehabifyHealth',
+                        timestamp: Date.now()
+                    },
+                    currency: data.currency || 'NGN',
+                    channels: data.channels || ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer']
+                }),
+                signal: controller.signal
             })
+
+            clearTimeout(timeoutId)
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
 
             const result = await response.json()
 
-            if (!result.status) {
-                throw new Error(`Paystack initialization failed: ${result.message}`)
+            if (result.status) {
+                log.info('Paystack payment initialized successfully', {
+                    action: 'paystack_initiate_success',
+                    metadata: { reference: data.reference }
+                })
+            } else {
+                log.warn('Paystack payment initialization failed API checks', {
+                    action: 'paystack_initiate_failed',
+                    metadata: { reference: data.reference, message: result.message }
+                })
             }
-
-            log.info('Paystack payment initialized successfully', {
-                action: 'paystack_payment_initialized',
-                metadata: {
-                    reference: data.reference,
-                    authorization_url: result.data?.authorization_url
-                }
-            })
 
             return result
         } catch (error) {
@@ -158,27 +172,33 @@ export class PaystackService {
     async verifyPayment(reference: string): Promise<PaystackResponse> {
         try {
             log.info('Verifying Paystack payment', {
-                action: 'paystack_verify_payment',
+                action: 'paystack_verify',
                 metadata: { reference }
             })
+
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 10000)
 
             const response = await fetch(`${this.baseUrl}/transaction/verify/${encodeURIComponent(reference)}`, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${this.config.secretKey}`,
-                    'Content-Type': 'application/json'
-                }
+                    Authorization: `Bearer ${this.config.secretKey}`,
+                },
+                signal: controller.signal
             })
+
+            clearTimeout(timeoutId)
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
 
             const result = await response.json()
 
-            log.info('Paystack payment verification completed', {
-                action: 'paystack_payment_verified',
-                metadata: {
-                    reference,
-                    status: result.data?.status,
-                    amount: result.data?.amount
-                }
+            log.info('Paystack verification completed', {
+                action: 'paystack_verify_complete',
+                metadata: { reference, status: result.status }
             })
 
             return result
@@ -253,28 +273,37 @@ export class PaystackService {
      */
     async resolveBankAccount(accountNumber: string, bankCode: string): Promise<PaystackResponse> {
         try {
+            const maskedAccount = accountNumber ? `****${accountNumber.slice(-4)}` : 'unknown';
+
             log.info('Resolving bank account', {
-                action: 'paystack_resolve_account',
-                metadata: { accountNumber, bankCode }
+                action: 'paystack_resolve_bank',
+                metadata: { accountNumber: maskedAccount, bankCode }
             })
 
-            const response = await fetch(
-                `${this.baseUrl}/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${this.config.secretKey}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            )
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 10000)
+
+            const response = await fetch(`${this.baseUrl}/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`, {
+                method: 'GET',
+                headers: {
+                    Authorization: `Bearer ${this.config.secretKey}`
+                },
+                signal: controller.signal
+            })
+
+            clearTimeout(timeoutId)
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
 
             const result = await response.json()
 
             log.info('Bank account resolved', {
-                action: 'paystack_account_resolved',
+                action: 'paystack_resolve_success',
                 metadata: {
-                    accountNumber,
+                    accountNumber: maskedAccount,
                     account_name: result.data?.account_name
                 }
             })
@@ -295,16 +324,25 @@ export class PaystackService {
      */
     async getBanks(country: string = 'nigeria'): Promise<PaystackResponse> {
         try {
-            const response = await fetch(`${this.baseUrl}/bank?country=${country}`, {
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 10000)
+
+            const response = await fetch(`${this.baseUrl}/bank?country=${encodeURIComponent(country)}`, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${this.config.secretKey}`,
-                    'Content-Type': 'application/json'
-                }
+                    Authorization: `Bearer ${this.config.secretKey}`
+                },
+                signal: controller.signal
             })
 
-            const result = await response.json()
-            return result
+            clearTimeout(timeoutId)
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+
+            return await response.json()
         } catch (error) {
             log.error('Get banks failed', { error: error as Error })
             throw error
@@ -317,12 +355,23 @@ export class PaystackService {
      */
     verifyWebhookSignature(payload: string, signature: string): boolean {
         try {
-            const hash = crypto
-                .createHmac('sha512', this.config.secretKey)
+            if (!this.config.webhookSecret) {
+                log.error('Missing Paystack webhook secret for verification', { action: 'paystack_verify_webhook_missing_secret' })
+                return false
+            }
+
+            const hash = crypto.createHmac('sha512', this.config.webhookSecret)
                 .update(payload)
                 .digest('hex')
 
-            return hash === signature
+            const bufferHash = Buffer.from(hash, 'hex')
+            const bufferSig = Buffer.from(signature, 'hex')
+
+            if (bufferHash.length !== bufferSig.length) {
+                return false
+            }
+
+            return crypto.timingSafeEqual(bufferHash, bufferSig)
         } catch (error) {
             log.error('Webhook signature verification failed', { error: error as Error })
             return false
@@ -338,7 +387,8 @@ export class PaystackService {
         physiotherapistShare: number
         paystackFee: number
     } {
-        const platformFee = parseInt(process.env.PLATFORM_FEE_AMOUNT || '100000') // ₦1,000 in kobo
+        // Base platform fee configured or 100k kobo (₦1000)
+        const platformFee = parseInt(process.env.PLATFORM_FEE_AMOUNT || '100000', 10) // ₦1,000 in kobo
         // Paystack fee: 1.5% + ₦100 (10000 kobo), capped at ₦2,000 (200000 kobo)
         const calculatedFee = Math.ceil(totalAmount * 0.015) + 10000
         const paystackFee = Math.min(calculatedFee, 200000)

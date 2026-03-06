@@ -88,6 +88,9 @@ export default function MyReferralsPage() {
                                             Date Referred
                                         </th>
                                         <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                            Sessions Attended
+                                        </th>
+                                        <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                             Status
                                         </th>
                                         <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
@@ -109,6 +112,9 @@ export default function MyReferralsPage() {
                                             </td>
                                             <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                 {new Date(referral.createdAt).toLocaleDateString()}
+                                            </td>
+                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 font-medium">
+                                                {referral.sessionCount || 0}
                                             </td>
                                             <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                 <Badge className={`${getStatusColor(referral.status)} border-none`} variant="outline">

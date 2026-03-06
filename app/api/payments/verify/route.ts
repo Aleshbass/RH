@@ -3,7 +3,11 @@ import { ConvexHttpClient } from 'convex/browser'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
+  throw new Error("NEXT_PUBLIC_CONVEX_URL is not configured.");
+}
+
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL)
 
 /**
  * Payment verification endpoint — uses Paystack
@@ -22,6 +26,9 @@ export async function POST(request: NextRequest) {
 
     console.log('Verifying Paystack payment:', { reference, status })
 
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000)
+
     // Verify with Paystack
     const verifyResponse = await fetch(
       `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
@@ -30,9 +37,21 @@ export async function POST(request: NextRequest) {
         headers: {
           'Authorization': `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        signal: controller.signal
       }
     )
+
+    clearTimeout(timeoutId)
+
+    if (!verifyResponse.ok) {
+      const errorText = await verifyResponse.text().catch(() => '');
+      return NextResponse.json({
+        success: false,
+        message: `Payment verification failed (HTTP ${verifyResponse.status}). ${errorText}`,
+        data: null
+      }, { status: verifyResponse.status });
+    }
 
     const verifyResult = await verifyResponse.json()
 
@@ -58,6 +77,8 @@ export async function POST(request: NextRequest) {
         const txId = parts.length >= 2 ? parts[1] : null
 
         if (txId) {
+          // Add basic idempotent check here by checking if it's already completed if needed
+          // For now, allow completeVerificationPurchase to handle uniqueness/idempotency by throwing
           const result = await convex.mutation(api.marketplace.verification.completeVerificationPurchase, {
             transactionId: txId as Id<'marketplaceTransactions'>,
             paymentReference: reference,
@@ -66,6 +87,11 @@ export async function POST(request: NextRequest) {
         }
       } catch (e) {
         console.error('Verification activation error:', e)
+        return NextResponse.json({
+          success: false,
+          message: 'Payment was valid but verification activation failed on server.',
+          data: null
+        }, { status: 500 })
       }
     }
 
@@ -83,6 +109,11 @@ export async function POST(request: NextRequest) {
         }
       } catch (e) {
         console.error('Marketplace booking error:', e)
+        return NextResponse.json({
+          success: false,
+          message: 'Payment was valid but marketplace booking completion failed.',
+          data: null
+        }, { status: 500 })
       }
     }
 

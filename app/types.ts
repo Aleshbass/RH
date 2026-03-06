@@ -13,11 +13,12 @@ export interface User {
   phone?: string;
   /** Indicates if the user is currently active (online) */
   isActive?: boolean;
-  role?: "physiotherapist" | "clinic_owner" | "patient" | "family_member" | "admin";
+  role?: "physiotherapist" | "clinic_owner" | "patient" | "family_member" | "admin" | "doctor";
   onboarded: boolean;
   physiotherapistProfileId?: Id<"physiotherapistProfiles">;
   patientProfileId?: Id<"patientProfiles">;
   clinicOwnerProfileId?: Id<"clinicOwnerProfiles">;
+  doctorProfileId?: Id<"referringDoctorProfiles">;
   lastLoginAt?: number;
   onboardingComplete?: boolean;
   status?: "active" | "inactive" | "pending_review" | "declined" | "pending";

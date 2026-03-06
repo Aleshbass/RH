@@ -42,6 +42,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!invoice.patientEmail) {
+      return NextResponse.json(
+        { error: 'Patient email is required for payment' },
+        { status: 400 }
+      );
+    }
+
     if (invoice.status === 'paid') {
       return NextResponse.json(
         { error: 'Invoice is already paid' },
@@ -83,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     // Prepare Paystack payment data (amount in kobo — Paystack's native unit)
     const paymentData: Record<string, unknown> = {
-      email: invoice.patientEmail || 'patient@rehabify.com',
+      email: invoice.patientEmail,
       amount: totalPayable, // Paystack uses kobo natively
       reference: txRef,
       callback_url: `${origin}/payment/callback`,

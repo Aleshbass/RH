@@ -80,8 +80,16 @@ export function InvoicePaymentModal({
       const response = await fetch('/api/payments/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoiceId: invoice._id }),
+        body: JSON.stringify({
+          invoiceId: invoice._id,
+          paymentMethod // include the selected method
+        }),
       })
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to initialize payment (HTTP ${response.status}). ${errorText}`);
+      }
 
       const result = await response.json()
 
@@ -96,6 +104,12 @@ export function InvoicePaymentModal({
       toast.error('Failed to initialize payment. Please try again.')
       setIsProcessing(false)
     }
+  }
+
+  const calculatePaystackFee = (amountKobo: number) => {
+    // Paystack fee: 1.5% + ₦100 (10000 kobo), waived if < ₦2500 (250000 kobo)
+    const flatFee = amountKobo < 250000 ? 0 : 10000;
+    return Math.min(Math.round(amountKobo * 0.015) + flatFee, 200000);
   }
 
   const handleManualPayment = async () => {
@@ -152,8 +166,7 @@ export function InvoicePaymentModal({
             {(() => {
               const base = invoice?.totalAmount ?? 0
               const platform = invoice?.platformFeeAmount ?? 100000
-              // Paystack fee: 1.5% + ₦100, capped at ₦2,000
-              const paystackFee = Math.min(Math.round((base + platform) * 0.015) + 10000, 200000)
+              const paystackFee = calculatePaystackFee(base + platform)
               const payable = base + platform + paystackFee
               return (
                 <div className="space-y-2">
@@ -369,7 +382,7 @@ export function InvoicePaymentModal({
                     {(() => {
                       const base = invoice?.totalAmount ?? 0
                       const platform = invoice?.platformFeeAmount ?? 100000
-                      const paystackFee = Math.min(Math.round((base + platform) * 0.015) + 10000, 200000)
+                      const paystackFee = calculatePaystackFee(base + platform)
                       const payable = base + platform + paystackFee
                       return `Proceed to Payment (₦${(payable / 100).toLocaleString()})`
                     })()}
