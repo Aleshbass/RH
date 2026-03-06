@@ -144,7 +144,7 @@ export const getAvailablePhysios = query({
                     imageUrl: user?.imageUrl,
                     specializations: profile.specializations ?? [],
                     location: profile.location ?? "",
-                    hourlyRate: profile.hourlyRate ?? 15000,
+                    hourlyRate: profile.hourlyRate ?? 1500000, // ₦15,000 base rate per 60-min session
                     offersOnlineSessions: profile.offersOnlineSessions ?? false,
                     offersInPersonSessions: profile.offersInPersonSessions ?? true,
                     yearsOfExperience: profile.yearsOfExperience ?? 0,

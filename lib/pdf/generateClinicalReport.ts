@@ -189,9 +189,9 @@ export const generateClinicalReport = (referral: ReferralData, doctorTitle?: str
     doc.setTextColor(150, 150, 150);
     doc.text("End of Clinical Report. For inquiries, contact providers@rehabify.com", 14, lastPageHeight - 10);
 
-    // Save/Download the PDF — use sanitized patient identifier
+    // Save/Download the PDF — use sanitized identifier
     const safeId = referral._id
-        ? referral._id
+        ? sanitizeFilename(String(referral._id))
         : sanitizeFilename(referral.patientLastName);
     doc.save(`Rehabify_Report_${safeId}_${Date.now()}.pdf`);
 };
