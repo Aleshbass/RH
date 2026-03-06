@@ -69,6 +69,7 @@ export default function AwadocTestPage() {
     const physios = useQuery(api.awadoc.getAvailablePhysios, {})
     const [results, setResults] = useState<Record<string, TestResult>>({})
     const [consultationId, setConsultationId] = useState<string | null>(null)
+    const [runAllInProgress, setRunAllInProgress] = useState(false)
 
     const updateResult = (id: string, update: Partial<TestResult>) => {
         setResults((prev) => ({
@@ -123,14 +124,19 @@ export default function AwadocTestPage() {
     }
 
     const runAllTests = async () => {
-        for (const event of EVENT_TYPES) {
-            await runTest(event.id, event.event)
-            // Small delay between tests to let Convex mutations settle
-            await new Promise((resolve) => setTimeout(resolve, 800))
+        setRunAllInProgress(true)
+        try {
+            for (const event of EVENT_TYPES) {
+                await runTest(event.id, event.event)
+                // Small delay between tests to let Convex mutations settle
+                await new Promise((resolve) => setTimeout(resolve, 800))
+            }
+        } finally {
+            setRunAllInProgress(false)
         }
     }
 
-    const isAnyRunning = Object.values(results).some((r) => r.status === 'running')
+    const isAnyRunning = runAllInProgress || Object.values(results).some((r) => r.status === 'running')
 
     return (
         <div className="space-y-6 p-6">
@@ -303,7 +309,7 @@ export default function AwadocTestPage() {
                                             size="sm"
                                             variant="outline"
                                             onClick={() => runTest(event.id, event.event)}
-                                            disabled={result?.status === 'running'}
+                                            disabled={result?.status === 'running' || runAllInProgress}
                                         >
                                             {result?.status === 'running' ? (
                                                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -314,6 +320,11 @@ export default function AwadocTestPage() {
                                     </div>
                                 </div>
                             </CardHeader>
+                            {result?.error && (
+                                <CardContent className="pt-0">
+                                    <p className="text-sm text-destructive">{result.error}</p>
+                                </CardContent>
+                            )}
                             {result?.response !== undefined && result?.response !== null && (
                                 <CardContent className="pt-0">
                                     <div className="rounded-lg bg-muted/50 p-3 overflow-auto max-h-64">
@@ -321,9 +332,6 @@ export default function AwadocTestPage() {
                                             {JSON.stringify(result.response as Record<string, unknown>, null, 2)}
                                         </pre>
                                     </div>
-                                    {result.error && (
-                                        <p className="text-sm text-destructive mt-2">{result.error}</p>
-                                    )}
                                 </CardContent>
                             )}
                         </Card>

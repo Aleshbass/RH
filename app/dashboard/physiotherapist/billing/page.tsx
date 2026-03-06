@@ -102,7 +102,7 @@ export default function BillingPage() {
   const sendInvoice = useMutation(api.billing.sendInvoice);
   const recordPayment = useMutation(api.billing.recordPayment);
   const generateInvoicePDF = useMutation(api.billing.generateInvoicePDF);
-  const initiateLoan = useMutation(api.mediloan.logInitiatedLoan);
+  // initiateLoan mutation removed — logging is handled server-side in /api/myitura/initiate
 
   const [isInitiatingLoan, setIsInitiatingLoan] = useState(false);
 
@@ -198,7 +198,21 @@ export default function BillingPage() {
   const handleInitiateMediLoan = useCallback(async (invoice: InvoiceFromQuery) => {
     setIsInitiatingLoan(true);
     try {
-      const activePatient = patients?.find(p => p.firstName + " " + p.lastName === invoice.patientName || p._id === (invoice as any).patientId);
+      // Match patient by ID first, then fall back to normalized name comparison
+      const activePatient = patients?.find(p => {
+        if ((invoice as any).patientId && p._id === (invoice as any).patientId) return true;
+        const pName = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim().toLowerCase();
+        const iName = (invoice.patientName ?? '').trim().toLowerCase();
+        return pName.length > 0 && pName === iName;
+      });
+
+      // Validate phone number before calling external API
+      const phoneNumber = (invoice as any).patientPhone || (activePatient as any)?.phone || (activePatient as any)?.phoneNumber || '';
+      if (!phoneNumber) {
+        toast.error('Patient phone number is required to initiate MediLoan. Please update the patient profile.');
+        setIsInitiatingLoan(false);
+        return;
+      }
 
       const response = await fetch('/api/myitura/initiate', {
         method: 'POST',
@@ -208,7 +222,7 @@ export default function BillingPage() {
           firstName: activePatient?.firstName || invoice.patientName.split(' ')[0],
           lastName: activePatient?.lastName || invoice.patientName.split(' ').slice(1).join(' ') || 'Patient',
           email: (invoice as any).patientEmail || activePatient?.email || undefined,
-          phoneNumber: (invoice as any).patientPhone || (activePatient as any)?.phone || (activePatient as any)?.phoneNumber || '',
+          phoneNumber,
           treatment: invoice.invoiceNumber ? `Invoice ${invoice.invoiceNumber}` : 'General Physiotherapy',
           treatmentAmount: invoice.totalAmount, // Already in kobo
           invoiceReference: invoice.invoiceNumber || undefined,

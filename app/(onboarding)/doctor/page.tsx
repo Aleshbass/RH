@@ -8,7 +8,7 @@ import { useOnboardingStore } from '@/stores/onboardingStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 
 export default function DoctorOnboardingPage() {
     const router = useRouter();
@@ -43,9 +43,10 @@ export default function DoctorOnboardingPage() {
 
             // Redirect to dashboard
             router.push('/dashboard');
-        } catch (error: any) {
-            console.error("Failed to setup doctor profile:", error);
-            toast.error(error.message || "Failed to save profile. Please try again.");
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'An unexpected error occurred';
+            console.error("Failed to setup doctor profile:", message);
+            toast.error(message || "Failed to save profile. Please try again.");
         } finally {
             setIsSubmitting(false);
         }

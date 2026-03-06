@@ -14,7 +14,7 @@ export default function MyReferralsPage() {
     const referrals = useQuery(api.doctors.getMyReferrals)
     const doctorProfile = useQuery(api.doctors.getMyDoctorProfile)
 
-    if (referrals === undefined) {
+    if (referrals === undefined || doctorProfile === undefined) {
         return (
             <div className="flex h-64 items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
@@ -99,7 +99,7 @@ export default function MyReferralsPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200">
-                                    {referrals.map((referral) => (
+                                    {referrals.map((referral: any) => (
                                         <tr key={referral._id}>
                                             <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
                                                 {referral.patientFirstName} {referral.patientLastName}
@@ -116,7 +116,7 @@ export default function MyReferralsPage() {
                                                 </Badge>
                                             </td>
                                             <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
-                                                {referral.commissionEarned ? formatCurrency(referral.commissionEarned, 'NGN') : '-'}
+                                                {referral.commissionEarned != null ? formatCurrency(referral.commissionEarned, 'NGN') : '-'}
                                             </td>
                                             <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
                                                 {referral.status === 'completed' || referral.status === 'paid_out' ? (

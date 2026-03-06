@@ -45,7 +45,9 @@ export default function AdminReferralsPage() {
                 referralId: selectedReferral._id,
                 status: statusToUpdate,
                 clinicalNotes: notes || undefined,
-                commissionEarned: commission ? parseFloat(commission) * 100 : undefined
+                commissionEarned: commission
+                    ? (isNaN(parseFloat(commission)) ? undefined : Math.round(parseFloat(commission) * 100))
+                    : undefined
             })
             toast.success("Referral status updated successfully")
             setIsUpdateModalOpen(false)
@@ -162,9 +164,9 @@ export default function AdminReferralsPage() {
 
                     <div className="grid gap-4 py-4">
                         <div className="space-y-2">
-                            <label className="text-sm font-medium">Status</label>
+                            <label htmlFor="referral-status" className="text-sm font-medium">Status</label>
                             <Select value={statusToUpdate} onValueChange={(val: ReferralStatus) => setStatusToUpdate(val)}>
-                                <SelectTrigger>
+                                <SelectTrigger id="referral-status">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -180,8 +182,9 @@ export default function AdminReferralsPage() {
 
                         {(statusToUpdate === 'completed' || statusToUpdate === 'paid_out') && (
                             <div className="space-y-2">
-                                <label className="text-sm font-medium">Earned Commission (NGN)</label>
+                                <label htmlFor="referral-commission" className="text-sm font-medium">Earned Commission (NGN)</label>
                                 <Input
+                                    id="referral-commission"
                                     type="number"
                                     placeholder="Amount in Naira"
                                     value={commission}
@@ -192,8 +195,9 @@ export default function AdminReferralsPage() {
                         )}
 
                         <div className="space-y-2">
-                            <label className="text-sm font-medium">Admin / Medical Notes</label>
+                            <label htmlFor="referral-notes" className="text-sm font-medium">Admin / Medical Notes</label>
                             <Textarea
+                                id="referral-notes"
                                 placeholder="Update notes for admin team or clinical summary"
                                 value={notes}
                                 onChange={(e) => setNotes(e.target.value)}

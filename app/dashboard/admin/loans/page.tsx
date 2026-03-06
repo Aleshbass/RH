@@ -135,7 +135,9 @@ export default function AdminLoansPage() {
                                                 {loan.myituraSdkRef || '—'}
                                             </td>
                                             <td className="px-6 py-4 text-gray-500 whitespace-nowrap text-xs">
-                                                {new Date(loan.createdAt).toLocaleDateString()}
+                                                {loan.createdAt && !isNaN(new Date(loan.createdAt).getTime())
+                                                    ? new Date(loan.createdAt).toLocaleDateString()
+                                                    : '—'}
                                             </td>
                                         </tr>
                                     )

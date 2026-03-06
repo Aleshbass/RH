@@ -17,7 +17,15 @@ export default function EarningsPage() {
         )
     }
 
-    if (!stats) return null;
+    if (!stats) {
+        return (
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+                <AlertCircle className="h-10 w-10 text-amber-500 mb-3" />
+                <p className="text-gray-700 font-medium">Unable to load earnings data</p>
+                <p className="text-sm text-gray-500 mt-1">Please refresh the page or contact support if the issue persists.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">

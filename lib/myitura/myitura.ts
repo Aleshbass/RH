@@ -48,10 +48,26 @@ export async function initiateMediLoan(payload: InitiateLoanRequest): Promise<In
             body: JSON.stringify(payload),
         });
 
-        const data: InitiateLoanResponse = await response.json();
+        const contentType = response.headers.get('content-type') || '';
+        let data: InitiateLoanResponse;
+        try {
+            if (!contentType.includes('application/json')) {
+                const text = await response.text();
+                console.error('MyItura API returned non-JSON response:', { status: response.status, contentType });
+                throw new Error(`MyItura returned non-JSON (status ${response.status}): ${text.slice(0, 200)}`);
+            }
+            data = await response.json();
+        } catch (parseError) {
+            if (parseError instanceof SyntaxError) {
+                const text = await response.text().catch(() => '[unreadable]');
+                console.error('MyItura API JSON parse error:', { status: response.status, body: text.slice(0, 200) });
+                throw new Error(`MyItura returned invalid JSON (status ${response.status})`);
+            }
+            throw parseError;
+        }
 
         if (!response.ok || !data.success) {
-            console.error("MyItura API Error details:", data);
+            console.error('MyItura API Error:', { status: response.status, error: data.error, message: data.message });
             throw new Error(data.error || data.message || "Failed to initiate loan with MyItura");
         }
 

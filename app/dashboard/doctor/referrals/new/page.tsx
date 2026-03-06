@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 
 export default function SubmitReferralPage() {
     const router = useRouter()

@@ -18,7 +18,6 @@ export const logInitiatedLoan = mutation({
         patientPhone: v.string(),
         patientEmail: v.optional(v.string()),
         applicationUrl: v.string(),
-        status: v.string(),
         expiresAt: v.string(),
     },
     handler: async (ctx, args) => {
@@ -58,6 +57,9 @@ export const logInitiatedLoan = mutation({
 /**
  * Called by the /api/myitura/webhook route when MyItura sends status updates.
  * Finds the loan by SDK reference or client reference and updates its status.
+ *
+ * NOTE: Authentication/signature verification is performed upstream in the
+ * Next.js API route (/api/myitura/webhook/route.ts) before this mutation is called.
  */
 export const updateLoanFromWebhook = mutation({
     args: {
@@ -66,7 +68,7 @@ export const updateLoanFromWebhook = mutation({
         status: v.string(),
         disbursedAt: v.optional(v.number()),
         repaymentStatus: v.optional(v.string()),
-        webhookPayload: v.optional(v.string()),
+        lastWebhookPayload: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
         let loan = null;
@@ -96,7 +98,7 @@ export const updateLoanFromWebhook = mutation({
         const updates: Record<string, any> = {
             status: args.status,
             updatedAt: Date.now(),
-            lastWebhookPayload: args.webhookPayload,
+            lastWebhookPayload: args.lastWebhookPayload,
         };
 
         if (args.disbursedAt) updates.disbursedAt = args.disbursedAt;

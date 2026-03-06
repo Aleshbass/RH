@@ -201,6 +201,7 @@ export const checkOnboardingStatus = query({
       v.literal("clinic_owner"),
       v.literal("patient"),
       v.literal("family_member"),
+      v.literal("doctor"),
       v.literal("admin")
     )),
     name: v.optional(v.string()),
@@ -402,6 +403,7 @@ export const checkDashboardAccess = query({
         v.literal("clinic_owner"),
         v.literal("patient"),
         v.literal("family_member"),
+        v.literal("doctor"),
         v.literal("admin")
       )),
       onboarded: v.boolean(),

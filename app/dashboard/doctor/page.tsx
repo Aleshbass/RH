@@ -13,13 +13,21 @@ export default function DoctorDashboardOverview() {
 
     if (stats === undefined) {
         return (
-            <div className="flex h-64 items-center justify-center">
+            <div className="flex h-64 items-center justify-center" role="status" aria-label="Loading dashboard">
                 <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                <span className="sr-only">Loading…</span>
             </div>
         )
     }
 
-    if (!stats) return null;
+    if (!stats) {
+        return (
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+                <p className="text-gray-700 font-medium">Unable to load dashboard data</p>
+                <p className="text-sm text-gray-500 mt-1">Please refresh the page or try again later.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">

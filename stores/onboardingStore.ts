@@ -358,6 +358,19 @@ export const useOnboardingStore = create<OnboardingStore>()(
     }),
     {
       name: 'rehabify-onboarding-storage',
+      partialize: (state) => ({
+        ...state,
+        data: {
+          ...state.data,
+          // Strip sensitive banking fields from localStorage persistence
+          doctorData: {
+            ...state.data.doctorData,
+            bankName: undefined,
+            accountNumber: undefined,
+            accountName: undefined,
+          },
+        },
+      }),
     }
   )
 );

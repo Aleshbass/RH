@@ -65,37 +65,64 @@ export async function POST(request: NextRequest) {
         // 4. Generate internal reference
         const clientReference = `RH-LOAN-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-        // 5. Call MyItura SDK
-        const myituraResponse = await fetch(`${baseURL}/api/v1/sdk/loans/initiate`, {
-            method: "POST",
-            headers: {
-                "X-API-Public-Key": publicKey,
-                "X-API-Secret-Key": secretKey,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                clientReference,
-                invoiceReference: invoiceReference || undefined,
-                firstName,
-                lastName,
-                email: email || undefined,
-                phoneNumber,
-                treatment,
-                treatmentAmount,
-            }),
-        });
+        // 5. Call MyItura SDK (with timeout)
+        const controller = new AbortController();
+        const timeoutMs = 15000;
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+        let myituraResponse: Response;
+        try {
+            myituraResponse = await fetch(`${baseURL}/api/v1/sdk/loans/initiate`, {
+                method: "POST",
+                headers: {
+                    "X-API-Public-Key": publicKey,
+                    "X-API-Secret-Key": secretKey,
+                    "Content-Type": "application/json",
+                },
+                signal: controller.signal,
+                body: JSON.stringify({
+                    clientReference,
+                    invoiceReference: invoiceReference || undefined,
+                    firstName,
+                    lastName,
+                    email: email || undefined,
+                    phoneNumber,
+                    treatment,
+                    treatmentAmount,
+                }),
+            });
+        } catch (fetchError: any) {
+            clearTimeout(timer);
+            if (fetchError.name === 'AbortError') {
+                return NextResponse.json(
+                    { error: "MyItura API request timed out" },
+                    { status: 504 }
+                );
+            }
+            throw fetchError;
+        } finally {
+            clearTimeout(timer);
+        }
 
         const data = await myituraResponse.json();
 
         if (!myituraResponse.ok || !data.success) {
-            console.error("[MyItura] API error:", data);
+            console.error("[MyItura] API error:", { status: myituraResponse.status, message: data.message, error: data.error });
             return NextResponse.json(
                 { error: data.error || data.message || "Failed to initiate loan" },
                 { status: myituraResponse.status }
             );
         }
 
-        // 6. Log in Convex
+        // 6. Log in Convex — validate data.data exists
+        if (!data.data || !data.data.sdkReference || !data.data.applicationUrl) {
+            console.error("[MyItura] Unexpected response shape: missing data.data fields");
+            return NextResponse.json(
+                { error: "MyItura returned an incomplete response" },
+                { status: 502 }
+            );
+        }
+
         const loanId = await convex.mutation(api.mediloan.logInitiatedLoan, {
             patientId: patientId || undefined,
             clientReference,
@@ -108,8 +135,7 @@ export async function POST(request: NextRequest) {
             patientPhone: phoneNumber,
             patientEmail: email || undefined,
             applicationUrl: data.data.applicationUrl,
-            status: "initiated",
-            expiresAt: data.data.expiresAt,
+            expiresAt: data.data.expiresAt ?? '',
         });
 
         return NextResponse.json({

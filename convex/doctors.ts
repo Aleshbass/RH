@@ -58,7 +58,13 @@ export const setupDoctorProfile = mutation({
 
         // If user already has a doctor profile, update it
         if (user.doctorProfileId) {
-            await ctx.db.patch(user.doctorProfileId, args);
+            // Filter out keys with undefined values to avoid overwriting existing data
+            const filtered = Object.fromEntries(
+                Object.entries(args).filter(([, v]) => v !== undefined)
+            );
+            if (Object.keys(filtered).length > 0) {
+                await ctx.db.patch(user.doctorProfileId, filtered);
+            }
             return user.doctorProfileId;
         }
 

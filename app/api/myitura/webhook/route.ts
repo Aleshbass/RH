@@ -44,7 +44,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    console.log(`[MyItura Webhook] Event received:`, JSON.stringify(body, null, 2));
+    // Log only non-sensitive fields to avoid PII exposure
+    console.log(`[MyItura Webhook] Event received:`, {
+        event: body.event || body.type || body.eventType,
+        sdkReference: body.sdkReference || body.data?.sdkReference,
+        clientReference: body.clientReference || body.data?.clientReference,
+    });
 
     try {
         // Extract fields — adjust based on MyItura's actual payload format
@@ -72,7 +77,7 @@ export async function POST(request: NextRequest) {
             status: loanStatus,
             disbursedAt: loanStatus === "disbursed" ? Date.now() : undefined,
             repaymentStatus: loanStatus === "repaid" ? "completed" : undefined,
-            webhookPayload: JSON.stringify(body),
+            lastWebhookPayload: JSON.stringify(body),
         });
 
         console.log(`[MyItura Webhook] Processed ${eventType} for ref: ${sdkReference || clientReference}`);

@@ -955,7 +955,8 @@ export default defineSchema({
     .index("by_patient", ["patientId"])
     .index("by_clientReference", ["clientReference"])
     .index("by_myituraSdkRef", ["myituraSdkRef"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_createdAt", ["createdAt"]),
 
   // Referrals to other healthcare providers
   referrals: defineTable({
