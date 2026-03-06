@@ -52,6 +52,9 @@ import {
   Mail,
   Palette,
   Globe,
+  UserPlus,
+  WalletCards,
+  Stethoscope,
 } from 'lucide-react'
 import { TooltipContent } from '@/components/ui/tooltip'
 import Link from 'next/link'
@@ -96,6 +99,27 @@ const navigationGroups = [
         icon: Shield,
         roles: ['admin'],
         description: 'Manage user roles and permissions',
+      },
+      {
+        title: 'Inbound Referrals',
+        href: '/dashboard/admin/referrals',
+        icon: UserPlus,
+        roles: ['admin'],
+        description: 'Process referring doctor patient intake queue',
+      },
+      {
+        title: 'MediLoan Applications',
+        href: '/dashboard/admin/loans',
+        icon: WalletCards,
+        roles: ['admin'],
+        description: 'Track patient loan applications via MyItura',
+      },
+      {
+        title: 'AwaDoc Integration',
+        href: '/dashboard/admin/awadoc',
+        icon: Stethoscope,
+        roles: ['admin'],
+        description: 'Manage AwaDoc marketplace integration & test webhooks',
       },
     ],
   },

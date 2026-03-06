@@ -166,13 +166,13 @@ async function handleConsultationRequest(body: any) {
     const scheduledTime = preferredTime ? new Date(preferredTime).getTime() : Date.now() + 3600000;
     const endTime = scheduledTime + 3600000; // 60 minute sessions
 
-    // Get a suitable physio (first available for now — can be smarter later)
+    // Get a suitable physio using weighted matching
     const physios = await convex.query(api.awadoc.getAvailablePhysios, {
         serviceArea: "ALL",
         preferredMode: preferredMode === "virtual" ? "virtual" : "physical",
     });
 
-    const selectedPhysio = physios[0]; // Simple selection for now
+    const selectedPhysio = selectBestPhysio(physios);
     const sessionRate = selectedPhysio?.hourlyRate ?? 1500000; // Default ₦15,000 in kobo
 
     // Create session record in Convex
@@ -275,6 +275,35 @@ async function handleConsultationConfirmed(body: any) {
 }
 
 // ── Helpers ─────────────────────────────────────────────
+
+/**
+ * Select the best-matching physiotherapist using a weighted scoring approach.
+ *
+ * Weights:
+ *  - Average rating:       50%
+ *  - Years of experience:  30%
+ *  - Competitive rate:     20% (lower rate scores higher for patient value)
+ */
+function selectBestPhysio(physios: any[]): any | null {
+    if (!physios || physios.length === 0) return null;
+    if (physios.length === 1) return physios[0];
+
+    // Normalise values to 0-1 range for scoring
+    const maxRate = Math.max(...physios.map((p) => p.hourlyRate ?? 0)) || 1;
+    const maxExp = Math.max(...physios.map((p) => p.yearsOfExperience ?? 0)) || 1;
+
+    const scored = physios.map((p) => {
+        const ratingScore = (p.averageRating ?? 0) / 5;            // 0–1
+        const expScore = (p.yearsOfExperience ?? 0) / maxExp;      // 0–1
+        const rateScore = 1 - (p.hourlyRate ?? 0) / maxRate;       // 0–1 (lower = better)
+
+        const total = ratingScore * 0.5 + expScore * 0.3 + rateScore * 0.2;
+        return { physio: p, score: total };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored[0].physio;
+}
 
 /**
  * Build AwaDoc doctor_time array from our availability schedule.
@@ -402,7 +431,7 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
                     : undefined,
                 duration: "01:00:00",
                 link: session.mode === "virtual"
-                    ? `https://app.rehabifyhealth.com/call/${consultationId}`
+                    ? `${process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com"}/video-call/${consultationId}`
                     : undefined,
             },
         },

@@ -4,7 +4,9 @@ import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import Link from 'next/link'
 import {
     Activity,
     DollarSign,
@@ -14,6 +16,7 @@ import {
     AlertTriangle,
     ExternalLink,
     RefreshCw,
+    FlaskConical,
 } from 'lucide-react'
 
 // ── Types ───────────────────────────────────────────────
@@ -108,10 +111,18 @@ export default function AwadocDashboardPage() {
                             Monitor bookings from the AwaDoc marketplace
                         </p>
                     </div>
-                    <Badge variant="outline" className="text-sm px-3 py-1">
-                        <span className="w-2 h-2 bg-green-500 rounded-full mr-2 inline-block" />
-                        Test Environment
-                    </Badge>
+                    <div className="flex items-center gap-3">
+                        <Button variant="outline" size="sm" asChild>
+                            <Link href="/dashboard/admin/awadoc/test">
+                                <FlaskConical className="h-4 w-4 mr-2" />
+                                Test Integration
+                            </Link>
+                        </Button>
+                        <Badge variant="outline" className="text-sm px-3 py-1">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2 inline-block" />
+                            Test Environment
+                        </Badge>
+                    </div>
                 </div>
 
                 {/* Metrics Cards */}

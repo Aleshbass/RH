@@ -10,7 +10,7 @@ import { User } from '@/app/types'
 import PendingApprovalPage from '@/components/dashboard/shared/PendingApprovalPage'
 import { Button } from '@/components/ui/button'
 
-type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'admin';
+type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin';
 
 export default function DashboardPage() {
   const { isLoaded, isSignedIn } = useAuth()
@@ -45,6 +45,7 @@ export default function DashboardPage() {
       if (user.patientProfileId) return 'patient'
       if (user.physiotherapistProfileId) return 'physiotherapist'
       if (user.clinicOwnerProfileId) return 'clinic_owner'
+      if (user.doctorProfileId) return 'doctor'
       return undefined
     })()
 
@@ -88,6 +89,9 @@ export default function DashboardPage() {
           break
         case 'patient':
           router.replace('/dashboard/patient')
+          break
+        case 'doctor':
+          router.replace('/dashboard/doctor')
           break
         case 'admin':
           router.replace('/dashboard/admin')

@@ -102,6 +102,9 @@ export default function BillingPage() {
   const sendInvoice = useMutation(api.billing.sendInvoice);
   const recordPayment = useMutation(api.billing.recordPayment);
   const generateInvoicePDF = useMutation(api.billing.generateInvoicePDF);
+  const initiateLoan = useMutation(api.mediloan.logInitiatedLoan);
+
+  const [isInitiatingLoan, setIsInitiatingLoan] = useState(false);
 
   const filteredInvoices = useMemo(() => {
     return invoices?.filter((invoice: InvoiceFromQuery) => {
@@ -191,6 +194,43 @@ export default function BillingPage() {
       console.error('Download PDF error:', error);
     }
   }, [generateInvoicePDF]);
+
+  const handleInitiateMediLoan = useCallback(async (invoice: InvoiceFromQuery) => {
+    setIsInitiatingLoan(true);
+    try {
+      const activePatient = patients?.find(p => p.firstName + " " + p.lastName === invoice.patientName || p._id === (invoice as any).patientId);
+
+      const response = await fetch('/api/myitura/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patientId: activePatient?._id || undefined,
+          firstName: activePatient?.firstName || invoice.patientName.split(' ')[0],
+          lastName: activePatient?.lastName || invoice.patientName.split(' ').slice(1).join(' ') || 'Patient',
+          email: (invoice as any).patientEmail || activePatient?.email || undefined,
+          phoneNumber: (invoice as any).patientPhone || (activePatient as any)?.phone || (activePatient as any)?.phoneNumber || '',
+          treatment: invoice.invoiceNumber ? `Invoice ${invoice.invoiceNumber}` : 'General Physiotherapy',
+          treatmentAmount: invoice.totalAmount, // Already in kobo
+          invoiceReference: invoice.invoiceNumber || undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to initiate MediLoan');
+      }
+
+      toast.success(
+        `MediLoan initiated! SMS sent to patient. Ref: ${data.data.sdkReference}`,
+        { duration: 6000 }
+      );
+    } catch (error: any) {
+      toast.error("Failed to initiate loan: " + error.message);
+    } finally {
+      setIsInitiatingLoan(false);
+    }
+  }, [patients]);
 
   const addInvoiceItem = useCallback(() => {
     setInvoiceForm(prev => ({
@@ -654,6 +694,8 @@ export default function BillingPage() {
           onSend={async () => handleSendInvoice(selectedInvoice._id)}
           onRecordPayment={async (amount: number, method: string) => handleRecordPayment(selectedInvoice._id, amount, method)}
           onDownload={async () => handleDownloadPDF(selectedInvoice._id)}
+          onInitiateMediLoan={handleInitiateMediLoan as any}
+          isInitiatingLoan={isInitiatingLoan}
         />
       )}
     </div>

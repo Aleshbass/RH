@@ -56,7 +56,7 @@ export function DoctorsClinicsSection() {
                                 href="/sign-up"
                                 className="group inline-flex items-center gap-2 bg-[#002e2c] hover:bg-[#004a46] text-white font-semibold py-3.5 px-8 rounded-full transition-all duration-300 hover:scale-105 shadow-lg shadow-[#002e2c]/20"
                             >
-                                <span>Become a Partner</span>
+                                <span>Refer a Patient Now</span>
                                 <ArrowRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
                             </Link>
                         </motion.div>

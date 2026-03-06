@@ -28,6 +28,7 @@ export default defineSchema({
       v.literal("clinic_owner"),
       v.literal("patient"),
       v.literal("family_member"),
+      v.literal("doctor"),
       v.literal("admin")
     )),
     onboarded: v.boolean(), // Flag to indicate if user has completed initial profile setup
@@ -36,6 +37,7 @@ export default defineSchema({
     physiotherapistProfileId: v.optional(v.id("physiotherapistProfiles")),
     patientProfileId: v.optional(v.id("patientProfiles")),
     clinicOwnerProfileId: v.optional(v.id("clinicOwnerProfiles")), // Assuming clinicOwnerProfiles might be added later or clinics table is primary link
+    doctorProfileId: v.optional(v.id("referringDoctorProfiles")), // Link to doctor profile
     // familyMemberProfileId: v.optional(v.id("familyMemberProfiles")), // Add if/when this table is created
 
     // Timestamps
@@ -853,6 +855,107 @@ export default defineSchema({
     .index("by_clinic_id_and_status", ["clinicId", "status"])
     .index("by_clinic_id_and_invoice_number", ["clinicId", "invoiceNumber"])
     .index("by_payment_reference", ["paymentReference"]),
+
+  // ─── Phase 4: Doctor & Referring Partner Portal ───
+
+  // Profiles for doctors/partners referring patients to Rehabify
+  referringDoctorProfiles: defineTable({
+    userId: v.id("users"),
+    title: v.optional(v.string()), // e.g., "Dr.", "Prof."
+    medicalLicenseNumber: v.optional(v.string()),
+    specialty: v.optional(v.string()), // e.g., "Orthopedics", "General Practice"
+    hospitalAffiliation: v.optional(v.string()), // Where they work
+    bio: v.optional(v.string()),
+
+    // Financial/Payout Details
+    bankName: v.optional(v.string()),
+    accountNumber: v.optional(v.string()),
+    accountName: v.optional(v.string()),
+
+    // Configurable commission structure per doctor (optional, defaults could apply globally)
+    commissionRateOverride: v.optional(v.number()), // percentage, e.g., 0.1 for 10%
+    flatFeeOverride: v.optional(v.number()), // flat fee per referral in kobo
+  })
+    .index("by_user_id", ["userId"]),
+
+  // Inbound patient referrals from referring doctors/partners
+  inboundReferrals: defineTable({
+    referringDoctorId: v.id("users"), // The doctor who made the referral
+
+    // Patient Details Provided Before Registration
+    patientFirstName: v.string(),
+    patientLastName: v.string(),
+    patientEmail: v.optional(v.string()),
+    patientPhone: v.string(),
+    hospitalClinic: v.optional(v.string()), // The hospital/clinic the referral is coming from
+    condition: v.optional(v.string()),
+    clinicalNotes: v.optional(v.string()), // Reason for referral, initial diagnosis
+
+    // Tracking the patient lifecycle
+    patientId: v.optional(v.id("users")), // Linked once they sign up
+    appointmentId: v.optional(v.id("appointments")), // Associated first appointment
+
+    status: v.union(
+      v.literal("pending"),    // Referral submitted, patient hasn't booked yet
+      v.literal("contacted"),  // Rehabify team contacted them
+      v.literal("booked"),     // First session scheduled
+      v.literal("completed"),  // First session completed
+      v.literal("paid_out"),   // Commission paid to referrer
+      v.literal("cancelled")
+    ),
+
+    // Financial Tracking
+    commissionEarned: v.optional(v.number()), // Amount earned by referrer in kobo
+
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_referring_doctor", ["referringDoctorId"])
+    .index("by_patient", ["patientId"])
+    .index("by_status", ["status"])
+    .index("by_referring_doctor_and_status", ["referringDoctorId", "status"]),
+
+  // MyItura MediLoan applications
+  loanApplications: defineTable({
+    patientId: v.optional(v.id("users")),
+    initiatedBy: v.id("users"), // Physio or Clinic Owner ID who initiated it
+    clientReference: v.string(), // Unique internal ref (RH-LOAN-xxx)
+    invoiceReference: v.optional(v.string()), // Optional invoice link
+    myituraSdkRef: v.optional(v.string()), // 10-char MyItura ref
+    treatment: v.string(),
+    amount: v.number(), // in kobo (100 kobo = ₦1)
+
+    // Patient display fields (so we don't need to join every time)
+    patientFirstName: v.string(),
+    patientLastName: v.string(),
+    patientPhone: v.string(),
+    patientEmail: v.optional(v.string()),
+
+    applicationUrl: v.optional(v.string()), // SMS link sent to patient
+    status: v.union(
+      v.literal("initiated"),   // We called MyItura, SMS sent
+      v.literal("pending"),     // Patient started their application
+      v.literal("approved"),    // Loan approved by MyItura
+      v.literal("disbursed"),   // Funds released to Rehabify
+      v.literal("declined"),    // Loan application rejected
+      v.literal("expired"),     // 7-day window lapsed
+      v.literal("failed"),      // API or system error
+      v.literal("repaid")       // Patient fully repaid the loan
+    ),
+    expiresAt: v.optional(v.string()),
+
+    // Post-loan tracking
+    disbursedAt: v.optional(v.number()),
+    repaymentStatus: v.optional(v.string()), // e.g. "on_track", "overdue", "completed"
+    lastWebhookPayload: v.optional(v.string()), // Raw webhook JSON for debugging
+
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_patient", ["patientId"])
+    .index("by_clientReference", ["clientReference"])
+    .index("by_myituraSdkRef", ["myituraSdkRef"])
+    .index("by_status", ["status"]),
 
   // Referrals to other healthcare providers
   referrals: defineTable({

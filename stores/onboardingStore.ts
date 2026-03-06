@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'admin';
+export type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin';
 
 type PhysiotherapistData = {
   // Step 1: Personal & Contact Info
@@ -115,6 +115,16 @@ type OnboardingData = {
   physiotherapistData: PhysiotherapistData;
   clinicOwnerData: ClinicOwnerData;
   patientData: PatientData;
+  doctorData: Partial<{
+    title: string;
+    medicalLicenseNumber: string;
+    specialty: string;
+    hospitalAffiliation: string;
+    bio: string;
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+  }>;
 };
 
 type OnboardingStore = {
@@ -127,6 +137,16 @@ type OnboardingStore = {
   updatePhysiotherapistData: (data: Partial<PhysiotherapistData>) => void;
   updateClinicOwnerData: (data: Partial<ClinicOwnerData>) => void;
   updatePatientData: (data: Partial<PatientData>) => void;
+  updateDoctorData: (data: Partial<{
+    title: string;
+    medicalLicenseNumber: string;
+    specialty: string;
+    hospitalAffiliation: string;
+    bio: string;
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+  }>) => void;
   completeOnboarding: () => void;
   resetOnboarding: () => void;
   nextStep: (role: UserRole) => void;
@@ -204,7 +224,8 @@ const initialState: OnboardingData = {
     therapyFor: '',
     location: '',
     preferredLanguage: ''
-  }
+  },
+  doctorData: {}
 };
 
 export const useOnboardingStore = create<OnboardingStore>()(
@@ -271,6 +292,26 @@ export const useOnboardingStore = create<OnboardingStore>()(
             ...state.data,
             patientData: {
               ...state.data.patientData,
+              ...data
+            }
+          }
+        })),
+
+      updateDoctorData: (data: Partial<{
+        title: string;
+        medicalLicenseNumber: string;
+        specialty: string;
+        hospitalAffiliation: string;
+        bio: string;
+        bankName: string;
+        accountNumber: string;
+        accountName: string;
+      }>) =>
+        set((state) => ({
+          data: {
+            ...state.data,
+            doctorData: {
+              ...state.data.doctorData,
               ...data
             }
           }

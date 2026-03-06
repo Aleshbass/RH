@@ -84,6 +84,9 @@ export default function RoleSelectionPage() {
         case 'patient':
           router.push('/patient/step1');
           break;
+        case 'doctor':
+          router.push('/doctor');
+          break;
         default:
           console.error('Unknown role selected');
           // Optionally, navigate to an error page or back to role selection
@@ -132,6 +135,14 @@ export default function RoleSelectionPage() {
             disabled={loadingRole !== null}
           >
             {loadingRole === 'patient' ? 'Loading...' : 'I am a Patient'}
+          </Button>
+          <Button
+            onClick={() => handleRoleSelect('doctor')}
+            className="w-full text-lg py-6 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-md transition-transform transform hover:scale-105"
+            aria-label="Select Doctor Role"
+            disabled={loadingRole !== null}
+          >
+            {loadingRole === 'doctor' ? 'Loading...' : 'I am a Referring Doctor'}
           </Button>
           <p className="text-sm text-gray-600 text-center mt-6 px-4">
             Patients join through invitation links from their physiotherapist

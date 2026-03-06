@@ -25,7 +25,7 @@ export function getAwadocConfig() {
     return {
         apiKey: process.env.AWADOC_API_KEY ?? "",
         secretKey: process.env.AWADOC_SECRET_KEY ?? "",
-        partnerId: process.env.AWADOC_PARTNER_ID ?? "rehabify",
+        partnerId: process.env.AWADOC_PARTNER_ID ?? "69764afe2c6108f861514a29",
         baseUrl: process.env.AWADOC_BASE_URL ?? "https://partners-staging.awadoc.com",
         environment: parseEnvironment(process.env.AWADOC_ENVIRONMENT),
     };

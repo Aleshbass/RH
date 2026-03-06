@@ -6,15 +6,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 // Remove formatCurrency import since we'll define our own
 import { format } from 'date-fns';
-import { 
-  Send, 
-  CreditCard, 
-  Download, 
-  X, 
-  Calendar, 
-  User, 
-  Mail, 
-  Phone
+import {
+  Send,
+  CreditCard,
+  Download,
+  X,
+  Calendar,
+  User,
+  Mail,
+  Phone,
+  WalletCards
 } from 'lucide-react';
 
 // Types used in this modal
@@ -58,6 +59,8 @@ interface SimpleInvoiceModalProps {
   onSend: () => void;
   onRecordPayment: (amount: number, method: string) => void;
   onDownload: () => void;
+  onInitiateMediLoan?: (invoice: Invoice) => void;
+  isInitiatingLoan?: boolean;
 }
 
 export function SimpleInvoiceModal({
@@ -66,7 +69,9 @@ export function SimpleInvoiceModal({
   onClose,
   onSend,
   onRecordPayment,
-  onDownload
+  onDownload,
+  onInitiateMediLoan,
+  isInitiatingLoan
 }: SimpleInvoiceModalProps) {
   if (!selectedInvoice) return null;
 
@@ -120,7 +125,7 @@ export function SimpleInvoiceModal({
                     <span>{selectedInvoice.patientPhone || selectedInvoice.patient?.phoneNumber || 'Phone not available'}</span>
                   </div>
                 </div>
-                
+
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -164,7 +169,7 @@ export function SimpleInvoiceModal({
                     </div>
                   </div>
                 ))}
-                
+
                 <div className="pt-4 space-y-2">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
@@ -195,19 +200,32 @@ export function SimpleInvoiceModal({
               <Download className="h-4 w-4 mr-2" />
               Download PDF
             </Button>
-            
+
             {selectedInvoice.status === 'draft' && (
               <Button onClick={onSend}>
                 <Send className="h-4 w-4 mr-2" />
                 Send Invoice
               </Button>
             )}
-            
+
             {(selectedInvoice.status === 'pending' || selectedInvoice.status === 'sent' || selectedInvoice.status === 'overdue') && (
-              <Button onClick={() => onRecordPayment((selectedInvoice.totalAmount || 0) / 100, 'bank_transfer')}>
-                <CreditCard className="h-4 w-4 mr-2" />
-                Record Payment
-              </Button>
+              <>
+                {onInitiateMediLoan && (
+                  <Button
+                    variant="outline"
+                    className="border-green-600 text-green-700 hover:bg-green-50"
+                    onClick={() => onInitiateMediLoan(selectedInvoice)}
+                    disabled={isInitiatingLoan}
+                  >
+                    <WalletCards className="h-4 w-4 mr-2" />
+                    {isInitiatingLoan ? 'Initiating...' : 'Initiate MediLoan'}
+                  </Button>
+                )}
+                <Button onClick={() => onRecordPayment((selectedInvoice.totalAmount || 0) / 100, 'bank_transfer')}>
+                  <CreditCard className="h-4 w-4 mr-2" />
+                  Record Payment
+                </Button>
+              </>
             )}
           </div>
         </div>

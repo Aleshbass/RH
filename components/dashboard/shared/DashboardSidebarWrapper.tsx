@@ -18,7 +18,8 @@ import {
   Video,
   Search,
   Stethoscope,
-  Receipt
+  Receipt,
+  UserPlus
 } from 'lucide-react'
 
 // Navigation configuration for physiotherapists
@@ -77,7 +78,33 @@ const clinicOwnerNavItems = [
   },
 ]
 
-
+// Navigation configuration for referring doctors
+const doctorNavItems = [
+  {
+    title: 'Overview',
+    href: '/dashboard/doctor',
+    icon: LayoutDashboard,
+    roles: ['doctor']
+  },
+  {
+    title: 'Refer a Patient',
+    href: '/dashboard/doctor/referrals/new',
+    icon: UserPlus,
+    roles: ['doctor']
+  },
+  {
+    title: 'My Referrals',
+    href: '/dashboard/doctor/referrals',
+    icon: Users,
+    roles: ['doctor']
+  },
+  {
+    title: 'Earnings',
+    href: '/dashboard/doctor/earnings',
+    icon: Receipt,
+    roles: ['doctor']
+  },
+]
 
 interface DashboardSidebarWrapperProps {
   defaultCollapsed?: boolean
@@ -108,6 +135,9 @@ export function DashboardSidebarWrapper({ defaultCollapsed = false }: DashboardS
       break
     case 'clinic_owner':
       navItems = clinicOwnerNavItems
+      break
+    case 'doctor':
+      navItems = doctorNavItems
       break
     case 'admin':
       // Admin uses its own sidebar layout (AdminLayout), so return null to avoid double sidebar spacing
