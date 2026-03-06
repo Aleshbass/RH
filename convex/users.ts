@@ -50,36 +50,6 @@ export const getUserByEmail = query({
  */
 export const getUserById = query({
   args: { userId: v.id("users") },
-  returns: v.union(v.null(), v.object({
-    _id: v.id("users"),
-    _creationTime: v.number(),
-    clerkId: v.string(),
-    email: v.optional(v.string()),
-    firstName: v.optional(v.string()),
-    lastName: v.optional(v.string()),
-    imageUrl: v.optional(v.string()),
-    phoneNumber: v.optional(v.string()),
-    clinicId: v.optional(v.id("clinics")),
-    status: v.optional(v.union(
-      v.literal("active"),
-      v.literal("suspended"),
-      v.literal("terminated")
-    )),
-    joinedAt: v.optional(v.number()),
-    role: v.optional(v.union(
-      v.literal("physiotherapist"),
-      v.literal("clinic_owner"),
-      v.literal("patient"),
-      v.literal("family_member"),
-      v.literal("admin")
-    )),
-    onboarded: v.boolean(),
-    physiotherapistProfileId: v.optional(v.id("physiotherapistProfiles")),
-    patientProfileId: v.optional(v.id("patientProfiles")),
-    clinicOwnerProfileId: v.optional(v.id("clinicOwnerProfiles")),
-    lastLoginAt: v.optional(v.number()),
-    toursCompleted: v.optional(v.array(v.string())),
-  })),
   handler: async (ctx, args) => {
     return await ctx.db.get(args.userId);
   },
