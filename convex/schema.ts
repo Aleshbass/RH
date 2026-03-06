@@ -164,12 +164,14 @@ export default defineSchema({
     averageRating: v.optional(v.number()), // Average rating from reviews
     reviewCount: v.optional(v.number()), // Total number of reviews
     referralSource: v.optional(v.string()), // How did you hear about us?
+    bookingSlug: v.optional(v.string()), // Short booking URL slug e.g. "eniola-ojuko"
   })
     .index("by_user_id", ["userId"])
     .index("by_clinic_id", ["clinicId"])
     .index("by_marketplace_availability", ["isAvailableOnMarketplace"])
     .index("by_verification_status", ["verificationBadge.status"])
-    .index("by_location", ["location"]),
+    .index("by_location", ["location"])
+    .index("by_bookingSlug", ["bookingSlug"]),
 
   // Patient specific profiles/details
   patientProfiles: defineTable({

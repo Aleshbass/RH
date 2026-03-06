@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { Id } from "@/convex/_generated/dataModel";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import {
     Copy,
     Check,
@@ -38,12 +40,21 @@ export default function ShareableBookingLink({
 }: ShareableBookingLinkProps) {
     const [copied, setCopied] = useState(false);
     const [bookingUrl, setBookingUrl] = useState("");
+    const ensureSlug = useMutation(api.marketplace.search.ensureBookingSlug);
 
     useEffect(() => {
-        if (typeof window !== "undefined") {
-            setBookingUrl(`${window.location.origin}/book/${physiotherapistId}`);
-        }
-    }, [physiotherapistId]);
+        if (typeof window === "undefined") return;
+
+        // Try to get/create a short slug, fall back to raw ID
+        ensureSlug({ userId: physiotherapistId })
+            .then((slug) => {
+                const path = slug || physiotherapistId;
+                setBookingUrl(`${window.location.origin}/book/${path}`);
+            })
+            .catch(() => {
+                setBookingUrl(`${window.location.origin}/book/${physiotherapistId}`);
+            });
+    }, [physiotherapistId, ensureSlug]);
 
     const copyToClipboard = async () => {
         try {

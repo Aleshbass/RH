@@ -32,14 +32,20 @@ const SESSION_TYPES = [
 export default function PhysioBookingPage() {
     const params = useParams();
     const router = useRouter();
-    const physiotherapistId = params.physiotherapistId as Id<"users">;
+    const rawParam = params.physiotherapistId as string;
 
-    // Fetch physio profile
+    // Try resolving as a slug first
+    const slugResult = useQuery(api.marketplace.search.resolveBookingSlug, { slug: rawParam });
+
+    // Determine the real userId — slug match takes priority, otherwise try raw param as ID
+    const resolvedUserId = slugResult?.userId ?? (rawParam as Id<"users">);
+
+    // Fetch physio profile with the resolved user ID
     const profile = useQuery(api.marketplace.search.getPhysiotherapistProfile, {
-        physiotherapistId,
+        physiotherapistId: resolvedUserId,
     });
 
-    if (profile === undefined) {
+    if (profile === undefined || slugResult === undefined) {
         return (
             <div className="min-h-screen bg-[#121212] flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
@@ -112,7 +118,7 @@ export default function PhysioBookingPage() {
     }
 
     const handleSessionSelect = (duration: number) => {
-        router.push(`/book/${physiotherapistId}/${duration}`);
+        router.push(`/book/${rawParam}/${duration}`);
     };
 
     return (

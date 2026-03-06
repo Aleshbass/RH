@@ -52,7 +52,7 @@ export function RecentPatients({
         </CardHeader>
         <CardContent className="px-0 sm:px-6 space-y-3">
           {recentPatients && recentPatients.length > 0 ? (
-            recentPatients.map((patient) => (
+            [...new Map(recentPatients.map(p => [p._id, p])).values()].map((patient) => (
               <div
                 key={patient._id}
                 className="group flex items-center gap-3 p-3 bg-white border rounded-xl hover:border-[#005b57]/30 hover:shadow-sm transition-all cursor-pointer"

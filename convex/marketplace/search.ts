@@ -407,3 +407,64 @@ export const incrementProfileView = mutation({
     return { success: true };
   },
 });
+
+/**
+ * Resolve a booking slug to a user ID.
+ * Used by the /book/[slug] page to support short URLs like /book/eniola-ojuko
+ */
+export const resolveBookingSlug = query({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_bookingSlug", (q) => q.eq("bookingSlug", args.slug))
+      .first();
+
+    if (!profile) return null;
+    return { userId: profile.userId, profileId: profile._id };
+  },
+});
+
+/**
+ * Ensure a physiotherapist has a booking slug.
+ * Auto-generates from user name if not set, appending a short suffix on collisions.
+ */
+export const ensureBookingSlug = mutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .first();
+
+    if (!profile) return null;
+    if (profile.bookingSlug) return profile.bookingSlug;
+
+    const user = await ctx.db.get(args.userId);
+    if (!user) return null;
+
+    // Generate slug from name
+    const base = `${user.firstName || ""}-${user.lastName || ""}`
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      || "physio";
+
+    // Check for collisions and append suffix if needed
+    let slug = base;
+    let attempt = 0;
+    while (attempt < 10) {
+      const existing = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_bookingSlug", (q) => q.eq("bookingSlug", slug))
+        .first();
+      if (!existing) break;
+      attempt++;
+      slug = `${base}-${Math.random().toString(36).slice(2, 5)}`;
+    }
+
+    await ctx.db.patch(profile._id, { bookingSlug: slug });
+    return slug;
+  },
+});
