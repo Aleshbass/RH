@@ -267,6 +267,8 @@ const physiotherapistProfileDataValidator = v.object({
   gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
   referralSource: v.optional(v.string()),
   location: v.optional(v.string()),
+  latitude: v.optional(v.float64()),
+  longitude: v.optional(v.float64()),
   availabilitySchedule: v.optional(v.any()),
 });
 

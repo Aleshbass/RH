@@ -48,7 +48,16 @@ export const savePhysiotherapistDocument = mutation({
     storageId: v.id("_storage"),
     documentType: v.union(
       v.literal("licenseDocument"),
-      v.literal("additionalCertificate")
+      v.literal("additionalCertificate"),
+      v.literal("degreeCertificate"),
+      v.literal("nyscCertificate"),
+      v.literal("transcript"),
+      v.literal("mrtbLicense"),
+      v.literal("npaMembership"),
+      v.literal("practicingLicense"),
+      v.literal("nationalId"),
+      v.literal("passportPhoto"),
+      v.literal("proofOfAddress")
     ),
     fileName: v.string(),
     fileSize: v.number(),
@@ -125,7 +134,16 @@ export const getPhysiotherapistDocuments = query({
     storageId: v.id("_storage"),
     documentType: v.union(
       v.literal("licenseDocument"),
-      v.literal("additionalCertificate")
+      v.literal("additionalCertificate"),
+      v.literal("degreeCertificate"),
+      v.literal("nyscCertificate"),
+      v.literal("transcript"),
+      v.literal("mrtbLicense"),
+      v.literal("npaMembership"),
+      v.literal("practicingLicense"),
+      v.literal("nationalId"),
+      v.literal("passportPhoto"),
+      v.literal("proofOfAddress")
     ),
     fileName: v.string(),
     fileSize: v.number(),

@@ -5,11 +5,24 @@ import { useConvex } from "convex/react";
 import { Id } from "@/convex/_generated/dataModel";
 import { useFileUpload } from './useFileUpload';
 
+export type PhysioDocumentType =
+  | "licenseDocument"
+  | "additionalCertificate"
+  | "degreeCertificate"
+  | "nyscCertificate"
+  | "transcript"
+  | "mrtbLicense"
+  | "npaMembership"
+  | "practicingLicense"
+  | "nationalId"
+  | "passportPhoto"
+  | "proofOfAddress";
+
 interface PhysiotherapistDocument {
   _id: Id<"physiotherapistDocuments">;
   physiotherapistId: Id<"physiotherapistProfiles">;
   storageId: Id<"_storage">;
-  documentType: "licenseDocument" | "additionalCertificate";
+  documentType: PhysioDocumentType;
   fileName: string;
   fileSize: number;
   contentType: string;
@@ -71,7 +84,7 @@ export function usePhysiotherapistDocuments(physiotherapistId: Id<"physiotherapi
       targetPhysiotherapistId
     }: {
       storageId: Id<"_storage">,
-      documentType: "licenseDocument" | "additionalCertificate",
+      documentType: PhysioDocumentType,
       fileName: string,
       fileSize: number,
       contentType: string,
@@ -107,7 +120,7 @@ export function usePhysiotherapistDocuments(physiotherapistId: Id<"physiotherapi
   /**
    * Upload a document and save the reference in the database
    */
-  const uploadDocument = async (file: File, documentType: "licenseDocument" | "additionalCertificate", overridePhysiotherapistId?: Id<"physiotherapistProfiles">) => {
+  const uploadDocument = async (file: File, documentType: PhysioDocumentType, overridePhysiotherapistId?: Id<"physiotherapistProfiles">) => {
     setError(null);
     const fileKey = `${file.name}-${file.size}-${documentType}`;
 
@@ -179,7 +192,7 @@ export function usePhysiotherapistDocuments(physiotherapistId: Id<"physiotherapi
   /**
    * Get documents of a specific type
    */
-  const getDocumentsByType = (type: "licenseDocument" | "additionalCertificate"): PhysiotherapistDocument[] => {
+  const getDocumentsByType = (type: PhysioDocumentType): PhysiotherapistDocument[] => {
     return (documentsQuery.data || []).filter((doc: PhysiotherapistDocument) => doc.documentType === type);
   };
 

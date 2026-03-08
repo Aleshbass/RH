@@ -19,6 +19,8 @@ type PhysiotherapistData = {
   bio: string;
   licenseNumber: string;
   location?: string; // Added location field
+  latitude?: number; // GPS latitude for map
+  longitude?: number; // GPS longitude for map
   languagesSpoken: string[];
   operatingHours: any;
 

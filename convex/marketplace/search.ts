@@ -207,6 +207,8 @@ export const searchPhysiotherapists = query({
       specializations: p.specializations || [],
       yearsOfExperience: p.yearsOfExperience || 0,
       location: p.location,
+      latitude: p.latitude,
+      longitude: p.longitude,
       hourlyRate: p.hourlyRate ? p.hourlyRate / 100 : 0, // Convert to Naira
       initialConsultRate: p.initialConsultRate
         ? p.initialConsultRate / 100
@@ -313,6 +315,8 @@ export const getPhysiotherapistProfile = query({
       specializations: profile.specializations || [],
       yearsOfExperience: profile.yearsOfExperience || 0,
       location: profile.location,
+      latitude: profile.latitude,
+      longitude: profile.longitude,
       languagesSpoken: profile.languagesSpoken || [],
 
       // Pricing

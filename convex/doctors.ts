@@ -169,7 +169,7 @@ export const getMyReferrals = query({
                 if (referral.patientId) {
                     const sessions = await ctx.db
                         .query("sessionLogs")
-                        .withIndex("by_patient", (q) => q.eq("patientId", referral.patientId!))
+                        .withIndex("by_patient_id_and_date", (q) => q.eq("patientId", referral.patientId!))
                         .collect();
 
                     // We can count all created logs, or filter by a specific status if sessionLogs had one
@@ -243,7 +243,7 @@ export const getDashboardStats = query({
             if (referral.patientId) {
                 const sessions = await ctx.db
                     .query("sessionLogs")
-                    .withIndex("by_patient", (q) => q.eq("patientId", referral.patientId!))
+                    .withIndex("by_patient_id_and_date", (q) => q.eq("patientId", referral.patientId!))
                     .collect();
                 totalSessionsAttended += sessions.length;
             }

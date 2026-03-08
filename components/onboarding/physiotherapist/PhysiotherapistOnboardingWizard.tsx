@@ -20,11 +20,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileUpload } from '@/components/ui/file-upload';
 import LocationSearch from '@/components/marketplace/LocationSearch';
-import { usePhysiotherapistDocuments } from '@/lib/hooks/usePhysiotherapistDocuments';
+import dynamic from 'next/dynamic';
+import { usePhysiotherapistDocuments, PhysioDocumentType } from '@/lib/hooks/usePhysiotherapistDocuments';
 import { cn } from '@/lib/utils';
 import { AvailabilityScheduler } from '@/components/onboarding/common/AvailabilityScheduler';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFileUpload } from '@/lib/hooks/useFileUpload';
+
+const MapboxLocationPicker = dynamic(
+    () => import('@/components/onboarding/physiotherapist/MapboxLocationPicker'),
+    { ssr: false, loading: () => <div className="h-[340px] bg-gray-100 rounded-xl animate-pulse" /> }
+);
 
 
 // --- Schemas ---
@@ -50,6 +56,8 @@ const professionalInfoSchema = z.object({
 
 const locationSchema = z.object({
     location: z.string().min(2, 'Location is required'),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
 });
 
 const bioSchema = z.object({
@@ -80,6 +88,8 @@ const fullSchema = z.object({
     ...referralSchema.shape,
     specializations: z.array(z.string()).min(1, "Select at least one specialization"),
     operatingHours: z.any(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
 });
 
 type FormValues = z.infer<typeof fullSchema>;
@@ -120,11 +130,22 @@ export default function PhysiotherapistOnboardingWizard() {
     const [certificates, setCertificates] = useState<File[]>([]);
     const [uploadError, setUploadError] = useState<string | null>(null);
 
+    // New document states for Nigerian professional documents
+    const [degreeCertFile, setDegreeCertFile] = useState<File | null>(null);
+    const [nyscCertFile, setNyscCertFile] = useState<File | null>(null);
+    const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
+    const [mrtbLicenseFile, setMrtbLicenseFile] = useState<File | null>(null);
+    const [npaMembershipFile, setNpaMembershipFile] = useState<File | null>(null);
+    const [practicingLicenseFile, setPracticingLicenseFile] = useState<File | null>(null);
+    const [nationalIdFile, setNationalIdFile] = useState<File | null>(null);
+    const [passportPhotoFile, setPassportPhotoFile] = useState<File | null>(null);
+    const [proofOfAddressFile, setProofOfAddressFile] = useState<File | null>(null);
+
     const {
         uploadDocument,
         isUploading,
         uploadProgress,
-    } = usePhysiotherapistDocuments(currentUser?.physiotherapistProfileId);
+    } = usePhysiotherapistDocuments(currentUser?.physiotherapistProfileId ?? null);
 
     // Profile Photo Upload
     const updateProfileImage = useMutation(api.users.updateProfileImageFromStorage);
@@ -159,6 +180,8 @@ export default function PhysiotherapistOnboardingWizard() {
             licenseNumber: physiotherapistData.licenseNumber || '',
             yearsOfExperience: physiotherapistData.yearsOfExperience || 0,
             location: physiotherapistData.location || '',
+            latitude: physiotherapistData.latitude || undefined,
+            longitude: physiotherapistData.longitude || undefined,
             bio: physiotherapistData.bio || '',
             certificationBoard: physiotherapistData.certificationBoard || '',
             certificationYear: physiotherapistData.certificationYear || new Date().getFullYear(),
@@ -258,8 +281,21 @@ export default function PhysiotherapistOnboardingWizard() {
             case 6: fieldsToValidate = ['certificationBoard', 'certificationYear', 'licenseExpiryDate']; break;
             case 7: fieldsToValidate = ['operatingHours']; break;
             case 8:
-                if (!licenseFile) {
-                    toast.error("Please upload your license document");
+                // Validate required documents
+                if (!degreeCertFile) {
+                    toast.error("Please upload your degree certificate");
+                    return;
+                }
+                if (!nyscCertFile) {
+                    toast.error("Please upload your NYSC discharge certificate");
+                    return;
+                }
+                if (!nationalIdFile) {
+                    toast.error("Please upload your National ID or driver's license");
+                    return;
+                }
+                if (!passportPhotoFile) {
+                    toast.error("Please upload your passport photograph");
                     return;
                 }
                 // No zod validation for files here, handled manually
@@ -317,6 +353,8 @@ export default function PhysiotherapistOnboardingWizard() {
                             licenseNumber: formData.licenseNumber,
                             yearsOfExperience: formData.yearsOfExperience,
                             location: formData.location,
+                            latitude: formData.latitude,
+                            longitude: formData.longitude,
                             bio: formData.bio,
                             certificationBoard: formData.certificationBoard,
                             certificationYear: formData.certificationYear,
@@ -345,6 +383,8 @@ export default function PhysiotherapistOnboardingWizard() {
                     yearsOfExperience: formData.yearsOfExperience,
                     bio: formData.bio,
                     location: formData.location,
+                    latitude: formData.latitude,
+                    longitude: formData.longitude,
                     certificationBoard: formData.certificationBoard,
                     certificationYear: formData.certificationYear,
                     licenseExpiryDate: formData.licenseExpiryDate,
@@ -365,11 +405,33 @@ export default function PhysiotherapistOnboardingWizard() {
             const profileId = result.physiotherapistProfileId;
 
             // 2. Upload Documents using the profileId
-            if (licenseFile) {
-                const success = await uploadDocument(licenseFile, "licenseDocument", profileId);
-                if (!success) throw new Error("Failed to upload license document");
-            }
+            // Helper to upload a file with a specific document type
+            const uploadDoc = async (file: File | null, docType: PhysioDocumentType) => {
+                if (file) {
+                    const success = await uploadDocument(file, docType, profileId);
+                    if (!success) throw new Error(`Failed to upload ${docType}`);
+                }
+            };
 
+            // Academic credentials
+            await uploadDoc(degreeCertFile, "degreeCertificate");
+            await uploadDoc(nyscCertFile, "nyscCertificate");
+            await uploadDoc(transcriptFile, "transcript");
+
+            // Professional registration
+            await uploadDoc(mrtbLicenseFile, "mrtbLicense");
+            await uploadDoc(npaMembershipFile, "npaMembership");
+            await uploadDoc(practicingLicenseFile, "practicingLicense");
+
+            // Identity documents
+            await uploadDoc(nationalIdFile, "nationalId");
+            await uploadDoc(passportPhotoFile, "passportPhoto");
+            await uploadDoc(proofOfAddressFile, "proofOfAddress");
+
+            // Legacy: also upload licenseFile and certificates if set
+            if (licenseFile) {
+                await uploadDocument(licenseFile, "licenseDocument", profileId);
+            }
             for (const cert of certificates) {
                 await uploadDocument(cert, "additionalCertificate", profileId);
             }
@@ -552,24 +614,22 @@ export default function PhysiotherapistOnboardingWizard() {
                             <div className="space-y-6">
                                 <div className="text-center mb-6">
                                     <h2 className="text-2xl font-bold text-[#002e2c]">Practice Location</h2>
-                                    <p className="text-gray-500">Where do you practice?</p>
+                                    <p className="text-gray-500">Pin your practice location on the map</p>
                                 </div>
                                 <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label>Location</Label>
-                                        <Controller
-                                            control={control}
-                                            name="location"
-                                            render={({ field }) => (
-                                                <LocationSearch
-                                                    value={field.value}
-                                                    onChange={field.onChange}
-                                                    className="w-full"
-                                                />
-                                            )}
-                                        />
-                                        {errors.location && <p className="text-xs text-red-500">{errors.location.message}</p>}
-                                    </div>
+                                    <MapboxLocationPicker
+                                        value={{
+                                            location: watch('location') || '',
+                                            latitude: watch('latitude'),
+                                            longitude: watch('longitude'),
+                                        }}
+                                        onChange={(data) => {
+                                            setValue('location', data.location);
+                                            setValue('latitude', data.latitude);
+                                            setValue('longitude', data.longitude);
+                                        }}
+                                    />
+                                    {errors.location && <p className="text-xs text-red-500">{errors.location.message}</p>}
                                 </div>
                             </div>
                         )}
@@ -779,34 +839,128 @@ export default function PhysiotherapistOnboardingWizard() {
                         {/* Step 9: Documents */}
                         {currentStep === 8 && (
                             <div className="space-y-6">
-                                <div className="text-center mb-6">
-                                    <h2 className="text-2xl font-bold text-[#002e2c]">Documents</h2>
-                                    <p className="text-gray-500">Upload your license and certificates</p>
+                                <div className="text-center mb-4">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Required Documents</h2>
+                                    <p className="text-gray-500">Upload your professional credentials</p>
                                 </div>
-                                <div className="space-y-6">
-                                    <div className="space-y-2">
-                                        <Label>License Document *</Label>
-                                        <FileUpload
-                                            id="license-upload"
-                                            label="Upload License"
-                                            accept="application/pdf,image/*"
-                                            onChange={(file) => setLicenseFile(file as File)}
-                                            value={licenseFile}
-                                        />
+
+                                {/* Academic Credentials */}
+                                <div className="space-y-3">
+                                    <h3 className="text-sm font-semibold text-[#005b57] uppercase tracking-wider flex items-center gap-2">
+                                        <span className="w-6 h-6 bg-teal-100 rounded-full flex items-center justify-center text-xs font-bold text-[#005b57]">1</span>
+                                        Academic Credentials
+                                    </h3>
+                                    <div className="space-y-3 pl-8">
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm">Degree Certificate (BSc/MSc Physiotherapy) <span className="text-red-500">*</span></Label>
+                                            <FileUpload
+                                                id="degree-cert-upload"
+                                                label="Upload Degree Certificate"
+                                                accept="application/pdf,image/*"
+                                                onChange={(file) => setDegreeCertFile(file as File)}
+                                                value={degreeCertFile}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm">NYSC Discharge Certificate <span className="text-red-500">*</span></Label>
+                                            <FileUpload
+                                                id="nysc-cert-upload"
+                                                label="Upload NYSC Certificate"
+                                                accept="application/pdf,image/*"
+                                                onChange={(file) => setNyscCertFile(file as File)}
+                                                value={nyscCertFile}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm">Transcript of Records <span className="text-gray-400 text-xs">(Optional)</span></Label>
+                                            <FileUpload
+                                                id="transcript-upload"
+                                                label="Upload Transcript"
+                                                accept="application/pdf,image/*"
+                                                onChange={(file) => setTranscriptFile(file as File)}
+                                                value={transcriptFile}
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label>Additional Certificates (Optional)</Label>
-                                        <FileUpload
-                                            id="certs-upload"
-                                            label="Upload Certificates"
-                                            accept="application/pdf,image/*"
-                                            multiple
-                                            onChange={(files) => {
-                                                const fileArray = Array.isArray(files) ? files : [files];
-                                                setCertificates(fileArray.filter((f): f is File => f !== null));
-                                            }}
-                                            value={certificates}
-                                        />
+                                </div>
+
+                                {/* Professional Registration */}
+                                <div className="space-y-3">
+                                    <h3 className="text-sm font-semibold text-[#005b57] uppercase tracking-wider flex items-center gap-2">
+                                        <span className="w-6 h-6 bg-teal-100 rounded-full flex items-center justify-center text-xs font-bold text-[#005b57]">2</span>
+                                        Professional Registration
+                                    </h3>
+                                    <div className="space-y-3 pl-8">
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm">MRTB License <span className="text-gray-400 text-xs">(If available)</span></Label>
+                                            <FileUpload
+                                                id="mrtb-upload"
+                                                label="Upload MRTB License"
+                                                accept="application/pdf,image/*"
+                                                onChange={(file) => setMrtbLicenseFile(file as File)}
+                                                value={mrtbLicenseFile}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm">NPA Membership <span className="text-gray-400 text-xs">(If available)</span></Label>
+                                            <FileUpload
+                                                id="npa-upload"
+                                                label="Upload NPA Membership"
+                                                accept="application/pdf,image/*"
+                                                onChange={(file) => setNpaMembershipFile(file as File)}
+                                                value={npaMembershipFile}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm">Practicing License from Facility <span className="text-gray-400 text-xs">(If employed)</span></Label>
+                                            <FileUpload
+                                                id="practicing-license-upload"
+                                                label="Upload Practicing License"
+                                                accept="application/pdf,image/*"
+                                                onChange={(file) => setPracticingLicenseFile(file as File)}
+                                                value={practicingLicenseFile}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Identity */}
+                                <div className="space-y-3">
+                                    <h3 className="text-sm font-semibold text-[#005b57] uppercase tracking-wider flex items-center gap-2">
+                                        <span className="w-6 h-6 bg-teal-100 rounded-full flex items-center justify-center text-xs font-bold text-[#005b57]">3</span>
+                                        Identity Documents
+                                    </h3>
+                                    <div className="space-y-3 pl-8">
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm">National ID or Driver&apos;s License <span className="text-red-500">*</span></Label>
+                                            <FileUpload
+                                                id="national-id-upload"
+                                                label="Upload National ID"
+                                                accept="application/pdf,image/*"
+                                                onChange={(file) => setNationalIdFile(file as File)}
+                                                value={nationalIdFile}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm">Passport Photograph <span className="text-red-500">*</span></Label>
+                                            <FileUpload
+                                                id="passport-photo-upload"
+                                                label="Upload Passport Photo"
+                                                accept="image/*"
+                                                onChange={(file) => setPassportPhotoFile(file as File)}
+                                                value={passportPhotoFile}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-sm">Proof of Address <span className="text-gray-400 text-xs">(Optional)</span></Label>
+                                            <FileUpload
+                                                id="proof-address-upload"
+                                                label="Upload Proof of Address"
+                                                accept="application/pdf,image/*"
+                                                onChange={(file) => setProofOfAddressFile(file as File)}
+                                                value={proofOfAddressFile}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             </div>

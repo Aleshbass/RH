@@ -460,9 +460,9 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
           </Dialog>
         </div>
 
-        {currentPlan.phases && currentPlan.phases.length > 0 ? (
+        {currentPlan.phases && (currentPlan.phases as any[]).length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {currentPlan.phases.map((phase: any) =>
+            {(currentPlan.phases as any[]).map((phase: any) =>
               phase.exercises.map((exercise: any, exIdx: number) => {
                 const exerciseDetail = exerciseDetails[exercise.exerciseId];
                 return (

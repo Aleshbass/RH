@@ -129,6 +129,8 @@ export default defineSchema({
 
     // Location
     location: v.optional(v.string()), // "Lagos", "Abuja", "Online"
+    latitude: v.optional(v.float64()), // GPS latitude for map placement
+    longitude: v.optional(v.float64()), // GPS longitude for map placement
     offersOnlineSessions: v.optional(v.boolean()),
     offersInPersonSessions: v.optional(v.boolean()),
 
@@ -354,7 +356,19 @@ export default defineSchema({
     storageId: v.id("_storage"),
     documentType: v.union(
       v.literal("licenseDocument"),
-      v.literal("additionalCertificate")
+      v.literal("additionalCertificate"),
+      // Academic credentials
+      v.literal("degreeCertificate"),
+      v.literal("nyscCertificate"),
+      v.literal("transcript"),
+      // Professional registration
+      v.literal("mrtbLicense"),
+      v.literal("npaMembership"),
+      v.literal("practicingLicense"),
+      // Identity documents
+      v.literal("nationalId"),
+      v.literal("passportPhoto"),
+      v.literal("proofOfAddress")
     ),
     fileName: v.string(),
     fileSize: v.number(),

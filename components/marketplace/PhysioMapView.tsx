@@ -24,6 +24,8 @@ export interface PhysioMapItem {
     specializations: string[];
     yearsOfExperience: number;
     location?: string;
+    latitude?: number;
+    longitude?: number;
     hourlyRate: number;
     initialConsultRate: number;
     averageRating: number;
@@ -66,10 +68,22 @@ export function PhysioMapView({
         const result: GeocodedPhysio[] = [];
 
         for (const physio of physiotherapists) {
+            // Prefer stored coordinates over text geocoding
+            if (physio.latitude && physio.longitude) {
+                // Add small random offset to prevent perfect overlap
+                const offset = () => (Math.random() - 0.5) * 0.01;
+                result.push({
+                    ...physio,
+                    lat: physio.latitude + offset(),
+                    lng: physio.longitude + offset(),
+                });
+                continue;
+            }
+
+            // Fallback: try to geocode from text location
             if (!physio.location) continue;
             const coords = geocodeNigerianLocation(physio.location);
             if (coords) {
-                // Add small random offset to prevent perfect overlap
                 const offset = () => (Math.random() - 0.5) * 0.01;
                 result.push({
                     ...physio,
