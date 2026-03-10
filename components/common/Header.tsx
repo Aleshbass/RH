@@ -18,9 +18,9 @@ const RehabifyLogo = () => (
     <Image
       src="/logos/MainRehabify.svg"
       alt="Rehabify Health"
-      width={80}
-      height={80}
-      className="h-16 w-16"
+      width={100}
+      height={32}
+      className="h-8 sm:h-10 w-auto"
     />
   </Link>
 );
@@ -245,7 +245,7 @@ const navLinks: NavItem[] = [
       },
       {
         name: "For Patients",
-        href: "/platform/patients",
+        href: "/start-treatment",
         subtitle: "Personalized rehabilitation programs"
       },
       {
@@ -256,6 +256,7 @@ const navLinks: NavItem[] = [
     ],
   },
   { name: "Physio Register", href: "/find-a-physio", type: "link" },
+  { name: "Pricing", href: "/pricing", type: "link" },
   {
     name: "CPD",
     type: "dropdown",
@@ -372,7 +373,7 @@ export default function Header() {
           duration: 0.3,
         }}
         className={cn(
-          "relative z-[60] mx-auto hidden w-[90%] max-w-[1100px] flex-row items-center justify-between px-4 py-3 lg:flex text-[#002e2c] font-sans rounded-2xl",
+          "relative z-[60] mx-auto hidden w-[95%] max-w-[1100px] mt-2 flex-row items-center justify-between px-4 py-2 lg:flex text-[#002e2c] font-sans rounded-2xl",
           "sm:px-6 md:px-8",
           "bg-white/70 backdrop-blur-xl border border-white/20 shadow-[0_4px_30px_rgba(0,0,0,0.06)]",
         )}
@@ -420,7 +421,7 @@ export default function Header() {
           duration: 0.3,
         }}
         className={cn(
-          "relative z-[60] mx-auto flex w-[90%] max-w-md flex-row items-center justify-between px-4 py-2 lg:hidden text-[#002e2c] font-sans rounded-xl",
+          "relative z-[60] mx-auto flex w-[95%] max-w-md flex-row items-center justify-between px-4 mt-2 py-1.5 lg:hidden text-[#002e2c] font-sans rounded-xl",
           "bg-white/70 backdrop-blur-xl border border-white/20 shadow-[0_4px_30px_rgba(0,0,0,0.06)]",
         )}
       >

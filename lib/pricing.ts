@@ -1,5 +1,5 @@
 // ──────────────────────────────────────────────────
-// Rehabify — Pricing Calculator
+// Rehabify — Pricing Calculator (Revised Model)
 // ──────────────────────────────────────────────────
 
 // ── Location Tiers ────────────────────────────────
@@ -202,7 +202,7 @@ export function getPhysioLevelAdjustment(level: PhysioLevel): number {
     return PHYSIO_LEVEL_ADJUSTMENTS[level];
 }
 
-// ── Full Price Calculator ─────────────────────────
+// ── Full Session Price Calculator ─────────────────
 export const BASE_RATE = 15_000;
 
 export interface PriceBreakdown {
@@ -213,7 +213,7 @@ export interface PriceBreakdown {
     conditionLevel: ConditionLevel;
     physioLevelAdjustment: number;
     physioLevel: PhysioLevel;
-    sessionRate: number; // what the patient pays per session
+    sessionRate: number; // the physio's session rate (before platform fees)
 }
 
 export function calculateSessionPrice(
@@ -239,15 +239,86 @@ export function calculateSessionPrice(
     };
 }
 
-// ── Package Calculator ────────────────────────────
+// ── Platform Fee Calculator ───────────────────────
+// Standard sessions (≤₦25k): Fixed ₦1,000
+// Premium sessions (>₦25k):  ₦1,000 + 5% on the excess above ₦25k
+export const PLATFORM_FEE_FLAT = 1_000;
+export const PREMIUM_THRESHOLD = 25_000;
+export const PREMIUM_EXCESS_RATE = 0.05; // 5%
+
+export function calculatePlatformFee(sessionRate: number): number {
+    if (sessionRate <= PREMIUM_THRESHOLD) {
+        return PLATFORM_FEE_FLAT;
+    }
+    const excess = sessionRate - PREMIUM_THRESHOLD;
+    return PLATFORM_FEE_FLAT + Math.round(excess * PREMIUM_EXCESS_RATE);
+}
+
+// ── First-Session Extras ──────────────────────────
+export const INITIAL_ASSESSMENT_FEE = 2_500;
+export const AWADOC_FEE = 2_000;
+export const FIRST_SESSION_EXTRAS = INITIAL_ASSESSMENT_FEE + AWADOC_FEE; // ₦4,500
+
+// ── Full Session Fee Breakdown ────────────────────
+// What a patient pays for a single session, including all fees
+export interface SessionFeeBreakdown {
+    physioRate: number;          // what the physio earns (session rate, possibly discounted)
+    platformFee: number;        // Rehabify platform fee
+    initialAssessment: number;  // ₦2,500 (first session only)
+    awadocFee: number;          // ₦2,000 (first session only)
+    patientPays: number;        // total the patient pays
+    isFirstSession: boolean;
+}
+
+export function calculateSessionFees(
+    sessionRate: number,
+    isFirstSession: boolean = false,
+): SessionFeeBreakdown {
+    const platformFee = calculatePlatformFee(sessionRate);
+    const initialAssessment = isFirstSession ? INITIAL_ASSESSMENT_FEE : 0;
+    const awadocFee = isFirstSession ? AWADOC_FEE : 0;
+    const patientPays = sessionRate + platformFee + initialAssessment + awadocFee;
+
+    return {
+        physioRate: sessionRate,
+        platformFee,
+        initialAssessment,
+        awadocFee,
+        patientPays,
+        isFirstSession,
+    };
+}
+
+// ── Package Calculator (Revised) ──────────────────
+// Physio sets a discount percentage (5-15%)
+// Discount applies to the physio's session rate
+// Platform fees are constant; discount comes from physio's cut
+export const MIN_DISCOUNT_PERCENT = 5;
+export const MAX_DISCOUNT_PERCENT = 15;
+export const AVAILABLE_PACKAGES = [1, 4, 8, 12] as const;
+export type PackageSize = typeof AVAILABLE_PACKAGES[number];
+
 export interface PackageBreakdown {
     sessions: number;
     discountPercent: number;
-    discountPerSession: number;
-    discountedRate: number;
-    packageTotal: number;
-    normalTotal: number;
-    patientSaves: number;
+    // Per-session breakdown
+    originalRate: number;           // physio's undiscounted rate
+    discountPerSession: number;     // how much the physio discounts
+    discountedRate: number;         // physio's rate after discount
+    platformFeePerSession: number;  // platform fee (based on discounted rate)
+    // First session extras
+    firstSessionExtras: number;     // ₦4,500 (assessment + awadoc)
+    // Totals
+    firstSessionTotal: number;      // 1st session: discounted + platform + extras
+    followUpSessionTotal: number;   // subsequent sessions: discounted + platform
+    packageTotal: number;           // what patient pays for entire package
+    normalTotal: number;            // what patient would pay without discount
+    patientSaves: number;           // total savings
+    // Distribution
+    physioEarnings: number;         // total physio gets
+    platformEarnings: number;       // total platform gets
+    assessmentEarnings: number;     // initial assessment fee
+    awadocEarnings: number;         // awadoc fee
 }
 
 export function calculatePackagePrice(
@@ -265,24 +336,90 @@ export function calculatePackagePrice(
         throw new RangeError('discountPercent must be between 0 and 100 inclusive');
     }
 
+    // Discount only applies to physio's rate
     const discountPerSession = Math.round(sessionRate * (discountPercent / 100));
     const discountedRate = sessionRate - discountPerSession;
-    const normalTotal = sessionRate * sessions;
-    const packageTotal = discountedRate * sessions;
+
+    // Platform fee based on discounted rate
+    const platformFeePerSession = calculatePlatformFee(discountedRate);
+
+    // First session extras
+    const firstSessionExtras = FIRST_SESSION_EXTRAS;
+
+    // Session totals
+    const firstSessionTotal = discountedRate + platformFeePerSession + firstSessionExtras;
+    const followUpSessionTotal = discountedRate + platformFeePerSession;
+
+    // Package total
+    const packageTotal = sessions === 1
+        ? firstSessionTotal
+        : firstSessionTotal + (followUpSessionTotal * (sessions - 1));
+
+    // Normal pricing (no discount)
+    const normalPlatformFee = calculatePlatformFee(sessionRate);
+    const normalFirstSession = sessionRate + normalPlatformFee + firstSessionExtras;
+    const normalFollowUp = sessionRate + normalPlatformFee;
+    const normalTotal = sessions === 1
+        ? normalFirstSession
+        : normalFirstSession + (normalFollowUp * (sessions - 1));
+
     const patientSaves = normalTotal - packageTotal;
+
+    // Distribution
+    const physioEarnings = discountedRate * sessions;
+    const platformEarnings = platformFeePerSession * sessions;
+    const assessmentEarnings = INITIAL_ASSESSMENT_FEE;
+    const awadocEarnings = AWADOC_FEE;
 
     return {
         sessions,
         discountPercent,
+        originalRate: sessionRate,
         discountPerSession,
         discountedRate,
+        platformFeePerSession,
+        firstSessionExtras,
+        firstSessionTotal,
+        followUpSessionTotal,
         packageTotal,
         normalTotal,
         patientSaves,
+        physioEarnings,
+        platformEarnings,
+        assessmentEarnings,
+        awadocEarnings,
     };
+}
+
+// ── Recommended Discount Defaults ─────────────────
+export function getRecommendedDiscount(sessionRate: number): number {
+    if (sessionRate <= 20_000) return 10;  // Standard physios
+    if (sessionRate <= 30_000) return 7;   // Senior specialists
+    return 5;                              // Consultants
 }
 
 // ── Formatting helpers ────────────────────────────
 export function formatNaira(amount: number): string {
     return `₦${amount.toLocaleString("en-NG")}`;
 }
+
+// ── Package labels & descriptions ─────────────────
+export const PACKAGE_INFO: Record<PackageSize, { label: string; description: string; popular?: boolean }> = {
+    1: {
+        label: "Single Session",
+        description: "Try a session, no commitment",
+    },
+    4: {
+        label: "Starter Package",
+        description: "4 sessions — great for mild conditions",
+    },
+    8: {
+        label: "Complete Care",
+        description: "8 sessions — our most popular plan",
+        popular: true,
+    },
+    12: {
+        label: "Full Recovery",
+        description: "12 sessions — best for complex cases",
+    },
+};

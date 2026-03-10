@@ -18,13 +18,8 @@ export default function PhysiotherapistOnboardingLayout({
 
   useEffect(() => {
     if (isLoaded) {
-      // If no user is logged in, redirect to sign in
-      if (!user) {
-        redirect('/sign-in');
-      }
-
       // If user already completed onboarding, skip onboarding flow
-      if (currentUser && (currentUser as { onboarded?: boolean }).onboarded) {
+      if (user && currentUser && (currentUser as { onboarded?: boolean }).onboarded) {
         redirect('/dashboard');
       }
 
@@ -44,3 +39,4 @@ export default function PhysiotherapistOnboardingLayout({
     </div>
   );
 }
+

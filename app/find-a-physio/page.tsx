@@ -3,20 +3,13 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Loader2, Search, SlidersHorizontal } from "lucide-react";
+import { Loader2, Search, SlidersHorizontal, Map, List, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import PhysioCard from "@/components/marketplace/PhysioCard";
-import SearchFilters from "@/components/marketplace/SearchFilters";
+import { DynamicPhysioMapView } from "@/components/marketplace/DynamicPhysioMapView";
 import { useMarketplaceStore } from "@/stores/marketplaceStore";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+
 import {
   Select,
   SelectContent,
@@ -24,6 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+
+type ViewMode = "list" | "map" | "split";
 
 export default function FindAPhysioPage() {
   // Use marketplace store for persistent state
@@ -42,8 +38,9 @@ export default function FindAPhysioPage() {
   // Local state for UI
   const [localSearchQuery, setLocalSearchQuery] = useState(storedQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(storedQuery);
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const [showDesktopFilters, setShowDesktopFilters] = useState(true);
+
+  const [viewMode, setViewMode] = useState<ViewMode>("split");
+  const [hoveredPhysioId, setHoveredPhysioId] = useState<string | null>(null);
 
   // Debounce search query
   useEffect(() => {
@@ -94,6 +91,18 @@ export default function FindAPhysioPage() {
     setDebouncedQuery("");
   }, [clearStoredFilters]);
 
+  // Show map on larger screens, list on mobile by default
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setViewMode("list");
+      }
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50/50">
       {/* Hero Section */}
@@ -131,80 +140,19 @@ export default function FindAPhysioPage() {
             </div>
           </div>
 
-          {/* Mobile Filters Button */}
-          <div className="mt-8 lg:hidden">
-            <Sheet open={showMobileFilters} onOpenChange={setShowMobileFilters}>
-              <SheetTrigger asChild>
-                <Button
-                  variant="secondary"
-                  className="w-full bg-white/10 text-white hover:bg-white/20 border border-white/20 backdrop-blur-sm h-12 text-base"
-                >
-                  <SlidersHorizontal className="mr-2 h-4 w-4" />
-                  Filters & Sort
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-full sm:w-[400px] overflow-y-auto p-0">
-                <SheetHeader className="p-6 border-b border-gray-100 bg-white sticky top-0 z-10">
-                  <SheetTitle className="text-xl font-bold text-gray-900">Filters</SheetTitle>
-                  <SheetDescription>
-                    Refine your search results
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="p-6">
-                  <SearchFilters
-                    filters={storedFilters}
-                    onFiltersChange={setStoredFilters}
-                    sortBy={storedSortBy}
-                    onSortChange={setStoredSortBy}
-                  />
-                </div>
-              </SheetContent>
-            </Sheet>
-          </div>
+
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* Desktop Filters Sidebar */}
-          {showDesktopFilters && (
-            <div className="hidden lg:block w-72 flex-shrink-0">
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sticky top-24">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-bold text-gray-900">Filters</h2>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearFilters}
-                    className="text-xs text-gray-500 hover:text-brand h-auto p-0 hover:bg-transparent"
-                  >
-                    Reset
-                  </Button>
-                </div>
-                <SearchFilters
-                  filters={storedFilters}
-                  onFiltersChange={setStoredFilters}
-                  sortBy={storedSortBy}
-                  onSortChange={setStoredSortBy}
-                />
-              </div>
-            </div>
-          )}
 
-          {/* Results */}
+
+          {/* Results + Map */}
           <div className="flex-1 min-w-0">
             <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
-              {/* Toggle Filters Button - Desktop */}
-              <Button
-                onClick={() => setShowDesktopFilters(!showDesktopFilters)}
-                variant="outline"
-                size="sm"
-                className="hidden lg:flex items-center gap-2 border-gray-200 text-gray-600 hover:bg-gray-50"
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                {showDesktopFilters ? 'Hide Filters' : 'Show Filters'}
-              </Button>
+
 
               {/* Results Count */}
               <div className="flex-1">
@@ -215,6 +163,67 @@ export default function FindAPhysioPage() {
                   )}
                 </p>
               </div>
+
+              {/* View Toggle - Desktop */}
+              <div className="hidden lg:flex items-center bg-gray-100 rounded-xl p-1 gap-0.5">
+                <button
+                  onClick={() => setViewMode("list")}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                    viewMode === "list"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  <List className="h-3.5 w-3.5" />
+                  List
+                </button>
+                <button
+                  onClick={() => setViewMode("split")}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                    viewMode === "split"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  <div className="flex gap-0.5">
+                    <div className="w-1.5 h-3 bg-current rounded-sm" />
+                    <div className="w-1.5 h-3 bg-current rounded-sm opacity-50" />
+                  </div>
+                  Split
+                </button>
+                <button
+                  onClick={() => setViewMode("map")}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                    viewMode === "map"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  <Map className="h-3.5 w-3.5" />
+                  Map
+                </button>
+              </div>
+
+              {/* Mobile Map Toggle */}
+              <button
+                onClick={() => setViewMode(viewMode === "map" ? "list" : "map")}
+                className="lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                {viewMode === "map" ? (
+                  <>
+                    <List className="h-4 w-4" />
+                    Show List
+                  </>
+                ) : (
+                  <>
+                    <Map className="h-4 w-4" />
+                    Show Map
+                  </>
+                )}
+              </button>
 
               {/* Sort Dropdown */}
               <Select value={storedSortBy} onValueChange={setStoredSortBy}>
@@ -231,59 +240,108 @@ export default function FindAPhysioPage() {
               </Select>
             </div>
 
-            {/* Loading State */}
-            {isLoading && (
-              <div className="flex flex-col items-center justify-center py-24">
-                <Loader2 className="h-10 w-10 animate-spin text-brand mb-4" />
-                <p className="text-gray-500 text-sm">Finding the best matches...</p>
-              </div>
-            )}
+            {/* Split View Layout */}
+            <div
+              className={cn(
+                "flex gap-6",
+                viewMode === "split" && "lg:flex-row",
+                viewMode === "list" && "flex-col",
+                viewMode === "map" && "flex-col"
+              )}
+            >
+              {/* List Panel */}
+              {viewMode !== "map" && (
+                <div
+                  className={cn(
+                    "min-w-0",
+                    viewMode === "split" ? "lg:w-1/2 lg:max-h-[calc(100vh-200px)] lg:overflow-y-auto lg:pr-2 custom-scrollbar" : "w-full"
+                  )}
+                >
+                  {/* Loading State */}
+                  {isLoading && (
+                    <div className="flex flex-col items-center justify-center py-24">
+                      <Loader2 className="h-10 w-10 animate-spin text-brand mb-4" />
+                      <p className="text-gray-500 text-sm">Finding the best matches...</p>
+                    </div>
+                  )}
 
-            {/* Physiotherapist Cards */}
-            {displayResults && hasResults && (
-              <div className={`grid gap-6 auto-rows-fr ${showDesktopFilters
-                ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
-                : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                }`}>
-                {physios.map((physio: any) => (
-                  <PhysioCard key={physio.id} physiotherapist={physio} />
-                ))}
-              </div>
-            )}
+                  {/* Physiotherapist Cards */}
+                  {displayResults && hasResults && (
+                    <div
+                      className={cn(
+                        "grid gap-6 auto-rows-fr",
+                        viewMode === "split"
+                          ? "grid-cols-1 xl:grid-cols-2"
+                          : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                      )}
+                    >
+                      {physios.map((physio: any) => (
+                        <div
+                          key={physio.id}
+                          onMouseEnter={() => setHoveredPhysioId(physio.id)}
+                          onMouseLeave={() => setHoveredPhysioId(null)}
+                        >
+                          <PhysioCard physiotherapist={physio} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-            {/* Empty State */}
-            {displayResults && !hasResults && (
-              <div className="text-center py-24 bg-white rounded-3xl border border-dashed border-gray-200">
-                <div className="w-16 h-16 mx-auto bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                  <Search className="h-8 w-8 text-gray-400" />
+                  {/* Empty State */}
+                  {displayResults && !hasResults && (
+                    <div className="text-center py-24 bg-white rounded-3xl border border-dashed border-gray-200">
+                      <div className="w-16 h-16 mx-auto bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                        <Search className="h-8 w-8 text-gray-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        No matches found
+                      </h3>
+                      <p className="text-gray-500 mb-6 max-w-sm mx-auto">
+                        We couldn&apos;t find any physiotherapists matching your criteria. Try adjusting your filters.
+                      </p>
+                      <Button
+                        onClick={clearFilters}
+                        variant="outline"
+                        className="border-gray-200"
+                      >
+                        Clear All Filters
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Load More */}
+                  {displayResults && displayResults.hasMore && (
+                    <div className="mt-12 text-center">
+                      <Button
+                        variant="outline"
+                        className="px-8 h-12 rounded-xl border-gray-200 text-gray-900 hover:bg-gray-50 hover:text-gray-900 transition-all font-medium"
+                      >
+                        Load More Results
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  No matches found
-                </h3>
-                <p className="text-gray-500 mb-6 max-w-sm mx-auto">
-                  We couldn't find any physiotherapists matching your criteria. Try adjusting your filters.
-                </p>
-                <Button
-                  onClick={clearFilters}
-                  variant="outline"
-                  className="border-gray-200"
-                >
-                  Clear All Filters
-                </Button>
-              </div>
-            )}
+              )}
 
-            {/* Load More */}
-            {displayResults && displayResults.hasMore && (
-              <div className="mt-12 text-center">
-                <Button
-                  variant="outline"
-                  className="px-8 h-12 rounded-xl border-gray-200 text-gray-900 hover:bg-gray-50 hover:text-gray-900 transition-all font-medium"
+              {/* Map Panel */}
+              {(viewMode === "map" || viewMode === "split") && (
+                <div
+                  className={cn(
+                    "relative rounded-2xl overflow-hidden border border-gray-200 shadow-sm",
+                    viewMode === "split"
+                      ? "hidden lg:block lg:w-1/2 lg:sticky lg:top-24 lg:h-[calc(100vh-200px)]"
+                      : "w-full h-[60vh] lg:h-[calc(100vh-200px)]"
+                  )}
                 >
-                  Load More Results
-                </Button>
-              </div>
-            )}
+                  <DynamicPhysioMapView
+                    physiotherapists={physios}
+                    hoveredPhysioId={hoveredPhysioId}
+                    onPhysioHover={setHoveredPhysioId}
+                    className="w-full h-full"
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

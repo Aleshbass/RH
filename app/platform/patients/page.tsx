@@ -44,7 +44,7 @@ export default function PatientsPage() {
       description="Recover faster and better with a dedicated team by your side. Rehabify Health connects you with top physiotherapists and gives you the tools to take control of your health."
       features={features}
       ctaText="Start Your Recovery"
-      ctaLink="/sign-up?role=patient"
+      ctaLink="/start-treatment"
     />
   );
 }

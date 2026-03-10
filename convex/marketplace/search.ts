@@ -324,6 +324,7 @@ export const getPhysiotherapistProfile = query({
         ...pkg,
         price: pkg.price / 100,
       })),
+      packageDiscountPercent: (profile as any).packageDiscountPercent || 0,
 
       // Ratings
       averageRating: profile.averageRating || 0,

@@ -25,9 +25,15 @@ export default function ConditionalLayout({ children }: ConditionalLayoutProps) 
   const isBookingConfirmationRoute = pathname.startsWith('/marketplace/booking-confirmation')
   // Hide header/footer on Cal.com-style booking pages for clean embedded experience
   const isBookingRoute = pathname.startsWith('/book')
+  // Patient onboarding flow — has its own header
+  const isStartTreatmentRoute = pathname === '/start-treatment'
+  // Patient matching/physio profile pages — clean experience, no footer
+  const isPatientMatchingRoute = pathname.startsWith('/find-my-physio')
+  // Individual physio profile page — clean focused experience
+  const isPhysioProfileRoute = /^\/find-a-physio\/.+/.test(pathname)
 
-  const showHeader = !isDashboardRoute && !isPaymentRoute && !isBookingConfirmationRoute && !isBookingRoute
-  const showFooter = !isDashboardRoute && !isOnboardingRoute && !isPaymentRoute && !isBookingConfirmationRoute && !isBookingRoute
+  const showHeader = !isDashboardRoute && !isPaymentRoute && !isBookingConfirmationRoute && !isBookingRoute && !isStartTreatmentRoute
+  const showFooter = !isDashboardRoute && !isOnboardingRoute && !isPaymentRoute && !isBookingConfirmationRoute && !isBookingRoute && !isStartTreatmentRoute && !isPatientMatchingRoute && !isPhysioProfileRoute
 
   return (
     <>

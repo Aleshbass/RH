@@ -123,6 +123,7 @@ export default defineSchema({
       price: v.number(), // Total package price in kobo
       description: v.optional(v.string()),
     }))),
+    packageDiscountPercent: v.optional(v.number()), // 5-15% discount for multi-session packages
 
     // Location
     location: v.optional(v.string()), // "Lagos", "Abuja", "Online"
@@ -2171,6 +2172,47 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_severity", ["severity"])
     .index("by_created_at", ["createdAt"]),
+
+  // ── Retention System ──────────────────────────────
+  // Bonuses for physios with >60% retention rate
+  physioRetentionBonuses: defineTable({
+    physiotherapistId: v.id("users"),
+    amount: v.number(), // in Naira (e.g., 500 per patient)
+    patientsCompleted: v.number(), // number of patients who completed 4+ sessions
+    period: v.string(), // e.g., "2026-Q1"
+    status: v.union(
+      v.literal("pending"),
+      v.literal("paid"),
+      v.literal("cancelled")
+    ),
+    paidAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_physio", ["physiotherapistId"])
+    .index("by_status", ["status"])
+    .index("by_period", ["period"]),
+
+  // Penalties for physios with <30% retention rate
+  physioRetentionPenalties: defineTable({
+    physiotherapistId: v.id("users"),
+    currentLevel: v.union(
+      v.literal("none"),
+      v.literal("warning"),
+      v.literal("reduced_allocation"),
+      v.literal("suspended")
+    ),
+    lastUpdated: v.number(),
+    history: v.array(
+      v.object({
+        level: v.string(),
+        reason: v.string(),
+        retentionRate: v.number(),
+        date: v.number(),
+      })
+    ),
+  })
+    .index("by_physio", ["physiotherapistId"])
+    .index("by_level", ["currentLevel"]),
 
   // Health tables from health schema
   ...healthTables,

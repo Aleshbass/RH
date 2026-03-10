@@ -108,7 +108,7 @@ export default function ClinicSettingsPage() {
                     <Label htmlFor="description">Description</Label>
                     <Textarea
                       id="description"
-                      defaultValue={clinic?.description || ''}
+                      defaultValue={''}
                       placeholder="Brief description of your clinic"
                       rows={3}
                     />
@@ -168,7 +168,7 @@ export default function ClinicSettingsPage() {
                     <Label htmlFor="website">Website</Label>
                     <Input
                       id="website"
-                      defaultValue={clinic?.website || ''}
+                      defaultValue={''}
                       placeholder="https://www.yourclinic.com"
                     />
                   </div>

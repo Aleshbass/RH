@@ -86,6 +86,7 @@ import type * as imagekit from "../imagekit.js";
 import type * as location from "../location.js";
 import type * as marketplace_booking from "../marketplace/booking.js";
 import type * as marketplace_debug from "../marketplace/debug.js";
+import type * as marketplace_matching from "../marketplace/matching.js";
 import type * as marketplace_migrations from "../marketplace/migrations.js";
 import type * as marketplace_quickEnable from "../marketplace/quickEnable.js";
 import type * as marketplace_reports from "../marketplace/reports.js";
@@ -220,6 +221,7 @@ declare const fullApi: ApiFromModules<{
   location: typeof location;
   "marketplace/booking": typeof marketplace_booking;
   "marketplace/debug": typeof marketplace_debug;
+  "marketplace/matching": typeof marketplace_matching;
   "marketplace/migrations": typeof marketplace_migrations;
   "marketplace/quickEnable": typeof marketplace_quickEnable;
   "marketplace/reports": typeof marketplace_reports;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,6 +11,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { useUser } from '@clerk/nextjs';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -102,7 +103,9 @@ export default function PhysiotherapistOnboardingWizard() {
     const router = useRouter();
     const { data, updatePhysiotherapistData, completeOnboarding } = useOnboardingStore();
     const { physiotherapistData } = data;
+    const { user, isSignedIn } = useUser();
     const currentUser = useQuery(api.users.getMyUser);
+    const hasRestoredRef = useRef(false);
     const completeUserProfileMutation = useMutation(api.users.completeUserProfile);
 
     const [currentStep, setCurrentStep] = useState(0);
@@ -184,6 +187,46 @@ export default function PhysiotherapistOnboardingWizard() {
         }
     }, [currentUser, setValue, physiotherapistData.firstName]);
 
+    // Restore saved onboarding data after sign-up redirect
+    useEffect(() => {
+        if (!isSignedIn || hasRestoredRef.current) return;
+        try {
+            const saved = localStorage.getItem('physioOnboardingData');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                // Only restore if less than 24 hours old
+                if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+                    hasRestoredRef.current = true;
+                    const fd = parsed.formData;
+                    // Restore all form fields
+                    if (fd.firstName) setValue('firstName', fd.firstName);
+                    if (fd.lastName) setValue('lastName', fd.lastName);
+                    if (fd.email) setValue('email', fd.email);
+                    if (fd.phoneNumber) setValue('phoneNumber', fd.phoneNumber);
+                    if (fd.age) setValue('age', fd.age);
+                    if (fd.gender) setValue('gender', fd.gender);
+                    if (fd.licenseNumber) setValue('licenseNumber', fd.licenseNumber);
+                    if (fd.yearsOfExperience) setValue('yearsOfExperience', fd.yearsOfExperience);
+                    if (fd.location) setValue('location', fd.location);
+                    if (fd.bio) setValue('bio', fd.bio);
+                    if (fd.certificationBoard) setValue('certificationBoard', fd.certificationBoard);
+                    if (fd.certificationYear) setValue('certificationYear', fd.certificationYear);
+                    if (fd.licenseExpiryDate) setValue('licenseExpiryDate', fd.licenseExpiryDate);
+                    if (fd.referralSource) setValue('referralSource', fd.referralSource);
+                    if (fd.termsAccepted) setValue('termsAccepted', fd.termsAccepted);
+                    if (fd.operatingHours) setValue('operatingHours', fd.operatingHours);
+                    // Restore specializations
+                    if (parsed.specializations?.length) {
+                        setSpecializations(parsed.specializations);
+                    }
+                    // Jump to the review step so they can re-submit
+                    setCurrentStep(steps.length - 1);
+                    toast.success('Welcome back! Your onboarding data has been restored.');
+                }
+            }
+        } catch { }
+    }, [isSignedIn, setValue]);
+
     // Simulate loading for availability step
     useEffect(() => {
         if (currentStep === 7) { // Availability step
@@ -258,6 +301,40 @@ export default function PhysiotherapistOnboardingWizard() {
     const handleFinalSubmit = async () => {
         const formData = watch();
 
+        // ── If not signed in, save form data and redirect to sign-up ──
+        if (!isSignedIn) {
+            try {
+                localStorage.setItem(
+                    'physioOnboardingData',
+                    JSON.stringify({
+                        formData: {
+                            firstName: formData.firstName,
+                            lastName: formData.lastName,
+                            email: formData.email,
+                            phoneNumber: formData.phoneNumber,
+                            age: formData.age,
+                            gender: formData.gender,
+                            licenseNumber: formData.licenseNumber,
+                            yearsOfExperience: formData.yearsOfExperience,
+                            location: formData.location,
+                            bio: formData.bio,
+                            certificationBoard: formData.certificationBoard,
+                            certificationYear: formData.certificationYear,
+                            licenseExpiryDate: formData.licenseExpiryDate,
+                            referralSource: formData.referralSource,
+                            termsAccepted: formData.termsAccepted,
+                            operatingHours: formData.operatingHours,
+                        },
+                        specializations,
+                        timestamp: Date.now(),
+                    })
+                );
+            } catch { }
+            toast.info('Create your account to complete onboarding');
+            router.push('/sign-up?redirect=/physiotherapist');
+            return;
+        }
+
         try {
             // 1. Create/Update Profile FIRST to get the ID
             const result = await completeUserProfileMutation({
@@ -302,6 +379,9 @@ export default function PhysiotherapistOnboardingWizard() {
                 ...formData,
                 specializations,
             });
+
+            // Clear any saved onboarding data
+            try { localStorage.removeItem('physioOnboardingData'); } catch { }
 
             // 4. Redirect to completion page to handle finalization
             router.push('/onboarding-complete');
@@ -844,7 +924,7 @@ export default function PhysiotherapistOnboardingWizard() {
                     {isSubmitting || isUploading ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                     ) : currentStep === steps.length - 1 ? (
-                        'Complete'
+                        isSignedIn ? 'Complete' : 'Create Account & Complete'
                     ) : (
                         <>
                             Next

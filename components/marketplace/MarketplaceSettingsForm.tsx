@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -17,41 +17,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Loader2, Info } from "lucide-react";
+import { Loader2, Info, TrendingUp, Star, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  calculatePlatformFee,
+  calculatePackagePrice,
+  getRecommendedDiscount,
+  formatNaira,
+  AVAILABLE_PACKAGES,
+  PACKAGE_INFO,
+  type PackageSize,
+} from "@/lib/pricing";
 
 interface MarketplaceSettingsFormProps {
   settings: any;
-}
-
-// Fee calculation helper - patient pays session fee, fees deducted from physiotherapist
-function calculateFees(sessionFee: number) {
-  if (!sessionFee || sessionFee <= 0) return {
-    youReceive: 0,
-    platformFee: 0,
-    paystackFee: 0,
-    patientPays: 0
-  };
-
-  // Patient pays only the session fee
-  const patientPays = sessionFee;
-
-  // Platform fee is fixed at ₦1,000
-  const platformFee = 1000;
-
-  // Paystack charges 1.5% + ₦100 on (session fee + platform fee)
-  const chargeableAmount = sessionFee + platformFee;
-  const paystackFee = Math.round(chargeableAmount * 0.015) + 100;
-
-  // Physiotherapist receives: session fee - platform fee - paystack fee
-  const youReceive = sessionFee - platformFee - paystackFee;
-
-  return {
-    youReceive: Math.max(0, youReceive), // Ensure non-negative
-    platformFee,
-    paystackFee,
-    patientPays,
-  };
 }
 
 const LOCATIONS = [
@@ -75,6 +54,12 @@ const SPECIALIZATIONS = [
   "Post-Surgery Rehabilitation",
 ];
 
+const DISCOUNT_OPTIONS = [
+  { value: 5, label: "5%", tag: "Conservative" },
+  { value: 7, label: "7%", tag: "Recommended", recommended: true },
+  { value: 10, label: "10%", tag: "Competitive" },
+];
+
 export default function MarketplaceSettingsForm({
   settings,
 }: MarketplaceSettingsFormProps) {
@@ -88,12 +73,55 @@ export default function MarketplaceSettingsForm({
     isAvailableOnMarketplace: settings.isAvailableOnMarketplace,
     hourlyRate: settings.hourlyRate,
     initialConsultRate: settings.initialConsultRate,
+    packageDiscountPercent: settings.packageDiscountPercent || 0,
     location: settings.location || "",
     offersOnlineSessions: settings.offersOnlineSessions,
     offersInPersonSessions: settings.offersInPersonSessions,
     bio: settings.bio || "",
     specializations: settings.specializations || [],
   });
+
+  const [customDiscount, setCustomDiscount] = useState("");
+  const [useCustomDiscount, setUseCustomDiscount] = useState(
+    formData.packageDiscountPercent > 0 &&
+    !DISCOUNT_OPTIONS.some(o => o.value === formData.packageDiscountPercent)
+  );
+
+  // Calculate recommended discount based on rate
+  const recommendedDiscount = useMemo(
+    () => getRecommendedDiscount(formData.hourlyRate),
+    [formData.hourlyRate]
+  );
+
+  // Active discount for preview
+  const activeDiscount = formData.packageDiscountPercent || recommendedDiscount;
+
+  // Package previews
+  const packagePreviews = useMemo(() => {
+    if (!formData.hourlyRate || formData.hourlyRate <= 0) return [];
+    return AVAILABLE_PACKAGES.filter(s => s > 1).map(sessions => {
+      try {
+        return calculatePackagePrice(formData.hourlyRate, sessions, activeDiscount);
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+  }, [formData.hourlyRate, activeDiscount]);
+
+  // Earnings comparison (with vs without packages)
+  const earningsComparison = useMemo(() => {
+    if (!formData.hourlyRate || formData.hourlyRate <= 0) return null;
+    const avgSessionsWithout = 2.4; // industry average without packages
+    const earningsWithout = formData.hourlyRate * avgSessionsWithout;
+    const pkg8 = packagePreviews.find(p => p && p.sessions === 8);
+    if (!pkg8) return null;
+    return {
+      withoutPackages: earningsWithout,
+      with8Package: pkg8.physioEarnings,
+      advantage: pkg8.physioEarnings - earningsWithout,
+      percentageGain: Math.round(((pkg8.physioEarnings - earningsWithout) / earningsWithout) * 100),
+    };
+  }, [formData.hourlyRate, packagePreviews]);
 
   const handleSpecializationToggle = (spec: string) => {
     setFormData((prev) => ({
@@ -105,18 +133,17 @@ export default function MarketplaceSettingsForm({
   };
 
   const handleToggleVisibility = async (checked: boolean) => {
-    // Update local state immediately for responsive UI
     setFormData((prev) => ({
       ...prev,
       isAvailableOnMarketplace: checked,
     }));
 
-    // Save to database
     try {
       await updateSettings({
         isAvailableOnMarketplace: checked,
         hourlyRate: Math.round(formData.hourlyRate * 100),
         initialConsultRate: Math.round(formData.initialConsultRate * 100),
+        packageDiscountPercent: formData.packageDiscountPercent,
         location: formData.location,
         offersOnlineSessions: formData.offersOnlineSessions,
         offersInPersonSessions: formData.offersInPersonSessions,
@@ -134,7 +161,6 @@ export default function MarketplaceSettingsForm({
       );
     } catch (error) {
       console.error("Error updating visibility:", error);
-      // Revert on error
       setFormData((prev) => ({
         ...prev,
         isAvailableOnMarketplace: !checked,
@@ -152,8 +178,9 @@ export default function MarketplaceSettingsForm({
     try {
       await updateSettings({
         isAvailableOnMarketplace: formData.isAvailableOnMarketplace,
-        hourlyRate: Math.round(formData.hourlyRate * 100), // Convert to kobo
+        hourlyRate: Math.round(formData.hourlyRate * 100),
         initialConsultRate: Math.round(formData.initialConsultRate * 100),
+        packageDiscountPercent: formData.packageDiscountPercent,
         location: formData.location,
         offersOnlineSessions: formData.offersOnlineSessions,
         offersInPersonSessions: formData.offersInPersonSessions,
@@ -174,9 +201,20 @@ export default function MarketplaceSettingsForm({
     }
   };
 
+  // Platform fee preview
+  const feePreview = useMemo(() => {
+    const rate = formData.hourlyRate;
+    if (!rate || rate <= 0) return null;
+    const platformFee = calculatePlatformFee(rate);
+    return {
+      patientPays: rate + platformFee,
+      platformFee,
+      youReceive: rate,
+    };
+  }, [formData.hourlyRate]);
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Marketplace Visibility */}
+    <form onSubmit={handleSubmit} className="space-y-8">
       {/* Marketplace Visibility */}
       <div className="flex items-center justify-between p-6 bg-white border border-gray-200 rounded-xl shadow-sm">
         <div className="flex-1">
@@ -247,14 +285,16 @@ export default function MarketplaceSettingsForm({
         </Select>
       </div>
 
-      {/* Pricing */}
-      <div>
-        <Label className="text-base font-semibold mb-4 block">Pricing</Label>
-        <p className="text-sm text-gray-600 mb-4">
-          Set your session rates. Prices are in Nigerian Naira (₦).
-        </p>
+      {/* ── PRICING SECTION ── */}
+      <div className="space-y-6">
+        <div>
+          <Label className="text-base font-semibold mb-1 block">Session Pricing</Label>
+          <p className="text-sm text-gray-600 mb-4">
+            Set your session rates in Nigerian Naira (₦). Platform fees are separate and transparent.
+          </p>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="initialConsultRate" className="text-sm font-medium">
               Initial Consultation Rate
@@ -308,99 +348,207 @@ export default function MarketplaceSettingsForm({
           </div>
         </div>
 
-        {/* Fee Breakdown Cards */}
-        {(formData.initialConsultRate > 0 || formData.hourlyRate > 0) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-            {formData.initialConsultRate > 0 && (
-              <Card className="border border-gray-200 shadow-sm bg-gray-50/50">
-                <CardContent className="pt-6">
-                  <div className="flex items-start gap-2 mb-4">
-                    <div className="p-1.5 bg-white rounded-md border border-gray-200 shadow-sm">
-                      <Info className="h-4 w-4 text-gray-700" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900 text-sm">Initial Consultation</h4>
-                      <p className="text-xs text-gray-500">Fee breakdown</p>
-                    </div>
-                  </div>
-
-                  {(() => {
-                    const fees = calculateFees(formData.initialConsultRate);
-                    return (
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-600">Patient Pays</span>
-                          <span className="font-medium text-gray-900">₦{fees.patientPays.toLocaleString()}</span>
-                        </div>
-
-                        <div className="pt-3 border-t border-gray-200 space-y-2">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500">Platform Fee</span>
-                            <span className="text-gray-500">-₦{fees.platformFee.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500">Processing</span>
-                            <span className="text-gray-500">-₦{fees.paystackFee.toLocaleString()}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-between items-center pt-3 border-t border-gray-200">
-                          <span className="font-semibold text-gray-900">You Receive</span>
-                          <span className="font-bold text-green-600">₦{fees.youReceive.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </CardContent>
-              </Card>
-            )}
-
-            {formData.hourlyRate > 0 && (
-              <Card className="border border-gray-200 shadow-sm bg-gray-50/50">
-                <CardContent className="pt-6">
-                  <div className="flex items-start gap-2 mb-4">
-                    <div className="p-1.5 bg-white rounded-md border border-gray-200 shadow-sm">
-                      <Info className="h-4 w-4 text-gray-700" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900 text-sm">Follow-up Session</h4>
-                      <p className="text-xs text-gray-500">Fee breakdown</p>
-                    </div>
-                  </div>
-
-                  {(() => {
-                    const fees = calculateFees(formData.hourlyRate);
-                    return (
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-600">Patient Pays</span>
-                          <span className="font-medium text-gray-900">₦{fees.patientPays.toLocaleString()}</span>
-                        </div>
-
-                        <div className="pt-3 border-t border-gray-200 space-y-2">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500">Platform Fee</span>
-                            <span className="text-gray-500">-₦{fees.platformFee.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500">Processing</span>
-                            <span className="text-gray-500">-₦{fees.paystackFee.toLocaleString()}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-between items-center pt-3 border-t border-gray-200">
-                          <span className="font-semibold text-gray-900">You Receive</span>
-                          <span className="font-bold text-green-600">₦{fees.youReceive.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </CardContent>
-              </Card>
-            )}
-          </div>
+        {/* Fee Breakdown */}
+        {feePreview && (
+          <Card className="border border-gray-200 shadow-sm bg-gray-50/50">
+            <CardContent className="pt-5">
+              <div className="flex items-start gap-2 mb-3">
+                <div className="p-1.5 bg-white rounded-md border border-gray-200 shadow-sm">
+                  <Info className="h-4 w-4 text-gray-700" />
+                </div>
+                <div>
+                  <h4 className="font-semibold text-gray-900 text-sm">Platform Fee Structure</h4>
+                  <p className="text-xs text-gray-500">Per follow-up session</p>
+                </div>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Your session rate</span>
+                  <span className="font-medium text-gray-900">{formatNaira(feePreview.youReceive)}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">Platform fee {formData.hourlyRate > 25000 ? `(₦1k + 5% on excess)` : `(flat)`}</span>
+                  <span className="text-gray-500">+{formatNaira(feePreview.platformFee)}</span>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-gray-200">
+                  <span className="font-semibold text-gray-900">Patient pays</span>
+                  <span className="font-bold text-gray-900">{formatNaira(feePreview.patientPays)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-semibold text-green-700">You receive</span>
+                  <span className="font-bold text-green-600">{formatNaira(feePreview.youReceive)}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
+
+      {/* ── PACKAGE DISCOUNT SECTION ── */}
+      {formData.hourlyRate > 0 && (
+        <div className="space-y-5">
+          <div className="border-t border-gray-100 pt-6">
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles className="w-5 h-5 text-amber-500" />
+              <Label className="text-base font-semibold">Package Discount Settings</Label>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Offer discounted rates for multi-session packages. Patients who commit to more sessions save money, and you get guaranteed bookings.
+            </p>
+          </div>
+
+          {/* Discount Options */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {DISCOUNT_OPTIONS.map((option) => {
+              const isActive = !useCustomDiscount && formData.packageDiscountPercent === option.value;
+              const pkg8 = (() => {
+                try { return calculatePackagePrice(formData.hourlyRate, 8, option.value); }
+                catch { return null; }
+              })();
+              return (
+                <button
+                  type="button"
+                  key={option.value}
+                  onClick={() => {
+                    setFormData(prev => ({ ...prev, packageDiscountPercent: option.value }));
+                    setUseCustomDiscount(false);
+                  }}
+                  className={`relative p-4 rounded-xl border-2 text-left transition-all cursor-pointer ${isActive
+                      ? "border-[#005b57] bg-[#e6f0ef]/50 shadow-sm"
+                      : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                >
+                  {option.recommended && (
+                    <span className="absolute -top-2.5 left-3 px-2 py-0.5 bg-amber-400 text-[10px] font-bold text-amber-900 rounded-full flex items-center gap-1">
+                      <Star className="w-3 h-3" /> RECOMMENDED
+                    </span>
+                  )}
+                  <p className={`text-2xl font-bold ${isActive ? "text-[#005b57]" : "text-gray-900"}`}>
+                    {option.label}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">{option.tag}</p>
+                  {pkg8 && (
+                    <p className="text-xs text-gray-600 mt-2">
+                      Patient saves {formatNaira(pkg8.patientSaves)} on 8 sessions
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Custom discount */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setUseCustomDiscount(!useCustomDiscount)}
+              className={`text-sm font-medium cursor-pointer ${useCustomDiscount ? "text-[#005b57]" : "text-gray-500 hover:text-gray-700"}`}
+            >
+              {useCustomDiscount ? "✓ Using custom discount" : "Or set a custom %"}
+            </button>
+            {useCustomDiscount && (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={5}
+                  max={15}
+                  value={customDiscount || formData.packageDiscountPercent}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setCustomDiscount(e.target.value);
+                    setFormData(prev => ({ ...prev, packageDiscountPercent: Math.max(5, Math.min(15, val)) }));
+                  }}
+                  className="w-20 h-9 text-center font-semibold"
+                  placeholder="7"
+                />
+                <span className="text-sm text-gray-500">% (5-15% allowed)</span>
+              </div>
+            )}
+          </div>
+
+          {/* Earnings Preview */}
+          {earningsComparison && (
+            <Card className="border-2 border-green-200 bg-gradient-to-br from-green-50 to-emerald-50/50">
+              <CardContent className="pt-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <TrendingUp className="w-5 h-5 text-green-600" />
+                  <h4 className="font-semibold text-gray-900 text-sm">Your Earnings Preview</h4>
+                </div>
+
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Per session (after {activeDiscount}% discount)</span>
+                    <span className="font-semibold text-gray-900">
+                      {formatNaira(Math.round(formData.hourlyRate * (1 - activeDiscount / 100)))}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">8-session package earnings</span>
+                    <span className="font-bold text-green-600">
+                      {formatNaira(earningsComparison.with8Package)}
+                    </span>
+                  </div>
+
+                  <div className="border-t border-green-200 pt-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 text-xs">vs No packages (2.4 sessions avg)</span>
+                      <span className="text-xs text-gray-500">
+                        {formatNaira(earningsComparison.withoutPackages)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="font-semibold text-green-700">Package advantage</span>
+                      <span className="font-bold text-green-600">
+                        +{formatNaira(earningsComparison.advantage)} (+{earningsComparison.percentageGain}%) 🎉
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Package Pricing Preview */}
+          {packagePreviews.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-3">What patients will see:</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {packagePreviews.map((pkg) => {
+                  if (!pkg) return null;
+                  const info = PACKAGE_INFO[pkg.sessions as PackageSize];
+                  return (
+                    <div
+                      key={pkg.sessions}
+                      className={`p-4 rounded-xl border ${info?.popular ? "border-[#005b57] bg-[#f0faf9] ring-1 ring-[#005b57]/20" : "border-gray-200 bg-white"
+                        }`}
+                    >
+                      {info?.popular && (
+                        <span className="text-[10px] font-bold text-[#005b57] uppercase tracking-wider">
+                          Most Popular
+                        </span>
+                      )}
+                      <p className="font-bold text-gray-900 text-lg">
+                        {pkg.sessions} Sessions
+                      </p>
+                      <p className="text-xs text-gray-500">{info?.description}</p>
+                      <p className="font-bold text-gray-900 mt-2">
+                        {formatNaira(pkg.packageTotal)}
+                      </p>
+                      <p className="text-xs text-green-600 font-medium">
+                        Save {formatNaira(pkg.patientSaves)}
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        {formatNaira(Math.round(pkg.packageTotal / pkg.sessions))}/session avg
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Session Types */}
       <div>

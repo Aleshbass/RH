@@ -40,7 +40,7 @@ const ConnectedCareSection = () => {
                 </li>
               </ul>
               <NavbarButton
-                href="/sign-up"
+                href="/physiotherapist"
                 variant="secondary"
                 className="group bg-white hover:bg-gray-200 text-[#002e2c] font-semibold py-3 sm:py-4 px-6 sm:px-8 rounded-full inline-flex items-center transition-all duration-300 transform hover:scale-105"
               >

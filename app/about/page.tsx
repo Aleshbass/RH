@@ -431,7 +431,7 @@ export default function AboutPage() {
                                         </div>
                                     </div>
                                 ))}
-                                <Link href="/sign-up" className="inline-flex items-center gap-2 text-[#005b57] font-semibold text-sm mt-2 hover:underline">
+                                <Link href="/physiotherapist" className="inline-flex items-center gap-2 text-[#005b57] font-semibold text-sm mt-2 hover:underline">
                                     Join Our Network <ArrowRight className="w-4 h-4" />
                                 </Link>
                             </div>
@@ -557,7 +557,7 @@ export default function AboutPage() {
                                     Find a Physio
                                 </Link>
                                 <Link
-                                    href="/sign-up"
+                                    href="/physiotherapist"
                                     className="bg-white text-[#005b57] font-semibold py-3 px-6 rounded-full border-2 border-[#005b57] hover:bg-[#005b57] hover:text-white transition-all"
                                 >
                                     Join Our Network

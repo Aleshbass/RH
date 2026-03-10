@@ -271,7 +271,7 @@ export default function OwnerAnalyticsPage() {
 
               <div className="pt-4 border-t">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{formatCurrency(revenueData?.total || 0)}</div>
+                  <div className="text-2xl font-bold text-green-600">{formatCurrency(revenueData?.totalRevenue || 0)}</div>
                   <div className="text-xs text-gray-600">Total Revenue</div>
                 </div>
               </div>

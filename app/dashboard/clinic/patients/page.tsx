@@ -62,7 +62,7 @@ export default function ClinicPatientsPage() {
   const [selectedPhysio, setSelectedPhysio] = useState<string>('all')
   const [selectedPatientId, setSelectedPatientId] = useState<Id<'users'> | null>(null)
 
-  const clinicPatients = useQuery(api.clinics.getClinicPatients) as ClinicPatient[] | undefined
+  const clinicPatients = useQuery(api.clinics.getClinicPatients, {}) as ClinicPatient[] | undefined
   const patientStats = useQuery(api.clinics.getClinicPatientStats)
   const clinicStaff = useQuery(api.clinics.getClinicStaff)
 

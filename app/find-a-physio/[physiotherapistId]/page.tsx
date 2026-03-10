@@ -6,6 +6,8 @@ import { api } from "@/convex/_generated/api";
 import { useParams, useRouter } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import Image from "next/image";
+import Link from "next/link";
+import { motion } from "framer-motion";
 import {
   Loader2,
   MapPin,
@@ -20,23 +22,50 @@ import {
   MessageSquare,
   ShieldCheck,
   Activity,
-  CreditCard
+  CreditCard,
+  Globe,
+  Heart,
+  Sparkles,
+  ChevronRight,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
 import BookingWidget from "@/components/marketplace/BookingWidget";
 import ReviewsList from "@/components/marketplace/ReviewsList";
 import RatingBreakdown from "@/components/marketplace/RatingBreakdown";
+
+// ── Helper: Capitalize location ──
+function capitalizeLocation(loc: string): string {
+  if (!loc) return "";
+  return loc
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+// ── Star rating display ──
+function StarRating({ rating }: { rating: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Star
+          key={i}
+          className={`h-4 w-4 ${i <= Math.round(rating)
+            ? "fill-amber-400 text-amber-400"
+            : "fill-gray-200 text-gray-200"
+            }`}
+        />
+      ))}
+    </div>
+  );
+}
 
 export default function PhysiotherapistProfilePage() {
   const params = useParams();
   const router = useRouter();
   const physiotherapistId = params.physiotherapistId as Id<"users">;
-  const [activeTab, setActiveTab] = useState("about");
+  const [activeSection, setActiveSection] = useState<"about" | "reviews" | "pricing">("about");
 
   // Fetch profile data
   const profile = useQuery(
@@ -63,60 +92,103 @@ export default function PhysiotherapistProfilePage() {
         sessionStorage.setItem(key, "1");
       }
     } catch {
-      // Fallback without sessionStorage
       incrementView({ physiotherapistId }).catch(console.error);
     }
-  }, [physiotherapistId, profile?.profileId]);
+  }, [physiotherapistId, profile?.profileId, incrementView]);
 
+  // Loading
   if (profile === undefined) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-[#005b57]" />
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50/50">
+        <div className="relative">
+          <div className="w-16 h-16 rounded-full bg-teal-50 flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-[#005b57]" />
+          </div>
+          <Sparkles className="absolute -top-1 -right-1 h-5 w-5 text-amber-400 animate-pulse" />
+        </div>
+        <p className="text-gray-500 mt-4 font-medium">Loading profile...</p>
       </div>
     );
   }
 
+  // Not found
   if (!profile) {
     return (
-      <div className="max-w-4xl mx-auto p-8">
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <p className="text-gray-600 mb-4">Physiotherapist profile not found</p>
-            <Button onClick={() => router.push("/find-a-physio")} variant="outline">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Search
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50/50">
+        <div className="bg-white rounded-3xl shadow-xl p-10 max-w-md text-center border border-gray-100">
+          <div className="w-20 h-20 mx-auto rounded-full bg-gray-100 flex items-center justify-center mb-5">
+            <Users className="h-10 w-10 text-gray-300" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Profile Not Found</h2>
+          <p className="text-gray-500 mb-6">
+            This physiotherapist may have deactivated their profile or the link may be incorrect.
+          </p>
+          <Button
+            onClick={() => router.push("/find-a-physio")}
+            className="bg-[#005b57] hover:bg-[#004a46] text-white rounded-xl px-6 h-11"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Search
+          </Button>
+        </div>
       </div>
     );
   }
 
+  const displayRate = profile.initialConsultRate > 0
+    ? profile.initialConsultRate
+    : profile.hourlyRate > 0
+      ? profile.hourlyRate
+      : null;
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-12">
-      {/* Cover Image & Header */}
-      <div className="bg-white shadow-sm">
-        {/* Cover Image */}
-        <div className="h-48 md:h-64 bg-gradient-to-r from-[#005b57] to-[#007f7a] relative">
-          <div className="absolute inset-0 bg-black/10" />
+    <div className="min-h-screen bg-gray-50/50">
+      {/* ─── Hero Header ─── */}
+      <div className="relative">
+        {/* Background */}
+        <div className="h-64 sm:h-72 md:h-80 bg-gradient-to-br from-[#002e2c] via-[#005b57] to-[#007a73] relative overflow-hidden">
+          {/* Decorative */}
+          <div className="absolute inset-0">
+            <div className="absolute -right-20 -top-20 w-80 h-80 bg-white/5 rounded-full blur-3xl" />
+            <div className="absolute -left-16 bottom-0 w-60 h-60 bg-teal-400/10 rounded-full blur-3xl" />
+            <div className="absolute right-1/4 top-1/3 w-2 h-2 bg-white/20 rounded-full" />
+            <div className="absolute left-1/3 top-2/3 w-1.5 h-1.5 bg-white/15 rounded-full" />
+          </div>
+
+          {/* Back button - positioned below the fixed header */}
+          <div className="absolute top-20 sm:top-24 left-4 sm:left-6 z-20">
+            <button
+              onClick={() => router.back()}
+              className="flex items-center gap-2 text-white/80 hover:text-white bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full text-sm font-medium transition-all hover:bg-white/20 cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span className="hidden sm:inline">Back</span>
+            </button>
+          </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="relative -mt-20 sm:-mt-24 pb-6 border-b border-gray-100">
-            <div className="flex flex-col md:flex-row gap-6 items-start">
-              {/* Profile Image */}
-              <div className="relative flex-shrink-0 mx-auto md:mx-0">
+        {/* Profile card overlay */}
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="relative -mt-24 sm:-mt-28 bg-white rounded-2xl sm:rounded-3xl shadow-xl border border-gray-100 p-5 sm:p-8"
+          >
+            <div className="flex flex-col sm:flex-row gap-5 sm:gap-6">
+              {/* Avatar */}
+              <div className="relative flex-shrink-0 mx-auto sm:mx-0">
                 <div className="relative">
                   {profile.imageUrl ? (
                     <Image
                       src={profile.imageUrl}
                       alt={profile.fullName}
-                      width={160}
-                      height={160}
-                      className="rounded-full object-cover border-[6px] border-white shadow-lg w-32 h-32 sm:w-40 sm:h-40"
+                      width={120}
+                      height={120}
+                      className="rounded-2xl object-cover border-4 border-white shadow-lg w-24 h-24 sm:w-28 sm:h-28"
                     />
                   ) : (
-                    <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-[#005b57] flex items-center justify-center text-white text-4xl font-bold border-[6px] border-white shadow-lg">
+                    <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-br from-[#005b57] to-[#007a73] flex items-center justify-center text-white text-3xl font-bold border-4 border-white shadow-lg">
                       {profile.fullName
                         .split(" ")
                         .map((n: string) => n[0])
@@ -125,70 +197,83 @@ export default function PhysiotherapistProfilePage() {
                     </div>
                   )}
                   {profile.isVerified && (
-                    <div className="absolute bottom-2 right-2 bg-blue-500 rounded-full p-1.5 border-2 border-white shadow-sm" title="Verified Physiotherapist">
-                      <BadgeCheck className="h-5 w-5 text-white" />
+                    <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-xl p-1.5 border-2 border-white shadow-sm">
+                      <BadgeCheck className="h-4 w-4 text-white" />
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Profile Info */}
-              <div className="flex-1 text-center md:text-left pt-2 md:pt-24">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+              {/* Info */}
+              <div className="flex-1 text-center sm:text-left">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                   <div>
-                    <h1 className="text-3xl font-bold text-gray-900 mb-1">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
                       {profile.fullName}
                     </h1>
                     {profile.credentials.length > 0 && (
-                      <p className="text-lg text-gray-600 font-medium">
-                        {profile.credentials.join(" • ")}
+                      <p className="text-sm sm:text-base text-gray-500 font-medium mt-0.5">
+                        {profile.credentials.join(" · ")}
                       </p>
                     )}
 
-                    {/* Key Info Badges */}
-                    <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-4 text-sm">
+                    {/* Meta badges */}
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-3">
                       {profile.location && (
-                        <div className="flex items-center gap-1.5 text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
-                          <MapPin className="h-3.5 w-3.5" />
-                          <span>{profile.location}</span>
-                        </div>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
+                          <MapPin className="h-3 w-3" />
+                          {capitalizeLocation(profile.location)}
+                        </span>
                       )}
-                      <div className="flex items-center gap-1.5 text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
-                        <Award className="h-3.5 w-3.5" />
-                        <span>{profile.yearsOfExperience} years exp.</span>
-                      </div>
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
+                        <Award className="h-3 w-3" />
+                        {profile.yearsOfExperience} years exp.
+                      </span>
                       {(profile.offersOnlineSessions || profile.offersInPersonSessions) && (
-                        <div className="flex items-center gap-1.5 text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
-                          {profile.offersOnlineSessions ? <Video className="h-3.5 w-3.5" /> : <Users className="h-3.5 w-3.5" />}
-                          <span>
-                            {profile.offersOnlineSessions && profile.offersInPersonSessions
-                              ? "Hybrid Available"
-                              : profile.offersOnlineSessions
-                                ? "Online Only"
-                                : "In-Person Only"}
-                          </span>
-                        </div>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
+                          {profile.offersOnlineSessions && profile.offersInPersonSessions ? (
+                            <><Globe className="h-3 w-3" /> Hybrid</>
+                          ) : profile.offersOnlineSessions ? (
+                            <><Video className="h-3 w-3" /> Online</>
+                          ) : (
+                            <><Users className="h-3 w-3" /> In-Person</>
+                          )}
+                        </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Rating Badge */}
-                  {profile.averageRating > 0 && (
-                    <div className="flex flex-col items-center md:items-end bg-amber-50 px-4 py-2 rounded-xl border border-amber-100">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-2xl font-bold text-gray-900">{profile.averageRating.toFixed(1)}</span>
-                        <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
+                  {/* Rating badge */}
+                  <div className="flex flex-col items-center sm:items-end flex-shrink-0">
+                    {profile.averageRating > 0 ? (
+                      <div className="bg-amber-50 border border-amber-100 px-4 py-2.5 rounded-xl text-center">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-2xl font-bold text-gray-900">
+                            {profile.averageRating.toFixed(1)}
+                          </span>
+                          <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
+                        </div>
+                        <p className="text-[10px] text-gray-500 font-medium">
+                          {profile.reviewCount} verified review{profile.reviewCount !== 1 ? "s" : ""}
+                        </p>
                       </div>
-                      <span className="text-xs text-gray-600 font-medium">{profile.reviewCount} verified reviews</span>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="bg-gray-50 border border-gray-100 px-4 py-2.5 rounded-xl text-center">
+                        <p className="text-xs text-gray-400 font-medium">New on Rehabify</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Specializations */}
                 {profile.specializations.length > 0 && (
-                  <div className="flex flex-wrap justify-center md:justify-start gap-2 mt-6">
-                    {profile.specializations.map((spec: string, index: number) => (
-                      <Badge key={index} variant="secondary" className="bg-[#e6f0ef] text-[#005b57] hover:bg-[#d0e5e3]">
+                  <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 mt-4">
+                    {profile.specializations.map((spec: string, i: number) => (
+                      <Badge
+                        key={i}
+                        variant="secondary"
+                        className="bg-[#e6f0ef] text-[#005b57] hover:bg-[#d0e5e3] text-xs font-medium px-2.5 py-0.5"
+                      >
                         {spec}
                       </Badge>
                     ))}
@@ -196,99 +281,181 @@ export default function PhysiotherapistProfilePage() {
                 )}
               </div>
             </div>
-          </div>
-
-          {/* Mobile Breadcrumb */}
-          <div className="md:hidden py-4">
-            <Button
-              variant="ghost"
-              onClick={() => router.push("/find-a-physio")}
-              className="text-gray-600 hover:text-[#005b57] pl-0"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Search
-            </Button>
-          </div>
+          </motion.div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-3 mb-6">
-                <TabsTrigger value="about">About</TabsTrigger>
-                <TabsTrigger value="reviews">Reviews ({profile.reviewCount})</TabsTrigger>
-                <TabsTrigger value="pricing">Pricing</TabsTrigger>
-              </TabsList>
+      {/* ─── Main Content ─── */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column */}
+          <div className="lg:col-span-2 space-y-5">
+            {/* Section tabs */}
+            <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+              {[
+                { key: "about", label: "About" },
+                { key: "reviews", label: `Reviews (${profile.reviewCount})` },
+                { key: "pricing", label: "Pricing" },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveSection(tab.key as any)}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${activeSection === tab.key
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                    }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-              {/* About Tab */}
-              <TabsContent value="about" className="space-y-6 animate-in fade-in-50 duration-300">
-                <Card className="border-none shadow-sm">
-                  <CardHeader>
-                    <CardTitle className="text-xl">About Me</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {profile.bio ? (
-                      <p className="text-gray-700 leading-relaxed whitespace-pre-line text-base">
-                        {profile.bio}
+            {/* About Section */}
+            {activeSection === "about" && (
+              <motion.div
+                key="about"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-5"
+              >
+                {/* Bio */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-3">About Me</h3>
+                  {profile.bio ? (
+                    <p className="text-gray-600 leading-relaxed whitespace-pre-line text-[15px]">
+                      {profile.bio}
+                    </p>
+                  ) : (
+                    <div className="bg-gray-50 rounded-xl p-5 text-center">
+                      <p className="text-gray-400 italic text-sm">
+                        This physiotherapist hasn&apos;t added a bio yet.
                       </p>
-                    ) : (
-                      <p className="text-gray-500 italic">
-                        No bio provided yet.
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
+                    </div>
+                  )}
+                </div>
 
+                {/* Quick info grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+                    <Award className="h-5 w-5 text-[#005b57] mx-auto mb-1.5" />
+                    <p className="text-xl font-bold text-gray-900">{profile.yearsOfExperience}</p>
+                    <p className="text-xs text-gray-500">Years Exp.</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+                    <Star className="h-5 w-5 text-amber-400 mx-auto mb-1.5" />
+                    <p className="text-xl font-bold text-gray-900">
+                      {profile.averageRating > 0 ? profile.averageRating.toFixed(1) : "—"}
+                    </p>
+                    <p className="text-xs text-gray-500">Rating</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center col-span-2 sm:col-span-1">
+                    <MessageSquare className="h-5 w-5 text-blue-500 mx-auto mb-1.5" />
+                    <p className="text-xl font-bold text-gray-900">{profile.reviewCount}</p>
+                    <p className="text-xs text-gray-500">Reviews</p>
+                  </div>
+                </div>
+
+                {/* Languages */}
                 {profile.languagesSpoken && profile.languagesSpoken.length > 0 && (
-                  <Card className="border-none shadow-sm">
-                    <CardHeader>
-                      <CardTitle className="text-xl">Languages Spoken</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex flex-wrap gap-2">
-                        {profile.languagesSpoken.map((lang: string, idx: number) => (
-                          <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-md text-gray-700 text-sm font-medium">
-                            <MessageSquare className="w-3.5 h-3.5 text-gray-500" />
-                            {lang}
-                          </div>
-                        ))}
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+                    <h3 className="text-lg font-bold text-gray-900 mb-3">Languages Spoken</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {profile.languagesSpoken.map((lang: string, idx: number) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 rounded-lg text-gray-700 text-sm font-medium border border-gray-100"
+                        >
+                          <Globe className="w-3 h-3 text-gray-400" />
+                          {lang}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Session types */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-3">Session Availability</h3>
+                  <div className="space-y-2.5">
+                    {profile.offersInPersonSessions && (
+                      <div className="flex items-center gap-3 p-3 bg-teal-50/50 rounded-xl border border-teal-100/50">
+                        <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center">
+                          <Users className="h-4 w-4 text-[#005b57]" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">In-Person Sessions</p>
+                          <p className="text-xs text-gray-500">
+                            {profile.location
+                              ? `Available in ${capitalizeLocation(profile.location)}`
+                              : "Location to be confirmed"}
+                          </p>
+                        </div>
+                        <Check className="h-4 w-4 text-[#005b57] ml-auto" />
                       </div>
-                    </CardContent>
-                  </Card>
-                )}
-              </TabsContent>
+                    )}
+                    {profile.offersOnlineSessions && (
+                      <div className="flex items-center gap-3 p-3 bg-purple-50/50 rounded-xl border border-purple-100/50">
+                        <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
+                          <Video className="h-4 w-4 text-purple-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Online Sessions</p>
+                          <p className="text-xs text-gray-500">Via secure video call</p>
+                        </div>
+                        <Check className="h-4 w-4 text-purple-600 ml-auto" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
 
-              {/* Reviews Tab */}
-              <TabsContent value="reviews" className="space-y-6 animate-in fade-in-50 duration-300">
+            {/* Reviews Section */}
+            {activeSection === "reviews" && (
+              <motion.div
+                key="reviews"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-5"
+              >
                 {ratingBreakdown && (
-                  <RatingBreakdown breakdown={ratingBreakdown} />
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                    <RatingBreakdown breakdown={ratingBreakdown} />
+                  </div>
                 )}
-                <ReviewsList physiotherapistId={physiotherapistId} />
-              </TabsContent>
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <ReviewsList physiotherapistId={physiotherapistId} />
+                </div>
+              </motion.div>
+            )}
 
-              {/* Pricing Tab */}
-              <TabsContent value="pricing" className="space-y-6 animate-in fade-in-50 duration-300">
-                <Card className="border-none shadow-sm">
-                  <CardHeader>
-                    <CardTitle className="text-xl">Session Rates</CardTitle>
-                    <CardDescription>
-                      Transparent pricing for all services. All prices are in Nigerian Naira (₦).
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
+            {/* Pricing Section */}
+            {activeSection === "pricing" && (
+              <motion.div
+                key="pricing"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-5"
+              >
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+                  <h3 className="text-lg font-bold text-gray-900 mb-1">Session Rates</h3>
+                  <p className="text-sm text-gray-500 mb-5">
+                    Transparent pricing in Nigerian Naira (₦)
+                  </p>
+
+                  <div className="space-y-3">
                     {profile.initialConsultRate > 0 && (
-                      <div className="flex justify-between items-center p-5 bg-gray-50 rounded-xl border border-gray-100">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-                            <Activity className="w-5 h-5" />
+                      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50/50 to-white rounded-xl border border-blue-100/50">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                            <Activity className="w-5 h-5 text-blue-600" />
                           </div>
                           <div>
-                            <p className="font-semibold text-gray-900">Initial Consultation</p>
-                            <p className="text-sm text-gray-600">Comprehensive assessment & treatment plan</p>
+                            <p className="font-semibold text-gray-900 text-sm">Initial Consultation</p>
+                            <p className="text-xs text-gray-500">Assessment & treatment plan</p>
                           </div>
                         </div>
                         <p className="text-xl font-bold text-[#005b57]">
@@ -298,14 +465,14 @@ export default function PhysiotherapistProfilePage() {
                     )}
 
                     {profile.hourlyRate > 0 && (
-                      <div className="flex justify-between items-center p-5 bg-gray-50 rounded-xl border border-gray-100">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-600">
-                            <Clock className="w-5 h-5" />
+                      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50/50 to-white rounded-xl border border-green-100/50">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+                            <Clock className="w-5 h-5 text-green-600" />
                           </div>
                           <div>
-                            <p className="font-semibold text-gray-900">Follow-up Session</p>
-                            <p className="text-sm text-gray-600">Standard therapy session</p>
+                            <p className="font-semibold text-gray-900 text-sm">Follow-up Session</p>
+                            <p className="text-xs text-gray-500">Standard therapy session</p>
                           </div>
                         </div>
                         <p className="text-xl font-bold text-[#005b57]">
@@ -314,69 +481,102 @@ export default function PhysiotherapistProfilePage() {
                       </div>
                     )}
 
-                    {profile.packageRates && profile.packageRates.length > 0 && (
-                      <>
-                        <div className="py-2">
-                          <Separator />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold mb-4 text-lg">Package Deals</h3>
-                          <div className="grid gap-4">
-                            {profile.packageRates.map((pkg: any, idx: number) => (
-                              <div
-                                key={idx}
-                                className="flex justify-between items-center p-5 border rounded-xl hover:border-[#005b57] hover:shadow-sm transition-all bg-white"
-                              >
-                                <div>
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <Badge variant="outline" className="border-[#005b57] text-[#005b57]">
-                                      {pkg.sessions} Sessions
-                                    </Badge>
-                                  </div>
-                                  {pkg.description && (
-                                    <p className="text-sm text-gray-600 mt-1">
-                                      {pkg.description}
-                                    </p>
+                    {!profile.initialConsultRate && !profile.hourlyRate && (
+                      <div className="text-center py-8 bg-gray-50 rounded-xl">
+                        <CreditCard className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                        <p className="text-sm text-gray-500 font-medium">Pricing on request</p>
+                        <p className="text-xs text-gray-400 mt-0.5">Contact this physio for rates</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Package Deals */}
+                  {profile.packageRates && profile.packageRates.length > 0 && (
+                    <div className="mt-6 pt-5 border-t border-gray-100">
+                      <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-amber-500" />
+                        Package Deals
+                      </h4>
+                      <div className="space-y-2.5">
+                        {profile.packageRates.map((pkg: any, idx: number) => {
+                          const savings = (profile.hourlyRate * pkg.sessions) - pkg.price;
+                          return (
+                            <div
+                              key={idx}
+                              className="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:border-[#005b57]/30 hover:shadow-sm transition-all bg-white"
+                            >
+                              <div>
+                                <div className="flex items-center gap-2 mb-0.5">
+                                  <Badge variant="outline" className="border-[#005b57] text-[#005b57] text-xs">
+                                    {pkg.sessions} Sessions
+                                  </Badge>
+                                  {savings > 0 && (
+                                    <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                                      Save ₦{savings.toLocaleString()}
+                                    </span>
                                   )}
                                 </div>
-                                <div className="text-right">
-                                  <p className="text-xl font-bold text-[#005b57]">
-                                    ₦{pkg.price.toLocaleString()}
-                                  </p>
-                                  <p className="text-xs text-gray-500 mt-0.5">
-                                    Save ₦{((profile.hourlyRate * pkg.sessions) - pkg.price).toLocaleString()}
-                                  </p>
-                                </div>
+                                {pkg.description && (
+                                  <p className="text-xs text-gray-500 mt-1">{pkg.description}</p>
+                                )}
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
+                              <p className="text-lg font-bold text-[#005b57]">
+                                ₦{pkg.price.toLocaleString()}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
           </div>
 
-          {/* Right Column - Booking Widget */}
+          {/* Right Column - Booking Widget + Trust Badges */}
           <div className="lg:col-span-1">
-            <div className="sticky top-24">
-              <BookingWidget profile={profile} />
+            <div className="sticky top-6">
+              {/* Booking widget */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <BookingWidget profile={profile} />
+              </div>
 
-              {/* Trust Badges */}
-              <div className="mt-6 bg-white rounded-xl p-6 border border-gray-100 shadow-sm space-y-4">
-                <div className="flex items-center gap-3 text-sm text-gray-600">
-                  <ShieldCheck className="w-5 h-5 text-[#005b57]" />
-                  <span>Verified Professional</span>
+              {/* Quick price display (for profiles with rates) */}
+              {displayRate && (
+                <div className="mt-4 bg-gradient-to-br from-[#f0faf9] to-white rounded-2xl border border-[#005b57]/10 p-5 text-center">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    Starting from
+                  </p>
+                  <p className="text-3xl font-bold text-[#005b57]">
+                    ₦{displayRate.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">per session</p>
                 </div>
+              )}
+
+              {/* Trust badges */}
+              <div className="mt-4 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">
+                  Why choose Rehabify
+                </p>
+                {profile.isVerified && (
+                  <div className="flex items-center gap-3 text-sm text-gray-600">
+                    <ShieldCheck className="w-5 h-5 text-[#005b57] flex-shrink-0" />
+                    <span>Verified Professional</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-3 text-sm text-gray-600">
-                  <BadgeCheck className="w-5 h-5 text-[#005b57]" />
+                  <BadgeCheck className="w-5 h-5 text-[#005b57] flex-shrink-0" />
                   <span>Licensed Physiotherapist</span>
                 </div>
                 <div className="flex items-center gap-3 text-sm text-gray-600">
-                  <CreditCard className="w-5 h-5 text-[#005b57]" />
-                  <span>Secure Payments via Flutterwave</span>
+                  <CreditCard className="w-5 h-5 text-[#005b57] flex-shrink-0" />
+                  <span>Secure Payments</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-gray-600">
+                  <Heart className="w-5 h-5 text-[#005b57] flex-shrink-0" />
+                  <span>Patient Satisfaction Guarantee</span>
                 </div>
               </div>
             </div>

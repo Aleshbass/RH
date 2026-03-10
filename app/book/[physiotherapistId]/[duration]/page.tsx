@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useParams, useRouter } from "next/navigation";
@@ -20,9 +20,22 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import CalendarBookingWidget from "@/components/marketplace/CalendarBookingWidget";
+import PackageSelector, { type SimplePackageBreakdown } from "@/components/marketplace/PackageSelector";
 import { toast } from "sonner";
+import { formatNaira } from "@/lib/pricing";
 
-type BookingStep = "select-time" | "details" | "confirm";
+type BookingStep = "select-time" | "select-package" | "details" | "confirm";
+
+// Treatment prefs from onboarding flow
+interface TreatmentPrefs {
+    cityKey: string;
+    areaIndex?: number;
+    areaLabel: string;
+    conditionLabel: string;
+    conditionLevel: string;
+    sessionRate: number;
+    timestamp: number;
+}
 
 // Session info based on duration
 function getSessionInfo(duration: number) {
@@ -58,7 +71,13 @@ export default function BookingPage() {
         "online"
     );
     const [notes, setNotes] = useState("");
+    const savedPrefsRef = useRef(false);
+    const [treatmentPrefs, setTreatmentPrefs] = useState<TreatmentPrefs | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+
+    // Package selection state
+    const [selectedPackage, setSelectedPackage] = useState<1 | 4 | 8 | 12>(1);
+    const [packageBreakdown, setPackageBreakdown] = useState<SimplePackageBreakdown | null>(null);
 
     // Fetch profile
     const profile = useQuery(api.marketplace.search.getPhysiotherapistProfile, {
@@ -74,6 +93,103 @@ export default function BookingPage() {
     const completeBooking = useMutation(
         api.marketplace.booking.completeMarketplaceBooking
     );
+
+    // Save treatment prefs mutation
+    const saveTreatmentPrefs = useMutation(
+        api.marketplace.matching.savePatientTreatmentPrefs
+    );
+
+    // Get the physio's discount percent (default to 7% if not set)
+    const discountPercent = useMemo(() => {
+        if (!profile) return 7;
+        return (profile as any).packageDiscountPercent || 7;
+    }, [profile]);
+
+    // Session rate: prefer formula-calculated rate from patient onboarding,
+    // fall back to physio's manually-set rate if no prefs exist
+    const sessionRate = useMemo(() => {
+        // Use the formula-based rate from /start-treatment onboarding
+        if (treatmentPrefs?.sessionRate && treatmentPrefs.sessionRate > 0) {
+            return treatmentPrefs.sessionRate;
+        }
+        // Fallback: use physio's profile rate
+        if (!profile) return 0;
+        return profile.hourlyRate || 0;
+    }, [treatmentPrefs, profile]);
+
+    // ── Load treatment prefs from localStorage (from /start-treatment) ──
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem("treatmentPrefs");
+            if (stored) {
+                const prefs = JSON.parse(stored) as TreatmentPrefs;
+                // Only use if less than 24 hours old
+                if (Date.now() - prefs.timestamp < 24 * 60 * 60 * 1000) {
+                    setTreatmentPrefs(prefs);
+                    // Auto-populate notes with condition if notes are empty
+                    if (!notes && prefs.conditionLabel) {
+                        setNotes(`Condition: ${prefs.conditionLabel}`);
+                    }
+                }
+            }
+
+            // Also check for pending booking (returned from sign-in redirect)
+            const pendingBooking = localStorage.getItem("pendingBooking");
+            if (pendingBooking) {
+                const pending = JSON.parse(pendingBooking);
+                if (pending.physiotherapistId === physiotherapistId) {
+                    // Restore booking state
+                    if (pending.slot) setSelectedSlot(pending.slot);
+                    if (pending.sessionMode) setSessionMode(pending.sessionMode);
+                    if (pending.notes) setNotes(pending.notes);
+                    if (pending.selectedPackage) setSelectedPackage(pending.selectedPackage);
+                    if (pending.packageBreakdown) setPackageBreakdown(pending.packageBreakdown);
+                    if (pending.slot) setStep("details");
+                }
+                localStorage.removeItem("pendingBooking");
+            }
+        } catch {
+            // localStorage may not be available
+        }
+    }, []);
+
+    // ── Save treatment prefs to DB after sign-in ──
+    useEffect(() => {
+        if (
+            isSignedIn &&
+            treatmentPrefs &&
+            !savedPrefsRef.current &&
+            treatmentPrefs.cityKey &&
+            treatmentPrefs.areaIndex !== undefined
+        ) {
+            savedPrefsRef.current = true;
+            saveTreatmentPrefs({
+                cityKey: treatmentPrefs.cityKey,
+                areaIndex: treatmentPrefs.areaIndex,
+                areaLabel: treatmentPrefs.areaLabel,
+                conditionLabel: treatmentPrefs.conditionLabel,
+                conditionLevel: treatmentPrefs.conditionLevel,
+                sessionRate: treatmentPrefs.sessionRate,
+            }).catch((err) => {
+                console.error("Failed to save treatment prefs:", err);
+            });
+        }
+    }, [isSignedIn, treatmentPrefs, saveTreatmentPrefs]);
+
+    // Initialize default package breakdown when profile loads
+    useEffect(() => {
+        if (sessionRate > 0 && !packageBreakdown) {
+            setPackageBreakdown({
+                sessions: 1,
+                sessionRate,
+                discountPercent: 0,
+                discountedRate: sessionRate,
+                total: sessionRate,
+                normalTotal: sessionRate,
+                saves: 0,
+            });
+        }
+    }, [sessionRate, packageBreakdown]);
 
     if (profile === undefined) {
         return (
@@ -109,20 +225,31 @@ export default function BookingPage() {
         setSelectedSlot(slot);
     };
 
-    const goToDetails = () => {
+    const goToPackageSelection = () => {
         if (!selectedSlot) {
             toast.error("Please select a time slot");
             return;
         }
+        setStep("select-package");
+    };
+
+    const goToDetails = () => {
         setStep("details");
     };
 
     const goBack = () => {
-        if (step === "details") {
+        if (step === "select-package") {
             setStep("select-time");
+        } else if (step === "details") {
+            setStep("select-package");
         } else if (step === "confirm") {
             setStep("details");
         }
+    };
+
+    const handlePackageSelect = (pkg: 1 | 4 | 8 | 12, breakdown: SimplePackageBreakdown) => {
+        setSelectedPackage(pkg);
+        setPackageBreakdown(breakdown);
     };
 
     const initializeFlutterwavePayment = async (
@@ -165,9 +292,17 @@ export default function BookingPage() {
         }
     };
 
+    const packageLabels: Record<number, string> = {
+        1: "Single Session",
+        4: "Starter Package",
+        8: "Complete Care",
+        12: "Full Recovery",
+    };
+    const packageName = packageLabels[selectedPackage] || "Package";
+
     const handleBooking = async () => {
         if (!isSignedIn) {
-            // Save booking state to localStorage and redirect to sign in
+            // Save booking state + treatment prefs + package data to localStorage and redirect to sign in
             localStorage.setItem(
                 "pendingBooking",
                 JSON.stringify({
@@ -175,6 +310,9 @@ export default function BookingPage() {
                     slot: selectedSlot,
                     sessionMode,
                     notes,
+                    treatmentPrefs,
+                    selectedPackage,
+                    packageBreakdown,
                 })
             );
             router.push(
@@ -188,9 +326,8 @@ export default function BookingPage() {
             return;
         }
 
-        // Validate email before proceeding with paid sessions
-        const sessionPrice = profile.initialConsultRate || profile.hourlyRate || 0;
-        if (sessionPrice > 0 && !user?.primaryEmailAddress?.emailAddress) {
+        const totalAmount = packageBreakdown?.total || profile.initialConsultRate || profile.hourlyRate || 0;
+        if (totalAmount > 0 && !user?.primaryEmailAddress?.emailAddress) {
             toast.error("Email address is required for payment");
             return;
         }
@@ -200,18 +337,17 @@ export default function BookingPage() {
         try {
             const result = await createBooking({
                 physiotherapistId,
-                sessionType: "follow_up",
+                sessionType: selectedPackage === 1 ? "initial_consult" : "package",
                 sessionDate: selectedSlot.start,
                 sessionDuration,
                 isOnline: sessionMode === "online",
-                serviceAmount: Math.round(sessionPrice * 100), // in kobo
-                patientNotes: notes || undefined,
+                serviceAmount: Math.round(totalAmount * 100), // in kobo
+                patientNotes: notes ? `${notes}\n\nPackage: ${packageName} (${selectedPackage} sessions)` : `Package: ${packageName} (${selectedPackage} sessions)`,
             });
 
             // For free sessions, skip payment and complete booking directly
-            if (sessionPrice === 0) {
+            if (totalAmount === 0) {
                 toast.success("Booking confirmed!");
-                // Complete the free booking
                 await completeBooking({
                     bookingId: result.bookingId,
                     paymentReference: `FREE_${result.bookingId}_${Date.now()}`,
@@ -221,8 +357,8 @@ export default function BookingPage() {
                 return;
             }
 
-            // Initialize Flutterwave payment for paid sessions - AWAIT the call
-            await initializeFlutterwavePayment(result.bookingId, sessionPrice);
+            // Initialize Flutterwave payment for paid sessions
+            await initializeFlutterwavePayment(result.bookingId, totalAmount);
         } catch (error: any) {
             console.error("Booking error:", error);
             toast.error("Booking failed", {
@@ -272,7 +408,7 @@ export default function BookingPage() {
                         {selectedSlot && (
                             <div className="flex justify-end">
                                 <Button
-                                    onClick={goToDetails}
+                                    onClick={goToPackageSelection}
                                     className="bg-teal-600 hover:bg-teal-700 text-white px-8"
                                 >
                                     Continue
@@ -283,10 +419,65 @@ export default function BookingPage() {
                     </div>
                 )}
 
+                {/* Step: Select Package */}
+                {step === "select-package" && selectedSlot && (
+                    <div className="max-w-lg mx-auto w-full">
+                        <div className="bg-[#1a1a1a] rounded-xl p-5 sm:p-6 border border-gray-800">
+                            {/* Physio header mini */}
+                            <div className="flex items-center gap-3 mb-5 pb-4 border-b border-gray-800">
+                                {profile.imageUrl && (
+                                    <Image
+                                        src={profile.imageUrl}
+                                        alt={profile.fullName}
+                                        width={40}
+                                        height={40}
+                                        className="rounded-full object-cover"
+                                    />
+                                )}
+                                <div>
+                                    <p className="text-sm font-medium text-white">
+                                        {profile.fullName}
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                        {formatDate(selectedSlot.start)} · {formatTime(selectedSlot.start)}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Package Selector */}
+                            <PackageSelector
+                                sessionRate={sessionRate}
+                                discountPercent={discountPercent}
+                                selectedPackage={selectedPackage}
+                                onSelect={handlePackageSelect}
+                            />
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-3 mt-6">
+                                <Button
+                                    onClick={goBack}
+                                    variant="outline"
+                                    className="flex-1 border-gray-300 bg-white text-black hover:bg-gray-100"
+                                >
+                                    <ArrowLeft className="w-4 h-4 mr-2" />
+                                    Back
+                                </Button>
+                                <Button
+                                    onClick={goToDetails}
+                                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white"
+                                >
+                                    Continue
+                                    <ArrowRight className="w-4 h-4 ml-2" />
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Step: Details */}
                 {step === "details" && selectedSlot && (
-                    <div className="max-w-lg mx-auto">
-                        <div className="bg-[#1a1a1a] rounded-xl p-6 border border-gray-800">
+                    <div className="max-w-lg mx-auto w-full">
+                        <div className="bg-[#1a1a1a] rounded-xl p-5 sm:p-6 border border-gray-800">
                             <h2 className="text-xl font-semibold text-white mb-6">
                                 Booking Details
                             </h2>
@@ -375,13 +566,47 @@ export default function BookingPage() {
                             </div>
 
                             {/* Price Summary */}
-                            <div className="bg-gray-800 rounded-lg p-4 mb-6">
+                            <div className="bg-gray-800 rounded-lg p-4 mb-6 space-y-2">
                                 <div className="flex justify-between items-center">
-                                    <span className="text-gray-400">Session Fee</span>
+                                    <div>
+                                        <span className="text-gray-300 text-sm font-medium">
+                                            {packageName}
+                                        </span>
+                                        <span className="text-gray-500 text-xs ml-2">
+                                            {selectedPackage} session{selectedPackage > 1 ? "s" : ""}
+                                        </span>
+                                    </div>
                                     <span className="text-xl font-bold text-white">
-                                        {(profile.initialConsultRate || profile.hourlyRate) ? `₦${(profile.initialConsultRate || profile.hourlyRate).toLocaleString()}` : 'Free'}
+                                        {packageBreakdown
+                                            ? formatNaira(packageBreakdown.total)
+                                            : sessionRate > 0
+                                                ? formatNaira(sessionRate)
+                                                : "Free"
+                                        }
                                     </span>
                                 </div>
+                                {packageBreakdown && packageBreakdown.saves > 0 && (
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-green-400">You save</span>
+                                        <span className="text-green-400 font-medium">
+                                            {formatNaira(packageBreakdown.saves)}
+                                        </span>
+                                    </div>
+                                )}
+                                {selectedPackage > 1 && packageBreakdown && (
+                                    <p className="text-[11px] text-gray-500">
+                                        {formatNaira(Math.round(packageBreakdown.total / selectedPackage))}/session average
+                                    </p>
+                                )}
+
+                                {/* Change plan link */}
+                                <button
+                                    type="button"
+                                    onClick={() => setStep("select-package")}
+                                    className="text-teal-400 text-xs hover:text-teal-300 underline pt-1"
+                                >
+                                    Change plan
+                                </button>
                             </div>
 
                             {/* Action Buttons */}
@@ -404,7 +629,7 @@ export default function BookingPage() {
                                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                                             Processing...
                                         </>
-                                    ) : !(profile.initialConsultRate || profile.hourlyRate) ? (
+                                    ) : !sessionRate ? (
                                         isSignedIn ? "Book Now" : "Sign In & Book"
                                     ) : isSignedIn ? (
                                         "Confirm & Pay"
@@ -429,12 +654,12 @@ export default function BookingPage() {
                                 Booking Confirmed!
                             </h2>
                             <p className="text-gray-400 mb-6">
-                                Your session with {profile.fullName} has been scheduled.
+                                Your {packageName.toLowerCase()} with {profile.fullName} has been scheduled.
                             </p>
 
                             {selectedSlot && (
                                 <div className="bg-gray-800 rounded-lg p-4 mb-6 text-left">
-                                    <p className="text-gray-400 text-sm mb-1">Session Time</p>
+                                    <p className="text-gray-400 text-sm mb-1">First Session</p>
                                     <p className="text-white font-medium">
                                         {formatDate(selectedSlot.start)}
                                     </p>
@@ -442,6 +667,11 @@ export default function BookingPage() {
                                         {formatTime(selectedSlot.start)} -{" "}
                                         {formatTime(selectedSlot.end)}
                                     </p>
+                                    {selectedPackage > 1 && (
+                                        <p className="text-gray-500 text-sm mt-2">
+                                            + {selectedPackage - 1} more sessions to be scheduled
+                                        </p>
+                                    )}
                                 </div>
                             )}
 
