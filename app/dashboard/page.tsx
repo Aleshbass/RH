@@ -19,7 +19,7 @@ export default function DashboardPage() {
   const user: User | null | undefined = useQuery(
     api.users.getMyUser,
     isLoaded && isSignedIn ? {} : "skip"
-  )
+  ) as unknown as User | null | undefined
   const dashboardAccess = useQuery(
     api.queries.checkDashboardAccess,
     isLoaded && isSignedIn ? {} : "skip"

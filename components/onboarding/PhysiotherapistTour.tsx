@@ -541,7 +541,7 @@ export function PhysiotherapistTour({ forceShow = false }: PhysiotherapistTourPr
         completeTour();
       },
       onPopoverRender: (popover, { state }) => {
-        const activeIndex = state.activeIndex;
+        const activeIndex = state.activeIndex ?? 0;
         const currentStep = availableSteps[activeIndex];
 
         // Mobile Sidebar Logic

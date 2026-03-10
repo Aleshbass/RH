@@ -117,7 +117,7 @@ export default function ClinicSettingsPage() {
                     <Label htmlFor="specializations">Specializations</Label>
                     <Input
                       id="specializations"
-                      defaultValue={clinic?.specializations?.join(', ') || ''}
+                      defaultValue={(clinic as any)?.specializations?.join(', ') || ''}
                       placeholder="e.g., Sports Therapy, Orthopedic Rehab"
                     />
                   </div>

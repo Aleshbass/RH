@@ -103,7 +103,7 @@ export default function OwnerAnalyticsPage() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(revenueData?.total || 0)}</div>
+              <div className="text-2xl font-bold">{formatCurrency(revenueData?.totalRevenue || 0)}</div>
               <div className="flex items-center gap-2 mt-2">
                 <p className="text-xs text-muted-foreground">This month: {formatCurrency(revenueData?.thisMonth || 0)}</p>
                 {getGrowthBadge(revenueData?.growth || 0)}
