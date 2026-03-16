@@ -102,7 +102,7 @@ export default function RoleSelectionPage() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-emerald-50 to-teal-100">
-      <div className="w-full max-w-md shadow-xl bg-white/80 backdrop-blur-md rounded-xl p-8">
+      <div className="w-full max-w-2xl shadow-xl bg-white/80 backdrop-blur-md rounded-xl p-8">
         <div className="text-center mb-6">
           <h1 className="text-3xl font-semibold text-teal-800">
             Welcome to Rehabify Health!
@@ -111,42 +111,70 @@ export default function RoleSelectionPage() {
             Please select your role to get started.
           </p>
         </div>
-        <div className="space-y-6 p-2">
-          <Button
+        <div className="grid gap-4 sm:grid-cols-2 mt-8">
+          {/* Physiotherapist Card */}
+          <button
             onClick={() => handleRoleSelect('physiotherapist')}
-            className="w-full text-lg py-6 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg shadow-md transition-transform transform hover:scale-105"
-            aria-label="Select Physiotherapist Role"
             disabled={loadingRole !== null}
+            className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'physiotherapist' ? 'border-teal-500 ring-2 ring-teal-200 opacity-80' : 'border-teal-100 hover:border-teal-500 hover:shadow-md'
+              }`}
           >
-            {loadingRole === 'physiotherapist' ? 'Loading...' : 'I am a Physiotherapist'}
-          </Button>
-          <Button
+            <div className="w-12 h-12 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-teal-500 group-hover:text-white transition-colors">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-1">Physiotherapist</h3>
+            <p className="text-sm text-gray-500">I treat patients and want to manage my practice.</p>
+          </button>
+
+          {/* Clinic Owner Card */}
+          <button
             onClick={() => handleRoleSelect('clinic_owner')}
-            className="w-full text-lg py-6 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg shadow-md transition-transform transform hover:scale-105"
-            aria-label="Select Clinic Owner Role"
             disabled={loadingRole !== null}
+            className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'clinic_owner' ? 'border-emerald-500 ring-2 ring-emerald-200 opacity-80' : 'border-emerald-100 hover:border-emerald-500 hover:shadow-md'
+              }`}
           >
-            {loadingRole === 'clinic_owner' ? 'Loading...' : 'I am a Clinic Owner'}
-          </Button>
-          <Button
+            <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-1">Clinic Owner</h3>
+            <p className="text-sm text-gray-500">I run a facility and manage multiple staff.</p>
+          </button>
+
+          {/* Patient Card */}
+          <button
             onClick={() => handleRoleSelect('patient')}
-            className="w-full text-lg py-6 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-md transition-transform transform hover:scale-105"
-            aria-label="Select Patient Role"
             disabled={loadingRole !== null}
+            className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'patient' ? 'border-blue-500 ring-2 ring-blue-200 opacity-80' : 'border-blue-100 hover:border-blue-500 hover:shadow-md'
+              }`}
           >
-            {loadingRole === 'patient' ? 'Loading...' : 'I am a Patient'}
-          </Button>
-          <Button
+            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-1">Patient</h3>
+            <p className="text-sm text-gray-500">I need care or have an invitation link.</p>
+          </button>
+
+          {/* Doctor Card */}
+          <button
             onClick={() => handleRoleSelect('doctor')}
-            className="w-full text-lg py-6 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg shadow-md transition-transform transform hover:scale-105"
-            aria-label="Select Doctor Role"
             disabled={loadingRole !== null}
+            className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'doctor' ? 'border-indigo-500 ring-2 ring-indigo-200 opacity-80' : 'border-indigo-100 hover:border-indigo-500 hover:shadow-md'
+              }`}
           >
-            {loadingRole === 'doctor' ? 'Loading...' : 'I am a Referring Doctor'}
-          </Button>
-          <p className="text-sm text-gray-600 text-center mt-6 px-4">
-            Patients join through invitation links from their physiotherapist
-          </p>
+            <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-1">Referring Doctor</h3>
+            <p className="text-sm text-gray-500">I want to refer my patients for physio.</p>
+          </button>
         </div>
       </div>
       <p className="mt-8 text-sm text-gray-600">

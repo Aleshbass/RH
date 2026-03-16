@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { CheckCircle2, MapPin, Stethoscope, Award, Clock, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { formatNaira } from "@/lib/pricing";
+import { InteractivePricingCalculator } from "@/components/billing/InteractivePricingCalculator";
 
 export default function PricingPage() {
     return (
@@ -29,23 +30,14 @@ export default function PricingPage() {
                     >
                         We calculate a fair, exact session rate based on your location, condition severity, and the physiotherapist's expertise. No hidden fees.
                     </motion.p>
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.2 }}
-                    >
-                        <Link
-                            href="/start-treatment"
-                            className="inline-flex items-center justify-center h-14 px-8 rounded-full bg-teal-500 text-white font-bold text-lg hover:bg-teal-400 transition-all shadow-[0_0_20px_rgba(20,184,166,0.2)]"
-                        >
-                            <Sparkles className="w-5 h-5 mr-2" />
-                            Calculate My Price
-                        </Link>
-                    </motion.div>
                 </div>
             </div>
 
-            <div className="max-w-5xl mx-auto px-6 py-20">
+            <div className="max-w-5xl mx-auto px-6 -mt-12 relative z-20">
+                <InteractivePricingCalculator />
+            </div>
+
+            <div className="max-w-5xl mx-auto px-6 py-10">
                 {/* The Formula */}
                 <div className="text-center mb-16">
                     <h2 className="text-3xl font-bold text-[#002B29] mb-4">How Your Price is Calculated</h2>
@@ -250,11 +242,42 @@ export default function PricingPage() {
                 </div>
 
                 {/* Platform Fee Notice */}
-                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 text-center max-w-2xl mx-auto">
+                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 text-center max-w-2xl mx-auto mb-20">
                     <h4 className="font-bold text-gray-900 mb-2">Our Transparent Booking Fee</h4>
                     <p className="text-sm text-gray-600">
                         In addition to the session rate, a simple ₦1,000 platform fee applies per booking. This covers fast matching, secure payments, video call infrastructure, and our 24/7 support guarantee. There are no hidden subscription costs.
                     </p>
+                </div>
+
+                {/* Final CTA Section */}
+                <div className="grid md:grid-cols-2 gap-6 items-center">
+                    <div className="bg-[#002B29] rounded-3xl p-8 text-center md:text-left flex flex-col items-center md:items-start text-white h-full relative overflow-hidden">
+                        <div className="absolute top-0 right-0 opacity-10">
+                            <Stethoscope className="w-48 h-48 -mr-10 -mt-10" />
+                        </div>
+                        <h3 className="text-2xl font-bold mb-3 relative z-10">Ready to start recovery?</h3>
+                        <p className="text-teal-100 mb-8 relative z-10">Book an expert physiotherapist to visit your home or clinic today.</p>
+                        <Link
+                            href="/start-treatment"
+                            className="inline-flex items-center justify-center h-12 px-6 rounded-full bg-teal-500 text-white font-bold hover:bg-teal-400 transition-colors mt-auto relative z-10 w-full sm:w-auto"
+                        >
+                            Book a Session
+                        </Link>
+                    </div>
+
+                    <div className="bg-teal-50 border border-teal-100 rounded-3xl p-8 text-center md:text-left flex flex-col items-center md:items-start h-full relative overflow-hidden">
+                        <div className="absolute bottom-0 right-0 opacity-5">
+                            <Award className="w-48 h-48 -mr-10 -mb-10 text-teal-900" />
+                        </div>
+                        <h3 className="text-2xl font-bold text-[#002B29] mb-3 relative z-10">Are you a physiotherapist?</h3>
+                        <p className="text-teal-800 mb-8 relative z-10">Join Rehabify to earn more, manage your sessions, and reach patients across Nigeria.</p>
+                        <Link
+                            href="/platform/physiotherapists"
+                            className="inline-flex items-center justify-center h-12 px-6 rounded-full bg-white text-teal-900 font-bold hover:bg-gray-50 transition-colors border border-gray-200 mt-auto relative z-10 w-full sm:w-auto shadow-sm"
+                        >
+                            Learn about joining
+                        </Link>
+                    </div>
                 </div>
             </div>
         </div>

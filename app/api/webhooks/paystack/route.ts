@@ -197,16 +197,58 @@ async function handlePaymentFailed(data: {
 }
 
 /**
- * Handle transfer completed (payout to physiotherapist)
+ * Handle transfer completed (payout to physiotherapist or referring doctor)
  */
-async function handleTransferCompleted(data: Record<string, unknown>) {
+async function handleTransferCompleted(data: any) {
     log.info('Transfer completed', {
         action: 'paystack_transfer_completed',
         metadata: {
             reference: data.reference,
             amount: data.amount,
+            reason: data.reason
         }
     })
+
+    try {
+        const reference = String(data.reference || '');
+        const reason = String(data.reason || '');
+        const metadata = data.metadata as Record<string, unknown> | undefined;
+        
+        let referralId: string | null = null;
+        
+        // 1. Check if admin explicitly attached a referralId in metadata
+        if (metadata && metadata.referralId) {
+            referralId = String(metadata.referralId);
+        } else {
+            // 2. Check reference or reason for a Convex ID pattern (usually 32 chars)
+            // If the admin manually makes a payout on Paystack, they can paste the Convex ID into the note/reference
+            const convexIdRegex = /[a-zA-Z0-9_-]{32}/;
+            const refMatch = reference.match(convexIdRegex);
+            const reasonMatch = reason.match(convexIdRegex);
+            
+            if (refMatch) referralId = refMatch[0];
+            else if (reasonMatch) referralId = reasonMatch[0];
+        }
+
+        if (referralId) {
+            const { ConvexHttpClient } = await import('convex/browser')
+            const { api } = await import('@/convex/_generated/api') as any
+            const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+            
+            await convex.mutation(api.adminReferrals.webhookUpdateReferralPayout, {
+                referralId,
+                amountPaidOut: Number(data.amount) || 0 // Pass amount in kobo
+            });
+            
+            log.info(`Updated referral ${referralId} with payout commission of ${data.amount}`);
+        }
+    } catch (error) {
+        log.error('Failed to process transfer completion', { error: error as Error })
+        ErrorTracker.captureException(error as Error, {
+            action: 'paystack_transfer_handler_error',
+            extra: { reference: data.reference }
+        })
+    }
 }
 
 /**

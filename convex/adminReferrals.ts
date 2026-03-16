@@ -79,3 +79,43 @@ export const updateReferralStatus = mutation({
         return args.referralId;
     },
 });
+
+/**
+ * Auto-update a referral's commission earned from a webhook (no auth required)
+ */
+export const webhookUpdateReferralPayout = mutation({
+    args: {
+        referralId: v.id("inboundReferrals"),
+        amountPaidOut: v.number(), // Amount in kobo
+    },
+    handler: async (ctx, args) => {
+        const referral = await ctx.db.get(args.referralId);
+        if (!referral) {
+            console.error("Referral not found for webhook tracking:", args.referralId);
+            return;
+        }
+
+        const newCommission = (referral.commissionEarned || 0) + args.amountPaidOut;
+        
+        await ctx.db.patch(args.referralId, {
+            status: "paid_out",
+            commissionEarned: newCommission,
+            updatedAt: Date.now(),
+        });
+
+        // Also create a log entry for the audit trail
+        await ctx.db.insert("auditLogs", {
+            action: "referral_payout_webhook",
+            targetEntityType: "inboundReferrals",
+            targetEntityId: args.referralId,
+            timestamp: Date.now(),
+            details: {
+                previousAmount: referral.commissionEarned || 0,
+                amountAdded: args.amountPaidOut,
+                newTotal: newCommission,
+            }
+        });
+
+        return args.referralId;
+    }
+});
