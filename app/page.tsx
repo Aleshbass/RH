@@ -1,6 +1,6 @@
 "use client";
 
-import { Authenticated, Unauthenticated } from "convex/react";
+import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
 import dynamicImport from "next/dynamic";
 
 import { LandingHero } from "@/components/landing/hero";
@@ -50,6 +50,10 @@ export default function Home() {
           {/* Show the landing page for unauthenticated users */}
           <PageContent />
         </Unauthenticated>
+
+        <AuthLoading>
+          <PageContent />
+        </AuthLoading>
       </main>
     </>
   );
