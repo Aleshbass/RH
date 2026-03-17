@@ -42,7 +42,7 @@ export const createPhysiotherapistSubaccount = action({
             const physiotherapistUser: any = await ctx.runQuery(api.users.getUserById as any, {
                 userId: args.physiotherapistId,
             });
-            const businessEmail: string = physiotherapistUser?.email || "info@rehabifyhealth.com";
+            const businessEmail: string = physiotherapistUser?.email || "info@physioaroundme.com";
             const businessMobile: string = physiotherapistUser?.phone || "";
 
             // Create subaccount on Paystack

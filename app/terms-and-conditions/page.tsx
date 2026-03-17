@@ -4,11 +4,11 @@ import { MedicalWebPageSchema } from '@/components/seo/StructuredData';
 
 export const metadata: Metadata = {
   title: 'Terms and Conditions',
-  description: 'Rehabify Health Terms and Conditions - User agreements, platform rules, and service guidelines for our AI-powered physiotherapy platform.',
-  keywords: ['terms and conditions', 'rehabify health', 'user agreement', 'healthcare platform terms', 'physiotherapy services'],
+  description: 'Physio Around Me Terms and Conditions - User agreements, platform rules, and service guidelines for our AI-powered physiotherapy platform.',
+  keywords: ['terms and conditions', 'physio around me', 'user agreement', 'healthcare platform terms', 'physiotherapy services'],
   openGraph: {
-    title: 'Terms and Conditions | Rehabify Health',
-    description: 'Read our terms and conditions for using RehabifyHealth platform and services.',
+    title: 'Terms and Conditions | Physio Around Me',
+    description: 'Read our terms and conditions for using Physio Around Me platform and services.',
     type: 'website',
   },
 };
@@ -17,9 +17,9 @@ export default function TermsAndConditionsPage() {
   return (
     <>
       <MedicalWebPageSchema
-        title="Terms and Conditions - Rehabify Health"
-        description="User agreements and service guidelines for RehabifyHealth platform"
-        url="https://rehabifyhealth.com/terms-and-conditions"
+        title="Terms and Conditions - Physio Around Me"
+        description="User agreements and service guidelines for Physio Around Me platform"
+        url="https://physioaroundme.com/terms-and-conditions"
       />
       
       <div className="min-h-screen bg-gray-50 py-12">
@@ -257,7 +257,7 @@ export default function TermsAndConditionsPage() {
                   <strong>Email:</strong> <a href="mailto:rehabify.app@gmail.com" className="text-[#005b57] hover:underline">rehabify.app@gmail.com</a>
                 </p>
                 <p className="text-gray-700 mt-2">
-                  <strong>Platform:</strong> <a href="https://rehabifyhealth.com" className="text-[#005b57] hover:underline">https://rehabifyhealth.com</a>
+                  <strong>Platform:</strong> <a href="https://physioaroundme.com" className="text-[#005b57] hover:underline">https://physioaroundme.com</a>
                 </p>
               </div>
             </section>

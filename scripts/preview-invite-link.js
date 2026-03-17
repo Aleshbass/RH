@@ -55,7 +55,7 @@ async function main() {
     console.log('Is production:  ', isProduction);
 
     if (!isProduction) {
-      console.error('\nFAIL: Normalized link is not using https://www.rehabifyhealth.com');
+      console.error('\nFAIL: Normalized link is not using https://www.physioaroundme.com');
       process.exit(2);
     }
 

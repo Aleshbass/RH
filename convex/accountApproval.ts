@@ -100,7 +100,7 @@ export const submitForReview = mutation({
 
     const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || (user.email || "User");
     const roleLabel = user.role === "physiotherapist" ? "Physiotherapist" : user.role === "clinic_owner" ? "Clinic Owner" : "User";
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
     const adminActionPath = `/admin/users/${user._id}`;
     const adminDashboardLink = `${appUrl}${adminActionPath}`;
 
@@ -374,7 +374,7 @@ export const approveAccount = action({
         : user.role === "clinic_owner"
           ? "Clinic Owner"
           : "User";
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com";
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
       const dashboardPath = user.role === "physiotherapist" ? "/dashboard/physiotherapist" : user.role === "clinic_owner" ? "/dashboard/clinic" : "/dashboard";
       const dashboardLink = `${appUrl}${dashboardPath}`;
 

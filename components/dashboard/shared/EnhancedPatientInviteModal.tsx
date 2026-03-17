@@ -39,7 +39,7 @@ export default function EnhancedPatientInviteModal({ isOpen, onClose, onSubmit }
 
   const appBaseUrl = useMemo(() => {
     if (typeof window !== 'undefined') return window.location.origin
-    return process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com'
+    return process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com'
   }, [])
 
   const buildLink = (code?: string) => {

@@ -94,8 +94,8 @@ export default function VerificationFailureModal({
                 <HelpCircle className="h-4 w-4" />
                 <span>
                   Need help? Contact{" "}
-                  <a href="mailto:support@rehabifyhealth.com" className="text-[#005b57] font-medium hover:underline">
-                    support@rehabifyhealth.com
+                  <a href="mailto:support@physioaroundme.com" className="text-[#005b57] font-medium hover:underline">
+                    support@physioaroundme.com
                   </a>
                 </span>
               </div>

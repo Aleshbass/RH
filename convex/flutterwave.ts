@@ -44,7 +44,7 @@ export const createPhysiotherapistSubaccount = action({
             const physiotherapistUser = await ctx.runQuery(api.users.getUserById as any, {
                 userId: args.physiotherapistId,
             });
-            const businessEmail = (physiotherapistUser as any)?.email || "info@rehabifyhealth.com";
+            const businessEmail = (physiotherapistUser as any)?.email || "info@physioaroundme.com";
             const businessMobile = (physiotherapistUser as any)?.phone || "";
 
             // Create subaccount on Flutterwave
@@ -288,7 +288,7 @@ export const initializePaymentWithSplit = action({
                 },
                 customizations: {
                     title: "Rehabify Health",
-                    logo: "https://rehabifyhealth.com/logo.png",
+                    logo: "https://physioaroundme.com/logo.png",
                     description: `Payment for Invoice #${invoice.invoiceNumber}`
                 },
                 payment_options: "card, banktransfer, ussd"

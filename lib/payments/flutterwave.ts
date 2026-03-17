@@ -124,8 +124,8 @@ export class FlutterwaveService {
                     timestamp: Date.now()
                 },
                 customizations: {
-                    title: 'Rehabify Health',
-                    logo: 'https://rehabifyhealth.com/logo.png'
+                    title: 'Physio Around Me',
+                    logo: 'https://physioaroundme.com/logo.png'
                 }
             }
 

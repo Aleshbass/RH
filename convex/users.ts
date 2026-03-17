@@ -534,7 +534,7 @@ export const completeUserProfile = mutation({
 
         const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || (user.email || "User");
         const roleLabel = args.role === "physiotherapist" ? "Physiotherapist" : "Clinic Owner";
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com";
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
         const adminActionPath = `/admin/users/${user._id}`;
         const adminDashboardLink = `${appUrl}${adminActionPath}`;
 

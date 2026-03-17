@@ -42,7 +42,7 @@ export const createDoctorSubaccount = action({
             const doctorUser: any = await ctx.runQuery(api.users.getUserById as any, {
                 userId: args.doctorId,
             });
-            const businessEmail: string = doctorUser?.email || "info@rehabifyhealth.com";
+            const businessEmail: string = doctorUser?.email || "info@physioaroundme.com";
             const businessMobile: string = doctorUser?.phone || "";
 
             // Create subaccount on Paystack

@@ -187,7 +187,7 @@ export default function VideoCallsPage() {
         });
 
         // Compose meeting link for invitations
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://rehabifyhealth.com')
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://physioaroundme.com')
         callLink = `${baseUrl}/video-call/${result?.streamCallId || result?.roomId}`;
       } else {
         // Google Meet - use the manual link
@@ -201,7 +201,7 @@ export default function VideoCallsPage() {
       }
 
       // Compose meeting link for invitations (legacy code below, now set above)
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://rehabifyhealth.com')
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://physioaroundme.com')
       const legacyCallLink = `${baseUrl}/video-call/${result?.streamCallId || result?.roomId}`;
 
       // Auto-send the invitation email (restores previous behavior)
@@ -298,7 +298,7 @@ export default function VideoCallsPage() {
   };
 
   const handleInvite = async (call: VideoCall) => {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://rehabifyhealth.com')
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://physioaroundme.com')
     const callLink = (call.meetingLink && !call.meetingLink.includes('daily.co'))
       ? call.meetingLink
       : `${baseUrl}/video-call/${call.streamCallId || call.roomId}`

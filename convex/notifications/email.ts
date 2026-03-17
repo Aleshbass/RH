@@ -95,7 +95,7 @@ export const processEmailForNotification = internalAction({
             userRole: user.role === "physiotherapist" ? "Physiotherapist"
               : user.role === "clinic_owner" ? "Clinic Owner"
                 : "User",
-            dashboardLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.rehabifyhealth.com'}/dashboard/${user.role === "physiotherapist" ? "physiotherapist"
+            dashboardLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.physioaroundme.com'}/dashboard/${user.role === "physiotherapist" ? "physiotherapist"
                 : user.role === "clinic_owner" ? "clinic"
                   : "patient"
               }`,
@@ -108,7 +108,7 @@ export const processEmailForNotification = internalAction({
             userEmail: user.email,
             userName: displayName,
             reason: (notification.payload?.data as any)?.metadata?.reason || "Application requirements not met",
-            supportLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.rehabifyhealth.com'}/support`,
+            supportLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.physioaroundme.com'}/support`,
             requiredDocuments: ((notification.payload?.data as any)?.metadata?.requiredDocuments as string[] | undefined) || (
               user.role === "physiotherapist"
                 ? ["Valid Professional License", "Certification Documents", "Updated Contact Information"]
@@ -121,7 +121,7 @@ export const processEmailForNotification = internalAction({
 
         case "onboarding_complete": {
           // Send a welcome/confirmation email to the user who completed onboarding
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
           const dashboardPath = user.role === "patient"
             ? "/dashboard/patient"
             : user.role === "physiotherapist"
@@ -143,7 +143,7 @@ export const processEmailForNotification = internalAction({
         case "appointment_cancelled": {
           // Optional routing: attempt to use dedicated actions for cancellation emails
           const md = (notification.payload?.data as any)?.metadata || {};
-          const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com').replace(/\/$/, '');
+          const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com').replace(/\/$/, '');
 
           // Compute best-effort fields
           const appointmentDate = md.appointmentDate || Date.now();
@@ -188,7 +188,7 @@ export const processEmailForNotification = internalAction({
 
         case "appointment_reminder": {
           const md = (notification.payload?.data as any)?.metadata || {};
-          const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com').replace(/\/$/, '');
+          const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com').replace(/\/$/, '');
 
           const patientName = displayName;
           const physiotherapistName = md.physiotherapistName || "your physiotherapist";
@@ -219,7 +219,7 @@ export const processEmailForNotification = internalAction({
 
         case "patient_onboarded": {
           const patientName = (notification.payload?.data as any)?.metadata?.patientName || "New patient";
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
           const patientsLink = `${appUrl}/dashboard/physiotherapist/patients`;
           // Send email to physiotherapist using dedicated action
           emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendPatientOnboardedProviderEmail"], {

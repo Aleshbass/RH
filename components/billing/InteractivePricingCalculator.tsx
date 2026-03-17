@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { formatNaira, calculateSessionPrice, calculatePackagePrice, calculateSessionFees } from "@/lib/pricing";
+import { formatNaira, calculateSessionPrice, calculatePackagePrice, calculateSessionFees, INITIAL_ASSESSMENT_FEE, AWADOC_FEE } from "@/lib/pricing";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -131,11 +131,11 @@ export function InteractivePricingCalculator() {
                                 </div>
                                 <div className="flex justify-between items-center text-gray-500 text-sm">
                                     <span className="flex items-center gap-1">First-session Assessment <Info className="w-3 h-3" /></span>
-                                    <span>{formatNaira(2500)}</span>
+                                    <span>{formatNaira(INITIAL_ASSESSMENT_FEE)}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-gray-500 text-sm">
                                     <span className="flex items-center gap-1">Medical Record setup <Info className="w-3 h-3" /></span>
-                                    <span>{formatNaira(2000)}</span>
+                                    <span>{formatNaira(AWADOC_FEE)}</span>
                                 </div>
                             </>
                         ) : (

@@ -7,7 +7,7 @@ import { api } from "../../_generated/api";
 
 // Utility to build invitation link from env
 function buildInvitationLink(code: string): string {
-  const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://rehabifyhealth.com";
+  const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://physioaroundme.com";
   const baseUrl = envBase.replace(/\/$/, "");
   return `${baseUrl}/patient-invite/${code}`;
 }

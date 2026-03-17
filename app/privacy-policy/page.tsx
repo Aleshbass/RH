@@ -5,11 +5,11 @@ import { MedicalWebPageSchema } from '@/components/seo/StructuredData';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
-  description: 'Rehabify Health Privacy Policy - How we collect, use, and protect your health data. NDPR compliant healthcare platform with robust data security.',
-  keywords: ['privacy policy', 'rehabify health', 'data protection', 'NDPR compliance', 'healthcare privacy', 'patient data security'],
+  description: 'Physio Around Me Privacy Policy - How we collect, use, and protect your health data. NDPR compliant healthcare platform with robust data security.',
+  keywords: ['privacy policy', 'physio around me', 'data protection', 'NDPR compliance', 'healthcare privacy', 'patient data security'],
   openGraph: {
-    title: 'Privacy Policy | Rehabify Health',
-    description: 'Learn how RehabifyHealth protects your personal and health information.',
+    title: 'Privacy Policy | Physio Around Me',
+    description: 'Learn how Physio Around Me protects your personal and health information.',
     type: 'website',
   },
 };
@@ -18,9 +18,9 @@ export default function PrivacyPolicyPage() {
   return (
     <>
       <MedicalWebPageSchema
-        title="Privacy Policy - Rehabify Health"
+        title="Privacy Policy - Physio Around Me"
         description="Our commitment to protecting your health data and personal information"
-        url="https://rehabifyhealth.com/privacy-policy"
+        url="https://physioaroundme.com/privacy-policy"
       />
 
       <div className="min-h-screen bg-gray-50">
@@ -207,7 +207,7 @@ export default function PrivacyPolicyPage() {
                   <strong>Rehabify Health – Data Protection Officer</strong>
                 </p>
                 <p className="text-gray-700 mt-2">
-                  <strong>Email:</strong> <a href="mailto:support@rehabifyhealth.com" className="text-[#005b57] hover:underline">support@rehabifyhealth.com</a>
+                  <strong>Email:</strong> <a href="mailto:support@physioaroundme.com" className="text-[#005b57] hover:underline">support@physioaroundme.com</a>
                 </p>
               </div>
             </section>

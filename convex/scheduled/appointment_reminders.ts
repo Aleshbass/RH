@@ -31,7 +31,7 @@ export const sendDailyAppointmentReminders = internalMutation({
       )
       .collect();
 
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com").replace(/\/$/, "");
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com").replace(/\/$/, "");
 
     for (const appt of appointments) {
       try {

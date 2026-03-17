@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     // Get clinic details (you would fetch this from your database)
     // For now, using placeholder data
-    const clinicEmail = 'admin@rehabifyhealth.com'; // This should be fetched from clinic data
+    const clinicEmail = 'admin@physioaroundme.com'; // This should be fetched from clinic data
     // Note: clinicId and clinicName would be used in production to fetch actual clinic details
 
     const formattedDate = format(new Date(scheduledDate), 'PPP');
@@ -193,7 +193,7 @@ export async function POST(request: NextRequest) {
     };
 
     const emailData = {
-      from: 'RehabifyHealth <info@rehabifyhealth.com>',
+      from: 'RehabifyHealth <info@physioaroundme.com>',
       to: [clinicEmail],
       subject: getSubject(),
       html: getEmailContent(),

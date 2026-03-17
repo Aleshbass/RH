@@ -497,12 +497,12 @@ export default function CalendarBookingWidget({
             {/* Footer - Rehabify Branding (like Cal.com) */}
             <div className="py-4 text-center">
                 <a
-                    href="https://rehabifyhealth.com"
+                    href="https://physioaroundme.com"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-gray-400 font-bold font-cal hover:text-gray-300 transition-colors"
                 >
-                    Rehabifyhealth.com
+                    physioaroundme.com
                 </a>
             </div>
             {/* Custom Scrollbar Styles */}

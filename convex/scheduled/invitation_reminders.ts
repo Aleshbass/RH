@@ -27,7 +27,7 @@ export const sendPendingInvitationReminders = internalAction({
       createdBefore,
     });
 
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://rehabifyhealth.com').replace(/\/$/, '');
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://physioaroundme.com').replace(/\/$/, '');
 
     let sent = 0;
     for (const inv of pending) {

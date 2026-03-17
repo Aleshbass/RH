@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const physiotherapistEmail = `physio-${userId}@temp.com` // Temporary
 
     const emailResult = await resend.emails.send({
-      from: `RehabifyHealth <${process.env.FROM_EMAIL || 'info@rehabifyhealth.com'}>`,
+      from: `RehabifyHealth <${process.env.FROM_EMAIL || 'info@physioaroundme.com'}>`,
       to: physiotherapistEmail,
       subject: 'Bank Account Connected Successfully',
       html: `
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
               </div>
               <div class="footer">
                 <p>RehabifyHealth - Empowering Healthcare Professionals</p>
-                <p>Need help? Contact us at support@rehabifyhealth.com or call +234-XXX-XXXX</p>
+                <p>Need help? Contact us at support@physioaroundme.com or call +234-XXX-XXXX</p>
                 <p>This is an automated message. Please do not reply to this email.</p>
               </div>
             </div>

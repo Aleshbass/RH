@@ -61,7 +61,7 @@ export const acceptStaffInvitationWithNotification = action({
           });
 
           if (clinicOwner?.email) {
-            const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com').replace(/\/$/, '');
+            const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com').replace(/\/$/, '');
             const staffLink = `${appUrl}/dashboard/clinic/staff`;
             await ctx.runAction((api as any).actions.emails.sendClinicStaffInviteOwnerAcceptedEmail, {
               to: clinicOwner.email,
@@ -136,7 +136,7 @@ export const declineStaffInvitationWithNotification = action({
         });
 
         if (clinicOwner?.email) {
-          const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com').replace(/\/$/, '');
+          const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com').replace(/\/$/, '');
           const staffLink = `${appUrl}/dashboard/clinic/staff`;
           await ctx.runAction((api as any).actions.emails.sendClinicStaffInviteOwnerDeclinedEmail, {
             to: clinicOwner.email,

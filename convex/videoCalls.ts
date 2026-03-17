@@ -75,7 +75,7 @@ export const createVideoCall = action({
 
     // Generate Stream call ID
     const streamCallId = args.roomId || `call-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
+    const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
     const meetingLink = `${appBase}/video-call/${streamCallId}`;
 
     try {
@@ -643,7 +643,7 @@ export const scheduleVideoCall = mutation({
     // Set up participants - user (physiotherapist) and patient
     const participants = [user._id, args.patientId]
 
-    const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com'
+    const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com'
     const computedMeetingLink = args.meetingLink || `${appBase}/video-call/${roomId}`
 
     const callId = await ctx.db.insert("videoCalls", {

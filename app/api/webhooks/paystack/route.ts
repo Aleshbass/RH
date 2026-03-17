@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
                 break
 
             case 'transfer.success':
-                await handleTransferCompleted(data)
+                await handleTransferCompleted(data, rawBody, signature as string)
                 break
 
             default:
@@ -199,7 +199,7 @@ async function handlePaymentFailed(data: {
 /**
  * Handle transfer completed (payout to physiotherapist or referring doctor)
  */
-async function handleTransferCompleted(data: any) {
+async function handleTransferCompleted(data: any, rawBody: string, signature: string) {
     log.info('Transfer completed', {
         action: 'paystack_transfer_completed',
         metadata: {
@@ -216,18 +216,25 @@ async function handleTransferCompleted(data: any) {
         
         let referralId: string | null = null;
         
-        // 1. Check if admin explicitly attached a referralId in metadata
+            // 1. Check if admin explicitly attached a referralId in metadata
         if (metadata && metadata.referralId) {
             referralId = String(metadata.referralId);
+            log.info('Resolved referralId from direct metadata', { action: 'paystack_transfer_id_metadata' });
         } else {
-            // 2. Check reference or reason for a Convex ID pattern (usually 32 chars)
-            // If the admin manually makes a payout on Paystack, they can paste the Convex ID into the note/reference
-            const convexIdRegex = /[a-zA-Z0-9_-]{32}/;
+            // 2. Fallback check reference or reason with explicit prefixes to prevent random 32-char collisions
+            // They can type "referral:xyz" or "convex:xyz"
+            const convexIdRegex = /(?:referral:|convex:)([a-zA-Z0-9_-]{32})/;
+            
             const refMatch = reference.match(convexIdRegex);
             const reasonMatch = reason.match(convexIdRegex);
             
-            if (refMatch) referralId = refMatch[0];
-            else if (reasonMatch) referralId = reasonMatch[0];
+            if (refMatch) {
+                referralId = String(refMatch[1]);
+                log.info('Resolved referralId from reference matching fallback', { action: 'paystack_transfer_id_fallback_reference' });
+            } else if (reasonMatch) {
+                referralId = String(reasonMatch[1]);
+                log.info('Resolved referralId from reason matching fallback', { action: 'paystack_transfer_id_fallback_reason' });
+            }
         }
 
         if (referralId) {
@@ -237,7 +244,9 @@ async function handleTransferCompleted(data: any) {
             
             await convex.mutation(api.adminReferrals.webhookUpdateReferralPayout, {
                 referralId,
-                amountPaidOut: Number(data.amount) || 0 // Pass amount in kobo
+                amountPaidOut: Number(data.amount) || 0, // Pass amount in kobo
+                signature,
+                payload: rawBody
             });
             
             log.info(`Updated referral ${referralId} with payout commission of ${data.amount}`);

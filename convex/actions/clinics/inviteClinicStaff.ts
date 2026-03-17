@@ -78,7 +78,7 @@ export const createClinicStaffInvitationWithNotification = action({
 
       // Send email if requested (default true)
       if (args.sendEmail !== false) {
-        const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://rehabifyhealth.com';
+        const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://physioaroundme.com';
         const baseUrl = (args.origin || envBase).replace(/\/$/, '');
         const invitationLink = `${baseUrl}/staff-invite/${result.code}`;
 
@@ -193,7 +193,7 @@ export const resendClinicStaffInvitation = action({
       const clinicName = fullInvitation?.clinic?.name as string | undefined;
 
       // Use env-based domain for staff invitation reminder links
-      const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://rehabifyhealth.com';
+      const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://physioaroundme.com';
       const baseUrl = envBase.replace(/\/$/, '');
       const invitationLink = `${baseUrl}/staff-invite/${invitation.code}`;
 

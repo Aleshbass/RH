@@ -269,7 +269,7 @@ export const completeMarketplaceBooking = mutation({
                 if (preferredPlatform === 'stream') {
                     // Create Stream video call
                     const streamCallId = `call-${appointmentId}-${Date.now()}`;
-                    const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
+                    const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
                     meetingLink = `${appBase}/video-call/${streamCallId}`;
 
                     const callId = await ctx.runMutation(internal.videoCalls.createVideoCallRecord, {

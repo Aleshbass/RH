@@ -19,13 +19,13 @@ export async function POST(request: Request) {
     // Use a valid from address (fallback to onboarding@resend.dev in non-prod or when not configured)
     const fromAddress = process.env.RESEND_FROM_EMAIL ||
       (process.env.NODE_ENV === "production"
-        ? "Rehabify Demo Requests <info@rehabifyhealth.com>"
+        ? "Rehabify Demo Requests <info@physioaroundme.com>"
         : "Rehabify Demo Requests <onboarding@resend.dev>");
 
     // Send email to admin/sales team
     const adminEmail = await resend.emails.send({
       from: fromAddress,
-      to: process.env.DEMO_REQUEST_EMAIL || "support@rehabifyhealth.com",
+      to: process.env.DEMO_REQUEST_EMAIL || "support@physioaroundme.com",
       replyTo: email,
       subject: `New Demo Request from ${name}`,
       html: `
@@ -120,7 +120,7 @@ export async function POST(request: Request) {
             </p>
             
             <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 12px; text-align: center;">
-              <p>If you have any urgent questions, please contact us at <a href="mailto:support@rehabifyhealth.com" style="color: #005b57;">support@rehabifyhealth.com</a></p>
+              <p>If you have any urgent questions, please contact us at <a href="mailto:support@physioaroundme.com" style="color: #005b57;">support@physioaroundme.com</a></p>
             </div>
           </div>
         </div>

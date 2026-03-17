@@ -39,18 +39,18 @@ export const sendPatientInvitationEmail = action({
       const resend = new Resend(RESEND_API_KEY);
       
       // Use your verified domain email
-      const fromEmail = 'info@rehabifyhealth.com';
+      const fromEmail = 'info@physioaroundme.com';
       const fromName = process.env.FROM_NAME || 'Rehabify Health';
       
       console.log('[EMAIL ACTION] Using email:', `${fromName} <${fromEmail}>`);
       
       // Normalize invitation link to production domain regardless of input
-      const PRODUCTION_BASE = 'https://www.rehabifyhealth.com';
+      const PRODUCTION_BASE = 'https://www.physioaroundme.com';
       let normalizedInvitationLink = args.invitationLink;
       try {
         const u = new URL(args.invitationLink);
         u.protocol = 'https:';
-        u.host = 'www.rehabifyhealth.com';
+        u.host = 'www.physioaroundme.com';
         normalizedInvitationLink = u.toString();
       } catch (_e) {
         // Fallback if the provided link isn't a full URL
@@ -145,12 +145,12 @@ export const previewNormalizedPatientInvitationLink = action({
     isProduction: v.boolean(),
   }),
   handler: async (_ctx, args) => {
-    const PRODUCTION_BASE = 'https://www.rehabifyhealth.com';
+    const PRODUCTION_BASE = 'https://www.physioaroundme.com';
     let normalizedLink = args.invitationLink;
     try {
       const u = new URL(args.invitationLink);
       u.protocol = 'https:';
-      u.host = 'www.rehabifyhealth.com';
+      u.host = 'www.physioaroundme.com';
       normalizedLink = u.toString();
     } catch (_e) {
       normalizedLink = `${PRODUCTION_BASE}/patient-invite/${args.invitationCode}`;
@@ -189,16 +189,16 @@ export const sendInvitationReminderEmail = action({
       }
 
       const resend = new Resend(RESEND_API_KEY);
-      const fromEmail = 'info@rehabifyhealth.com';
+      const fromEmail = 'info@physioaroundme.com';
       const fromName = 'Rehabify Health';
       
       // Normalize invitation link for reminder as well
-      const PRODUCTION_BASE = 'https://www.rehabifyhealth.com';
+      const PRODUCTION_BASE = 'https://www.physioaroundme.com';
       let normalizedInvitationLink = args.invitationLink;
       try {
         const u = new URL(args.invitationLink);
         u.protocol = 'https:';
-        u.host = 'www.rehabifyhealth.com';
+        u.host = 'www.physioaroundme.com';
         normalizedInvitationLink = u.toString();
       } catch (_e) {
         normalizedInvitationLink = `${PRODUCTION_BASE}/patient-invite/${args.invitationCode}`;

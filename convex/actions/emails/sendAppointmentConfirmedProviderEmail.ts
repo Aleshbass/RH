@@ -19,7 +19,7 @@ export const sendAppointmentConfirmedProviderEmail = action({
   },
   handler: async (_ctx, args) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
       const viewLink = args.viewLink.startsWith('http') ? args.viewLink : `${baseUrl}${args.viewLink}`;
       const result = await sendEmail({
         to: args.to,

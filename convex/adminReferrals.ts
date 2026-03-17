@@ -81,14 +81,47 @@ export const updateReferralStatus = mutation({
 });
 
 /**
- * Auto-update a referral's commission earned from a webhook (no auth required)
+ * Auto-update a referral's commission earned from a webhook
+ * Requires HMAC signature validation since this endpoint is unauthenticated on Convex.
  */
 export const webhookUpdateReferralPayout = mutation({
     args: {
         referralId: v.id("inboundReferrals"),
         amountPaidOut: v.number(), // Amount in kobo
+        signature: v.string(),
+        payload: v.string(),
     },
     handler: async (ctx, args) => {
+        // 1. Verify positive amount
+        if (args.amountPaidOut < 0) {
+            console.error(`Negative amount paid out not permitted: ${args.amountPaidOut}`);
+            throw new Error("Invalid amount");
+        }
+
+        // 2. Validate HMAC signature
+        const secret = process.env.PAYMENT_WEBHOOK_SECRET;
+        if (!secret) {
+            console.error("PAYMENT_WEBHOOK_SECRET is not defined");
+            throw new Error("Server misconfigured");
+        }
+        
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.importKey(
+            'raw',
+            encoder.encode(secret),
+            { name: 'HMAC', hash: 'SHA-512' },
+            false,
+            ['sign']
+        );
+        const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(args.payload));
+        const hashArray = Array.from(new Uint8Array(signatureBuffer));
+        const computedSignature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        if (computedSignature !== args.signature) {
+            console.error(`Invalid webhook signature! Expected ${computedSignature}, got ${args.signature}`);
+            throw new Error("Unauthorized webhook call");
+        }
+
         const referral = await ctx.db.get(args.referralId);
         if (!referral) {
             console.error("Referral not found for webhook tracking:", args.referralId);

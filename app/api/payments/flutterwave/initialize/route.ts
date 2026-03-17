@@ -6,8 +6,8 @@ const FLUTTERWAVE_BASE_URL = "https://api.flutterwave.com/v3";
 // Allowed redirect URL hosts
 const ALLOWED_REDIRECT_HOSTS = [
     "localhost",
-    "rehabifyhealth.com",
-    "www.rehabifyhealth.com",
+    "physioaroundme.com",
+    "www.physioaroundme.com",
 ];
 
 // Add the app URL host if configured
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
                     customizations: {
                         title: "Rehabify Health",
                         description: "Physiotherapy Session Booking",
-                        logo: "https://rehabifyhealth.com/logo.png",
+                        logo: "https://physioaroundme.com/logo.png",
                     },
                     meta: {
                         booking_id: bookingId,

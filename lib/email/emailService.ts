@@ -628,7 +628,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
                 <p style="color: #6b7280; font-size: 14px; margin: 0 0 8px 0;">
                   Need help getting started?
                 </p>
-                <a href="mailto:support@rehabifyhealth.com" style="color: #005b57; font-size: 14px; font-weight: 500; text-decoration: none;">
+                <a href="mailto:support@physioaroundme.com" style="color: #005b57; font-size: 14px; font-weight: 500; text-decoration: none;">
                   Contact our support team →
                 </a>
               </div>
@@ -644,11 +644,11 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
                 &copy; ${new Date().getFullYear()} Rehabify Health. All rights reserved.
               </p>
               <div style="margin-top: 16px;">
-                <a href="https://rehabifyhealth.com" style="color: #6b7280; font-size: 12px; text-decoration: none; margin: 0 8px;">Website</a>
+                <a href="https://physioaroundme.com" style="color: #6b7280; font-size: 12px; text-decoration: none; margin: 0 8px;">Website</a>
                 <span style="color: #d1d5db;">•</span>
-                <a href="https://rehabifyhealth.com/privacy" style="color: #6b7280; font-size: 12px; text-decoration: none; margin: 0 8px;">Privacy</a>
+                <a href="https://physioaroundme.com/privacy" style="color: #6b7280; font-size: 12px; text-decoration: none; margin: 0 8px;">Privacy</a>
                 <span style="color: #d1d5db;">•</span>
-                <a href="mailto:support@rehabifyhealth.com" style="color: #6b7280; font-size: 12px; text-decoration: none; margin: 0 8px;">Support</a>
+                <a href="mailto:support@physioaroundme.com" style="color: #6b7280; font-size: 12px; text-decoration: none; margin: 0 8px;">Support</a>
               </div>
             </div>
           </div>

@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
     // Send email via Resend (using verified domain)
     const result = await resend.emails.send({
-      from: `RehabifyHealth <${process.env.FROM_EMAIL || 'info@rehabifyhealth.com'}>`,
+      from: `RehabifyHealth <${process.env.FROM_EMAIL || 'info@physioaroundme.com'}>`,
       to: typeof to === 'string' ? to : emailData.to,
       subject: emailData.subject,
       html: emailData.html
@@ -75,7 +75,7 @@ async function createAdminEmail(paymentType: string, reference: string, amount?:
   const amountFormatted = amount ? `₦${(amount / 100).toLocaleString()}` : 'N/A'
   
   return {
-    to: process.env.PLATFORM_ADMIN_EMAIL || 'admin@rehabifyhealth.com',
+    to: process.env.PLATFORM_ADMIN_EMAIL || 'admin@physioaroundme.com',
     subject: `Payment ${isSuccess ? 'Successful' : 'Failed'} - ${reference}`,
     html: `
       <!DOCTYPE html>
@@ -180,7 +180,7 @@ async function createPatientEmail(paymentType: string, reference: string, amount
             </div>
             <div class="footer">
               <p>RehabifyHealth - Your Health, Our Priority</p>
-              <p>If you have any questions, contact us at support@rehabifyhealth.com</p>
+              <p>If you have any questions, contact us at support@physioaroundme.com</p>
             </div>
           </div>
         </body>
@@ -260,7 +260,7 @@ async function createPhysiotherapistEmail(paymentType: string, reference: string
             </div>
             <div class="footer">
               <p>RehabifyHealth - Empowering Healthcare Professionals</p>
-              <p>Questions? Contact us at support@rehabifyhealth.com</p>
+              <p>Questions? Contact us at support@physioaroundme.com</p>
             </div>
           </div>
         </body>

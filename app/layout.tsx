@@ -38,18 +38,17 @@ const matter = localFont({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com'),
   title: {
-    default: "Rehabify Health - AI-Powered Physical Therapy & Rehabilitation Platform",
-    template: "%s | Rehabify Health",
+    default: "Physio Around Me - AI-Powered Physical Therapy & Rehabilitation Platform",
+    template: "%s | Physio Around Me",
   },
   description: "Revolutionary healthcare platform connecting patients with licensed physiotherapists. AI-powered exercise monitoring, telehealth appointments, treatment plans, and comprehensive rehabilitation services in Nigeria and beyond.",
   keywords: [
-    'rehabify',
-    'rehabify health',
-    'rehabifyhealth',
-    'Rehabify Health',
-    'RehabifyHealth',
+    'physio around me',
+    'physioaroundme',
+    'Physio Around Me',
+    'PhysioAroundMe',
     'physiotherapy platform',
     'physical therapy online',
     'online physiotherapy',
@@ -62,9 +61,9 @@ export const metadata: Metadata = {
     'treatment plans',
     'licensed physiotherapists',
   ],
-  authors: [{ name: 'Rehabify Health' }],
-  creator: 'Rehabify Health',
-  publisher: 'Rehabify Health',
+  authors: [{ name: 'Physio Around Me' }],
+  creator: 'Physio Around Me',
+  publisher: 'Physio Around Me',
   formatDetection: {
     email: false,
     address: false,
@@ -79,24 +78,24 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com',
-    title: 'Rehabify Health - Expert Physical Therapy & Rehabilitation',
+    url: process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com',
+    title: 'Physio Around Me - Expert Physical Therapy & Rehabilitation',
     description: 'Revolutionary healthcare platform connecting patients with licensed physiotherapists. AI-powered exercise monitoring and telehealth appointments.',
-    siteName: 'Rehabify Health',
+    siteName: 'Physio Around Me',
     images: [
       {
         url: '/opengraph-image', // Next.js auto-generates from opengraph-image.tsx
         width: 1200,
         height: 630,
-        alt: 'Rehabify Health - Expert Physical Therapy & Rehabilitation',
+        alt: 'Physio Around Me - Expert Physical Therapy & Rehabilitation',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Rehabify Health - Expert Physical Therapy & Rehabilitation',
+    title: 'Physio Around Me - Expert Physical Therapy & Rehabilitation',
     description: 'Revolutionary healthcare platform connecting patients with licensed physiotherapists.',
-    creator: '@RehabifyHealth',
+    creator: '@PhysioAroundMe',
     images: ['/opengraph-image'],
   },
   robots: {
@@ -114,7 +113,7 @@ export const metadata: Metadata = {
     google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
   },
   alternates: {
-    canonical: process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com',
+    canonical: process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com',
   },
   other: {
     'apple-mobile-web-app-capable': 'yes',

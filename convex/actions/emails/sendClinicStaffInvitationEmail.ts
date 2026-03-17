@@ -36,7 +36,7 @@ export const sendClinicStaffInvitationEmail = action({
       console.log('[CLINIC EMAIL] Initializing Resend client');
       const resend = new Resend(RESEND_API_KEY);
       
-      const fromEmail = 'info@rehabifyhealth.com';
+      const fromEmail = 'info@physioaroundme.com';
       const fromName = 'Rehabify Health';
       
       console.log('[CLINIC EMAIL] From:', `${fromName} <${fromEmail}>`);
@@ -146,7 +146,7 @@ export const sendClinicStaffInvitationReminderEmail = action({
       }
 
       const resend = new Resend(RESEND_API_KEY);
-      const fromEmail = 'info@rehabifyhealth.com';
+      const fromEmail = 'info@physioaroundme.com';
       const fromName = 'Rehabify Health';
       
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(args.invitationLink)}`;

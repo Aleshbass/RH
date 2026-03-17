@@ -23,7 +23,7 @@ export const sendAppointmentScheduledEmail = action({
   },
   handler: async (_ctx, args) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://rehabifyhealth.com';
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
       const absolutize = (url?: string) => {
         if (!url) return '#';
         if (url.startsWith('http://') || url.startsWith('https://')) return url;

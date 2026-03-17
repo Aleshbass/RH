@@ -431,7 +431,7 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
                     : undefined,
                 duration: "01:00:00",
                 link: session.mode === "virtual"
-                    ? `${process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com"}/video-call/${consultationId}`
+                    ? `${process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com"}/video-call/${consultationId}`
                     : undefined,
             },
         },

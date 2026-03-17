@@ -114,7 +114,7 @@ export function FlutterwaveCheckout({
                 customizations: {
                     title: 'Rehabify Health',
                     description: 'Payment for healthcare services',
-                    logo: 'https://rehabifyhealth.com/logo.png'
+                    logo: 'https://physioaroundme.com/logo.png'
                 },
                 callback: function (response: FlutterwaveResponse) {
                     // Payment completed
