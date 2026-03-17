@@ -4,11 +4,11 @@ import { MedicalWebPageSchema } from '@/components/seo/StructuredData';
 
 export const metadata: Metadata = {
   title: 'Terms and Conditions',
-  description: 'Physio Around Me Terms and Conditions - User agreements, platform rules, and service guidelines for our AI-powered physiotherapy platform.',
-  keywords: ['terms and conditions', 'physio around me', 'user agreement', 'healthcare platform terms', 'physiotherapy services'],
+  description: 'Rehabify Health Terms and Conditions - User agreements, platform rules, and service guidelines for our AI-powered physiotherapy platform.',
+  keywords: ['terms and conditions', 'rehabify health', 'user agreement', 'healthcare platform terms', 'physiotherapy services'],
   openGraph: {
-    title: 'Terms and Conditions | Physio Around Me',
-    description: 'Read our terms and conditions for using Physio Around Me platform and services.',
+    title: 'Terms and Conditions | Rehabify Health',
+    description: 'Read our terms and conditions for using Rehabify Health platform and services.',
     type: 'website',
   },
 };
@@ -17,8 +17,8 @@ export default function TermsAndConditionsPage() {
   return (
     <>
       <MedicalWebPageSchema
-        title="Terms and Conditions - Physio Around Me"
-        description="User agreements and service guidelines for Physio Around Me platform"
+        title="Terms and Conditions - Rehabify Health"
+        description="User agreements and service guidelines for Rehabify Health platform"
         url="https://physioaroundme.com/terms-and-conditions"
       />
       

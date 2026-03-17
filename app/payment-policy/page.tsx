@@ -4,11 +4,11 @@ import { MedicalWebPageSchema } from '@/components/seo/StructuredData';
 
 export const metadata: Metadata = {
   title: 'Payment Policy',
-  description: 'Physio Around Me Payment Policy - Fee structure, billing practices, refund procedures, and payout terms for physiotherapy services.',
-  keywords: ['payment policy', 'physio around me', 'billing', 'refund policy', 'physiotherapy fees', 'Paystack payment'],
+  description: 'Rehabify Health Payment Policy - Fee structure, billing practices, refund procedures, and payout terms for physiotherapy services.',
+  keywords: ['payment policy', 'rehabify health', 'billing', 'refund policy', 'physiotherapy fees', 'Paystack payment'],
   openGraph: {
-    title: 'Payment Policy | Physio Around Me',
-    description: 'Understand Physio Around Me payment policies, fees, and refund procedures.',
+    title: 'Payment Policy | Rehabify Health',
+    description: 'Understand Rehabify Health payment policies, fees, and refund procedures.',
     type: 'website',
   },
 };
@@ -17,8 +17,8 @@ export default function PaymentPolicyPage() {
   return (
     <>
       <MedicalWebPageSchema
-        title="Payment Policy - Physio Around Me"
-        description="Fee structure, billing practices, and payment terms for Physio Around Me services"
+        title="Payment Policy - Rehabify Health"
+        description="Fee structure, billing practices, and payment terms for Rehabify Health services"
         url="https://physioaroundme.com/payment-policy"
       />
       

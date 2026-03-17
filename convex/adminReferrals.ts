@@ -86,15 +86,23 @@ export const updateReferralStatus = mutation({
  */
 export const webhookUpdateReferralPayout = mutation({
     args: {
-        referralId: v.id("inboundReferrals"),
-        amountPaidOut: v.number(), // Amount in kobo
         signature: v.string(),
         payload: v.string(),
     },
     handler: async (ctx, args) => {
+        // Parse and validate payload structure first
+        let parsedPayload: { referralId: string; amountPaidOut: number };
+        try {
+            parsedPayload = JSON.parse(args.payload);
+        } catch {
+            throw new Error("Invalid payload format");
+        }
+
+        const { referralId, amountPaidOut } = parsedPayload;
+
         // 1. Verify positive amount
-        if (args.amountPaidOut < 0) {
-            console.error(`Negative amount paid out not permitted: ${args.amountPaidOut}`);
+        if (typeof amountPaidOut !== 'number' || amountPaidOut < 0) {
+            console.error(`Invalid amount paid out: ${amountPaidOut}`);
             throw new Error("Invalid amount");
         }
 
@@ -117,20 +125,33 @@ export const webhookUpdateReferralPayout = mutation({
         const hashArray = Array.from(new Uint8Array(signatureBuffer));
         const computedSignature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-        if (computedSignature !== args.signature) {
-            console.error(`Invalid webhook signature! Expected ${computedSignature}, got ${args.signature}`);
+        const expectedBuffer = encoder.encode(computedSignature);
+        const actualBuffer = encoder.encode(args.signature);
+        
+        let isValid = expectedBuffer.length === actualBuffer.length;
+        if (isValid) {
+            // Constant-time comparison
+            let mismatch = 0;
+            for (let i = 0; i < expectedBuffer.length; i++) {
+                mismatch |= expectedBuffer[i] ^ actualBuffer[i];
+            }
+            if (mismatch !== 0) isValid = false;
+        }
+
+        if (!isValid) {
+            console.error("Invalid webhook signature!");
             throw new Error("Unauthorized webhook call");
         }
 
-        const referral = await ctx.db.get(args.referralId);
+        const referral = await ctx.db.get(referralId as any);
         if (!referral) {
-            console.error("Referral not found for webhook tracking:", args.referralId);
+            console.error("Referral not found for webhook tracking:", referralId);
             return;
         }
 
-        const newCommission = (referral.commissionEarned || 0) + args.amountPaidOut;
+        const newCommission = (referral.commissionEarned || 0) + amountPaidOut;
         
-        await ctx.db.patch(args.referralId, {
+        await ctx.db.patch(referralId as any, {
             status: "paid_out",
             commissionEarned: newCommission,
             updatedAt: Date.now(),
@@ -140,15 +161,15 @@ export const webhookUpdateReferralPayout = mutation({
         await ctx.db.insert("auditLogs", {
             action: "referral_payout_webhook",
             targetEntityType: "inboundReferrals",
-            targetEntityId: args.referralId,
+            targetEntityId: referralId as any,
             timestamp: Date.now(),
             details: {
                 previousAmount: referral.commissionEarned || 0,
-                amountAdded: args.amountPaidOut,
+                amountAdded: amountPaidOut,
                 newTotal: newCommission,
             }
         });
 
-        return args.referralId;
+        return referralId;
     }
 });

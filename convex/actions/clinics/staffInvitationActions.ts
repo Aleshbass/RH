@@ -19,6 +19,8 @@ export const acceptStaffInvitationWithNotification = action({
   }),
   handler: async (ctx, args) => {
     try {
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com').replace(/\/$/, '');
+      
       // Accept the invitation using the base mutation
       const result = await ctx.runMutation(api.clinics.acceptClinicInvitation, {
         code: args.code,
@@ -46,7 +48,7 @@ export const acceptStaffInvitationWithNotification = action({
               userName: invitation.inviteeName || 'Team Member',
               userRole: invitation.role.replace('_', ' '),
               clinicName: invitation.clinic?.name,
-              dashboardLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${invitation.role === 'physiotherapist' ? 'physiotherapist' : 'clinic'}`,
+              dashboardLink: `${appUrl}/dashboard/${invitation.role === 'physiotherapist' ? 'physiotherapist' : 'clinic'}`,
             },
           });
         } catch (emailError) {
@@ -61,7 +63,6 @@ export const acceptStaffInvitationWithNotification = action({
           });
 
           if (clinicOwner?.email) {
-            const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com').replace(/\/$/, '');
             const staffLink = `${appUrl}/dashboard/clinic/staff`;
             await ctx.runAction((api as any).actions.emails.sendClinicStaffInviteOwnerAcceptedEmail, {
               to: clinicOwner.email,
@@ -204,7 +205,7 @@ export const createStaffDirectWithWelcome = action({
           data: {
             userName: staffName,
             userRole: args.role.replace('_', ' '),
-            dashboardLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${args.role === 'physiotherapist' ? 'physiotherapist' : 'clinic'}`,
+            dashboardLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com'}/dashboard/${args.role === 'physiotherapist' ? 'physiotherapist' : 'clinic'}`,
           },
         });
       } catch (emailError) {

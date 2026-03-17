@@ -5,11 +5,11 @@ import { MedicalWebPageSchema } from '@/components/seo/StructuredData';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
-  description: 'Physio Around Me Privacy Policy - How we collect, use, and protect your health data. NDPR compliant healthcare platform with robust data security.',
-  keywords: ['privacy policy', 'physio around me', 'data protection', 'NDPR compliance', 'healthcare privacy', 'patient data security'],
+  description: 'Rehabify Health Privacy Policy - How we collect, use, and protect your health data. NDPR compliant healthcare platform with robust data security.',
+  keywords: ['privacy policy', 'rehabify health', 'data protection', 'NDPR compliance', 'healthcare privacy', 'patient data security'],
   openGraph: {
-    title: 'Privacy Policy | Physio Around Me',
-    description: 'Learn how Physio Around Me protects your personal and health information.',
+    title: 'Privacy Policy | Rehabify Health',
+    description: 'Learn how Rehabify Health protects your personal and health information.',
     type: 'website',
   },
 };
@@ -18,7 +18,7 @@ export default function PrivacyPolicyPage() {
   return (
     <>
       <MedicalWebPageSchema
-        title="Privacy Policy - Physio Around Me"
+        title="Privacy Policy - Rehabify Health"
         description="Our commitment to protecting your health data and personal information"
         url="https://physioaroundme.com/privacy-policy"
       />

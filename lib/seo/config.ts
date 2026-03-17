@@ -1,23 +1,23 @@
 /**
- * Centralized SEO Configuration for PhysioAroundMe
+ * Centralized SEO Configuration for RehabifyHealth
  * 
  * This file contains all SEO-related constants, metadata templates,
  * and configuration used across the application.
  */
 
 export const SITE_CONFIG = {
-  name: 'PhysioAroundMe',
-  title: 'Physio Around Me - AI-Powered Physical Therapy & Rehabilitation Platform',
+  name: 'RehabifyHealth',
+  title: 'Rehabify Health - AI-Powered Physical Therapy & Rehabilitation Platform',
   description: 'Revolutionary healthcare platform connecting patients with licensed physiotherapists. AI-powered exercise monitoring, telehealth appointments, treatment plans, and comprehensive rehabilitation services.',
   url: process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com',
   ogImage: '/opengraph-image', // Auto-generated from opengraph-image.tsx
-  twitterHandle: '@PhysioAroundMe',
+  twitterHandle: '@RehabifyHealth',
   keywords: [
     // Primary keywords - Brand variations
-    'physio around me',
-    'physioaroundme',
-    'Physio Around Me',
-    'PhysioAroundMe',
+    'rehabify health',
+    'rehabifyhealth',
+    'Rehabify Health',
+    'RehabifyHealth',
     'find a physiotherapist near me',
     
     // Service keywords
@@ -52,8 +52,8 @@ export const SITE_CONFIG = {
   
   // Structured data
   organization: {
-    name: 'PhysioAroundMe',
-    legalName: 'Physio Around Me Ltd',
+    name: 'RehabifyHealth',
+    legalName: 'Rehabify Health Ltd',
     url: process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com',
     logo: '/logos/MainRehabify.svg',
     foundingDate: '2024',
@@ -74,7 +74,7 @@ export const SITE_CONFIG = {
   // Medical service schema
   medicalService: {
     '@type': 'MedicalBusiness',
-    name: 'PhysioAroundMe',
+    name: 'RehabifyHealth',
     description: 'Digital physiotherapy and rehabilitation platform',
     medicalSpecialty: [
       'Physical Therapy',
@@ -174,20 +174,20 @@ export const DEFAULT_METADATA = {
  */
 export const PAGE_METADATA = {
   home: {
-    title: 'Physio Around Me - AI-Powered Physical Therapy & Telehealth Platform',
+    title: 'Rehabify Health - AI-Powered Physical Therapy & Telehealth Platform',
     description: 'Connect with licensed physiotherapists online. AI-powered exercise monitoring, personalized treatment plans, and convenient telehealth appointments. Start your rehabilitation journey today.',
-    keywords: ['physio around me', 'online physiotherapy', 'telehealth', 'virtual physical therapy', 'AI exercise monitoring'],
+    keywords: ['rehabify health', 'online physiotherapy', 'telehealth', 'virtual physical therapy', 'AI exercise monitoring'],
   },
   
   signIn: {
-    title: 'Sign In to Physio Around Me',
-    description: 'Access your Physio Around Me account. Book appointments, track your progress, and connect with your physiotherapist.',
+    title: 'Sign In to Rehabify Health',
+    description: 'Access your Rehabify Health account. Book appointments, track your progress, and connect with your physiotherapist.',
     robots: { index: false, follow: true }, // Don't index auth pages
   },
   
   signUp: {
-    title: 'Join Physio Around Me - Start Your Rehabilitation Journey',
-    description: 'Create your Physio Around Me account. Get access to licensed physiotherapists, personalized treatment plans, and AI-powered exercise monitoring.',
+    title: 'Join Rehabify Health - Start Your Rehabilitation Journey',
+    description: 'Create your Rehabify Health account. Get access to licensed physiotherapists, personalized treatment plans, and AI-powered exercise monitoring.',
     robots: { index: true, follow: true }, // Index signup for conversion
   },
   
@@ -212,8 +212,8 @@ export const PAGE_METADATA = {
   
   // Patient journey pages
   howItWorks: {
-    title: 'How Physio Around Me Works - Simple Steps to Better Health',
-    description: 'Learn how Physio Around Me connects you with physiotherapists, monitors your exercises, and tracks your recovery progress.',
+    title: 'How Rehabify Health Works - Simple Steps to Better Health',
+    description: 'Learn how Rehabify Health connects you with physiotherapists, monitors your exercises, and tracks your recovery progress.',
   },
   
   pricing: {
@@ -222,12 +222,12 @@ export const PAGE_METADATA = {
   },
   
   about: {
-    title: 'About Physio Around Me - Revolutionizing Physical Therapy',
+    title: 'About Rehabify Health - Revolutionizing Physical Therapy',
     description: 'Learn about our mission to make quality physiotherapy accessible through technology, AI, and telehealth.',
   },
   
   contact: {
-    title: 'Contact Physio Around Me - Get Support',
+    title: 'Contact Rehabify Health - Get Support',
     description: 'Get in touch with our support team. We\'re here to help with questions about appointments, treatments, and platform features.',
   },
 };
