@@ -78,9 +78,12 @@ export default function AwadocTestPage() {
         }))
     }
 
-    const runTest = async (eventId: string, eventType: string) => {
+    const runTest = async (eventId: string, eventType: string, overrideConsultationId?: string) => {
         updateResult(eventId, { eventType, status: 'running' })
         const start = performance.now()
+
+        // Use override if provided (avoids stale closure in runAllTests)
+        const activeConsultationId = overrideConsultationId ?? consultationId
 
         try {
             const res = await fetch('/api/awadoc/test', {
@@ -88,7 +91,7 @@ export default function AwadocTestPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     eventType,
-                    consultationId: consultationId ?? undefined,
+                    consultationId: activeConsultationId ?? undefined,
                 }),
             })
 
@@ -105,6 +108,8 @@ export default function AwadocTestPage() {
                     response: data.response,
                     duration,
                 })
+                // Return consultation ID so runAllTests can chain it
+                return data.response?.consultation?.id ?? null
             } else {
                 updateResult(eventId, {
                     status: 'error',
@@ -112,6 +117,7 @@ export default function AwadocTestPage() {
                     response: data,
                     duration,
                 })
+                return null
             }
         } catch (err) {
             const duration = Math.round(performance.now() - start)
@@ -120,14 +126,21 @@ export default function AwadocTestPage() {
                 error: err instanceof Error ? err.message : 'Network error',
                 duration,
             })
+            return null
         }
     }
 
     const runAllTests = async () => {
         setRunAllInProgress(true)
+        let chainedConsultationId: string | null = null
         try {
             for (const event of EVENT_TYPES) {
-                await runTest(event.id, event.event)
+                // Pass the chained consultation ID from test 2 to test 3
+                const resultId = await runTest(event.id, event.event, chainedConsultationId ?? undefined)
+                // Capture consultation ID from the "request" test for use in "confirmed"
+                if (event.id === 'request' && resultId) {
+                    chainedConsultationId = resultId
+                }
                 // Small delay between tests to let Convex mutations settle
                 await new Promise((resolve) => setTimeout(resolve, 800))
             }
