@@ -102,8 +102,10 @@ export async function POST(request: NextRequest) {
     const timestamp = Math.floor(Date.now() / 1000);
     const signature = buildSignature(payload, timestamp, config.secretKey);
 
-    // Determine our own webhook URL
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    // Determine our own webhook URL from the incoming request's origin
+    // This ensures it works in any environment (localhost, Vercel preview, production)
+    const requestUrl = new URL(request.url);
+    const appUrl = `${requestUrl.protocol}//${requestUrl.host}`;
     const webhookUrl = `${appUrl}/api/awadoc/webhook`;
 
     try {
