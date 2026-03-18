@@ -241,6 +241,25 @@ body {
   display: none;
 }
 
+/* Fix Tailwind v4 preflight breaking Mapbox GL tile rendering */
+.mapboxgl-map img {
+  max-width: none !important;
+  height: auto !important;
+}
+
+.mapboxgl-canvas-container,
+.mapboxgl-canvas {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+}
+
+.mapboxgl-ctrl-logo,
+.mapboxgl-ctrl-attrib,
+.mapboxgl-ctrl-group button {
+  max-width: none !important;
+}
+
 /* Mapbox popup overrides for physio map */
 .physio-map-popup .mapboxgl-popup-content {
   padding: 0 !important;

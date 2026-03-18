@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+import { UserButton, useAuth } from "@clerk/nextjs";
 import { motion } from "motion/react";
 import Link from "next/link";
 import Image from "next/image";
@@ -305,6 +305,7 @@ export default function Header() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeItem, setActiveItem] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { isSignedIn, isLoaded } = useAuth();
 
   const handleItemHover = (itemName: string) => {
     setActiveItem(itemName);
@@ -400,12 +401,11 @@ export default function Header() {
         </nav>
 
         <div className="flex items-center justify-end space-x-2 sm:space-x-4 flex-shrink-0">
-          <SignedOut>
-            <NavbarButton href="/sign-in" className="text-sm px-3 py-1.5 sm:px-4 sm:py-2">Sign In</NavbarButton>
-          </SignedOut>
-          <SignedIn>
+          {isLoaded && isSignedIn ? (
             <UserButton />
-          </SignedIn>
+          ) : (
+            <NavbarButton href="/sign-in" className="text-sm px-3 py-1.5 sm:px-4 sm:py-2">Sign In</NavbarButton>
+          )}
         </div>
       </motion.div>
 
@@ -430,12 +430,11 @@ export default function Header() {
         </div>
 
         <div className="flex items-center space-x-2">
-          <SignedOut>
-            <NavbarButton href="/sign-in" className="text-xs py-1.5 px-3">Sign In</NavbarButton>
-          </SignedOut>
-          <SignedIn>
+          {isLoaded && isSignedIn ? (
             <UserButton />
-          </SignedIn>
+          ) : (
+            <NavbarButton href="/sign-in" className="text-xs py-1.5 px-3">Sign In</NavbarButton>
+          )}
           <div className="relative z-[70]">
             <div className="cursor-pointer">
               <MobileNavToggle
