@@ -235,35 +235,49 @@ async function handleConsultationConfirmed(body: any) {
         };
     }
 
-    // Update session to confirmed
-    await convex.mutation(api.awadoc.updateSessionStatus, {
-        consultationId,
-        status: "confirmed",
-        grossAmount: body.context?.consultation?.pricing?.amount
-            ? Math.round(body.context.consultation.pricing.amount * 100) // Naira → kobo
-            : undefined,
-    });
-
-    // Retrieve the session to get physio details
-    const session = await convex.query(api.awadoc.getSessionByConsultationId, {
+    // First verify the session exists before updating
+    const existingSession = await convex.query(api.awadoc.getSessionByConsultationId, {
         consultationId,
     });
 
-    if (!session) {
-        console.error("[AwaDoc] Session not found after confirmation", {
+    if (!existingSession) {
+        console.error("[AwaDoc] Session not found for confirmation", {
             consultationId,
             requestId,
         });
         return {
             status: "error",
-            error: "Session not found after confirmation",
+            error: `Session not found for consultation: ${consultationId}`,
+            acknowledged_at: new Date().toISOString(),
+        };
+    }
+
+    // Update session to confirmed
+    try {
+        await convex.mutation(api.awadoc.updateSessionStatus, {
+            consultationId,
+            status: "confirmed",
+            grossAmount: body.context?.consultation?.pricing?.amount
+                ? Math.round(body.context.consultation.pricing.amount * 100) // Naira → kobo
+                : undefined,
+        });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        console.error("[AwaDoc] Failed to update session status:", {
+            consultationId,
+            requestId,
+            error: message,
+        });
+        return {
+            status: "error",
+            error: `Failed to update session: ${message}`,
             acknowledged_at: new Date().toISOString(),
         };
     }
 
     // Send doctor_assigned callback to AwaDoc (async, don't block response)
-    if (session.physiotherapistId) {
-        sendDoctorAssignedCallback(consultationId, session).catch((err) =>
+    if (existingSession.physiotherapistId) {
+        sendDoctorAssignedCallback(consultationId, existingSession).catch((err) =>
             console.error("[AwaDoc] Failed to send doctor_assigned callback:", err)
         );
     }
