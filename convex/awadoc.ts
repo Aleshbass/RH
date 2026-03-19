@@ -365,3 +365,119 @@ export const getDashboardStats = query({
         };
     },
 });
+
+// ── Set guest token on an AwaDoc session ────────────────
+
+export const setGuestToken = mutation({
+    args: {
+        consultationId: v.string(),
+        guestToken: v.string(),
+        guestTokenExpiresAt: v.number(),
+    },
+    handler: async (ctx, args) => {
+        const session = await ctx.db
+            .query("awadocSessions")
+            .withIndex("by_consultation_id", (q) =>
+                q.eq("consultationId", args.consultationId)
+            )
+            .unique();
+
+        if (!session) {
+            throw new Error(`Session not found: ${args.consultationId}`);
+        }
+
+        await ctx.db.patch(session._id, {
+            guestToken: args.guestToken,
+            guestTokenExpiresAt: args.guestTokenExpiresAt,
+            updatedAt: Date.now(),
+        });
+
+        return { success: true };
+    },
+});
+
+// ── Validate a guest token for video call access ────────
+
+export const validateGuestToken = query({
+    args: {
+        consultationId: v.string(),
+        guestToken: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const session = await ctx.db
+            .query("awadocSessions")
+            .withIndex("by_consultation_id", (q) =>
+                q.eq("consultationId", args.consultationId)
+            )
+            .unique();
+
+        if (!session) {
+            return { valid: false, error: "Session not found" };
+        }
+
+        if (!session.guestToken || session.guestToken !== args.guestToken) {
+            return { valid: false, error: "Invalid token" };
+        }
+
+        if (session.guestTokenExpiresAt && Date.now() > session.guestTokenExpiresAt) {
+            return { valid: false, error: "Token expired" };
+        }
+
+        // Fetch physio details for the guest UI
+        let physioName = "Physiotherapist";
+        if (session.physiotherapistId) {
+            const physio = await ctx.db.get(session.physiotherapistId);
+            if (physio) {
+                physioName = `${physio.firstName ?? ""} ${physio.lastName ?? ""}`.trim() || "Physiotherapist";
+            }
+        }
+
+        return {
+            valid: true,
+            session: {
+                consultationId: session.consultationId,
+                patientName: session.awadocUserName,
+                physioName,
+                mode: session.mode ?? "virtual",
+                scheduledTime: session.scheduledTime,
+                endTime: session.endTime,
+                status: session.status,
+            },
+        };
+    },
+});
+
+// ── Mark an AwaDoc session as completed ─────────────────
+
+export const completeSession = mutation({
+    args: {
+        consultationId: v.string(),
+        notes: v.optional(v.string()),
+        actualDurationMinutes: v.optional(v.number()),
+    },
+    handler: async (ctx, args) => {
+        const session = await ctx.db
+            .query("awadocSessions")
+            .withIndex("by_consultation_id", (q) =>
+                q.eq("consultationId", args.consultationId)
+            )
+            .unique();
+
+        if (!session) {
+            throw new Error(`Session not found: ${args.consultationId}`);
+        }
+
+        const now = Date.now();
+        await ctx.db.patch(session._id, {
+            status: "completed",
+            completedAt: now,
+            updatedAt: now,
+        });
+
+        return {
+            success: true,
+            consultationId: args.consultationId,
+            completedAt: now,
+        };
+    },
+});

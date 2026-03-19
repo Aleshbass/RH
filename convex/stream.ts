@@ -288,3 +288,48 @@ export const ensureChatMembership = action({
     }
   }
 })
+
+// Generate a Stream token for an AwaDoc guest patient (no auth required)
+export const getGuestStreamToken = action({
+  args: {
+    guestUserId: v.string(),
+    guestUserName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // No auth check — this is for unauthenticated AwaDoc patients
+    // Security is handled by guest token validation before this is called
+
+    const apiKey = process.env.STREAM_API_KEY
+    const apiSecret = process.env.STREAM_SECRET
+
+    if (!apiKey || !apiSecret) {
+      throw new Error("Stream credentials not configured")
+    }
+
+    try {
+      const client = new StreamClient(apiKey, apiSecret)
+
+      // Generate token for the guest user
+      const token = client.generateUserToken({
+        user_id: args.guestUserId,
+        validity_in_seconds: 4 * 60 * 60, // 4 hours (shorter for guests)
+      })
+
+      // Create/update guest user in Stream
+      await client.upsertUsers([{
+        id: args.guestUserId,
+        name: args.guestUserName,
+        role: 'user',
+      }])
+
+      return {
+        token,
+        apiKey,
+        userId: args.guestUserId,
+      }
+    } catch (error) {
+      console.error("Failed to generate guest Stream token:", error)
+      throw new Error("Failed to generate guest Stream token")
+    }
+  },
+})

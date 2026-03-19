@@ -2394,6 +2394,10 @@ export default defineSchema({
     netAmount: v.optional(v.number()),        // 80% — what Rehabify receives
     currency: v.optional(v.string()),         // "NGN"
 
+    // Guest video access
+    guestToken: v.optional(v.string()),           // Secure token for guest video join
+    guestTokenExpiresAt: v.optional(v.number()),  // Token expiry timestamp
+
     // Timestamps
     createdAt: v.number(),
     updatedAt: v.number(),

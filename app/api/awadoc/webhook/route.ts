@@ -395,10 +395,32 @@ async function getPhysioDetails(physiotherapistId: string) {
 
 /**
  * Send the consultation.doctor_assigned and consultation.scheduled callbacks to AwaDoc.
+ * Also generates a guest access token for the AwaDoc patient to join the video call.
  */
 async function sendDoctorAssignedCallback(consultationId: string, session: any) {
     // Fetch real physio details
     const doctor = await getPhysioDetails(session.physiotherapistId);
+
+    // Generate a secure guest token for the patient to join the video call
+    const guestToken = crypto.randomUUID();
+    const guestTokenExpiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+
+    // Store the guest token on the session
+    try {
+        await convex.mutation(api.awadoc.setGuestToken, {
+            consultationId,
+            guestToken,
+            guestTokenExpiresAt,
+        });
+    } catch (err) {
+        console.error("[AwaDoc] Failed to store guest token:", err);
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+    // Guest meeting link — no Clerk auth required
+    const guestMeetingLink = session.mode === "virtual"
+        ? `${appUrl}/video-call/${consultationId}/guest?guest=${guestToken}`
+        : undefined;
 
     await sendCallbackEvent("consultation.doctor_assigned", {
         context: {
@@ -419,7 +441,7 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
         },
     });
 
-    // Also send consultation.scheduled
+    // Also send consultation.scheduled with the guest meeting link
     await sendCallbackEvent("consultation.scheduled", {
         context: {
             consultation: {
@@ -444,9 +466,7 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
                     ? new Date(session.endTime).toISOString()
                     : undefined,
                 duration: "01:00:00",
-                link: session.mode === "virtual"
-                    ? `${process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com"}/video-call/${consultationId}`
-                    : undefined,
+                link: guestMeetingLink,
             },
         },
     });

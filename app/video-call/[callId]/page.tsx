@@ -17,7 +17,37 @@ export default function VideoCallPage() {
   // Get call metadata from Convex
   const callMetadata = useQuery(api.stream_queries.getCallMetadata, { callId })
 
-  const handleCallEnd = useCallback(() => {
+  // Check if this is an AwaDoc session (consultation IDs start with "cns-")
+  const isAwadocSession = callId.startsWith('cns-')
+  const awadocSession = useQuery(
+    api.awadoc.getSessionByConsultationId,
+    isAwadocSession ? { consultationId: callId } : "skip"
+  )
+
+  // Track whether we've already sent the completion callback
+  const completionSentRef = useRef(false)
+
+  const handleCallEnd = useCallback(async () => {
+    // If this is an AwaDoc session and the user is a physio, send completion callback
+    if (
+      isAwadocSession &&
+      !completionSentRef.current &&
+      user?.publicMetadata?.role === 'physiotherapist' &&
+      awadocSession?.status !== 'completed'
+    ) {
+      completionSentRef.current = true
+      try {
+        await fetch('/api/awadoc/complete-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ consultationId: callId }),
+        })
+        console.log('[AwaDoc] Session completion callback sent')
+      } catch (err) {
+        console.error('[AwaDoc] Failed to send completion:', err)
+      }
+    }
+
     // Redirect based on user role
     if (user?.publicMetadata?.role === 'physiotherapist') {
       router.push('/dashboard/physiotherapist')
@@ -28,7 +58,7 @@ export default function VideoCallPage() {
     } else {
       router.push('/dashboard')
     }
-  }, [router, user?.publicMetadata?.role])
+  }, [router, user?.publicMetadata?.role, isAwadocSession, callId, awadocSession?.status])
 
   // If the backend marks the call as ended (e.g., host clicked "End for Everyone"),
   // redirect all participants back to their dashboards.

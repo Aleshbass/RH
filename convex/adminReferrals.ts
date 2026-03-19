@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { ensureUserRole } from "./auth";
+import { Id } from "./_generated/dataModel";
 
 /**
  * Get all inbound referrals for admin processing
@@ -143,7 +144,8 @@ export const webhookUpdateReferralPayout = mutation({
             throw new Error("Unauthorized webhook call");
         }
 
-        const referral = await ctx.db.get(referralId as any);
+        const referralIdToUse = referralId as Id<"inboundReferrals">;
+        const referral = await ctx.db.get(referralIdToUse);
         if (!referral) {
             console.error("Referral not found for webhook tracking:", referralId);
             return;
@@ -151,7 +153,7 @@ export const webhookUpdateReferralPayout = mutation({
 
         const newCommission = (referral.commissionEarned || 0) + amountPaidOut;
         
-        await ctx.db.patch(referralId as any, {
+        await ctx.db.patch(referralIdToUse, {
             status: "paid_out",
             commissionEarned: newCommission,
             updatedAt: Date.now(),
@@ -161,7 +163,7 @@ export const webhookUpdateReferralPayout = mutation({
         await ctx.db.insert("auditLogs", {
             action: "referral_payout_webhook",
             targetEntityType: "inboundReferrals",
-            targetEntityId: referralId as any,
+            targetEntityId: referralIdToUse,
             timestamp: Date.now(),
             details: {
                 previousAmount: referral.commissionEarned || 0,
