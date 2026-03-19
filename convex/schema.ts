@@ -2403,6 +2403,8 @@ export default defineSchema({
     updatedAt: v.number(),
     confirmedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
+    notes: v.optional(v.string()),                  // Session notes from physio
+    actualDurationMinutes: v.optional(v.number()),   // Actual session duration
   })
     .index("by_consultation_id", ["consultationId"])
     .index("by_request_id", ["requestId"])

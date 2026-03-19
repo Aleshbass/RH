@@ -296,8 +296,10 @@ export const getGuestStreamToken = action({
     guestUserName: v.string(),
   },
   handler: async (ctx, args) => {
-    // No auth check — this is for unauthenticated AwaDoc patients
-    // Security is handled by guest token validation before this is called
+    // Enforce guest-only namespace to prevent collision with Clerk user IDs
+    if (!args.guestUserId.startsWith('awadoc-guest-')) {
+      throw new Error("Invalid guest user ID format: must start with 'awadoc-guest-'")
+    }
 
     const apiKey = process.env.STREAM_API_KEY
     const apiSecret = process.env.STREAM_SECRET
@@ -315,7 +317,7 @@ export const getGuestStreamToken = action({
         validity_in_seconds: 4 * 60 * 60, // 4 hours (shorter for guests)
       })
 
-      // Create/update guest user in Stream
+      // Create/update guest user in Stream (namespaced ID prevents collisions)
       await client.upsertUsers([{
         id: args.guestUserId,
         name: args.guestUserName,

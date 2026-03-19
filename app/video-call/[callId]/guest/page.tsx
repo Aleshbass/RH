@@ -25,6 +25,14 @@ function GuestCallUI({ callId, onLeave }: { callId: string; onLeave: () => void 
     const callingState = useCallCallingState()
     const participantCount = useParticipantCount()
     const hasRedirectedRef = useRef(false)
+    const hasJoinedRef = useRef(false)
+
+    // Track when the call has been joined at least once
+    useEffect(() => {
+        if (callingState === CallingState.JOINED) {
+            hasJoinedRef.current = true
+        }
+    }, [callingState])
 
     // Auto-navigate when call ends
     useEffect(() => {
@@ -39,7 +47,9 @@ function GuestCallUI({ callId, onLeave }: { callId: string; onLeave: () => void 
         return () => { call.off('call.ended', handleCallEnded) }
     }, [call, onLeave])
 
+    // Only treat LEFT/IDLE as ended if we were previously joined
     useEffect(() => {
+        if (!hasJoinedRef.current) return
         const isCallEnded = callingState === CallingState.LEFT || callingState === CallingState.IDLE
         if (isCallEnded && !hasRedirectedRef.current) {
             const timeout = setTimeout(() => {
@@ -82,7 +92,8 @@ function GuestCallUI({ callId, onLeave }: { callId: string; onLeave: () => void 
         )
     }
 
-    if (participantCount === 0) {
+    // Only show "Consultation Ended" if we were previously joined and now count is 0
+    if (hasJoinedRef.current && participantCount === 0) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-900 to-gray-900 text-white">
                 <div className="text-center space-y-4">
@@ -158,6 +169,10 @@ export default function GuestVideoCallPage() {
         if (!guestToken || !callId || initializedRef.current) return
         initializedRef.current = true
 
+        const controller = new AbortController()
+        let mounted = true
+        const timeoutId = setTimeout(() => controller.abort(), 30000) // 30s timeout
+
         const init = async () => {
             try {
                 // Step 1: Validate token and get Stream credentials
@@ -165,9 +180,12 @@ export default function GuestVideoCallPage() {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ consultationId: callId, guestToken }),
+                    signal: controller.signal,
                 })
 
                 const data = await res.json()
+
+                if (!mounted) return
 
                 if (!res.ok || !data.valid) {
                     setError(data.error ?? 'Invalid or expired link')
@@ -182,6 +200,7 @@ export default function GuestVideoCallPage() {
                 })
 
                 // Step 2: Initialize Stream client with guest credentials
+                if (!mounted) return
                 setStatus('joining')
                 const streamClient = StreamVideoClient.getOrCreateInstance({
                     apiKey: data.stream.apiKey,
@@ -192,22 +211,37 @@ export default function GuestVideoCallPage() {
                     token: data.stream.token,
                 })
 
+                if (!mounted) return
                 setClient(streamClient)
 
                 // Step 3: Join the call
                 const streamCall = streamClient.call('default', callId)
                 await streamCall.join({ create: false })
 
+                if (!mounted) return
                 setCall(streamCall)
                 setStatus('joined')
             } catch (err) {
-                console.error('[AwaDoc Guest] Init error:', err)
-                setError(err instanceof Error ? err.message : 'Failed to join consultation')
+                if (!mounted) return
+                if (err instanceof DOMException && err.name === 'AbortError') {
+                    setError('Connection timed out. Please try again.')
+                } else {
+                    setError(err instanceof Error ? err.message : 'Failed to join consultation')
+                }
                 setStatus('error')
+                console.error('[AwaDoc Guest] Init error:', err)
+            } finally {
+                clearTimeout(timeoutId)
             }
         }
 
         init()
+
+        return () => {
+            mounted = false
+            controller.abort()
+            clearTimeout(timeoutId)
+        }
     }, [callId, guestToken])
 
     const handleCallEnd = useCallback(() => {

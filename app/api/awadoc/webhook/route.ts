@@ -404,6 +404,7 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
     // Generate a secure guest token for the patient to join the video call
     const guestToken = crypto.randomUUID();
     const guestTokenExpiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+    let guestTokenStored = false;
 
     // Store the guest token on the session
     try {
@@ -412,13 +413,14 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
             guestToken,
             guestTokenExpiresAt,
         });
+        guestTokenStored = true;
     } catch (err) {
-        console.error("[AwaDoc] Failed to store guest token:", err);
+        console.error("[AwaDoc] Failed to store guest token — guest link will not be sent:", err);
     }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
-    // Guest meeting link — no Clerk auth required
-    const guestMeetingLink = session.mode === "virtual"
+    // Guest meeting link — only include if token was persisted successfully
+    const guestMeetingLink = (guestTokenStored && session.mode === "virtual")
         ? `${appUrl}/video-call/${consultationId}/guest?guest=${guestToken}`
         : undefined;
 

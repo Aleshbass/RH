@@ -66,17 +66,18 @@ export async function POST(request: NextRequest) {
                     userId: session.physiotherapistId,
                 });
                 if (user) {
-                    doctorName = `${user.firstName} ${user.lastName}`.trim() || "Physiotherapist";
+                    doctorName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || "Physiotherapist";
                 }
             } catch {
                 // Non-fatal, use default name
             }
         }
 
-        // Calculate actual duration
+        // Calculate actual duration (use current time as the end if endTime isn't set)
+        const now = Date.now();
         const duration = actualDurationMinutes
-            ?? (session.scheduledTime && session.endTime
-                ? Math.round((session.endTime - session.scheduledTime) / 60000)
+            ?? (session.scheduledTime
+                ? Math.round((now - session.scheduledTime) / 60000)
                 : 60);
 
         // Send consultation.completed callback to AwaDoc

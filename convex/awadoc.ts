@@ -419,7 +419,7 @@ export const validateGuestToken = query({
             return { valid: false, error: "Invalid token" };
         }
 
-        if (session.guestTokenExpiresAt && Date.now() > session.guestTokenExpiresAt) {
+        if (!session.guestTokenExpiresAt || Date.now() > session.guestTokenExpiresAt) {
             return { valid: false, error: "Token expired" };
         }
 
@@ -472,6 +472,8 @@ export const completeSession = mutation({
             status: "completed",
             completedAt: now,
             updatedAt: now,
+            ...(args.notes !== undefined ? { notes: args.notes } : {}),
+            ...(args.actualDurationMinutes !== undefined ? { actualDurationMinutes: args.actualDurationMinutes } : {}),
         });
 
         return {
