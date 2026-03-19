@@ -73,11 +73,11 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Calculate actual duration (use current time as the end if endTime isn't set)
+        // Calculate actual duration
         const now = Date.now();
         const duration = actualDurationMinutes
             ?? (session.scheduledTime
-                ? Math.round((now - session.scheduledTime) / 60000)
+                ? Math.round(((session.endTime ?? now) - session.scheduledTime) / 60000)
                 : 60);
 
         // Send consultation.completed callback to AwaDoc

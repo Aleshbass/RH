@@ -420,7 +420,7 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
     // Guest meeting link — only include if token was persisted successfully
-    const guestMeetingLink = (guestTokenStored && session.mode === "virtual")
+    const guestMeetingLink = (guestTokenStored && (session.mode ?? "virtual") === "virtual")
         ? `${appUrl}/video-call/${consultationId}/guest?guest=${guestToken}`
         : undefined;
 
