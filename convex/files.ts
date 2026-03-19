@@ -13,12 +13,11 @@ export const generateUploadUrl = mutation({
   },
   returns: v.string(),
   handler: async (ctx, args) => {
-    // Authenticate the user
-    const user = await getAuthenticatedUser(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
+    // Note: We allow unauthenticated users to generate upload URLs.
+    // This is explicitly required so physiotherapists and clinic owners can upload their 
+    // profile photos during the onboarding wizard BEFORE they create a Clerk account.
+    // The actual storage mapping/linking is strictly protected by auth in the save/update mutations.
+    
     // Generate the upload URL
     return await ctx.storage.generateUploadUrl();
   },

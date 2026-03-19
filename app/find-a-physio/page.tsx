@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Loader2, Search, SlidersHorizontal, Map, List, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import PhysioCard from "@/components/marketplace/PhysioCard";
 import { DynamicPhysioMapView } from "@/components/marketplace/DynamicPhysioMapView";
 import { useMarketplaceStore } from "@/stores/marketplaceStore";
@@ -106,7 +107,7 @@ export default function FindAPhysioPage() {
   return (
     <div className="min-h-screen bg-gray-50/50">
       {/* Hero Section */}
-      <div className="bg-[#005b57] text-white pt-40 pb-16 md:pt-48 md:pb-20 relative overflow-hidden">
+      <div className="bg-[#005b57] text-white pt-24 pb-12 md:pt-32 md:pb-16 relative overflow-hidden">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute right-0 top-0 w-96 h-96 bg-white rounded-full blur-3xl -mr-20 -mt-20" />
@@ -137,6 +138,14 @@ export default function FindAPhysioPage() {
                   <Loader2 className="h-5 w-5 animate-spin text-brand" />
                 </div>
               )}
+            </div>
+            
+            <div className="mt-8 flex items-center gap-3 text-sm text-teal-50/90 bg-white/10 w-fit px-4 py-2.5 rounded-full border border-teal-500/30 backdrop-blur-sm">
+              <span className="font-medium">Are you a Physiotherapist?</span>
+              <div className="w-px h-4 bg-teal-500/50" />
+              <Link href="/physiotherapist" className="font-semibold text-white hover:text-teal-200 transition-colors">
+                Register your practice →
+              </Link>
             </div>
           </div>
 

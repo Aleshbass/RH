@@ -260,7 +260,6 @@ export default function MapboxLocationPicker({ value, onChange, className }: Map
                     mapStyle="mapbox://styles/mapbox/streets-v12"
                     mapboxAccessToken={MAPBOX_TOKEN}
                     minZoom={4}
-                    reuseMaps
                     cursor={isDragging ? 'grabbing' : 'crosshair'}
                 >
                     <NavigationControl position="top-right" showCompass={false} />

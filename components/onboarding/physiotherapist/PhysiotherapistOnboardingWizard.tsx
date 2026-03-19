@@ -141,6 +141,10 @@ export default function PhysiotherapistOnboardingWizard() {
     const [passportPhotoFile, setPassportPhotoFile] = useState<File | null>(null);
     const [proofOfAddressFile, setProofOfAddressFile] = useState<File | null>(null);
 
+    // Guest Profile Photo handling
+    const [guestProfilePhotoId, setGuestProfilePhotoId] = useState<string | null>(null);
+    const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
+
     const {
         uploadDocument,
         isUploading,
@@ -158,12 +162,22 @@ export default function PhysiotherapistOnboardingWizard() {
         try {
             const { storageId } = await uploadProfilePhoto(file);
             if (storageId) {
-                await updateProfileImage({ storageId });
-                toast.success("Profile photo updated successfully");
+                if (isSignedIn) {
+                    await updateProfileImage({ storageId });
+                    toast.success("Profile photo updated successfully");
+                } else {
+                    setGuestProfilePhotoId(storageId);
+                    setProfilePhotoPreviewUrl(URL.createObjectURL(file));
+                    toast.success("Profile photo uploaded! It will be linked after you sign up.");
+                }
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to upload profile photo:", error);
-            toast.error("Failed to upload profile photo");
+            if (error.message?.includes("logged in") || error.message?.includes("authenticated")) {
+                toast.error("Please sign in to upload your profile photo");
+            } else {
+                toast.error("Failed to upload profile photo");
+            }
         }
     };
 
@@ -238,9 +252,11 @@ export default function PhysiotherapistOnboardingWizard() {
                     if (fd.referralSource) setValue('referralSource', fd.referralSource);
                     if (fd.termsAccepted) setValue('termsAccepted', fd.termsAccepted);
                     if (fd.operatingHours) setValue('operatingHours', fd.operatingHours);
-                    // Restore specializations
                     if (parsed.specializations?.length) {
                         setSpecializations(parsed.specializations);
+                    }
+                    if (parsed.guestProfilePhotoId) {
+                        setGuestProfilePhotoId(parsed.guestProfilePhotoId);
                     }
                     // Jump to the review step so they can re-submit
                     setCurrentStep(steps.length - 1);
@@ -364,6 +380,7 @@ export default function PhysiotherapistOnboardingWizard() {
                             operatingHours: formData.operatingHours,
                         },
                         specializations,
+                        guestProfilePhotoId,
                         timestamp: Date.now(),
                     })
                 );
@@ -434,6 +451,15 @@ export default function PhysiotherapistOnboardingWizard() {
             }
             for (const cert of certificates) {
                 await uploadDocument(cert, "additionalCertificate", profileId);
+            }
+
+            // If they uploaded a profile photo as a guest, link it to their user record NOW
+            if (guestProfilePhotoId) {
+                try {
+                    await updateProfileImage({ storageId: guestProfilePhotoId as Id<"_storage"> });
+                } catch (e) {
+                    console.error("Failed to link guest profile photo", e);
+                }
             }
 
             // 3. Update Store with all data needed for finalization
@@ -699,9 +725,9 @@ export default function PhysiotherapistOnboardingWizard() {
                                 <div className="flex flex-col items-center space-y-4 p-6 bg-gray-50 rounded-xl border border-gray-100">
                                     <div className="relative group">
                                         <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-md">
-                                            {currentUser?.imageUrl ? (
+                                            {profilePhotoPreviewUrl || currentUser?.imageUrl ? (
                                                 <img
-                                                    src={currentUser.imageUrl}
+                                                    src={profilePhotoPreviewUrl || currentUser?.imageUrl}
                                                     alt="Profile"
                                                     className="w-full h-full object-cover"
                                                 />

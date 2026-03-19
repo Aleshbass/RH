@@ -145,7 +145,6 @@ export function PhysioMapView({
                     [NIGERIA_BOUNDS.ne.lng + 2, NIGERIA_BOUNDS.ne.lat + 2],
                 ]}
                 minZoom={5}
-                reuseMaps
             >
                 <NavigationControl position="top-right" showCompass={false} />
 

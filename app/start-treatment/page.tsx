@@ -17,6 +17,7 @@ import {
     TrendingUp,
     BarChart3,
     Dumbbell,
+    Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -216,14 +217,81 @@ export default function StartTreatmentPage() {
         level: ConditionLevel;
     } | null>(null);
 
-    // Search results — filter cities by query
-    const filteredCities = useMemo(() => {
+    const [mapboxResults, setMapboxResults] = useState<CityEntry[]>([]);
+    const [isSearchingMapbox, setIsSearchingMapbox] = useState(false);
+    const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+
+    // Search results — filter cities by query locally
+    const filteredLocalCities = useMemo(() => {
         if (!searchQuery.trim()) return [];
         const q = searchQuery.toLowerCase().trim();
         return ALL_CITIES.filter(city =>
             city.searchTerms.includes(q) || city.name.toLowerCase().startsWith(q)
-        ).slice(0, 8);
+        ).slice(0, 5);
     }, [searchQuery]);
+
+    // Mapbox Geocoding for dynamic places
+    useEffect(() => {
+        if (!searchQuery.trim() || searchQuery.length < 3 || !MAPBOX_TOKEN) {
+            setMapboxResults([]);
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            setIsSearchingMapbox(true);
+            try {
+                const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?access_token=${MAPBOX_TOKEN}&country=NG&limit=4`);
+                const data = await res.json();
+                if (data.features) {
+                    const dynamicResults: CityEntry[] = data.features.map((f: any) => {
+                        const placeName = f.place_name;
+                        const lower = placeName.toLowerCase();
+                        
+                        // Try to inherit tier from local data if it's a known city
+                        let bestMatch = ALL_CITIES.find(c => lower.includes(c.name.toLowerCase()));
+                        
+                        if (!bestMatch) {
+                            // Unmapped city -> "Other Location" (Tier 4)
+                            return {
+                                name: f.text, // Just the city name (e.g. "Yenagoa")
+                                regionKey: "other",
+                                regionLabel: placeName.split(",").slice(1).join(",").trim() || "Nigeria",
+                                areaIndex: 0,
+                                tier: 4,
+                                searchTerms: placeName.toLowerCase()
+                            };
+                        } else {
+                            // Inherit the tier/region but use Mapbox's beautiful name
+                            return {
+                                ...bestMatch,
+                                name: f.text,
+                                regionLabel: placeName.split(",").slice(1).join(",").trim() || bestMatch.regionLabel,
+                            };
+                        }
+                    });
+                    setMapboxResults(dynamicResults);
+                }
+            } catch (err) {
+                console.error("Mapbox search failed:", err);
+            } finally {
+                setIsSearchingMapbox(false);
+            }
+        }, 400);
+
+        return () => clearTimeout(timer);
+    }, [searchQuery, MAPBOX_TOKEN]);
+
+    // Combine local and Mapbox results, deduplicating by name
+    const filteredCities = useMemo(() => {
+        const combined = [...filteredLocalCities, ...mapboxResults];
+        const seen = new Set<string>();
+        return combined.filter(c => {
+            const lowerName = c.name.toLowerCase();
+            if (seen.has(lowerName)) return false;
+            seen.add(lowerName);
+            return true;
+        }).slice(0, 8);
+    }, [filteredLocalCities, mapboxResults]);
 
     // Close dropdown on outside click
     useEffect(() => {
@@ -350,7 +418,11 @@ export default function StartTreatmentPage() {
                                             placeholder="Type your city — e.g. Calabar, Lagos, Enugu..."
                                             className="w-full h-12 sm:h-14 pl-11 pr-10 rounded-2xl border border-gray-200 focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/15 outline-none text-base text-gray-900 placeholder:text-gray-400 transition-all bg-gray-50/50 focus:bg-white"
                                         />
-                                        {searchQuery && (
+                                        {isSearchingMapbox ? (
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 p-2">
+                                                <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
+                                            </div>
+                                        ) : searchQuery ? (
                                             <button
                                                 onClick={() => {
                                                     setSearchQuery("");
@@ -358,11 +430,11 @@ export default function StartTreatmentPage() {
                                                     setShowDropdown(false);
                                                     searchRef.current?.focus();
                                                 }}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-gray-600 transition-colors"
                                             >
                                                 <X className="h-4 w-4" />
                                             </button>
-                                        )}
+                                        ) : null}
 
                                         {/* Search dropdown */}
                                         <AnimatePresence>
@@ -377,7 +449,7 @@ export default function StartTreatmentPage() {
                                                 >
                                                     {filteredCities.map((city, i) => (
                                                         <button
-                                                            key={`${city.regionKey}-${city.areaIndex}`}
+                                                            key={`${city.regionKey}-${city.areaIndex}-${city.name}`}
                                                             onClick={() => handleCitySelect(city)}
                                                             className={`w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-[#f0faf9] transition-colors cursor-pointer ${i > 0 ? "border-t border-gray-50" : ""
                                                                 } ${selectedCity?.name === city.name && selectedCity?.regionKey === city.regionKey

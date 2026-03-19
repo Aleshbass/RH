@@ -9,9 +9,9 @@ import { ChevronRight, ChevronLeft, Loader2, Upload, Twitter, Instagram, Linkedi
 import OnboardingSuccessModal from '@/components/onboarding/common/OnboardingSuccessModal';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { useMutation, useQuery } from 'convex/react';
-import { api } from '@/convex/_generated/api';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { useUser } from '@clerk/nextjs';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -151,6 +151,13 @@ export default function ClinicOwnerOnboardingWizard() {
     const [clinicImageOutside, setClinicImageOutside] = useState<File | null>(null);
     const [clinicImageInside, setClinicImageInside] = useState<File | null>(null);
 
+    // Guest Profile Photo handling
+    const [guestProfilePhotoId, setGuestProfilePhotoId] = useState<string | null>(null);
+    const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
+
+    // Auth
+    const { user, isSignedIn } = useUser();
+
     // Profile Photo Upload
     const updateProfileImage = useMutation(api.users.updateProfileImageFromStorage);
     const { uploadFile: uploadProfilePhoto, isUploading: isProfilePhotoUploading } = useFileUpload();
@@ -162,12 +169,22 @@ export default function ClinicOwnerOnboardingWizard() {
         try {
             const { storageId } = await uploadProfilePhoto(file);
             if (storageId) {
-                await updateProfileImage({ storageId });
-                toast.success("Profile photo updated successfully");
+                if (isSignedIn) {
+                    await updateProfileImage({ storageId });
+                    toast.success("Profile photo updated successfully");
+                } else {
+                    setGuestProfilePhotoId(storageId);
+                    setProfilePhotoPreviewUrl(URL.createObjectURL(file));
+                    toast.success("Profile photo uploaded! It will be linked after you sign up.");
+                }
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to upload profile photo:", error);
-            toast.error("Failed to upload profile photo");
+            if (error.message?.includes("logged in") || error.message?.includes("authenticated")) {
+                toast.error("Please sign in to upload your profile photo");
+            } else {
+                toast.error("Failed to upload profile photo");
+            }
         }
     };
 
@@ -228,6 +245,47 @@ export default function ClinicOwnerOnboardingWizard() {
             setValue('email', currentUser.email || '');
         }
     }, [currentUser, setValue, clinicOwnerData.firstName]);
+
+    // Restore guest saving logic
+    useEffect(() => {
+        if (!isSignedIn) return;
+
+        try {
+            const savedData = localStorage.getItem('clinicOwnerOnboardingData');
+            if (savedData) {
+                const parsed = JSON.parse(savedData);
+                // Check if the data is recent (within last 24 hours)
+                if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+                    // Restore form values
+                    const fieldsToRestore = [
+                        'firstName', 'lastName', 'email', 'phoneNumber', 'yearsInBusiness', 
+                        'isOwner', 'positionIfNotOwner', 'clinicName', 'registrationNumber', 
+                        'clinicType', 'yearEstablished', 'clinicEmail', 'clinicPhone', 
+                        'website', 'address', 'clinicLocation', 'city', 'state', 
+                        'services', 'specialties', 'facilities', 'equipmentAvailable', 
+                        'operatingHours', 'additionalNotes', 'referralSource', 'acceptTerms'
+                    ];
+
+                    fieldsToRestore.forEach(field => {
+                        if (parsed.formData[field] !== undefined) {
+                            setValue(field as any, parsed.formData[field]);
+                        }
+                    });
+
+                    if (parsed.guestProfilePhotoId) {
+                        setGuestProfilePhotoId(parsed.guestProfilePhotoId);
+                    }
+                    if (parsed.actualClinicId) {
+                        setActualClinicId(parsed.actualClinicId);
+                    }
+
+                    // Jump to the review step so they can re-submit
+                    setCurrentStep(steps.length - 1);
+                    toast.success('Welcome back! Your onboarding data has been restored.');
+                }
+            }
+        } catch { }
+    }, [isSignedIn, setValue, setActualClinicId]);
 
     // Simulate loading for availability step
     useEffect(() => {
@@ -307,6 +365,24 @@ export default function ClinicOwnerOnboardingWizard() {
     const handleFinalSubmit = async () => {
         const formData = watch();
 
+        // ── If not signed in, save form data and redirect to sign-up ──
+        if (!isSignedIn) {
+            try {
+                localStorage.setItem(
+                    'clinicOwnerOnboardingData',
+                    JSON.stringify({
+                        formData,
+                        guestProfilePhotoId,
+                        actualClinicId,
+                        timestamp: Date.now(),
+                    })
+                );
+            } catch { }
+            toast.info('Create your account to complete onboarding');
+            router.push('/sign-up?redirect=/clinic-owner');
+            return;
+        }
+
         try {
             // Helper to upload image and get storageId
             const uploadImage = async (file: File) => {
@@ -360,7 +436,14 @@ export default function ClinicOwnerOnboardingWizard() {
                 await Promise.all(uploadPromises);
             }
 
-
+            // If they uploaded a profile photo as a guest, link it to their user record NOW
+            if (guestProfilePhotoId) {
+                try {
+                    await updateProfileImage({ storageId: guestProfilePhotoId as Id<"_storage"> });
+                } catch (e) {
+                    console.error("Failed to link guest profile photo", e);
+                }
+            }
 
             // 3. Submit Profile Data
             await completeUserProfileMutation({
@@ -466,9 +549,9 @@ export default function ClinicOwnerOnboardingWizard() {
                                 <div className="flex flex-col items-center space-y-4 p-6 bg-gray-50 rounded-xl border border-gray-100 mb-6">
                                     <div className="relative group">
                                         <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-md">
-                                            {currentUser?.imageUrl ? (
+                                            {profilePhotoPreviewUrl || currentUser?.imageUrl ? (
                                                 <img
-                                                    src={currentUser.imageUrl}
+                                                    src={profilePhotoPreviewUrl || currentUser?.imageUrl}
                                                     alt="Profile"
                                                     className="w-full h-full object-cover"
                                                 />
