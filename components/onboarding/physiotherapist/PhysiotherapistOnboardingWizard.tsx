@@ -145,6 +145,14 @@ export default function PhysiotherapistOnboardingWizard() {
     const [guestProfilePhotoId, setGuestProfilePhotoId] = useState<string | null>(null);
     const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
 
+    useEffect(() => {
+        return () => {
+            if (profilePhotoPreviewUrl) {
+                URL.revokeObjectURL(profilePhotoPreviewUrl);
+            }
+        };
+    }, [profilePhotoPreviewUrl]);
+
     const {
         uploadDocument,
         isUploading,
@@ -167,6 +175,9 @@ export default function PhysiotherapistOnboardingWizard() {
                     toast.success("Profile photo updated successfully");
                 } else {
                     setGuestProfilePhotoId(storageId);
+                    if (profilePhotoPreviewUrl) {
+                        URL.revokeObjectURL(profilePhotoPreviewUrl);
+                    }
                     setProfilePhotoPreviewUrl(URL.createObjectURL(file));
                     toast.success("Profile photo uploaded! It will be linked after you sign up.");
                 }
@@ -454,11 +465,12 @@ export default function PhysiotherapistOnboardingWizard() {
             }
 
             // If they uploaded a profile photo as a guest, link it to their user record NOW
-            if (guestProfilePhotoId) {
+            if (guestProfilePhotoId && typeof guestProfilePhotoId === 'string') {
                 try {
                     await updateProfileImage({ storageId: guestProfilePhotoId as Id<"_storage"> });
-                } catch (e) {
+                } catch (e: any) {
                     console.error("Failed to link guest profile photo", e);
+                    toast.error("Could not link your profile photo. Please upload it again later.");
                 }
             }
 
