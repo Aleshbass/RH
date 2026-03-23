@@ -82,23 +82,35 @@ export function buildSignatureFromRaw(
  * Returns `true` if the signature matches AND the timestamp
  * is within ±5 minutes of the current server time.
  */
+export interface SignatureVerificationResult {
+    valid: boolean;
+    debug?: {
+        rawBodyLength: number;
+        rawBodyPreview: string;
+        bodyHash: string;
+        timestamp: number;
+        receivedSignature: string;
+        expectedSignature?: string;
+        error?: string;
+    };
+}
+
 export function verifyInboundSignature(
     rawBody: string,
     timestamp: number,
     signature: string
-): boolean {
+): SignatureVerificationResult {
     const config = getAwadocConfig();
 
-    // Debug logging for signature troubleshooting
     const bodyHash = crypto.createHash("sha256").update(rawBody).digest("hex");
-    console.log("[AwaDoc] Signature debug:", {
+    const debug = {
         rawBodyLength: rawBody.length,
         rawBodyPreview: rawBody.substring(0, 200),
         bodyHash,
         timestamp,
         receivedSignature: signature,
-        secretKeyPreview: config.secretKey ? `${config.secretKey.substring(0, 6)}...` : "MISSING",
-    });
+        expectedSignature: "",
+    };
 
     // Clock-skew guard (±5 minutes)
     const now = Math.floor(Date.now() / 1000);
@@ -108,25 +120,21 @@ export function verifyInboundSignature(
             received: timestamp,
             diff: Math.abs(now - timestamp),
         });
-        return false;
+        return { valid: false, debug: { ...debug, error: "timestamp skew too large" } };
     }
 
     const expected = buildSignatureFromRaw(rawBody, timestamp, config.secretKey);
-    console.log("[AwaDoc] Signature comparison:", {
-        expected,
-        received: signature,
-        match: expected === signature,
-    });
+    debug.expectedSignature = expected;
 
     // Timing-safe comparison
     try {
-        return crypto.timingSafeEqual(
+        const match = crypto.timingSafeEqual(
             Buffer.from(expected, "hex"),
             Buffer.from(signature, "hex")
         );
+        return { valid: match, debug };
     } catch (err) {
-        console.error("[AwaDoc] timingSafeEqual error:", err instanceof Error ? err.message : err);
-        return false;
+        return { valid: false, debug: { ...debug, error: err instanceof Error ? err.message : String(err) } };
     }
 }
 

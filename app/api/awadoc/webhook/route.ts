@@ -50,10 +50,15 @@ export async function POST(request: NextRequest) {
     const timestamp = timestampHeader ? parseInt(timestampHeader, 10) : 0;
 
     // ── Verify signature (use raw body string to avoid JSON re-serialization differences) ──
-    if (!verifyInboundSignature(rawBody, timestamp, signature)) {
-        console.warn("[AwaDoc] Invalid signature for event:", eventId);
+    const verification = verifyInboundSignature(rawBody, timestamp, signature);
+    
+    if (!verification.valid) {
+        console.warn("[AwaDoc] Invalid signature for event:", eventId, verification.debug);
         await logEvent(eventId, body?.event_type ?? "unknown", "inbound", body, null, "error", "Signature verification failed");
-        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+        return NextResponse.json({ 
+            error: "Invalid signature", 
+            debug_info: verification.debug 
+        }, { status: 401 });
     }
 
     const eventType: string = body.event_type ?? "";
