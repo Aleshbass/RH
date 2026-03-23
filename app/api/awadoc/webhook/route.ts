@@ -38,9 +38,10 @@ export async function POST(request: NextRequest) {
     const signature = request.headers.get("x-signature") ?? "";
 
     let body: any;
+    let rawBody: string;
 
     try {
-        const rawBody = await request.text();
+        rawBody = await request.text();
         body = JSON.parse(rawBody);
     } catch {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -48,8 +49,8 @@ export async function POST(request: NextRequest) {
 
     const timestamp = timestampHeader ? parseInt(timestampHeader, 10) : 0;
 
-    // ── Verify signature ──
-    if (!verifyInboundSignature(body, timestamp, signature)) {
+    // ── Verify signature (use raw body string to avoid JSON re-serialization differences) ──
+    if (!verifyInboundSignature(rawBody, timestamp, signature)) {
         console.warn("[AwaDoc] Invalid signature for event:", eventId);
         await logEvent(eventId, body?.event_type ?? "unknown", "inbound", body, null, "error", "Signature verification failed");
         return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
@@ -193,6 +194,8 @@ async function handleConsultationRequest(body: any) {
         physiotherapistId: selectedPhysio?.userId,
     });
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+
     return {
         status: "confirmed",
         request_id: requestId,
@@ -208,6 +211,13 @@ async function handleConsultationRequest(body: any) {
                 amount: sessionRate / 100, // Convert kobo → Naira
                 currency: "NGN",
             },
+        },
+        meeting: {
+            mode: preferredMode,
+            start_time: new Date(scheduledTime).toISOString(),
+            end_time: new Date(endTime).toISOString(),
+            duration: "01:00:00",
+            link: `${appUrl}/video-call/${consultationId}`,
         },
     };
 }

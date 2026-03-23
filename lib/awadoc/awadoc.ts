@@ -55,13 +55,35 @@ export function buildSignature(
 }
 
 /**
+ * Build the HMAC SHA256 signature from a raw body string + timestamp.
+ *
+ * Use this for INBOUND verification to avoid JSON parse/re-stringify
+ * differences (whitespace, key ordering) that would break the hash.
+ */
+export function buildSignatureFromRaw(
+    rawBody: string,
+    timestamp: number,
+    secret: string
+): string {
+    const bodyHash = crypto
+        .createHash("sha256")
+        .update(rawBody)
+        .digest("hex");
+
+    const canonical = `${bodyHash}\n${timestamp}`;
+
+    return crypto.createHmac("sha256", secret).update(canonical).digest("hex");
+}
+
+/**
  * Verify an inbound webhook signature from AwaDoc.
  *
+ * Accepts the RAW body string to avoid JSON parse/re-stringify differences.
  * Returns `true` if the signature matches AND the timestamp
  * is within ±5 minutes of the current server time.
  */
 export function verifyInboundSignature(
-    body: unknown,
+    rawBody: string,
     timestamp: number,
     signature: string
 ): boolean {
@@ -78,7 +100,7 @@ export function verifyInboundSignature(
         return false;
     }
 
-    const expected = buildSignature(body, timestamp, config.secretKey);
+    const expected = buildSignatureFromRaw(rawBody, timestamp, config.secretKey);
     // Timing-safe comparison
     try {
         return crypto.timingSafeEqual(
