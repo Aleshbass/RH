@@ -89,6 +89,17 @@ export function verifyInboundSignature(
 ): boolean {
     const config = getAwadocConfig();
 
+    // Debug logging for signature troubleshooting
+    const bodyHash = crypto.createHash("sha256").update(rawBody).digest("hex");
+    console.log("[AwaDoc] Signature debug:", {
+        rawBodyLength: rawBody.length,
+        rawBodyPreview: rawBody.substring(0, 200),
+        bodyHash,
+        timestamp,
+        receivedSignature: signature,
+        secretKeyPreview: config.secretKey ? `${config.secretKey.substring(0, 6)}...` : "MISSING",
+    });
+
     // Clock-skew guard (±5 minutes)
     const now = Math.floor(Date.now() / 1000);
     if (Math.abs(now - timestamp) > 300) {
@@ -101,13 +112,20 @@ export function verifyInboundSignature(
     }
 
     const expected = buildSignatureFromRaw(rawBody, timestamp, config.secretKey);
+    console.log("[AwaDoc] Signature comparison:", {
+        expected,
+        received: signature,
+        match: expected === signature,
+    });
+
     // Timing-safe comparison
     try {
         return crypto.timingSafeEqual(
             Buffer.from(expected, "hex"),
             Buffer.from(signature, "hex")
         );
-    } catch {
+    } catch (err) {
+        console.error("[AwaDoc] timingSafeEqual error:", err instanceof Error ? err.message : err);
         return false;
     }
 }
