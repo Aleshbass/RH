@@ -107,14 +107,26 @@ export async function POST(request: NextRequest) {
  */
 async function handleAvailabilityQuery(body: any) {
     const queryId: string = body.meta?.query_id ?? "";
-    const serviceArea: string = body.context?.service_area ?? "ALL";
-    const preferredMode: string | null = body.context?.schedule?.preferred_mode ?? null;
+    const rawServiceArea: string = body.context?.service_area ?? "ALL";
+    // Treat placeholder / empty values as "ALL" so we don't filter on them
+    const PLACEHOLDER_VALUES = ["string", "", "any", "all"];
+    const serviceArea = PLACEHOLDER_VALUES.includes(rawServiceArea.toLowerCase().trim())
+        ? "ALL"
+        : rawServiceArea;
+    const rawPreferredMode: string | null = body.context?.schedule?.preferred_mode ?? null;
+    const preferredMode = rawPreferredMode && rawPreferredMode.toLowerCase() !== "any"
+        ? rawPreferredMode
+        : null;
+
+    console.log("[AwaDoc] Availability query params:", { queryId, serviceArea, rawServiceArea, preferredMode, rawPreferredMode });
 
     // Fetch available physios from Convex
     const physios = await convex.query(api.awadoc.getAvailablePhysios, {
         serviceArea,
         preferredMode: preferredMode ?? undefined,
     });
+
+    console.log(`[AwaDoc] Found ${physios.length} available physios`);
 
     // Map to AwaDoc specialist format
     const specialists = physios.map((p: any) => {
