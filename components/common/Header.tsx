@@ -255,7 +255,10 @@ const navLinks: NavItem[] = [
       },
     ],
   },
-  { name: "Physio Register", href: "/find-a-physio", type: "link" },
+  { name: "Physio Register", type: "dropdown", items: [
+      { name: "Register", href: "/physio-register/register", subtitle: "Add your credentials to the registry" },
+      { name: "Verify a Physio", href: "/physio-register/verify", subtitle: "Check a physiotherapist's license" },
+  ] },
   { name: "Pricing", href: "/pricing", type: "link" },
   {
     name: "CPD",

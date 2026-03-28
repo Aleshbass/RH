@@ -113,6 +113,7 @@ import type * as payments from "../payments.js";
 import type * as payouts from "../payouts.js";
 import type * as paystack from "../paystack.js";
 import type * as paystackDoctor from "../paystackDoctor.js";
+import type * as physioRegistry from "../physioRegistry.js";
 import type * as physiotherapistProfiles from "../physiotherapistProfiles.js";
 import type * as physiotherapists from "../physiotherapists.js";
 import type * as queries from "../queries.js";
@@ -255,6 +256,7 @@ declare const fullApi: ApiFromModules<{
   payouts: typeof payouts;
   paystack: typeof paystack;
   paystackDoctor: typeof paystackDoctor;
+  physioRegistry: typeof physioRegistry;
   physiotherapistProfiles: typeof physiotherapistProfiles;
   physiotherapists: typeof physiotherapists;
   queries: typeof queries;

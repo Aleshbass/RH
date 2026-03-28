@@ -351,6 +351,43 @@ export default defineSchema({
     .index("by_user_id", ["userId"])
     .index("by_status", ["status"]),
 
+  // Physio Register: Standalone public registry for physiotherapist credential verification
+  // Completely separate from physiotherapistProfiles (Rehabify Health platform members)
+  physioRegistry: defineTable({
+    fullName: v.string(),
+    email: v.string(),
+    phone: v.string(),
+    practiceName: v.optional(v.string()),
+    practiceAddress: v.optional(v.string()),
+    yearsOfExperience: v.number(),
+    licenseNumber: v.string(), // MRTB license ID
+    regulatoryBody: v.string(), // e.g. "MRTB", "HCPC", "AHPRA"
+    licenseCountry: v.string(),
+    licenseExpiryDate: v.string(), // ISO date string
+    specialties: v.array(v.string()),
+    languages: v.array(v.string()),
+    bio: v.optional(v.string()),
+    websiteUrl: v.optional(v.string()),
+    // Document uploads (Convex storage)
+    profilePhotoStorageId: v.optional(v.id("_storage")),
+    licenseCertStorageId: v.id("_storage"), // License certificate PDF/image
+    photoIdStorageId: v.id("_storage"), // Government-issued photo ID
+    insuranceStorageId: v.optional(v.id("_storage")), // Proof of insurance/indemnity
+    // Verification workflow
+    verificationStatus: v.union(
+      v.literal("pending"),
+      v.literal("verified"),
+      v.literal("rejected")
+    ),
+    rejectionReason: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.string()), // Admin who reviewed
+    submittedAt: v.number(),
+  })
+    .index("by_license_number", ["licenseNumber"])
+    .index("by_verification_status", ["verificationStatus"])
+    .index("by_email", ["email"]),
+
   physiotherapistDocuments: defineTable({
     physiotherapistId: v.id("physiotherapistProfiles"),
     storageId: v.id("_storage"),

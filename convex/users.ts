@@ -128,7 +128,9 @@ export const updateOrCreateUser = internalMutation({
       if (existingUser.lastName !== (last_name || undefined)) {
         updates.lastName = last_name || undefined;
       }
-      if (existingUser.imageUrl !== (image_url || undefined)) {
+      
+      const isConvexImage = existingUser.imageUrl?.includes("convex.cloud") || existingUser.imageUrl?.includes("convex.site");
+      if (!isConvexImage && existingUser.imageUrl !== (image_url || undefined)) {
         updates.imageUrl = image_url || undefined;
       }
 
@@ -200,7 +202,9 @@ export const storeUserFromClerk = mutation({
       if (args.lastName && existingUser.lastName !== args.lastName) {
         updates.lastName = args.lastName;
       }
-      if (args.imageUrl && existingUser.imageUrl !== args.imageUrl) {
+      
+      const isConvexImage = existingUser.imageUrl?.includes("convex.cloud") || existingUser.imageUrl?.includes("convex.site");
+      if (args.imageUrl && !isConvexImage && existingUser.imageUrl !== args.imageUrl) {
         updates.imageUrl = args.imageUrl;
       }
 
