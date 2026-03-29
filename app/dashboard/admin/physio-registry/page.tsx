@@ -126,10 +126,25 @@ export default function PhysioRegistryAdminPage() {
 
     // Detail view
     if (selectedId) {
-        if (!selectedEntry) {
+        if (selectedEntry === undefined) {
             return (
                 <div className="p-6 max-w-4xl flex items-center justify-center min-h-[400px]">
                     <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
+                </div>
+            );
+        }
+
+        if (selectedEntry === null) {
+            return (
+                <div className="p-6 max-w-4xl flex flex-col items-center justify-center min-h-[400px] text-center gap-4">
+                    <ShieldAlert className="w-12 h-12 text-gray-300" />
+                    <div>
+                        <p className="font-semibold text-gray-700">Registration Not Found</p>
+                        <p className="text-sm text-gray-500">This registration may have been deleted.</p>
+                    </div>
+                    <Button variant="outline" onClick={() => setSelectedId(null)}>
+                        Back to list
+                    </Button>
                 </div>
             );
         }
