@@ -36,6 +36,15 @@ export default function MapboxAddressInput({
     const [showResults, setShowResults] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+    const controllerRef = useRef<AbortController | null>(null);
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (searchTimeout.current) clearTimeout(searchTimeout.current);
+            if (controllerRef.current) controllerRef.current.abort();
+        };
+    }, []);
 
     // Sync external value
     useEffect(() => {
@@ -60,18 +69,30 @@ export default function MapboxAddressInput({
             setResults([]);
             return;
         }
+
+        if (controllerRef.current) {
+            controllerRef.current.abort();
+        }
+        controllerRef.current = new AbortController();
+
         setIsSearching(true);
         try {
             const res = await fetch(
-                `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${MAPBOX_TOKEN}&country=NG&limit=5&types=place,locality,neighborhood,address`
+                `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${MAPBOX_TOKEN}&country=NG&limit=5&types=place,locality,neighborhood,address`,
+                { signal: controllerRef.current.signal }
             );
+            if (!res.ok) {
+                throw new Error(`Mapbox API error: ${res.status} ${res.statusText}`);
+            }
             const data = await res.json();
             if (data.features) {
                 setResults(data.features);
                 setShowResults(true);
             }
-        } catch (err) {
-            console.error('Mapbox search failed:', err);
+        } catch (err: any) {
+            if (err.name !== 'AbortError') {
+                console.error('Mapbox search failed:', err);
+            }
         } finally {
             setIsSearching(false);
         }

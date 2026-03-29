@@ -31,7 +31,7 @@ interface VerifiedEntry {
     source: "registry" | "platform";
 }
 
-function ProfilePhoto({ storageId, imageUrl, onClick }: { storageId?: Id<"_storage"> | null, imageUrl?: string, onClick?: () => void }) {
+function ProfilePhoto({ storageId, imageUrl, onClick }: { storageId?: Id<"_storage"> | null, imageUrl?: string, onClick?: (e: React.MouseEvent) => void }) {
     const url = useQuery(
         api.physioRegistry.getProfilePhotoUrl,
         storageId ? { storageId } : "skip"
@@ -89,7 +89,8 @@ function ResultCard({ entry }: { entry: VerifiedEntry }) {
                     <ProfilePhoto 
                         storageId={entry.profilePhotoStorageId} 
                         imageUrl={entry.profileImageUrl} 
-                        onClick={() => {
+                        onClick={(e) => {
+                            e.stopPropagation();
                             if (fullImageUrl) setShowImageModal(true);
                         }} 
                     />
@@ -254,9 +255,12 @@ export default function VerifyPhysioPage() {
             : { searchQuery: query || undefined }
     );
 
+    const playedRef = React.useRef(false);
+
     // Trigger confetti on successful license search
     useEffect(() => {
-        if (hasSearched && searchType === 'license' && results && results.length > 0) {
+        if (hasSearched && searchType === 'license' && results && results.length > 0 && !playedRef.current) {
+            playedRef.current = true;
             confetti({
                 particleCount: 100,
                 spread: 70,
@@ -266,7 +270,7 @@ export default function VerifyPhysioPage() {
             
             // Play success sound
             try {
-                const audio = new Audio('/sound/public_sound_Magic Sweep 2.wav');
+                const audio = new Audio('/sound/magic-sweep.wav');
                 audio.volume = 0.5;
                 audio.play().catch(e => console.log('Audio playback prevented:', e));
             } catch (error) {
@@ -277,6 +281,7 @@ export default function VerifyPhysioPage() {
 
     const handleSearch = () => {
         setHasSearched(true);
+        playedRef.current = false;
         if (searchType === 'license') {
             setLicenseQuery(searchInput.trim());
             setQuery('');
@@ -288,8 +293,6 @@ export default function VerifyPhysioPage() {
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') handleSearch();
-    };
-
     };
 
     return (

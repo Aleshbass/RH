@@ -173,7 +173,8 @@ export default defineSchema({
     .index("by_marketplace_availability", ["isAvailableOnMarketplace"])
     .index("by_verification_status", ["verificationBadge.status"])
     .index("by_location", ["location"])
-    .index("by_bookingSlug", ["bookingSlug"]),
+    .index("by_bookingSlug", ["bookingSlug"])
+    .index("by_license_number", ["licenseNumber"]),
 
   // Patient specific profiles/details
   patientProfiles: defineTable({
@@ -381,7 +382,7 @@ export default defineSchema({
     ),
     rejectionReason: v.optional(v.string()),
     verifiedAt: v.optional(v.number()),
-    reviewedBy: v.optional(v.string()), // Admin who reviewed
+    reviewedBy: v.optional(v.id("users")), // Admin who reviewed
     submittedAt: v.number(),
   })
     .index("by_license_number", ["licenseNumber"])

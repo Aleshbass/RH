@@ -71,7 +71,7 @@ export default function PhysioRegisterPage() {
                 {/* Info section */}
                 <div className="mt-16 max-w-2xl mx-auto text-center">
                     <h3 className="text-lg font-semibold text-[#002e2c] mb-3">How it works</h3>
-                    <div className="grid grid-cols-3 gap-4 text-sm text-gray-600">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm text-gray-600">
                         <div className="bg-white rounded-xl p-4 border border-gray-100">
                             <div className="w-8 h-8 rounded-lg bg-teal-100 text-[#005b57] font-bold flex items-center justify-center mx-auto mb-2">1</div>
                             <p>Submit your license &amp; credentials</p>

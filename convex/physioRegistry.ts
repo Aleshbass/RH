@@ -7,6 +7,7 @@
 
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { ensureUserRole } from "./auth";
 
 // ── Public: Submit a new registry entry ─────────────────
 
@@ -120,27 +121,17 @@ export const searchRegistry = query({
 
       console.log(`[PhysioRegistry] Found ${approvedStatuses.length} approved users`);
 
-      // Use string set for reliable ID comparison
-      const approvedUserIdStrings = new Set(approvedStatuses.map((s) => String(s.userId)));
-
-      // Get all physio profiles
-      const allProfiles = await ctx.db
-        .query("physiotherapistProfiles")
-        .collect();
-
-      console.log(`[PhysioRegistry] Found ${allProfiles.length} total physio profiles`);
-
-      // Filter to only approved ones
-      const approvedProfiles = allProfiles.filter(
-        (p) => approvedUserIdStrings.has(String(p.userId))
-      );
-
-      console.log(`[PhysioRegistry] ${approvedProfiles.length} profiles belong to approved users`);
-
-      // Fetch user details for each
+      // Fetch user details for each via indexing
       const results: SearchResult[] = [];
-      for (const profile of approvedProfiles) {
-        const user = await ctx.db.get(profile.userId);
+      for (const status of approvedStatuses) {
+        const profile = await ctx.db
+            .query("physiotherapistProfiles")
+            .withIndex("by_user_id", (q) => q.eq("userId", status.userId))
+            .first();
+            
+        if (!profile) continue;
+
+        const user = await ctx.db.get(status.userId);
         if (!user) continue;
 
         const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Unknown";
@@ -158,7 +149,7 @@ export const searchRegistry = query({
           yearsOfExperience: profile.yearsOfExperience || 0,
           practiceAddress: profile.location || "",
           verificationStatus: "verified",
-          verifiedAt: approvedStatuses.find((s) => String(s.userId) === String(profile.userId))?.reviewedAt,
+          verifiedAt: status.reviewedAt,
           profilePhotoStorageId: undefined,
           profileImageUrl: user.imageUrl,
           source: "platform",
@@ -184,14 +175,42 @@ export const searchRegistry = query({
         results.push(registryToResult(registryEntry));
       }
 
-      // Check platform physios
-      const platformPhysios = await getApprovedPlatformPhysios();
-      for (const p of platformPhysios) {
-        if (
-          p.licenseNumber === args.licenseNumber &&
-          !results.some((r) => r.licenseNumber === p.licenseNumber)
-        ) {
-          results.push(p);
+      // Check platform physios by index
+      const platformProfiles = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_license_number", (q) => q.eq("licenseNumber", args.licenseNumber!))
+        .collect();
+
+      for (const p of platformProfiles) {
+        if (results.some((r) => r.licenseNumber === p.licenseNumber)) continue;
+
+        const approval = await ctx.db
+          .query("accountApprovalStatus")
+          .withIndex("by_user_id", (q) => q.eq("userId", p.userId))
+          .first();
+
+        if (approval && approval.status === "approved") {
+          const user = await ctx.db.get(p.userId);
+          if (user) {
+            results.push({
+              id: `platform_${p._id}`,
+              fullName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Unknown",
+              licenseNumber: p.licenseNumber || "",
+              regulatoryBody: p.certificationBoard || "MRTB",
+              licenseCountry: "Nigeria",
+              licenseExpiryDate: p.licenseExpiryDate || "",
+              specialties: p.specializations || [],
+              languages: p.languagesSpoken || [],
+              bio: p.bio || "",
+              yearsOfExperience: p.yearsOfExperience || 0,
+              practiceAddress: p.location || "",
+              verificationStatus: "verified",
+              verifiedAt: approval.reviewedAt,
+              profilePhotoStorageId: undefined,
+              profileImageUrl: user.imageUrl,
+              source: "platform",
+            });
+          }
         }
       }
 
@@ -259,6 +278,7 @@ export const adminListRegistrations = query({
     ),
   },
   handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
     if (args.status) {
       return await ctx.db
         .query("physioRegistry")
@@ -277,6 +297,7 @@ export const adminListRegistrations = query({
 export const adminGetRegistration = query({
   args: { id: v.id("physioRegistry") },
   handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
     const entry = await ctx.db.get(args.id);
     if (!entry) return null;
 
@@ -308,12 +329,14 @@ export const adminGetRegistration = query({
 export const adminApprove = mutation({
   args: { id: v.id("physioRegistry") },
   handler: async (ctx, args) => {
+    const adminUser = await ensureUserRole(ctx, ["admin"]);
     const entry = await ctx.db.get(args.id);
     if (!entry) throw new Error("Registration not found");
 
     await ctx.db.patch(args.id, {
       verificationStatus: "verified",
       verifiedAt: Date.now(),
+      reviewedBy: adminUser._id,
       rejectionReason: undefined,
     });
 
@@ -329,11 +352,13 @@ export const adminReject = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
+    const adminUser = await ensureUserRole(ctx, ["admin"]);
     const entry = await ctx.db.get(args.id);
     if (!entry) throw new Error("Registration not found");
 
     await ctx.db.patch(args.id, {
       verificationStatus: "rejected",
+      reviewedBy: adminUser._id,
       rejectionReason: args.reason,
     });
 
@@ -352,6 +377,30 @@ export const checkStatus = query({
       .first();
 
     if (!entry) return null;
+
+    let isOwner = false;
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity) {
+      if (identity.email === args.email) {
+        isOwner = true;
+      } else {
+        const userByEmail = await ctx.db
+           .query("users")
+           .withIndex("by_email", q => q.eq("email", args.email))
+           .first();
+        if (userByEmail && userByEmail.clerkId === identity.subject) {
+            isOwner = true;
+        }
+      }
+    }
+
+    if (!isOwner) {
+       return {
+         verificationStatus: entry.verificationStatus,
+         submittedAt: entry.submittedAt,
+         verifiedAt: entry.verifiedAt,
+       };
+    }
 
     return {
       id: entry._id,

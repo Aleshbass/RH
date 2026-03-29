@@ -176,6 +176,12 @@ export default function PhysioRegisterWizard() {
         }
     };
 
+    useEffect(() => {
+        return () => {
+            if (profilePhotoPreview) URL.revokeObjectURL(profilePhotoPreview);
+        };
+    }, [profilePhotoPreview]);
+
     const handleProfilePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -188,11 +194,20 @@ export default function PhysioRegisterWizard() {
     const handleFinalSubmit = async () => {
         setIsSubmitting(true);
         try {
+            if (!licenseCertFile || !photoIdFile) {
+                toast.error("Please upload all required documents.");
+                return;
+            }
+
             // Upload files
-            const licenseCertResult = await uploadFile(licenseCertFile!);
-            const photoIdResult = await uploadFile(photoIdFile!);
+            const licenseCertResult = await uploadFile(licenseCertFile);
+            const photoIdResult = await uploadFile(photoIdFile);
             const insuranceResult = insuranceFile ? await uploadFile(insuranceFile) : null;
             const profilePhotoResult = profilePhotoFile ? await uploadFile(profilePhotoFile) : null;
+
+            if (!licenseCertResult.storageId || !photoIdResult.storageId) {
+                throw new Error("Failed to upload required documents. Please try again.");
+            }
 
             const formData = watch();
 
@@ -211,8 +226,8 @@ export default function PhysioRegisterWizard() {
                 languages,
                 bio: formData.bio || undefined,
                 websiteUrl: formData.websiteUrl || undefined,
-                licenseCertStorageId: licenseCertResult.storageId!,
-                photoIdStorageId: photoIdResult.storageId!,
+                licenseCertStorageId: licenseCertResult.storageId as Id<"_storage">,
+                photoIdStorageId: photoIdResult.storageId as Id<"_storage">,
                 insuranceStorageId: insuranceResult?.storageId as Id<"_storage"> | undefined,
                 profilePhotoStorageId: profilePhotoResult?.storageId as Id<"_storage"> | undefined,
             });
