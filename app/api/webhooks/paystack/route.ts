@@ -120,10 +120,62 @@ async function handlePaymentSuccess(data: {
 
         const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
-        // Update payment status in the database
+        // 1. Check for Verification Badge Payments
+        const transactionType = Array.isArray(data.metadata?.custom_fields)
+            ? data.metadata.custom_fields.find((f: any) => f.variable_name === 'transaction_type')?.value
+            : undefined;
+        
+        const transactionId = Array.isArray(data.metadata?.custom_fields)
+            ? data.metadata.custom_fields.find((f: any) => f.variable_name === 'transaction_id')?.value
+            : undefined;
+
+        const isVerificationByReference = data.reference?.startsWith('VERIFICATION_');
+
+        if ((transactionType === 'verification_badge' && transactionId) || isVerificationByReference) {
+            log.info('🏆 Processing verification badge payment...');
+            
+            let txId = transactionId;
+            if (!txId && isVerificationByReference) {
+                const parts = data.reference.split('_');
+                if (parts.length >= 2) txId = parts[1];
+            }
+            
+            if (txId) {
+                const result = await convex.mutation(api.marketplace.verification.completeVerificationPurchase, {
+                    transactionId: txId,
+                    paymentReference: data.reference,
+                });
+                
+                if (result.success && result.userId) {
+                    try {
+                        const userEmail = data.customer?.email || data.metadata?.email || "";
+                        const userName = data.customer?.first_name || data.metadata?.userName || "";
+                        
+                        if (userEmail) {
+                            await convex.action(api.actions.emails.sendVerificationBadgeEmail.sendVerificationBadgeConfirmation, {
+                                userEmail,
+                                userName,
+                                tier: result.tier,
+                                amount: data.amount,
+                                expiresAt: result.expiresAt,
+                                paymentReference: data.reference,
+                            });
+                        }
+                    } catch (emailError) {
+                        log.error('Error sending verification email', { error: emailError as Error });
+                    }
+                }
+                return; // Stop execution if it's a verification badge
+            }
+        }
+
+        // 2. Regular Invoice Payments
+        log.info('Processing regular invoice payment', { action: 'regular_payment_path' });
+
+        // Update payment status in the database (Use 'completed' so it triggers the invoice update)
         await convex.mutation(api.payments.updatePaymentStatus, {
             paystackReference: data.reference,
-            status: 'paid',
+            status: 'completed',
             paystackData: {
                 amount: data.amount,
                 currency: data.currency,
@@ -132,6 +184,19 @@ async function handlePaymentSuccess(data: {
                 customer_email: data.customer?.email,
             }
         })
+
+        // 3. Keep patient balance in sync automatically
+        if (data.metadata?.invoiceId) {
+            try {
+                // updatePaymentStatus handles invoice status + notifications
+                await convex.mutation(api.payments.updatePatientBalance, {
+                    invoiceId: data.metadata.invoiceId,
+                    amountPaid: data.amount
+                });
+            } catch (err) {
+                log.error('Failed to update patient balance secondary task', { error: err as Error });
+            }
+        }
 
         // Send payment notification emails
         await sendPaymentEmails({

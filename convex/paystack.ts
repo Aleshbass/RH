@@ -259,6 +259,26 @@ export const savePhysiotherapistBankDetails = internalMutation({
 });
 
 /**
+ * Query to get a physiotherapist's verified paystack subaccount for split payments
+ */
+export const getPhysiotherapistBankDetails = query({
+    args: {
+        physiotherapistId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        const account = await ctx.db
+            .query("physiotherapistBankAccounts")
+            .withIndex("by_physiotherapist_id", (q: any) => q.eq("physiotherapistId", args.physiotherapistId))
+            .first();
+
+        if (account && account.isVerified && account.subaccountCode) {
+            return account;
+        }
+        return null;
+    }
+});
+
+/**
  * Query to get physiotherapist's bank accounts
  */
 export const getMyBankAccounts = query({

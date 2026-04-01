@@ -352,8 +352,9 @@ export default defineSchema({
     .index("by_user_id", ["userId"])
     .index("by_status", ["status"]),
 
-  // Physio Register: Standalone public registry for physiotherapist credential verification
+  // Physio Register: Public registry of physiotherapists
   // Completely separate from physiotherapistProfiles (Rehabify Health platform members)
+  // All registered physios appear publicly — no admin verification gate
   physioRegistry: defineTable({
     fullName: v.string(),
     email: v.string(),
@@ -374,11 +375,28 @@ export default defineSchema({
     licenseCertStorageId: v.id("_storage"), // License certificate PDF/image
     photoIdStorageId: v.id("_storage"), // Government-issued photo ID
     insuranceStorageId: v.optional(v.id("_storage")), // Proof of insurance/indemnity
-    // Verification workflow
+
+    // Authentication & Identity
+    clerkUserId: v.optional(v.string()), // Links to Clerk user after signup
+    slug: v.optional(v.string()), // URL slug (sanitized license number) for shareable profile URLs
+
+    // Referral tracking
+    referredByLicense: v.optional(v.string()), // License # of the physio who referred them
+
+    // Peer verification & ranking
+    peerVerificationCount: v.optional(v.number()), // Total colleague verifications
+    patientReviewCount: v.optional(v.number()), // Total patient reviews
+    averagePatientRating: v.optional(v.number()), // 1-5 star average from patients
+    referralCount: v.optional(v.number()), // How many physios registered via this person's link
+    rankingScore: v.optional(v.number()), // Composite score for sorting
+    ranking: v.optional(v.number()), // Position e.g. "#1 out of 250"
+
+    // Legacy verification workflow (kept for backward compat with admin panel)
     verificationStatus: v.union(
       v.literal("pending"),
       v.literal("verified"),
-      v.literal("rejected")
+      v.literal("rejected"),
+      v.literal("listed") // Default for new registrations — publicly visible
     ),
     rejectionReason: v.optional(v.string()),
     verifiedAt: v.optional(v.number()),
@@ -387,7 +405,41 @@ export default defineSchema({
   })
     .index("by_license_number", ["licenseNumber"])
     .index("by_verification_status", ["verificationStatus"])
-    .index("by_email", ["email"]),
+    .index("by_email", ["email"])
+    .index("by_slug", ["slug"])
+    .index("by_clerk_user_id", ["clerkUserId"])
+    .index("by_ranking_score", ["rankingScore"])
+    .index("by_referred_by", ["referredByLicense"]),
+
+  // Peer verifications and patient reviews for the Physio Register
+  physioRegistryPeerVerifications: defineTable({
+    registryEntryId: v.id("physioRegistry"), // Physio being verified/reviewed
+    verifierType: v.union(
+      v.literal("colleague"),
+      v.literal("patient")
+    ),
+    // Verifier info
+    verifierName: v.string(),
+    verifierEmail: v.optional(v.string()),
+    verifierQualifications: v.optional(v.string()), // e.g. "PT, MSc"
+    verifierLicenseNumber: v.optional(v.string()), // If fellow physio
+    relationshipContext: v.optional(v.union(
+      v.literal("school"),
+      v.literal("work"),
+      v.literal("conference"),
+      v.literal("mentorship"),
+      v.literal("other")
+    )),
+    relationshipDetails: v.optional(v.string()), // Free text
+    // Patient review fields
+    rating: v.optional(v.number()), // 1-5 stars (patient only)
+    reviewText: v.optional(v.string()), // Written review
+    // Meta
+    createdAt: v.number(),
+  })
+    .index("by_registry_entry", ["registryEntryId"])
+    .index("by_verifier_license", ["verifierLicenseNumber"])
+    .index("by_verifier_email", ["verifierEmail"]),
 
   physiotherapistDocuments: defineTable({
     physiotherapistId: v.id("physiotherapistProfiles"),

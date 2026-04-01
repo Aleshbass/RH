@@ -5,11 +5,13 @@ import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Check, Plus, X, Loader2, Upload, ShieldCheck } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, Plus, X, Loader2, Upload, ShieldCheck, Share2, Copy, UserPlus, ArrowRight, Award } from 'lucide-react';
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { toast } from 'sonner';
 import { Id } from '@/convex/_generated/dataModel';
+import { useSearchParams } from 'next/navigation';
+import { SignIn, SignUp, useUser, useSignUp as useClerkSignUp } from '@clerk/nextjs';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -67,6 +69,7 @@ const steps = [
     { id: 'license', title: 'License & Credentials' },
     { id: 'profile', title: 'Professional Profile' },
     { id: 'review', title: 'Review & Submit' },
+    { id: 'signup', title: 'Create Account' },
 ];
 
 const SPECIALIZATIONS = [
@@ -87,12 +90,19 @@ const REGULATORY_BODIES = [
 ];
 
 export default function PhysioRegisterWizard() {
+    const searchParams = useSearchParams();
+    const referredByLicense = searchParams?.get('ref') || undefined;
+
     const [currentStep, setCurrentStep] = useState(0);
     const [direction, setDirection] = useState(0);
     const [specialties, setSpecialties] = useState<string[]>([]);
     const [languages, setLanguages] = useState<string[]>(["English"]);
     const [manualSpecialty, setManualSpecialty] = useState('');
     const [isSubmitted, setIsSubmitted] = useState(false);
+    const [registrySlug, setRegistrySlug] = useState('');
+    const [registryEntryId, setRegistryEntryId] = useState<Id<"physioRegistry"> | null>(null);
+    const [showSignupStep, setShowSignupStep] = useState(false);
+    const [copied, setCopied] = useState(false);
 
     // File states
     const [licenseCertFile, setLicenseCertFile] = useState<File | null>(null);
@@ -101,8 +111,12 @@ export default function PhysioRegisterWizard() {
     const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
     const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
 
+    // Clerk
+    const { user: clerkUser, isLoaded: isClerkLoaded } = useUser();
+
     // Convex
     const submitRegistration = useMutation(api.physioRegistry.submitRegistration);
+    const linkClerkUser = useMutation(api.physioRegistry.linkClerkUser);
     const { uploadFile, isUploading } = useFileUpload();
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -129,6 +143,22 @@ export default function PhysioRegisterWizard() {
         }
     });
 
+    // Auto-link Clerk user to registry entry after signup
+    useEffect(() => {
+        if (isClerkLoaded && clerkUser && registryEntryId && showSignupStep) {
+            linkClerkUser({
+                registryEntryId,
+                clerkUserId: clerkUser.id,
+            }).then(() => {
+                setShowSignupStep(false);
+                setIsSubmitted(true);
+                toast.success('Account linked! Your profile is ready.');
+            }).catch((err) => {
+                console.error('Failed to link Clerk user:', err);
+            });
+        }
+    }, [isClerkLoaded, clerkUser, registryEntryId, showSignupStep, linkClerkUser]);
+
     const nextStep = async () => {
         let fieldsToValidate: any[] = [];
 
@@ -138,7 +168,6 @@ export default function PhysioRegisterWizard() {
                 break;
             case 1:
                 fieldsToValidate = ['licenseNumber', 'regulatoryBody', 'licenseCountry', 'licenseExpiryDate'];
-                // Validate required file uploads
                 if (!licenseCertFile) {
                     toast.error("Please upload your license certificate");
                     return;
@@ -149,7 +178,6 @@ export default function PhysioRegisterWizard() {
                 }
                 break;
             case 2:
-                // No required fields in profile step
                 break;
             case 3:
                 fieldsToValidate = ['termsAccepted'];
@@ -161,16 +189,17 @@ export default function PhysioRegisterWizard() {
             if (!isStepValid) return;
         }
 
-        if (currentStep < steps.length - 1) {
+        if (currentStep === 3) {
+            // Submit data first, then show signup step
+            await handleFinalSubmit();
+        } else if (currentStep < steps.length - 1) {
             setDirection(1);
             setCurrentStep(prev => prev + 1);
-        } else {
-            await handleFinalSubmit();
         }
     };
 
     const prevStep = () => {
-        if (currentStep > 0) {
+        if (currentStep > 0 && !showSignupStep) {
             setDirection(-1);
             setCurrentStep(prev => prev - 1);
         }
@@ -200,7 +229,6 @@ export default function PhysioRegisterWizard() {
                 return;
             }
 
-            // Upload files
             const licenseCertResult = await uploadFile(licenseCertFile);
             const photoIdResult = await uploadFile(photoIdFile);
             const insuranceResult = insuranceFile ? await uploadFile(insuranceFile) : null;
@@ -212,7 +240,7 @@ export default function PhysioRegisterWizard() {
 
             const formData = watch();
 
-            await submitRegistration({
+            const result = await submitRegistration({
                 fullName: formData.fullName,
                 email: formData.email,
                 phone: formData.phone,
@@ -231,16 +259,54 @@ export default function PhysioRegisterWizard() {
                 photoIdStorageId: photoIdResult.storageId as Id<"_storage">,
                 insuranceStorageId: insuranceResult?.storageId as Id<"_storage"> | undefined,
                 profilePhotoStorageId: profilePhotoResult?.storageId as Id<"_storage"> | undefined,
+                referredByLicense,
             });
 
-            setIsSubmitted(true);
-            toast.success("Registration submitted successfully!");
+            if (result.success) {
+                setRegistryEntryId(result.id);
+                setRegistrySlug(result.slug);
+
+                // If already signed in, link immediately
+                if (isClerkLoaded && clerkUser) {
+                    await linkClerkUser({
+                        registryEntryId: result.id,
+                        clerkUserId: clerkUser.id,
+                    });
+                    setIsSubmitted(true);
+                    toast.success("Registration submitted successfully!");
+                } else {
+                    // Show signup step
+                    setShowSignupStep(true);
+                    setDirection(1);
+                    setCurrentStep(4);
+                    toast.success("Data saved! Create an account to manage your profile.");
+                }
+            }
         } catch (error: any) {
             console.error("Registration error:", error);
             toast.error(error.message || "Failed to submit registration");
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    const handleCopyProfileLink = () => {
+        const url = `${window.location.origin}/physio-register/${registrySlug}`;
+        navigator.clipboard.writeText(url);
+        setCopied(true);
+        toast.success('Profile link copied!');
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    const handleShareWhatsApp = () => {
+        const url = `${window.location.origin}/physio-register/${registrySlug}`;
+        const text = `I just joined the Physio Register! Check out my profile and verify me: ${url}`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
+    const handleSkipSignup = () => {
+        setShowSignupStep(false);
+        setIsSubmitted(true);
     };
 
     // Animation variants
@@ -252,31 +318,75 @@ export default function PhysioRegisterWizard() {
 
     // Success screen
     if (isSubmitted) {
+        const profileUrl = registrySlug
+            ? `${typeof window !== 'undefined' ? window.location.origin : ''}/physio-register/${registrySlug}`
+            : '';
+
         return (
             <div className="w-full max-w-xl mx-auto px-4 py-12 text-center">
                 <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
                     <ShieldCheck className="w-10 h-10 text-green-600" />
                 </div>
-                <h2 className="text-2xl font-bold text-[#002e2c] mb-3">Registration Submitted!</h2>
+                <h2 className="text-2xl font-bold text-[#002e2c] mb-3">You&apos;re on the Register!</h2>
                 <p className="text-gray-600 mb-6">
-                    Your credentials have been submitted for verification. Our team will review your information
-                    within <strong>2–5 business days</strong>. You&apos;ll receive an email notification once your
-                    registration has been reviewed.
+                    Your profile is now live on the Physio Register. Share it with your colleagues to get verified
+                    and climb the rankings!
                 </p>
-                <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 text-sm text-teal-800 mb-6">
-                    <strong>What happens next?</strong>
-                    <ul className="mt-2 space-y-1 text-left list-disc list-inside">
-                        <li>Our admin team reviews your documents</li>
-                        <li>Once verified, your name appears in the Physio Register</li>
-                        <li>Anyone can search and verify your credentials</li>
-                    </ul>
-                </div>
-                <div className="flex gap-3 justify-center">
-                    <Button asChild variant="outline">
-                        <a href="/physio-register/verify">Verify a Physio</a>
+
+                {/* Profile URL */}
+                {registrySlug && (
+                    <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 mb-6">
+                        <p className="text-xs text-gray-400 mb-1 font-medium uppercase tracking-wider">Your Profile URL</p>
+                        <p className="text-sm text-[#005b57] font-mono break-all mb-3">{profileUrl}</p>
+                        <div className="flex gap-2 justify-center">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleCopyProfileLink}
+                                className="rounded-xl text-xs"
+                            >
+                                {copied ? <Check className="w-3 h-3 mr-1.5" /> : <Copy className="w-3 h-3 mr-1.5" />}
+                                {copied ? 'Copied!' : 'Copy Link'}
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleShareWhatsApp}
+                                className="rounded-xl text-xs"
+                            >
+                                <Share2 className="w-3 h-3 mr-1.5" /> WhatsApp
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {/* CTA: Get verified by colleagues */}
+                <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 rounded-xl p-5 mb-6">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                        <Award className="w-5 h-5 text-amber-600" />
+                        <strong className="text-[#002e2c]">Become a Top Physiotherapist in Nigeria</strong>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3">
+                        Share your profile to get your colleagues to verify you.
+                        The more verifications, the higher you rank on the register!
+                    </p>
+                    <Button
+                        onClick={handleShareWhatsApp}
+                        className="bg-[#005b57] hover:bg-[#00443e] text-white rounded-xl shadow-lg shadow-teal-900/10"
+                    >
+                        <Share2 className="w-4 h-4 mr-2" />
+                        Share to Get Verified
                     </Button>
-                    <Button asChild className="bg-[#005b57] hover:bg-[#00443e]">
-                        <a href="/">Back to Home</a>
+                </div>
+
+                <div className="flex gap-3 justify-center">
+                    {registrySlug && (
+                        <Button asChild className="bg-[#005b57] hover:bg-[#00443e]">
+                            <a href={`/physio-register/${registrySlug}`}>View Your Profile</a>
+                        </Button>
+                    )}
+                    <Button asChild variant="outline">
+                        <a href="/physio-register">Browse the Register</a>
                     </Button>
                 </div>
             </div>
@@ -285,6 +395,14 @@ export default function PhysioRegisterWizard() {
 
     return (
         <div className="w-full max-w-xl mx-auto px-4 py-6">
+            {/* Referral notice */}
+            {referredByLicense && currentStep === 0 && (
+                <div className="mb-4 bg-teal-50 border border-teal-200 rounded-xl p-3 text-sm text-teal-800 flex items-center gap-2">
+                    <UserPlus className="w-4 h-4 shrink-0" />
+                    <span>You were referred by a colleague (License: <strong>{referredByLicense}</strong>)</span>
+                </div>
+            )}
+
             {/* Progress Bar */}
             <div className="mb-8">
                 <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -593,7 +711,6 @@ export default function PhysioRegisterWizard() {
                                 </div>
 
                                 <div className="space-y-4">
-                                    {/* Summary cards */}
                                     <div className="bg-gray-50 rounded-xl p-4 space-y-3">
                                         <h3 className="text-sm font-semibold text-[#005b57] uppercase tracking-wider">Personal Info</h3>
                                         <div className="grid grid-cols-2 gap-2 text-sm">
@@ -659,43 +776,82 @@ export default function PhysioRegisterWizard() {
                                 </div>
                             </div>
                         )}
+
+                        {/* Step 5: Sign Up */}
+                        {currentStep === 4 && showSignupStep && (
+                            <div className="space-y-6">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Create Your Account</h2>
+                                    <p className="text-gray-500">
+                                        Sign up to manage your profile, edit your details, and track your ranking
+                                    </p>
+                                </div>
+
+                                <div className="flex justify-center">
+                                    <SignUp
+                                        routing="hash"
+                                        appearance={{
+                                            elements: {
+                                                rootBox: "mx-auto",
+                                                card: "shadow-none border border-gray-200 rounded-2xl",
+                                                headerTitle: "hidden",
+                                                headerSubtitle: "hidden",
+                                                formButtonPrimary: "bg-[#005b57] hover:bg-[#00443e]",
+                                            }
+                                        }}
+                                        fallbackRedirectUrl={registrySlug ? `/physio-register/${registrySlug}` : '/physio-register'}
+                                    />
+                                </div>
+
+                                <div className="text-center">
+                                    <button
+                                        onClick={handleSkipSignup}
+                                        className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+                                    >
+                                        Skip for now — I&apos;ll create an account later
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </motion.div>
                 </AnimatePresence>
             </div>
 
             {/* Navigation Buttons */}
-            <div className="flex justify-between pt-6 mt-6 border-t border-gray-100">
-                <Button
-                    type="button"
-                    onClick={prevStep}
-                    variant="ghost"
-                    className={cn("text-gray-500 hover:text-gray-900", currentStep === 0 && "invisible")}
-                >
-                    <ChevronLeft className="w-4 h-4 mr-2" />
-                    Back
-                </Button>
+            {currentStep < 4 && (
+                <div className="flex justify-between pt-6 mt-6 border-t border-gray-100">
+                    <Button
+                        type="button"
+                        onClick={prevStep}
+                        variant="ghost"
+                        className={cn("text-gray-500 hover:text-gray-900", currentStep === 0 && "invisible")}
+                    >
+                        <ChevronLeft className="w-4 h-4 mr-2" />
+                        Back
+                    </Button>
 
-                <Button
-                    type="button"
-                    onClick={nextStep}
-                    disabled={isSubmitting || isUploading}
-                    className="bg-[#005b57] hover:bg-[#00443e] text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-900/10"
-                >
-                    {isSubmitting || isUploading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : currentStep === steps.length - 1 ? (
-                        <>
-                            <ShieldCheck className="w-4 h-4 mr-2" />
-                            Submit for Verification
-                        </>
-                    ) : (
-                        <>
-                            Next
-                            <ChevronRight className="w-4 h-4 ml-2" />
-                        </>
-                    )}
-                </Button>
-            </div>
+                    <Button
+                        type="button"
+                        onClick={nextStep}
+                        disabled={isSubmitting || isUploading}
+                        className="bg-[#005b57] hover:bg-[#00443e] text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-900/10"
+                    >
+                        {isSubmitting || isUploading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : currentStep === 3 ? (
+                            <>
+                                <ShieldCheck className="w-4 h-4 mr-2" />
+                                Submit & Continue
+                            </>
+                        ) : (
+                            <>
+                                Next
+                                <ChevronRight className="w-4 h-4 ml-2" />
+                            </>
+                        )}
+                    </Button>
+                </div>
+            )}
         </div>
     );
 }
