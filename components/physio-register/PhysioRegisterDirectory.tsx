@@ -110,11 +110,13 @@ export default function PhysioRegisterDirectoryPage() {
 
       {/* Patient CTA Banner */}
       <div className="bg-amber-50 border-b border-amber-200/60">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-center gap-3 text-sm">
-          <Stethoscope className="w-4 h-4 text-amber-600 shrink-0" />
-          <span className="text-amber-800">
-            Are you a Patient looking for a Physiotherapist?
-          </span>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 text-sm text-center sm:text-left">
+          <div className="flex items-center justify-center gap-2">
+            <Stethoscope className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="text-amber-800">
+              Are you a Patient looking for a Physiotherapist?
+            </span>
+          </div>
           <Link
             href="/start-treatment"
             className="inline-flex items-center gap-1 font-bold text-[#005b57] hover:text-teal-700 hover:underline transition-colors"
@@ -127,15 +129,15 @@ export default function PhysioRegisterDirectoryPage() {
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         {/* Toolbar */}
-        <div className="flex items-center justify-between flex-wrap gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row items-center justify-between flex-wrap gap-4 mb-8 text-center sm:text-left">
           <div>
             <p className="text-gray-600 text-sm">
               <span className="font-semibold text-gray-900">{totalCount}</span> physiotherapists on the register
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
-              <SelectTrigger className="w-48 border-gray-200 bg-white h-10 rounded-xl text-sm">
+              <SelectTrigger className="w-full sm:w-48 border-gray-200 bg-white h-10 rounded-xl text-sm">
                 <SelectValue placeholder="Sort by..." />
               </SelectTrigger>
               <SelectContent>
@@ -145,8 +147,8 @@ export default function PhysioRegisterDirectoryPage() {
                 <SelectItem value="name">Name (A-Z)</SelectItem>
               </SelectContent>
             </Select>
-            <Link href="/physio-register/register">
-              <Button className="bg-[#005b57] hover:bg-[#00443e] text-white rounded-xl h-10 text-sm shadow-lg shadow-teal-900/10">
+            <Link href="/physio-register/register" className="w-full sm:w-auto">
+              <Button className="w-full sm:w-auto bg-[#005b57] hover:bg-[#00443e] text-white rounded-xl h-10 text-sm shadow-lg shadow-teal-900/10">
                 <UserPlus className="w-4 h-4 mr-2" />
                 Join the Register
               </Button>

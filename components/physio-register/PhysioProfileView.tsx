@@ -165,9 +165,11 @@ export default function PhysioProfilePage() {
 
         {/* Patient CTA Banner */}
         <div className="bg-amber-50 border-b border-amber-200/60">
-          <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-center gap-3 text-sm">
-            <Stethoscope className="w-4 h-4 text-amber-600 shrink-0" />
-            <span className="text-amber-800">Are you a Patient looking for a Physiotherapist?</span>
+          <div className="max-w-4xl mx-auto px-4 py-2.5 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 text-sm text-center">
+            <div className="flex items-center justify-center gap-2">
+              <Stethoscope className="w-4 h-4 text-amber-600 shrink-0" />
+              <span className="text-amber-800">Are you a Patient looking for a Physiotherapist?</span>
+            </div>
             <Link
               href="/start-treatment"
               className="inline-flex items-center gap-1 font-bold text-[#005b57] hover:underline"
@@ -205,19 +207,19 @@ export default function PhysioProfilePage() {
                   )}
                 </div>
 
-                <div className="flex-1">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
+                <div className="flex-1 w-full">
+                  <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+                    <div className="w-full sm:w-auto break-words">
                       <h1 className="text-2xl md:text-3xl font-bold text-[#002e2c] mb-1">
                         {profile.fullName}
                       </h1>
                       <p className="text-gray-500 text-sm mb-3">
-                        {profile.regulatoryBody} • License: <strong className="text-[#002e2c]">{profile.licenseNumber}</strong>
+                        {profile.regulatoryBody} • License: <strong className="text-[#002e2c] break-all">{profile.licenseNumber}</strong>
                       </p>
                     </div>
                     {/* Ranking */}
                     {profile.ranking && (
-                      <div className="shrink-0 bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl px-4 py-3 text-center">
+                      <div className="shrink-0 w-full sm:w-auto bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl px-4 py-3 text-center">
                         <Award className="w-5 h-5 text-amber-600 mx-auto mb-1" />
                         <p className="text-lg font-bold text-amber-700">#{profile.ranking}</p>
                         <p className="text-[10px] text-amber-600 font-medium">
