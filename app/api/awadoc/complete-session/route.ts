@@ -1,7 +1,7 @@
 /**
  * AwaDoc Session Completion API
  *
- * Called when a physiotherapist ends an AwaDoc consultation.
+ * Called when a physiotherapist ends an AwaDoc therapy session.
  * Marks the session as completed and sends a callback to AwaDoc.
  */
 
@@ -18,7 +18,7 @@ const convex = new ConvexHttpClient(convexUrl);
 
 export async function POST(request: NextRequest) {
     let body: {
-        consultationId: string;
+        therapyId: string;
         notes?: string;
         actualDurationMinutes?: number;
     };
@@ -29,31 +29,31 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { consultationId, notes, actualDurationMinutes } = body;
+    const { therapyId, notes, actualDurationMinutes } = body;
 
-    if (!consultationId) {
+    if (!therapyId) {
         return NextResponse.json(
-            { error: "Missing consultationId" },
+            { error: "Missing therapyId" },
             { status: 400 }
         );
     }
 
     try {
         // Look up session first for details
-        const session = await convex.query(api.awadoc.getSessionByConsultationId, {
-            consultationId,
+        const session = await convex.query(api.awadoc.getSessionByTherapyId, {
+            therapyId,
         });
 
         if (!session) {
             return NextResponse.json(
-                { error: `Session not found: ${consultationId}` },
+                { error: `Session not found: ${therapyId}` },
                 { status: 404 }
             );
         }
 
         // Mark session as completed in Convex
         await convex.mutation(api.awadoc.completeSession, {
-            consultationId,
+            therapyId,
             notes,
             actualDurationMinutes,
         });
@@ -80,11 +80,16 @@ export async function POST(request: NextRequest) {
                 ? Math.round(((session.endTime ?? now) - session.scheduledTime) / 60000)
                 : 60);
 
-        // Send consultation.completed callback to AwaDoc
-        const callbackResult = await sendCallbackEvent("consultation.completed", {
+        // Send therapy.session.completed callback to AwaDoc
+        const callbackResult = await sendCallbackEvent("therapy.session.completed", {
+            request_id: session.requestId ?? "",
+            therapy_id: therapyId,
+            event: "therapy.session.completed",
+            completed_at: new Date().toISOString(),
+            summary: notes ?? `Session completed. Duration: ${duration} minutes.`,
             context: {
-                consultation: {
-                    id: consultationId,
+                therapy: {
+                    id: therapyId,
                     status: "completed",
                     completed_at: new Date().toISOString(),
                     duration_minutes: duration,
@@ -97,17 +102,16 @@ export async function POST(request: NextRequest) {
                     id: session.physiotherapistId ?? "unknown",
                     name: doctorName,
                 },
-                ...(notes ? { notes } : {}),
             },
         });
 
         // Log the outbound event
         try {
             await convex.mutation(api.awadoc.logEvent, {
-                eventId: `evt-rh-completed-${consultationId}`,
-                eventType: "consultation.completed",
+                eventId: `evt-rh-completed-${therapyId}`,
+                eventType: "therapy.session.completed",
                 direction: "outbound",
-                payload: { consultationId, duration, notes: notes ? "[REDACTED]" : undefined },
+                payload: { therapyId, duration, notes: notes ? "[REDACTED]" : undefined },
                 responsePayload: callbackResult,
                 status: callbackResult.success ? "success" : "error",
                 errorMessage: callbackResult.error,
@@ -118,7 +122,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            consultationId,
+            therapyId,
             completedAt: new Date().toISOString(),
             callbackSent: callbackResult.success,
         });

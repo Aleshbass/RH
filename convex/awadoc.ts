@@ -179,7 +179,7 @@ export const getUserById = query({
 
 export const createSession = mutation({
     args: {
-        consultationId: v.string(),
+        therapyId: v.string(),
         queryId: v.optional(v.string()),
         requestId: v.optional(v.string()),
         eventId: v.optional(v.string()),
@@ -208,7 +208,7 @@ export const createSession = mutation({
         const { awadocCommission, netAmount } = calculateCommission(grossAmount);
 
         const sessionId = await ctx.db.insert("awadocSessions", {
-            consultationId: args.consultationId,
+            therapyId: args.therapyId,
             queryId: args.queryId,
             requestId: args.requestId,
             eventId: args.eventId,
@@ -231,7 +231,7 @@ export const createSession = mutation({
             updatedAt: now,
         });
 
-        return { sessionId, consultationId: args.consultationId };
+        return { sessionId, therapyId: args.therapyId };
     },
 });
 
@@ -239,7 +239,7 @@ export const createSession = mutation({
 
 export const updateSessionStatus = mutation({
     args: {
-        consultationId: v.string(),
+        therapyId: v.string(),
         status: v.union(
             v.literal("queried"),
             v.literal("requested"),
@@ -257,13 +257,13 @@ export const updateSessionStatus = mutation({
     handler: async (ctx, args) => {
         const session = await ctx.db
             .query("awadocSessions")
-            .withIndex("by_consultation_id", (q) =>
-                q.eq("consultationId", args.consultationId)
+            .withIndex("by_therapy_id", (q) =>
+                q.eq("therapyId", args.therapyId)
             )
             .unique();
 
         if (!session) {
-            throw new Error(`AwaDoc session not found: ${args.consultationId}`);
+            throw new Error(`AwaDoc session not found: ${args.therapyId}`);
         }
 
         const updates: Record<string, unknown> = {
@@ -306,15 +306,15 @@ export const getSessionByRequestId = query({
     },
 });
 
-// ── Find session by consultation ID ─────────────────────
+// ── Find session by therapy ID ─────────────────────
 
-export const getSessionByConsultationId = query({
-    args: { consultationId: v.string() },
+export const getSessionByTherapyId = query({
+    args: { therapyId: v.string() },
     handler: async (ctx, args) => {
         return await ctx.db
             .query("awadocSessions")
-            .withIndex("by_consultation_id", (q) =>
-                q.eq("consultationId", args.consultationId)
+            .withIndex("by_therapy_id", (q) =>
+                q.eq("therapyId", args.therapyId)
             )
             .unique();
     },
@@ -370,20 +370,20 @@ export const getDashboardStats = query({
 
 export const setGuestToken = mutation({
     args: {
-        consultationId: v.string(),
+        therapyId: v.string(),
         guestToken: v.string(),
         guestTokenExpiresAt: v.number(),
     },
     handler: async (ctx, args) => {
         const session = await ctx.db
             .query("awadocSessions")
-            .withIndex("by_consultation_id", (q) =>
-                q.eq("consultationId", args.consultationId)
+            .withIndex("by_therapy_id", (q) =>
+                q.eq("therapyId", args.therapyId)
             )
             .unique();
 
         if (!session) {
-            throw new Error(`Session not found: ${args.consultationId}`);
+            throw new Error(`Session not found: ${args.therapyId}`);
         }
 
         await ctx.db.patch(session._id, {
@@ -400,14 +400,14 @@ export const setGuestToken = mutation({
 
 export const validateGuestToken = query({
     args: {
-        consultationId: v.string(),
+        therapyId: v.string(),
         guestToken: v.string(),
     },
     handler: async (ctx, args) => {
         const session = await ctx.db
             .query("awadocSessions")
-            .withIndex("by_consultation_id", (q) =>
-                q.eq("consultationId", args.consultationId)
+            .withIndex("by_therapy_id", (q) =>
+                q.eq("therapyId", args.therapyId)
             )
             .unique();
 
@@ -435,7 +435,7 @@ export const validateGuestToken = query({
         return {
             valid: true,
             session: {
-                consultationId: session.consultationId,
+                therapyId: session.therapyId,
                 patientName: session.awadocUserName,
                 physioName,
                 mode: session.mode ?? "virtual",
@@ -451,20 +451,20 @@ export const validateGuestToken = query({
 
 export const completeSession = mutation({
     args: {
-        consultationId: v.string(),
+        therapyId: v.string(),
         notes: v.optional(v.string()),
         actualDurationMinutes: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
         const session = await ctx.db
             .query("awadocSessions")
-            .withIndex("by_consultation_id", (q) =>
-                q.eq("consultationId", args.consultationId)
+            .withIndex("by_therapy_id", (q) =>
+                q.eq("therapyId", args.therapyId)
             )
             .unique();
 
         if (!session) {
-            throw new Error(`Session not found: ${args.consultationId}`);
+            throw new Error(`Session not found: ${args.therapyId}`);
         }
 
         const now = Date.now();
@@ -478,7 +478,7 @@ export const completeSession = mutation({
 
         return {
             success: true,
-            consultationId: args.consultationId,
+            therapyId: args.therapyId,
             completedAt: now,
         };
     },

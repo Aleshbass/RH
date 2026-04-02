@@ -17,11 +17,11 @@ export default function VideoCallPage() {
   // Get call metadata from Convex
   const callMetadata = useQuery(api.stream_queries.getCallMetadata, { callId })
 
-  // Check if this is an AwaDoc session (consultation IDs start with "cns-")
-  const isAwadocSession = callId.startsWith('cns-')
+  // Check if this is an AwaDoc session (therapy IDs start with "thp-")
+  const isAwadocSession = callId.startsWith('thp-')
   const awadocSession = useQuery(
-    api.awadoc.getSessionByConsultationId,
-    isAwadocSession ? { consultationId: callId } : "skip"
+    api.awadoc.getSessionByTherapyId,
+    isAwadocSession ? { therapyId: callId } : "skip"
   )
 
   // Track whether we've already sent the completion callback
@@ -40,7 +40,7 @@ export default function VideoCallPage() {
         await fetch('/api/awadoc/complete-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ consultationId: callId }),
+          body: JSON.stringify({ therapyId: callId }),
         })
         console.log('[AwaDoc] Session completion callback sent')
       } catch (err) {

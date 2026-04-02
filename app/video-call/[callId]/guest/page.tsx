@@ -74,7 +74,7 @@ function GuestCallUI({ callId, onLeave }: { callId: string; onLeave: () => void 
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-900 to-gray-900 text-white">
                 <div className="text-center space-y-4">
                     <Loader2 className="h-12 w-12 animate-spin mx-auto text-teal-400" />
-                    <p className="text-xl">Joining your consultation...</p>
+                    <p className="text-xl">Joining your therapy session...</p>
                 </div>
             </div>
         )
@@ -92,13 +92,13 @@ function GuestCallUI({ callId, onLeave }: { callId: string; onLeave: () => void 
         )
     }
 
-    // Only show "Consultation Ended" if we were previously joined and now count is 0
+    // Only show "Session Ended" if we were previously joined and now count is 0
     if (hasJoinedRef.current && participantCount === 0) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-900 to-gray-900 text-white">
                 <div className="text-center space-y-4">
                     <Phone className="h-12 w-12 text-gray-400 mx-auto" />
-                    <p className="text-xl">Consultation Ended</p>
+                    <p className="text-xl">Session Ended</p>
                     <p className="text-gray-400">Thank you for using Rehabify Health via AwaDoc.</p>
                 </div>
             </div>
@@ -179,7 +179,7 @@ export default function GuestVideoCallPage() {
                 const res = await fetch('/api/awadoc/validate-guest', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ consultationId: callId, guestToken }),
+                    body: JSON.stringify({ therapyId: callId, guestToken }),
                     signal: controller.signal,
                 })
 
@@ -226,7 +226,7 @@ export default function GuestVideoCallPage() {
                 if (err instanceof DOMException && err.name === 'AbortError') {
                     setError('Connection timed out. Please try again.')
                 } else {
-                    setError(err instanceof Error ? err.message : 'Failed to join consultation')
+                    setError(err instanceof Error ? err.message : 'Failed to join therapy session')
                 }
                 setStatus('error')
                 console.error('[AwaDoc Guest] Init error:', err)
@@ -273,7 +273,7 @@ export default function GuestVideoCallPage() {
                     <Shield className="h-16 w-16 text-red-400 mx-auto" />
                     <h1 className="text-2xl font-bold">Access Denied</h1>
                     <p className="text-gray-400">
-                        This link is missing a valid guest token. Please use the link provided by AwaDoc to join your consultation.
+                        This link is missing a valid guest token. Please use the link provided by AwaDoc to join your therapy session.
                     </p>
                 </div>
             </div>
@@ -316,7 +316,7 @@ export default function GuestVideoCallPage() {
                 <div className="text-center space-y-4">
                     <Video className="h-12 w-12 text-teal-400 mx-auto animate-pulse" />
                     <h1 className="text-xl font-semibold">
-                        Joining consultation with {sessionInfo?.physioName ?? 'your physiotherapist'}...
+                        Joining session with {sessionInfo?.physioName ?? 'your physiotherapist'}...
                     </h1>
                     <p className="text-gray-400 text-sm">Please allow camera and microphone access when prompted</p>
                 </div>
@@ -332,7 +332,7 @@ export default function GuestVideoCallPage() {
                     <div className="h-20 w-20 mx-auto rounded-full bg-teal-500/20 flex items-center justify-center">
                         <Phone className="h-10 w-10 text-teal-400" />
                     </div>
-                    <h1 className="text-2xl font-bold">Consultation Complete</h1>
+                    <h1 className="text-2xl font-bold">Session Complete</h1>
                     <p className="text-gray-400">
                         Thank you for your session with {sessionInfo?.physioName ?? 'your physiotherapist'}.
                         Your physiotherapist will follow up with any recommended next steps.

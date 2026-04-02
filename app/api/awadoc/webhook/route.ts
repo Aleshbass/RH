@@ -2,9 +2,10 @@
  * AwaDoc Webhook Endpoint
  *
  * Receives inbound events from AwaDoc:
- *  - consultation.availability.query  → return available physios
- *  - consultation.request             → confirm booking
- *  - consultation.confirmed           → acknowledge payment
+ *  - therapy.availability.query  → return available physios
+ *  - therapy.request             → confirm booking
+ *  - therapy.confirmed           → acknowledge payment
+ *  - therapy.session.assigned    → follow-up therapist assignment
  *
  * All requests are HMAC-verified. Every event is audit-logged.
  */
@@ -68,14 +69,17 @@ export async function POST(request: NextRequest) {
         let response: Record<string, unknown>;
 
         switch (eventType) {
-            case "consultation.availability.query":
+            case "therapy.availability.query":
                 response = await handleAvailabilityQuery(body);
                 break;
-            case "consultation.request":
-                response = await handleConsultationRequest(body);
+            case "therapy.request":
+                response = await handleTherapyRequest(body);
                 break;
-            case "consultation.confirmed":
-                response = await handleConsultationConfirmed(body);
+            case "therapy.confirmed":
+                response = await handleTherapyConfirmed(body);
+                break;
+            case "therapy.session.assigned":
+                response = await handleSessionAssigned(body);
                 break;
             default:
                 console.log(`[AwaDoc] Unhandled event type: ${eventType}`);
@@ -100,9 +104,9 @@ export async function POST(request: NextRequest) {
 // ── Event handlers ──────────────────────────────────────
 
 /**
- * consultation.availability.query
+ * therapy.availability.query
  *
- * AwaDoc user is searching for available specialists in a service area.
+ * AwaDoc user is searching for available therapy/physiotherapy specialists.
  * We return our available physios formatted as AwaDoc specialists.
  */
 async function handleAvailabilityQuery(body: any) {
@@ -163,22 +167,22 @@ async function handleAvailabilityQuery(body: any) {
 }
 
 /**
- * consultation.request
+ * therapy.request
  *
- * AwaDoc user selected a physio and wants to book.
+ * AwaDoc user selected a physio and wants to book a therapy session.
  * We create an awadocSession and respond with confirmation + pricing.
  */
-async function handleConsultationRequest(body: any) {
+async function handleTherapyRequest(body: any) {
     const requestId: string = body.meta?.request_id ?? "";
     const userId: string = body.user?.id ?? "";
     const userName: string = body.user?.name ?? "";
     const specialistType: string = body.context?.specialist_type ?? AWADOC_SPECIALIST_TYPE;
-    const preferredMode: string = body.context?.schedule?.preferred_mode ?? "virtual";
+    const preferredMode: string = body.context?.schedule?.preferred_mode ?? "home_visit";
     const preferredTime: string = body.context?.schedule?.preferred_time ?? "";
     const preferredLang: string = body.context?.schedule?.preferred_lang ?? "en";
 
-    // Generate a unique consultation ID
-    const consultationId = `cns-${crypto.randomUUID().slice(0, 8)}`;
+    // Generate a unique therapy ID
+    const therapyId = `thp-${crypto.randomUUID().slice(0, 8)}`;
 
     // Parse preferred time
     const scheduledTime = preferredTime ? new Date(preferredTime).getTime() : Date.now() + 3600000;
@@ -187,7 +191,7 @@ async function handleConsultationRequest(body: any) {
     // Get a suitable physio using weighted matching
     const physios = await convex.query(api.awadoc.getAvailablePhysios, {
         serviceArea: "ALL",
-        preferredMode: preferredMode === "virtual" ? "virtual" : "physical",
+        preferredMode: preferredMode === "home_visit" ? "physical" : "virtual",
     });
 
     const selectedPhysio = selectBestPhysio(physios);
@@ -195,13 +199,13 @@ async function handleConsultationRequest(body: any) {
 
     // Create session record in Convex
     await convex.mutation(api.awadoc.createSession, {
-        consultationId,
+        therapyId,
         requestId,
         eventId: body.event_id,
         awadocUserId: userId,
         awadocUserName: userName,
         status: "requested",
-        mode: preferredMode === "virtual" ? "virtual" : "physical",
+        mode: preferredMode === "home_visit" ? "physical" : "virtual",
         specialistType,
         scheduledTime,
         endTime,
@@ -217,8 +221,8 @@ async function handleConsultationRequest(body: any) {
         status: "confirmed",
         request_id: requestId,
         confirmed_at: new Date().toISOString(),
-        consultation: {
-            id: consultationId,
+        therapy: {
+            id: therapyId,
             schedule: {
                 preferred_mode: preferredMode,
                 preferred_time: new Date(scheduledTime).toISOString(),
@@ -234,47 +238,47 @@ async function handleConsultationRequest(body: any) {
             start_time: new Date(scheduledTime).toISOString(),
             end_time: new Date(endTime).toISOString(),
             duration: "01:00:00",
-            link: `${appUrl}/video-call/${consultationId}`,
+            link: `${appUrl}/video-call/${therapyId}`,
         },
     };
 }
 
 /**
- * consultation.confirmed
+ * therapy.confirmed
  *
  * Payment has been made on AwaDoc's side.
  * We acknowledge and update the session status, then send doctor_assigned callback.
  */
-async function handleConsultationConfirmed(body: any) {
+async function handleTherapyConfirmed(body: any) {
     const requestId: string = body.meta?.request_id ?? "";
-    const consultationId: string = body.context?.consultation?.id ?? "";
+    const therapyId: string = body.context?.therapy?.id ?? "";
 
-    // Reject if consultationId is missing — don't silently acknowledge
-    if (!consultationId) {
-        console.warn("[AwaDoc] consultation.confirmed received without consultationId", {
+    // Reject if therapyId is missing — don't silently acknowledge
+    if (!therapyId) {
+        console.warn("[AwaDoc] therapy.confirmed received without therapyId", {
             requestId,
             payload: body.context,
         });
         return {
             status: "error",
-            error: "Missing consultation ID in payload",
+            error: "Missing therapy ID in payload",
             acknowledged_at: new Date().toISOString(),
         };
     }
 
     // First verify the session exists before updating
-    const existingSession = await convex.query(api.awadoc.getSessionByConsultationId, {
-        consultationId,
+    const existingSession = await convex.query(api.awadoc.getSessionByTherapyId, {
+        therapyId,
     });
 
     if (!existingSession) {
         console.error("[AwaDoc] Session not found for confirmation", {
-            consultationId,
+            therapyId,
             requestId,
         });
         return {
             status: "error",
-            error: `Session not found for consultation: ${consultationId}`,
+            error: `Session not found for therapy: ${therapyId}`,
             acknowledged_at: new Date().toISOString(),
         };
     }
@@ -282,16 +286,16 @@ async function handleConsultationConfirmed(body: any) {
     // Update session to confirmed
     try {
         await convex.mutation(api.awadoc.updateSessionStatus, {
-            consultationId,
+            therapyId,
             status: "confirmed",
-            grossAmount: body.context?.consultation?.pricing?.amount
-                ? Math.round(body.context.consultation.pricing.amount * 100) // Naira → kobo
+            grossAmount: body.context?.therapy?.pricing?.amount
+                ? Math.round(body.context.therapy.pricing.amount * 100) // Naira → kobo
                 : undefined,
         });
     } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         console.error("[AwaDoc] Failed to update session status:", {
-            consultationId,
+            therapyId,
             requestId,
             error: message,
         });
@@ -304,10 +308,35 @@ async function handleConsultationConfirmed(body: any) {
 
     // Send doctor_assigned callback to AwaDoc (async, don't block response)
     if (existingSession.physiotherapistId) {
-        sendDoctorAssignedCallback(consultationId, existingSession).catch((err) =>
+        sendDoctorAssignedCallback(therapyId, existingSession).catch((err) =>
             console.error("[AwaDoc] Failed to send doctor_assigned callback:", err)
         );
     }
+
+    return {
+        status: "acknowledged",
+        acknowledged_at: new Date().toISOString(),
+    };
+}
+
+/**
+ * therapy.session.assigned
+ *
+ * Platform confirms therapist assignment for a follow-up session.
+ * We acknowledge and update our internal records.
+ */
+async function handleSessionAssigned(body: any) {
+    const requestId: string = body.request_id ?? "";
+    const therapyId: string = body.therapy_id ?? "";
+
+    if (!therapyId) {
+        return {
+            status: "error",
+            error: "Missing therapy_id in payload",
+        };
+    }
+
+    console.log("[AwaDoc] Session assigned for follow-up:", { requestId, therapyId });
 
     return {
         status: "acknowledged",
@@ -421,10 +450,10 @@ async function getPhysioDetails(physiotherapistId: string) {
 }
 
 /**
- * Send the consultation.doctor_assigned and consultation.scheduled callbacks to AwaDoc.
+ * Send the therapy.doctor_assigned and therapy.scheduled callbacks to AwaDoc.
  * Also generates a guest access token for the AwaDoc patient to join the video call.
  */
-async function sendDoctorAssignedCallback(consultationId: string, session: any) {
+async function sendDoctorAssignedCallback(therapyId: string, session: any) {
     // Fetch real physio details
     const doctor = await getPhysioDetails(session.physiotherapistId);
 
@@ -436,7 +465,7 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
     // Store the guest token on the session
     try {
         await convex.mutation(api.awadoc.setGuestToken, {
-            consultationId,
+            therapyId,
             guestToken,
             guestTokenExpiresAt,
         });
@@ -448,15 +477,15 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
     // Guest meeting link — only include if token was persisted successfully
     const guestMeetingLink = (guestTokenStored && (session.mode ?? "virtual") === "virtual")
-        ? `${appUrl}/video-call/${consultationId}/guest?guest=${guestToken}`
+        ? `${appUrl}/video-call/${therapyId}/guest?guest=${guestToken}`
         : undefined;
 
-    await sendCallbackEvent("consultation.doctor_assigned", {
+    await sendCallbackEvent("therapy.doctor_assigned", {
         context: {
-            consultation: {
-                id: consultationId,
+            therapy: {
+                id: therapyId,
                 schedule: {
-                    preferred_mode: session.mode ?? "virtual",
+                    preferred_mode: session.mode ?? "home_visit",
                     preferred_time: session.scheduledTime
                         ? new Date(session.scheduledTime).toISOString()
                         : undefined,
@@ -470,13 +499,13 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
         },
     });
 
-    // Also send consultation.scheduled with the guest meeting link
-    await sendCallbackEvent("consultation.scheduled", {
+    // Also send therapy.scheduled with the guest meeting link
+    await sendCallbackEvent("therapy.scheduled", {
         context: {
-            consultation: {
-                id: consultationId,
+            therapy: {
+                id: therapyId,
                 schedule: {
-                    preferred_mode: session.mode ?? "virtual",
+                    preferred_mode: session.mode ?? "home_visit",
                     preferred_time: session.scheduledTime
                         ? new Date(session.scheduledTime).toISOString()
                         : undefined,
@@ -487,7 +516,7 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
                 },
             },
             meeting: {
-                mode: session.mode ?? "virtual",
+                mode: session.mode ?? "home_visit",
                 start_time: session.scheduledTime
                     ? new Date(session.scheduledTime).toISOString()
                     : undefined,
@@ -502,18 +531,18 @@ async function sendDoctorAssignedCallback(consultationId: string, session: any) 
 
     // Log both outbound events
     await logEvent(
-        `evt-rh-assigned-${consultationId}`,
-        "consultation.doctor_assigned",
+        `evt-rh-assigned-${therapyId}`,
+        "therapy.doctor_assigned",
         "outbound",
-        { consultationId },
+        { therapyId },
         null,
         "success"
     );
     await logEvent(
-        `evt-rh-scheduled-${consultationId}`,
-        "consultation.scheduled",
+        `evt-rh-scheduled-${therapyId}`,
+        "therapy.scheduled",
         "outbound",
-        { consultationId },
+        { therapyId },
         null,
         "success"
     );

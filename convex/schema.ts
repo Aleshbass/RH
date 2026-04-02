@@ -2442,12 +2442,12 @@ export default defineSchema({
     .index("by_level", ["currentLevel"]),
 
   // ─── AwaDoc Integration ───────────────────────────────────────
-  // Tracks each AwaDoc-initiated consultation from discovery to completion
+  // Tracks each AwaDoc-initiated therapy session from discovery to completion
   awadocSessions: defineTable({
     // AwaDoc identifiers
     queryId: v.optional(v.string()),        // From availability.query
-    requestId: v.optional(v.string()),      // From consultation.request
-    consultationId: v.string(),             // Our generated ID (e.g., "cns-xxx")
+    requestId: v.optional(v.string()),      // From therapy.request
+    therapyId: v.string(),                  // Our generated ID (e.g., "thp-xxx")
     eventId: v.optional(v.string()),        // AwaDoc event UUID
 
     // AwaDoc user
@@ -2496,7 +2496,7 @@ export default defineSchema({
     notes: v.optional(v.string()),                  // Session notes from physio
     actualDurationMinutes: v.optional(v.number()),   // Actual session duration
   })
-    .index("by_consultation_id", ["consultationId"])
+    .index("by_therapy_id", ["therapyId"])
     .index("by_request_id", ["requestId"])
     .index("by_query_id", ["queryId"])
     .index("by_status", ["status"])

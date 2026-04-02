@@ -397,10 +397,21 @@ export const getRegistryStats = query({
 
 // ── Shared Helper: Fetch and map official Rehabify Physiotherapists ───
 async function getOfficialPhysiosAsRegistryEntries(ctx: any) {
-  const officialProfiles = await ctx.db.query("physiotherapistProfiles").collect();
-  const verifiedOfficialProfiles = officialProfiles.filter((p: any) => 
-    p.verificationBadge?.status === "verified" || p.verificationBadge?.status === "pro_verified"
-  );
+  const approvedStatuses = await ctx.db
+    .query("accountApprovalStatus")
+    .withIndex("by_status", (q: any) => q.eq("status", "approved"))
+    .collect();
+
+  const officialProfiles = [];
+  for (const status of approvedStatuses) {
+    const profile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_user_id", (q: any) => q.eq("userId", status.userId))
+      .first();
+    if (profile) officialProfiles.push(profile);
+  }
+
+  const verifiedOfficialProfiles = officialProfiles;
   
   const results = [];
   for (const official of verifiedOfficialProfiles) {

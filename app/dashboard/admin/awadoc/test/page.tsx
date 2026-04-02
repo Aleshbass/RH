@@ -36,19 +36,19 @@ const EVENT_TYPES = [
     {
         id: 'availability',
         label: 'Availability Query',
-        event: 'consultation.availability.query',
-        description: 'Simulates AwaDoc searching for available physiotherapists in your system',
+        event: 'therapy.availability.query',
+        description: 'Simulates AwaDoc searching for available therapy specialists in your system',
     },
     {
         id: 'request',
-        label: 'Consultation Request',
-        event: 'consultation.request',
-        description: 'Simulates a patient selecting a physio and requesting a booking',
+        label: 'Therapy Request',
+        event: 'therapy.request',
+        description: 'Simulates a patient selecting a physio and requesting a therapy booking',
     },
     {
         id: 'confirmed',
         label: 'Payment Confirmed',
-        event: 'consultation.confirmed',
+        event: 'therapy.confirmed',
         description: 'Simulates AwaDoc confirming that payment was successful',
     },
 ] as const
@@ -68,7 +68,7 @@ function formatRate(kobo: number): string {
 export default function AwadocTestPage() {
     const physios = useQuery(api.awadoc.getAvailablePhysios, {})
     const [results, setResults] = useState<Record<string, TestResult>>({})
-    const [consultationId, setConsultationId] = useState<string | null>(null)
+    const [therapyId, setTherapyId] = useState<string | null>(null)
     const [runAllInProgress, setRunAllInProgress] = useState(false)
 
     const updateResult = (id: string, update: Partial<TestResult>) => {
@@ -78,12 +78,12 @@ export default function AwadocTestPage() {
         }))
     }
 
-    const runTest = async (eventId: string, eventType: string, overrideConsultationId?: string) => {
+    const runTest = async (eventId: string, eventType: string, overrideTherapyId?: string) => {
         updateResult(eventId, { eventType, status: 'running' })
         const start = performance.now()
 
         // Use override if provided (avoids stale closure in runAllTests)
-        const activeConsultationId = overrideConsultationId ?? consultationId
+        const activeTherapyId = overrideTherapyId ?? therapyId
 
         try {
             const res = await fetch('/api/awadoc/test', {
@@ -91,7 +91,7 @@ export default function AwadocTestPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     eventType,
-                    consultationId: activeConsultationId ?? undefined,
+                    therapyId: activeTherapyId ?? undefined,
                 }),
             })
 
@@ -99,17 +99,17 @@ export default function AwadocTestPage() {
             const duration = Math.round(performance.now() - start)
 
             if (res.ok) {
-                // Store consultation ID from request event for follow-up tests
-                if (eventId === 'request' && data.response?.consultation?.id) {
-                    setConsultationId(data.response.consultation.id)
+                // Store therapy ID from request event for follow-up tests
+                if (eventId === 'request' && data.response?.therapy?.id) {
+                    setTherapyId(data.response.therapy.id)
                 }
                 updateResult(eventId, {
                     status: 'success',
                     response: data.response,
                     duration,
                 })
-                // Return consultation ID so runAllTests can chain it
-                return data.response?.consultation?.id ?? null
+                // Return therapy ID so runAllTests can chain it
+                return data.response?.therapy?.id ?? null
             } else {
                 updateResult(eventId, {
                     status: 'error',
@@ -132,14 +132,14 @@ export default function AwadocTestPage() {
 
     const runAllTests = async () => {
         setRunAllInProgress(true)
-        let chainedConsultationId: string | null = null
+        let chainedTherapyId: string | null = null
         try {
             for (const event of EVENT_TYPES) {
-                // Pass the chained consultation ID from test 2 to test 3
-                const resultId = await runTest(event.id, event.event, chainedConsultationId ?? undefined)
-                // Capture consultation ID from the "request" test for use in "confirmed"
+                // Pass the chained therapy ID from test 2 to test 3
+                const resultId = await runTest(event.id, event.event, chainedTherapyId ?? undefined)
+                // Capture therapy ID from the "request" test for use in "confirmed"
                 if (event.id === 'request' && resultId) {
-                    chainedConsultationId = resultId
+                    chainedTherapyId = resultId
                 }
                 // Small delay between tests to let Convex mutations settle
                 await new Promise((resolve) => setTimeout(resolve, 800))
@@ -280,10 +280,10 @@ export default function AwadocTestPage() {
                     Run them in order: Availability → Request → Confirmed.
                 </p>
 
-                {consultationId && (
+                {therapyId && (
                     <div className="rounded-lg bg-muted/50 border px-4 py-2 text-sm">
-                        <span className="text-muted-foreground">Active Consultation ID: </span>
-                        <code className="font-mono text-primary">{consultationId}</code>
+                        <span className="text-muted-foreground">Active Therapy ID: </span>
+                        <code className="font-mono text-primary">{therapyId}</code>
                         <span className="text-muted-foreground"> (used for follow-up tests)</span>
                     </div>
                 )}

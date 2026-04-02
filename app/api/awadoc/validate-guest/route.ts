@@ -1,7 +1,7 @@
 /**
  * AwaDoc Guest Token Validation API
  *
- * Validates a guest token for an AwaDoc consultation and returns
+ * Validates a guest token for an AwaDoc therapy session and returns
  * a Stream Video token so the guest can join the call.
  */
 
@@ -16,7 +16,7 @@ if (!convexUrl) {
 const convex = new ConvexHttpClient(convexUrl);
 
 export async function POST(request: NextRequest) {
-    let body: { consultationId: string; guestToken: string };
+    let body: { therapyId: string; guestToken: string };
 
     try {
         body = await request.json();
@@ -24,11 +24,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { consultationId, guestToken } = body;
+    const { therapyId, guestToken } = body;
 
-    if (!consultationId || !guestToken) {
+    if (!therapyId || !guestToken) {
         return NextResponse.json(
-            { error: "Missing consultationId or guestToken" },
+            { error: "Missing therapyId or guestToken" },
             { status: 400 }
         );
     }
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     try {
         // Validate the guest token against Convex
         const result = await convex.query(api.awadoc.validateGuestToken, {
-            consultationId,
+            therapyId,
             guestToken,
         });
 
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Generate a guest Stream token
-        const guestUserId = `awadoc-guest-${consultationId}`;
+        const guestUserId = `awadoc-guest-${therapyId}`;
         const guestUserName = result.session?.patientName ?? "AwaDoc Patient";
 
         const streamResult = await convex.action(api.stream.getGuestStreamToken, {

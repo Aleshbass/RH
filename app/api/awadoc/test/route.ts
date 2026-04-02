@@ -22,66 +22,80 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    let input: { eventType: string; consultationId?: string };
+    let input: { eventType: string; therapyId?: string };
     try {
         input = await request.json();
     } catch {
         return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { eventType, consultationId } = input;
+    const { eventType, therapyId } = input;
 
     // Build test payload for the given event type
     const eventId = `test-${crypto.randomUUID().slice(0, 8)}`;
-    const testConsultationId = consultationId ?? `cns-test-${crypto.randomUUID().slice(0, 6)}`;
+    const testTherapyId = therapyId ?? `thp-test-${crypto.randomUUID().slice(0, 6)}`;
     let payload: Record<string, unknown>;
 
     switch (eventType) {
-        case "consultation.availability.query":
+        case "therapy.availability.query":
             payload = {
                 event_id: eventId,
                 event_type: eventType,
                 timestamp: new Date().toISOString(),
-                meta: { query_id: `qry-test-${Date.now()}` },
+                user: { id: "awadoc-test-user", name: "Test Patient (AwaDoc)" },
+                meta: { query_id: `qry-test-${Date.now()}`, trace_id: `trace-test-${Date.now()}` },
                 context: {
-                    service_area: "ALL",
+                    service_area: "Lagos",
                     schedule: {
-                        preferred_mode: "virtual",
-                    },
-                },
-            };
-            break;
-
-        case "consultation.request":
-            payload = {
-                event_id: eventId,
-                event_type: eventType,
-                timestamp: new Date().toISOString(),
-                meta: { request_id: `req-test-${Date.now()}` },
-                user: {
-                    id: "awadoc-test-user",
-                    name: "Test Patient (AwaDoc)",
-                },
-                context: {
-                    specialist_type: "physiotherapist",
-                    schedule: {
-                        preferred_mode: "virtual",
-                        preferred_time: new Date(Date.now() + 86400000).toISOString(), // Tomorrow
+                        preferred_mode: "home_visit",
                         preferred_lang: "en",
                     },
                 },
             };
             break;
 
-        case "consultation.confirmed":
+        case "therapy.request":
             payload = {
                 event_id: eventId,
                 event_type: eventType,
                 timestamp: new Date().toISOString(),
-                meta: { request_id: `req-test-${Date.now()}` },
+                meta: { request_id: `req-test-${Date.now()}`, trace_id: `trace-test-${Date.now()}` },
+                user: {
+                    id: "awadoc-test-user",
+                    name: "Test Patient (AwaDoc)",
+                    phone: "+2348000000000",
+                },
                 context: {
-                    consultation: {
-                        id: testConsultationId,
+                    specialist_type: "physiotherapist",
+                    service_type: "physiotherapy",
+                    session_type: "single",
+                    schedule: {
+                        preferred_mode: "home_visit",
+                        preferred_time: new Date(Date.now() + 86400000).toISOString(), // Tomorrow
+                        preferred_lang: "en",
+                    },
+                    notes: "Test booking from AwaDoc integration",
+                    location: {
+                        address: "Lekki Phase 1, Lagos",
+                    },
+                },
+            };
+            break;
+
+        case "therapy.confirmed":
+            payload = {
+                event_id: eventId,
+                event_type: eventType,
+                timestamp: new Date().toISOString(),
+                user: { id: "awadoc-test-user", name: "Test Patient (AwaDoc)" },
+                meta: { request_id: `req-test-${Date.now()}`, trace_id: `trace-test-${Date.now()}` },
+                context: {
+                    therapy: {
+                        id: testTherapyId,
+                        schedule: {
+                            preferred_mode: "home_visit",
+                            preferred_time: new Date(Date.now() + 86400000).toISOString(),
+                        },
                         pricing: {
                             amount: 15000, // ₦15,000
                             currency: "NGN",
@@ -93,7 +107,7 @@ export async function POST(request: NextRequest) {
 
         default:
             return NextResponse.json(
-                { error: `Unknown event type: ${eventType}` },
+                { error: `Unknown event type: ${eventType}. Supported: therapy.availability.query, therapy.request, therapy.confirmed` },
                 { status: 400 }
             );
     }
