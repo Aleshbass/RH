@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Minus } from 'lucide-react';
+import { Plus, Minus, Send } from 'lucide-react';
 
 const faqData = [
   {
@@ -68,9 +68,22 @@ const FaqItem = ({ item, isOpen, onClick }: FaqItemProps) => {
 
 const FAQ = () => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [question, setQuestion] = useState('');
+  const [submitted, setSubmitted] = useState(false);
 
   const handleClick = (index: number) => {
     setActiveIndex(activeIndex === index ? null : index);
+  };
+
+  const handleQuestionSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!question.trim()) return;
+    const subject = encodeURIComponent('FAQ Question from Rehabify Website');
+    const body = encodeURIComponent(question.trim());
+    window.open(`mailto:hello@rehabify.ng?subject=${subject}&body=${body}`, '_blank');
+    setSubmitted(true);
+    setQuestion('');
+    setTimeout(() => setSubmitted(false), 4000);
   };
 
   return (
@@ -94,8 +107,46 @@ const FAQ = () => {
             />
           ))}
         </div>
-        <div className="text-center mt-12">
-          <p className="text-gray-600">Visit our full <a href="/faqs" className="text-[#005b57] hover:underline font-medium">FAQ page</a> if you have more questions.</p>
+
+        {/* Inline question submission */}
+        <div className="mt-14 bg-white rounded-2xl border border-[#005b57]/10 p-6 sm:p-8 shadow-sm">
+          <div className="text-center mb-6">
+            <h3 className="text-lg font-bold text-[#002e2c]">Still have a question?</h3>
+            <p className="text-sm text-gray-500 mt-1">Type it below and we&apos;ll get back to you.</p>
+          </div>
+          {submitted ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="text-center py-4"
+            >
+              <p className="text-[#005b57] font-semibold text-sm">✓ Opening your email — we&apos;ll reply soon!</p>
+            </motion.div>
+          ) : (
+            <form onSubmit={handleQuestionSubmit} className="flex flex-col sm:flex-row gap-3">
+              <input
+                id="faq-question-input"
+                type="text"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="e.g. Do you serve Enugu State?"
+                className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] text-sm text-[#002e2c] bg-gray-50"
+                required
+              />
+              <button
+                id="faq-question-submit"
+                type="submit"
+                className="inline-flex items-center justify-center gap-2 bg-[#005b57] hover:bg-[#00443e] text-white font-semibold px-6 py-3 rounded-xl text-sm transition-colors cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                Ask Us
+              </button>
+            </form>
+          )}
+        </div>
+
+        <div className="text-center mt-8">
+          <p className="text-gray-500 text-sm">Or browse our full <a href="/faqs" className="text-[#005b57] hover:underline font-medium">FAQ page</a>.</p>
         </div>
       </div>
     </section>
@@ -103,3 +154,4 @@ const FAQ = () => {
 };
 
 export default FAQ;
+

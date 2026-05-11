@@ -229,6 +229,7 @@ const NavItemComponent = ({ item, isActive, onClick, onMouseEnter, onMouseLeave 
 
 // Navigation link data with subtitles
 const navLinks: NavItem[] = [
+  { name: "For Patients", href: "/start-treatment", type: "link" },
   {
     name: "Professionals",
     type: "dropdown",
@@ -242,11 +243,6 @@ const navLinks: NavItem[] = [
         name: "For Physiotherapists",
         href: "/platform/physiotherapists",
         subtitle: "Tools to streamline patient care"
-      },
-      {
-        name: "For Patients",
-        href: "/start-treatment",
-        subtitle: "Personalized rehabilitation programs"
       },
       {
         name: "For Family Members",

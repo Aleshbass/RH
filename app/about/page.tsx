@@ -397,7 +397,7 @@ export default function AboutPage() {
                             <div className="space-y-4">
                                 <h3 className="font-bold text-xl text-gray-900">For Patients</h3>
                                 {[
-                                    ["Smart Matching", "60-second questionnaire → verified physiotherapist matches → transparent pricing → book in 24 hours"],
+                                    ["Smart Matching", "60-second conversation → verified physiotherapist matches → transparent pricing → book in 24 hours"],
                                     ["Fair, Dynamic Pricing", "Pricing based on location, condition complexity, and provider experience."],
                                     ["Progress Tracking", "Digital session notes, exercise videos, objective measurements, recovery timelines — all in one app."],
                                     ["Package Savings", "Book sessions together, save up to 15%, and guarantee your schedule."],

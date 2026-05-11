@@ -20,11 +20,7 @@ export default function FamilyPage() {
       description: "Access a library of resources designed to help family members provide the best possible support at home.",
       icon: <HeartHandshake className="h-6 w-6" />,
     },
-    {
-      title: "Shared Health Records",
-      description: "With patient consent, access important health documents and treatment notes to better understand their needs.",
-      icon: <FileHeart className="h-6 w-6" />,
-    },
+
     {
       title: "Emergency Contact",
       description: "Quick access to the care team in case of urgent questions or concerns regarding your loved one's condition.",

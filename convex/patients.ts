@@ -325,6 +325,56 @@ export const getPatientDetails = query({
     };
   },
 });
+
+/**
+ * Get the active package booking for a patient (physio-scoped)
+ */
+export const getActivePackageBooking = query({
+  args: { patientId: v.id("users") },
+  handler: async (ctx, args) => {
+    const physiotherapist = await getAuthenticatedPhysiotherapist(ctx);
+
+    // Verify access
+    const relationship = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient_and_physiotherapist", (q) =>
+        q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .unique();
+
+    if (!relationship) return null;
+
+    // Find the latest confirmed package booking
+    const bookings = await ctx.db
+      .query("marketplaceBookings")
+      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("physiotherapistId"), physiotherapist._id),
+          q.eq(q.field("sessionType"), "package"),
+          q.eq(q.field("bookingStatus"), "confirmed")
+        )
+      )
+      .order("desc")
+      .first();
+
+    if (!bookings) return null;
+
+    return {
+      bookingId: bookings._id,
+      packageSessions: bookings.packageSessions ?? 1,
+      sessionsRemaining: bookings.sessionsRemaining ?? bookings.packageSessions ?? 1,
+      conditionLabel: bookings.conditionLabel ?? "General physiotherapy",
+      conditionLevel: bookings.conditionLevel ?? "standard",
+      packageDiscountPercent: bookings.packageDiscountPercent ?? 0,
+      totalAmount: bookings.totalAmount, // kobo
+      treatmentPlanId: (bookings as any).treatmentPlanId ?? null,
+      paidAt: bookings.paidAt,
+    };
+  },
+});
+
 export const getMyPatientInvitations = query({
   args: {
     status: v.optional(v.union(

@@ -26,7 +26,7 @@ export function ProblemSection() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12">
                         {[
-                            { emoji: "💸", text: "Spend ₦50,000+ on private clinic visits" },
+                            { emoji: "💸", text: "Spend expensively on private clinic visits" },
                             { emoji: "🏥", text: "Wait 2-6 weeks for hospital appointments" },
                             { emoji: "😣", text: "Just live with the pain" },
                         ].map((item, i) => (

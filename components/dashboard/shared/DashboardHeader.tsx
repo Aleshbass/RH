@@ -94,8 +94,10 @@ export function DashboardHeader() {
     },
   ]
 
-  // Note: userData is not available in this component, so showing all actions for now
-  const filteredQuickActions = quickActions
+  // Filter actions by the current user's role — patients must not see provider-only actions
+  const filteredQuickActions = user
+    ? quickActions.filter((a) => a.roles.includes(user.role ?? ''))
+    : []
 
   // Toast on new notification
   useEffect(() => {

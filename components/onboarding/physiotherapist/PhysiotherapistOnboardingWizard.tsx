@@ -123,6 +123,7 @@ export default function PhysiotherapistOnboardingWizard() {
     const [specializations, setSpecializations] = useState<string[]>(physiotherapistData.specializations || []);
     const [manualSpecialization, setManualSpecialization] = useState('');
     const [isAvailabilityLoading, setIsAvailabilityLoading] = useState(false);
+    const [isFinalSubmitting, setIsFinalSubmitting] = useState(false);
 
 
     // Document State
@@ -403,6 +404,7 @@ export default function PhysiotherapistOnboardingWizard() {
 
         try {
             // 1. Create/Update Profile FIRST to get the ID
+            setIsFinalSubmitting(true);
             const result = await completeUserProfileMutation({
                 role: "physiotherapist",
                 profileData: {
@@ -490,6 +492,8 @@ export default function PhysiotherapistOnboardingWizard() {
             console.error("Submission error:", error);
             toast.error(error.message || "Failed to complete onboarding");
             setUploadError(error.message);
+        } finally {
+            setIsFinalSubmitting(false);
         }
     };
 
@@ -930,7 +934,13 @@ export default function PhysiotherapistOnboardingWizard() {
                                     </h3>
                                     <div className="space-y-3 pl-8">
                                         <div className="space-y-1.5">
-                                            <Label className="text-sm">MRTB License <span className="text-gray-400 text-xs">(If available)</span></Label>
+                                            <Label className="text-sm">
+                                                MRTB License{' '}
+                                                <span className="text-gray-400 text-xs">(If available)</span>
+                                            </Label>
+                                            <p className="text-[11px] text-gray-400 leading-snug">
+                                                The national license issued by the Medical Rehabilitation Therapists Board (MRTB) of Nigeria.
+                                            </p>
                                             <FileUpload
                                                 id="mrtb-upload"
                                                 label="Upload MRTB License"
@@ -940,7 +950,10 @@ export default function PhysiotherapistOnboardingWizard() {
                                             />
                                         </div>
                                         <div className="space-y-1.5">
-                                            <Label className="text-sm">NPA Membership <span className="text-gray-400 text-xs">(If available)</span></Label>
+                                            <Label className="text-sm">
+                                                NPA (Nigeria Physiotherapy Association) Membership{' '}
+                                                <span className="text-gray-400 text-xs">(If available)</span>
+                                            </Label>
                                             <FileUpload
                                                 id="npa-upload"
                                                 label="Upload NPA Membership"
@@ -950,7 +963,13 @@ export default function PhysiotherapistOnboardingWizard() {
                                             />
                                         </div>
                                         <div className="space-y-1.5">
-                                            <Label className="text-sm">Practicing License from Facility <span className="text-gray-400 text-xs">(If employed)</span></Label>
+                                            <Label className="text-sm">
+                                                Practicing License from Facility{' '}
+                                                <span className="text-gray-400 text-xs">(If employed by a clinic or hospital)</span>
+                                            </Label>
+                                            <p className="text-[11px] text-gray-400 leading-snug">
+                                                Only required if you are employed. This is different from your MRTB national license.
+                                            </p>
                                             <FileUpload
                                                 id="practicing-license-upload"
                                                 label="Upload Practicing License"
@@ -1082,8 +1101,13 @@ export default function PhysiotherapistOnboardingWizard() {
                                             )}
                                         />
                                         <div className="text-sm">
-                                            <Label className="font-medium text-gray-900">I accept the terms and conditions</Label>
-                                            <p className="text-gray-500 text-xs mt-1">By continuing, you agree to our Terms of Service and Privacy Policy.</p>
+                                            <Label className="font-medium text-gray-900">
+                                                I accept the{' '}
+                                                <a href="/terms-and-conditions" target="_blank" rel="noopener noreferrer" className="text-[#005b57] underline hover:text-[#00443e]">Terms &amp; Conditions</a>
+                                                {' '}and{' '}
+                                                <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-[#005b57] underline hover:text-[#00443e]">Privacy Policy</a>
+                                            </Label>
+                                            <p className="text-gray-500 text-xs mt-1">Please read and agree before completing your registration.</p>
                                         </div>
                                     </div>
                                     {errors.termsAccepted && <p className="text-xs text-red-500">{errors.termsAccepted.message}</p>}
@@ -1110,10 +1134,10 @@ export default function PhysiotherapistOnboardingWizard() {
                 <Button
                     type="button"
                     onClick={nextStep}
-                    disabled={isSubmitting || isUploading}
+                    disabled={isFinalSubmitting || isUploading}
                     className="bg-[#005b57] hover:bg-[#00443e] text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-900/10"
                 >
-                    {isSubmitting || isUploading ? (
+                    {isFinalSubmitting || isUploading ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                     ) : currentStep === steps.length - 1 ? (
                         isSignedIn ? 'Complete' : 'Create Account & Complete'

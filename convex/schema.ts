@@ -2262,6 +2262,14 @@ export default defineSchema({
     sessionDuration: v.number(), // minutes
     isOnline: v.boolean(),
 
+    // Package booking fields
+    packageSessions: v.optional(v.number()),          // 1 | 4 | 8 | 12 — total sessions purchased
+    packageDiscountPercent: v.optional(v.number()),   // physio discount applied (0–15%)
+    sessionsRemaining: v.optional(v.number()),         // decremented each time a session is completed
+    treatmentPlanId: v.optional(v.id("treatmentPlans")), // auto-created on payment confirmation
+    conditionLabel: v.optional(v.string()),            // e.g. "Back or neck pain"
+    conditionLevel: v.optional(v.string()),            // "standard" | "moderate" | "complex"
+
     // Pricing
     serviceAmount: v.number(), // Amount for service (kobo)
     platformFee: v.number(), // 20% platform fee (kobo)

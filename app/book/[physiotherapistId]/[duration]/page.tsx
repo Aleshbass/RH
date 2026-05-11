@@ -341,8 +341,13 @@ export default function BookingPage() {
                 sessionDate: selectedSlot.start,
                 sessionDuration,
                 isOnline: sessionMode === "online",
-                serviceAmount: Math.round(totalAmount * 100), // in kobo
+                serviceAmount: Math.round(totalAmount * 100), // in kobo — full package total
                 patientNotes: notes ? `${notes}\n\nPackage: ${packageName} (${selectedPackage} sessions)` : `Package: ${packageName} (${selectedPackage} sessions)`,
+                // Package metadata — persisted in Convex, used to auto-create treatment plan
+                packageSessions: selectedPackage,
+                packageDiscountPercent: discountPercent,
+                conditionLabel: treatmentPrefs?.conditionLabel,
+                conditionLevel: treatmentPrefs?.conditionLevel,
             });
 
             // For free sessions, skip payment and complete booking directly

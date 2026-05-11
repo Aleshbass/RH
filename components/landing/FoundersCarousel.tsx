@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Quote } from 'lucide-react';
 
 const testimonials = [
@@ -44,8 +44,8 @@ export function FoundersCarousel() {
     return (
         <section className="py-12 sm:py-16 bg-gray-50 overflow-hidden">
             <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-                {/* Section Header */}
-                <div className="text-center mb-10">
+                {/* Section Header — isolated with explicit bottom margin so cards never float up into it */}
+                <div className="text-center mb-10 relative z-10">
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-gray-200 shadow-sm mb-4">
                         <span className="text-xs font-medium text-[#005b57]">Testimonials</span>
                     </div>
@@ -57,24 +57,60 @@ export function FoundersCarousel() {
                     </p>
                 </div>
 
-                {/* Carousel */}
-                <div className="relative max-w-6xl mx-auto">
+                {/* ── Mobile: simple stacked card (no absolute/overlap issues) ── */}
+                <div className="block lg:hidden max-w-lg mx-auto">
+                    <AnimatePresence mode="wait">
+                        <motion.div
+                            key={`mobile-${current}`}
+                            initial={{ opacity: 0, y: 16 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -16 }}
+                            transition={{ duration: 0.35 }}
+                            className="bg-white rounded-2xl p-6 sm:p-8 shadow-[0_8px_30px_rgba(0,0,0,0.08)] border border-gray-100"
+                        >
+                            <Quote className="w-8 h-8 text-[#005b57]/20 mb-4" />
+                            <blockquote>
+                                <p className="text-base sm:text-lg text-gray-900 font-semibold leading-relaxed mb-6">
+                                    &ldquo;{testimonials[current].quote}&rdquo;
+                                </p>
+                                <div className="flex items-center gap-4">
+                                    <div className="h-12 w-12 rounded-xl bg-[#e6f0ef] flex items-center justify-center border border-[#005b57]/10 flex-shrink-0">
+                                        <span className="text-xl font-bold text-[#005b57]">
+                                            {testimonials[current].name.charAt(0)}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-gray-900 text-sm">
+                                            {testimonials[current].name}
+                                        </p>
+                                        <p className="text-xs text-[#005b57] font-medium mt-0.5">
+                                            {testimonials[current].role}
+                                        </p>
+                                    </div>
+                                </div>
+                            </blockquote>
+                        </motion.div>
+                    </AnimatePresence>
+                </div>
+
+                {/* ── Desktop: 3-card perspective carousel ── */}
+                <div className="hidden lg:block relative max-w-6xl mx-auto">
                     {/* Crosshair Markers */}
                     <div className="absolute -top-6 -left-4 w-4 h-4 border-t border-l border-gray-300 z-10" />
                     <div className="absolute -top-6 -right-4 w-4 h-4 border-t border-r border-gray-300 z-10" />
                     <div className="absolute -bottom-6 -left-4 w-4 h-4 border-b border-l border-gray-300 z-10" />
                     <div className="absolute -bottom-6 -right-4 w-4 h-4 border-b border-r border-gray-300 z-10" />
 
-                    <div className="relative h-[320px] flex items-center justify-center perspective-1000">
+                    <div className="relative h-[340px] flex items-center justify-center">
                         {/* Previous Card (Blurred & Faded) */}
                         <motion.div
                             key={`prev-${prev}`}
-                            className="absolute w-full max-w-md opacity-40 blur-[2px] scale-90 -translate-x-[55%] z-0 hidden lg:block"
+                            className="absolute w-full max-w-md opacity-40 blur-[2px] scale-90 -translate-x-[55%] z-0"
                             initial={{ x: -100, opacity: 0 }}
-                            animate={{ x: "-55%", opacity: 0.4 }}
+                            animate={{ x: '-55%', opacity: 0.4 }}
                             transition={{ duration: 0.5 }}
                         >
-                            <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm h-full">
+                            <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                                 <p className="text-base text-gray-800 font-medium mb-4 line-clamp-3">&ldquo;{testimonials[prev].quote}&rdquo;</p>
                                 <div className="flex items-center gap-3">
                                     <div className="h-8 w-8 rounded-full bg-[#e6f0ef] flex items-center justify-center text-[#005b57] font-bold text-sm">
@@ -97,7 +133,6 @@ export function FoundersCarousel() {
                             transition={{ duration: 0.5 }}
                         >
                             <div className="bg-white rounded-2xl p-8 shadow-[0_8px_30px_rgba(0,0,0,0.08)] border border-gray-100 relative">
-                                {/* Quote Icon */}
                                 <Quote className="w-8 h-8 text-[#005b57]/20 mb-4" />
 
                                 {/* Card Corner Markers */}
@@ -132,12 +167,12 @@ export function FoundersCarousel() {
                         {/* Next Card (Blurred & Faded) */}
                         <motion.div
                             key={`next-${next}`}
-                            className="absolute w-full max-w-md opacity-40 blur-[2px] scale-90 translate-x-[55%] z-0 hidden lg:block"
+                            className="absolute w-full max-w-md opacity-40 blur-[2px] scale-90 translate-x-[55%] z-0"
                             initial={{ x: 100, opacity: 0 }}
-                            animate={{ x: "55%", opacity: 0.4 }}
+                            animate={{ x: '55%', opacity: 0.4 }}
                             transition={{ duration: 0.5 }}
                         >
-                            <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm h-full">
+                            <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                                 <p className="text-base text-gray-800 font-medium mb-4 line-clamp-3">&ldquo;{testimonials[next].quote}&rdquo;</p>
                                 <div className="flex items-center gap-3">
                                     <div className="h-8 w-8 rounded-full bg-[#e6f0ef] flex items-center justify-center text-[#005b57] font-bold text-sm">
@@ -151,23 +186,24 @@ export function FoundersCarousel() {
                             </div>
                         </motion.div>
                     </div>
+                </div>
 
-                    {/* Indicators */}
-                    <div className="flex justify-center gap-2 mt-8">
-                        {testimonials.map((_, index) => (
-                            <button
-                                key={index}
-                                onClick={() => setCurrentIndex(index)}
-                                className={`h-1.5 rounded-full transition-all duration-300 ${index === currentIndex
-                                    ? 'w-8 bg-[#005b57]'
-                                    : 'w-1.5 bg-gray-300 hover:bg-gray-400'
-                                    }`}
-                                aria-label={`Go to testimonial ${index + 1}`}
-                            />
-                        ))}
-                    </div>
+                {/* Dot Indicators (shared across mobile & desktop) */}
+                <div className="flex justify-center gap-2 mt-8">
+                    {testimonials.map((_, index) => (
+                        <button
+                            key={index}
+                            onClick={() => setCurrentIndex(index)}
+                            className={`h-1.5 rounded-full transition-all duration-300 ${index === currentIndex
+                                ? 'w-8 bg-[#005b57]'
+                                : 'w-1.5 bg-gray-300 hover:bg-gray-400'
+                                }`}
+                            aria-label={`Go to testimonial ${index + 1}`}
+                        />
+                    ))}
                 </div>
             </div>
         </section>
     );
 }
+

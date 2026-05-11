@@ -9,7 +9,7 @@ const steps = [
         id: 1,
         number: '01',
         title: 'Tell us what hurts',
-        description: 'Quick 60-second questionnaire about your condition, location, and needs.',
+        description: 'Quick 60-second conversation about your condition, location, and needs.',
         icon: MessageCircleQuestion,
     },
     {

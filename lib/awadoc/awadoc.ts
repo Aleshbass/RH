@@ -237,10 +237,10 @@ export async function sendCallbackEvent(
 // ── Specialist type mapping ─────────────────────────────
 
 /**
- * The specialist_type slug we register with AwaDoc.
- * Update this once confirmed with the AwaDoc integrations team.
+ * The specialist_type slug registered with AwaDoc.
+ * Confirmed with the AwaDoc integrations team — we are listed as "therapy".
  */
-export const AWADOC_SPECIALIST_TYPE = "physiotherapist";
+export const AWADOC_SPECIALIST_TYPE = "therapy";
 
 /**
  * Map Rehabify session modes to AwaDoc availability_mode values.

@@ -49,20 +49,28 @@ export async function POST(request: NextRequest) {
     }
 
     const timestamp = timestampHeader ? parseInt(timestampHeader, 10) : 0;
+    const eventType: string = body.event_type ?? "";
 
     // ── Verify signature (use raw body string to avoid JSON re-serialization differences) ──
-    const verification = verifyInboundSignature(rawBody, timestamp, signature);
-    
-    if (!verification.valid) {
-        console.warn("[AwaDoc] Invalid signature for event:", eventId, verification.debug);
-        await logEvent(eventId, body?.event_type ?? "unknown", "inbound", body, null, "error", "Signature verification failed");
-        return NextResponse.json({ 
-            error: "Invalid signature", 
-            debug_info: verification.debug 
-        }, { status: 401 });
+    try {
+        const verification = verifyInboundSignature(rawBody, timestamp, signature);
+        
+        if (!verification.valid) {
+            console.warn("[AwaDoc] Invalid signature for event:", eventId, verification.debug);
+            await logEvent(eventId, body?.event_type ?? "unknown", "inbound", body, null, "error", "Signature verification failed");
+            return NextResponse.json({ 
+                error: "Invalid signature", 
+                debug_info: verification.debug 
+            }, { status: 401 });
+        }
+    } catch (sigErr) {
+        console.error("[AwaDoc] Signature verification threw:", sigErr);
+        return NextResponse.json(
+            { error: "Signature verification error", event_type: eventType },
+            { status: 401 }
+        );
     }
 
-    const eventType: string = body.event_type ?? "";
     console.log(`[AwaDoc] Received event: ${eventType} (${eventId})`);
 
     try {
@@ -93,12 +101,42 @@ export async function POST(request: NextRequest) {
         // Log full error details internally
         const message = err instanceof Error ? err.message : "Internal error";
         const stack = err instanceof Error ? err.stack : undefined;
-        console.error(`[AwaDoc] Error handling ${eventType}:`, err);
-        if (stack) console.error("[AwaDoc] Stack:", stack);
+        console.error(`[AwaDoc] Error handling ${eventType}:`, {
+            eventId,
+            error: message,
+            stack,
+            bodyKeys: body ? Object.keys(body) : [],
+        });
+
         await logEvent(eventId, eventType, "inbound", body, null, "error", message);
-        // Return generic message to client — never leak internals
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+
+        // Return the event_type so AwaDoc can report which handler failed
+        // The error_code helps us diagnose without leaking sensitive internals
+        const errorCode = categoriseError(message);
+        return NextResponse.json(
+            {
+                error: "Internal server error",
+                event_type: eventType,
+                error_code: errorCode,
+                event_id: eventId,
+            },
+            { status: 500 }
+        );
     }
+}
+
+/**
+ * Categorise an internal error into a safe, reportable error code.
+ * Never exposes stack traces or sensitive details externally.
+ */
+function categoriseError(message: string): string {
+    const msg = message.toLowerCase();
+    if (msg.includes("not found")) return "RESOURCE_NOT_FOUND";
+    if (msg.includes("convex") || msg.includes("network") || msg.includes("fetch"))
+        return "BACKEND_UNAVAILABLE";
+    if (msg.includes("timeout") || msg.includes("abort")) return "TIMEOUT";
+    if (msg.includes("invalid") || msg.includes("parse")) return "INVALID_PAYLOAD";
+    return "PROCESSING_ERROR";
 }
 
 // ── Event handlers ──────────────────────────────────────
@@ -125,10 +163,21 @@ async function handleAvailabilityQuery(body: any) {
     console.log("[AwaDoc] Availability query params:", { queryId, serviceArea, rawServiceArea, preferredMode, rawPreferredMode });
 
     // Fetch available physios from Convex
-    const physios = await convex.query(api.awadoc.getAvailablePhysios, {
-        serviceArea,
-        preferredMode: preferredMode ?? undefined,
-    });
+    let physios: any[] = [];
+    try {
+        physios = await convex.query(api.awadoc.getAvailablePhysios, {
+            serviceArea,
+            preferredMode: preferredMode ?? undefined,
+        });
+    } catch (queryErr) {
+        console.error("[AwaDoc] Failed to query physios for availability:", queryErr);
+        return {
+            status: "error",
+            query_id: queryId,
+            error: "Unable to query available therapists at this time",
+            error_code: "BACKEND_UNAVAILABLE",
+        };
+    }
 
     console.log(`[AwaDoc] Found ${physios.length} available physios`);
 
@@ -144,7 +193,7 @@ async function handleAvailabilityQuery(body: any) {
 
         return {
             type: AWADOC_SPECIALIST_TYPE,
-            name: `${p.firstName} ${p.lastName}`.trim() || "Physiotherapist",
+            name: `${p.firstName} ${p.lastName}`.trim() || "Therapist",
             availability_mode: availabilityMode,
             scheduling_mode: "patient_choice" as const,
             pricing: {
@@ -189,31 +238,72 @@ async function handleTherapyRequest(body: any) {
     const endTime = scheduledTime + 3600000; // 60 minute sessions
 
     // Get a suitable physio using weighted matching
-    const physios = await convex.query(api.awadoc.getAvailablePhysios, {
-        serviceArea: "ALL",
-        preferredMode: preferredMode === "home_visit" ? "physical" : "virtual",
-    });
+    let physios: any[] = [];
+    try {
+        physios = await convex.query(api.awadoc.getAvailablePhysios, {
+            serviceArea: "ALL",
+            preferredMode: preferredMode === "virtual" ? "virtual" : "physical",
+        });
+    } catch (queryErr) {
+        console.error("[AwaDoc] Failed to query available physios:", queryErr);
+        return {
+            status: "error",
+            request_id: requestId,
+            error: "Unable to query available therapists at this time",
+            error_code: "BACKEND_UNAVAILABLE",
+        };
+    }
 
     const selectedPhysio = selectBestPhysio(physios);
-    const sessionRate = selectedPhysio?.hourlyRate ?? 1500000; // Default ₦15,000 in kobo
+
+    // If no therapists are available on the marketplace, inform AwaDoc gracefully
+    if (!selectedPhysio) {
+        console.warn("[AwaDoc] No available therapists for request:", {
+            requestId,
+            preferredMode,
+            physioCount: physios.length,
+        });
+        return {
+            status: "no_availability",
+            request_id: requestId,
+            message: "No therapists are currently available for this request",
+            queried_at: new Date().toISOString(),
+        };
+    }
+
+    const sessionRate = selectedPhysio.hourlyRate ?? 1500000; // Default ₦15,000 in kobo
 
     // Create session record in Convex
-    await convex.mutation(api.awadoc.createSession, {
-        therapyId,
-        requestId,
-        eventId: body.event_id,
-        awadocUserId: userId,
-        awadocUserName: userName,
-        status: "requested",
-        mode: preferredMode === "home_visit" ? "physical" : "virtual",
-        specialistType,
-        scheduledTime,
-        endTime,
-        preferredLang,
-        grossAmount: sessionRate,
-        currency: "NGN",
-        physiotherapistId: selectedPhysio?.userId,
-    });
+    try {
+        await convex.mutation(api.awadoc.createSession, {
+            therapyId,
+            requestId,
+            eventId: body.event_id,
+            awadocUserId: userId,
+            awadocUserName: userName,
+            status: "requested",
+            mode: preferredMode === "home_visit" ? "physical" : "virtual",
+            specialistType,
+            scheduledTime,
+            endTime,
+            preferredLang,
+            grossAmount: sessionRate,
+            currency: "NGN",
+            physiotherapistId: selectedPhysio.userId,
+        });
+    } catch (mutErr) {
+        console.error("[AwaDoc] Failed to create session:", {
+            therapyId,
+            requestId,
+            error: mutErr instanceof Error ? mutErr.message : String(mutErr),
+        });
+        return {
+            status: "error",
+            request_id: requestId,
+            error: "Failed to create therapy session",
+            error_code: "SESSION_CREATE_FAILED",
+        };
+    }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
 

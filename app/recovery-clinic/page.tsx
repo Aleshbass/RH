@@ -89,7 +89,7 @@ const steps = [
     {
         num: "1",
         title: "Tell Us What You Need",
-        desc: "Answer a quick questionnaire about your location, condition, and preferences. Takes under 60 seconds.",
+        desc: "Tell us about your location, condition, and preferences in under 60 seconds.",
     },
     {
         num: "2",
@@ -188,7 +188,7 @@ const testimonials = [
         rating: 5,
     },
     {
-        text: "As a runner, I needed someone who understood sports injuries. The matching was perfect and the package pricing saved me over ₦15,000.",
+        text: "As a runner, I needed someone who understood sports injuries. The matching was perfect and the package pricing made a real difference.",
         name: "Kemi O.",
         condition: "Sports Injury",
         rating: 5,

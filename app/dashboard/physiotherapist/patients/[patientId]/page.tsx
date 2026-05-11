@@ -5,7 +5,7 @@ import { api } from '@/convex/_generated/api';
 import { useAuth } from '@clerk/nextjs';
 import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, ArrowLeft, Calendar, FileText, Phone, Mail, User, Heart, Pill, AlertTriangle, Plus, Download, Edit, CreditCard, Video } from 'lucide-react';
+import { Loader2, ArrowLeft, Calendar, FileText, Phone, Mail, User, Heart, Pill, AlertTriangle, Plus, Download, Edit, CreditCard, Video, Package, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -241,6 +241,12 @@ export default function PatientDetailsPage() {
     patientId ? { patientUserId: patientId as Id<'users'> } : 'skip'
   ) as PatientDocument[] | undefined;
 
+  // Active package booking for this patient
+  const activePackage = useQuery(
+    api.patients.getActivePackageBooking,
+    patientId ? { patientId: patientId as Id<'users'> } : 'skip'
+  );
+
   // Redirect if not authenticated
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -399,6 +405,57 @@ export default function PatientDetailsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Active Package Card ── */}
+      {activePackage && (
+        <Card className="border-l-4 border-l-teal-500 bg-teal-50/40">
+          <CardContent className="pt-5 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              {/* Icon + title */}
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center">
+                  <Package className="h-5 w-5 text-teal-700" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-teal-700 uppercase tracking-wide">Active Package</p>
+                  <p className="text-sm font-bold text-gray-900 truncate">
+                    {activePackage.conditionLabel} — {activePackage.packageSessions}-Session Package
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {activePackage.packageDiscountPercent > 0 && `${activePackage.packageDiscountPercent}% discount · `}
+                    Paid {activePackage.paidAt ? new Date(activePackage.paidAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Progress */}
+              <div className="flex-shrink-0 w-full sm:w-52">
+                <div className="flex justify-between text-xs text-gray-600 mb-1">
+                  <span>Sessions remaining</span>
+                  <span className="font-semibold">{activePackage.sessionsRemaining} / {activePackage.packageSessions}</span>
+                </div>
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-teal-500 rounded-full transition-all"
+                    style={{ width: `${Math.round(((activePackage.packageSessions - activePackage.sessionsRemaining) / activePackage.packageSessions) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  {activePackage.packageSessions - activePackage.sessionsRemaining} of {activePackage.packageSessions} sessions used
+                </p>
+              </div>
+
+              {/* CTA */}
+              {activePackage.treatmentPlanId && (
+                <div className="flex-shrink-0">
+                  <CheckCircle2 className="h-4 w-4 text-teal-500 inline mr-1" />
+                  <span className="text-xs text-teal-700 font-medium">Plan created</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Detailed Information Tabs */}
       <Tabs defaultValue="appointments" className="space-y-4" id="patient-sections-tabs">

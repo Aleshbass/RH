@@ -427,6 +427,46 @@ export const getPlatformMarketplaceAnalytics = query({
     // Unique patients
     const uniquePatients = new Set(allBookings.map((b) => b.patientId));
 
+    // Package vs single-session breakdown
+    const packageBookings = completedBookings.filter(
+      (b) => b.sessionType === "package" || (b.packageSessions && b.packageSessions > 1)
+    );
+    const singleBookings = completedBookings.filter(
+      (b) => b.sessionType !== "package" && (!b.packageSessions || b.packageSessions <= 1)
+    );
+
+    const packageRevenue = packageBookings.reduce(
+      (sum, b) => sum + (b.totalAmount || 0), 0
+    );
+    const singleRevenue = singleBookings.reduce(
+      (sum, b) => sum + (b.totalAmount || 0), 0
+    );
+
+    const avgPackageSize = packageBookings.length > 0
+      ? packageBookings.reduce((sum, b) => sum + (b.packageSessions || 1), 0) / packageBookings.length
+      : 0;
+
+    // Top 5 recent package bookings for admin table
+    const recentPackageBookings = await Promise.all(
+      packageBookings
+        .sort((a, b) => (b.paidAt || b.createdAt) - (a.paidAt || a.createdAt))
+        .slice(0, 5)
+        .map(async (b) => {
+          const patient = await ctx.db.get(b.patientId);
+          const physio = await ctx.db.get(b.physiotherapistId);
+          return {
+            bookingId: b._id,
+            patientName: patient ? `${patient.firstName} ${patient.lastName}` : "Unknown",
+            physioName: physio ? `${physio.firstName} ${physio.lastName}` : "Unknown",
+            packageSessions: b.packageSessions ?? 1,
+            sessionsRemaining: b.sessionsRemaining ?? b.packageSessions ?? 1,
+            conditionLabel: b.conditionLabel ?? "General",
+            totalAmount: (b.totalAmount || 0) / 100,
+            paidAt: b.paidAt,
+          };
+        })
+    );
+
     return {
       revenue: {
         total: totalRevenue / 100,
@@ -439,6 +479,14 @@ export const getPlatformMarketplaceAnalytics = query({
         completed: completedBookings.length,
         pending: allBookings.filter((b) => b.paymentStatus === "pending").length,
         failed: allBookings.filter((b) => b.paymentStatus === "failed").length,
+      },
+      packages: {
+        totalPackageBookings: packageBookings.length,
+        totalSingleBookings: singleBookings.length,
+        packageRevenue: packageRevenue / 100,
+        singleRevenue: singleRevenue / 100,
+        avgPackageSize: Math.round(avgPackageSize * 10) / 10,
+        recentPackageBookings,
       },
       physiotherapists: {
         total: allPhysios.length,
@@ -454,3 +502,4 @@ export const getPlatformMarketplaceAnalytics = query({
     };
   },
 });
+

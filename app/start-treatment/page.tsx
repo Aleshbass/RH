@@ -18,6 +18,7 @@ import {
     BarChart3,
     Dumbbell,
     Loader2,
+    PenLine,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -216,6 +217,23 @@ export default function StartTreatmentPage() {
         label: string;
         level: ConditionLevel;
     } | null>(null);
+    const [showOtherInput, setShowOtherInput] = useState(false);
+    const [otherConditionText, setOtherConditionText] = useState("");
+    const [otherConditionLevel, setOtherConditionLevel] = useState<ConditionLevel>("standard");
+
+    // Step 3: Package selection
+    const [selectedPackage, setSelectedPackage] = useState<PackageSize>(8);
+
+    // Sync "other" condition text → selectedCondition
+    useEffect(() => {
+        if (showOtherInput) {
+            if (otherConditionText.trim().length >= 2) {
+                setSelectedCondition({ label: otherConditionText.trim(), level: otherConditionLevel });
+            } else {
+                setSelectedCondition(null);
+            }
+        }
+    }, [otherConditionText, otherConditionLevel, showOtherInput]);
 
     const [mapboxResults, setMapboxResults] = useState<CityEntry[]>([]);
     const [isSearchingMapbox, setIsSearchingMapbox] = useState(false);
@@ -326,7 +344,8 @@ export default function StartTreatmentPage() {
     }, []);
 
     const canAdvanceStep1 = selectedCity !== null;
-    const canAdvanceStep2 = selectedCondition !== null;
+    const canAdvanceStep2 = selectedCondition !== null &&
+        (!showOtherInput || otherConditionText.trim().length >= 2);
 
     // Select a city from search or popular click
     const handleCitySelect = useCallback((city: CityEntry) => {
@@ -356,6 +375,7 @@ export default function StartTreatmentPage() {
         matchingParams.set("condition", selectedCondition.label);
         matchingParams.set("conditionLevel", selectedCondition.level);
     }
+    matchingParams.set("packageSessions", String(selectedPackage));
     const findMyPhysioUrl = `/find-my-physio?${matchingParams.toString()}`;
 
     return (
@@ -566,7 +586,15 @@ export default function StartTreatmentPage() {
                                 exit="exit"
                                 transition={{ duration: 0.3, ease: "easeInOut" }}
                             >
-                                <div className="bg-white rounded-3xl shadow-xl border border-gray-100 p-5 sm:p-8">
+                                {/* Back button — above the card so it's always clickable */}
+                                <button
+                                    onClick={goBack}
+                                    className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors cursor-pointer mb-3 ml-1"
+                                >
+                                    <ArrowLeft className="w-4 h-4" /> Back
+                                </button>
+
+                                <div className="bg-white rounded-3xl shadow-xl border border-gray-100 p-5 sm:p-8 pb-28 sm:pb-32">
                                     <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">
                                         What do you need help with?
                                     </h1>
@@ -584,8 +612,11 @@ export default function StartTreatmentPage() {
                                                     {group.options.map((opt) => (
                                                         <button
                                                             key={opt.label}
-                                                            onClick={() => setSelectedCondition(opt)}
-                                                            className={`text-left px-4 py-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-center gap-3 ${selectedCondition?.label === opt.label
+                                                            onClick={() => {
+                                                                setShowOtherInput(false);
+                                                                setSelectedCondition(opt);
+                                                            }}
+                                                            className={`text-left px-4 py-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-center gap-3 ${selectedCondition?.label === opt.label && !showOtherInput
                                                                 ? "bg-[#e6f0ef] border-[#005b57] ring-2 ring-[#005b57]/20"
                                                                 : "bg-gray-50/80 border-gray-200 hover:border-[#005b57]/50 hover:bg-gray-50"
                                                                 }`}
@@ -601,27 +632,73 @@ export default function StartTreatmentPage() {
                                                 </div>
                                             </div>
                                         ))}
+
+                                        {/* Other / Not Listed */}
+                                        <div>
+                                            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2.5">Not Listed?</p>
+                                            <button
+                                                onClick={() => {
+                                                    setShowOtherInput(true);
+                                                    setSelectedCondition(null);
+                                                }}
+                                                className={`w-full text-left px-4 py-3 rounded-xl border transition-all duration-200 cursor-pointer flex items-center gap-3 ${
+                                                    showOtherInput
+                                                        ? "bg-[#e6f0ef] border-[#005b57] ring-2 ring-[#005b57]/20"
+                                                        : "bg-gray-50/80 border-gray-200 hover:border-[#005b57]/50 hover:bg-gray-50"
+                                                }`}
+                                            >
+                                                <span className="text-lg flex-shrink-0">📝</span>
+                                                <span className="font-medium text-gray-900 text-sm leading-tight">Something else / I&apos;m not sure</span>
+                                            </button>
+
+                                            <AnimatePresence>
+                                                {showOtherInput && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, height: 0 }}
+                                                        animate={{ opacity: 1, height: "auto" }}
+                                                        exit={{ opacity: 0, height: 0 }}
+                                                        transition={{ duration: 0.25 }}
+                                                        className="overflow-hidden"
+                                                    >
+                                                        <div className="pt-3 space-y-3">
+                                                            <input
+                                                                autoFocus
+                                                                type="text"
+                                                                value={otherConditionText}
+                                                                onChange={(e) => setOtherConditionText(e.target.value)}
+                                                                placeholder="e.g. Shoulder pain, balance issues, scoliosis..."
+                                                                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/15 outline-none text-sm text-gray-900 bg-gray-50 focus:bg-white transition-all"
+                                                            />
+                                                            <div>
+                                                                <p className="text-xs text-gray-500 mb-2 font-medium">How severe is it?</p>
+                                                                <div className="flex gap-2">
+                                                                    {(["standard", "moderate", "complex"] as ConditionLevel[]).map((lvl) => {
+                                                                        const labels: Record<ConditionLevel, string> = { standard: "Mild", moderate: "Moderate", complex: "Severe" };
+                                                                        return (
+                                                                            <button
+                                                                                key={lvl}
+                                                                                onClick={() => setOtherConditionLevel(lvl)}
+                                                                                className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                                                                    otherConditionLevel === lvl
+                                                                                        ? "bg-[#005b57] text-white border-[#005b57]"
+                                                                                        : "border-gray-200 text-gray-600 hover:border-[#005b57]/40"
+                                                                                }`}
+                                                                            >
+                                                                                {labels[lvl]}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
                                     </div>
 
-                                    <div className="mt-8 flex justify-between items-center">
-                                        <button
-                                            onClick={goBack}
-                                            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors cursor-pointer"
-                                        >
-                                            <ArrowLeft className="w-4 h-4" /> Back
-                                        </button>
-                                        <button
-                                            onClick={goNext}
-                                            disabled={!canAdvanceStep2}
-                                            className={`group flex items-center gap-2 py-3 px-6 sm:px-8 rounded-full font-semibold transition-all duration-300 cursor-pointer text-sm sm:text-base ${canAdvanceStep2
-                                                ? "bg-[#005b57] text-white hover:bg-[#004a46] shadow-lg shadow-[#005b57]/20 hover:scale-[1.03]"
-                                                : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                                }`}
-                                        >
-                                            See My Price
-                                            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                                        </button>
-                                    </div>
+                                    {/* No static CTA row — the floating Dynamic Island handles See My Price.
+                                         Back link sits above the card so it's never obscured. */}
                                 </div>
                             </motion.div>
                         )}
@@ -696,61 +773,74 @@ export default function StartTreatmentPage() {
                                         </div>
                                     </div>
 
-                                    {/* Package Options — Simple clean pricing */}
+                                    {/* Interactive Package Options */}
                                     <div className="mb-6">
                                         <div className="flex items-center gap-2 mb-3">
                                             <Sparkles className="w-4 h-4 text-amber-500" />
-                                            <p className="text-sm font-bold text-gray-800">
-                                                Save more with packages
-                                            </p>
+                                            <p className="text-sm font-bold text-gray-800">Save more with packages</p>
                                         </div>
                                         <div className="grid grid-cols-2 gap-2">
                                             {([1, 4, 8, 12] as const).map((sessions) => {
-                                                const rate = price.sessionRate;
-                                                const discountPct = sessions === 1 ? 0 : 7; // 7% default preview discount
-                                                const discountPerSession = Math.round(rate * (discountPct / 100));
-                                                const discountedRate = rate - discountPerSession;
-                                                const total = discountedRate * sessions;
-                                                const normalTotal = rate * sessions;
-                                                const saves = normalTotal - total;
-                                                const labels: Record<number, { name: string; desc: string; popular?: boolean }> = {
-                                                    1: { name: "Single Session", desc: "Try it out" },
-                                                    4: { name: "Starter", desc: "4 sessions" },
-                                                    8: { name: "Complete Care", desc: "8 sessions", popular: true },
-                                                    12: { name: "Full Recovery", desc: "12 sessions" },
-                                                };
-                                                const info = labels[sessions];
+                                                const discount = sessions === 1 ? 0 : getRecommendedDiscount(price.sessionRate);
+                                                const pkg = calculatePackagePrice(price.sessionRate, sessions, discount);
+                                                const info = PACKAGE_INFO[sessions];
+                                                const isSelected = selectedPackage === sessions;
                                                 return (
-                                                    <div
+                                                    <button
                                                         key={sessions}
-                                                        className={`relative rounded-xl border p-3.5 ${info.popular
-                                                            ? "border-[#005b57] bg-[#f0faf9] ring-1 ring-[#005b57]/20"
-                                                            : "border-gray-200 bg-white"
-                                                            }`}
+                                                        onClick={() => setSelectedPackage(sessions)}
+                                                        className={`relative text-left rounded-xl border p-3.5 cursor-pointer transition-all duration-200 ${
+                                                            isSelected
+                                                                ? "border-[#005b57] bg-[#f0faf9] ring-2 ring-[#005b57]/20 scale-[1.02]"
+                                                                : "border-gray-200 bg-white hover:border-[#005b57]/40 hover:bg-gray-50"
+                                                        }`}
                                                     >
                                                         {info.popular && (
                                                             <span className="absolute -top-2 right-2 px-2 py-0.5 bg-amber-400 text-[9px] font-bold text-amber-900 rounded-full uppercase">
                                                                 Popular
                                                             </span>
                                                         )}
-                                                        <p className="text-[11px] font-semibold text-gray-500 mb-0.5">{info.name}</p>
+                                                        {isSelected && (
+                                                            <span className="absolute top-2 right-2">
+                                                                <CheckCircle2 className="w-3.5 h-3.5 text-[#005b57]" />
+                                                            </span>
+                                                        )}
+                                                        <p className="text-[11px] font-semibold text-gray-500 mb-0.5">{info.label}</p>
                                                         <p className="text-lg font-bold text-gray-900">
-                                                            {formatNaira(total)}
+                                                            {formatNaira(pkg.packageTotal)}
                                                         </p>
                                                         <p className="text-[11px] text-gray-400">
-                                                            {formatNaira(discountedRate)}/session
+                                                            {formatNaira(Math.round(pkg.packageTotal / sessions))}/session
                                                         </p>
-                                                        {saves > 0 && (
+                                                        {pkg.patientSaves > 0 && (
                                                             <p className="text-[11px] text-green-600 font-semibold mt-1">
-                                                                Save {formatNaira(saves)}
+                                                                Save {formatNaira(pkg.patientSaves)}
                                                             </p>
                                                         )}
-                                                    </div>
+                                                    </button>
                                                 );
                                             })}
                                         </div>
+
+                                        {/* Selected package summary */}
+                                        {selectedPackage > 1 && (() => {
+                                            const discount = getRecommendedDiscount(price.sessionRate);
+                                            const pkg = calculatePackagePrice(price.sessionRate, selectedPackage, discount);
+                                            return (
+                                                <motion.div
+                                                    key={selectedPackage}
+                                                    initial={{ opacity: 0, y: 4 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    className="mt-3 bg-[#002e2c] text-white rounded-xl px-4 py-3 flex items-center justify-between"
+                                                >
+                                                    <span className="text-xs font-medium text-teal-200">{selectedPackage} sessions</span>
+                                                    <span className="font-bold text-sm">{formatNaira(pkg.packageTotal)}</span>
+                                                    <span className="text-xs text-green-400 font-semibold">Save {formatNaira(pkg.patientSaves)}</span>
+                                                </motion.div>
+                                            );
+                                        })()}
                                         <p className="text-[10px] text-gray-400 mt-2.5 text-center">
-                                            Discounts vary by physiotherapist (5-15%)
+                                            Includes platform fee · Discounts vary by physiotherapist (5–15%)
                                         </p>
                                     </div>
 
@@ -801,6 +891,42 @@ export default function StartTreatmentPage() {
                     </AnimatePresence>
                 </div>
             </div>
+
+        {/* ── Floating Dynamic Island CTA ── */}
+        {/* pointer-events-none on the wrapper prevents it blocking the page behind it */}
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex flex-col items-center pb-6">
+            <AnimatePresence>
+                {step === 2 && selectedCondition && price && (
+                    <motion.div
+                        initial={{ y: 100, opacity: 0, scale: 0.85 }}
+                        animate={{ y: 0, opacity: 1, scale: 1 }}
+                        exit={{ y: 100, opacity: 0, scale: 0.85 }}
+                        transition={{ type: "spring", damping: 22, stiffness: 280 }}
+                        className="pointer-events-auto"
+                    >
+                        <button
+                            onClick={goNext}
+                            className="flex items-center gap-3 bg-[#002e2c] text-white pl-4 pr-5 py-3.5 rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.35)] hover:bg-[#004a46] transition-all duration-200 hover:scale-[1.04] active:scale-[0.97] cursor-pointer"
+                        >
+                            <span className="flex items-center justify-center w-7 h-7 bg-teal-500/20 rounded-full">
+                                <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+                            </span>
+                            <div className="text-left">
+                                <p className="text-[10px] text-teal-300 font-medium leading-none mb-0.5">Estimated rate</p>
+                                <p className="text-base font-bold leading-none">
+                                    {formatNaira(price.sessionRate)}
+                                    <span className="text-xs text-gray-400 font-normal ml-1">/session</span>
+                                </p>
+                            </div>
+                            <span className="h-5 w-px bg-white/10" />
+                            <span className="text-sm font-semibold text-teal-300">See My Price</span>
+                            <ArrowRight className="w-4 h-4 text-teal-400" />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
+    </div>
     );
 }
+

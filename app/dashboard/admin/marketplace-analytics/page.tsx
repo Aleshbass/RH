@@ -2,7 +2,7 @@
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Loader2, DollarSign, Users, TrendingUp, Star, AlertTriangle } from "lucide-react";
+import { Loader2, DollarSign, Users, TrendingUp, Star, AlertTriangle, Package } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -102,12 +102,29 @@ export default function AdminMarketplaceAnalyticsPage() {
             </p>
           </CardContent>
         </Card>
+
+        {/* Package Revenue card */}
+        <Card className="border-l-4 border-l-teal-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Package Revenue</CardTitle>
+            <Package className="h-4 w-4 text-teal-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-teal-700">
+              ₦{(analytics.packages?.packageRevenue ?? 0).toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {analytics.packages?.totalPackageBookings ?? 0} package bookings · avg {analytics.packages?.avgPackageSize ?? 0} sessions
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Tabs */}
       <Tabs defaultValue="earnings" className="space-y-4">
         <TabsList>
           <TabsTrigger value="earnings">Physiotherapist Earnings</TabsTrigger>
+          <TabsTrigger value="packages">Package Bookings</TabsTrigger>
           <TabsTrigger value="reports">
             Patient Reports
             {reports.reports.filter((r: any) => r.status === "pending").length > 0 && (
@@ -176,6 +193,93 @@ export default function AdminMarketplaceAnalyticsPage() {
                   ))}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Packages Tab */}
+        <TabsContent value="packages" className="space-y-4">
+          {/* Summary stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="bg-teal-50 border-teal-200">
+              <CardContent className="pt-5">
+                <p className="text-xs font-semibold text-teal-700 uppercase tracking-wide mb-1">Package Revenue</p>
+                <p className="text-2xl font-bold text-teal-800">₦{(analytics.packages?.packageRevenue ?? 0).toLocaleString()}</p>
+                <p className="text-xs text-teal-600 mt-0.5">{analytics.packages?.totalPackageBookings ?? 0} package bookings</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-gray-50">
+              <CardContent className="pt-5">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Single-Session Revenue</p>
+                <p className="text-2xl font-bold text-gray-800">₦{(analytics.packages?.singleRevenue ?? 0).toLocaleString()}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{analytics.packages?.totalSingleBookings ?? 0} single sessions</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-amber-50 border-amber-200">
+              <CardContent className="pt-5">
+                <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">Avg Package Size</p>
+                <p className="text-2xl font-bold text-amber-800">{analytics.packages?.avgPackageSize ?? 0} sessions</p>
+                <p className="text-xs text-amber-600 mt-0.5">per package booking</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Recent package bookings table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-teal-600" />
+                Recent Package Bookings
+              </CardTitle>
+              <CardDescription>Latest 5 confirmed package purchases</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(analytics.packages?.recentPackageBookings ?? []).length === 0 ? (
+                <p className="text-center text-gray-500 py-8">No package bookings yet</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>Physiotherapist</TableHead>
+                      <TableHead>Condition</TableHead>
+                      <TableHead>Package</TableHead>
+                      <TableHead>Progress</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(analytics.packages?.recentPackageBookings ?? []).map((pkg: any) => (
+                      <TableRow key={pkg.bookingId}>
+                        <TableCell className="font-medium">{pkg.patientName}</TableCell>
+                        <TableCell className="text-gray-600">{pkg.physioName}</TableCell>
+                        <TableCell>
+                          <span className="text-sm text-gray-700">{pkg.conditionLabel}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="border-teal-300 text-teal-700">
+                            {pkg.packageSessions}-Session
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-teal-500 rounded-full"
+                                style={{ width: `${Math.round(((pkg.packageSessions - pkg.sessionsRemaining) / pkg.packageSessions) * 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-500">{pkg.sessionsRemaining} left</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          ₦{pkg.totalAmount.toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

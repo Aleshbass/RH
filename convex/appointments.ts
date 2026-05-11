@@ -583,6 +583,28 @@ export const updateAppointmentStatus = mutation({
           console.log(`Generated payouts for appointment ${args.appointmentId} and invoice ${invoice._id}`);
         }
       }
+
+      // ── Decrement sessionsRemaining on linked package booking ──────────
+      // Find the most recent confirmed package booking for this patient+physio pair
+      const packageBooking = await ctx.db
+        .query("marketplaceBookings")
+        .withIndex("by_patient", (q) => q.eq("patientId", appointment.patientId))
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("physiotherapistId"), appointment.physiotherapistId),
+            q.eq(q.field("sessionType"), "package"),
+            q.eq(q.field("bookingStatus"), "confirmed")
+          )
+        )
+        .order("desc")
+        .first();
+
+      if (packageBooking && (packageBooking.sessionsRemaining ?? 0) > 0) {
+        await ctx.db.patch(packageBooking._id, {
+          sessionsRemaining: Math.max(0, (packageBooking.sessionsRemaining ?? 1) - 1),
+          updatedAt: Date.now(),
+        } as any);
+      }
     }
 
     return {

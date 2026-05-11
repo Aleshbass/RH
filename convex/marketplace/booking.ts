@@ -49,8 +49,13 @@ export const createMarketplaceBooking = mutation({
         sessionDate: v.optional(v.number()),
         sessionDuration: v.number(), // minutes
         isOnline: v.boolean(),
-        serviceAmount: v.number(), // in kobo
+        serviceAmount: v.number(), // in kobo — full package total if packageSessions > 1
         patientNotes: v.optional(v.string()),
+        // Package fields
+        packageSessions: v.optional(v.number()),        // 1 | 4 | 8 | 12
+        packageDiscountPercent: v.optional(v.number()), // 0–15
+        conditionLabel: v.optional(v.string()),
+        conditionLevel: v.optional(v.string()),
     },
 
     handler: async (ctx, args) => {
@@ -85,11 +90,15 @@ export const createMarketplaceBooking = mutation({
         // Calculate fees
         const fees = calculateMarketplaceFees(args.serviceAmount);
 
+        // Determine effective session type
+        const effectiveSessionType =
+            args.packageSessions && args.packageSessions > 1 ? "package" : args.sessionType;
+
         // Create booking
         const bookingId = await ctx.db.insert("marketplaceBookings", {
             physiotherapistId: args.physiotherapistId,
             patientId: patient._id,
-            sessionType: args.sessionType,
+            sessionType: effectiveSessionType,
             sessionDate: args.sessionDate,
             sessionDuration: args.sessionDuration,
             isOnline: args.isOnline,
@@ -101,6 +110,12 @@ export const createMarketplaceBooking = mutation({
             paymentStatus: "pending",
             bookingStatus: "pending_payment",
             patientNotes: args.patientNotes,
+            // Package fields
+            packageSessions: args.packageSessions ?? 1,
+            packageDiscountPercent: args.packageDiscountPercent ?? 0,
+            sessionsRemaining: args.packageSessions ?? 1,
+            conditionLabel: args.conditionLabel,
+            conditionLevel: args.conditionLevel,
             createdAt: Date.now(),
             updatedAt: Date.now(),
         });
@@ -190,6 +205,52 @@ export const completeMarketplaceBooking = mutation({
                 relationshipCreated: false, // Already existed
                 patientPhysioRelationshipId: relationshipId,
             });
+        }
+
+        // ── Auto-create Treatment Plan for package bookings ───────────────
+        const isPackage = (booking.packageSessions ?? 1) > 1;
+        if (isPackage) {
+            const sessions = booking.packageSessions ?? 1;
+            const discountPct = booking.packageDiscountPercent ?? 0;
+            const condLabel = booking.conditionLabel ?? "General physiotherapy";
+            const condLevel = booking.conditionLevel ?? "standard";
+
+            const condLevelLabel: Record<string, string> = {
+                standard: "Standard Care",
+                moderate: "Advanced Care",
+                complex: "Specialized Neurological Care",
+            };
+
+            const planId = await ctx.db.insert("treatmentPlans", {
+                patientId: booking.patientId,
+                physiotherapistId: booking.physiotherapistId,
+                title: `${condLabel} — ${sessions}-Session Package`,
+                description: `${sessions}-session package booked via Rehabify Marketplace. ${discountPct > 0 ? `${discountPct}% package discount applied.` : ""}`,
+                startDate: Date.now(),
+                status: "active",
+                priority: "medium",
+                goals: [{
+                    description: `Complete all ${sessions} pre-paid sessions`,
+                    targetValue: `${sessions} sessions`,
+                    timeline: "As scheduled with your physiotherapist",
+                    measurable: true,
+                }],
+                phases: [{
+                    name: "Package Sessions",
+                    description: `${sessions} pre-paid sessions — ${condLevelLabel[condLevel] ?? condLevel}. Condition: ${condLabel}.`,
+                    duration: `${sessions} sessions`,
+                    order: 1,
+                    exercises: [],
+                }],
+                notes: `Package booking via marketplace.\nCondition: ${condLabel} (${condLevel})\nSessions: ${sessions}\nDiscount: ${discountPct}%\nPayment ref: ${args.paymentReference}`,
+                reviewInterval: 7,
+                version: 1,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            } as any);
+
+            // Link treatment plan back to booking
+            await ctx.db.patch(args.bookingId, { treatmentPlanId: planId } as any);
         }
 
         // Record commission transaction
