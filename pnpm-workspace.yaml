@@ -1,9 +1,2 @@
-onlyBuiltDependencies:
-  - '@clerk/shared'
-  - '@sentry/cli'
-  - '@tailwindcss/oxide'
-  - core-js
-  - esbuild
-  - puppeteer
-  - sharp
-  - unrs-resolver
+packages:
+  - '.'
