@@ -1,33 +1,45 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { formatNaira, calculateSessionPrice, calculatePackagePrice, calculateSessionFees, INITIAL_ASSESSMENT_FEE, AWADOC_FEE } from "@/lib/pricing";
+import React, { useState } from "react";
+import { calculateSessionPrice, calculatePackagePrice } from "@/lib/pricing";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Calculator, Sparkles, Receipt, Info } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Calculator, Sparkles, Receipt, Info, Lock } from "lucide-react";
 import { motion } from "framer-motion";
+import Link from "next/link";
+
+// Qualitative tier labels — no ₦ amounts shown publicly
+function getRateTier(sessionRate: number): { label: string; color: string; description: string } {
+    if (sessionRate >= 30_000) return { label: "Premium Rate", color: "text-purple-700", description: "Senior specialist / high-demand area" };
+    if (sessionRate >= 22_000) return { label: "Above Average", color: "text-blue-700", description: "Experienced physio / major city" };
+    if (sessionRate >= 18_000) return { label: "Moderate Rate", color: "text-teal-700", description: "Standard specialist in urban area" };
+    return { label: "Standard Rate", color: "text-green-700", description: "Entry-level / secondary city" };
+}
+
+function getPackageTier(sessions: number, discount: number): { label: string; savings: string } {
+    if (sessions === 1) return { label: "Pay-as-you-go", savings: "No discount" };
+    if (sessions === 4) return { label: "Starter Saving", savings: `${discount}% off` };
+    if (sessions === 8) return { label: "Good Value", savings: `${discount}% off` };
+    return { label: "Best Value", savings: `${discount}% off` };
+}
 
 export function InteractivePricingCalculator() {
-    const [locationTier, setLocationTier] = useState<number>(2); // Default to Tier 2 (Major Cities)
+    const [locationTier, setLocationTier] = useState<number>(2);
     const [conditionLevel, setConditionLevel] = useState<string>("standard");
     const [expertiseLevel, setExpertiseLevel] = useState<string>("standard");
     const [sessionCount, setSessionCount] = useState<number>(1);
 
-    // Calculate live price based on selections
     const sessionRate = calculateSessionPrice(
         locationTier as Readonly<1 | 2 | 3 | 4>,
         conditionLevel as "standard" | "moderate" | "complex",
         expertiseLevel as "standard" | "senior" | "consultant"
     ).sessionRate;
 
-    // Calculate fees for a single session
-    const fees = calculateSessionFees(sessionRate);
-
-    // Calculate package pricing
     const discountPercent = sessionCount >= 12 ? 15 : sessionCount >= 8 ? 10 : sessionCount >= 4 ? 5 : 0;
-    const packageTotal = calculatePackagePrice(sessionRate, sessionCount, discountPercent).packageTotal;
+
+    const rateTier = getRateTier(sessionRate);
+    const packageTier = getPackageTier(sessionCount, discountPercent);
 
     return (
         <Card className="w-full max-w-4xl mx-auto shadow-xl border-teal-100 bg-white/50 backdrop-blur-xl mb-24 relative overflow-hidden">
@@ -41,7 +53,7 @@ export function InteractivePricingCalculator() {
                 </div>
                 <CardTitle className="text-3xl">Interactive Price Calculator</CardTitle>
                 <CardDescription className="text-teal-50 text-base">
-                    Adjust the parameters below to instantly see an estimate of your session costs.
+                    Adjust the parameters below to see a rate estimate for your session.
                 </CardDescription>
             </CardHeader>
 
@@ -84,8 +96,8 @@ export function InteractivePricingCalculator() {
                                 <SelectValue placeholder="Select physiotherapist level" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="standard">Standard Physio (1-4 years)</SelectItem>
-                                <SelectItem value="senior">Senior Physio (5-10 years)</SelectItem>
+                                <SelectItem value="standard">Standard Physio (1–4 years)</SelectItem>
+                                <SelectItem value="senior">Senior Physio (5–10 years)</SelectItem>
                                 <SelectItem value="consultant">Consultant (10+ years)</SelectItem>
                             </SelectContent>
                         </Select>
@@ -110,66 +122,71 @@ export function InteractivePricingCalculator() {
                     </div>
                 </div>
 
-                {/* Results Column */}
+                {/* Results Column — qualitative only, no ₦ amounts */}
                 <div className="bg-gray-50/80 rounded-2xl p-6 border border-gray-200 shadow-sm flex flex-col h-full">
                     <div className="flex items-center gap-2 mb-6 pb-4 border-b border-gray-200">
                         <Receipt className="w-5 h-5 text-teal-700" />
-                        <h3 className="font-bold text-gray-900 text-lg">Estimated Breakdown</h3>
+                        <h3 className="font-bold text-gray-900 text-lg">Estimated Rate Tier</h3>
                     </div>
 
-                    <div className="space-y-4 flex-1">
-                        <div className="flex justify-between items-center text-gray-600">
-                            <span>Base Physio Rate</span>
-                            <span className="font-medium text-gray-900">{formatNaira(sessionRate)} <span className="text-xs text-gray-400 font-normal">/ session</span></span>
-                        </div>
-
-                        {sessionCount === 1 ? (
-                            <>
-                                <div className="flex justify-between items-center text-gray-600">
-                                    <span>Platform Booking Fee</span>
-                                    <span className="font-medium text-gray-900">{formatNaira(fees.platformFee)}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-gray-500 text-sm">
-                                    <span className="flex items-center gap-1">First-session Assessment <Info className="w-3 h-3" /></span>
-                                    <span>{formatNaira(INITIAL_ASSESSMENT_FEE)}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-gray-500 text-sm">
-                                    <span className="flex items-center gap-1">Medical Record setup <Info className="w-3 h-3" /></span>
-                                    <span>{formatNaira(AWADOC_FEE)}</span>
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <div className="flex justify-between items-center text-gray-600">
-                                    <span>{sessionCount}x Sessions</span>
-                                    <span className="font-medium text-gray-900">{formatNaira(sessionRate * sessionCount)}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-green-600 font-medium">
-                                    <span>Package Discount ({discountPercent}%)</span>
-                                    <span>-{formatNaira(Math.round(sessionRate * sessionCount * (discountPercent / 100)))}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-gray-500 text-sm mt-2">
-                                    <span>Platform & Setup Fees included</span>
-                                    <span></span>
-                                </div>
-                            </>
-                        )}
-                    </div>
-
-                    <div className="mt-8 pt-6 border-t border-gray-200">
-                        <div className="flex justify-between items-end mb-2">
-                            <span className="text-lg font-bold text-gray-900">Total Estimate</span>
-                            <motion.span
-                                key={packageTotal}
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                className="text-3xl font-black text-[#005B57]"
+                    <div className="space-y-5 flex-1">
+                        {/* Rate tier indicator */}
+                        <div>
+                            <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">Session Rate</p>
+                            <motion.div
+                                key={rateTier.label}
+                                initial={{ opacity: 0, y: 6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100"
                             >
-                                {formatNaira(packageTotal)}
-                            </motion.span>
+                                <div className={`text-xl font-black ${rateTier.color}`}>{rateTier.label}</div>
+                            </motion.div>
+                            <p className="text-xs text-gray-400 mt-1.5 pl-1">{rateTier.description}</p>
                         </div>
-                        <p className="text-xs text-gray-500 text-right">
-                            *Actual prices may vary slightly based on specific physio rates.
+
+                        {/* Package indicator */}
+                        <div>
+                            <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">Package Value</p>
+                            <motion.div
+                                key={packageTier.label}
+                                initial={{ opacity: 0, y: 6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100"
+                            >
+                                <span className="font-bold text-gray-800">{packageTier.label}</span>
+                                <span className={`text-sm font-semibold ${discountPercent > 0 ? "text-green-700 bg-green-50 px-2 py-0.5 rounded-full" : "text-gray-400"}`}>
+                                    {packageTier.savings}
+                                </span>
+                            </motion.div>
+                        </div>
+
+                        {/* What's included */}
+                        <div className="pt-2">
+                            <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2">Includes</p>
+                            <ul className="space-y-1.5 text-sm text-gray-600">
+                                <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block" />One-on-one physiotherapy session</li>
+                                {sessionCount === 1 && <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block" />Initial health assessment</li>}
+                                {sessionCount === 1 && <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block" />Digital health record setup</li>}
+                                {sessionCount > 1 && <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block" />{sessionCount} sessions at discounted rate</li>}
+                                <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block" />Secure payment via Paystack</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    {/* Lock / CTA */}
+                    <div className="mt-6 pt-5 border-t border-gray-200">
+                        <div className="flex items-center gap-2 mb-3 text-gray-500">
+                            <Lock className="w-4 h-4" />
+                            <span className="text-xs">Exact pricing shown after matching</span>
+                        </div>
+                        <Link
+                            href="/start-treatment"
+                            className="block w-full text-center bg-[#005B57] hover:bg-[#00443e] text-white font-semibold py-3 rounded-xl transition-colors text-sm shadow-md shadow-teal-900/10"
+                        >
+                            Get My Exact Price →
+                        </Link>
+                        <p className="text-xs text-gray-400 text-center mt-2">
+                            Free to match · No commitment required
                         </p>
                     </div>
                 </div>
@@ -177,3 +194,4 @@ export function InteractivePricingCalculator() {
         </Card>
     );
 }
+
