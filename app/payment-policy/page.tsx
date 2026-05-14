@@ -4,11 +4,11 @@ import { MedicalWebPageSchema } from '@/components/seo/StructuredData';
 
 export const metadata: Metadata = {
   title: 'Payment Policy',
-  description: 'Rehabify Health Payment Policy - Fee structure, billing practices, refund procedures, and payout terms for physiotherapy services.',
-  keywords: ['payment policy', 'rehabify health', 'billing', 'refund policy', 'physiotherapy fees', 'Paystack payment'],
+  description: 'Rehabify Health Payment Policy - How payments work, processing fees, refunds, and direct settlement to healthcare providers via Paystack.',
+  keywords: ['payment policy', 'rehabify health', 'billing', 'refund policy', 'physiotherapy fees', 'Paystack payment', 'direct settlement'],
   openGraph: {
     title: 'Payment Policy | Rehabify Health',
-    description: 'Understand Rehabify Health payment policies, fees, and refund procedures.',
+    description: 'Understand how Rehabify Health processes payments directly to healthcare providers.',
     type: 'website',
   },
 };
@@ -54,7 +54,10 @@ export default function PaymentPolicyPage() {
             <section id="introduction" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">1. Introduction</h2>
               <p className="text-gray-700 leading-relaxed">
-                This Payment Policy outlines how <strong>Rehabify Health</strong> ("Rehabify," "we," "our," or "us") manages fees, billing, payments, refunds, and payouts for services provided through our platform. By using Rehabify, you agree to these payment terms.
+                This Payment Policy outlines how <strong>Rehabify Health</strong> ("Rehabify," "we," "our," or "us") manages billing, payment processing, and refunds for services facilitated through our platform. By using Rehabify, you agree to these payment terms.
+              </p>
+              <p className="text-gray-700 leading-relaxed mt-4">
+                Rehabify operates as a <strong>Software-as-a-Service (SaaS) platform</strong>. We do not collect, hold, or pool patient funds. All payments are processed and settled <strong>directly to the healthcare provider</strong> at the time of each transaction via Paystack&apos;s secure payment infrastructure.
               </p>
             </section>
 
@@ -81,40 +84,34 @@ export default function PaymentPolicyPage() {
 
             <section id="fee-structure" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">3. Fee Structure</h2>
-              
-              <div className="bg-gradient-to-r from-[#005b57] to-[#00877e] text-white rounded-lg p-6 mb-6">
-                <h3 className="text-2xl font-bold mb-4">Rehabify Platform Fees</h3>
-                
-                <div className="space-y-4">
-                  <div className="bg-white/10 rounded-lg p-4">
-                    <p className="text-lg font-semibold mb-2">Base Platform Fee</p>
-                    <p className="text-3xl font-bold">₦1,000</p>
-                    <p className="text-sm opacity-90 mt-1">Per transaction</p>
-                  </div>
 
-                  <div className="bg-white/10 rounded-lg p-4">
-                    <p className="text-lg font-semibold mb-2">Payment Processing Fee</p>
-                    <p className="text-3xl font-bold">1.5% + ₦100</p>
-                    <p className="text-sm opacity-90 mt-1">Capped at ₦2,000 for transactions over ₦100,000</p>
-                  </div>
+              <div className="bg-gradient-to-r from-[#005b57] to-[#00877e] text-white rounded-lg p-6 mb-6">
+                <h3 className="text-2xl font-bold mb-4">Payment Processing Fee</h3>
+                <div className="bg-white/10 rounded-lg p-4">
+                  <p className="text-lg font-semibold mb-2">Paystack Processing Fee</p>
+                  <p className="text-3xl font-bold">1.5% + ₦100</p>
+                  <p className="text-sm opacity-90 mt-1">Capped at ₦2,000 for transactions over ₦100,000</p>
                 </div>
               </div>
+
+              <p className="text-gray-700 leading-relaxed mb-4">
+                Rehabify does <strong>not</strong> charge a platform fee. The only transaction cost is the standard Paystack payment processing fee, which is transparently disclosed at checkout. This fee is charged by Paystack — Rehabify does not retain any portion of it.
+              </p>
 
               <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Fee Calculation Example</h3>
               <div className="bg-gray-50 p-6 rounded-lg">
                 <p className="text-gray-700 font-semibold mb-3">For a ₦20,000 appointment:</p>
                 <ul className="space-y-2 text-gray-700">
-                  <li>• Appointment Fee: <strong>₦20,000</strong></li>
-                  <li>• Platform Fee: <strong>₦1,000</strong></li>
-                  <li>• Processing Fee: <strong>₦415</strong> (1.5% of ₦21,000 + ₦100)</li>
-                  <li className="pt-2 border-t border-gray-300 font-bold">Patient Pays: <strong>₦21,415</strong></li>
-                  <li className="text-green-700 font-bold">Physiotherapist Receives: <strong>₦20,000</strong></li>
+                  <li>• Session Rate (set by physiotherapist): <strong>₦20,000</strong></li>
+                  <li>• Paystack Processing Fee: <strong>₦400</strong> (1.5% of ₦20,000 + ₦100)</li>
+                  <li className="pt-2 border-t border-gray-300 font-bold">Patient Pays: <strong>₦20,400</strong></li>
+                  <li className="text-green-700 font-bold">Physiotherapist Receives: <strong>₦20,000</strong> (directly, at time of payment)</li>
                 </ul>
               </div>
 
               <div className="mt-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded">
                 <p className="text-yellow-900">
-                  <strong>Note:</strong> For transactions over ₦100,000, the processing fee is capped at ₦2,000 total.
+                  <strong>Note:</strong> For transactions over ₦100,000, the Paystack processing fee is capped at ₦2,000 total.
                 </p>
               </div>
             </section>
@@ -132,34 +129,36 @@ export default function PaymentPolicyPage() {
                 <li>Home visit services</li>
               </ul>
               <p className="text-gray-700 leading-relaxed mt-4">
-                Rehabify's platform and processing fees are added transparently to your set prices.
+                The Paystack processing fee is transparently disclosed to patients at checkout. Providers receive their full set rate with no deductions by Rehabify.
               </p>
             </section>
 
-            <section id="payouts" className="mb-8">
-              <h2 className="text-2xl font-bold text-[#005b57] mb-4">5. Payouts to Providers</h2>
-              
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Payout Timeline</h3>
-              <p className="text-gray-700 leading-relaxed mb-4">
-                Physiotherapists and clinics receive their earnings (after deducting platform and processing fees) within:
-              </p>
-              <div className="bg-green-50 p-6 rounded-lg">
-                <p className="text-2xl font-bold text-green-700 mb-2">48 hours to 2 weeks</p>
-                <p className="text-gray-700">After successful payment confirmation</p>
+            <section id="direct-settlement" className="mb-8">
+              <h2 className="text-2xl font-bold text-[#005b57] mb-4">5. Direct Settlement to Providers</h2>
+
+              <div className="mt-4 p-4 bg-green-50 border-l-4 border-green-600 rounded mb-6">
+                <p className="text-green-900">
+                  <strong>No fund holding:</strong> Rehabify does not collect, hold, or pool patient payments at any point. Funds are settled directly to the healthcare provider&apos;s registered bank account at the time of each transaction.
+                </p>
               </div>
 
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Payout Requirements</h3>
-              <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li>Valid Nigerian bank account linked to your profile</li>
-                <li>Completed identity and license verification</li>
-                <li>Minimum payout threshold: ₦1,000</li>
-                <li>Session completion and documentation</li>
-              </ul>
-
-              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Payout Method</h3>
-              <p className="text-gray-700 leading-relaxed">
-                Payouts are made via direct bank transfer to your registered account. You will receive email notifications when payouts are processed.
+              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">How It Works</h3>
+              <p className="text-gray-700 leading-relaxed mb-4">
+                Rehabify uses <strong>Paystack&apos;s Split Payment / Subaccount feature</strong>. When a patient makes a payment:
               </p>
+              <ol className="list-decimal pl-6 text-gray-700 space-y-3">
+                <li>The patient initiates payment via Paystack&apos;s secure checkout.</li>
+                <li>Paystack processes the transaction and simultaneously routes the session fee <strong>directly</strong> to the physiotherapist&apos;s or clinic&apos;s registered Paystack subaccount.</li>
+                <li>The Paystack processing fee is settled separately by Paystack — Rehabify does not handle it.</li>
+                <li>The provider receives the full session rate they set, with no deductions by Rehabify.</li>
+              </ol>
+
+              <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">Provider Requirements for Direct Settlement</h3>
+              <ul className="list-disc pl-6 text-gray-700 space-y-2">
+                <li>Valid Nigerian bank account linked to your Rehabify profile</li>
+                <li>Completed identity and professional license verification</li>
+                <li>Active Paystack subaccount (set up during onboarding)</li>
+              </ul>
             </section>
 
             <section id="refunds" className="mb-8">
@@ -300,19 +299,19 @@ export default function PaymentPolicyPage() {
               <div className="grid md:grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="font-semibold mb-2">Platform Fee:</p>
-                  <p>₦1,000 per transaction</p>
+                  <p>None — Rehabify charges no platform fee</p>
                 </div>
                 <div>
                   <p className="font-semibold mb-2">Processing Fee:</p>
-                  <p>1.5% + ₦100</p>
+                  <p>Paystack: 1.5% + ₦100 (capped at ₦2,000)</p>
                 </div>
                 <div>
-                  <p className="font-semibold mb-2">Payout Time:</p>
-                  <p>48 hours to 2 weeks</p>
+                  <p className="font-semibold mb-2">Provider Settlement:</p>
+                  <p>Direct at transaction time via Paystack subaccount</p>
                 </div>
                 <div>
                   <p className="font-semibold mb-2">Cancellation:</p>
-                  <p>24+ hours: Full refund</p>
+                  <p>24+ hours before: Full refund</p>
                 </div>
               </div>
             </div>

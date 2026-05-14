@@ -35,19 +35,19 @@ export default function PayoutPolicyPage() {
                 {/* Key Highlights */}
                 <div className="mb-12 grid gap-6 sm:grid-cols-3">
                     <div className="rounded-lg border border-gray-200 bg-white p-6">
-                        <div className="mb-2 text-3xl font-bold text-gray-900">24h</div>
-                        <div className="text-sm font-medium text-gray-600">Processing Time</div>
-                        <div className="mt-2 text-xs text-gray-500">After appointment completion</div>
+                        <div className="mb-2 text-3xl font-bold text-gray-900">Instant</div>
+                        <div className="text-sm font-medium text-gray-600">Direct Settlement</div>
+                        <div className="mt-2 text-xs text-gray-500">At time of each transaction</div>
                     </div>
                     <div className="rounded-lg border border-gray-200 bg-white p-6">
                         <div className="mb-2 text-3xl font-bold text-gray-900">100%</div>
                         <div className="text-sm font-medium text-gray-600">Your Earnings</div>
-                        <div className="mt-2 text-xs text-gray-500">No hidden deductions</div>
+                        <div className="mt-2 text-xs text-gray-500">No Rehabify deductions</div>
                     </div>
                     <div className="rounded-lg border border-gray-200 bg-white p-6">
                         <div className="mb-2 text-3xl font-bold text-gray-900">Secure</div>
                         <div className="text-sm font-medium text-gray-600">Direct Transfer</div>
-                        <div className="mt-2 text-xs text-gray-500">Via Paystack</div>
+                        <div className="mt-2 text-xs text-gray-500">Via Paystack Subaccount</div>
                     </div>
                 </div>
 
@@ -62,9 +62,9 @@ export default function PayoutPolicyPage() {
                                     1
                                 </div>
                                 <div>
-                                    <h3 className="font-semibold text-gray-900">Complete Your Session</h3>
+                                    <h3 className="font-semibold text-gray-900">Patient Initiates Payment</h3>
                                     <p className="mt-1 text-sm text-gray-600">
-                                        Mark your appointment as completed in your dashboard after providing treatment.
+                                        The patient pays for their session via Paystack&apos;s secure checkout on the Rehabify platform.
                                     </p>
                                 </div>
                             </div>
@@ -73,9 +73,9 @@ export default function PayoutPolicyPage() {
                                     2
                                 </div>
                                 <div>
-                                    <h3 className="font-semibold text-gray-900">Automatic Processing</h3>
+                                    <h3 className="font-semibold text-gray-900">Paystack Splits Instantly</h3>
                                     <p className="mt-1 text-sm text-gray-600">
-                                        Your payout is automatically queued for processing within 24 hours.
+                                        Paystack processes the transaction and routes your session fee <strong>directly</strong> to your registered Paystack subaccount in real time. Rehabify never holds the funds.
                                     </p>
                                 </div>
                             </div>
@@ -84,9 +84,9 @@ export default function PayoutPolicyPage() {
                                     3
                                 </div>
                                 <div>
-                                    <h3 className="font-semibold text-gray-900">Receive Payment</h3>
+                                    <h3 className="font-semibold text-gray-900">Funds Arrive in Your Bank</h3>
                                     <p className="mt-1 text-sm text-gray-600">
-                                        Funds are transferred directly to your connected bank account.
+                                        Your full session rate is transferred to your linked Nigerian bank account. You receive the exact amount you set — no deductions by Rehabify.
                                     </p>
                                 </div>
                             </div>
@@ -98,9 +98,9 @@ export default function PayoutPolicyPage() {
                         <h2 className="mb-6 text-2xl font-bold text-gray-900">Fee Structure</h2>
                         <div className="rounded-lg border border-gray-200 bg-white p-6">
                             <div className="mb-6">
-                                <h3 className="text-lg font-semibold text-gray-900">Platform Fee</h3>
+                                <h3 className="text-lg font-semibold text-gray-900">No Platform Fee</h3>
                                 <p className="mt-2 text-sm text-gray-600">
-                                    Rehabify charges a flat platform fee of <strong>₦1,000</strong> per transaction. This fee is automatically added to the patient's payment and does not affect your earnings.
+                                    Rehabify charges <strong>no platform fee</strong>. You receive the full session rate you set. The only cost is the standard Paystack payment processing fee (1.5% + ₦100, capped at ₦2,000), which is passed on transparently to the patient at checkout.
                                 </p>
                             </div>
                             <div className="rounded-lg bg-gray-50 p-4">
@@ -111,8 +111,8 @@ export default function PayoutPolicyPage() {
                                         <span className="font-medium text-gray-900">₦20,000</span>
                                     </div>
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">Platform Fee (paid by patient)</span>
-                                        <span className="font-medium text-gray-900">₦1,000</span>
+                                        <span className="text-gray-600">Paystack Processing Fee (paid by patient)</span>
+                                        <span className="font-medium text-gray-900">₦400</span>
                                     </div>
                                     <div className="flex justify-between border-t border-gray-200 pt-2 font-semibold">
                                         <span className="text-gray-900">You Receive</span>
@@ -125,7 +125,7 @@ export default function PayoutPolicyPage() {
 
                     {/* Requirements */}
                     <section>
-                        <h2 className="mb-6 text-2xl font-bold text-gray-900">Payout Requirements</h2>
+                        <h2 className="mb-6 text-2xl font-bold text-gray-900">Settlement Requirements</h2>
                         <div className="rounded-lg border border-gray-200 bg-white p-6">
                             <ul className="space-y-3">
                                 <li className="flex gap-3">
@@ -138,11 +138,11 @@ export default function PayoutPolicyPage() {
                                 </li>
                                 <li className="flex gap-3">
                                     <Check className="h-5 w-5 shrink-0 text-green-600" />
-                                    <span className="text-sm text-gray-600">Minimum payout threshold: ₦1,000</span>
+                                    <span className="text-sm text-gray-600">Active Paystack subaccount (configured during provider onboarding)</span>
                                 </li>
                                 <li className="flex gap-3">
                                     <Check className="h-5 w-5 shrink-0 text-green-600" />
-                                    <span className="text-sm text-gray-600">Appointment marked as completed with documentation</span>
+                                    <span className="text-sm text-gray-600">Appointment confirmed and session invoice issued</span>
                                 </li>
                             </ul>
                         </div>

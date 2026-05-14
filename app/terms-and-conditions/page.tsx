@@ -154,10 +154,10 @@ export default function TermsAndConditionsPage() {
             <section id="billing" className="mb-8">
               <h2 className="text-2xl font-bold text-[#005b57] mb-4">7. Billing & Payments</h2>
               <ul className="list-disc pl-6 text-gray-700 space-y-2">
-                <li><strong>Payment Processing:</strong> All payments are processed through Paystack</li>
-                <li><strong>Platform Fee:</strong> ₦1,000 per transaction</li>
-                <li><strong>Processing Fee:</strong> 1.5% + ₦100 (capped at ₦2,000 for transactions over ₦100,000)</li>
-                <li><strong>Payouts:</strong> Within 48 hours to 2 weeks after payment confirmation</li>
+                <li><strong>Payment Processing:</strong> All payments are processed securely through Paystack</li>
+                <li><strong>Platform Fee:</strong> Rehabify charges no platform fee</li>
+                <li><strong>Processing Fee:</strong> Paystack&apos;s standard fee of 1.5% + ₦100 (capped at ₦2,000 for transactions over ₦100,000)</li>
+                <li><strong>Direct Settlement:</strong> Patient payments are settled directly to providers via Paystack subaccounts at the time of each transaction. Rehabify does not hold or pool funds on behalf of any party.</li>
                 <li><strong>Refunds:</strong> See our <Link href="/payment-policy" className="text-[#005b57] hover:underline">Payment Policy</Link> for details</li>
               </ul>
             </section>
