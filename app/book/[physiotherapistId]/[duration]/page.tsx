@@ -71,6 +71,7 @@ export default function BookingPage() {
         "online"
     );
     const [notes, setNotes] = useState("");
+    const [patientAddress, setPatientAddress] = useState("");
     const savedPrefsRef = useRef(false);
     const [treatmentPrefs, setTreatmentPrefs] = useState<TreatmentPrefs | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -142,6 +143,7 @@ export default function BookingPage() {
                     if (pending.slot) setSelectedSlot(pending.slot);
                     if (pending.sessionMode) setSessionMode(pending.sessionMode);
                     if (pending.notes) setNotes(pending.notes);
+                    if (pending.patientAddress) setPatientAddress(pending.patientAddress);
                     if (pending.selectedPackage) setSelectedPackage(pending.selectedPackage);
                     if (pending.packageBreakdown) setPackageBreakdown(pending.packageBreakdown);
                     if (pending.slot) setStep("details");
@@ -310,6 +312,7 @@ export default function BookingPage() {
                     slot: selectedSlot,
                     sessionMode,
                     notes,
+                    patientAddress,
                     treatmentPrefs,
                     selectedPackage,
                     packageBreakdown,
@@ -323,6 +326,11 @@ export default function BookingPage() {
 
         if (!selectedSlot) {
             toast.error("Please select a time slot");
+            return;
+        }
+
+        if (sessionMode === "in-person" && !patientAddress.trim()) {
+            toast.error("Please provide your exact address for in-person visits.");
             return;
         }
 
@@ -346,6 +354,7 @@ export default function BookingPage() {
                 // Package metadata — persisted in Convex, used to auto-create treatment plan
                 packageSessions: selectedPackage,
                 packageDiscountPercent: discountPercent,
+                patientAddress: sessionMode === "in-person" ? patientAddress : undefined,
                 conditionLabel: treatmentPrefs?.conditionLabel,
                 conditionLevel: treatmentPrefs?.conditionLevel,
             });
@@ -555,6 +564,24 @@ export default function BookingPage() {
                                     </div>
                                 )}
 
+                            {/* Exact Address for In-Person */}
+                            {sessionMode === "in-person" && (
+                                <div className="mb-6">
+                                    <Label htmlFor="address" className="text-gray-300 mb-2 block">
+                                        Exact Home Address <span className="text-red-400">*</span>
+                                    </Label>
+                                    <Textarea
+                                        id="address"
+                                        value={patientAddress}
+                                        onChange={(e) => setPatientAddress(e.target.value)}
+                                        placeholder="Enter your exact street address, apartment number, and any special instructions for the physiotherapist..."
+                                        className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 resize-none"
+                                        rows={3}
+                                        required
+                                    />
+                                </div>
+                            )}
+
                             {/* Notes */}
                             <div className="mb-6">
                                 <Label htmlFor="notes" className="text-gray-300 mb-2 block">
@@ -626,8 +653,8 @@ export default function BookingPage() {
                                 </Button>
                                 <Button
                                     onClick={handleBooking}
-                                    disabled={isProcessing}
-                                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white"
+                                    disabled={isProcessing || (sessionMode === "in-person" && !patientAddress.trim())}
+                                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50"
                                 >
                                     {isProcessing ? (
                                         <>

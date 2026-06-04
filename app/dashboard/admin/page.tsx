@@ -33,6 +33,7 @@ import Link from 'next/link'
 import { Skeleton } from '@/components/ui/skeleton'
 import { format } from 'date-fns'
 import { ActivityLog } from "@/types/activity"
+import AdminLiveMap from "@/components/dashboard/admin/AdminLiveMap"
 
 interface StatCardProps {
   title: string
@@ -267,6 +268,9 @@ export default function AdminDashboard() {
           </>
         )}
       </div>
+
+      {/* Live Map of Physiotherapists */}
+      <AdminLiveMap />
 
       {/* Quick Actions & System Status */}
       <div className="grid gap-6 md:grid-cols-2">

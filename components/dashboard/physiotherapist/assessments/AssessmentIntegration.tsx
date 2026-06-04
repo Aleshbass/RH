@@ -75,6 +75,24 @@ export function AssessmentIntegration({
       description: "Comprehensive shoulder mobility and strength",
       category: "Upper Extremity",
     },
+    {
+      id: "psfs",
+      name: "Patient-Specific Functional Scale (PSFS)",
+      description: "Patient-identified functional limitations rated 0-10",
+      category: "Functional",
+    },
+    {
+      id: "nprs",
+      name: "Numeric Pain Rating Scale (NPRS)",
+      description: "Current, best and worst pain in last 24 hours (0-10)",
+      category: "Pain",
+    },
+    {
+      id: "nps",
+      name: "Net Promoter Score (NPS)",
+      description: "Patient satisfaction and likelihood to recommend (0-10)",
+      category: "Satisfaction",
+    },
   ];
 
   const handleCreateAssessment = async () => {

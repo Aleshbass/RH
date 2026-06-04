@@ -26,6 +26,7 @@ import { useRouter } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { InsightsSidebar } from '@/components/dashboard/shared/InsightsSidebar'
 import ShareableBookingLink from '@/components/booking/ShareableBookingLink'
+import LiveLocationTracker from '@/components/dashboard/physiotherapist/LiveLocationTracker'
 
 
 
@@ -274,6 +275,11 @@ export function PhysiotherapistDashboardV2() {
             </CardContent>
           </Card>
         )}
+
+        {/* Live Location Tracker */}
+        <div className="mb-6">
+          <LiveLocationTracker />
+        </div>
 
         {/* Key Metrics - Compact Design */}
         <div id="tour-metrics-grid" className="grid grid-cols-2 gap-4 lg:grid-cols-4">

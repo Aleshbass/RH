@@ -56,6 +56,7 @@ export const createMarketplaceBooking = mutation({
         packageDiscountPercent: v.optional(v.number()), // 0–15
         conditionLabel: v.optional(v.string()),
         conditionLevel: v.optional(v.string()),
+        patientAddress: v.optional(v.string()), // For in-person sessions
     },
 
     handler: async (ctx, args) => {
@@ -102,6 +103,7 @@ export const createMarketplaceBooking = mutation({
             sessionDate: args.sessionDate,
             sessionDuration: args.sessionDuration,
             isOnline: args.isOnline,
+            patientAddress: args.patientAddress,
             serviceAmount: fees.serviceAmount,
             platformFee: fees.platformFee,
             paystackFee: fees.paystackFee,

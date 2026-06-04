@@ -1773,6 +1773,18 @@ export default defineSchema({
     .index("by_call_id", ["callId"])
     .index("by_uploaded_by", ["uploadedBy"]),
 
+  // Physiotherapist Live Locations for tracking
+  physiotherapistLocations: defineTable({
+    physiotherapistId: v.id("users"),
+    latitude: v.number(),
+    longitude: v.number(),
+    status: v.union(v.literal("in_transit"), v.literal("at_patient"), v.literal("idle")),
+    lastUpdated: v.number(),
+    accuracy: v.optional(v.number()), // GPS accuracy radius
+  })
+    .index("by_physiotherapist", ["physiotherapistId"])
+    .index("by_status", ["status"]),
+
   appointmentFeedback: defineTable({
     appointmentId: v.id("appointments"),
     patientId: v.id("patients"),
@@ -2182,6 +2194,9 @@ export default defineSchema({
       v.literal("neck_disability"),
       v.literal("shoulder_function"),
       v.literal("dash"),
+      v.literal("psfs"),
+      v.literal("nprs"),
+      v.literal("nps"),
       v.literal("custom")
     ),
     title: v.string(),
@@ -2261,6 +2276,7 @@ export default defineSchema({
     sessionDate: v.optional(v.number()), // Scheduled date
     sessionDuration: v.number(), // minutes
     isOnline: v.boolean(),
+    patientAddress: v.optional(v.string()), // Exact address for in-person sessions
 
     // Package booking fields
     packageSessions: v.optional(v.number()),          // 1 | 4 | 8 | 12 — total sessions purchased
