@@ -2154,6 +2154,7 @@ export default defineSchema({
   physiotherapistBankAccounts: defineTable({
     physiotherapistId: v.id("users"),
     subaccountCode: v.string(), // Paystack subaccount code
+    subaccountId: v.optional(v.string()), // Legacy field
     bankCode: v.string(),
     accountNumber: v.string(),
     bankName: v.string(),
