@@ -47,8 +47,8 @@ import type * as actions_patients_index from "../actions/patients/index.js";
 import type * as actions_patients_invitePatient from "../actions/patients/invitePatient.js";
 import type * as actions_patients_simpleCompleteOnboarding from "../actions/patients/simpleCompleteOnboarding.js";
 import type * as admin from "../admin.js";
-import type * as admin_marketplaceEarnings from "../admin/marketplaceEarnings.js";
 import type * as adminReferrals from "../adminReferrals.js";
+import type * as admin_marketplaceEarnings from "../admin/marketplaceEarnings.js";
 import type * as admin_fix from "../admin_fix.js";
 import type * as analytics from "../analytics.js";
 import type * as analytics_service from "../analytics/service.js";
@@ -81,12 +81,12 @@ import type * as exerciseCompletions from "../exerciseCompletions.js";
 import type * as exerciseTemplates from "../exerciseTemplates.js";
 import type * as exercises from "../exercises.js";
 import type * as files from "../files.js";
-import type * as flutterwave from "../flutterwave.js";
 import type * as health from "../health.js";
 import type * as helpers_triggerRetryProcessing from "../helpers/triggerRetryProcessing.js";
 import type * as http from "../http.js";
 import type * as imagekit from "../imagekit.js";
 import type * as location from "../location.js";
+import type * as locationTracking from "../locationTracking.js";
 import type * as marketplace_booking from "../marketplace/booking.js";
 import type * as marketplace_debug from "../marketplace/debug.js";
 import type * as marketplace_matching from "../marketplace/matching.js";
@@ -123,10 +123,10 @@ import type * as reminders from "../reminders.js";
 import type * as resourceManagement from "../resourceManagement.js";
 import type * as resourceNotifications from "../resourceNotifications.js";
 import type * as resourceSchema from "../resourceSchema.js";
+import type * as scheduledTasks from "../scheduledTasks.js";
 import type * as scheduled_appointment_reminders from "../scheduled/appointment_reminders.js";
 import type * as scheduled_invitation_reminders from "../scheduled/invitation_reminders.js";
 import type * as scheduled_notification_retry from "../scheduled/notification_retry.js";
-import type * as scheduledTasks from "../scheduledTasks.js";
 import type * as schema_calendar from "../schema/calendar.js";
 import type * as schema_health from "../schema/health.js";
 import type * as sessionLogs from "../sessionLogs.js";
@@ -142,7 +142,6 @@ import type * as treatmentPlanSync from "../treatmentPlanSync.js";
 import type * as treatmentPlans from "../treatmentPlans.js";
 import type * as users from "../users.js";
 import type * as videoCalls from "../videoCalls.js";
-import type * as webhooks_flutterwaveHandlers from "../webhooks/flutterwaveHandlers.js";
 
 import type {
   ApiFromModules,
@@ -190,8 +189,8 @@ declare const fullApi: ApiFromModules<{
   "actions/patients/invitePatient": typeof actions_patients_invitePatient;
   "actions/patients/simpleCompleteOnboarding": typeof actions_patients_simpleCompleteOnboarding;
   admin: typeof admin;
-  "admin/marketplaceEarnings": typeof admin_marketplaceEarnings;
   adminReferrals: typeof adminReferrals;
+  "admin/marketplaceEarnings": typeof admin_marketplaceEarnings;
   admin_fix: typeof admin_fix;
   analytics: typeof analytics;
   "analytics/service": typeof analytics_service;
@@ -224,12 +223,12 @@ declare const fullApi: ApiFromModules<{
   exerciseTemplates: typeof exerciseTemplates;
   exercises: typeof exercises;
   files: typeof files;
-  flutterwave: typeof flutterwave;
   health: typeof health;
   "helpers/triggerRetryProcessing": typeof helpers_triggerRetryProcessing;
   http: typeof http;
   imagekit: typeof imagekit;
   location: typeof location;
+  locationTracking: typeof locationTracking;
   "marketplace/booking": typeof marketplace_booking;
   "marketplace/debug": typeof marketplace_debug;
   "marketplace/matching": typeof marketplace_matching;
@@ -266,10 +265,10 @@ declare const fullApi: ApiFromModules<{
   resourceManagement: typeof resourceManagement;
   resourceNotifications: typeof resourceNotifications;
   resourceSchema: typeof resourceSchema;
+  scheduledTasks: typeof scheduledTasks;
   "scheduled/appointment_reminders": typeof scheduled_appointment_reminders;
   "scheduled/invitation_reminders": typeof scheduled_invitation_reminders;
   "scheduled/notification_retry": typeof scheduled_notification_retry;
-  scheduledTasks: typeof scheduledTasks;
   "schema/calendar": typeof schema_calendar;
   "schema/health": typeof schema_health;
   sessionLogs: typeof sessionLogs;
@@ -285,7 +284,6 @@ declare const fullApi: ApiFromModules<{
   treatmentPlans: typeof treatmentPlans;
   users: typeof users;
   videoCalls: typeof videoCalls;
-  "webhooks/flutterwaveHandlers": typeof webhooks_flutterwaveHandlers;
 }>;
 
 /**

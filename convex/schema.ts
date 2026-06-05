@@ -2153,8 +2153,7 @@ export default defineSchema({
   // Physiotherapist bank accounts for split payments
   physiotherapistBankAccounts: defineTable({
     physiotherapistId: v.id("users"),
-    subaccountCode: v.string(), // Paystack subaccount code (kept for backward compatibility)
-    subaccountId: v.optional(v.string()), // Flutterwave subaccount ID
+    subaccountCode: v.string(), // Paystack subaccount code
     bankCode: v.string(),
     accountNumber: v.string(),
     bankName: v.string(),
@@ -2163,7 +2162,7 @@ export default defineSchema({
     isVerified: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
-    paymentProvider: v.optional(v.union(v.literal("paystack"), v.literal("flutterwave"))), // Which provider this account uses
+    paymentProvider: v.optional(v.literal("paystack")),
   })
     .index("by_physiotherapist_id", ["physiotherapistId"])
     .index("by_subaccount_code", ["subaccountCode"]),
@@ -2180,7 +2179,7 @@ export default defineSchema({
     isVerified: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
-    paymentProvider: v.optional(v.union(v.literal("paystack"), v.literal("flutterwave"))),
+    paymentProvider: v.optional(v.literal("paystack")),
   })
     .index("by_doctor_id", ["doctorId"])
     .index("by_subaccount_code", ["subaccountCode"]),

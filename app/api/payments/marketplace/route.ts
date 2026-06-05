@@ -60,11 +60,11 @@ export async function POST(request: NextRequest) {
         bookingId: bookingId as Id<'marketplaceBookings'>,
       });
       if (bookingDetails?.physiotherapistId) {
-        const bankDetails = await convex.query((api as any).flutterwave.getPhysiotherapistBankDetails, {
+        const bankDetails = await convex.query((api as any).paystack.getPhysiotherapistBankDetails, {
           physiotherapistId: bookingDetails.physiotherapistId,
         });
-        if (bankDetails?.subaccountId) {
-          paymentData.subaccount = bankDetails.subaccountId;
+        if (bankDetails?.subaccountCode) {
+          paymentData.subaccount = bankDetails.subaccountCode;
           paymentData.bearer = 'account';
         }
       }

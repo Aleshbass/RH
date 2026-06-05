@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
@@ -27,6 +28,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -41,7 +52,8 @@ import {
   Crown,
   Stethoscope,
   Building2,
-  User
+  User,
+  Trash2
 } from 'lucide-react'
 import { ColumnDef } from '@tanstack/react-table'
 import { format } from 'date-fns'
@@ -182,17 +194,64 @@ function RoleChangeDialog({ user, onClose, onRoleChange }: RoleChangeDialogProps
 }
 
 export function UserManagement() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const roleParam = searchParams?.get('role') as UserRole | 'all' | null
+
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null)
   const [showRoleDialog, setShowRoleDialog] = useState(false)
+  const [userToDelete, setUserToDelete] = useState<UserData | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [activeRoleFilter, setActiveRoleFilter] = useState<UserRole | 'all'>(roleParam || 'all')
+
+  // Update filter when URL changes
+  useEffect(() => {
+    if (roleParam && roleParam !== activeRoleFilter) {
+      setActiveRoleFilter(roleParam)
+    }
+  }, [roleParam, activeRoleFilter])
+
+  const handleRoleFilterChange = (value: UserRole | 'all') => {
+    setActiveRoleFilter(value)
+    if (value === 'all') {
+      router.push('/dashboard/admin/users')
+    } else {
+      router.push(`/dashboard/admin/users?role=${value}`)
+    }
+  }
 
   // Get all users
   const users = useQuery(api.users.getAllUsers)
+
+  // Filter users
+  const filteredUsers = useMemo(() => {
+    if (!users) return []
+    if (activeRoleFilter === 'all') return users
+    return users.filter((u: any) => u.role === activeRoleFilter)
+  }, [users, activeRoleFilter])
 
   // Get current user to verify admin status
   const currentUser = useQuery(api.users.getMyUser)
 
   // Mutations
   const setUserRole = useMutation(api.users.setUserRole)
+  const deleteUser = useMutation(api.users.adminDeleteUser)
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return
+    setIsDeleting(true)
+    try {
+      await deleteUser({ userId: userToDelete._id })
+      toast.success('User deleted successfully')
+      setUserToDelete(null)
+    } catch (error) {
+      toast.error('Failed to delete user', {
+        description: error instanceof Error ? error.message : 'Unknown error'
+      })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   const handleRoleChange = async (userId: Id<'users'>, newRole: UserRole) => {
     await setUserRole({ userId, role: newRole })
@@ -254,6 +313,15 @@ export function UserManagement() {
       },
     },
     {
+      accessorKey: 'phoneNumber',
+      header: 'Phone',
+      cell: ({ row }) => (
+        <div className="text-sm text-muted-foreground">
+          {row.original.phoneNumber || 'Not provided'}
+        </div>
+      ),
+    },
+    {
       accessorKey: 'status',
       header: 'Status',
       cell: ({ row }) => (
@@ -294,6 +362,14 @@ export function UserManagement() {
                 Promote to Admin
               </DropdownMenuItem>
             )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem 
+              className="text-red-600 focus:text-red-600" 
+              onClick={() => setUserToDelete(row.original)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete User
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       ),
@@ -396,20 +472,65 @@ export function UserManagement() {
 
       {/* Users Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>All Users</CardTitle>
-          <CardDescription>
-            Manage user roles and permissions
-          </CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>All Users</CardTitle>
+            <CardDescription>
+              Manage user roles and permissions
+            </CardDescription>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-muted-foreground font-medium">Filter by Role:</span>
+            <Select value={activeRoleFilter} onValueChange={(value) => handleRoleFilterChange(value as UserRole | 'all')}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="All Roles" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="patient">Patients</SelectItem>
+                <SelectItem value="physiotherapist">Physiotherapists</SelectItem>
+                <SelectItem value="clinic_owner">Clinic Owners</SelectItem>
+                <SelectItem value="family_member">Family Members</SelectItem>
+                <SelectItem value="admin">Administrators</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <CardContent>
           <DataTable
-            data={users}
+            data={filteredUsers}
             columns={userColumns}
             searchKey="email"
           />
         </CardContent>
       </Card>
+
+      {/* Delete User Confirmation */}
+      <AlertDialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the user
+              <strong> {userToDelete?.firstName} {userToDelete?.lastName} ({userToDelete?.email})</strong> 
+              and remove their associated profile data from our servers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={(e) => {
+                e.preventDefault()
+                handleDeleteUser()
+              }}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete User'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Role Change Dialog */}
       <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>

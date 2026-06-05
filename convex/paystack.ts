@@ -229,7 +229,6 @@ export const savePhysiotherapistBankDetails = internalMutation({
             // Update existing record
             await ctx.db.patch(existing._id, {
                 subaccountCode: args.subaccountId,
-                subaccountId: args.subaccountId, // Store as both for backward compatibility
                 bankCode: args.bankCode,
                 accountNumber: args.accountNumber,
                 bankName: args.bankName,
@@ -243,7 +242,6 @@ export const savePhysiotherapistBankDetails = internalMutation({
             await ctx.db.insert("physiotherapistBankAccounts", {
                 physiotherapistId: args.physiotherapistId,
                 subaccountCode: args.subaccountId,
-                subaccountId: args.subaccountId,
                 bankCode: args.bankCode,
                 accountNumber: args.accountNumber,
                 bankName: args.bankName,

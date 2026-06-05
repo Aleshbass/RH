@@ -93,7 +93,7 @@ export default function BillingPage() {
     billingStats: BillingStats | undefined;
   };
   // Connected payout account status
-  const bankAccounts = useQuery(api.flutterwave.getMyBankAccounts as never);
+  const bankAccounts = useQuery(api.paystack.getMyBankAccounts as never);
   const accounts: BankAccount[] = Array.isArray(bankAccounts) ? (bankAccounts as unknown as BankAccount[]) : [];
   const defaultAccount: BankAccount | undefined = accounts.find((a) => a?.isDefault) || accounts[0];
 

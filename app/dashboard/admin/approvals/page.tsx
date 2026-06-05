@@ -49,7 +49,9 @@ import {
   Eye,
   RefreshCw,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  Phone,
+  Trash2
 } from "lucide-react";
 
 export default function AdminApprovalsPage() {
@@ -63,6 +65,7 @@ export default function AdminApprovalsPage() {
   const debugApprovals = useQueryUntyped(api.users.debugApprovalStatus) as ApprovalWithUser[] | undefined;
   const approveUser = useMutation(api.users.approveUser);
   const declineUser = useMutation(api.users.declineUser);
+  const deleteUser = useMutation(api.users.adminDeleteUser);
   const cleanupOrphanedApprovals = useMutation(api.users.cleanupOrphanedApprovals);
   const testNotificationEmail = useAction(api.users.testNotificationEmail);
 
@@ -109,6 +112,30 @@ export default function AdminApprovalsPage() {
       setProcessingUserId(null);
     }
   }, [declineUser]);
+
+  const handleDelete = useCallback(async (userId: Id<"users">, userName: string) => {
+    setProcessingUserId(userId);
+    try {
+      await deleteUser({ userId });
+      toast.success(`${userName} deleted successfully`, {
+        description: 'The user and all associated data have been permanently removed.',
+        duration: 5000,
+      });
+      // Close dialog if open for this user
+      if (selectedUserId === userId) {
+        setShowDialog(false);
+        setSelectedUserId(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete user:', error);
+      toast.error('Failed to delete user', {
+        description: error instanceof Error ? error.message : 'An unexpected error occurred',
+        duration: 5000,
+      });
+    } finally {
+      setProcessingUserId(null);
+    }
+  }, [deleteUser, selectedUserId]);
 
   const handleQuickApprove = useCallback(async (userId: Id<"users">, userName: string) => {
     setProcessingUserId(userId);
@@ -359,8 +386,16 @@ export default function AdminApprovalsPage() {
                           <h3 className="font-semibold">
                             {approval.user.firstName} {approval.user.lastName}
                           </h3>
-                          <p className="text-sm text-muted-foreground">{approval.user.email}</p>
-                          <div className="flex items-center space-x-2 mt-1">
+                          <div className="flex flex-col gap-1 mt-1 text-sm text-muted-foreground">
+                            <p>{approval.user.email}</p>
+                            {approval.user.phoneNumber && (
+                              <p className="flex items-center">
+                                <Phone className="h-3 w-3 mr-1" />
+                                {approval.user.phoneNumber}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-2 mt-2">
                             <Badge variant="outline">
                               <Icon className="mr-1 h-3 w-3" />
                               {config.label}
@@ -415,6 +450,37 @@ export default function AdminApprovalsPage() {
                           <Eye className="mr-2 h-4 w-4" />
                           Review Details
                         </Button>
+
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              disabled={isProcessing}
+                              className="text-red-600 border-red-200 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Permanently Delete User?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you absolutely sure you want to delete <strong>{userName}</strong>? 
+                                This action cannot be undone. It will permanently remove their account, profile data, and this pending application.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={() => handleDelete(approval.userId, userName || 'User')}
+                                className="bg-red-600 hover:bg-red-700"
+                              >
+                                Delete User
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </div>
                     

@@ -611,7 +611,8 @@ export const updateUserRole = mutation({
       v.literal("physiotherapist"),
       v.literal("patient"),
       v.literal("clinic_owner"),
-      v.literal("family_member")
+      v.literal("family_member"),
+      v.literal("doctor")
     ),
   },
   returns: v.object({ success: v.boolean(), message: v.optional(v.string()) }),
@@ -1019,6 +1020,7 @@ export const debugApprovalStatus = query({
             firstName: user.firstName,
             lastName: user.lastName,
             email: user.email,
+            phoneNumber: user.phoneNumber,
             role: user.role,
             imageUrl: user.imageUrl,
           } : null,
@@ -1066,6 +1068,7 @@ export const getPendingApprovals = query({
             firstName: user.firstName,
             lastName: user.lastName,
             email: user.email,
+            phoneNumber: user.phoneNumber,
             role: user.role,
             imageUrl: user.imageUrl,
           } : null,
@@ -1585,5 +1588,56 @@ export const updatePhysiotherapistProfile = mutation({
     if (Object.keys(profileUpdates).length > 0) {
       await ctx.db.patch(user.physiotherapistProfileId, profileUpdates);
     }
+  },
+});
+
+/**
+ * Completely delete a user and their associated profiles from the system
+ */
+export const adminDeleteUser = mutation({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    // Verify admin access
+    const currentUser = await ensureUserRole(ctx, ["admin"]);
+
+    if (currentUser._id === args.userId) {
+      throw new Error("You cannot delete your own admin account.");
+    }
+
+    const userToDelete = await ctx.db.get(args.userId);
+    if (!userToDelete) {
+      throw new Error("User not found");
+    }
+
+    // 1. Delete associated profiles based on role
+    if (userToDelete.patientProfileId) {
+      await ctx.db.delete(userToDelete.patientProfileId);
+    }
+    if (userToDelete.physiotherapistProfileId) {
+      await ctx.db.delete(userToDelete.physiotherapistProfileId);
+    }
+    if (userToDelete.clinicOwnerProfileId) {
+      await ctx.db.delete(userToDelete.clinicOwnerProfileId);
+    }
+
+    // 2. Delete any pending accountApprovalStatus for this user
+    const approvals = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .collect();
+    
+    for (const approval of approvals) {
+      await ctx.db.delete(approval._id);
+    }
+
+    // 3. Delete the user
+    await ctx.db.delete(args.userId);
+
+    // Optional: Log the deletion
+    console.log(`Admin ${currentUser._id} deleted user ${args.userId} (${userToDelete.email})`);
+
+    return { success: true, message: "User deleted successfully" };
   },
 });

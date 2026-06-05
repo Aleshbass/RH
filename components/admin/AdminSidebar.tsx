@@ -101,7 +101,7 @@ const navigationGroups = [
         description: 'Manage user roles and permissions',
       },
       {
-        title: 'Inbound Referrals',
+        title: 'Doctor Referrals',
         href: '/dashboard/admin/referrals',
         icon: UserPlus,
         roles: ['admin'],

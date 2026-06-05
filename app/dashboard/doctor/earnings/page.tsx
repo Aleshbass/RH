@@ -5,11 +5,13 @@ import { api } from '@/convex/_generated/api'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Wallet, ArrowUpRight, Loader2, AlertCircle } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+import { DoctorBankAccountConnection } from '@/components/billing/DoctorBankAccountConnection'
 
 export default function EarningsPage() {
     const stats = useQuery(api.doctors.getDashboardStats)
+    const currentUser = useQuery(api.users.getMyUser)
 
-    if (stats === undefined) {
+    if (stats === undefined || currentUser === undefined) {
         return (
             <div className="flex h-64 items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
@@ -17,7 +19,7 @@ export default function EarningsPage() {
         )
     }
 
-    if (!stats) {
+    if (!stats || !currentUser) {
         return (
             <div className="flex flex-col items-center justify-center h-64 text-center">
                 <AlertCircle className="h-10 w-10 text-amber-500 mb-3" />
@@ -28,10 +30,10 @@ export default function EarningsPage() {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 max-w-6xl mx-auto">
             <div>
                 <h1 className="text-2xl font-bold tracking-tight text-gray-900">Earnings & Payouts</h1>
-                <p className="text-gray-500">Track your referral kickbacks and payment history.</p>
+                <p className="text-gray-500">Track your referral kickbacks and manage your payout accounts.</p>
             </div>
 
             <div className="grid gap-6 md:grid-cols-3">
@@ -66,25 +68,33 @@ export default function EarningsPage() {
                 </Card>
             </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Payout History</CardTitle>
-                    <CardDescription>Your recent payouts directly to your bank account.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex flex-col items-center justify-center py-12 text-center text-gray-500">
-                        <Wallet className="h-12 w-12 text-gray-300 mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900">No payouts yet</h3>
-                        <p className="mt-1 text-sm">Payouts are processed automatically at the end of each month.</p>
+            <div className="grid gap-6 lg:grid-cols-2 items-start">
+                {/* Left Column: Bank Accounts */}
+                <div className="space-y-6">
+                    <DoctorBankAccountConnection doctorId={currentUser._id} />
+                    
+                    <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 flex items-start gap-3">
+                        <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+                        <div className="text-sm text-amber-800">
+                            <strong>Payout Schedule:</strong> Kickback commissions are disbursed to your registered bank account automatically via Paystack. Please ensure your bank details are verified above.
+                        </div>
                     </div>
-                </CardContent>
-            </Card>
-
-            <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
-                <div className="text-sm text-amber-800">
-                    <strong>Payout Schedule:</strong> Kickback commissions are calculated and disbursed to your registered bank account on the 5th of every month for the previous month's completed sessions.
                 </div>
+
+                {/* Right Column: Payout History */}
+                <Card className="h-full">
+                    <CardHeader>
+                        <CardTitle>Recent Payouts</CardTitle>
+                        <CardDescription>Your recent payouts directly to your bank account.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex flex-col items-center justify-center py-16 text-center text-gray-500">
+                            <Wallet className="h-12 w-12 text-gray-300 mb-4" />
+                            <h3 className="text-lg font-medium text-gray-900">No payouts yet</h3>
+                            <p className="mt-1 text-sm max-w-xs mx-auto">Payouts are processed to your connected bank account.</p>
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
         </div>
     )

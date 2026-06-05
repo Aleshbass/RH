@@ -204,6 +204,25 @@ export default function AdminReferralsPage() {
                                 rows={3}
                             />
                         </div>
+
+                        {selectedReferral?.doctorBankAccount ? (
+                            <div className="mt-2 p-3 bg-indigo-50 border border-indigo-100 rounded-md">
+                                <h4 className="text-xs font-semibold text-indigo-900 mb-2 uppercase tracking-wider">Payout Details</h4>
+                                <div className="space-y-1 text-sm text-indigo-800">
+                                    <p><span className="font-medium text-indigo-900">Bank:</span> {selectedReferral.doctorBankAccount.bankName}</p>
+                                    <p><span className="font-medium text-indigo-900">Account:</span> {selectedReferral.doctorBankAccount.accountNumber}</p>
+                                    <p><span className="font-medium text-indigo-900">Name:</span> {selectedReferral.doctorBankAccount.accountName}</p>
+                                    <p className="mt-1 text-xs text-indigo-600 font-mono">
+                                        Subaccount Code: {selectedReferral.doctorBankAccount.subaccountCode}
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="mt-2 p-3 bg-amber-50 border border-amber-100 rounded-md">
+                                <h4 className="text-xs font-semibold text-amber-900 mb-1 uppercase tracking-wider">Missing Payout Details</h4>
+                                <p className="text-xs text-amber-800">The referring doctor has not connected a verified bank account yet. Automatic split payments will fail.</p>
+                            </div>
+                        )}
                     </div>
 
                     <DialogFooter>

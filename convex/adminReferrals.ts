@@ -24,12 +24,22 @@ export const getInboundReferrals = query({
                 if (doctor && doctor.doctorProfileId) {
                     doctorProfile = await ctx.db.get(doctor.doctorProfileId);
                 }
+                
+                // Fetch doctor's verified bank accounts for payouts
+                const bankAccounts = await ctx.db
+                    .query("doctorBankAccounts")
+                    .withIndex("by_doctor_id", (q) => q.eq("doctorId", referral.referringDoctorId))
+                    .collect();
+                
+                // Prefer the default account, or take the first one available
+                const defaultBankAccount = bankAccounts.find(a => a.isDefault) || bankAccounts[0] || null;
 
                 return {
                     ...referral,
                     doctorName: doctor ? `${doctor.firstName} ${doctor.lastName}` : "Unknown",
                     doctorEmail: doctor?.email,
                     doctorProfile,
+                    doctorBankAccount: defaultBankAccount,
                 };
             })
         );

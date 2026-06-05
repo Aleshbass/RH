@@ -34,8 +34,8 @@ const Footer = () => {
         </div>
 
         {/* Links Section */}
-        <div className="py-12 border-t border-gray-700 grid grid-cols-2 md:grid-cols-5 gap-8">
-          <div className="col-span-2 md:col-span-1">
+        <div className="py-12 border-t border-gray-700 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-8">
+          <div className="col-span-1 sm:col-span-2 md:col-span-1">
             <Image src="/logos/White MainRehabify.svg" width={150} height={40} alt="Rehabify Logo" className="object-contain mb-4" />
             <p className="text-gray-400">Revolutionizing physiotherapy through technology.</p>
           </div>

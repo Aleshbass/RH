@@ -112,6 +112,22 @@ export default function RoleSelectionPage() {
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 mt-8">
+          {/* Doctor Card */}
+          <button
+            onClick={() => handleRoleSelect('doctor')}
+            disabled={loadingRole !== null}
+            className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'doctor' ? 'border-green-500 ring-2 ring-green-200 opacity-80' : 'border-green-100 hover:border-green-500 hover:shadow-md'
+              }`}
+          >
+            <div className="w-12 h-12 bg-green-50 text-green-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-green-500 group-hover:text-white transition-colors">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-1">Referring Doctor</h3>
+            <p className="text-sm text-gray-500">I want to refer my patients for physio.</p>
+          </button>
+
           {/* Physiotherapist Card */}
           <button
             onClick={() => handleRoleSelect('physiotherapist')}
@@ -158,22 +174,6 @@ export default function RoleSelectionPage() {
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-1">Patient</h3>
             <p className="text-sm text-gray-500">I need care or have an invitation link.</p>
-          </button>
-
-          {/* Doctor Card */}
-          <button
-            onClick={() => handleRoleSelect('doctor')}
-            disabled={loadingRole !== null}
-            className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'doctor' ? 'border-indigo-500 ring-2 ring-indigo-200 opacity-80' : 'border-indigo-100 hover:border-indigo-500 hover:shadow-md'
-              }`}
-          >
-            <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-1">Referring Doctor</h3>
-            <p className="text-sm text-gray-500">I want to refer my patients for physio.</p>
           </button>
         </div>
       </div>

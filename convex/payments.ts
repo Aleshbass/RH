@@ -16,7 +16,6 @@ const paymentStatus = v.union(
 // Payment method enum
 const paymentMethod = v.union(
   v.literal("paystack"),
-  v.literal("flutterwave"),
   v.literal("bank_transfer"),
   v.literal("cash")
 );

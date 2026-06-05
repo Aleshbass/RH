@@ -139,11 +139,19 @@ export const getAdminDashboardStats = query({
     const newUsersToday = allUsers.filter(u => u._creationTime >= todayStart).length;
     const newUsersThisWeek = allUsers.filter(u => u._creationTime >= weekAgo).length;
 
-    // Get pending approvals (use users table with approval status check)
-    const pendingUsers = await ctx.db
-      .query("users")
-      .filter(q => q.eq(q.field("onboarded"), false))
+    // Get pending approvals from the accountApprovalStatus table
+    // (same source as the approvals page so numbers always match)
+    const pendingApprovalRecords = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_status", (q) => q.eq("status", "pending_review"))
       .collect();
+
+    // Filter out orphaned records (where user no longer exists)
+    let validPendingCount = 0;
+    for (const record of pendingApprovalRecords) {
+      const user = await ctx.db.get(record.userId);
+      if (user) validPendingCount++;
+    }
 
     // Get all appointments
     const allAppointments = await ctx.db.query("appointments").collect();
@@ -162,7 +170,7 @@ export const getAdminDashboardStats = query({
       totalUsers,
       newUsersToday,
       newUsersThisWeek,
-      pendingApprovals: pendingUsers.length,
+      pendingApprovals: validPendingCount,
       appointmentsToday,
       totalClinics: allClinics.length,
       totalAppointments: allAppointments.length,

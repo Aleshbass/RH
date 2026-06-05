@@ -5,7 +5,7 @@
  */
 
 import { v } from "convex/values";
-import { mutation, action, internalMutation } from "../_generated/server";
+import { mutation, action, internalMutation, query } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 
 /**

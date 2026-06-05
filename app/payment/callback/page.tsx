@@ -17,30 +17,20 @@ function PaymentCallbackContent() {
   const [invoiceId, setInvoiceId] = useState<string | null>(null)
   const [isMarketplaceBooking, setIsMarketplaceBooking] = useState(false)
 
-  // Flutterwave verification
-  const verifyFlutterwaveTransaction = useAction(api.flutterwave.verifyTransactionByRef)
   // Paystack verification
   const verifyPaystackTransaction = useAction(api.payments.verifyPaystackTransaction)
   // Complete marketplace booking
   const completeMarketplaceBooking = useAction((api as any).marketplace.booking.completeMarketplaceBooking)
 
   useEffect(() => {
-    // Flutterwave parameters
-    const flwStatus = searchParams.get('status')
-    const transactionId = searchParams.get('transaction_id')
-    const txRef = searchParams.get('tx_ref')
-
-    // Paystack parameters (backward compatibility)
+    // Paystack parameters
     const reference = searchParams.get('reference')
     const trxref = searchParams.get('trxref')
 
-    // Check if this is a Flutterwave callback
-    const isFlutterwave = (flwStatus && txRef) || (txRef && !reference && !trxref)
-
     // Determine payment reference
-    const paymentRef = txRef || reference || trxref
+    const paymentRef = reference || trxref
 
-    if (!paymentRef && !transactionId) {
+    if (!paymentRef) {
       setStatus('failed')
       setMessage('No payment reference found')
       return
@@ -48,81 +38,37 @@ function PaymentCallbackContent() {
 
     const verifyPayment = async () => {
       try {
-        if (isFlutterwave) {
-          // Flutterwave verification
-          // If status is already 'successful', we can trust it but still verify
-          if (flwStatus === 'successful' && transactionId) {
-            // Verify by transaction ID for extra security
-            const result = await verifyFlutterwaveTransaction({
-              txRef: txRef!
-            })
+        // Paystack verification
+        const result = await verifyPaystackTransaction({
+          reference: paymentRef!
+        })
 
-            if (result.success && result.status === 'successful') {
-              setStatus('success')
-              setMessage('Payment completed successfully! Your balance has been updated.')
-              toast.success('Payment successful!')
-            } else {
-              setStatus('failed')
-              setMessage(result.error || 'Payment verification failed')
-              toast.error('Payment failed')
+        if (result.success && result.status === 'success') {
+          // Check if this is a marketplace booking
+          if (result.metadata?.bookingId) {
+            try {
+              await completeMarketplaceBooking({
+                bookingId: result.metadata.bookingId,
+                paymentReference: paymentRef!,
+              })
+            } catch (err) {
+              console.error('Failed to complete marketplace booking:', err)
             }
-          } else if (flwStatus === 'cancelled') {
-            setStatus('failed')
-            setMessage('Payment was cancelled')
-            toast.error('Payment cancelled')
-          } else if (flwStatus === 'failed') {
-            setStatus('failed')
-            setMessage('Payment failed. Please try again.')
-            toast.error('Payment failed')
-          } else {
-            // Verify by tx_ref
-            const result = await verifyFlutterwaveTransaction({
-              txRef: txRef!
-            })
-
-            if (result.success && result.status === 'successful') {
-              setStatus('success')
-              setMessage('Payment completed successfully! Your balance has been updated.')
-              toast.success('Payment successful!')
-            } else {
-              setStatus('failed')
-              setMessage(result.error || 'Payment verification failed')
-              toast.error('Payment failed')
-            }
+            setIsMarketplaceBooking(true)
           }
+
+          setStatus('success')
+          setMessage('Payment completed successfully! Your booking is confirmed.')
+
+          if (result.metadata?.invoiceId) {
+            setInvoiceId(result.metadata.invoiceId)
+          }
+
+          toast.success('Payment successful!')
         } else {
-          // Paystack verification
-          const result = await verifyPaystackTransaction({
-            reference: paymentRef!
-          })
-
-          if (result.success && result.status === 'success') {
-            // Check if this is a marketplace booking
-            if (result.metadata?.bookingId) {
-              try {
-                await completeMarketplaceBooking({
-                  bookingId: result.metadata.bookingId,
-                  paymentReference: paymentRef!,
-                })
-              } catch (err) {
-                console.error('Failed to complete marketplace booking:', err)
-              }
-              setIsMarketplaceBooking(true)
-            }
-
-            setStatus('success')
-            setMessage('Payment completed successfully! Your booking is confirmed.')
-
-            if (result.metadata?.invoiceId) {
-              setInvoiceId(result.metadata.invoiceId)
-            }
-
-            toast.success('Payment successful!')
-          } else {
-            setStatus('failed')
-            setMessage(result.error || 'Payment verification failed')
-            toast.error('Payment failed')
-          }
+          setStatus('failed')
+          setMessage(result.error || 'Payment verification failed')
+          toast.error('Payment failed')
         }
       } catch (error) {
         console.error('Payment verification error:', error)
@@ -133,7 +79,7 @@ function PaymentCallbackContent() {
     }
 
     verifyPayment()
-  }, [searchParams, verifyFlutterwaveTransaction, verifyPaystackTransaction, completeMarketplaceBooking])
+  }, [searchParams, verifyPaystackTransaction, completeMarketplaceBooking])
 
   const handleContinue = () => {
     if (isMarketplaceBooking) {
