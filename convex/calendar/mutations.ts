@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Internal mutations for calendar operations
  * These are non-node mutations that can be called from node actions

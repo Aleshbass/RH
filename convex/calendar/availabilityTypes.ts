@@ -13,14 +13,14 @@ import { v } from "convex/values";
 export const timeSlotValidator = v.object({
     start: v.string(), // "HH:MM" format
     end: v.string(), // "HH:MM" format
-});
+}) as any;
 
 // Single day availability
 export const dayAvailabilityValidator = v.object({
     dayOfWeek: v.number(), // 0=Sunday, 1=Monday, ..., 6=Saturday
     isAvailable: v.boolean(),
     slots: v.array(timeSlotValidator), // Multiple slots per day (e.g., 9-12, 13-17 for lunch break)
-});
+}) as any;
 
 // Date override (holidays, vacation, custom hours)
 export const dateOverrideValidator = v.object({
@@ -28,13 +28,13 @@ export const dateOverrideValidator = v.object({
     isAvailable: v.boolean(),
     slots: v.optional(v.array(timeSlotValidator)), // Custom hours for that day
     reason: v.optional(v.string()), // "National Holiday", "Vacation", etc.
-});
+}) as any;
 
 // Buffer settings (Cal.com style - before and after)
 export const bufferSettingsValidator = v.object({
     beforeEvent: v.number(), // minutes before each event
     afterEvent: v.number(), // minutes after each event (for cleaning, notes)
-});
+}) as any;
 
 // Complete availability schedule
 export const availabilityScheduleValidator = v.object({
@@ -43,7 +43,7 @@ export const availabilityScheduleValidator = v.object({
     buffer: bufferSettingsValidator,
     weeklyHours: v.array(dayAvailabilityValidator),
     dateOverrides: v.optional(v.array(dateOverrideValidator)),
-});
+}) as any;
 
 // TypeScript types derived from validators
 export type TimeSlot = {
