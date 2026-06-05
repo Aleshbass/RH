@@ -130,6 +130,90 @@ export const createMarketplaceBooking = mutation({
 });
 
 /**
+ * Guest Booking — no Clerk auth required.
+ * Used when patients check out without creating an account.
+ * Stores guestEmail + guestPhone on the booking record.
+ */
+export const guestCreateMarketplaceBooking = mutation({
+    args: {
+        physiotherapistId: v.id("users"),
+        sessionType: v.string(),
+        sessionDate: v.optional(v.number()),
+        sessionDuration: v.number(),
+        isOnline: v.boolean(),
+        serviceAmount: v.number(), // in kobo
+        patientNotes: v.optional(v.string()),
+        packageSessions: v.optional(v.number()),
+        packageDiscountPercent: v.optional(v.number()),
+        conditionLabel: v.optional(v.string()),
+        conditionLevel: v.optional(v.string()),
+        patientAddress: v.optional(v.string()),
+        guestEmail: v.string(),
+        guestPhone: v.optional(v.string()),
+        guestName: v.optional(v.string()),
+    },
+
+    handler: async (ctx, args) => {
+        // No auth check — guests are allowed
+        const physioProfile = await ctx.db
+            .query("physiotherapistProfiles")
+            .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistId))
+            .first();
+
+        if (!physioProfile || !physioProfile.isAvailableOnMarketplace) {
+            throw new Error("Physiotherapist not available for booking");
+        }
+
+        const fees = calculateMarketplaceFees(args.serviceAmount);
+        const effectiveSessionType =
+            args.packageSessions && args.packageSessions > 1 ? "package" : args.sessionType;
+
+        // Guest users don't have a patientId — use physiotherapistId as placeholder
+        // The booking will be linked to a real patient after they sign up (future enhancement)
+        const bookingId = await ctx.db.insert("marketplaceBookings", {
+            physiotherapistId: args.physiotherapistId,
+            patientId: args.physiotherapistId, // placeholder — overridden on account creation
+            sessionType: effectiveSessionType,
+            sessionDate: args.sessionDate,
+            sessionDuration: args.sessionDuration,
+            isOnline: args.isOnline,
+            patientAddress: args.patientAddress,
+            serviceAmount: fees.serviceAmount,
+            platformFee: fees.platformFee,
+            paystackFee: fees.paystackFee,
+            totalAmount: fees.totalAmount,
+            physiotherapistEarnings: fees.physiotherapistEarnings,
+            paymentStatus: "pending",
+            bookingStatus: "pending_payment",
+            patientNotes: args.patientNotes,
+            packageSessions: args.packageSessions ?? 1,
+            packageDiscountPercent: args.packageDiscountPercent ?? 0,
+            sessionsRemaining: args.packageSessions ?? 1,
+            conditionLabel: args.conditionLabel,
+            conditionLevel: args.conditionLevel,
+            guestEmail: args.guestEmail,
+            guestPhone: args.guestPhone,
+            guestName: args.guestName,
+            isGuestBooking: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+        } as any);
+
+        return { bookingId, fees };
+    },
+});
+
+/**
+ * Get marketplace booking by ID (for server-side use by payment API)
+ */
+export const getMarketplaceBooking = query({
+    args: { bookingId: v.id("marketplaceBookings") },
+    handler: async (ctx, args) => {
+        return await ctx.db.get(args.bookingId);
+    },
+});
+
+/**
  * Complete marketplace booking after payment
  * Called by Paystack webhook or payment confirmation
  */

@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
+import Link from "next/link";
 import {
     Loader2,
     ArrowLeft,
@@ -14,9 +15,13 @@ import {
     CheckCircle2,
     Video,
     Users,
+    Mail,
+    Phone,
+    LogIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import CalendarBookingWidget from "@/components/marketplace/CalendarBookingWidget";
@@ -76,6 +81,12 @@ export default function BookingPage() {
     const [treatmentPrefs, setTreatmentPrefs] = useState<TreatmentPrefs | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
 
+    // Guest checkout state (for non-signed-in users)
+    const [guestEmail, setGuestEmail] = useState("");
+    const [guestPhone, setGuestPhone] = useState("");
+    const [guestName, setGuestName] = useState("");
+    const [showGuestForm, setShowGuestForm] = useState(false);
+
     // Package selection state
     const [selectedPackage, setSelectedPackage] = useState<1 | 4 | 8 | 12>(1);
     const [packageBreakdown, setPackageBreakdown] = useState<SimplePackageBreakdown | null>(null);
@@ -88,6 +99,11 @@ export default function BookingPage() {
     // Create booking mutation
     const createBooking = useMutation(
         api.marketplace.booking.createMarketplaceBooking
+    );
+
+    // Guest booking mutation (no auth required)
+    const guestCreateBooking = useMutation(
+        api.marketplace.booking.guestCreateMarketplaceBooking
     );
 
     // Complete booking mutation (for free sessions)
@@ -254,41 +270,35 @@ export default function BookingPage() {
         setPackageBreakdown(breakdown);
     };
 
-    const initializeFlutterwavePayment = async (
+    const initializePaystackPayment = async (
         bookingId: Id<"marketplaceBookings">,
-        amount: number
+        amountNaira: number,
+        email: string,
+        phone?: string,
+        name?: string
     ) => {
-        // Validate email before proceeding
-        const userEmail = user?.primaryEmailAddress?.emailAddress;
-        if (!userEmail) {
-            throw new Error("Email address is required for payment");
-        }
-
-        // Call our API to create a Flutterwave payment link
-        const response = await fetch("/api/payments/flutterwave/initialize", {
+        const response = await fetch("/api/payments/marketplace", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 bookingId,
-                amount,
-                email: userEmail,
-                name: user?.fullName || user?.firstName || "Customer",
-                redirectUrl: `${window.location.origin}/payment/callback`,
+                amount: amountNaira, // naira — API converts to kobo
+                email,
+                phone: phone || null,
+                name: name || null,
             }),
         });
 
-        // Check HTTP status before parsing JSON
         if (!response.ok) {
             const errorText = await response.text();
-            console.error("Payment initialization failed:", response.status, errorText);
+            console.error("Paystack init failed:", response.status, errorText);
             throw new Error(`Payment initialization failed: ${response.statusText}`);
         }
 
         const data = await response.json();
 
-        if (data.success && data.paymentUrl) {
-            // Redirect to Flutterwave payment page
-            window.location.href = data.paymentUrl;
+        if (data.success && data.authorization_url) {
+            window.location.href = data.authorization_url;
         } else {
             throw new Error(data.error || "Failed to initialize payment");
         }
@@ -302,28 +312,7 @@ export default function BookingPage() {
     };
     const packageName = packageLabels[selectedPackage] || "Package";
 
-    const handleBooking = async () => {
-        if (!isSignedIn) {
-            // Save booking state + treatment prefs + package data to localStorage and redirect to sign in
-            localStorage.setItem(
-                "pendingBooking",
-                JSON.stringify({
-                    physiotherapistId,
-                    slot: selectedSlot,
-                    sessionMode,
-                    notes,
-                    patientAddress,
-                    treatmentPrefs,
-                    selectedPackage,
-                    packageBreakdown,
-                })
-            );
-            router.push(
-                `/sign-in?redirect=/book/${physiotherapistId}/${sessionDuration}`
-            );
-            return;
-        }
-
+    const processBookingAndPay = async (email: string, phone?: string, name?: string) => {
         if (!selectedSlot) {
             toast.error("Please select a time slot");
             return;
@@ -335,31 +324,38 @@ export default function BookingPage() {
         }
 
         const totalAmount = packageBreakdown?.total || profile.initialConsultRate || profile.hourlyRate || 0;
-        if (totalAmount > 0 && !user?.primaryEmailAddress?.emailAddress) {
-            toast.error("Email address is required for payment");
-            return;
-        }
 
         setIsProcessing(true);
 
         try {
-            const result = await createBooking({
+            const bookingArgs = {
                 physiotherapistId,
                 sessionType: selectedPackage === 1 ? "initial_consult" : "package",
                 sessionDate: selectedSlot.start,
                 sessionDuration,
                 isOnline: sessionMode === "online",
-                serviceAmount: Math.round(totalAmount * 100), // in kobo — full package total
+                serviceAmount: Math.round(totalAmount * 100), // in kobo
                 patientNotes: notes ? `${notes}\n\nPackage: ${packageName} (${selectedPackage} sessions)` : `Package: ${packageName} (${selectedPackage} sessions)`,
-                // Package metadata — persisted in Convex, used to auto-create treatment plan
                 packageSessions: selectedPackage,
                 packageDiscountPercent: discountPercent,
                 patientAddress: sessionMode === "in-person" ? patientAddress : undefined,
                 conditionLabel: treatmentPrefs?.conditionLabel,
                 conditionLevel: treatmentPrefs?.conditionLevel,
-            });
+            };
 
-            // For free sessions, skip payment and complete booking directly
+            let result;
+            if (isSignedIn) {
+                result = await createBooking(bookingArgs);
+            } else {
+                result = await guestCreateBooking({
+                    ...bookingArgs,
+                    guestEmail: email,
+                    guestPhone: phone,
+                    guestName: name,
+                });
+            }
+
+            // Free session — skip payment
             if (totalAmount === 0) {
                 toast.success("Booking confirmed!");
                 await completeBooking({
@@ -371,16 +367,47 @@ export default function BookingPage() {
                 return;
             }
 
-            // Initialize Flutterwave payment for paid sessions
-            await initializeFlutterwavePayment(result.bookingId, totalAmount);
+            // Initialize Paystack payment
+            await initializePaystackPayment(result.bookingId, totalAmount, email, phone, name);
         } catch (error: any) {
             console.error("Booking error:", error);
             toast.error("Booking failed", {
-                description:
-                    error.message || "Failed to create booking. Please try again.",
+                description: error.message || "Failed to create booking. Please try again.",
             });
             setIsProcessing(false);
         }
+    };
+
+    const handleBooking = async () => {
+        if (!selectedSlot) {
+            toast.error("Please select a time slot");
+            return;
+        }
+        if (sessionMode === "in-person" && !patientAddress.trim()) {
+            toast.error("Please provide your exact address for in-person visits.");
+            return;
+        }
+
+        if (isSignedIn) {
+            // Signed-in: use Clerk email directly
+            const email = user?.primaryEmailAddress?.emailAddress;
+            if (!email) {
+                toast.error("No email address found on your account.");
+                return;
+            }
+            await processBookingAndPay(email, undefined, user?.fullName || user?.firstName || undefined);
+        } else {
+            // Not signed in: show guest form
+            setShowGuestForm(true);
+        }
+    };
+
+    const handleGuestPay = async () => {
+        if (!guestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
+            toast.error("Please enter a valid email address.");
+            return;
+        }
+        await processBookingAndPay(guestEmail.trim(), guestPhone.trim() || undefined, guestName.trim() || undefined);
     };
 
     const formatDate = (timestamp: number) => {
@@ -641,7 +668,71 @@ export default function BookingPage() {
                                 </button>
                             </div>
 
+                            {/* Guest checkout form */}
+                            {showGuestForm && !isSignedIn && (
+                                <div className="bg-gray-900 border border-teal-700 rounded-xl p-5 mb-5 space-y-4">
+                                    <p className="text-teal-400 text-sm font-semibold">Quick Checkout — No Account Needed</p>
+                                    <div>
+                                        <Label htmlFor="guestName" className="text-gray-300 mb-1 block text-xs">Full Name (Optional)</Label>
+                                        <div className="relative">
+                                            <Input
+                                                id="guestName"
+                                                value={guestName}
+                                                onChange={(e) => setGuestName(e.target.value)}
+                                                placeholder="Your full name"
+                                                className="bg-gray-800 border-gray-700 text-white pl-9"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <Label htmlFor="guestEmail" className="text-gray-300 mb-1 block text-xs">Email Address <span className="text-red-400">*</span></Label>
+                                        <div className="relative">
+                                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                                            <Input
+                                                id="guestEmail"
+                                                type="email"
+                                                value={guestEmail}
+                                                onChange={(e) => setGuestEmail(e.target.value)}
+                                                placeholder="you@example.com"
+                                                className="bg-gray-800 border-gray-700 text-white pl-9"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <Label htmlFor="guestPhone" className="text-gray-300 mb-1 block text-xs">Phone Number (Optional)</Label>
+                                        <div className="relative">
+                                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                                            <Input
+                                                id="guestPhone"
+                                                type="tel"
+                                                value={guestPhone}
+                                                onChange={(e) => setGuestPhone(e.target.value)}
+                                                placeholder="080xxxxxxxx"
+                                                className="bg-gray-800 border-gray-700 text-white pl-9"
+                                            />
+                                        </div>
+                                    </div>
+                                    <Button
+                                        onClick={handleGuestPay}
+                                        disabled={isProcessing || !guestEmail.trim()}
+                                        className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+                                    >
+                                        {isProcessing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</> : "Continue to Payment"}
+                                    </Button>
+                                    <p className="text-center text-xs text-gray-500">
+                                        Already have an account?{" "}
+                                        <Link
+                                            href={`/sign-in?redirect=/book/${physiotherapistId}/${sessionDuration}`}
+                                            className="text-teal-400 hover:underline"
+                                        >
+                                            Sign in instead
+                                        </Link>
+                                    </p>
+                                </div>
+                            )}
+
                             {/* Action Buttons */}
+                            {!showGuestForm && (
                             <div className="flex gap-3">
                                 <Button
                                     onClick={goBack}
@@ -662,14 +753,15 @@ export default function BookingPage() {
                                             Processing...
                                         </>
                                     ) : !sessionRate ? (
-                                        isSignedIn ? "Book Now" : "Sign In & Book"
+                                        isSignedIn ? "Book Now" : "Book Now"
                                     ) : isSignedIn ? (
                                         "Confirm & Pay"
                                     ) : (
-                                        "Sign In & Pay"
+                                        "Continue to Payment"
                                     )}
                                 </Button>
                             </div>
+                            )}
                         </div>
                     </div>
                 )}

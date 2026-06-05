@@ -15,11 +15,14 @@ function PaymentCallbackContent() {
   const [status, setStatus] = useState<'loading' | 'success' | 'failed'>('loading')
   const [message, setMessage] = useState('')
   const [invoiceId, setInvoiceId] = useState<string | null>(null)
+  const [isMarketplaceBooking, setIsMarketplaceBooking] = useState(false)
 
-  // Use Flutterwave verification
+  // Flutterwave verification
   const verifyFlutterwaveTransaction = useAction(api.flutterwave.verifyTransactionByRef)
-  // Keep Paystack for backward compatibility during transition
+  // Paystack verification
   const verifyPaystackTransaction = useAction(api.payments.verifyPaystackTransaction)
+  // Complete marketplace booking
+  const completeMarketplaceBooking = useAction((api as any).marketplace.booking.completeMarketplaceBooking)
 
   useEffect(() => {
     // Flutterwave parameters
@@ -88,14 +91,27 @@ function PaymentCallbackContent() {
             }
           }
         } else {
-          // Paystack verification (backward compatibility)
+          // Paystack verification
           const result = await verifyPaystackTransaction({
             reference: paymentRef!
           })
 
           if (result.success && result.status === 'success') {
+            // Check if this is a marketplace booking
+            if (result.metadata?.bookingId) {
+              try {
+                await completeMarketplaceBooking({
+                  bookingId: result.metadata.bookingId,
+                  paymentReference: paymentRef!,
+                })
+              } catch (err) {
+                console.error('Failed to complete marketplace booking:', err)
+              }
+              setIsMarketplaceBooking(true)
+            }
+
             setStatus('success')
-            setMessage('Payment completed successfully! Your balance has been updated.')
+            setMessage('Payment completed successfully! Your booking is confirmed.')
 
             if (result.metadata?.invoiceId) {
               setInvoiceId(result.metadata.invoiceId)
@@ -117,11 +133,12 @@ function PaymentCallbackContent() {
     }
 
     verifyPayment()
-  }, [searchParams, verifyFlutterwaveTransaction, verifyPaystackTransaction])
+  }, [searchParams, verifyFlutterwaveTransaction, verifyPaystackTransaction, completeMarketplaceBooking])
 
   const handleContinue = () => {
-    // Redirect to invoices page or dashboard
-    if (invoiceId) {
+    if (isMarketplaceBooking) {
+      router.push('/dashboard/patient/appointments')
+    } else if (invoiceId) {
       router.push('/dashboard/patient/invoices')
     } else {
       router.push('/dashboard')
