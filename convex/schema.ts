@@ -2320,6 +2320,12 @@ export default defineSchema({
     patientNotes: v.optional(v.string()),
     cancellationReason: v.optional(v.string()),
 
+    // Guest details
+    isGuestBooking: v.optional(v.boolean()),
+    guestEmail: v.optional(v.string()),
+    guestPhone: v.optional(v.string()),
+    guestName: v.optional(v.string()),
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
