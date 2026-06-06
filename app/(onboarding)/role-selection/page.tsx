@@ -92,9 +92,9 @@ export default function RoleSelectionPage() {
           // Optionally, navigate to an error page or back to role selection
           break;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating user role:', error);
-      // Optionally show an error message to the user
+      import('sonner').then(({ toast }) => toast.error(error.message || 'Failed to update role. Please try again.'));
     } finally {
       setLoadingRole(null);
     }

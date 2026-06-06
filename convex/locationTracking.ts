@@ -108,7 +108,7 @@ export const getAllActiveLocations = query({
       .first();
 
     if (!user || user.role !== "admin") {
-      throw new Error("Only admins can view all locations");
+      return [];
     }
 
     const locations = await ctx.db.query("physiotherapistLocations").collect();
