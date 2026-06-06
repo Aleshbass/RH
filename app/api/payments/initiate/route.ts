@@ -1,9 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
-import { ConvexHttpClient } from 'convex/browser';
+import { getConvexClient } from '@/lib/convex-client';
 import { Id } from '@/convex/_generated/dataModel';
-
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +19,7 @@ export async function POST(request: NextRequest) {
     const { api } = await import('@/convex/_generated/api') as any;
 
     // Get invoice details from Convex
-    const invoice = await convex.query((api.billing.getInvoiceById as any), {
+    const invoice = await getConvexClient().query((api.billing.getInvoiceById as any), {
       invoiceId: invoiceId as Id<'invoices'>
     }) as {
       _id: Id<'invoices'>;
@@ -75,7 +73,7 @@ export async function POST(request: NextRequest) {
     let subaccountCode: string | null = null;
     if (invoice.physiotherapistId) {
       try {
-        const bankDetails = await convex.query(api.flutterwave.getPhysiotherapistBankDetails, {
+        const bankDetails = await getConvexClient().query(api.flutterwave.getPhysiotherapistBankDetails, {
           physiotherapistId: invoice.physiotherapistId
         });
         subaccountCode = bankDetails?.subaccountId || null;
@@ -132,7 +130,7 @@ export async function POST(request: NextRequest) {
 
     if (data.status === true) {
       // Save payment reference to database via Convex
-      await convex.mutation(api.payments.createPaymentRecord, {
+      await getConvexClient().mutation(api.payments.createPaymentRecord, {
         invoiceId: invoiceId as Id<'invoices'>,
         reference: txRef,
         amount: totalPayable,

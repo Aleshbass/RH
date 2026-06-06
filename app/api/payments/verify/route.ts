@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ConvexHttpClient } from 'convex/browser'
+import { getConvexClient } from '@/lib/convex-client'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
-
-if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
-  throw new Error("NEXT_PUBLIC_CONVEX_URL is not configured.");
-}
-
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL)
 
 /**
  * Payment verification endpoint — uses Paystack
@@ -79,7 +73,7 @@ export async function POST(request: NextRequest) {
         if (txId) {
           // Add basic idempotent check here by checking if it's already completed if needed
           // For now, allow completeVerificationPurchase to handle uniqueness/idempotency by throwing
-          const result = await convex.mutation(api.marketplace.verification.completeVerificationPurchase, {
+          const result = await getConvexClient().mutation(api.marketplace.verification.completeVerificationPurchase, {
             transactionId: txId as Id<'marketplaceTransactions'>,
             paymentReference: reference,
           })
@@ -102,7 +96,7 @@ export async function POST(request: NextRequest) {
         const bookingId = parts.length >= 2 ? parts[1] : null
 
         if (bookingId) {
-          await convex.mutation(api.marketplace.booking.completeMarketplaceBooking, {
+          await getConvexClient().mutation(api.marketplace.booking.completeMarketplaceBooking, {
             bookingId: bookingId as Id<'marketplaceBookings'>,
             paymentReference: reference,
           })

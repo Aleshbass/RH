@@ -6,16 +6,11 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
-
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-if (!convexUrl) {
-    throw new Error("[AwaDoc] NEXT_PUBLIC_CONVEX_URL must be set");
-}
-const convex = new ConvexHttpClient(convexUrl);
+import { getConvexClient } from "@/lib/convex-client";
 
 export async function POST(request: NextRequest) {
+    const convex = getConvexClient();
     let body: { therapyId: string; guestToken: string };
 
     try {

@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'
 import { api } from '@/convex/_generated/api'
-import { ConvexHttpClient } from 'convex/browser'
-
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+import { getConvexClient } from '@/lib/convex-client'
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +19,7 @@ export async function POST(request: NextRequest) {
     const mappedStatus = status === 'success' ? 'completed' : status
 
     // Update via Convex
-    const result = await convex.mutation(api.payments.updatePaymentStatus, {
+    const result = await getConvexClient().mutation(api.payments.updatePaymentStatus, {
       paystackReference: reference,
       status: mappedStatus,
       ...(paystackData ? { paystackData } : {})

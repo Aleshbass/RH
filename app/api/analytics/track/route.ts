@@ -3,7 +3,18 @@ import { api } from '@/convex/_generated/api'
 import { ConvexHttpClient } from 'convex/browser'
 import { log } from '@/lib/monitoring/logger'
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+let convexClient: ConvexHttpClient | null = null
+
+function getConvexClient(): ConvexHttpClient {
+  if (!convexClient) {
+    const url = process.env.NEXT_PUBLIC_CONVEX_URL
+    if (!url) {
+      throw new Error('NEXT_PUBLIC_CONVEX_URL is not set')
+    }
+    convexClient = new ConvexHttpClient(url)
+  }
+  return convexClient
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,7 +30,7 @@ export async function POST(request: NextRequest) {
     // Route to appropriate analytics function based on type
     switch (type) {
       case 'user-event':
-        await convex.mutation(api.analytics.logSystemEvent, {
+        await getConvexClient().mutation(api.analytics.logSystemEvent, {
           level: 'info',
           message: `User event: ${data.action}`,
           userId: data.userId,
@@ -34,7 +45,7 @@ export async function POST(request: NextRequest) {
         break
 
       case 'page-view':
-        await convex.mutation(api.analytics.recordPerformanceMetric, {
+        await getConvexClient().mutation(api.analytics.recordPerformanceMetric, {
           metric: 'page_view',
           value: 1,
           userId: data.userId,
@@ -48,7 +59,7 @@ export async function POST(request: NextRequest) {
         break
 
       case 'business-event':
-        await convex.mutation(api.analytics.recordPerformanceMetric, {
+        await getConvexClient().mutation(api.analytics.recordPerformanceMetric, {
           metric: `business_${data.event}`,
           value: data.value || 1,
           userId: data.userId,
@@ -62,7 +73,7 @@ export async function POST(request: NextRequest) {
         break
 
       case 'performance-metric':
-        await convex.mutation(api.analytics.recordPerformanceMetric, {
+        await getConvexClient().mutation(api.analytics.recordPerformanceMetric, {
           metric: data.metric,
           value: data.value,
           userId: data.userId,
@@ -74,7 +85,7 @@ export async function POST(request: NextRequest) {
         break
 
       case 'error':
-        await convex.mutation(api.analytics.logSystemEvent, {
+        await getConvexClient().mutation(api.analytics.logSystemEvent, {
           level: 'error',
           message: data.message,
           userId: data.userId,

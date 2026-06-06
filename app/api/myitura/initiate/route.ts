@@ -13,16 +13,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-if (!convexUrl) throw new Error("NEXT_PUBLIC_CONVEX_URL must be set");
-const convex = new ConvexHttpClient(convexUrl);
+import { getConvexClient } from "@/lib/convex-client";
 
 export async function POST(request: NextRequest) {
     try {
+        const convex = getConvexClient();
         // 1. Authenticate
         const { userId } = await auth();
         if (!userId) {

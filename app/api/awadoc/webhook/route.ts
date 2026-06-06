@@ -11,7 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { ConvexHttpClient } from "convex/browser";
+import { getConvexClient } from "@/lib/convex-client";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import crypto from "crypto";
@@ -23,13 +23,11 @@ import {
     toDayString,
 } from "@/lib/awadoc/awadoc";
 
-// ── Convex client (validated) ───────────────────────────
-
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-if (!convexUrl) {
-    throw new Error("[AwaDoc] NEXT_PUBLIC_CONVEX_URL must be set");
-}
-const convex = new ConvexHttpClient(convexUrl);
+const convex = {
+    query: (...args: any[]) => (getConvexClient().query as any)(...args),
+    mutation: (...args: any[]) => (getConvexClient().mutation as any)(...args),
+    action: (...args: any[]) => (getConvexClient().action as any)(...args),
+};
 
 // ── POST handler ────────────────────────────────────────
 

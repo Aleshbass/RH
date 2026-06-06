@@ -15,12 +15,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
-
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-if (!convexUrl) throw new Error("NEXT_PUBLIC_CONVEX_URL must be set");
-const convex = new ConvexHttpClient(convexUrl);
+import { getConvexClient } from "@/lib/convex-client";
 
 // Map MyItura event types to our internal statuses
 const EVENT_STATUS_MAP: Record<string, string> = {
@@ -34,6 +30,7 @@ const EVENT_STATUS_MAP: Record<string, string> = {
 };
 
 export async function POST(request: NextRequest) {
+    const convex = getConvexClient();
     const eventId = `myitura-${Date.now()}`;
 
     let body: any;

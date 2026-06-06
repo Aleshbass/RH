@@ -1,4 +1,5 @@
 import { api } from '@/convex/_generated/api';
+import { getConvexClient } from '@/lib/convex-client';
 import { ConvexHttpClient } from 'convex/browser';
 
 // Type definitions for resource objects
@@ -37,19 +38,16 @@ interface ResourceAvailabilityAlert {
 }
 
 export class ResourceNotificationService {
-  private convex: ConvexHttpClient;
   // Use untyped client to avoid deep TS generic instantiation issues
   private get client(): ConvexHttpClient {
-    return this.convex;
+    return getConvexClient();
   }
   // Use untyped API reference to avoid deep generics on api.*
   private get api(): typeof api {
     return api;
   }
 
-  constructor() {
-    this.convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-  }
+  constructor() {}
 
   /**
    * Send maintenance alert notification
