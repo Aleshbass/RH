@@ -2471,7 +2471,7 @@ export default defineSchema({
     // AwaDoc identifiers
     queryId: v.optional(v.string()),        // From availability.query
     requestId: v.optional(v.string()),      // From therapy.request
-    therapyId: v.string(),                  // Our generated ID (e.g., "thp-xxx")
+    therapyId: v.optional(v.string()),      // Our generated ID (e.g., "thp-xxx")
     eventId: v.optional(v.string()),        // AwaDoc event UUID
 
     // AwaDoc user
