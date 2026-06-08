@@ -166,6 +166,34 @@ export const getAdminDashboardStats = query({
     const notifications = await ctx.db.query("notifications").collect();
     const unsentNotifications = notifications.filter(n => !n.deliveredAt).length;
 
+    // Get public registry stats
+    const allRegistryEntries = await ctx.db.query("physioRegistry").collect();
+    const listedRegistryEntries = allRegistryEntries.filter(
+      (e) => e.verificationStatus === "listed" || e.verificationStatus === "verified" || e.verificationStatus === "pending"
+    );
+    const totalRegistered = listedRegistryEntries.length;
+
+    // Calculate overlap with platform physios
+    const platformPhysios = allUsers.filter(u => u.role === 'physiotherapist' && u.clerkId);
+    let overlapWithPlatform = 0;
+    
+    // We check overlap by seeing if the registry entry has a matching clerkUserId
+    listedRegistryEntries.forEach(entry => {
+      if (entry.clerkUserId) {
+        // If they have a clerkUserId linked, check if that user is a physiotherapist on the platform
+        const matchesPlatform = platformPhysios.some(p => p.clerkId === entry.clerkUserId);
+        if (matchesPlatform) {
+          overlapWithPlatform++;
+        }
+      } else {
+        // Fallback: Check if there's a platform physio with a matching email
+        const matchesEmail = platformPhysios.some(p => p.email && entry.email && p.email.toLowerCase() === entry.email.toLowerCase());
+        if (matchesEmail) {
+          overlapWithPlatform++;
+        }
+      }
+    });
+
     return {
       totalUsers,
       newUsersToday,
@@ -177,10 +205,14 @@ export const getAdminDashboardStats = query({
       unsentNotifications,
       usersByRole: {
         patients: allUsers.filter(u => u.role === 'patient').length,
-        physiotherapists: allUsers.filter(u => u.role === 'physiotherapist').length,
+        physiotherapists: platformPhysios.length,
         clinicOwners: allUsers.filter(u => u.role === 'clinic_owner').length,
         admins: allUsers.filter(u => u.role === 'admin').length,
       },
+      publicRegistryStats: {
+        totalRegistered,
+        overlapWithPlatform,
+      }
     };
   },
 });

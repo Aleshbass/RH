@@ -224,15 +224,35 @@ export default function AdminDashboard() {
       </div>
 
       {/* Secondary Stats */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {adminStats ? (
           <>
             <StatCard
-              title="Physiotherapists"
+              title="Approved Rehabify Physios"
               value={adminStats.usersByRole.physiotherapists}
-              description="Active healthcare providers"
+              description="Approved Rehabify physios"
               icon={Activity}
               href="/dashboard/admin/users?role=physiotherapist"
+              badge={{ text: 'Rehabify', variant: 'default' }}
+            />
+            <StatCard
+              title="Registered Physios"
+              value={adminStats.publicRegistryStats?.totalRegistered || 0}
+              description="On the public directory"
+              icon={Users}
+              href="/dashboard/admin/physio-registry"
+              badge={
+                adminStats.publicRegistryStats?.overlapWithPlatform > 0
+                  ? { text: `${adminStats.publicRegistryStats.overlapWithPlatform} also on Rehabify`, variant: 'secondary' }
+                  : undefined
+              }
+            />
+            <StatCard
+              title="Total Patients"
+              value={adminStats.usersByRole.patients}
+              description="Active platform patients"
+              icon={Users}
+              href="/dashboard/admin/users?role=patient"
             />
             <StatCard
               title="Clinic Owners"
