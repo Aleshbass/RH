@@ -293,15 +293,16 @@ export function UserManagement() {
       header: 'Role',
       cell: ({ row }) => {
         const role = row.original.role || 'patient'
-        const roleConfig = {
+        const roleConfig: Record<string, { label: string; icon: any; variant: 'default' | 'secondary' | 'destructive' }> = {
           patient: { label: 'Patient', icon: User, variant: 'secondary' as const },
           physiotherapist: { label: 'Physiotherapist', icon: Stethoscope, variant: 'default' as const },
           clinic_owner: { label: 'Clinic Owner', icon: Building2, variant: 'default' as const },
           family_member: { label: 'Family Member', icon: User, variant: 'secondary' as const },
+          doctor: { label: 'Doctor', icon: Stethoscope, variant: 'default' as const },
           admin: { label: 'Administrator', icon: Shield, variant: 'destructive' as const }
         }
 
-        const config = roleConfig[role]
+        const config = roleConfig[role] || { label: role, icon: User, variant: 'secondary' as const }
         const Icon = config.icon
 
         return (
