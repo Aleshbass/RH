@@ -2479,7 +2479,7 @@ export default defineSchema({
     requestId: v.optional(v.string()),      // From therapy.request
     therapyId: v.optional(v.string()),      // Our generated ID (e.g., "thp-xxx")
     eventId: v.optional(v.string()),        // AwaDoc event UUID
-    consultationId: v.optional(v.string()), // AwaDoc consultation ID
+    consultationId: v.optional(v.string()), // Legacy AwaDoc consultation ID
 
     // AwaDoc user
     awadocUserId: v.string(),
