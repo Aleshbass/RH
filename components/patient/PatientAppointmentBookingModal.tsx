@@ -376,6 +376,7 @@ export function PatientAppointmentBookingModal({
                                         </div>
                                     )}
                                 </div>
+                                )}
                             </div>
 
                             <Button
