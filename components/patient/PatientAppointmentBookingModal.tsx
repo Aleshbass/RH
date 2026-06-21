@@ -326,7 +326,7 @@ export function PatientAppointmentBookingModal({
                                 ) : (
                                     <div className="space-y-2">
                                         <label className="text-sm font-medium">Video Platform</label>
-                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-2 gap-4">
                                         <div
                                             className={cn(
                                                 "border rounded-lg p-4 cursor-pointer transition-all hover:border-[#005b57]",
