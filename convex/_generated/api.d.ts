@@ -32,6 +32,7 @@ import type * as actions_emails_sendDeclineEmail from "../actions/emails/sendDec
 import type * as actions_emails_sendGoogleMeetLinkEmail from "../actions/emails/sendGoogleMeetLinkEmail.js";
 import type * as actions_emails_sendInvitationEmail from "../actions/emails/sendInvitationEmail.js";
 import type * as actions_emails_sendOnboardingNotificationEmail from "../actions/emails/sendOnboardingNotificationEmail.js";
+import type * as actions_emails_sendPartnershipInquiryEmail from "../actions/emails/sendPartnershipInquiryEmail.js";
 import type * as actions_emails_sendPatientOnboardedProviderEmail from "../actions/emails/sendPatientOnboardedProviderEmail.js";
 import type * as actions_emails_sendPatientOnboardingCompleteEmail from "../actions/emails/sendPatientOnboardingCompleteEmail.js";
 import type * as actions_emails_sendVerificationBadgeEmail from "../actions/emails/sendVerificationBadgeEmail.js";
@@ -50,6 +51,7 @@ import type * as admin from "../admin.js";
 import type * as adminReferrals from "../adminReferrals.js";
 import type * as admin_marketplaceEarnings from "../admin/marketplaceEarnings.js";
 import type * as admin_fix from "../admin_fix.js";
+import type * as admin_purge from "../admin_purge.js";
 import type * as analytics from "../analytics.js";
 import type * as analytics_service from "../analytics/service.js";
 import type * as appointments from "../appointments.js";
@@ -116,6 +118,7 @@ import type * as paystackDoctor from "../paystackDoctor.js";
 import type * as physioRegistry from "../physioRegistry.js";
 import type * as physiotherapistProfiles from "../physiotherapistProfiles.js";
 import type * as physiotherapists from "../physiotherapists.js";
+import type * as public_ from "../public.js";
 import type * as queries from "../queries.js";
 import type * as recurringAppointments from "../recurringAppointments.js";
 import type * as reminderSystem from "../reminderSystem.js";
@@ -174,6 +177,7 @@ declare const fullApi: ApiFromModules<{
   "actions/emails/sendGoogleMeetLinkEmail": typeof actions_emails_sendGoogleMeetLinkEmail;
   "actions/emails/sendInvitationEmail": typeof actions_emails_sendInvitationEmail;
   "actions/emails/sendOnboardingNotificationEmail": typeof actions_emails_sendOnboardingNotificationEmail;
+  "actions/emails/sendPartnershipInquiryEmail": typeof actions_emails_sendPartnershipInquiryEmail;
   "actions/emails/sendPatientOnboardedProviderEmail": typeof actions_emails_sendPatientOnboardedProviderEmail;
   "actions/emails/sendPatientOnboardingCompleteEmail": typeof actions_emails_sendPatientOnboardingCompleteEmail;
   "actions/emails/sendVerificationBadgeEmail": typeof actions_emails_sendVerificationBadgeEmail;
@@ -192,6 +196,7 @@ declare const fullApi: ApiFromModules<{
   adminReferrals: typeof adminReferrals;
   "admin/marketplaceEarnings": typeof admin_marketplaceEarnings;
   admin_fix: typeof admin_fix;
+  admin_purge: typeof admin_purge;
   analytics: typeof analytics;
   "analytics/service": typeof analytics_service;
   appointments: typeof appointments;
@@ -258,6 +263,7 @@ declare const fullApi: ApiFromModules<{
   physioRegistry: typeof physioRegistry;
   physiotherapistProfiles: typeof physiotherapistProfiles;
   physiotherapists: typeof physiotherapists;
+  public: typeof public_;
   queries: typeof queries;
   recurringAppointments: typeof recurringAppointments;
   reminderSystem: typeof reminderSystem;

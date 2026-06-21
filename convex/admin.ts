@@ -133,11 +133,15 @@ export const getAdminDashboardStats = query({
     const todayStart = new Date().setHours(0, 0, 0, 0);
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
 
-    // Get all users
+    // Calculate active platform users (excluding admins, and requiring them to be fully onboarded)
     const allUsers = await ctx.db.query("users").collect();
-    const totalUsers = allUsers.length;
-    const newUsersToday = allUsers.filter(u => u._creationTime >= todayStart).length;
-    const newUsersThisWeek = allUsers.filter(u => u._creationTime >= weekAgo).length;
+    
+    // An active user is someone who is fully onboarded and is not an admin
+    const activePlatformUsers = allUsers.filter(u => u.onboarded === true && u.role !== 'admin');
+    const totalUsers = activePlatformUsers.length;
+    
+    const newUsersToday = activePlatformUsers.filter(u => u._creationTime >= todayStart).length;
+    const newUsersThisWeek = activePlatformUsers.filter(u => u._creationTime >= weekAgo).length;
 
     // Get pending approvals from the accountApprovalStatus table
     // (same source as the approvals page so numbers always match)

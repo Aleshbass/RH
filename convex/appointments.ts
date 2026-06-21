@@ -65,6 +65,7 @@ export const createAppointment = mutation({
     isPinned: v.optional(v.boolean()),
     colorCode: v.optional(v.string()),
     manualMeetingLink: v.optional(v.string()),
+    location: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{
     success: boolean;
@@ -136,6 +137,7 @@ export const createAppointment = mutation({
       isPinned: args.isPinned || false,
       colorCode: args.colorCode || "#3B82F6", // Default blue
       manualMeetingLink: args.manualMeetingLink,
+      location: args.location,
     });
 
     // Create notifications for both patient and therapist

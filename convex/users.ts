@@ -319,6 +319,7 @@ export const completeUserProfile = mutation({
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
     finalStep: v.optional(v.boolean()), // Add this parameter
+    onboardingSkipped: v.optional(v.boolean()), // True if user skipped optional onboarding steps
   },
   returns: v.object({
     success: v.boolean(),
@@ -357,6 +358,7 @@ export const completeUserProfile = mutation({
     const userUpdatePayload: Partial<Doc<"users">> = {
       role: args.role,
       onboarded: args.finalStep === true, // Only set to true on final step
+      ...(args.onboardingSkipped !== undefined && { onboardingSkipped: args.onboardingSkipped }),
     };
     if (args.firstName) userUpdatePayload.firstName = args.firstName;
     if (args.lastName) userUpdatePayload.lastName = args.lastName;
@@ -819,6 +821,35 @@ export const createAdminUser = mutation({
     });
 
     return adminId;
+  },
+});
+
+/**
+ * Clear the onboardingSkipped flag when a physiotherapist completes their remaining onboarding steps
+ */
+export const clearOnboardingSkipped = mutation({
+  args: {},
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("User not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .unique();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    if (user.onboardingSkipped) {
+      await ctx.db.patch(user._id, { onboardingSkipped: false });
+    }
+
+    return { success: true };
   },
 });
 

@@ -53,7 +53,7 @@ export function DoctorsClinicsSection() {
                                 ))}
                             </ul>
                             <Link
-                                href="/sign-up"
+                                href="/sign-up?redirect=/role-selection?role=doctor"
                                 className="group inline-flex items-center gap-2 bg-[#002e2c] hover:bg-[#004a46] text-white font-semibold py-3.5 px-8 rounded-full transition-all duration-300 hover:scale-105 shadow-lg shadow-[#002e2c]/20"
                             >
                                 <span>Refer a Patient Now</span>

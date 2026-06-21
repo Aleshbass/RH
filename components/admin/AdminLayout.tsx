@@ -66,6 +66,7 @@ function getBreadcrumbs(pathname: string) {
         security: 'Security Settings',
         announcements: 'Announcements',
         preferences: 'Admin Preferences',
+        partnerships: 'Partnership Inquiries',
       }
 
       breadcrumbs.push({

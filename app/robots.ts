@@ -31,22 +31,26 @@ export default function robots(): MetadataRoute.Robots {
           '/*?*utm_*', // Ignore tracking parameters
         ],
       },
-      // Block AI training bots (optional - discuss with team)
+      // Allow AI training bots to read the site for better brand recognition
       {
         userAgent: 'GPTBot',
-        disallow: '/',
+        allow: '/',
       },
       {
         userAgent: 'ChatGPT-User',
-        disallow: '/',
+        allow: '/',
       },
       {
         userAgent: 'CCBot',
-        disallow: '/',
+        allow: '/',
       },
       {
         userAgent: 'anthropic-ai',
-        disallow: '/',
+        allow: '/',
+      },
+      {
+        userAgent: 'Google-Extended',
+        allow: '/',
       },
       // Allow specific good bots
       {

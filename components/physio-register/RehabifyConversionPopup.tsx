@@ -9,9 +9,10 @@ import Link from 'next/link';
 interface RehabifyConversionPopupProps {
   isOpen: boolean;
   onClose: () => void;
+  slug?: string;
 }
 
-export default function RehabifyConversionPopup({ isOpen, onClose }: RehabifyConversionPopupProps) {
+export default function RehabifyConversionPopup({ isOpen, onClose, slug }: RehabifyConversionPopupProps) {
   if (!isOpen) return null;
 
   return (
@@ -79,13 +80,19 @@ export default function RehabifyConversionPopup({ isOpen, onClose }: RehabifyCon
               </div>
 
               <div className="pt-2 space-y-3">
-                <Link href="/platform/physiotherapists" className="block">
-                  <Button className="w-full h-12 bg-[#005b57] hover:bg-[#00443e] text-white rounded-xl font-semibold shadow-lg shadow-teal-900/10 text-sm">
-                    <Stethoscope className="w-4 h-4 mr-2" />
-                    Apply to Join RehabifyHealth
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </Link>
+                <button 
+                  onClick={() => {
+                    if (slug) {
+                      try { localStorage.setItem('physioOnboardingRegistrySlug', slug); } catch {}
+                    }
+                    window.location.href = "/sign-up?redirect=/physiotherapist";
+                  }}
+                  className="w-full h-12 bg-[#005b57] hover:bg-[#00443e] text-white rounded-xl font-semibold shadow-lg shadow-teal-900/10 text-sm flex items-center justify-center transition-colors"
+                >
+                  <Stethoscope className="w-4 h-4 mr-2" />
+                  Apply to Join RehabifyHealth
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </button>
                 <button
                   onClick={onClose}
                   className="w-full text-center text-sm text-gray-400 hover:text-gray-600 transition-colors py-2"

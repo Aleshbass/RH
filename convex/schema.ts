@@ -32,6 +32,7 @@ export default defineSchema({
       v.literal("admin")
     )),
     onboarded: v.boolean(), // Flag to indicate if user has completed initial profile setup
+    onboardingSkipped: v.optional(v.boolean()), // True if user skipped optional onboarding steps (can complete later)
 
     // Links to role-specific profiles
     physiotherapistProfileId: v.optional(v.id("physiotherapistProfiles")),
@@ -563,6 +564,7 @@ export default defineSchema({
     googleCalendarLink: v.optional(v.string()), // Link to view event in Google Calendar
     googleCalendarEventId: v.optional(v.string()), // Google Calendar event ID
     manualMeetingLink: v.optional(v.string()), // Manually added meeting link (e.g. Google Meet)
+    location: v.optional(v.string()), // Exact address for in-person appointments
     // Video call integration
     isOnline: v.optional(v.boolean()), // True for online/telehealth appointments
     meetingLink: v.optional(v.string()), // GetStream or other video platform meeting link
@@ -2098,6 +2100,7 @@ export default defineSchema({
   })
     .index("by_state", ["state"]),
 
+
   calendarWatchChannels: defineTable({
     channelId: v.string(),
     userId: v.id("users"),
@@ -2557,4 +2560,13 @@ export default defineSchema({
 
   // Health tables from health schema
   ...healthTables,
+
+  partnershipInquiries: defineTable({
+    name: v.string(),
+    email: v.string(),
+    organization: v.string(),
+    message: v.string(),
+    status: v.union(v.literal("new"), v.literal("contacted"), v.literal("closed")),
+    createdAt: v.number(),
+  }).index("by_status", ["status"]).index("by_created", ["createdAt"]),
 });

@@ -1,0 +1,23 @@
+# Rehabify Health (physioaroundme.com)
+
+## What is Rehabify Health / Physio Around Me?
+Rehabify Health (accessible at physioaroundme.com) is a revolutionary digital healthcare platform connecting patients with licensed physiotherapists. It is designed to make physical therapy and rehabilitation accessible, affordable, and effective across Nigeria and Africa.
+
+## Core Services & Features
+- **Find a Physiotherapist Near Me:** Patients can search, filter, and book appointments with verified, licensed physical therapists.
+- **Online Physiotherapy (Telehealth):** Secure video consultations allow patients to receive expert care from anywhere.
+- **AI-Powered Exercise Monitoring:** The platform uses advanced AI computer vision to track patient movements in real-time, ensuring correct form and counting repetitions during home exercises.
+- **Personalized Treatment Plans:** Therapists create custom, multi-phase rehabilitation programs directly in the platform.
+- **Marketplace:** A comprehensive directory of physiotherapy services, clinics, and specialists.
+
+## Brand Identity & Keywords
+- Primary Brand Name: Rehabify Health (often styled as RehabifyHealth or Rehabify).
+- Primary Domain / Search Term: Physio Around Me (physioaroundme.com).
+- Key Focus: Physical therapy, physiotherapy, online rehabilitation, AI exercise monitoring, telehealth, finding a physio.
+
+## Technical Details
+This platform is built with modern web technologies including Next.js, React, Convex (backend database), Clerk (authentication), and Stream (video calling).
+
+## Contact Information
+- Website: https://physioaroundme.com
+- Support Email: support@physioaroundme.com

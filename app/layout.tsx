@@ -45,6 +45,9 @@ export const metadata: Metadata = {
   },
   description: "Revolutionary healthcare platform connecting patients with licensed physiotherapists. AI-powered exercise monitoring, telehealth appointments, treatment plans, and comprehensive rehabilitation services in Nigeria and beyond.",
   keywords: [
+    'physio around me',
+    'physioaroundme',
+    'physioaroundme.com',
     'rehabify health',
     'rehabifyhealth',
     'Rehabify Health',

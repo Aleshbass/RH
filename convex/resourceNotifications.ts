@@ -389,7 +389,10 @@ export const cleanupOldNotifications = internalMutation({
           q.and(
             q.or(
               q.eq(q.field("type"), "resource_maintenance"),
-              q.eq(q.field("type"), "resource_conflict")
+              q.eq(q.field("type"), "resource_conflict"),
+              q.eq(q.field("type"), "invoice_payment_reminder"),
+              q.eq(q.field("type"), "appointment_reminder"),
+              q.eq(q.field("type"), "daily_exercise_reminder")
             ),
             q.lt(q.field("createdAt"), cutoffTime)
           )

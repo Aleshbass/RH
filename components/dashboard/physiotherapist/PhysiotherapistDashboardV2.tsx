@@ -27,6 +27,7 @@ import { useQuery } from 'convex/react'
 import { InsightsSidebar } from '@/components/dashboard/shared/InsightsSidebar'
 import ShareableBookingLink from '@/components/booking/ShareableBookingLink'
 import LiveLocationTracker from '@/components/dashboard/physiotherapist/LiveLocationTracker'
+import { OnboardingResumeBanner } from '@/components/dashboard/physiotherapist/OnboardingResumeBanner'
 
 
 
@@ -204,6 +205,8 @@ export function PhysiotherapistDashboardV2() {
             </Button>
           </div>
         </div>
+
+        <OnboardingResumeBanner />
 
         {/* Shareable Booking Link - Cal.com Style */}
         {user?._id && (

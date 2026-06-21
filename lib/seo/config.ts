@@ -14,10 +14,18 @@ export const SITE_CONFIG = {
   twitterHandle: '@RehabifyHealth',
   keywords: [
     // Primary keywords - Brand variations
+    'rehabify',
     'rehabify health',
     'rehabifyhealth',
     'Rehabify Health',
     'RehabifyHealth',
+    
+    // Core search terms requested
+    'physio',
+    'physiotherapist',
+    'physio around me',
+    'physioaroundme',
+    'physioaroundme.com',
     'find a physiotherapist near me',
     
     // Service keywords
@@ -249,12 +257,20 @@ export const ROBOTS_CONFIG = {
       ],
     },
     {
-      userAgent: 'GPTBot', // Block AI crawlers if desired
-      disallow: '/',
+      userAgent: 'GPTBot', // Explicitly allow AI crawlers for brand recognition
+      allow: '/',
     },
     {
       userAgent: 'ChatGPT-User',
-      disallow: '/',
+      allow: '/',
+    },
+    {
+      userAgent: 'anthropic-ai',
+      allow: '/',
+    },
+    {
+      userAgent: 'Google-Extended',
+      allow: '/',
     },
   ],
   sitemap: `${SITE_CONFIG.url}/sitemap.xml`,

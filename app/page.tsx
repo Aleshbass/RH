@@ -11,6 +11,8 @@ import { HomePageSEO } from "@/components/seo/HomePageSEO";
 import { ProblemSection } from "@/components/landing/ProblemSection";
 import { DoctorsClinicsSection } from "@/components/landing/DoctorsClinicsSection";
 import { SpeakToAPhysio } from "@/components/landing/SpeakToAPhysio";
+import { MeetJoySection } from "@/components/landing/MeetJoySection";
+import { ForInstitutionsSection } from "@/components/landing/ForInstitutionsSection";
 
 const RoleBasedFeatures = dynamicImport(() => import("@/components/landing/RoleBasedFeatures"));
 const ConnectedCareSection = dynamicImport(() => import("@/components/landing/ConnectedCareSection"));
@@ -28,7 +30,9 @@ const PageContent = () => (
     <HowItWorks />
     <RoleBasedFeatures />
     <ConnectedCareSection />
+    <MeetJoySection />
     <DoctorsClinicsSection />
+    <ForInstitutionsSection />
     <FoundersCarousel />
     <SpeakToAPhysio />
     <RehabifyLearnSection />

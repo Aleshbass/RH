@@ -10,8 +10,12 @@
  *  - loan.expired     → Application window lapsed
  *  - loan.repaid      → Patient fully repaid
  *
- * TODO: Ask MyItura for exact webhook signature verification method.
- *       For now we verify by checking their API keys in headers.
+ * Security: We verify the incoming request by checking that MyItura sends
+ * our public key in the X-API-Public-Key header. This ensures only MyItura
+ * (who knows our public key) can trigger status updates.
+ *
+ * TODO: Ask MyItura if they support HMAC webhook signatures for an additional
+ *       layer of security, and implement signature verification if so.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -29,9 +33,33 @@ const EVENT_STATUS_MAP: Record<string, string> = {
     "loan.failed": "failed",
 };
 
+/**
+ * Validates that the incoming webhook request is genuinely from MyItura
+ * by checking that the X-API-Public-Key header matches our configured key.
+ */
+function isAuthorizedWebhook(request: NextRequest): boolean {
+    const expectedPublicKey = process.env.MYITURA_PUBLIC_KEY;
+    if (!expectedPublicKey) {
+        // If env var is missing, block all webhooks to prevent accidental open door
+        console.error("[MyItura Webhook] MYITURA_PUBLIC_KEY env var is not set — rejecting all incoming webhooks.");
+        return false;
+    }
+
+    const incomingPublicKey =
+        request.headers.get("x-api-public-key") ||
+        request.headers.get("X-API-Public-Key");
+
+    return incomingPublicKey === expectedPublicKey;
+}
+
 export async function POST(request: NextRequest) {
     const convex = getConvexClient();
-    const eventId = `myitura-${Date.now()}`;
+
+    // --- Security Check ---
+    if (!isAuthorizedWebhook(request)) {
+        console.warn("[MyItura Webhook] Unauthorized request — invalid or missing API key header.");
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     let body: any;
     try {
@@ -49,22 +77,23 @@ export async function POST(request: NextRequest) {
     });
 
     try {
-        // Extract fields — adjust based on MyItura's actual payload format
-        // TODO: Confirm exact payload structure with MyItura team
+        // Extract fields — normalized from common MyItura payload shapes
         const eventType: string = body.event || body.type || body.eventType || "";
-        const sdkReference: string = body.sdkReference || body.data?.sdkReference || body.data?.sdkRef || "";
-        const clientReference: string = body.clientReference || body.data?.clientReference || "";
+        const sdkReference: string =
+            body.sdkReference || body.data?.sdkReference || body.data?.sdkRef || "";
+        const clientReference: string =
+            body.clientReference || body.data?.clientReference || "";
         const loanStatus = EVENT_STATUS_MAP[eventType];
 
         if (!loanStatus) {
-            console.warn(`[MyItura Webhook] Unknown event type: ${eventType}`);
-            // Still acknowledge receipt so they don't retry
-            return NextResponse.json({ received: true, warning: "Unknown event type" });
+            console.warn(`[MyItura Webhook] Unknown event type: "${eventType}" — acknowledged without action.`);
+            // Still return 200 so MyItura doesn't endlessly retry unknown events
+            return NextResponse.json({ received: true, warning: `Unknown event type: ${eventType}` });
         }
 
         if (!sdkReference && !clientReference) {
             console.error(`[MyItura Webhook] No reference found in payload`);
-            return NextResponse.json({ error: "Missing reference" }, { status: 400 });
+            return NextResponse.json({ error: "Missing sdkReference or clientReference" }, { status: 400 });
         }
 
         // Update loan status in our database
@@ -77,7 +106,9 @@ export async function POST(request: NextRequest) {
             lastWebhookPayload: JSON.stringify(body),
         });
 
-        console.log(`[MyItura Webhook] Processed ${eventType} for ref: ${sdkReference || clientReference}`);
+        console.log(
+            `[MyItura Webhook] ✅ Processed "${eventType}" → status "${loanStatus}" for ref: ${sdkReference || clientReference}`
+        );
 
         return NextResponse.json({
             received: true,
@@ -93,7 +124,7 @@ export async function POST(request: NextRequest) {
     }
 }
 
-// Health check - MyItura may ping this
+// Health check — MyItura may ping this to verify the endpoint is live
 export async function GET() {
     return NextResponse.json({
         status: "ok",

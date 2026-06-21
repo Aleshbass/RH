@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
@@ -9,12 +9,50 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { Loader2 } from 'lucide-react';
 
 export default function DoctorOnboardingPage() {
     const router = useRouter();
     const { data: storeData, updateDoctorData, completeOnboarding } = useOnboardingStore();
     const { doctorData } = storeData;
     const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    const [banks, setBanks] = useState<{name: string, code: string}[]>([]);
+    const [bankCode, setBankCode] = useState('');
+    const [isResolving, setIsResolving] = useState(false);
+    const [resolveError, setResolveError] = useState('');
+
+    useEffect(() => {
+        fetch('/api/paystack/banks')
+            .then(res => res.json())
+            .then(data => {
+                if (data.status) setBanks(data.data);
+            })
+            .catch(err => console.error("Failed to load banks", err));
+    }, []);
+
+    useEffect(() => {
+        if (doctorData?.accountNumber?.length === 10 && bankCode) {
+            setIsResolving(true);
+            setResolveError('');
+            fetch(`/api/paystack/resolve-account?account_number=${doctorData.accountNumber}&bank_code=${bankCode}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status) {
+                        updateDoctorData({ accountName: data.data.account_name });
+                        setResolveError('');
+                    } else {
+                        updateDoctorData({ accountName: '' });
+                        setResolveError(data.message || 'Could not resolve account');
+                    }
+                })
+                .catch(err => {
+                    updateDoctorData({ accountName: '' });
+                    setResolveError('Failed to resolve account');
+                })
+                .finally(() => setIsResolving(false));
+        }
+    }, [doctorData?.accountNumber, bankCode, updateDoctorData]);
 
     const setupDoctorProfile = useMutation(api.doctors.setupDoctorProfile);
 
@@ -150,32 +188,50 @@ export default function DoctorOnboardingPage() {
                         </p>
                         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                             <div className="sm:col-span-2">
-                                <label htmlFor="bankName" className="block text-sm font-medium text-gray-700">
+                                <label htmlFor="bankCode" className="block text-sm font-medium text-gray-700">
                                     Bank Name
                                 </label>
-                                <Input
-                                    id="bankName"
-                                    name="bankName"
-                                    value={doctorData?.bankName || ''}
-                                    onChange={handleChange}
-                                    placeholder="e.g., Zenith Bank"
+                                <select
+                                    id="bankCode"
+                                    value={bankCode}
+                                    onChange={(e) => {
+                                        setBankCode(e.target.value);
+                                        const selectedBank = banks.find(b => b.code === e.target.value);
+                                        if (selectedBank) {
+                                            updateDoctorData({ bankName: selectedBank.name });
+                                        }
+                                    }}
                                     required
-                                    className="mt-1"
-                                />
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-[#005b57] focus:ring focus:ring-[#005b57] focus:ring-opacity-50 py-2 px-3 border bg-white"
+                                >
+                                    <option value="" disabled>Select your bank</option>
+                                    {banks.map(bank => (
+                                        <option key={bank.code} value={bank.code}>{bank.name}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div>
                                 <label htmlFor="accountNumber" className="block text-sm font-medium text-gray-700">
                                     Account Number
                                 </label>
-                                <Input
-                                    id="accountNumber"
-                                    name="accountNumber"
-                                    value={doctorData?.accountNumber || ''}
-                                    onChange={handleChange}
-                                    placeholder="0123456789"
-                                    required
-                                    className="mt-1"
-                                />
+                                <div className="relative">
+                                    <Input
+                                        id="accountNumber"
+                                        name="accountNumber"
+                                        value={doctorData?.accountNumber || ''}
+                                        onChange={handleChange}
+                                        placeholder="0123456789"
+                                        required
+                                        maxLength={10}
+                                        className="mt-1"
+                                    />
+                                    {isResolving && (
+                                        <div className="absolute right-3 top-3">
+                                            <Loader2 className="w-4 h-4 animate-spin text-[#005b57]" />
+                                        </div>
+                                    )}
+                                </div>
+                                {resolveError && <p className="mt-1 text-xs text-red-500">{resolveError}</p>}
                             </div>
                             <div>
                                 <label htmlFor="accountName" className="block text-sm font-medium text-gray-700">
@@ -185,10 +241,10 @@ export default function DoctorOnboardingPage() {
                                     id="accountName"
                                     name="accountName"
                                     value={doctorData?.accountName || ''}
-                                    onChange={handleChange}
-                                    placeholder="Exact name on account"
+                                    readOnly
+                                    placeholder="Auto-filled from account number"
                                     required
-                                    className="mt-1"
+                                    className="mt-1 bg-gray-50 text-gray-500"
                                 />
                             </div>
                         </div>
@@ -197,8 +253,8 @@ export default function DoctorOnboardingPage() {
                     <div className="pt-6 flex justify-end">
                         <Button
                             type="submit"
-                            disabled={isSubmitting}
-                            className="w-full sm:w-auto px-8 bg-indigo-600 hover:bg-indigo-700 text-white"
+                            disabled={isSubmitting || !doctorData?.accountName || !!resolveError}
+                            className="w-full sm:w-auto px-8 bg-[#005b57] hover:bg-[#004a46] text-white transition-colors"
                         >
                             {isSubmitting ? "Saving..." : "Complete Setup"}
                         </Button>

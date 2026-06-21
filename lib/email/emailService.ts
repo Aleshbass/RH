@@ -23,7 +23,8 @@ export type EmailTemplate =
   | 'PATIENT_ONBOARDED_PROVIDER'
   | 'CLINIC_STAFF_INVITE_ACCEPTED_OWNER'
   | 'CLINIC_STAFF_INVITE_DECLINED_OWNER'
-  | 'GOOGLE_MEET_LINK';
+  | 'GOOGLE_MEET_LINK'
+  | 'PARTNERSHIP_INQUIRY';
 
 // Data interfaces for each email template
 export interface InvitationCreatedData {
@@ -194,6 +195,13 @@ export interface GoogleMeetLinkData {
   appointmentDate: string | number | Date;
 }
 
+export interface PartnershipInquiryData {
+  name: string;
+  email: string;
+  organization: string;
+  message: string;
+}
+
 // Discriminated union for EmailOptions
 export type EmailOptions =
   | { to: string; subject?: string; template: 'INVITATION_CREATED'; data: InvitationCreatedData }
@@ -216,7 +224,8 @@ export type EmailOptions =
   | { to: string; subject?: string; template: 'PATIENT_ONBOARDED_PROVIDER'; data: PatientOnboardedProviderData }
   | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_ACCEPTED_OWNER'; data: ClinicStaffInviteOwnerNoticeData }
   | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_DECLINED_OWNER'; data: ClinicStaffInviteOwnerNoticeData }
-  | { to: string; subject?: string; template: 'GOOGLE_MEET_LINK'; data: GoogleMeetLinkData };
+  | { to: string; subject?: string; template: 'GOOGLE_MEET_LINK'; data: GoogleMeetLinkData }
+  | { to: string; subject?: string; template: 'PARTNERSHIP_INQUIRY'; data: PartnershipInquiryData };
 
 /**
  * Send an email using the specified template and data
@@ -265,6 +274,23 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
  */
 export function getEmailContent(options: EmailOptions): { subject: string; body: string } {
   switch (options.template) {
+    case 'PARTNERSHIP_INQUIRY':
+      return {
+        subject: options.subject || `New Partnership Inquiry from ${options.data.organization}`,
+        body: `
+          <h1>New Partnership Inquiry</h1>
+          <p>You have received a new partnership inquiry from the landing page.</p>
+          <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0; font-weight: bold;">Name: ${options.data.name}</p>
+            <p style="margin: 8px 0 0 0; font-weight: bold;">Email: <a href="mailto:${options.data.email}">${options.data.email}</a></p>
+            <p style="margin: 8px 0 0 0; font-weight: bold;">Organization: ${options.data.organization}</p>
+            <p style="margin: 16px 0 8px 0; font-weight: bold;">Message:</p>
+            <p style="margin: 0; white-space: pre-wrap;">${options.data.message}</p>
+          </div>
+          <p>Please follow up directly via email.</p>
+        `
+      };
+
     case 'APPOINTMENT_REQUESTED':
       return {
         subject: options.subject || `New Appointment Request from ${options.data.patientName}`,

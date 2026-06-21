@@ -55,6 +55,7 @@ import {
   UserPlus,
   WalletCards,
   Stethoscope,
+  Handshake,
 } from 'lucide-react'
 import { TooltipContent } from '@/components/ui/tooltip'
 import Link from 'next/link'
@@ -225,6 +226,13 @@ const navigationGroups = [
         icon: Globe,
         roles: ['admin'],
         description: 'Create platform announcements',
+      },
+      {
+        title: 'Partnerships',
+        href: '/dashboard/admin/partnerships',
+        icon: Handshake,
+        roles: ['admin'],
+        description: 'Review B2B partnership inquiries',
       },
     ],
   },

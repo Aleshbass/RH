@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Check, Plus, X, Loader2, Twitter, Instagram, Linkedin, Globe, Users, Search as SearchIcon } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, Plus, X, Loader2, Twitter, Instagram, Linkedin, Globe, Users, Search as SearchIcon, SkipForward } from 'lucide-react';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
@@ -96,6 +96,9 @@ type FormValues = z.infer<typeof fullSchema>;
 
 // --- Steps Configuration ---
 
+// Steps 0-3 are required, steps 4-8 can be skipped and completed later
+const SKIPPABLE_FROM_STEP = 4;
+
 const steps = [
     { id: 'personal', title: 'Personal Info' },
     { id: 'demographics', title: 'Demographics' },
@@ -124,6 +127,21 @@ export default function PhysiotherapistOnboardingWizard() {
     const [manualSpecialization, setManualSpecialization] = useState('');
     const [isAvailabilityLoading, setIsAvailabilityLoading] = useState(false);
     const [isFinalSubmitting, setIsFinalSubmitting] = useState(false);
+    const [isSkipping, setIsSkipping] = useState(false);
+    const [registrySlug, setRegistrySlug] = useState<string | null>(null);
+
+    // Fetch registry profile if we have a slug
+    const registryProfile = useQuery(
+        api.physioRegistry.getPublicProfile,
+        registrySlug ? { slug: registrySlug } : "skip"
+    );
+
+    useEffect(() => {
+        try {
+            const slug = localStorage.getItem('physioOnboardingRegistrySlug');
+            if (slug) setRegistrySlug(slug);
+        } catch {}
+    }, []);
 
 
     // Document State
@@ -227,14 +245,39 @@ export default function PhysiotherapistOnboardingWizard() {
         }
     });
 
-    // Pre-fill user data
+    // Pre-fill user data & registry data
     useEffect(() => {
+        let hasChanges = false;
         if (currentUser && !physiotherapistData.firstName) {
             setValue('firstName', currentUser.firstName || '');
             setValue('lastName', currentUser.lastName || '');
             setValue('email', currentUser.email || '');
+            hasChanges = true;
         }
-    }, [currentUser, setValue, physiotherapistData.firstName]);
+        
+        if (registryProfile && !physiotherapistData.licenseNumber) {
+            // Split name into first/last if needed and not already set
+            if (registryProfile.fullName && !currentUser?.firstName) {
+                const parts = registryProfile.fullName.split(' ');
+                setValue('firstName', parts[0] || '');
+                setValue('lastName', parts.slice(1).join(' ') || '');
+            }
+            if (registryProfile.email && !currentUser?.email) setValue('email', registryProfile.email);
+            if (registryProfile.phone) setValue('phoneNumber', registryProfile.phone);
+            if (registryProfile.licenseNumber) setValue('licenseNumber', registryProfile.licenseNumber);
+            if (registryProfile.yearsOfExperience) setValue('yearsOfExperience', registryProfile.yearsOfExperience);
+            if (registryProfile.practiceAddress) setValue('location', registryProfile.practiceAddress);
+            if (registryProfile.bio) setValue('bio', registryProfile.bio);
+            if (registryProfile.specialties?.length) setSpecializations(registryProfile.specialties);
+            if (registryProfile.licenseExpiryDate) setValue('licenseExpiryDate', registryProfile.licenseExpiryDate);
+            if (registryProfile.regulatoryBody) setValue('certificationBoard', registryProfile.regulatoryBody);
+            hasChanges = true;
+        }
+        
+        if (hasChanges) {
+            // Trigger an update so UI re-renders if necessary
+        }
+    }, [currentUser, registryProfile, setValue, physiotherapistData.firstName, physiotherapistData.licenseNumber]);
 
     // Restore saved onboarding data after sign-up redirect
     useEffect(() => {
@@ -270,13 +313,41 @@ export default function PhysiotherapistOnboardingWizard() {
                     if (parsed.guestProfilePhotoId) {
                         setGuestProfilePhotoId(parsed.guestProfilePhotoId);
                     }
+                    
+                    if (parsed.onboardingSkipped) {
+                        // They skipped as a guest, so automatically submit the skipped profile now
+                        completeUserProfileMutation({
+                            role: 'physiotherapist',
+                            profileData: {
+                                specializations: parsed.specializations?.length > 0 ? parsed.specializations : undefined,
+                                licenseNumber: fd.licenseNumber || undefined,
+                                yearsOfExperience: fd.yearsOfExperience || undefined,
+                                bio: fd.bio || undefined,
+                                location: fd.location || undefined,
+                                latitude: fd.latitude,
+                                longitude: fd.longitude,
+                                dateOfBirth: fd.age ? `${new Date().getFullYear() - fd.age}-01-01` : undefined,
+                                gender: fd.gender,
+                            },
+                            firstName: fd.firstName,
+                            lastName: fd.lastName,
+                            finalStep: true,
+                            onboardingSkipped: true,
+                        }).then(() => {
+                            try { localStorage.removeItem('physioOnboardingData'); } catch { }
+                            toast.success('Welcome! Your skipped profile has been saved.');
+                            router.push('/dashboard');
+                        });
+                        return; // Prevent normal restore flow
+                    }
+                    
                     // Jump to the review step so they can re-submit
                     setCurrentStep(steps.length - 1);
                     toast.success('Welcome back! Your onboarding data has been restored.');
                 }
             }
         } catch { }
-    }, [isSignedIn, setValue]);
+    }, [isSignedIn, setValue, completeUserProfileMutation, router]);
 
     // Simulate loading for availability step
     useEffect(() => {
@@ -494,6 +565,82 @@ export default function PhysiotherapistOnboardingWizard() {
             setUploadError(error.message);
         } finally {
             setIsFinalSubmitting(false);
+        }
+    };
+
+    // --- Skip & Complete Later ---
+    const handleSkipAndContinue = async () => {
+        const formData = watch();
+        setIsSkipping(true);
+
+        if (!isSignedIn) {
+            try {
+                localStorage.setItem(
+                    'physioOnboardingData',
+                    JSON.stringify({
+                        formData: {
+                            firstName: formData.firstName,
+                            lastName: formData.lastName,
+                            email: formData.email,
+                            phoneNumber: formData.phoneNumber,
+                            age: formData.age,
+                            gender: formData.gender,
+                            licenseNumber: formData.licenseNumber,
+                            yearsOfExperience: formData.yearsOfExperience,
+                            location: formData.location,
+                            latitude: formData.latitude,
+                            longitude: formData.longitude,
+                            dateOfBirth: formData.age ? `${new Date().getFullYear() - formData.age}-01-01` : undefined,
+                        },
+                        specializations,
+                        guestProfilePhotoId,
+                        onboardingSkipped: true,
+                        timestamp: Date.now(),
+                    })
+                );
+            } catch { }
+            toast.info('Create your account to save your profile');
+            router.push('/sign-up?redirect=/physiotherapist');
+            return;
+        }
+
+        try {
+            // Save the required data (steps 0-5) to create/update the profile
+            await completeUserProfileMutation({
+                role: 'physiotherapist',
+                profileData: {
+                    specializations: specializations.length > 0 ? specializations : undefined,
+                    licenseNumber: formData.licenseNumber || undefined,
+                    yearsOfExperience: formData.yearsOfExperience || undefined,
+                    bio: formData.bio || undefined,
+                    location: formData.location || undefined,
+                    latitude: formData.latitude,
+                    longitude: formData.longitude,
+                    dateOfBirth: formData.age ? `${new Date().getFullYear() - formData.age}-01-01` : undefined,
+                    gender: formData.gender,
+                },
+                firstName: formData.firstName,
+                lastName: formData.lastName,
+                finalStep: true,
+                onboardingSkipped: true,
+            });
+
+            // Update the store
+            updatePhysiotherapistData({
+                ...formData,
+                specializations,
+            });
+
+            // Clear any saved localStorage data
+            try { localStorage.removeItem('physioOnboardingData'); } catch { }
+
+            toast.success('Profile saved! You can complete the remaining steps from your settings.');
+            router.push('/dashboard');
+        } catch (error: any) {
+            console.error('Skip & continue error:', error);
+            toast.error(error.message || 'Failed to save profile. Please try again.');
+        } finally {
+            setIsSkipping(false);
         }
     };
 
@@ -1120,7 +1267,7 @@ export default function PhysiotherapistOnboardingWizard() {
             </div>
 
             {/* Navigation Buttons */}
-            <div className="flex justify-between pt-6 mt-6 border-t border-gray-100">
+            <div className="flex justify-between items-center pt-6 mt-6 border-t border-gray-100">
                 <Button
                     type="button"
                     onClick={prevStep}
@@ -1131,23 +1278,45 @@ export default function PhysiotherapistOnboardingWizard() {
                     Back
                 </Button>
 
-                <Button
-                    type="button"
-                    onClick={nextStep}
-                    disabled={isFinalSubmitting || isUploading}
-                    className="bg-[#005b57] hover:bg-[#00443e] text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-900/10"
-                >
-                    {isFinalSubmitting || isUploading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : currentStep === steps.length - 1 ? (
-                        isSignedIn ? 'Complete' : 'Create Account & Complete'
-                    ) : (
-                        <>
-                            Next
-                            <ChevronRight className="w-4 h-4 ml-2" />
-                        </>
+                <div className="flex items-center gap-3">
+                    {/* Skip & Complete Later button — shown on optional steps (6-8) */}
+                    {currentStep >= SKIPPABLE_FROM_STEP && currentStep < steps.length - 1 && (
+                        <Button
+                            type="button"
+                            onClick={handleSkipAndContinue}
+                            disabled={isSkipping || isFinalSubmitting || isUploading}
+                            variant="outline"
+                            className="h-12 rounded-xl border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-400"
+                        >
+                            {isSkipping ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <>
+                                    <SkipForward className="w-4 h-4 mr-2" />
+                                    Skip & Complete Later
+                                </>
+                            )}
+                        </Button>
                     )}
-                </Button>
+
+                    <Button
+                        type="button"
+                        onClick={nextStep}
+                        disabled={isFinalSubmitting || isUploading || isSkipping}
+                        className="bg-[#005b57] hover:bg-[#00443e] text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-900/10"
+                    >
+                        {isFinalSubmitting || isUploading ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : currentStep === steps.length - 1 ? (
+                            isSignedIn ? 'Complete' : 'Create Account & Complete'
+                        ) : (
+                            <>
+                                Next
+                                <ChevronRight className="w-4 h-4 ml-2" />
+                            </>
+                        )}
+                    </Button>
+                </div>
             </div>
         </div >
     );

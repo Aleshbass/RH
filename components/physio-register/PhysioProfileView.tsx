@@ -612,6 +612,7 @@ export default function PhysioProfilePage() {
           setShowConversionPopup(false);
           localStorage.setItem('rehabify_popup_dismissed', 'true');
         }}
+        slug={slug}
       />
     </>
   );

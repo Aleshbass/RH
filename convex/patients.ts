@@ -1046,6 +1046,137 @@ export const reassignPatient = mutation({
       timestamp: Date.now(),
     });
 
+    // Transfer Active & Draft Treatment Plans
+    const activePlans = await ctx.db
+      .query("treatmentPlans")
+      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("physiotherapistId"), args.currentPhysiotherapistId),
+          q.or(
+            q.eq(q.field("status"), "active"),
+            q.eq(q.field("status"), "draft")
+          )
+        )
+      )
+      .collect();
+
+    for (const plan of activePlans) {
+      await ctx.db.patch(plan._id, {
+        physiotherapistId: args.newPhysiotherapistId,
+      });
+    }
+
+    // Transfer Future Appointments
+    const futureAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_physiotherapist_id_and_time", (q) =>
+        q.eq("physiotherapistId", args.currentPhysiotherapistId).gt("startTime", Date.now())
+      )
+      .filter((q) => q.eq(q.field("patientId"), args.patientId))
+      .collect();
+
+    for (const appt of futureAppointments) {
+      await ctx.db.patch(appt._id, {
+        physiotherapistId: args.newPhysiotherapistId,
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+/**
+ * Formally discharge a patient, ending the treatment relationship and archiving plans
+ */
+export const dischargePatient = mutation({
+  args: {
+    patientId: v.id("users"),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.auth.getUserIdentity();
+    if (!user) throw new Error("Not authenticated");
+
+    const physiotherapist = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", user.subject))
+      .unique();
+
+    if (!physiotherapist || physiotherapist.role !== "physiotherapist") {
+      throw new Error("Only physiotherapists can discharge patients");
+    }
+
+    // Find active relationship
+    const relationship = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_patient_and_physiotherapist", (q) =>
+        q.eq("patientId", args.patientId).eq("physiotherapistId", physiotherapist._id)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .unique();
+
+    if (!relationship) {
+      throw new Error("Active relationship not found");
+    }
+
+    // Deactivate relationship
+    await ctx.db.patch(relationship._id, {
+      status: "inactive",
+      endDate: Date.now(),
+    });
+
+    // Mark active treatment plans as completed
+    const activePlans = await ctx.db
+      .query("treatmentPlans")
+      .withIndex("by_patient", (q) => q.eq("patientId", args.patientId))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("physiotherapistId"), physiotherapist._id),
+          q.eq(q.field("status"), "active")
+        )
+      )
+      .collect();
+
+    for (const plan of activePlans) {
+      await ctx.db.patch(plan._id, {
+        status: "completed",
+        completedAt: Date.now(),
+      } as any);
+    }
+
+    // Cancel upcoming appointments
+    const futureAppointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_physiotherapist_id_and_time", (q) =>
+        q.eq("physiotherapistId", physiotherapist._id).gt("startTime", Date.now())
+      )
+      .filter((q) => q.eq(q.field("patientId"), args.patientId))
+      .collect();
+
+    for (const appt of futureAppointments) {
+      await ctx.db.patch(appt._id, {
+        status: "cancelled_by_therapist",
+        cancellationReason: "Patient formally discharged",
+      } as any);
+    }
+
+    // Log the discharge
+    await ctx.db.insert("systemLogs", {
+      type: "info",
+      action: "patient_discharged",
+      userId: physiotherapist._id,
+      clinicId: physiotherapist.clinicId,
+      targetEntityType: "user",
+      targetEntityId: args.patientId,
+      details: {
+        notes: args.notes,
+        plansCompleted: activePlans.length,
+        appointmentsCancelled: futureAppointments.length,
+      },
+      timestamp: Date.now(),
+    });
+
     return { success: true };
   },
 });

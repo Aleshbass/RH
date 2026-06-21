@@ -63,8 +63,8 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
       return
     }
 
-    // If user hasn't completed onboarding, redirect to appropriate onboarding flow
-    if (!currentUser.onboarded) {
+    // If user hasn't completed onboarding AND hasn't skipped, redirect to appropriate onboarding flow
+    if (!currentUser.onboarded && !currentUser.onboardingSkipped) {
       setIsRedirecting(true)
       switch (currentUser.role) {
         case 'physiotherapist':

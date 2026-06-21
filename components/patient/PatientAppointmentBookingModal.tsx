@@ -22,6 +22,7 @@ interface PatientAppointmentBookingModalProps {
 
 type Step = 'date' | 'time' | 'details' | 'success'
 type VideoPlatform = 'rehabify' | 'google_meet'
+type AppointmentType = 'telehealth' | 'in-person'
 
 const SERVICE_TYPES = [
     'Initial Consultation',
@@ -51,6 +52,8 @@ export function PatientAppointmentBookingModal({
     const [date, setDate] = useState<Date | undefined>(undefined)
     const [time, setTime] = useState<string | null>(null)
     const [serviceType, setServiceType] = useState<string>('')
+    const [appointmentType, setAppointmentType] = useState<AppointmentType>('telehealth')
+    const [location, setLocation] = useState<string>('')
     const [videoPlatform, setVideoPlatform] = useState<VideoPlatform>('rehabify')
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [physiotherapistId, setPhysiotherapistId] = useState<string>('')
@@ -79,6 +82,8 @@ export function PatientAppointmentBookingModal({
             setDate(undefined)
             setTime(null)
             setServiceType('')
+            setAppointmentType('telehealth')
+            setLocation('')
             setVideoPlatform('rehabify')
             setIsSubmitting(false)
         }
@@ -103,6 +108,10 @@ export function PatientAppointmentBookingModal({
 
     const handleSubmit = async () => {
         if (!date || !time || !serviceType || !physiotherapistId || !user) return
+        if (appointmentType === 'in-person' && (!location || location.trim() === '')) {
+            toast.error('Please enter an exact street address for the appointment');
+            return;
+        }
 
         setIsSubmitting(true)
 
@@ -117,8 +126,9 @@ export function PatientAppointmentBookingModal({
                 startTime: startDateTime.getTime(),
                 endTime: endDateTime.getTime(),
                 serviceType: serviceType,
-                appointmentType: 'telehealth',
-                manualMeetingLink: videoPlatform === 'google_meet' ? 'pending-generation' : undefined,
+                appointmentType: appointmentType,
+                manualMeetingLink: appointmentType === 'telehealth' && videoPlatform === 'google_meet' ? 'pending-generation' : undefined,
+                location: appointmentType === 'in-person' ? location : undefined,
                 status: 'scheduled',
             })
 
@@ -269,7 +279,53 @@ export function PatientAppointmentBookingModal({
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium">Video Platform</label>
+                                    <label className="text-sm font-medium">Appointment Type *</label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div
+                                            className={cn(
+                                                "border rounded-lg p-3 cursor-pointer transition-all hover:border-[#005b57]",
+                                                appointmentType === 'telehealth' ? "border-[#005b57] bg-[#005b57]/5 ring-1 ring-[#005b57]" : "border-gray-200"
+                                            )}
+                                            onClick={() => setAppointmentType('telehealth')}
+                                        >
+                                            <div className="flex flex-col items-center gap-2 text-center">
+                                                <Video className={cn("h-5 w-5", appointmentType === 'telehealth' ? "text-[#005b57]" : "text-gray-500")} />
+                                                <span className="text-sm font-medium">Telehealth</span>
+                                            </div>
+                                        </div>
+
+                                        <div
+                                            className={cn(
+                                                "border rounded-lg p-3 cursor-pointer transition-all hover:border-[#005b57]",
+                                                appointmentType === 'in-person' ? "border-[#005b57] bg-[#005b57]/5 ring-1 ring-[#005b57]" : "border-gray-200"
+                                            )}
+                                            onClick={() => setAppointmentType('in-person')}
+                                        >
+                                            <div className="flex flex-col items-center gap-2 text-center">
+                                                <MapPin className={cn("h-5 w-5", appointmentType === 'in-person' ? "text-[#005b57]" : "text-gray-500")} />
+                                                <span className="text-sm font-medium">In-person</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {appointmentType === 'in-person' ? (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Exact Address *</label>
+                                        <input
+                                            type="text"
+                                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                            placeholder="Enter house number, street name, and city..."
+                                            value={location}
+                                            onChange={(e) => setLocation(e.target.value)}
+                                        />
+                                        <p className="text-xs text-gray-500">
+                                            Please provide an exact address so your physiotherapist can navigate to you.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium">Video Platform</label>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div
                                             className={cn(
@@ -324,7 +380,12 @@ export function PatientAppointmentBookingModal({
 
                             <Button
                                 className="w-full bg-[#005b57] hover:bg-[#00443e] mt-4"
-                                disabled={!serviceType || isSubmitting || (videoPlatform === 'google_meet' && !googleCredentials)}
+                                disabled={
+                                    !serviceType ||
+                                    isSubmitting ||
+                                    (appointmentType === 'telehealth' && videoPlatform === 'google_meet' && !googleCredentials) ||
+                                    (appointmentType === 'in-person' && (!location || location.trim() === ''))
+                                }
                                 onClick={handleSubmit}
                             >
                                 {isSubmitting ? 'Confirming...' : 'Confirm Booking'}
@@ -366,7 +427,11 @@ export function PatientAppointmentBookingModal({
                                 <div className="grid grid-cols-[60px_1fr] gap-4">
                                     <span className="font-semibold text-gray-900">Where</span>
                                     <div className="flex items-center gap-2 text-gray-600">
-                                        {videoPlatform === 'rehabify' ? (
+                                        {appointmentType === 'in-person' ? (
+                                            <>
+                                                <MapPin className="h-4 w-4" /> {location}
+                                            </>
+                                        ) : videoPlatform === 'rehabify' ? (
                                             <>
                                                 <Video className="h-4 w-4" /> Rehabify Video
                                             </>
