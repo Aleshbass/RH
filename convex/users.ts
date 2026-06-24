@@ -1112,6 +1112,61 @@ export const getPendingApprovals = query({
 });
 
 /**
+ * Get declined approval requests for admin review
+ */
+export const getDeclinedApprovals = query({
+  args: {},
+  returns: v.array(v.object({
+    _id: v.id("accountApprovalStatus"),
+    _creationTime: v.number(),
+    userId: v.id("users"),
+    status: v.string(),
+    submittedAt: v.number(),
+    reviewedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.id("users")),
+    comments: v.optional(v.string()),
+    requiredDocuments: v.optional(v.array(v.string())),
+    user: v.any(),
+  })),
+  handler: async (ctx) => {
+    // Verify admin access
+    await ensureUserRole(ctx, ["admin"]);
+
+    const declinedApprovals = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_status", (q) => q.eq("status", "declined"))
+      .collect();
+
+    const approvalWithUserData = await Promise.all(
+      declinedApprovals.map(async (approval) => {
+        const user = await ctx.db.get(approval.userId);
+        return {
+          ...approval,
+          user: user ? {
+            _id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phoneNumber: user.phoneNumber,
+            role: user.role,
+            imageUrl: user.imageUrl,
+          } : null,
+        };
+      })
+    );
+
+    // Sort by most recently reviewed first
+    const sortedDeclined = approvalWithUserData.filter(item => item.user !== null).sort((a, b) => {
+      const timeA = a.reviewedAt || a.submittedAt || 0;
+      const timeB = b.reviewedAt || b.submittedAt || 0;
+      return timeB - timeA;
+    });
+
+    return sortedDeclined;
+  },
+});
+
+/**
  * Approve a user account
  */
 export const approveUser = mutation({

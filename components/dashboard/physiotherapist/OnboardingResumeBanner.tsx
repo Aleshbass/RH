@@ -85,7 +85,7 @@ export function OnboardingResumeBanner() {
                     {/* CTA buttons */}
                     <div className="flex items-center gap-3">
                         <Button
-                            onClick={() => router.push('/dashboard/physiotherapist/settings/complete-onboarding')}
+                            onClick={() => router.push('/physiotherapist?resume=true')}
                             className="bg-amber-500 hover:bg-amber-600 text-white h-10 rounded-xl shadow-sm"
                         >
                             Complete Profile

@@ -95,6 +95,13 @@ const navigationGroups = [
         description: 'Review pending account approvals',
       },
       {
+        title: 'Declined Approvals',
+        href: '/dashboard/admin/declined-physios',
+        icon: UserCog, // reusing UserCog or some other icon
+        roles: ['admin'],
+        description: 'View declined applications',
+      },
+      {
         title: 'Role Management',
         href: '/dashboard/admin/roles',
         icon: Shield,

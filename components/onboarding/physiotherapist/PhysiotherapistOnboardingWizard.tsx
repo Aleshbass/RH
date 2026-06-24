@@ -10,7 +10,7 @@ import { useOnboardingStore } from '@/stores/onboardingStore';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { FileUpload } from '@/components/ui/file-upload';
 import LocationSearch from '@/components/marketplace/LocationSearch';
 import dynamic from 'next/dynamic';
@@ -96,8 +97,8 @@ type FormValues = z.infer<typeof fullSchema>;
 
 // --- Steps Configuration ---
 
-// Steps 0-3 are required, steps 4-8 can be skipped and completed later
-const SKIPPABLE_FROM_STEP = 4;
+// Steps 0-7 are required, step 8 can be skipped and completed later
+const SKIPPABLE_FROM_STEP = 8;
 
 const steps = [
     { id: 'personal', title: 'Personal Info' },
@@ -114,6 +115,8 @@ const steps = [
 
 export default function PhysiotherapistOnboardingWizard() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const isResuming = searchParams.get('resume') === 'true';
     const { data, updatePhysiotherapistData, completeOnboarding } = useOnboardingStore();
     const { physiotherapistData } = data;
     const { user, isSignedIn } = useUser();
@@ -128,6 +131,7 @@ export default function PhysiotherapistOnboardingWizard() {
     const [isAvailabilityLoading, setIsAvailabilityLoading] = useState(false);
     const [isFinalSubmitting, setIsFinalSubmitting] = useState(false);
     const [isSkipping, setIsSkipping] = useState(false);
+    const [isSkipModalOpen, setIsSkipModalOpen] = useState(false);
     const [registrySlug, setRegistrySlug] = useState<string | null>(null);
 
     // Fetch registry profile if we have a slug
@@ -281,7 +285,7 @@ export default function PhysiotherapistOnboardingWizard() {
 
     // Restore saved onboarding data after sign-up redirect
     useEffect(() => {
-        if (!isSignedIn || hasRestoredRef.current) return;
+        if (!isSignedIn || !currentUser || hasRestoredRef.current) return;
         try {
             const saved = localStorage.getItem('physioOnboardingData');
             if (saved) {
@@ -314,7 +318,7 @@ export default function PhysiotherapistOnboardingWizard() {
                         setGuestProfilePhotoId(parsed.guestProfilePhotoId);
                     }
                     
-                    if (parsed.onboardingSkipped) {
+                    if (parsed.onboardingSkipped && !isResuming) {
                         // They skipped as a guest, so automatically submit the skipped profile now
                         completeUserProfileMutation({
                             role: 'physiotherapist',
@@ -341,13 +345,17 @@ export default function PhysiotherapistOnboardingWizard() {
                         return; // Prevent normal restore flow
                     }
                     
-                    // Jump to the review step so they can re-submit
-                    setCurrentStep(steps.length - 1);
+                    // Jump to the correct step
+                    if (isResuming) {
+                        setCurrentStep(SKIPPABLE_FROM_STEP);
+                    } else {
+                        setCurrentStep(steps.length - 1);
+                    }
                     toast.success('Welcome back! Your onboarding data has been restored.');
                 }
             }
         } catch { }
-    }, [isSignedIn, setValue, completeUserProfileMutation, router]);
+    }, [isSignedIn, currentUser, setValue, completeUserProfileMutation, router, isResuming]);
 
     // Simulate loading for availability step
     useEffect(() => {
@@ -569,44 +577,40 @@ export default function PhysiotherapistOnboardingWizard() {
     };
 
     // --- Skip & Complete Later ---
-    const handleSkipAndContinue = async () => {
+    const handleSkipAndContinue = () => {
+        setIsSkipModalOpen(true);
+    };
+
+    const confirmSkip = async () => {
         const formData = watch();
         setIsSkipping(true);
 
+        // Always save to localStorage so we can resume later
+        try {
+            localStorage.setItem(
+                'physioOnboardingData',
+                JSON.stringify({
+                    formData,
+                    specializations,
+                    timestamp: Date.now(),
+                    guestProfilePhotoId,
+                    onboardingSkipped: true,
+                })
+            );
+        } catch (e) {
+            console.error("Failed to save data to localStorage:", e);
+        }
+
         if (!isSignedIn) {
-            try {
-                localStorage.setItem(
-                    'physioOnboardingData',
-                    JSON.stringify({
-                        formData: {
-                            firstName: formData.firstName,
-                            lastName: formData.lastName,
-                            email: formData.email,
-                            phoneNumber: formData.phoneNumber,
-                            age: formData.age,
-                            gender: formData.gender,
-                            licenseNumber: formData.licenseNumber,
-                            yearsOfExperience: formData.yearsOfExperience,
-                            location: formData.location,
-                            latitude: formData.latitude,
-                            longitude: formData.longitude,
-                            dateOfBirth: formData.age ? `${new Date().getFullYear() - formData.age}-01-01` : undefined,
-                        },
-                        specializations,
-                        guestProfilePhotoId,
-                        onboardingSkipped: true,
-                        timestamp: Date.now(),
-                    })
-                );
-            } catch { }
-            toast.info('Create your account to save your profile');
+            setIsSkipping(false);
+            setIsSkipModalOpen(false);
             router.push('/sign-up?redirect=/physiotherapist');
             return;
         }
 
+        // For signed-in users, submit immediately and redirect
         try {
-            // Save the required data (steps 0-5) to create/update the profile
-            await completeUserProfileMutation({
+            const result = await completeUserProfileMutation({
                 role: 'physiotherapist',
                 profileData: {
                     specializations: specializations.length > 0 ? specializations : undefined,
@@ -625,22 +629,18 @@ export default function PhysiotherapistOnboardingWizard() {
                 onboardingSkipped: true,
             });
 
-            // Update the store
-            updatePhysiotherapistData({
-                ...formData,
-                specializations,
-            });
-
-            // Clear any saved localStorage data
-            try { localStorage.removeItem('physioOnboardingData'); } catch { }
-
-            toast.success('Profile saved! You can complete the remaining steps from your settings.');
-            router.push('/dashboard');
+            if (result.success) {
+                toast.success("Profile submitted for review. Please complete details later.");
+                router.push('/dashboard');
+            } else {
+                toast.error("Failed to submit profile.");
+            }
         } catch (error: any) {
-            console.error('Skip & continue error:', error);
-            toast.error(error.message || 'Failed to save profile. Please try again.');
+            console.error("Skip error:", error);
+            toast.error("An error occurred while skipping.");
         } finally {
             setIsSkipping(false);
+            setIsSkipModalOpen(false);
         }
     };
 
@@ -1265,6 +1265,46 @@ export default function PhysiotherapistOnboardingWizard() {
                     </motion.div>
                 </AnimatePresence>
             </div>
+
+            {/* Skip Modal */}
+            <Dialog open={isSkipModalOpen} onOpenChange={setIsSkipModalOpen}>
+                <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                        <DialogTitle>Skip Remaining Steps</DialogTitle>
+                        <DialogDescription>
+                            You are about to skip the rest of the onboarding process.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4">
+                        <p className="text-sm text-gray-600 mb-4">
+                            Your profile will be sent for review, but <strong>you won't be able to be assigned patients</strong> until you complete your details on the physiotherapist settings page after your account has been approved.
+                        </p>
+                    </div>
+                    <DialogFooter className="flex gap-2 justify-end">
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsSkipModalOpen(false)}
+                            disabled={isSkipping}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={confirmSkip}
+                            disabled={isSkipping}
+                            className="bg-[#005b57] hover:bg-[#00443e] text-white"
+                        >
+                            {isSkipping ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Skipping...
+                                </>
+                            ) : (
+                                "Confirm Skip"
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Navigation Buttons */}
             <div className="flex justify-between items-center pt-6 mt-6 border-t border-gray-100">

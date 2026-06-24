@@ -1,12 +1,12 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireAdmin } from "./helpers/auth";
+import { ensureUserRole } from "./auth";
 
 export const getPartnershipInquiries = query({
   args: {},
   handler: async (ctx) => {
     // Authenticate admin
-    await requireAdmin(ctx);
+    await ensureUserRole(ctx as any, ["admin"]);
 
     const inquiries = await ctx.db
       .query("partnershipInquiries")
@@ -25,7 +25,7 @@ export const updatePartnershipInquiryStatus = mutation({
   },
   handler: async (ctx, args) => {
     // Authenticate admin
-    await requireAdmin(ctx);
+    await ensureUserRole(ctx as any, ["admin"]);
 
     await ctx.db.patch(args.id, {
       status: args.status,
