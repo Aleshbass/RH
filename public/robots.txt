@@ -1,0 +1,12 @@
+# *
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /auth
+
+# Host
+Host: https://physioaroundme.com
+
+# Sitemaps
+Sitemap: https://physioaroundme.com/sitemap.xml

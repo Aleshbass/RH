@@ -39,15 +39,17 @@ export const searchPhysiotherapists = query({
     const limit = args.limit || 20;
     const offset = args.offset || 0;
 
-    // Get all approved physiotherapists with marketplace profiles
+    // Get all physiotherapist profiles (including those without explicit marketplace toggle)
     const allPhysios = await ctx.db
       .query("physiotherapistProfiles")
-      .filter((q) => q.eq(q.field("isAvailableOnMarketplace"), true))
       .collect();
 
     // Get user details for each physiotherapist
     const physiosWithDetails = await Promise.all(
       allPhysios.map(async (profile) => {
+        // Skip profiles that have explicitly opted OUT of marketplace
+        if (profile.isAvailableOnMarketplace === false) return null;
+
         const user = await ctx.db.get(profile.userId);
         if (!user) return null;
 
@@ -252,8 +254,8 @@ export const getPhysiotherapistProfile = query({
       .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistId))
       .first();
 
-    // Return null instead of throwing - let UI handle gracefully
-    if (!profile || !profile.isAvailableOnMarketplace) {
+    // Return null if profile doesn't exist or if explicitly opted out
+    if (!profile || profile.isAvailableOnMarketplace === false) {
       return null;
     }
 

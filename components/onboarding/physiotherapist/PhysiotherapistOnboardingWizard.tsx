@@ -318,32 +318,8 @@ export default function PhysiotherapistOnboardingWizard() {
                         setGuestProfilePhotoId(parsed.guestProfilePhotoId);
                     }
                     
-                    if (parsed.onboardingSkipped && !isResuming) {
-                        // They skipped as a guest, so automatically submit the skipped profile now
-                        completeUserProfileMutation({
-                            role: 'physiotherapist',
-                            profileData: {
-                                specializations: parsed.specializations?.length > 0 ? parsed.specializations : undefined,
-                                licenseNumber: fd.licenseNumber || undefined,
-                                yearsOfExperience: fd.yearsOfExperience || undefined,
-                                bio: fd.bio || undefined,
-                                location: fd.location || undefined,
-                                latitude: fd.latitude,
-                                longitude: fd.longitude,
-                                dateOfBirth: fd.age ? `${new Date().getFullYear() - fd.age}-01-01` : undefined,
-                                gender: fd.gender,
-                            },
-                            firstName: fd.firstName,
-                            lastName: fd.lastName,
-                            finalStep: true,
-                            onboardingSkipped: true,
-                        }).then(() => {
-                            try { localStorage.removeItem('physioOnboardingData'); } catch { }
-                            toast.success('Welcome! Your skipped profile has been saved.');
-                            router.push('/dashboard');
-                        });
-                        return; // Prevent normal restore flow
-                    }
+                    
+                    // Skip auto-submit disabled — require full onboarding completion
                     
                     // Jump to the correct step
                     if (isResuming) {
@@ -394,9 +370,6 @@ export default function PhysiotherapistOnboardingWizard() {
                     return;
                 }
                 if (!nationalIdFile) {
-                    toast.error("Please upload your National ID or driver's license");
-                    return;
-                }
                     toast.error("Please upload your National ID or driver's license");
                     return;
                 }
@@ -1265,45 +1238,7 @@ export default function PhysiotherapistOnboardingWizard() {
                 </AnimatePresence>
             </div>
 
-            {/* Skip Modal */}
-            <Dialog open={isSkipModalOpen} onOpenChange={setIsSkipModalOpen}>
-                <DialogContent className="sm:max-w-[425px]">
-                    <DialogHeader>
-                        <DialogTitle>Skip Remaining Steps</DialogTitle>
-                        <DialogDescription>
-                            You are about to skip the rest of the onboarding process.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="py-4">
-                        <p className="text-sm text-gray-600 mb-4">
-                            Your profile will be sent for review, but <strong>you won't be able to be assigned patients</strong> until you complete your details on the physiotherapist settings page after your account has been approved.
-                        </p>
-                    </div>
-                    <DialogFooter className="flex gap-2 justify-end">
-                        <Button
-                            variant="outline"
-                            onClick={() => setIsSkipModalOpen(false)}
-                            disabled={isSkipping}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={confirmSkip}
-                            disabled={isSkipping}
-                            className="bg-[#005b57] hover:bg-[#00443e] text-white"
-                        >
-                            {isSkipping ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Skipping...
-                                </>
-                            ) : (
-                                "Confirm Skip"
-                            )}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+
 
             {/* Navigation Buttons */}
             <div className="flex justify-between items-center pt-6 mt-6 border-t border-gray-100">
@@ -1318,25 +1253,6 @@ export default function PhysiotherapistOnboardingWizard() {
                 </Button>
 
                 <div className="flex items-center gap-3">
-                    {/* Skip & Complete Later button — shown on optional steps (6-8) */}
-                    {currentStep >= SKIPPABLE_FROM_STEP && currentStep < steps.length - 1 && (
-                        <Button
-                            type="button"
-                            onClick={handleSkipAndContinue}
-                            disabled={isSkipping || isFinalSubmitting || isUploading}
-                            variant="outline"
-                            className="h-12 rounded-xl border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-400"
-                        >
-                            {isSkipping ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <>
-                                    <SkipForward className="w-4 h-4 mr-2" />
-                                    Skip & Complete Later
-                                </>
-                            )}
-                        </Button>
-                    )}
 
                     <Button
                         type="button"
