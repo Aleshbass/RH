@@ -393,11 +393,10 @@ export default function PhysiotherapistOnboardingWizard() {
                     toast.error("Please upload your degree certificate");
                     return;
                 }
-                if (!nyscCertFile) {
-                    toast.error("Please upload your NYSC discharge certificate");
+                if (!nationalIdFile) {
+                    toast.error("Please upload your National ID or driver's license");
                     return;
                 }
-                if (!nationalIdFile) {
                     toast.error("Please upload your National ID or driver's license");
                     return;
                 }
@@ -1051,7 +1050,7 @@ export default function PhysiotherapistOnboardingWizard() {
                                             />
                                         </div>
                                         <div className="space-y-1.5">
-                                            <Label className="text-sm">NYSC Discharge Certificate <span className="text-red-500">*</span></Label>
+                                            <Label className="text-sm">NYSC Discharge Certificate <span className="text-gray-400 text-xs">(Optional)</span></Label>
                                             <FileUpload
                                                 id="nysc-cert-upload"
                                                 label="Upload NYSC Certificate"

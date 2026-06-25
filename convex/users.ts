@@ -381,6 +381,7 @@ export const completeUserProfile = mutation({
             physioProfileId = await ctx.db.insert("physiotherapistProfiles", {
               userId: user._id,
               ...physioData,
+              isAvailableOnMarketplace: true,
             });
             console.log("[completeUserProfile] New physiotherapist profile created. ID:", physioProfileId);
           }

@@ -172,6 +172,7 @@ export const ensurePhysiotherapistProfile = mutation({
           yearsOfExperience: 0,
           languagesSpoken: [],
           // clinicId is optional and can be set later
+          isAvailableOnMarketplace: true,
         });
 
         // Update user with the new profile ID

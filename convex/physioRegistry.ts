@@ -551,11 +551,22 @@ export const submitPeerVerification = mutation({
 // ── Public: Get verifications for a registry entry ──────
 
 export const getVerificationsForEntry = query({
-  args: { registryEntryId: v.id("physioRegistry") },
+  args: { registryEntryId: v.string() },
   handler: async (ctx, args) => {
+    let normalizedId;
+    try {
+      normalizedId = ctx.db.normalizeId("physioRegistry", args.registryEntryId);
+    } catch {
+      return [];
+    }
+
+    if (!normalizedId) {
+      return [];
+    }
+
     const verifications = await ctx.db
       .query("physioRegistryPeerVerifications")
-      .withIndex("by_registry_entry", (q) => q.eq("registryEntryId", args.registryEntryId))
+      .withIndex("by_registry_entry", (q) => q.eq("registryEntryId", normalizedId))
       .order("desc")
       .collect();
 

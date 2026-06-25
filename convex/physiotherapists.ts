@@ -50,6 +50,7 @@ export const upsertPhysiotherapistProfessionalDetails = mutation({
       // this insert will fail, which is the correct behavior.
       const newProfileId = await ctx.db.insert("physiotherapistProfiles", {
         userId: user._id,
+        isAvailableOnMarketplace: true,
         ...(args.clinicId && { clinicId: args.clinicId }), // Add clinicId if provided
         ...profileData, // Spread other profile data, ensuring clinicId from args takes precedence if set
       } as any); // Using 'as any' temporarily if schema has strict non-optional clinicId and it's not in profileData. Ideally, ensure profileData type matches schema or handle clinicId more explicitly.

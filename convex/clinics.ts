@@ -319,6 +319,7 @@ export const acceptClinicInvitation = mutation({
       const newProfileId = await ctx.db.insert("physiotherapistProfiles", {
         userId: user._id,
         clinicId: invitation.clinicId,
+        isAvailableOnMarketplace: true,
       });
       // Link profile to user
       await ctx.db.patch(user._id, {
@@ -1761,6 +1762,7 @@ export const createStaffDirect = mutation({
       await ctx.db.insert("physiotherapistProfiles", {
         userId: staffId,
         clinicId: clinic._id,
+        isAvailableOnMarketplace: true,
       } as any);
     }
 
