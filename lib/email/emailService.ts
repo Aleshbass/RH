@@ -24,7 +24,8 @@ export type EmailTemplate =
   | 'CLINIC_STAFF_INVITE_ACCEPTED_OWNER'
   | 'CLINIC_STAFF_INVITE_DECLINED_OWNER'
   | 'GOOGLE_MEET_LINK'
-  | 'PARTNERSHIP_INQUIRY';
+  | 'PARTNERSHIP_INQUIRY'
+  | 'PAYMENT_RECEIPT';
 
 // Data interfaces for each email template
 export interface InvitationCreatedData {
@@ -202,6 +203,20 @@ export interface PartnershipInquiryData {
   message: string;
 }
 
+export interface PaymentReceiptData {
+  recipientName: string;
+  patientName: string;
+  physiotherapistName: string;
+  amount: number;
+  currency: string;
+  paymentReference: string;
+  date: string | number | Date;
+  bookingId: string;
+  patientEmail: string;
+  patientPhone?: string;
+  role: 'patient' | 'physiotherapist' | 'admin';
+}
+
 // Discriminated union for EmailOptions
 export type EmailOptions =
   | { to: string; subject?: string; template: 'INVITATION_CREATED'; data: InvitationCreatedData }
@@ -225,7 +240,8 @@ export type EmailOptions =
   | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_ACCEPTED_OWNER'; data: ClinicStaffInviteOwnerNoticeData }
   | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_DECLINED_OWNER'; data: ClinicStaffInviteOwnerNoticeData }
   | { to: string; subject?: string; template: 'GOOGLE_MEET_LINK'; data: GoogleMeetLinkData }
-  | { to: string; subject?: string; template: 'PARTNERSHIP_INQUIRY'; data: PartnershipInquiryData };
+  | { to: string; subject?: string; template: 'PARTNERSHIP_INQUIRY'; data: PartnershipInquiryData }
+  | { to: string; subject?: string; template: 'PAYMENT_RECEIPT'; data: PaymentReceiptData };
 
 /**
  * Send an email using the specified template and data
@@ -290,6 +306,39 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           <p>Please follow up directly via email.</p>
         `
       };
+
+    case 'PAYMENT_RECEIPT': {
+      const amountStr = (options.data.amount / 100).toLocaleString('en-NG', { style: 'currency', currency: options.data.currency });
+      let receiptMessage = '';
+      if (options.data.role === 'patient') {
+        receiptMessage = `Thank you for your payment! Your booking with ${options.data.physiotherapistName} has been confirmed.`;
+      } else if (options.data.role === 'physiotherapist') {
+        receiptMessage = `Great news! ${options.data.patientName} has paid for their booking.`;
+      } else {
+        receiptMessage = `A new marketplace payment has been successfully processed for a booking.`;
+      }
+
+      const phoneRow = options.data.patientPhone ? `<p style="margin: 8px 0 0 0;"><strong>Patient Phone:</strong> ${options.data.patientPhone}</p>` : '';
+
+      return {
+        subject: options.subject || (options.data.role === 'patient' ? `Payment Receipt: Booking Confirmation` : `New Payment Received: ${options.data.patientName}`),
+        body: `
+          <h1>Payment Receipt</h1>
+          <p>Hello ${options.data.recipientName},</p>
+          <p>${receiptMessage}</p>
+          <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0; font-weight: bold; font-size: 18px;">Amount: ${amountStr}</p>
+            <p style="margin: 12px 0 0 0;"><strong>Date:</strong> ${new Date(options.data.date).toLocaleString()}</p>
+            <p style="margin: 8px 0 0 0;"><strong>Reference:</strong> ${options.data.paymentReference}</p>
+            <p style="margin: 8px 0 0 0;"><strong>Patient Name:</strong> ${options.data.patientName}</p>
+            <p style="margin: 8px 0 0 0;"><strong>Patient Email:</strong> ${options.data.patientEmail}</p>
+            ${phoneRow}
+            <p style="margin: 8px 0 0 0;"><strong>Physiotherapist:</strong> ${options.data.physiotherapistName}</p>
+            <p style="margin: 8px 0 0 0;"><strong>Booking ID:</strong> ${options.data.bookingId}</p>
+          </div>
+        `
+      };
+    }
 
     case 'APPOINTMENT_REQUESTED':
       return {

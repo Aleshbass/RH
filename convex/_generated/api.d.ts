@@ -35,6 +35,7 @@ import type * as actions_emails_sendOnboardingNotificationEmail from "../actions
 import type * as actions_emails_sendPartnershipInquiryEmail from "../actions/emails/sendPartnershipInquiryEmail.js";
 import type * as actions_emails_sendPatientOnboardedProviderEmail from "../actions/emails/sendPatientOnboardedProviderEmail.js";
 import type * as actions_emails_sendPatientOnboardingCompleteEmail from "../actions/emails/sendPatientOnboardingCompleteEmail.js";
+import type * as actions_emails_sendPaymentReceiptEmail from "../actions/emails/sendPaymentReceiptEmail.js";
 import type * as actions_emails_sendVerificationBadgeEmail from "../actions/emails/sendVerificationBadgeEmail.js";
 import type * as actions_emails_sendVideoCallInvitation from "../actions/emails/sendVideoCallInvitation.js";
 import type * as actions_index from "../actions/index.js";
@@ -181,6 +182,7 @@ declare const fullApi: ApiFromModules<{
   "actions/emails/sendPartnershipInquiryEmail": typeof actions_emails_sendPartnershipInquiryEmail;
   "actions/emails/sendPatientOnboardedProviderEmail": typeof actions_emails_sendPatientOnboardedProviderEmail;
   "actions/emails/sendPatientOnboardingCompleteEmail": typeof actions_emails_sendPatientOnboardingCompleteEmail;
+  "actions/emails/sendPaymentReceiptEmail": typeof actions_emails_sendPaymentReceiptEmail;
   "actions/emails/sendVerificationBadgeEmail": typeof actions_emails_sendVerificationBadgeEmail;
   "actions/emails/sendVideoCallInvitation": typeof actions_emails_sendVideoCallInvitation;
   "actions/index": typeof actions_index;

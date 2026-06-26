@@ -142,6 +142,13 @@ const navigationGroups = [
         description: 'View system-wide analytics',
       },
       {
+        title: 'Transactions',
+        href: '/dashboard/admin/transactions',
+        icon: WalletCards,
+        roles: ['admin'],
+        description: 'View all marketplace payments and invoices',
+      },
+      {
         title: 'User Activity',
         href: '/dashboard/admin/activity',
         icon: Activity,

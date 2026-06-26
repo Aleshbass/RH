@@ -563,6 +563,95 @@ export const completeMarketplaceBooking = mutation({
                 subjectOverride: `Appointment confirmed: ${patientName}`,
             });
         }
+        
+        // --- Billing and Receipts ---
+        const actualPatientEmail = (booking as any).guestEmail || patient?.email || "";
+        const actualPatientPhone = (booking as any).guestPhone || patient?.phoneNumber || "";
+        const actualPatientName = (booking as any).guestName || patientName;
+
+        // Auto-generate invoice so it shows in billing dashboards
+        const invoiceNumber = `INV-MKT-${Date.now()}`;
+        await ctx.db.insert("invoices", {
+            patientId: booking.patientId,
+            physiotherapistId: booking.physiotherapistId,
+            invoiceNumber,
+            items: [{
+                description: `Marketplace Booking: ${booking.sessionType} (${booking.sessionDuration} mins)`,
+                quantity: 1,
+                unitPrice: booking.serviceAmount,
+                totalPrice: booking.serviceAmount
+            }],
+            subtotalAmount: booking.serviceAmount,
+            platformFeeAmount: booking.platformFee,
+            paystackFeeAmount: booking.paystackFee,
+            totalAmount: booking.totalAmount,
+            currency: "NGN",
+            issueDate: Date.now(),
+            dueDate: Date.now(),
+            status: "paid",
+            paymentDate: Date.now(),
+            paymentMethod: "paystack",
+            paymentReference: args.paymentReference,
+            physiotherapistShare: booking.physiotherapistEarnings,
+            platformShare: booking.platformFee,
+            feeBreakdown: {
+                subtotal: booking.serviceAmount,
+                discount: 0,
+                platformFee: booking.platformFee,
+                paystackPercentage: 0.015,
+                paystackFlat: 10000,
+                total: booking.totalAmount,
+                physiotherapistEarnings: booking.physiotherapistEarnings,
+            },
+            notes: `Marketplace booking | Patient: ${actualPatientName} (${actualPatientEmail})${actualPatientPhone ? ` | Phone: ${actualPatientPhone}` : ''}`,
+            relatedAppointmentIds: [appointmentId],
+        } as any);
+
+        // Send payment receipts
+        const receiptData = {
+            patientName: actualPatientName,
+            physiotherapistName: physiotherapistName,
+            amount: booking.totalAmount,
+            currency: "NGN",
+            paymentReference: args.paymentReference,
+            date: Date.now(),
+            bookingId: args.bookingId,
+            patientEmail: actualPatientEmail,
+            patientPhone: actualPatientPhone,
+        };
+
+        if (actualPatientEmail) {
+            await ctx.scheduler.runAfter(0, api["actions/emails/sendPaymentReceiptEmail"].sendPaymentReceiptEmail as any, {
+                ...receiptData,
+                to: actualPatientEmail,
+                recipientName: actualPatientName,
+                role: "patient"
+            });
+        }
+        if (physioEmail) {
+            await ctx.scheduler.runAfter(0, api["actions/emails/sendPaymentReceiptEmail"].sendPaymentReceiptEmail as any, {
+                ...receiptData,
+                to: physioEmail,
+                recipientName: physiotherapistName,
+                role: "physiotherapist"
+            });
+        }
+        // Send to admin (hello)
+        await ctx.scheduler.runAfter(0, api["actions/emails/sendPaymentReceiptEmail"].sendPaymentReceiptEmail as any, {
+            ...receiptData,
+            to: "hello@physioaroundme.com",
+            recipientName: "Admin",
+            role: "admin"
+        });
+        
+        // Send to admin (billing)
+        await ctx.scheduler.runAfter(0, api["actions/emails/sendPaymentReceiptEmail"].sendPaymentReceiptEmail as any, {
+            ...receiptData,
+            to: "billing@physioaroundme.com",
+            recipientName: "Billing",
+            role: "admin"
+        });
+
         // Video call creation is now handled earlier in the function
 
         return {

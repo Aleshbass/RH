@@ -20,3 +20,4 @@ export { sendClinicStaffInviteOwnerDeclinedEmail } from "./sendClinicStaffInvite
 export { sendAppointmentCanceledPatientEmail } from "./sendAppointmentCanceledPatientEmail";
 export { sendAppointmentRescheduledPatientEmail } from "./sendAppointmentRescheduledPatientEmail";
 export { sendAppointmentReminderEmail } from "./sendAppointmentReminderEmail";
+export { sendPaymentReceiptEmail } from "./sendPaymentReceiptEmail";

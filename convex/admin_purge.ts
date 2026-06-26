@@ -43,3 +43,35 @@ export const purgeUnwantedUsers = mutation({
     return `Purged ${deletedCount} users (patients, clinic owners, unassigned, and pending physios).`;
   },
 });
+
+export const fixStuckPhysios = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // Find all pending approvals
+    const approvals = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_status", (q) => q.eq("status", "pending_review"))
+      .collect();
+
+    let fixedCount = 0;
+
+    for (const approval of approvals) {
+      const user = await ctx.db.get(approval.userId);
+      if (user && user.role === "physiotherapist") {
+        // We found a physio in pending review.
+        // Let's reset them back to onboarding so they can upload documents.
+        await ctx.db.delete(approval._id);
+        
+        await ctx.db.patch(user._id, {
+          onboarded: false,
+          hasCompletedOnboarding: false,
+          onboardingSkipped: false,
+        });
+        
+        fixedCount++;
+      }
+    }
+
+    return `Fixed ${fixedCount} stuck physiotherapists by resetting them to onboarding state.`;
+  }
+});

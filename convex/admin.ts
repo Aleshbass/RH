@@ -796,3 +796,63 @@ export const getPlatformRevenue = query({
     };
   },
 });
+
+/**
+ * Get all marketplace transactions/invoices for admin dashboard
+ * Shows patient name, email, phone, physio name, amounts, payment status
+ */
+export const getMarketplaceTransactions = query({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"]);
+
+    const invoices = await ctx.db.query("invoices").collect();
+
+    // Sort by issue date descending (newest first)
+    invoices.sort((a, b) => (b.issueDate || 0) - (a.issueDate || 0));
+
+    // Enrich with user details
+    const enriched = await Promise.all(
+      invoices.map(async (invoice) => {
+        const patient = await ctx.db.get(invoice.patientId);
+        const physio = invoice.physiotherapistId
+          ? await ctx.db.get(invoice.physiotherapistId)
+          : null;
+
+        return {
+          _id: invoice._id,
+          invoiceNumber: invoice.invoiceNumber,
+          // Patient info
+          patientName: patient
+            ? `${patient.firstName || ""} ${patient.lastName || ""}`.trim()
+            : "Unknown",
+          patientEmail: patient?.email || "",
+          patientPhone: patient?.phoneNumber || "",
+          // Physio info
+          physiotherapistName: physio
+            ? `${physio.firstName || ""} ${physio.lastName || ""}`.trim()
+            : "Unknown",
+          physiotherapistEmail: physio?.email || "",
+          // Amounts
+          subtotalAmount: invoice.subtotalAmount || 0,
+          platformFeeAmount: invoice.platformFeeAmount || 0,
+          paystackFeeAmount: (invoice as any).paystackFeeAmount || 0,
+          totalAmount: invoice.totalAmount || 0,
+          physiotherapistShare: invoice.physiotherapistShare || 0,
+          currency: invoice.currency || "NGN",
+          // Status
+          status: invoice.status,
+          paymentMethod: invoice.paymentMethod || "",
+          paymentReference: invoice.paymentReference || "",
+          paymentDate: invoice.paymentDate,
+          issueDate: invoice.issueDate,
+          // Items & notes
+          items: invoice.items,
+          notes: invoice.notes || "",
+        };
+      })
+    );
+
+    return enriched;
+  },
+});
