@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, ArrowUp, Check } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@clerk/nextjs';
@@ -109,11 +110,11 @@ export function LandingHero() {
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
 
   return (
-    <section className="relative min-h-[100svh] overflow-hidden bg-[#F5F0EA] pt-[140px] md:pt-[180px] lg:pt-[220px] pb-20">
+    <section className="relative min-h-[100svh] overflow-hidden bg-[#F5F0EA] pt-[140px] md:pt-[180px] lg:pt-[220px] pb-0 lg:pb-20 flex flex-col">
       <HeroBackground />
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 h-full flex flex-col justify-center">
-        <div className="flex flex-col lg:flex-row items-center justify-between max-w-6xl mx-auto gap-12 lg:gap-16 w-full">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 flex-1 flex flex-col justify-end lg:justify-center">
+        <div className="flex flex-col lg:flex-row items-center justify-between max-w-6xl mx-auto gap-12 lg:gap-16 w-full flex-1">
 
           {/* ── Left: Text Content ── */}
           <motion.div
@@ -143,8 +144,7 @@ export function LandingHero() {
               </Link>
             </div>
 
-            {/* Secondary CTAs */}
-            <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center lg:justify-start gap-4 mb-8">
+            <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center lg:justify-start gap-4">
               {dashboardProps && (
                 <Link href={dashboardProps.href} className="w-full sm:w-auto">
                   <span className="flex items-center justify-center text-white bg-emerald-600 hover:bg-emerald-500 font-semibold py-3 px-6 rounded-xl transition-all duration-300 shadow-md shadow-emerald-900/10 w-full text-sm">
@@ -152,31 +152,30 @@ export function LandingHero() {
                   </span>
                 </Link>
               )}
-              {!isSignedIn && (
-                <Link href="/start-treatment" className="w-full sm:w-auto">
-                  <span className="flex items-center justify-center text-white bg-emerald-600 hover:bg-emerald-500 font-semibold py-3 px-6 rounded-xl transition-all duration-300 shadow-md shadow-emerald-900/10 w-full text-sm">
-                    Or book via website
-                  </span>
-                </Link>
-              )}
-            </div>
-
-            {/* Trust badges */}
-            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-x-5 gap-y-2 text-[12px] sm:text-[13px] font-medium text-[#777]">
-              <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5 text-emerald-600" strokeWidth={3} />MRTB verified</span>
-              <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5 text-emerald-600" strokeWidth={3} />Same-day matching</span>
-              <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5 text-emerald-600" strokeWidth={3} />Yoruba · Igbo · Hausa · English</span>
             </div>
           </motion.div>
 
-          {/* ── Right: WhatsApp Chat Mockup ── */}
+          {/* ── Right: Image (Mobile) & WhatsApp Chat Mockup (Desktop) ── */}
           <motion.div
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.7, delay: 0.25 }}
-            className="w-full lg:w-[45%] hidden lg:flex justify-center lg:justify-end order-2 lg:-mt-12"
+            className="w-full lg:w-[45%] flex justify-center lg:justify-end order-2 mt-auto lg:-mt-12 lg:mb-0"
           >
-            <div className="w-full max-w-[380px] sm:max-w-[400px]">
+            {/* Mobile Image */}
+            <div className="w-full max-w-[400px] lg:hidden relative rounded-t-3xl overflow-hidden shadow-2xl translate-y-[1px]">
+              <Image 
+                src="/logos/images/rehabify-hero-image.webp" 
+                alt="Rehabify Patient Recovery" 
+                width={500} 
+                height={500}
+                className="w-full h-[280px] sm:h-[320px] object-cover object-top mix-blend-multiply"
+                priority
+              />
+            </div>
+
+            {/* Desktop WhatsApp Widget */}
+            <div className="w-full max-w-[380px] sm:max-w-[400px] hidden lg:block">
               {/* Phone frame */}
               <div className="bg-[#EFEAE2] rounded-[2rem] overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] border-[5px] border-[#E8E3DB] text-left">
 
