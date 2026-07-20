@@ -91,6 +91,16 @@ const Footer = () => {
               </li>
             </ul>
           </div>
+          
+          {/* Partners Section */}
+          <div className="col-span-1 sm:col-span-2 md:col-span-5 border-t border-gray-700 pt-8 mt-4">
+            <h3 className="font-bold mb-4">Partners</h3>
+            <div className="flex flex-col gap-2">
+              <Link href="/partners/mediloan" className="text-emerald-400 hover:text-emerald-300 font-semibold text-lg transition-colors">
+                MediLoan by MyItura →
+              </Link>
+            </div>
+          </div>
         </div>
 
         {/* Bottom Bar */}

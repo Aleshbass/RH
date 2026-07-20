@@ -38,9 +38,19 @@ export const webhookHandler = action({
       switch (args.type) {
         case "user.created":
         case "user.updated": {
-          await ctx.runMutation(internal.users.updateOrCreateUser, {
+          const userId = await ctx.runMutation(internal.users.updateOrCreateUser, {
             clerkUserData: args.data,
+          });
+          
+          // Reconcile any guest bookings for this user
+          const email = args.data.email_addresses?.find((e: any) => e.id === args.data.primary_email_address_id)?.email_address;
+          if (email) {
+            await ctx.runMutation(internal.marketplace.booking.claimGuestBookings, {
+              userId: userId as Id<"users">,
+              email,
             });
+          }
+          
           return { success: true, message: `User ${args.type}d successfully` };
         }
 
@@ -110,6 +120,12 @@ export const syncUser = action({
       firstName: args.firstName,
       lastName: args.lastName,
       imageUrl: args.imageUrl,
+    });
+
+    // Reconcile any guest bookings for this user
+    await ctx.runMutation(internal.marketplace.booking.claimGuestBookings, {
+      userId: userId as Id<"users">,
+      email: args.email,
     });
 
     return userId;

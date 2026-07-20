@@ -20,7 +20,7 @@ import { useQueryUntyped } from '@/lib/convexUntyped'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { RecentSessions } from '@/components/dashboard/physiotherapist/RecentSessions'
 import { RecentPatients } from '@/components/dashboard/physiotherapist/RecentPatients'
-import EnhancedPatientInviteModal from '@/components/dashboard/shared/EnhancedPatientInviteModal'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from 'convex/react'
@@ -130,16 +130,13 @@ export function PhysiotherapistDashboardV2() {
   // Router for navigation in quick actions
   const router = useRouter()
 
-  // Patient invitation modal state
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
+
 
   // Type the data with fallbacks
   const patients = (patientsData || []) as Patient[]
   const todaysAppointments = (todaysAppointmentsData || []) as Appointment[]
 
-  // Invitation is now handled entirely within EnhancedPatientInviteModal
 
-  const handleInvitePatient = () => setIsInviteModalOpen(true)
   const handleScheduleAppointment = () => router.push('/dashboard/physiotherapist/calendar?new=1')
   const handleCreateSession = () => router.push('/dashboard/physiotherapist/calendar')
   const handleManagePatients = () => router.push('/dashboard/physiotherapist/patients')
@@ -198,10 +195,6 @@ export function PhysiotherapistDashboardV2() {
             <Button variant="outline" className="w-full sm:w-auto">
               <Bell className="mr-2 h-4 w-4" />
               <span className="truncate">Notifications</span>
-            </Button>
-            <Button id="tour-add-patient-btn" onClick={handleInvitePatient} className="w-full sm:w-auto">
-              <UserPlus className="mr-2 h-4 w-4" />
-              <span className="truncate">Add Patient</span>
             </Button>
           </div>
         </div>
@@ -385,7 +378,6 @@ export function PhysiotherapistDashboardV2() {
               recentPatients={patients}
               onViewAll={() => router.push('/dashboard/physiotherapist/patients')}
               onViewPatient={(patientId: string) => router.push(`/dashboard/physiotherapist/patients/${patientId}`)}
-              onInvitePatient={handleInvitePatient}
             />
           </div>
         </div>
@@ -400,11 +392,7 @@ export function PhysiotherapistDashboardV2() {
           />
         </div>
 
-        {/* Patient Invitation Modal - enhanced multi-method */}
-        <EnhancedPatientInviteModal
-          isOpen={isInviteModalOpen}
-          onClose={() => setIsInviteModalOpen(false)}
-        />
+
       </div>
 
       {/* Insights Sidebar */}

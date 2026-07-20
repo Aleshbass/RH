@@ -13,6 +13,7 @@ import { DoctorsClinicsSection } from "@/components/landing/DoctorsClinicsSectio
 import { SpeakToAPhysio } from "@/components/landing/SpeakToAPhysio";
 import { MeetJoySection } from "@/components/landing/MeetJoySection";
 import { ForInstitutionsSection } from "@/components/landing/ForInstitutionsSection";
+import { MediloanSection } from "@/components/landing/MediloanSection";
 
 const RoleBasedFeatures = dynamicImport(() => import("@/components/landing/RoleBasedFeatures"));
 const ConnectedCareSection = dynamicImport(() => import("@/components/landing/ConnectedCareSection"));
@@ -35,6 +36,7 @@ const PageContent = () => (
     <ForInstitutionsSection />
     <FoundersCarousel />
     <SpeakToAPhysio />
+    <MediloanSection />
     <RehabifyLearnSection />
     <TrustSafety />
     <FAQ />

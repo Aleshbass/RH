@@ -356,22 +356,24 @@ export const completeMarketplaceBooking = mutation({
         });
 
         // Auto-onboard patient if necessary (ensure dashboard access)
-        const patientUser = await ctx.db.get(booking.patientId);
-        if (patientUser && patientUser.role !== "patient") {
-            await ctx.db.patch(booking.patientId, {
-                role: "patient",
-                onboarded: true,
-            } as any);
-        }
-        // Ensure patient profile exists
-        const existingPatientProfile = await ctx.db
-            .query("patientProfiles")
-            .withIndex("by_user_id", (q: any) => q.eq("userId", booking.patientId))
-            .first();
-        if (!existingPatientProfile) {
-            await ctx.db.insert("patientProfiles", {
-                userId: booking.patientId,
-            } as any);
+        if (!booking.isGuestBooking) {
+            const patientUser = await ctx.db.get(booking.patientId);
+            if (patientUser && patientUser.role !== "patient") {
+                await ctx.db.patch(booking.patientId, {
+                    role: "patient",
+                    onboarded: true,
+                } as any);
+            }
+            // Ensure patient profile exists
+            const existingPatientProfile = await ctx.db
+                .query("patientProfiles")
+                .withIndex("by_user_id", (q: any) => q.eq("userId", booking.patientId))
+                .first();
+            if (!existingPatientProfile) {
+                await ctx.db.insert("patientProfiles", {
+                    userId: booking.patientId,
+                } as any);
+            }
         }
 
         // Update physiotherapist stats
@@ -665,7 +667,7 @@ export const completeMarketplaceBooking = mutation({
 /**
  * Get booking details
  */
-export const getBookingDetails = mutation({
+export const getBookingDetails = query({
     args: {
         bookingId: v.id("marketplaceBookings"),
     },
@@ -690,7 +692,6 @@ export const getBookingDetails = mutation({
             throw new Error("Booking not found");
         }
 
-        // Verify user is part of the booking
         if (
             booking.patientId !== user._id &&
             booking.physiotherapistId !== user._id
@@ -698,27 +699,18 @@ export const getBookingDetails = mutation({
             throw new Error("Access denied");
         }
 
-        // Get physiotherapist and patient details
         const physio = await ctx.db.get(booking.physiotherapistId);
         const patient = await ctx.db.get(booking.patientId);
 
         return {
             ...booking,
             physiotherapist: physio
-                ? {
-                    id: physio._id,
-                    fullName: `${physio.firstName} ${physio.lastName}`,
-                    imageUrl: physio.imageUrl,
-                }
+                ? { id: physio._id, fullName: `${physio.firstName} ${physio.lastName}`, imageUrl: physio.imageUrl }
                 : null,
             patient: patient
-                ? {
-                    id: patient._id,
-                    fullName: `${patient.firstName} ${patient.lastName}`,
-                    imageUrl: patient.imageUrl,
-                }
+                ? { id: patient._id, fullName: `${patient.firstName} ${patient.lastName}`, imageUrl: patient.imageUrl }
                 : null,
-            serviceAmount: booking.serviceAmount / 100, // Convert to Naira
+            serviceAmount: booking.serviceAmount / 100,
             platformFee: booking.platformFee / 100,
             paystackFee: booking.paystackFee / 100,
             totalAmount: booking.totalAmount / 100,
@@ -756,7 +748,6 @@ export const cancelMarketplaceBooking = mutation({
             throw new Error("Booking not found");
         }
 
-        // Verify user is part of the booking
         if (
             booking.patientId !== user._id &&
             booking.physiotherapistId !== user._id
@@ -764,7 +755,6 @@ export const cancelMarketplaceBooking = mutation({
             throw new Error("Access denied");
         }
 
-        // Only allow cancellation if payment is completed
         if (booking.paymentStatus !== "completed") {
             throw new Error("Cannot cancel unpaid booking");
         }
@@ -775,7 +765,6 @@ export const cancelMarketplaceBooking = mutation({
             updatedAt: Date.now(),
         });
 
-        // If appointment exists, cancel it too
         if (booking.appointmentId) {
             await ctx.db.patch(booking.appointmentId, {
                 status:
@@ -787,5 +776,142 @@ export const cancelMarketplaceBooking = mutation({
         }
 
         return { success: true };
+    },
+});
+
+/**
+ * Reconcile guest bookings with a newly created user account
+ */
+export const claimGuestBookings = internalMutation({
+    args: {
+        userId: v.id("users"),
+        email: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const guestBookings = await ctx.db
+            .query("marketplaceBookings")
+            .filter((q) => q.eq(q.field("isGuestBooking"), true))
+            .filter((q) => q.eq(q.field("guestEmail"), args.email))
+            .collect();
+
+        let claimedCount = 0;
+
+        for (const booking of guestBookings) {
+            const oldPatientId = booking.patientId;
+
+            await ctx.db.patch(booking._id, {
+                patientId: args.userId,
+                isGuestBooking: false,
+            });
+
+            if (booking.appointmentId) {
+                await ctx.db.patch(booking.appointmentId, {
+                    patientId: args.userId,
+                });
+            }
+
+            if (booking.paymentReference) {
+                const invoicesToFix = await ctx.db
+                    .query("invoices")
+                    .withIndex("by_patient", (q) => q.eq("patientId", oldPatientId))
+                    .filter(q => q.eq(q.field("paymentReference"), booking.paymentReference))
+                    .collect();
+                    
+                for (const inv of invoicesToFix) {
+                    await ctx.db.patch(inv._id, { patientId: args.userId });
+                }
+            }
+
+            if (booking.patientPhysioRelationshipId) {
+                await ctx.db.patch(booking.patientPhysioRelationshipId, {
+                    patientId: args.userId,
+                });
+            }
+            
+            if (booking.treatmentPlanId) {
+                await ctx.db.patch(booking.treatmentPlanId, {
+                    patientId: args.userId,
+                });
+            }
+
+            claimedCount++;
+        }
+
+        if (claimedCount > 0) {
+            const user = await ctx.db.get(args.userId);
+            if (user && user.role !== "patient") {
+                await ctx.db.patch(args.userId, {
+                    role: "patient",
+                    onboarded: true,
+                });
+            }
+            const existingPatientProfile = await ctx.db
+                .query("patientProfiles")
+                .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+                .first();
+            if (!existingPatientProfile) {
+                await ctx.db.insert("patientProfiles", {
+                    userId: args.userId,
+                });
+            }
+        }
+
+        return { claimedCount };
+    },
+});
+
+/**
+ * Get recent marketplace bookings for a physiotherapist
+ * Used in the Physiotherapist dashboard "New Bookings" widget
+ */
+export const getRecentBookings = query({
+    args: {
+        limit: v.optional(v.number()),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            return [];
+        }
+
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+            .first();
+
+        if (!user) {
+            return [];
+        }
+
+        // Get bookings for this physiotherapist, most recent first
+        const bookings = await ctx.db
+            .query("marketplaceBookings")
+            .withIndex("by_physiotherapist_id", (q) => q.eq("physiotherapistId", user._id))
+            .order("desc")
+            .take(args.limit || 5);
+
+        // Fetch patient details for each booking
+        return Promise.all(
+            bookings.map(async (booking) => {
+                let patientName = "Guest User";
+                let patientEmail = booking.guestEmail || "";
+                
+                if (!booking.isGuestBooking) {
+                    const patient = await ctx.db.get(booking.patientId);
+                    if (patient) {
+                        patientName = `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || "Patient";
+                        patientEmail = patient.email || patientEmail;
+                    }
+                } else if (booking.guestName) {
+                    patientName = booking.guestName;
+                }
+
+                return {
+                    ...booking,
+                    patientName,
+                    patientEmail,
+                };
+            })
+        );
     },
 });

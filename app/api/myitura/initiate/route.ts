@@ -1,14 +1,18 @@
 /**
- * MyItura MediLoan — Loan Initiation API Route
+ * MyItura MediLoan — Admin Loan Initiation Route
  *
  * POST /api/myitura/initiate
  *
- * Called by the Physiotherapist/Clinic billing UI to initiate a MediLoan
- * on behalf of a patient. This route:
- *  1. Authenticates the caller via Clerk
- *  2. Calls the MyItura SDK (via lib/myitura/myitura.ts) to create the loan
- *  3. Logs the loan in our Convex database
- *  4. Returns the application URL + SDK reference
+ * Called by Rehabify admin from the loans dashboard to formally initiate a
+ * MediLoan with MyItura on behalf of a patient who submitted a loan request.
+ * Can also be called directly from the physiotherapist billing page.
+ *
+ * Flow:
+ *  1. Authenticate caller (must be signed-in admin or physio)
+ *  2. Call MyItura SDK with patient details + Rehabify's API keys
+ *  3. MyItura auto-sends an SMS to the patient's phone with an application link
+ *  4. Log the resulting loanApplication in Convex
+ *  5. Link back to the original loanRequest (if provided) and mark it "initiated"
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -21,7 +25,7 @@ export async function POST(request: NextRequest) {
     try {
         const convex = getConvexClient();
 
-        // 1. Authenticate — only logged-in physios/clinic staff can initiate loans
+        // 1. Must be authenticated — only Rehabify admin or physio can call MyItura SDK
         const { userId } = await auth();
         if (!userId) {
             return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
@@ -30,14 +34,15 @@ export async function POST(request: NextRequest) {
         // 2. Parse & validate body
         const body = await request.json();
         const {
-            patientId,
+            loanRequestId,    // optional — the Convex loanRequest ID this originated from
+            patientId,        // optional — Convex user ID of the patient
             firstName,
             lastName,
             email,
             phoneNumber,
             gender,
             treatment,
-            treatmentAmount,
+            treatmentAmount,  // in Kobo
             invoiceReference,
         } = body;
 
@@ -55,10 +60,10 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // 3. Generate a unique client reference for this request
+        // 3. Generate a unique client reference (must be unique per Rehabify account)
         const clientReference = `RH-LOAN-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-        // 4. Call MyItura SDK — all env var checks happen inside initiateMediLoan
+        // 4. Call MyItura SDK — Rehabify's Public + Secret keys are used here
         const myituraData = await initiateMediLoan({
             clientReference,
             invoiceReference: invoiceReference || undefined,
@@ -71,17 +76,18 @@ export async function POST(request: NextRequest) {
             treatmentAmount,
         });
 
-        // 5. Validate the response shape before logging
+        // 5. Validate SDK response
         if (!myituraData.data?.sdkReference || !myituraData.data?.applicationUrl) {
-            console.error("[MyItura] Unexpected response shape: missing data fields", myituraData);
+            console.error("[MyItura Initiate] Unexpected response shape:", myituraData);
             return NextResponse.json(
-                { error: "MyItura returned an incomplete response" },
+                { error: "MyItura returned an incomplete response. Please try again." },
                 { status: 502 }
             );
         }
 
-        // 6. Log in Convex for audit trail and dashboard visibility
+        // 6. Log the loan in Convex + link back to the loanRequest if provided
         const loanId = await convex.mutation(api.mediloan.logInitiatedLoan, {
+            loanRequestId: loanRequestId || undefined,
             patientId: patientId || undefined,
             clientReference,
             invoiceReference: invoiceReference || undefined,
@@ -104,12 +110,13 @@ export async function POST(request: NextRequest) {
                 sdkReference: myituraData.data.sdkReference,
                 applicationUrl: myituraData.data.applicationUrl,
                 expiresAt: myituraData.data.expiresAt,
+                message: `MediLoan initiated. SMS sent to ${phoneNumber} with the application link.`,
             },
         });
-    } catch (error: any) {
-        console.error("[MyItura] Initiation error:", error);
 
-        // Surface timeout errors clearly
+    } catch (error: any) {
+        console.error("[MyItura Initiate] Error:", error);
+
         if (error.name === "AbortError" || error.message?.includes("timed out")) {
             return NextResponse.json(
                 { error: "MyItura API request timed out. Please try again." },

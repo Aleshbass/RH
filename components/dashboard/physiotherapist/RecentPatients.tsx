@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Users, UserPlus, ChevronRight } from 'lucide-react'
+import { Users, ChevronRight } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { useState } from 'react'
 import { PatientQuickViewSheet } from './PatientQuickViewSheet'
@@ -22,14 +22,12 @@ interface Patient {
 interface RecentPatientsProps {
   recentPatients: Patient[] | undefined
   onViewAll: () => void
-  onViewPatient: (patientId: string) => void // Kept for compatibility but unused in this component now
-  onInvitePatient: () => void
+  onViewPatient?: (patientId: string) => void
 }
 
 export function RecentPatients({
   recentPatients,
   onViewAll,
-  onInvitePatient
 }: RecentPatientsProps) {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
 
@@ -81,16 +79,7 @@ export function RecentPatients({
                 <Users className="h-6 w-6 text-gray-400" />
               </div>
               <p className="text-sm font-medium text-gray-900">No patients yet</p>
-              <p className="text-xs text-gray-500 mb-4">Start by inviting your first patient</p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onInvitePatient}
-                className="bg-white"
-              >
-                <UserPlus className="h-4 w-4 mr-2" />
-                Invite Patient
-              </Button>
+              <p className="text-xs text-gray-500">Patients will appear here once they are assigned to you.</p>
             </div>
           )}
         </CardContent>

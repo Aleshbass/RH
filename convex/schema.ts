@@ -1023,25 +1023,30 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_referring_doctor_and_status", ["referringDoctorId", "status"]),
 
-  // MyItura MediLoan applications
+  // MyItura MediLoan applications — formally initiated with the MyItura SDK
   loanApplications: defineTable({
-    patientId: v.optional(v.id("users")),
-    initiatedBy: v.id("users"), // Physio or Clinic Owner ID who initiated it
-    clientReference: v.string(), // Unique internal ref (RH-LOAN-xxx)
-    invoiceReference: v.optional(v.string()), // Optional invoice link
-    myituraSdkRef: v.optional(v.string()), // 10-char MyItura ref
-    treatment: v.string(),
-    amount: v.number(), // in kobo (100 kobo = ₦1)
+    // Link back to the loanRequest that triggered this (if originated from a patient form)
+    loanRequestId: v.optional(v.id("loanRequests")),
 
-    // Patient display fields (so we don't need to join every time)
+    patientId: v.optional(v.id("users")),
+    initiatedBy: v.optional(v.id("users")), // Admin or Physio who called the SDK
+    clientReference: v.string(),             // Unique internal ref (RH-LOAN-xxx)
+    invoiceReference: v.optional(v.string()),
+    myituraSdkRef: v.optional(v.string()),   // 10-char MyItura ref returned on success
+    treatment: v.string(),
+    amount: v.number(),                      // in kobo (100 kobo = ₦1)
+
+    // Patient display fields (denormalized for quick access)
     patientFirstName: v.string(),
     patientLastName: v.string(),
     patientPhone: v.string(),
     patientEmail: v.optional(v.string()),
 
-    applicationUrl: v.optional(v.string()), // SMS link sent to patient
+    applicationUrl: v.optional(v.string()),  // SMS link sent to patient by MyItura
+    expiresAt: v.optional(v.string()),
+
     status: v.union(
-      v.literal("initiated"),   // We called MyItura, SMS sent
+      v.literal("initiated"),   // SDK called, SMS sent
       v.literal("pending"),     // Patient started their application
       v.literal("approved"),    // Loan approved by MyItura
       v.literal("disbursed"),   // Funds released to Rehabify
@@ -1050,12 +1055,11 @@ export default defineSchema({
       v.literal("failed"),      // API or system error
       v.literal("repaid")       // Patient fully repaid the loan
     ),
-    expiresAt: v.optional(v.string()),
 
     // Post-loan tracking
     disbursedAt: v.optional(v.number()),
-    repaymentStatus: v.optional(v.string()), // e.g. "on_track", "overdue", "completed"
-    lastWebhookPayload: v.optional(v.string()), // Raw webhook JSON for debugging
+    repaymentStatus: v.optional(v.string()),
+    lastWebhookPayload: v.optional(v.string()),
 
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -1064,6 +1068,7 @@ export default defineSchema({
     .index("by_clientReference", ["clientReference"])
     .index("by_myituraSdkRef", ["myituraSdkRef"])
     .index("by_status", ["status"])
+    .index("by_loanRequest", ["loanRequestId"])
     .index("by_createdAt", ["createdAt"]),
 
   // Referrals to other healthcare providers
@@ -2569,4 +2574,43 @@ export default defineSchema({
     status: v.union(v.literal("new"), v.literal("contacted"), v.literal("closed")),
     createdAt: v.number(),
   }).index("by_status", ["status"]).index("by_created", ["createdAt"]),
+
+  // Patient-submitted loan interest requests.
+  // These are NOT yet initiated with MyItura — they are pending Rehabify admin action.
+  // When admin clicks "Initiate", a real loan is created in loanApplications.
+  loanRequests: defineTable({
+    // Patient info (captured from form — may not be a registered user)
+    patientFirstName: v.string(),
+    patientLastName: v.string(),
+    patientPhone: v.string(),
+    patientEmail: v.optional(v.string()),
+    patientUserId: v.optional(v.id("users")), // Set if patient was logged in
+
+    // Treatment details
+    treatment: v.string(),
+    treatmentAmount: v.number(),              // in Kobo
+    physiotherapistId: v.optional(v.id("users")), // Which physio they were booking with
+
+    // Workflow status
+    status: v.union(
+      v.literal("pending"),      // Submitted, awaiting admin review
+      v.literal("initiated"),    // Admin has called MyItura SDK
+      v.literal("cancelled"),    // Admin dismissed / patient withdrew
+    ),
+
+    // Populated when admin initiates with MyItura
+    loanApplicationId: v.optional(v.id("loanApplications")), // link to the actual loan record
+    initiatedByAdminId: v.optional(v.id("users")),           // which admin initiated
+    initiatedAt: v.optional(v.number()),
+
+    // Admin notes
+    adminNotes: v.optional(v.string()),
+
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_patient_user", ["patientUserId"])
+    .index("by_created", ["createdAt"]),
+
 });
