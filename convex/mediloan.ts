@@ -121,6 +121,7 @@ export const logInitiatedLoan = mutation({
     args: {
         loanRequestId: v.optional(v.id("loanRequests")),
         patientId: v.optional(v.id("users")),
+        initiatorClerkId: v.optional(v.string()),
         clientReference: v.string(),
         invoiceReference: v.optional(v.string()),
         myituraSdkRef: v.string(),
@@ -135,18 +136,24 @@ export const logInitiatedLoan = mutation({
     },
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
-        if (!identity) throw new Error("Unauthenticated");
+        let initiator = null;
 
-        const initiator = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-            .unique();
-        if (!initiator) throw new Error("User not found");
+        if (identity) {
+            initiator = await ctx.db
+                .query("users")
+                .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+                .unique();
+        } else if (args.initiatorClerkId) {
+            initiator = await ctx.db
+                .query("users")
+                .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.initiatorClerkId))
+                .unique();
+        }
 
         const loanId = await ctx.db.insert("loanApplications", {
             loanRequestId: args.loanRequestId,
             patientId: args.patientId,
-            initiatedBy: initiator._id,
+            initiatedBy: initiator ? initiator._id : undefined,
             clientReference: args.clientReference,
             invoiceReference: args.invoiceReference,
             myituraSdkRef: args.myituraSdkRef,
@@ -168,7 +175,7 @@ export const logInitiatedLoan = mutation({
             await ctx.db.patch(args.loanRequestId, {
                 status: "initiated",
                 loanApplicationId: loanId,
-                initiatedByAdminId: initiator._id,
+                initiatedByAdminId: initiator ? initiator._id : undefined,
                 initiatedAt: Date.now(),
                 updatedAt: Date.now(),
             });

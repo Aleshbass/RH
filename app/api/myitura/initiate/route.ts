@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
         const loanId = await convex.mutation(api.mediloan.logInitiatedLoan, {
             loanRequestId: loanRequestId || undefined,
             patientId: patientId || undefined,
+            initiatorClerkId: userId,
             clientReference,
             invoiceReference: invoiceReference || undefined,
             myituraSdkRef: myituraData.data.sdkReference,
