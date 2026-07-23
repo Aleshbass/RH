@@ -144,9 +144,10 @@ export const logInitiatedLoan = mutation({
                 .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
                 .unique();
         } else if (args.initiatorClerkId) {
+            const clerkId = args.initiatorClerkId;
             initiator = await ctx.db
                 .query("users")
-                .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.initiatorClerkId))
+                .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkId))
                 .unique();
         }
 
