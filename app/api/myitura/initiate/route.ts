@@ -64,17 +64,35 @@ export async function POST(request: NextRequest) {
         const clientReference = `RH-LOAN-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
         // 4. Call MyItura SDK — Rehabify's Public + Secret keys are used here
-        const myituraData = await initiateMediLoan({
-            clientReference,
-            invoiceReference: invoiceReference || undefined,
-            firstName,
-            lastName,
-            email: email || undefined,
-            phoneNumber,
-            gender: gender || undefined,
-            treatment,
-            treatmentAmount,
-        });
+        let myituraData;
+        try {
+            myituraData = await initiateMediLoan({
+                clientReference,
+                invoiceReference: invoiceReference || undefined,
+                firstName,
+                lastName,
+                email: email || undefined,
+                phoneNumber,
+                gender: gender || undefined,
+                treatment,
+                treatmentAmount,
+            });
+        } catch (sdkError: any) {
+            const cause = sdkError?.cause?.message || sdkError?.cause?.code || "";
+            console.error("[MyItura Initiate] SDK call failed:", sdkError.message, "| cause:", cause);
+
+            if (sdkError.name === "AbortError" || sdkError.message?.includes("timed out")) {
+                return NextResponse.json(
+                    { error: "MyItura API request timed out. Please try again." },
+                    { status: 504 }
+                );
+            }
+
+            return NextResponse.json(
+                { error: `MyItura SDK error: ${sdkError.message}${cause ? ` (${cause})` : ""}` },
+                { status: 502 }
+            );
+        }
 
         // 5. Validate SDK response
         if (!myituraData.data?.sdkReference || !myituraData.data?.applicationUrl) {
@@ -86,22 +104,31 @@ export async function POST(request: NextRequest) {
         }
 
         // 6. Log the loan in Convex + link back to the loanRequest if provided
-        const loanId = await convex.mutation(api.mediloan.logInitiatedLoan, {
-            loanRequestId: loanRequestId || undefined,
-            patientId: patientId || undefined,
-            initiatorClerkId: userId,
-            clientReference,
-            invoiceReference: invoiceReference || undefined,
-            myituraSdkRef: myituraData.data.sdkReference,
-            treatment,
-            amount: treatmentAmount,
-            patientFirstName: firstName,
-            patientLastName: lastName,
-            patientPhone: phoneNumber,
-            patientEmail: email || undefined,
-            applicationUrl: myituraData.data.applicationUrl,
-            expiresAt: myituraData.data.expiresAt ?? "",
-        });
+        let loanId;
+        try {
+            loanId = await convex.mutation(api.mediloan.logInitiatedLoan, {
+                loanRequestId: loanRequestId || undefined,
+                patientId: patientId || undefined,
+                initiatorClerkId: userId,
+                clientReference,
+                invoiceReference: invoiceReference || undefined,
+                myituraSdkRef: myituraData.data.sdkReference,
+                treatment,
+                amount: treatmentAmount,
+                patientFirstName: firstName,
+                patientLastName: lastName,
+                patientPhone: phoneNumber,
+                patientEmail: email || undefined,
+                applicationUrl: myituraData.data.applicationUrl,
+                expiresAt: myituraData.data.expiresAt ?? "",
+            });
+        } catch (convexError: any) {
+            console.error("[MyItura Initiate] Convex mutation failed:", convexError.message);
+            return NextResponse.json(
+                { error: `Failed to save loan record: ${convexError.message}` },
+                { status: 500 }
+            );
+        }
 
         return NextResponse.json({
             success: true,
@@ -116,14 +143,8 @@ export async function POST(request: NextRequest) {
         });
 
     } catch (error: any) {
-        console.error("[MyItura Initiate] Error:", error);
-
-        if (error.name === "AbortError" || error.message?.includes("timed out")) {
-            return NextResponse.json(
-                { error: "MyItura API request timed out. Please try again." },
-                { status: 504 }
-            );
-        }
+        const cause = error?.cause?.message || error?.cause?.code || "";
+        console.error("[MyItura Initiate] Unexpected error:", error.message, "| cause:", cause);
 
         return NextResponse.json(
             { error: error.message || "Internal server error" },
