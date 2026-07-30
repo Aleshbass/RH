@@ -105,7 +105,7 @@ export function LandingHero() {
 
   const dashboardProps = getDashboardProps();
 
-  const whatsappNumber = "2348122615453";
+  const whatsappNumber = "2348061525811";
   const whatsappMessage = encodeURIComponent("Hi Joy, I need help with my recovery.");
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
 

@@ -91,7 +91,7 @@ export function MeetJoySection() {
                 </div>
 
                 {/* Button Mockup inside chat */}
-                <a href="https://wa.me/2348122615453" target="_blank" rel="noopener noreferrer" className="block mt-6 mx-2">
+                <a href="https://wa.me/2348061525811" target="_blank" rel="noopener noreferrer" className="block mt-6 mx-2">
                   <div className="bg-white/90 backdrop-blur-sm border border-gray-200 rounded-xl p-3.5 text-center cursor-pointer hover:bg-white transition-colors shadow-sm">
                     <span className="text-[#111b21] font-bold text-[15px]">Book next session →</span>
                   </div>
