@@ -2,15 +2,7 @@ import React from 'react';
 import { Bell, Eye, LineChart, MessageCircle, ArrowDown } from 'lucide-react';
 import { IconBrandWhatsapp } from '@tabler/icons-react';
 
-const WHATSAPP_PRE_MESSAGE = `Hi! 👋🏾
-Welcome to Rehabify Health 💚
-Thank you for reaching out! We’re here to help you access quality rehabilitation care from verified physiotherapists, wherever you are in Nigeria.
-To get started, simply tell us:
-1. Your name
-2. What you need help with
-3. Your preferred location 
-A member of our team will get back to you shortly and guide you through the next steps.`;
-
+const WHATSAPP_PRE_MESSAGE = "Hi Joy! 👋🏾 I need help with my recovery.";
 const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent(WHATSAPP_PRE_MESSAGE)}`;
 
 export function MeetJoySection() {

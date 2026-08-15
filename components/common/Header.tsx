@@ -579,7 +579,7 @@ export default function Header() {
                       </p>
                     </div>
                     <a
-                      href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi! 👋🏾\nI'd like to book a physiotherapy session. Can you help me get started?")}`}
+                      href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I need help with my recovery.")}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setIsMobileMenuOpen(false)}

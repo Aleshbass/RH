@@ -16,7 +16,7 @@ import {
 import { IconBrandWhatsapp } from "@tabler/icons-react";
 import Link from "next/link";
 
-const WHATSAPP_REFERRAL_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi! 👋🏾\nI'm a doctor / clinic representative and I'd like to refer patients through Rehabify.")}`;
+const WHATSAPP_REFERRAL_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I'd like to refer a patient through Rehabify.")}`;
 
 export function DoctorsClinicsSection() {
     const [referralSent, setReferralSent] = useState(false);

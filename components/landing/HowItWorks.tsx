@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { IconBrandWhatsapp } from '@tabler/icons-react';
 
-const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi! 👋🏾\nI'd like to get matched with a verified physiotherapist. Can you help me get started?")}`;
+const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I need help with my recovery.")}`;
 
 const SYMPTOM_TAGS = [
     { label: "Lower Back Pain", active: true },

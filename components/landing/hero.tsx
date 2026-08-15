@@ -153,14 +153,7 @@ export function LandingHero() {
   const dashboardProps = getDashboardProps();
 
   const whatsappNumber = "2348061525811";
-  const whatsappPreMessage = `Hi! 👋🏾
-Welcome to Rehabify Health 💚
-Thank you for reaching out! We’re here to help you access quality rehabilitation care from verified physiotherapists, wherever you are in Nigeria.
-To get started, simply tell us:
-1. Your name
-2. What you need help with
-3. Your preferred location 
-A member of our team will get back to you shortly and guide you through the next steps.`;
+  const whatsappPreMessage = "Hi Joy! 👋🏾 I need help with my recovery.";
   const whatsappMessage = encodeURIComponent(whatsappPreMessage);
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
 

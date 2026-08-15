@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { IconBrandWhatsapp } from "@tabler/icons-react";
 
-const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi! 👋🏾\nI'd like to get started with Rehabify. Can you help me find the right treatment?")}`;
+const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I need help with my recovery.")}`;
 
 export default function RoleBasedFeatures() {
   return (

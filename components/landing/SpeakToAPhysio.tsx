@@ -17,8 +17,8 @@ const conditions = [
 
 const getWhatsAppUrl = (condition?: string) => {
     const text = condition 
-        ? `Hi! 👋🏾\nI need help with physiotherapy for: ${condition}. Can you match me with a specialist?`
-        : `Hi! 👋🏾\nI'd like to speak with a verified physiotherapist. Can you help me get started?`;
+        ? `Hi Joy! 👋🏾 I need help with my recovery for: ${condition}.`
+        : "Hi Joy! 👋🏾 I need help with my recovery.";
     return `https://wa.me/2348061525811?text=${encodeURIComponent(text)}`;
 };
 

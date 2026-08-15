@@ -18,7 +18,7 @@ const Footer = () => {
           <h2 className="text-4xl md:text-5xl font-bold mb-4">Start Your Recovery Journey Now</h2>
           <p className="text-gray-300 mb-8 max-w-2xl mx-auto">No more choosing between health and finances. No more waiting weeks. No more wondering if you found the right physiotherapist.</p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <a href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi! 👋🏾\nI'd like to start my recovery journey. Can you help me?")}`} target="_blank" rel="noopener noreferrer">
+            <a href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I need help with my recovery.")}`} target="_blank" rel="noopener noreferrer">
               <button className="bg-white text-[#005b57] font-bold py-3 px-6 rounded-lg hover:bg-gray-200 transition-colors cursor-pointer">
                 Start Your Recovery
               </button>

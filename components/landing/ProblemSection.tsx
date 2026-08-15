@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 
-const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi! 👋🏾\nI need help with physiotherapy. Can you help me get started?")}`;
+const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I need help with my recovery.")}`;
 
 const STATS = [
   {
