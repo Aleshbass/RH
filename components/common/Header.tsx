@@ -365,6 +365,26 @@ const navLinks: NavItem[] = [
       },
     ],
   },
+  {
+    name: "For Business",
+    type: "dropdown",
+    icon: Building2,
+    badge: "New",
+    items: [
+      {
+        name: "Partnerships",
+        href: "/partnerships",
+        subtitle: "Partner with Rehabify — APIs, SDKs & more",
+        icon: Users,
+      },
+      {
+        name: "Integrations",
+        href: "/integrations",
+        subtitle: "Integrate into your hospital or clinic",
+        icon: Stethoscope,
+      },
+    ],
+  },
 ];
 
 export default function Header() {
