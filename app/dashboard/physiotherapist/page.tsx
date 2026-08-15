@@ -10,6 +10,7 @@ import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 
 import { PhysiotherapistTour } from '@/components/onboarding/PhysiotherapistTour'
+import { PhysioGuideVideoModal } from '@/components/dashboard/shared/PhysioGuideVideoModal'
 
 export default function PhysiotherapistDashboardPage() {
   const router = useRouter()
@@ -60,7 +61,13 @@ export default function PhysiotherapistDashboardPage() {
   return (
     <>
       <PhysiotherapistDashboardV2 />
+      {/* Platform guide video — shown once after approval on first dashboard visit */}
+      <PhysioGuideVideoModal
+        title="🎬 You're Approved! Welcome to Rehabify"
+        subtitle="Watch this quick guide to get the most out of your new dashboard."
+      />
       <PhysiotherapistTour />
     </>
   )
 }
+

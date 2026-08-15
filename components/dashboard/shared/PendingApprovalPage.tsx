@@ -1,11 +1,12 @@
 'use client'
 
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Clock, AlertCircle, ArrowRight, ShieldCheck, CreditCard, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { PhysioGuideVideoModal } from '@/components/dashboard/shared/PhysioGuideVideoModal';
 
 interface PendingApprovalPageProps {
   userRole: string
@@ -19,12 +20,14 @@ export default function PendingApprovalPage({
   declineReason
 }: PendingApprovalPageProps) {
   const router = useRouter()
+  const [showVideoGuide, setShowVideoGuide] = useState(true)
 
   const isPending = approvalStatus === 'pending_review'
   const isDeclined = approvalStatus === 'declined'
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -129,5 +132,15 @@ export default function PendingApprovalPage({
         </div>
       </motion.div>
     </div>
+
+    {/* Platform guide video — shown to physios waiting for approval */}
+    {isPending && userRole === 'physiotherapist' && showVideoGuide && (
+      <PhysioGuideVideoModal
+        title="🎬 Your Rehabify Platform Guide"
+        subtitle="While you wait for approval, get familiar with everything Rehabify has to offer."
+        onClose={() => setShowVideoGuide(false)}
+      />
+    )}
+    </>
   )
 }

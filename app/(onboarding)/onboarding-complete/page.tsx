@@ -1,14 +1,12 @@
 "use client";
 
-
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useUserProfileMutation } from "@/lib/onboardingHelpers";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-
-
 import { useOnboardingStore } from '@/stores/onboardingStore';
+import { PhysioGuideVideoModal } from '@/components/dashboard/shared/PhysioGuideVideoModal';
 
 type Status = "loading" | "success" | "error";
 
@@ -18,6 +16,7 @@ export default function OnboardingCompletePage() {
   const [message, setMessage] = useState("Finalizing your onboarding...");
   const { data } = useOnboardingStore();
   const [showModal, setShowModal] = useState(false);
+  const [showVideoGuide, setShowVideoGuide] = useState(false);
 
   // Completion actions for non-patient roles
   const completeUserProfile = useUserProfileMutation();
@@ -70,6 +69,7 @@ export default function OnboardingCompletePage() {
             setStatus("success");
             setMessage("Physiotherapist application submitted! Your account is pending admin approval.");
             setShowModal(true);
+            setShowVideoGuide(true);
             break;
 
           case 'clinic_owner':
@@ -227,6 +227,16 @@ export default function OnboardingCompletePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Platform guide video — shown to physios right after onboarding */}
+      {showVideoGuide && data.role === 'physiotherapist' && (
+        <PhysioGuideVideoModal
+          forceShow
+          title="🎬 Welcome to Rehabify!"
+          subtitle="While we review your application, watch this quick guide to get familiar with the platform."
+          onClose={() => setShowVideoGuide(false)}
+        />
       )}
     </div>
   );

@@ -2,6 +2,17 @@ import React from 'react';
 import { Bell, Eye, LineChart, MessageCircle, ArrowDown } from 'lucide-react';
 import { IconBrandWhatsapp } from '@tabler/icons-react';
 
+const WHATSAPP_PRE_MESSAGE = `Hi! 👋🏾
+Welcome to Rehabify Health 💚
+Thank you for reaching out! We’re here to help you access quality rehabilitation care from verified physiotherapists, wherever you are in Nigeria.
+To get started, simply tell us:
+1. Your name
+2. What you need help with
+3. Your preferred location 
+A member of our team will get back to you shortly and guide you through the next steps.`;
+
+const WHATSAPP_URL = `https://wa.me/2348061525811?text=${encodeURIComponent(WHATSAPP_PRE_MESSAGE)}`;
+
 export function MeetJoySection() {
   return (
     <section className="w-full py-24 bg-[#FFCFDC] relative overflow-hidden">
@@ -91,7 +102,7 @@ export function MeetJoySection() {
                 </div>
 
                 {/* Button Mockup inside chat */}
-                <a href="https://wa.me/2348061525811" target="_blank" rel="noopener noreferrer" className="block mt-6 mx-2">
+                <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="block mt-6 mx-2">
                   <div className="bg-white/90 backdrop-blur-sm border border-gray-200 rounded-xl p-3.5 text-center cursor-pointer hover:bg-white transition-colors shadow-sm">
                     <span className="text-[#111b21] font-bold text-[15px]">Book next session →</span>
                   </div>

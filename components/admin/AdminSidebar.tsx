@@ -142,6 +142,13 @@ const navigationGroups = [
         description: 'View system-wide analytics',
       },
       {
+        title: 'Marketplace Bookings',
+        href: '/dashboard/admin/marketplace-bookings',
+        icon: ClipboardCheck,
+        roles: ['admin'],
+        description: 'View and manage all marketplace bookings',
+      },
+      {
         title: 'Transactions',
         href: '/dashboard/admin/transactions',
         icon: WalletCards,
@@ -164,6 +171,7 @@ const navigationGroups = [
       },
     ],
   },
+
   {
     title: 'Content Management',
     items: [

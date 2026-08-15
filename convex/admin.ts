@@ -819,20 +819,63 @@ export const getMarketplaceTransactions = query({
           ? await ctx.db.get(invoice.physiotherapistId)
           : null;
 
+        // Find linked booking to extract guest fields + physio location
+        let isGuest = false;
+        let guestPhone = "";
+        let physioLocation = "";
+        let physioOffersOnline = false;
+        let physioOffersInPerson = false;
+
+        if (invoice.paymentReference) {
+          const linkedBooking = await ctx.db
+            .query("marketplaceBookings")
+            .withIndex("by_payment_reference", (q) =>
+              q.eq("paymentReference", invoice.paymentReference!)
+            )
+            .first();
+
+          if (linkedBooking) {
+            isGuest = Boolean(linkedBooking.isGuestBooking);
+            guestPhone = linkedBooking.guestPhone || "";
+          }
+        }
+
+        // Physio location
+        if (physio) {
+          const physioProfile = await ctx.db
+            .query("physiotherapistProfiles")
+            .withIndex("by_user_id", (q) => q.eq("userId", physio._id))
+            .first();
+          if (physioProfile) {
+            physioLocation = physioProfile.location || "";
+            physioOffersOnline = physioProfile.offersOnlineSessions ?? false;
+            physioOffersInPerson = physioProfile.offersInPersonSessions ?? false;
+          }
+        }
+
+        // Patient name/email — for guests, the user record now holds their real info
+        const patientName = patient
+          ? `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || patient.email || "Guest"
+          : "Unknown";
+        const patientEmail = patient?.email || "";
+        const patientPhone = patient?.phoneNumber || guestPhone || "";
+
         return {
           _id: invoice._id,
           invoiceNumber: invoice.invoiceNumber,
+          isGuest,
           // Patient info
-          patientName: patient
-            ? `${patient.firstName || ""} ${patient.lastName || ""}`.trim()
-            : "Unknown",
-          patientEmail: patient?.email || "",
-          patientPhone: patient?.phoneNumber || "",
+          patientName,
+          patientEmail,
+          patientPhone,
           // Physio info
           physiotherapistName: physio
             ? `${physio.firstName || ""} ${physio.lastName || ""}`.trim()
             : "Unknown",
           physiotherapistEmail: physio?.email || "",
+          physioLocation,
+          physioOffersOnline,
+          physioOffersInPerson,
           // Amounts
           subtotalAmount: invoice.subtotalAmount || 0,
           platformFeeAmount: invoice.platformFeeAmount || 0,
