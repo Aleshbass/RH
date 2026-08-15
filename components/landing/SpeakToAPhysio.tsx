@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import Link from "next/link";
 
 const conditions = [
     "Back Pain & Neck Stiffness",
@@ -15,6 +14,13 @@ const conditions = [
     "Chronic Pain Management",
     "Mobility After Accidents",
 ];
+
+const getWhatsAppUrl = (condition?: string) => {
+    const text = condition 
+        ? `Hi! 👋🏾\nI need help with physiotherapy for: ${condition}. Can you match me with a specialist?`
+        : `Hi! 👋🏾\nI'd like to speak with a verified physiotherapist. Can you help me get started?`;
+    return `https://wa.me/2348061525811?text=${encodeURIComponent(text)}`;
+};
 
 export function SpeakToAPhysio() {
     return (
@@ -47,12 +53,14 @@ export function SpeakToAPhysio() {
                                 viewport={{ once: true }}
                                 transition={{ duration: 0.3, delay: i * 0.05 }}
                             >
-                                <Link
-                                    href="/find-a-physio"
+                                <a
+                                    href={getWhatsAppUrl(condition)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     className="inline-block bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 text-white text-sm font-medium px-5 py-2.5 rounded-full transition-all duration-200 hover:scale-105 cursor-pointer"
                                 >
                                     {condition}
-                                </Link>
+                                </a>
                             </motion.div>
                         ))}
                     </div>
@@ -63,12 +71,14 @@ export function SpeakToAPhysio() {
                         viewport={{ once: true }}
                         transition={{ duration: 0.5, delay: 0.3 }}
                     >
-                        <Link
-                            href="/find-a-physio"
-                            className="group inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-10 rounded-full transition-all duration-300 hover:scale-105 shadow-lg shadow-green-500/30"
+                        <a
+                            href={getWhatsAppUrl()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-10 rounded-full transition-all duration-300 hover:scale-105 shadow-lg shadow-emerald-500/30"
                         >
-                            Find Your Physio Now
-                        </Link>
+                            Find Your Physio on WhatsApp
+                        </a>
                     </motion.div>
                 </div>
             </div>

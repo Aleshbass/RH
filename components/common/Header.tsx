@@ -578,14 +578,16 @@ export default function Header() {
                         Connect with top certified physiotherapists now.
                       </p>
                     </div>
-                    <Link
-                      href="/start-treatment"
+                    <a
+                      href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi! 👋🏾\nI'd like to book a physiotherapy session. Can you help me get started?")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       onClick={() => setIsMobileMenuOpen(false)}
                       className="shrink-0 flex items-center gap-1.5 bg-white text-[#004744] px-3.5 py-2 rounded-xl text-xs font-bold shadow-lg hover:bg-teal-50 active:scale-95 transition-all"
                     >
                       Book Now
                       <ArrowRight className="w-3.5 h-3.5" />
-                    </Link>
+                    </a>
                   </div>
                   {/* Subtle Background Glow */}
                   <div className="absolute -bottom-8 -right-8 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none" />
