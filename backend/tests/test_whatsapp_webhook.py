@@ -163,6 +163,132 @@ def test_webhook_then_process_once_runs_handle_turn_and_sends(
     assert sent[0][0] == patient_phone
 
 
+def _inbound_audio_payload(phone: str, wa_message_id: str, media_id: str) -> bytes:
+    payload = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messages": [
+                                {
+                                    "from": phone.lstrip("+"),
+                                    "id": wa_message_id,
+                                    "type": "audio",
+                                    "audio": {
+                                        "id": media_id,
+                                        "mime_type": "audio/ogg",
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ],
+    }
+    return json.dumps(payload).encode()
+
+
+def test_simulate_turn_audio_url_feeds_transcript(
+    client, db_session: Session, patient_phone: str, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+):
+    fake_llm.voice_transcript = "my knee still hurts"
+    fake_llm.reply = "Sorry about the knee — tell me more."
+    seen: list[tuple[bytes, str]] = []
+    original = fake_llm.complete_voice
+
+    def _spy(audio_bytes: bytes, mime: str):
+        seen.append((audio_bytes, mime))
+        return original(audio_bytes, mime)
+
+    fake_llm.complete_voice = _spy
+
+    class _Resp:
+        content = b"ogg-bytes"
+        headers = {"content-type": "audio/ogg"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr("httpx.get", lambda *args, **kwargs: _Resp())
+
+    response = client.post(
+        "/api/internal/simulate_turn",
+        json={
+            "phone": patient_phone,
+            "text": "",
+            "audio_url": "https://example.test/voice.ogg",
+        },
+    )
+    assert response.status_code == 200
+    assert seen == [(b"ogg-bytes", "audio/ogg")]
+    assert response.json()["reply"] == fake_llm.reply
+    stored = db_session.scalar(select(Message).where(Message.role == "user"))
+    assert stored is not None
+    assert stored.text == "my knee still hurts"
+
+
+def test_webhook_audio_then_process_once_uses_transcript(
+    client, db_session: Session, patient_phone: str, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+):
+    from app.queue.tasks import INBOUND_QUEUE, _redis
+    from app.queue.worker import process_queue_once
+
+    fake_llm.voice_transcript = "my knee still hurts"
+    fake_llm.reply = "Sorry about the knee — tell me more."
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.queue.worker.send_whatsapp_text",
+        lambda phone, text: sent.append((phone, text)),
+    )
+    _redis().delete(INBOUND_QUEUE)
+
+    media_id = "MEDIA123"
+    wa_message_id = f"wamid.audio.{uuid.uuid4()}"
+
+    class _Meta:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"url": "https://cdn.example.test/note.ogg", "mime_type": "audio/ogg"}
+
+    class _Audio:
+        content = b"ogg-bytes"
+        headers = {"content-type": "audio/ogg"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def _get(url: str, *args, **kwargs):
+        if media_id in str(url):
+            return _Meta()
+        return _Audio()
+
+    monkeypatch.setattr("httpx.get", _get)
+
+    body = _inbound_audio_payload(patient_phone, wa_message_id, media_id)
+    response = client.post(
+        "/webhook",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Hub-Signature-256": _sign(body),
+        },
+    )
+    assert response.status_code == 200
+
+    result = process_queue_once(session=db_session, llm=fake_llm, timeout=1)
+    stored = db_session.scalar(select(Message).where(Message.wa_message_id == wa_message_id))
+    assert result is not None
+    assert stored is not None
+    assert stored.text == "my knee still hurts"
+    assert sent
+    assert sent[0][0] == patient_phone
+
+
 def test_simulate_turn_does_not_send_whatsapp(
     client, patient_phone: str, monkeypatch: pytest.MonkeyPatch
 ):

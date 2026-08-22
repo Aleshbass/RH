@@ -13,7 +13,7 @@ router = APIRouter()
 
 class SimulateTurnIn(BaseModel):
     phone: str
-    text: str
+    text: str = ""
     audio_url: str | None = None
 
 
@@ -29,5 +29,6 @@ def simulate_turn(
         body.phone,
         body.text,
         llm=llm,
+        audio_url=body.audio_url,
     )
     return {"reply": result.reply_text if result is not None else ""}

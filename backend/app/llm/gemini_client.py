@@ -74,6 +74,7 @@ class GeminiClient:
         return _response_from_payload(payload)
 
     def complete_voice(self, audio_bytes: bytes, mime: str) -> LLMResponse:
+        # Plan 1: send audio bytes via generate_content on gemini_live_model (no Live websocket).
         client = genai.Client(api_key=self._settings.gemini_api_key)
         audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
         prompt = (

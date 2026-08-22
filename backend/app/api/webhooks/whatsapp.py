@@ -48,11 +48,24 @@ async def inbound_webhook(
         for change in entry.get("changes") or []:
             value = change.get("value") or {}
             for message in value.get("messages") or []:
-                if message.get("type") != "text":
-                    continue
                 wa_message_id = str(message.get("id") or "")
                 phone = _e164(str(message.get("from") or ""))
-                text = str((message.get("text") or {}).get("body") or "")
-                if wa_message_id and phone:
+                if not (wa_message_id and phone):
+                    continue
+                msg_type = message.get("type")
+                if msg_type == "text":
+                    text = str((message.get("text") or {}).get("body") or "")
                     enqueue_inbound(wa_message_id, phone, text)
+                elif msg_type == "audio":
+                    audio = message.get("audio") or {}
+                    media_id = str(audio.get("id") or "")
+                    mime = str(audio.get("mime_type") or "audio/ogg")
+                    if media_id:
+                        enqueue_inbound(
+                            wa_message_id,
+                            phone,
+                            "",
+                            audio_media_id=media_id,
+                            audio_mime=mime,
+                        )
     return {"status": "ok"}

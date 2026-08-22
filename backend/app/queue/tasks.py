@@ -24,10 +24,29 @@ def _redis() -> redis.Redis:
     return redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
 
 
-def enqueue_inbound(wa_message_id: str, phone: str, text: str) -> bool:
+def enqueue_inbound(
+    wa_message_id: str,
+    phone: str,
+    text: str,
+    *,
+    audio_url: str | None = None,
+    audio_media_id: str | None = None,
+    audio_mime: str | None = None,
+) -> bool:
     client = _redis()
     lock_key = f"joy:wamid:{wa_message_id}"
-    payload = json.dumps({"wa_message_id": wa_message_id, "phone": phone, "text": text})
+    payload_body: dict[str, str] = {
+        "wa_message_id": wa_message_id,
+        "phone": phone,
+        "text": text,
+    }
+    if audio_url:
+        payload_body["audio_url"] = audio_url
+    if audio_media_id:
+        payload_body["audio_media_id"] = audio_media_id
+    if audio_mime:
+        payload_body["audio_mime"] = audio_mime
+    payload = json.dumps(payload_body)
     result = client.eval(
         _ENQUEUE_LUA,
         2,

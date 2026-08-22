@@ -59,6 +59,14 @@ def _history(state: ConversationState) -> list[dict[str, str]]:
     return [{"role": message.role, "text": message.text} for message in state.recent_messages]
 
 
+def _user_history(state: ConversationState) -> list[dict[str, str]]:
+    return [
+        {"role": message.role, "text": message.text}
+        for message in state.recent_messages
+        if message.role == "user"
+    ]
+
+
 def _apply_inferred_area(extracted: ExtractedTriage) -> ExtractedTriage:
     if extracted.condition_area is not None:
         return extracted
@@ -219,7 +227,7 @@ def handle_turn(
     if state.known_facts:
         extra_context = f"KNOWN_FACTS:\n{json.dumps(state.known_facts, ensure_ascii=False)}"
     extract_prompt = build(
-        identity, phase, state.extracted, language, _history(state), "", extra_context
+        identity, phase, state.extracted, language, _user_history(state), "", extra_context
     )
     response = llm.complete(extract_prompt, user_text)
     language = response.language or language

@@ -133,3 +133,46 @@ def test_extraction_complete_excludes_rag_glossary_flags(
     assert not flags.get("chest_pain")
     assert not flags.get("saddle_anesthesia")
     assert result.blocked_by_safety is False
+
+
+def test_extraction_history_excludes_joy_glossary_terms(
+    db_session, patient_identity, fake_llm
+):
+    from app.conversation.state_manager import load, save_turn
+    from app.conversation.turn_handler import handle_turn
+
+    joy_reply = (
+        "Watch for chest pain or saddle numbness — tell me more about the knee."
+    )
+    state = load(db_session, patient_identity)
+    save_turn(
+        db_session,
+        state,
+        "knee after football",
+        joy_reply,
+        ExtractedTriage(
+            onset="1 week",
+            body_location="knee",
+            condition_area=ConditionArea.MSK,
+        ),
+        PatientPhase.MID_TRIAGE,
+        "en",
+    )
+    fake_llm.extraction = {}
+    fake_llm.reply = "Thanks, I've got that."
+    result = handle_turn(
+        db_session,
+        patient_identity.phone_e164,
+        "my knee still hurts",
+        fake_llm,
+    )
+
+    extraction_prompt = fake_llm.complete_prompts[0].lower()
+    assert "watch for chest pain" not in extraction_prompt
+    assert "saddle" not in extraction_prompt
+    flags = result.extracted.flags or {}
+    assert not flags.get("chest_pain")
+    assert not flags.get("saddle_anesthesia")
+    assert result.blocked_by_safety is False
+    assert len(fake_llm.complete_prompts) >= 2
+    assert "watch for chest pain" in fake_llm.complete_prompts[1].lower()
