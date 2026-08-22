@@ -12,10 +12,16 @@ _UNKNOWN_SENDER_QUESTION = (
 )
 
 _ROLE_CLAIM_RE = re.compile(
-    r"(?i)\b(?:i(?:\s+am|'m)\s+(?:a\s+)?physio(?:therapist)?|"
-    r"i(?:\s+am|'m)\s+(?:an\s+)?admin)\b"
+    r"(?i)(?:"
+    r"\bi(?:\s+am|'m)\s+(?:a\s+)?physio(?:therapist)?\b|"
+    r"\bi(?:\s+am|'m)\s+(?:an\s+)?admin\b|"
+    r"\bi(?:\s+am|'m)\s+(?:a\s+)?therapist\b|"
+    r"\b(?:apply(?:ing)?|join(?:ing)?)\s+as(?:\s+a)?\s+"
+    r"(?:physio(?:therapist)?|therapist)\b"
+    r")"
 )
 
+# Complaint words only — not copulas ("dey") or body-part/after words ("bayan", "back").
 _SYMPTOM_MARKERS = (
     "hurt",
     "hurts",
@@ -27,19 +33,9 @@ _SYMPTOM_MARKERS = (
     "numb",
     "injury",
     "lifting",
-    "dey",
     "dun",
-    "ẹ̀yìn",
-    "eyin",
     "egbu",
-    "azụ",
-    "azu",
     "zafi",
-    "bayan",
-    "back",
-    "knee",
-    "neck",
-    "shoulder",
 )
 
 

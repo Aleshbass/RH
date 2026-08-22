@@ -171,3 +171,15 @@ def test_begin_unknown_grouped_question_stores_no_persona(db_session):
     assert resolve(db_session, phone) is None
     assert db_session.scalar(select(Patient).where(Patient.phone_e164 == phone)) is None
     assert db_session.scalar(select(Physiotherapist).where(Physiotherapist.phone_e164 == phone)) is None
+
+
+def test_physio_intent_does_not_auto_create_patient(db_session, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    phone = "+2348000000199"
+    result = handle_turn(db_session, phone, "I dey apply as a therapist", fake_llm)
+    identity = resolve(db_session, phone)
+    assert db_session.scalar(select(Patient).where(Patient.phone_e164 == phone)) is None
+    assert identity is None or identity.persona == Persona.PHYSIO
+    if identity is None:
+        assert "physiotherapy" in result.reply_text.lower() or "physio" in result.reply_text.lower()

@@ -31,8 +31,11 @@ def test_each_language_two_turns_then_memory(db_session, fake_llm):
         lower_first = first.reply_text.lower()
         assert not any(probe in lower_first for probe in _CHECKLIST_PROBES)
         assert not any(picker in lower_first for picker in _LANGUAGE_PICKER)
+        # Second turn must use persisted last_known_language, not a leftover FakeLLM echo.
+        fake_llm.language = None
         fake_llm.extraction = {"severity": 6}
         second = handle_turn(db_session, phone, "ok", fake_llm)
+        assert second.language == lang
         assert second.phase in {"mid_triage", "post_triage"}
         lower_second = second.reply_text.lower()
         assert not any(picker in lower_second for picker in _LANGUAGE_PICKER)
@@ -43,6 +46,7 @@ def test_each_language_two_turns_then_memory(db_session, fake_llm):
         identity = resolve(db_session, phone)
         state = load(db_session, identity)
         assert state.extracted.onset == "2 weeks"
+        assert state.last_known_language == lang
 
 
 def test_symptom_on_unknown_phone_creates_patient_never_physio(db_session, fake_llm):

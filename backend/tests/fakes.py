@@ -8,11 +8,11 @@ class FakeLLM:
         self,
         reply: str = "",
         extraction: dict[str, Any] | None = None,
-        language: str = "en",
+        language: str | None = "en",
     ) -> None:
         self.reply = reply
         self.extraction = extraction or {}
-        self.language = language
+        self.language: str | None = language
         self.voice_transcript = ""
         self.last_prompt = ""
         self.complete_prompts: list[str] = []
@@ -21,15 +21,16 @@ class FakeLLM:
         self.last_prompt = prompt
         self.complete_prompts.append(prompt)
         # Scripted language echo: tests set `.language` per locale; never infer it.
+        # Empty/None means "no assignment this turn" so persist last_known_language.
         return LLMResponse(
             reply_text=self.reply,
             extraction_json=self.extraction,
-            language=self.language,
+            language=self.language or "",
         )
 
     def complete_voice(self, audio_bytes: bytes, mime: str) -> LLMResponse:
         return LLMResponse(
             reply_text=self.voice_transcript or self.reply,
             extraction_json=self.extraction,
-            language=self.language,
+            language=self.language or "",
         )
