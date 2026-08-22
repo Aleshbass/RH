@@ -89,11 +89,14 @@ def _resend_safety_block(
     user_text: str,
     phase: PatientPhase,
     language: str,
+    wa_message_id: str | None = None,
 ) -> TurnResult:
     safety = evaluate(state.extracted)
     reply = patient_message(safety)
     _audit_turn(session, identity, state.extracted, safety, phase)
-    save_turn(session, state, user_text, reply, state.extracted, phase, language)
+    save_turn(
+        session, state, user_text, reply, state.extracted, phase, language, wa_message_id
+    )
     return TurnResult(
         reply_text=reply,
         language=language,
@@ -179,7 +182,13 @@ def _reply_after_extract(
     return summary, PatientPhase.POST_TRIAGE
 
 
-def handle_turn(session: Session, phone: str, user_text: str, llm: LLMClient) -> TurnResult:
+def handle_turn(
+    session: Session,
+    phone: str,
+    user_text: str,
+    llm: LLMClient,
+    wa_message_id: str | None = None,
+) -> TurnResult:
     identity = resolve(session, phone)
     if identity is None:
         text = begin_unknown(session, phone)
@@ -201,7 +210,9 @@ def handle_turn(session: Session, phone: str, user_text: str, llm: LLMClient) ->
     phase = decide_phase(state)
     language = mirror_language(user_text, state.last_known_language)
     if _is_escalated(session, state):
-        return _resend_safety_block(session, identity, state, user_text, phase, language)
+        return _resend_safety_block(
+            session, identity, state, user_text, phase, language, wa_message_id
+        )
 
     extra_context = ""
     if state.known_facts:
@@ -219,7 +230,7 @@ def handle_turn(session: Session, phone: str, user_text: str, llm: LLMClient) ->
         reply = patient_message(safety)
         _set_triage_status(session, state, "escalated")
         _audit_turn(session, identity, extracted, safety, phase)
-        save_turn(session, state, user_text, reply, extracted, phase, language)
+        save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id)
         return TurnResult(
             reply_text=reply,
             language=language,
@@ -233,7 +244,7 @@ def handle_turn(session: Session, phone: str, user_text: str, llm: LLMClient) ->
         session, state, user_text, response.reply_text, extracted, phase
     )
     _audit_turn(session, identity, extracted, safety, outgoing)
-    save_turn(session, state, user_text, reply, extracted, outgoing, language)
+    save_turn(session, state, user_text, reply, extracted, outgoing, language, wa_message_id)
     return TurnResult(
         reply_text=reply,
         language=language,

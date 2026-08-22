@@ -1,9 +1,13 @@
 from collections.abc import Generator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.db import engine
+from app.config import get_settings
+from app.db import engine, get_session
+from app.llm.gemini_client import get_llm_client
+from app.main import app
 from app.models.patient import Patient
 from app.models.types import Identity, Persona
 from tests.fakes import FakeLLM
@@ -47,3 +51,25 @@ def patient_phone(patient_identity: Identity) -> str:
 @pytest.fixture
 def fake_llm() -> FakeLLM:
     return FakeLLM()
+
+
+@pytest.fixture
+def client(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch, fake_llm: FakeLLM
+) -> Generator[TestClient, None, None]:
+    monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "test-token")
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "test-secret")
+    settings = get_settings()
+    settings.whatsapp_verify_token = "test-token"
+    settings.whatsapp_app_secret = "test-secret"
+    monkeypatch.setattr("app.config.get_settings", lambda: settings)
+
+    def _session() -> Generator[Session, None, None]:
+        yield db_session
+
+    app.dependency_overrides[get_session] = _session
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_llm_client] = lambda: fake_llm
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()

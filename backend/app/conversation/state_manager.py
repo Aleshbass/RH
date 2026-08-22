@@ -167,6 +167,7 @@ def save_turn(
     extracted: ExtractedTriage,
     phase: PatientPhase,
     language: str,
+    wa_message_id: str | None = None,
 ) -> None:
     conversation = session.get(Conversation, state.conversation_id)
     if conversation is None:
@@ -180,6 +181,7 @@ def save_turn(
             role="user",
             text=user_text,
             created_at=_next_stamp(),
+            wa_message_id=wa_message_id,
         )
     )
     session.add(

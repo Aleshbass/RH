@@ -31,6 +31,10 @@ class LLMClient(Protocol):
     def complete_voice(self, audio_bytes: bytes, mime: str) -> LLMResponse: ...
 
 
+def get_llm_client() -> LLMClient:
+    return GeminiClient()
+
+
 def _parse_model_json(text: str) -> dict[str, Any]:
     raw = (text or "").strip()
     fenced = _FENCE_RE.search(raw)
