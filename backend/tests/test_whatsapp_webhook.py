@@ -183,20 +183,25 @@ def test_simulate_turn_does_not_send_whatsapp(
     assert sent == []
 
 
-def test_enqueue_retries_after_lpush_failure(monkeypatch: pytest.MonkeyPatch):
+def test_enqueue_retries_after_script_failure(monkeypatch: pytest.MonkeyPatch):
     from app.queue.tasks import enqueue_inbound, _redis
 
     wa_message_id = f"wamid.atomic.{uuid.uuid4()}"
-    original_lpush = redis.Redis.lpush
+    original_eval = redis.Redis.eval
+    calls = {"n": 0}
 
-    def _boom(self, *args, **kwargs):
-        raise redis.RedisError("lpush failed")
+    def _eval_fail_once(self, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise redis.RedisError("eval failed")
+        return original_eval(self, *args, **kwargs)
 
-    monkeypatch.setattr(redis.Redis, "lpush", _boom)
+    monkeypatch.setattr(redis.Redis, "eval", _eval_fail_once)
     with pytest.raises(redis.RedisError):
         enqueue_inbound(wa_message_id, "+2348000004001", "hello")
 
-    monkeypatch.setattr(redis.Redis, "lpush", original_lpush)
+    assert _redis().get(f"joy:wamid:{wa_message_id}") is None
+
     retry = enqueue_inbound(wa_message_id, "+2348000004001", "hello")
     assert retry is True
     assert _redis().get(f"joy:wamid:{wa_message_id}") == "1"

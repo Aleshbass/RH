@@ -7,6 +7,13 @@ from app.config import get_settings
 
 INBOUND_QUEUE = "joy:inbound"
 _WAMID_TTL_SECONDS = 60 * 60 * 24 * 7
+_ENQUEUE_LUA = """
+if redis.call('SET', KEYS[1], '1', 'NX', 'EX', tonumber(ARGV[2])) then
+    redis.call('LPUSH', KEYS[2], ARGV[1])
+    return 1
+end
+return 0
+"""
 
 
 def _redis() -> redis.Redis:
@@ -16,16 +23,16 @@ def _redis() -> redis.Redis:
 def enqueue_inbound(wa_message_id: str, phone: str, text: str) -> bool:
     client = _redis()
     lock_key = f"joy:wamid:{wa_message_id}"
-    reserved = client.set(lock_key, "1", nx=True, ex=_WAMID_TTL_SECONDS)
-    if not reserved:
-        return False
     payload = json.dumps({"wa_message_id": wa_message_id, "phone": phone, "text": text})
-    try:
-        client.lpush(INBOUND_QUEUE, payload)
-    except Exception:
-        client.delete(lock_key)
-        raise
-    return True
+    result = client.eval(
+        _ENQUEUE_LUA,
+        2,
+        lock_key,
+        INBOUND_QUEUE,
+        payload,
+        str(_WAMID_TTL_SECONDS),
+    )
+    return bool(result)
 
 
 def send_whatsapp_text(phone: str, text: str) -> None:
