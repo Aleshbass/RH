@@ -1,6 +1,6 @@
 from app.models.types import ExtractedTriage
 
-from app.triage.msk import needs_cauda_screen, unanswered_cauda_flags
+from app.triage.msk import is_msk_narrative, needs_cauda_screen, unanswered_cauda_flag_keys
 from app.triage.non_msk import infer_non_msk_area
 
 _FIELD_PHRASES = {
@@ -14,18 +14,19 @@ _FIELD_PHRASES = {
     "goals": "what you're hoping to get back to",
 }
 
-_SAFETY_SENTENCE = (
-    "Any numbness around the saddle area, a change in bladder or bowel control, "
-    "or weakness in both legs?"
-)
+_SAFETY_PHRASES = {
+    "saddle_anesthesia": "numbness around the saddle area",
+    "bladder_bowel_change": "a change in bladder or bowel control",
+    "bilateral_leg_weakness": "weakness in both legs",
+}
 
 
 def _has_condition_narrative(extracted: ExtractedTriage) -> bool:
     if extracted.body_location and extracted.body_location.strip():
         return True
-    if extracted.goals and extracted.goals.strip():
+    if infer_non_msk_area(extracted) is not None:
         return True
-    return infer_non_msk_area(extracted) is not None
+    return is_msk_narrative(extracted)
 
 
 def missing_fields(extracted: ExtractedTriage) -> list[str]:
@@ -40,9 +41,26 @@ def missing_fields(extracted: ExtractedTriage) -> list[str]:
         missing.append("condition_area")
     if not extracted.goals:
         missing.append("goals")
-    if needs_cauda_screen(extracted) and unanswered_cauda_flags(extracted):
+    unanswered = unanswered_cauda_flag_keys(extracted) if needs_cauda_screen(extracted) else []
+    if unanswered:
         missing.append("safety_flags")
+        missing.extend(unanswered)
     return missing
+
+
+def _join_phrases(phrases: list[str]) -> str:
+    if len(phrases) == 1:
+        return phrases[0]
+    if len(phrases) == 2:
+        return f"{phrases[0]} or {phrases[1]}"
+    return ", ".join(phrases[:-1]) + f", or {phrases[-1]}"
+
+
+def _safety_sentence(missing: list[str]) -> str:
+    phrases = [_SAFETY_PHRASES[key] for key in _SAFETY_PHRASES if key in missing]
+    if not phrases:
+        phrases = list(_SAFETY_PHRASES.values())
+    return f"Any {_join_phrases(phrases)}?"
 
 
 def grouped_followup(missing: list[str]) -> str | None:
@@ -60,5 +78,5 @@ def grouped_followup(missing: list[str]) -> str | None:
             joined = ", ".join(phrases[:-1]) + f", and {phrases[-1]}"
         parts.append(f"Could you tell me {joined}?")
     if "safety_flags" in missing:
-        parts.append(_SAFETY_SENTENCE)
+        parts.append(_safety_sentence(missing))
     return " ".join(parts) if parts else None

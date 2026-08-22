@@ -74,6 +74,13 @@ def test_condition_narrative_satisfies_location():
     assert "body_location" not in missing
 
 
+def test_vague_goals_do_not_count_as_condition_narrative():
+    extracted = ExtractedTriage(onset="2 weeks", severity=5, goals="get better")
+    missing = missing_fields(extracted)
+    assert "body_location" in missing
+    assert "goals" not in missing
+
+
 def test_msk_back_leg_missing_safety_is_one_grouped_sentence():
     extracted = ExtractedTriage(
         onset="1 week",
@@ -91,6 +98,32 @@ def test_msk_back_leg_missing_safety_is_one_grouped_sentence():
     assert "\n1." not in followup
     lower = followup.lower()
     assert "saddle" in lower or "bladder" in lower or "leg" in lower
+
+
+def test_safety_followup_only_asks_unanswered_flags():
+    extracted = ExtractedTriage(
+        onset="1 week",
+        severity=8,
+        body_location="lower back",
+        goals="walk to work",
+        condition_area=ConditionArea.MSK,
+        flags={
+            "saddle_anesthesia": False,
+            "bladder_bowel_change": True,
+            "bilateral_leg_weakness": None,
+        },
+    )
+    missing = missing_fields(extracted)
+    assert "safety_flags" in missing
+    followup = grouped_followup(missing)
+    assert followup is not None
+    assert followup.count("?") == 1
+    assert "\n1." not in followup
+    lower = followup.lower()
+    assert "leg" in lower or "weakness" in lower
+    assert "saddle" not in lower
+    assert "bladder" not in lower
+    assert "bowel" not in lower
 
 
 def test_shoulder_msk_does_not_require_cauda_flags():
