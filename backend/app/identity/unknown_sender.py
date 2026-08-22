@@ -32,7 +32,6 @@ _SYMPTOM_MARKERS = (
     "swell",
     "numb",
     "injury",
-    "lifting",
     "dun",
     "egbu",
     "zafi",

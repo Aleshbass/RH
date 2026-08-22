@@ -173,6 +173,15 @@ def test_begin_unknown_grouped_question_stores_no_persona(db_session):
     assert db_session.scalar(select(Physiotherapist).where(Physiotherapist.phone_e164 == phone)) is None
 
 
+def test_lifting_hobby_does_not_auto_create_patient(db_session, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    phone = "+2348000000198"
+    handle_turn(db_session, phone, "I enjoy lifting weights", fake_llm)
+    assert db_session.scalar(select(Patient).where(Patient.phone_e164 == phone)) is None
+    assert resolve(db_session, phone) is None
+
+
 def test_physio_intent_does_not_auto_create_patient(db_session, fake_llm):
     from app.conversation.turn_handler import handle_turn
 
