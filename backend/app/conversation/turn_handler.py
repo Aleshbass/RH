@@ -9,7 +9,7 @@ from app.conversation.orchestrator import decide_phase, has_narrative
 from app.conversation.state_manager import ConversationState, load, save_turn
 from app.identity.permissions import authorize
 from app.identity.resolver import resolve
-from app.identity.unknown_sender import begin_unknown
+from app.identity.unknown_sender import begin_unknown, maybe_provision_patient
 from app.llm.gemini_client import LLMClient
 from app.llm.prompt_builder import build
 from app.llm.rag.retriever import retrieve
@@ -199,6 +199,8 @@ def handle_turn(
     wa_message_id: str | None = None,
 ) -> TurnResult:
     identity = resolve(session, phone)
+    if identity is None:
+        identity = maybe_provision_patient(session, phone, user_text)
     if identity is None:
         text = begin_unknown(session, phone)
         _audit_identity(session, phone)

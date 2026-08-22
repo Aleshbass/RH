@@ -20,6 +20,7 @@ class FakeLLM:
     def complete(self, prompt: str, user_text: str) -> LLMResponse:
         self.last_prompt = prompt
         self.complete_prompts.append(prompt)
+        # Scripted language echo: tests set `.language` per locale; never infer it.
         return LLMResponse(
             reply_text=self.reply,
             extraction_json=self.extraction,
