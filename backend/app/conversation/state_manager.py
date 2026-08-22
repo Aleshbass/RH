@@ -1,0 +1,181 @@
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.conversation import Conversation, Message
+from app.models.patient import Patient
+from app.models.triage_session import TriageSession
+from app.models.types import ExtractedTriage, Identity, PatientPhase, Persona
+
+RECENT_MESSAGE_LIMIT = 12
+
+_last_stamp: datetime | None = None
+
+
+@dataclass
+class ConversationState:
+    phase: PatientPhase
+    last_known_language: str | None
+    summary_text: str | None
+    recent_messages: list[Message]
+    extracted: ExtractedTriage
+    known_facts: dict
+    conversation_id: UUID
+    triage_session_id: UUID | None = None
+
+
+def _next_stamp() -> datetime:
+    global _last_stamp
+    now = datetime.now(timezone.utc)
+    if _last_stamp is not None and now <= _last_stamp:
+        now = _last_stamp + timedelta(microseconds=1)
+    _last_stamp = now
+    return now
+
+
+def _patient_id(identity: Identity) -> UUID | None:
+    if identity.persona == Persona.PATIENT:
+        return identity.person_id
+    return identity.linked_patient_id
+
+
+def _known_facts(session: Session, patient_id: UUID | None) -> dict:
+    if patient_id is None:
+        return {}
+    patient = session.get(Patient, patient_id)
+    if patient is None:
+        return {}
+    facts: dict = {}
+    if patient.name is not None:
+        facts["name"] = patient.name
+    if patient.age is not None:
+        facts["age"] = patient.age
+    if patient.location is not None:
+        facts["location"] = patient.location
+    return facts
+
+
+def _merge_extracted(existing: ExtractedTriage, incoming: ExtractedTriage) -> ExtractedTriage:
+    merged = existing.model_dump()
+    for key, value in incoming.model_dump().items():
+        if value is None:
+            continue
+        if isinstance(value, list):
+            if value:
+                merged[key] = value
+            continue
+        if isinstance(value, dict):
+            current = dict(merged.get(key) or {})
+            for inner_key, inner_value in value.items():
+                if inner_value is not None:
+                    current[inner_key] = inner_value
+            merged[key] = current
+            continue
+        merged[key] = value
+    return ExtractedTriage.model_validate(merged)
+
+
+def load(session: Session, identity: Identity) -> ConversationState:
+    conversation = session.scalar(
+        select(Conversation).where(
+            Conversation.person_id == identity.person_id,
+            Conversation.persona == identity.persona,
+        )
+    )
+    if conversation is None:
+        conversation = Conversation(
+            person_id=identity.person_id,
+            persona=identity.persona,
+            phase=PatientPhase.FIRST_CONTACT,
+        )
+        session.add(conversation)
+        session.flush()
+
+    patient_id = _patient_id(identity)
+    triage: TriageSession | None = None
+    extracted = ExtractedTriage()
+    if patient_id is not None:
+        triage = session.scalar(
+            select(TriageSession).where(
+                TriageSession.patient_id == patient_id,
+                TriageSession.status == "open",
+            )
+        )
+        if triage is None:
+            triage = TriageSession(
+                patient_id=patient_id,
+                extracted=ExtractedTriage().model_dump(mode="json"),
+                status="open",
+            )
+            session.add(triage)
+            session.flush()
+        extracted = ExtractedTriage.model_validate(triage.extracted)
+
+    newest_first = session.scalars(
+        select(Message)
+        .where(Message.conversation_id == conversation.id)
+        .order_by(Message.created_at.desc())
+        .limit(RECENT_MESSAGE_LIMIT)
+    ).all()
+    recent_messages = list(reversed(newest_first))
+
+    return ConversationState(
+        phase=conversation.phase,
+        last_known_language=conversation.last_known_language,
+        summary_text=conversation.summary_text,
+        recent_messages=recent_messages,
+        extracted=extracted,
+        known_facts=_known_facts(session, patient_id),
+        conversation_id=conversation.id,
+        triage_session_id=triage.id if triage is not None else None,
+    )
+
+
+def save_turn(
+    session: Session,
+    state: ConversationState,
+    user_text: str,
+    joy_text: str,
+    extracted: ExtractedTriage,
+    phase: PatientPhase,
+    language: str,
+) -> None:
+    conversation = session.get(Conversation, state.conversation_id)
+    if conversation is None:
+        raise ValueError("conversation missing")
+    conversation.phase = phase
+    conversation.last_known_language = language
+
+    session.add(
+        Message(
+            conversation_id=conversation.id,
+            role="user",
+            text=user_text,
+            created_at=_next_stamp(),
+        )
+    )
+    session.add(
+        Message(
+            conversation_id=conversation.id,
+            role="joy",
+            text=joy_text,
+            created_at=_next_stamp(),
+        )
+    )
+
+    if state.triage_session_id is not None:
+        triage = session.get(TriageSession, state.triage_session_id)
+        if triage is not None:
+            existing = ExtractedTriage.model_validate(triage.extracted)
+            merged = _merge_extracted(existing, extracted)
+            triage.extracted = merged.model_dump(mode="json")
+            if merged.condition_area is not None:
+                triage.condition_area = merged.condition_area
+            state.extracted = merged
+
+    state.phase = phase
+    state.last_known_language = language
+    session.flush()
