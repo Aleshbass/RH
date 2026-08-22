@@ -24,6 +24,9 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+"app.llm.rag" = ["knowledge_base/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

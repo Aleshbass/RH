@@ -1,5 +1,3 @@
-import pytest
-
 from tests.fakes import FakeLLM
 
 
@@ -19,13 +17,31 @@ def test_fake_llm_complete_voice_returns_scripted_transcript():
     assert response.language == "en"
 
 
-def test_gemini_client_complete_voice_not_implemented():
+def test_gemini_client_complete_voice_transcribes_audio(monkeypatch):
     from app.config import Settings
     from app.llm.gemini_client import GeminiClient
 
-    client = GeminiClient(Settings(gemini_api_key=""))
-    with pytest.raises(NotImplementedError):
-        client.complete_voice(b"", "audio/ogg")
+    captured: dict[str, object] = {}
+
+    class _Resp:
+        text = '{"reply_text": "my child cannot sit", "extraction": {}, "language": "en"}'
+
+    class _Models:
+        def generate_content(self, **kwargs):
+            captured.update(kwargs)
+            return _Resp()
+
+    class _Client:
+        def __init__(self, **kwargs):
+            self.models = _Models()
+
+    monkeypatch.setattr("app.llm.gemini_client.genai.Client", _Client)
+    client = GeminiClient(Settings(gemini_api_key="not-a-real-key"))
+    response = client.complete_voice(b"fake-audio", "audio/ogg")
+    assert "child" in response.reply_text
+    assert captured.get("model")
+    contents = captured.get("contents")
+    assert contents is not None
 
 
 def test_gemini_client_parses_json_without_live_api(monkeypatch):

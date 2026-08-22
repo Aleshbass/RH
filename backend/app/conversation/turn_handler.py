@@ -12,6 +12,7 @@ from app.identity.resolver import resolve
 from app.identity.unknown_sender import begin_unknown
 from app.llm.gemini_client import LLMClient
 from app.llm.prompt_builder import build
+from app.llm.rag.retriever import retrieve
 from app.matching.specialty_match import NotReadyError, match_physios
 from app.models.conversation import Conversation
 from app.models.triage_session import TriageSession
@@ -217,8 +218,11 @@ def handle_turn(
     extra_context = ""
     if state.known_facts:
         extra_context = f"KNOWN_FACTS:\n{json.dumps(state.known_facts, ensure_ascii=False)}"
+    rag_snippet = ""
+    if state.extracted.condition_area is not None:
+        rag_snippet = retrieve(state.extracted.condition_area)
     prompt = build(
-        identity, phase, state.extracted, language, _history(state), "", extra_context
+        identity, phase, state.extracted, language, _history(state), rag_snippet, extra_context
     )
     response = llm.complete(prompt, user_text)
     language = response.language or language

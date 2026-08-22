@@ -46,6 +46,15 @@ def _parse_model_json(text: str) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _response_from_payload(payload: dict[str, Any]) -> LLMResponse:
+    extraction = payload.get("extraction")
+    return LLMResponse(
+        reply_text=str(payload.get("reply_text") or ""),
+        extraction_json=extraction if isinstance(extraction, dict) else {},
+        language=str(payload.get("language") or ""),
+    )
+
+
 class GeminiClient:
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
@@ -62,12 +71,22 @@ class GeminiClient:
             ),
         )
         payload = _parse_model_json(response.text or "")
-        extraction = payload.get("extraction")
-        return LLMResponse(
-            reply_text=str(payload.get("reply_text") or ""),
-            extraction_json=extraction if isinstance(extraction, dict) else {},
-            language=str(payload.get("language") or ""),
-        )
+        return _response_from_payload(payload)
 
     def complete_voice(self, audio_bytes: bytes, mime: str) -> LLMResponse:
-        raise NotImplementedError("Gemini Live voice is Task 12")
+        client = genai.Client(api_key=self._settings.gemini_api_key)
+        audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
+        prompt = (
+            "Transcribe this voice note exactly. "
+            f"{_JSON_INSTRUCTION} "
+            "reply_text must be the transcript."
+        )
+        response = client.models.generate_content(
+            model=self._settings.gemini_live_model,
+            contents=[prompt, audio_part],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
+        )
+        payload = _parse_model_json(response.text or "")
+        return _response_from_payload(payload)
