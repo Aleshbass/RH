@@ -218,13 +218,10 @@ def handle_turn(
     extra_context = ""
     if state.known_facts:
         extra_context = f"KNOWN_FACTS:\n{json.dumps(state.known_facts, ensure_ascii=False)}"
-    rag_snippet = ""
-    if state.extracted.condition_area is not None:
-        rag_snippet = retrieve(state.extracted.condition_area)
-    prompt = build(
-        identity, phase, state.extracted, language, _history(state), rag_snippet, extra_context
+    extract_prompt = build(
+        identity, phase, state.extracted, language, _history(state), "", extra_context
     )
-    response = llm.complete(prompt, user_text)
+    response = llm.complete(extract_prompt, user_text)
     language = response.language or language
 
     extracted = _apply_inferred_area(merge_extraction(state.extracted, response.extraction_json))
@@ -244,8 +241,19 @@ def handle_turn(
             blocked_by_safety=True,
         )
 
+    candidate_reply = response.reply_text
+    if extracted.condition_area is not None:
+        rag_snippet = retrieve(extracted.condition_area)
+        if rag_snippet:
+            reply_prompt = build(
+                identity, phase, extracted, language, _history(state), rag_snippet, extra_context
+            )
+            reply_response = llm.complete(reply_prompt, user_text)
+            candidate_reply = reply_response.reply_text
+            language = reply_response.language or language
+
     reply, outgoing = _reply_after_extract(
-        session, state, user_text, response.reply_text, extracted, phase
+        session, state, user_text, candidate_reply, extracted, phase
     )
     _audit_turn(session, identity, extracted, safety, outgoing)
     save_turn(session, state, user_text, reply, extracted, outgoing, language, wa_message_id)

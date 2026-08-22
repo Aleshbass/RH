@@ -87,3 +87,49 @@ def test_handle_turn_injects_neuro_rag(db_session, patient_identity, fake_llm):
     prompt = fake_llm.last_prompt.lower()
     assert "rag:\n(none)" not in prompt
     assert "neurological physiotherapy" in prompt or "stroke rehabilitation" in prompt
+
+
+def test_extraction_complete_excludes_rag_glossary_flags(
+    db_session, patient_identity, fake_llm
+):
+    from pathlib import Path
+
+    from app.conversation.state_manager import load, save_turn
+    from app.conversation.turn_handler import handle_turn
+    from app.llm.rag import retriever as rag_mod
+
+    glossary = (Path(rag_mod.__file__).parent / "knowledge_base" / "glossary.md").read_text()
+    assert "chest pain" in glossary.lower()
+    assert "saddle" in glossary.lower()
+
+    state = load(db_session, patient_identity)
+    save_turn(
+        db_session,
+        state,
+        "knee after football",
+        "tell me more",
+        ExtractedTriage(
+            onset="1 week",
+            body_location="knee",
+            condition_area=ConditionArea.MSK,
+        ),
+        PatientPhase.MID_TRIAGE,
+        "en",
+    )
+    fake_llm.extraction = {}
+    fake_llm.reply = "Thanks, I've got that."
+    result = handle_turn(
+        db_session,
+        patient_identity.phone_e164,
+        "still the knee, no other symptoms",
+        fake_llm,
+    )
+
+    extraction_prompt = fake_llm.complete_prompts[0].lower()
+    assert "rag:\n(none)" in extraction_prompt
+    assert "chest pain" not in extraction_prompt
+    assert "saddle" not in extraction_prompt
+    flags = result.extracted.flags or {}
+    assert not flags.get("chest_pain")
+    assert not flags.get("saddle_anesthesia")
+    assert result.blocked_by_safety is False

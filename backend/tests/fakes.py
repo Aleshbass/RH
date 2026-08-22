@@ -15,9 +15,11 @@ class FakeLLM:
         self.language = language
         self.voice_transcript = ""
         self.last_prompt = ""
+        self.complete_prompts: list[str] = []
 
     def complete(self, prompt: str, user_text: str) -> LLMResponse:
         self.last_prompt = prompt
+        self.complete_prompts.append(prompt)
         return LLMResponse(
             reply_text=self.reply,
             extraction_json=self.extraction,
