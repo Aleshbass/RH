@@ -15,13 +15,16 @@ def _redis() -> redis.Redis:
 
 def enqueue_inbound(wa_message_id: str, phone: str, text: str) -> bool:
     client = _redis()
-    reserved = client.set(f"joy:wamid:{wa_message_id}", "1", nx=True, ex=_WAMID_TTL_SECONDS)
+    lock_key = f"joy:wamid:{wa_message_id}"
+    reserved = client.set(lock_key, "1", nx=True, ex=_WAMID_TTL_SECONDS)
     if not reserved:
         return False
-    client.lpush(
-        INBOUND_QUEUE,
-        json.dumps({"wa_message_id": wa_message_id, "phone": phone, "text": text}),
-    )
+    payload = json.dumps({"wa_message_id": wa_message_id, "phone": phone, "text": text})
+    try:
+        client.lpush(INBOUND_QUEUE, payload)
+    except Exception:
+        client.delete(lock_key)
+        raise
     return True
 
 
