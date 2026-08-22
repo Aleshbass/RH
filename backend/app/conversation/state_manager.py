@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.conversation import Conversation, Message
@@ -60,39 +61,52 @@ def _known_facts(session: Session, patient_id: UUID | None) -> dict:
 
 def _merge_extracted(existing: ExtractedTriage, incoming: ExtractedTriage) -> ExtractedTriage:
     merged = existing.model_dump()
-    for key, value in incoming.model_dump().items():
+    for key in incoming.model_fields_set:
+        value = getattr(incoming, key)
         if value is None:
             continue
-        if isinstance(value, list):
-            if value:
-                merged[key] = value
-            continue
         if isinstance(value, dict):
-            current = dict(merged.get(key) or {})
-            for inner_key, inner_value in value.items():
-                if inner_value is not None:
-                    current[inner_key] = inner_value
-            merged[key] = current
+            if not value:
+                merged[key] = {}
+            else:
+                current = dict(merged.get(key) or {})
+                for inner_key, inner_value in value.items():
+                    if inner_value is not None:
+                        current[inner_key] = inner_value
+                merged[key] = current
             continue
         merged[key] = value
     return ExtractedTriage.model_validate(merged)
 
 
-def load(session: Session, identity: Identity) -> ConversationState:
-    conversation = session.scalar(
-        select(Conversation).where(
+def _get_conversation(session: Session, identity: Identity) -> Conversation | None:
+    return session.scalar(
+        select(Conversation)
+        .where(
             Conversation.person_id == identity.person_id,
             Conversation.persona == identity.persona,
         )
+        .with_for_update()
     )
+
+
+def load(session: Session, identity: Identity) -> ConversationState:
+    conversation = _get_conversation(session, identity)
     if conversation is None:
-        conversation = Conversation(
+        created = Conversation(
             person_id=identity.person_id,
             persona=identity.persona,
             phase=PatientPhase.FIRST_CONTACT,
         )
-        session.add(conversation)
-        session.flush()
+        try:
+            with session.begin_nested():
+                session.add(created)
+                session.flush()
+            conversation = created
+        except IntegrityError:
+            conversation = _get_conversation(session, identity)
+            if conversation is None:
+                raise
 
     patient_id = _patient_id(identity)
     triage: TriageSession | None = None
