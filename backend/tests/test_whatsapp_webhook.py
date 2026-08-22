@@ -183,25 +183,26 @@ def test_simulate_turn_does_not_send_whatsapp(
     assert sent == []
 
 
-def test_enqueue_retries_after_script_failure(monkeypatch: pytest.MonkeyPatch):
-    from app.queue.tasks import enqueue_inbound, _redis
+def test_enqueue_retries_after_lpush_failure():
+    from app.queue.tasks import INBOUND_QUEUE, enqueue_inbound, _redis
 
-    wa_message_id = f"wamid.atomic.{uuid.uuid4()}"
-    original_eval = redis.Redis.eval
-    calls = {"n": 0}
+    client = _redis()
+    wa_message_id = f"wamid.lpush.{uuid.uuid4()}"
+    lock_key = f"joy:wamid:{wa_message_id}"
 
-    def _eval_fail_once(self, *args, **kwargs):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise redis.RedisError("eval failed")
-        return original_eval(self, *args, **kwargs)
+    client.delete(INBOUND_QUEUE, lock_key)
+    client.set(INBOUND_QUEUE, "not-a-list")
 
-    monkeypatch.setattr(redis.Redis, "eval", _eval_fail_once)
-    with pytest.raises(redis.RedisError):
-        enqueue_inbound(wa_message_id, "+2348000004001", "hello")
+    try:
+        with pytest.raises(redis.ResponseError):
+            enqueue_inbound(wa_message_id, "+2348000004001", "hello")
 
-    assert _redis().get(f"joy:wamid:{wa_message_id}") is None
+        assert client.get(lock_key) is None
 
-    retry = enqueue_inbound(wa_message_id, "+2348000004001", "hello")
-    assert retry is True
-    assert _redis().get(f"joy:wamid:{wa_message_id}") == "1"
+        client.delete(INBOUND_QUEUE)
+
+        retry = enqueue_inbound(wa_message_id, "+2348000004001", "hello")
+        assert retry is True
+        assert client.get(lock_key) == "1"
+    finally:
+        client.delete(INBOUND_QUEUE, lock_key)

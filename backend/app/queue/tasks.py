@@ -9,7 +9,11 @@ INBOUND_QUEUE = "joy:inbound"
 _WAMID_TTL_SECONDS = 60 * 60 * 24 * 7
 _ENQUEUE_LUA = """
 if redis.call('SET', KEYS[1], '1', 'NX', 'EX', tonumber(ARGV[2])) then
-    redis.call('LPUSH', KEYS[2], ARGV[1])
+    local pushed = redis.pcall('LPUSH', KEYS[2], ARGV[1])
+    if type(pushed) == 'table' and pushed.err then
+        redis.call('DEL', KEYS[1])
+        return redis.error_reply(pushed.err)
+    end
     return 1
 end
 return 0
