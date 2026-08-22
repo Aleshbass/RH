@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db import engine
 from app.models.patient import Patient
 from app.models.types import Identity, Persona
+from tests.fakes import FakeLLM
 
 
 @pytest.fixture
@@ -36,3 +37,13 @@ def patient_identity(db_session: Session) -> Identity:
         person_id=patient.id,
         phone_e164=patient.phone_e164,
     )
+
+
+@pytest.fixture
+def patient_phone(patient_identity: Identity) -> str:
+    return patient_identity.phone_e164
+
+
+@pytest.fixture
+def fake_llm() -> FakeLLM:
+    return FakeLLM()
