@@ -53,6 +53,7 @@ def build(
     language: str,
     history: list[Any],
     rag_snippet: str,
+    extra_context: str = "",
 ) -> str:
     phase_value = _phase_value(phase)
     parts = [_load(name) for name in _ALWAYS]
@@ -62,6 +63,8 @@ def build(
     parts.append(f"LANGUAGE: {language}")
     parts.append(f"HISTORY:\n{_format_history(history)}")
     parts.append(f"RAG:\n{rag_snippet or '(none)'}")
+    if extra_context:
+        parts.append(extra_context)
     assembled = "\n\n".join(parts)
     replacements = {
         "{{resolved_persona}}": identity.persona.value,

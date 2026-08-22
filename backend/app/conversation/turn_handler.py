@@ -1,3 +1,4 @@
+import json
 import re
 
 from sqlalchemy.orm import Session
@@ -19,7 +20,6 @@ from app.models.types import (
     ExtractedTriage,
     Identity,
     PatientPhase,
-    Persona,
     SafetyResult,
     TurnResult,
 )
@@ -29,16 +29,29 @@ from app.triage.extraction import infer_condition_area, merge_extraction
 from app.triage.question_batching import grouped_followup, missing_fields
 from app.triage.summary import plain_summary
 
-_CONFIRM_RE = re.compile(r"\b(yes|yeah|yep|correct)\b", re.IGNORECASE)
+_YES_RE = re.compile(r"\b(yes|yeah|yep)\b", re.IGNORECASE)
+_CORRECT_RE = re.compile(r"\bcorrect\b", re.IGNORECASE)
+_NEGATED_CORRECT_RE = re.compile(
+    r"\b(?:not|no|never)\b.{0,40}\bcorrect\b|\bcorrect\b.{0,20}\b(?:not|no)\b",
+    re.IGNORECASE,
+)
 
 _MATCHING_NEXT_SLICE = (
     "Thanks for confirming. Matching you with a specialist physio is the next slice. "
     "I will share options when that is ready."
 )
+_LATER_PATH = (
+    "This WhatsApp path is for later — I will be able to help you here in a later slice."
+)
+_MID_ACK = "Thanks, I've got that."
 
 
 def _is_summary_confirm(user_text: str) -> bool:
-    return bool(_CONFIRM_RE.search(user_text))
+    if _YES_RE.search(user_text):
+        return True
+    if _CORRECT_RE.search(user_text) and not _NEGATED_CORRECT_RE.search(user_text):
+        return True
+    return False
 
 
 def _history(state: ConversationState) -> list[dict[str, str]]:
@@ -60,6 +73,35 @@ def _set_triage_status(session: Session, state: ConversationState, status: str) 
     triage = session.get(TriageSession, state.triage_session_id)
     if triage is not None:
         triage.status = status
+
+
+def _is_escalated(session: Session, state: ConversationState) -> bool:
+    if state.triage_session_id is None:
+        return False
+    triage = session.get(TriageSession, state.triage_session_id)
+    return triage is not None and triage.status == "escalated"
+
+
+def _resend_safety_block(
+    session: Session,
+    identity: Identity,
+    state: ConversationState,
+    user_text: str,
+    phase: PatientPhase,
+    language: str,
+) -> TurnResult:
+    safety = evaluate(state.extracted)
+    reply = patient_message(safety)
+    _audit_turn(session, identity, state.extracted, safety, phase)
+    save_turn(session, state, user_text, reply, state.extracted, phase, language)
+    return TurnResult(
+        reply_text=reply,
+        language=language,
+        phase=phase,
+        extracted=state.extracted,
+        safety=safety,
+        blocked_by_safety=True,
+    )
 
 
 def _store_summary(session: Session, state: ConversationState, text: str) -> None:
@@ -101,7 +143,7 @@ def _audit_turn(
         kind=AuditKind.SAFETY,
         actor_phone=identity.phone_e164,
         person_id=identity.person_id,
-        payload={**safety.model_dump(), "notify_family": True},
+        payload={**safety.model_dump(), "notify_family": False},
     )
 
 
@@ -119,7 +161,10 @@ def _reply_after_extract(
     leftover = missing_fields(extracted)
     if leftover:
         followup = grouped_followup(leftover)
-        return followup or candidate_reply, PatientPhase.MID_TRIAGE
+        if not followup:
+            return candidate_reply, PatientPhase.MID_TRIAGE
+        ack = candidate_reply.strip() or _MID_ACK
+        return f"{ack} {followup}", PatientPhase.MID_TRIAGE
 
     if incoming_phase == PatientPhase.POST_TRIAGE and _is_summary_confirm(user_text):
         try:
@@ -130,6 +175,7 @@ def _reply_after_extract(
 
     summary = plain_summary(extracted)
     _store_summary(session, state, summary)
+    _set_triage_status(session, state, "summarised")
     return summary, PatientPhase.POST_TRIAGE
 
 
@@ -144,13 +190,25 @@ def handle_turn(session: Session, phone: str, user_text: str, llm: LLMClient) ->
             phase=PatientPhase.FIRST_CONTACT,
         )
 
-    if identity.persona == Persona.PATIENT:
-        authorize(identity, "triage")
+    if not authorize(identity, "triage"):
+        return TurnResult(
+            reply_text=_LATER_PATH,
+            language=mirror_language(user_text, None),
+            phase=PatientPhase.FIRST_CONTACT,
+        )
 
     state = load(session, identity)
     phase = decide_phase(state)
     language = mirror_language(user_text, state.last_known_language)
-    prompt = build(identity, phase, state.extracted, language, _history(state), "")
+    if _is_escalated(session, state):
+        return _resend_safety_block(session, identity, state, user_text, phase, language)
+
+    extra_context = ""
+    if state.known_facts:
+        extra_context = f"KNOWN_FACTS:\n{json.dumps(state.known_facts, ensure_ascii=False)}"
+    prompt = build(
+        identity, phase, state.extracted, language, _history(state), "", extra_context
+    )
     response = llm.complete(prompt, user_text)
     language = response.language or language
 

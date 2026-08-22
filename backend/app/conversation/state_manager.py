@@ -79,6 +79,22 @@ def _merge_extracted(existing: ExtractedTriage, incoming: ExtractedTriage) -> Ex
     return ExtractedTriage.model_validate(merged)
 
 
+def _current_triage(session: Session, patient_id: UUID) -> TriageSession | None:
+    open_row = session.scalar(
+        select(TriageSession).where(
+            TriageSession.patient_id == patient_id,
+            TriageSession.status == "open",
+        )
+    )
+    if open_row is not None:
+        return open_row
+    return session.scalar(
+        select(TriageSession)
+        .where(TriageSession.patient_id == patient_id)
+        .order_by(TriageSession.created_at.desc())
+    )
+
+
 def _get_conversation(session: Session, identity: Identity) -> Conversation | None:
     return session.scalar(
         select(Conversation)
@@ -112,12 +128,7 @@ def load(session: Session, identity: Identity) -> ConversationState:
     triage: TriageSession | None = None
     extracted = ExtractedTriage()
     if patient_id is not None:
-        triage = session.scalar(
-            select(TriageSession).where(
-                TriageSession.patient_id == patient_id,
-                TriageSession.status == "open",
-            )
-        )
+        triage = _current_triage(session, patient_id)
         if triage is None:
             triage = TriageSession(
                 patient_id=patient_id,
