@@ -337,3 +337,16 @@ def test_mirror_language_uses_word_boundaries_not_substrings():
 def test_mirror_language_how_far_greeting_at_start():
     assert mirror_language("How far?", None) == "pcm"
     assert mirror_language("how far now", None) == "pcm"
+
+
+def test_mirror_language_how_far_comma_prefix_is_english():
+    assert mirror_language("How far, can I bend my knee?", None) == "en"
+    assert mirror_language("how far, can I bend my knee?", None) == "en"
+
+
+def test_mirror_language_yoruba_combining_accents():
+    # ọ + combining grave/acute; ASCII \b does not treat marks as word chars
+    jowo = "jọ" + "\u0300" + "wọ" + "\u0301"
+    assert mirror_language(jowo, None) == "yo"
+    assert mirror_language(f"{jowo} epele", None) == "yo"
+    assert mirror_language("jọ̀wọ́", None) == "yo"
