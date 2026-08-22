@@ -5,7 +5,8 @@ from sqlalchemy import DateTime, String, event, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base
+from app.models.base import Base, str_enum
+from app.models.types import AuditKind
 
 
 class AuditEvent(Base):
@@ -15,7 +16,7 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    kind: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[AuditKind] = mapped_column(str_enum(AuditKind, "audit_kind"), nullable=False)
     actor_phone: Mapped[str] = mapped_column(String, nullable=False)
     person_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
