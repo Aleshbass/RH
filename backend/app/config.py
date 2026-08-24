@@ -1,9 +1,21 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     database_url: str = "postgresql+psycopg://joy:joy@localhost:5432/joy"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _psycopg_driver(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        if value.startswith("postgresql://"):
+            return "postgresql+psycopg://" + value.removeprefix("postgresql://")
+        if value.startswith("postgres://"):
+            return "postgresql+psycopg://" + value.removeprefix("postgres://")
+        return value
     redis_url: str = "redis://localhost:6379/0"
     gemini_api_key: str = ""
     gemini_text_model: str = "gemini-2.0-flash"
