@@ -106,3 +106,62 @@ def test_gemini_client_parses_json_without_live_api(monkeypatch):
     assert response.reply_text == "Hi"
     assert response.extraction_json["onset"] == "2d"
     assert response.language == "en"
+
+
+def test_parse_model_json_invalid_returns_empty():
+    from app.llm.gemini_client import _parse_model_json
+
+    assert _parse_model_json("not-json{") == {}
+    assert _parse_model_json("[]") == {}
+
+
+def test_gemini_client_retries_timeout_once_then_raises(monkeypatch):
+    from app.config import Settings
+    from app.llm.gemini_client import GeminiClient, GeminiTimeoutError
+
+    calls = {"n": 0}
+
+    class _Models:
+        def generate_content(self, **kwargs):
+            calls["n"] += 1
+            raise TimeoutError("deadline")
+
+    class _Client:
+        def __init__(self, **kwargs):
+            self.models = _Models()
+
+    monkeypatch.setattr("app.llm.gemini_client.genai.Client", _Client)
+    client = GeminiClient(Settings(gemini_api_key="not-a-real-key"))
+    try:
+        client.complete("assembled prompt", "hello")
+        raise AssertionError("expected GeminiTimeoutError")
+    except GeminiTimeoutError:
+        pass
+    assert calls["n"] == 2
+
+
+def test_gemini_client_succeeds_on_timeout_retry(monkeypatch):
+    from app.config import Settings
+    from app.llm.gemini_client import GeminiClient
+
+    calls = {"n": 0}
+
+    class _Resp:
+        text = '{"reply_text": "Hi", "extraction": {}, "language": "en"}'
+
+    class _Models:
+        def generate_content(self, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise TimeoutError("deadline")
+            return _Resp()
+
+    class _Client:
+        def __init__(self, **kwargs):
+            self.models = _Models()
+
+    monkeypatch.setattr("app.llm.gemini_client.genai.Client", _Client)
+    client = GeminiClient(Settings(gemini_api_key="not-a-real-key"))
+    response = client.complete("assembled prompt", "hello")
+    assert response.reply_text == "Hi"
+    assert calls["n"] == 2

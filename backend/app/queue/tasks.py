@@ -6,6 +6,9 @@ import redis
 from app.config import get_settings
 
 INBOUND_QUEUE = "joy:inbound"
+PROCESSING_QUEUE = "joy:inbound:processing"
+DEAD_LETTER_QUEUE = "joy:inbound:dead"
+MAX_ATTEMPTS = 3
 _WAMID_TTL_SECONDS = 60 * 60 * 24 * 7
 _ENQUEUE_LUA = """
 if redis.call('SET', KEYS[1], '1', 'NX', 'EX', tonumber(ARGV[2])) then
@@ -62,7 +65,7 @@ def send_whatsapp_text(phone: str, text: str) -> None:
     settings = get_settings()
     if not settings.whatsapp_access_token or not settings.whatsapp_phone_number_id:
         return
-    httpx.post(
+    response = httpx.post(
         f"https://graph.facebook.com/v21.0/{settings.whatsapp_phone_number_id}/messages",
         headers={"Authorization": f"Bearer {settings.whatsapp_access_token}"},
         json={
@@ -73,3 +76,4 @@ def send_whatsapp_text(phone: str, text: str) -> None:
         },
         timeout=15.0,
     )
+    response.raise_for_status()

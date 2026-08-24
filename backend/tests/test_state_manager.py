@@ -127,7 +127,11 @@ def test_recent_messages_capped_at_12(db_session, patient_identity):
             PatientPhase.MID_TRIAGE,
             "en",
         )
-    stored = db_session.scalar(select(func.count()).select_from(Message))
+    stored = db_session.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(Message.conversation_id == state.conversation_id)
+    )
     assert stored == 16
     again = load(db_session, patient_identity)
     assert len(again.recent_messages) == 12
@@ -171,7 +175,7 @@ def test_explicit_empty_list_corrects_stored_aggravating(db_session, patient_ide
     assert again.extracted.aggravating == []
 
 
-def test_explicit_empty_dict_corrects_stored_flags(db_session, patient_identity):
+def test_explicit_empty_dict_does_not_wipe_stored_flags(db_session, patient_identity):
     state = load(db_session, patient_identity)
     save_turn(
         db_session,
@@ -192,7 +196,7 @@ def test_explicit_empty_dict_corrects_stored_flags(db_session, patient_identity)
         "en",
     )
     again = load(db_session, patient_identity)
-    assert again.extracted.flags == {}
+    assert again.extracted.flags == {"fever": True}
 
 
 def test_unset_defaults_do_not_wipe_stored_collections(db_session, patient_identity):

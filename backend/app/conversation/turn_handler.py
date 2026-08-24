@@ -174,9 +174,8 @@ def _reply_after_extract(
     if leftover:
         followup = grouped_followup(leftover)
         if not followup:
-            return candidate_reply, PatientPhase.MID_TRIAGE
-        ack = candidate_reply.strip() or _MID_ACK
-        return f"{ack} {followup}", PatientPhase.MID_TRIAGE
+            return _MID_ACK, PatientPhase.MID_TRIAGE
+        return f"{_MID_ACK} {followup}", PatientPhase.MID_TRIAGE
 
     if incoming_phase == PatientPhase.POST_TRIAGE and _is_summary_confirm(user_text):
         try:

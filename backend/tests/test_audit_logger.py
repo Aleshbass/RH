@@ -32,7 +32,12 @@ def test_audit_insert_not_update(db_session, patient_id):
         person_id=patient_id,
         payload={"fired": True},
     )
-    rows = db_session.query(AuditEvent).order_by(AuditEvent.created_at).all()
+    rows = (
+        db_session.query(AuditEvent)
+        .filter(AuditEvent.person_id == patient_id)
+        .order_by(AuditEvent.created_at)
+        .all()
+    )
     assert len(rows) == 2
     assert rows[0].id == first
     assert rows[1].payload["fired"] is True
@@ -96,6 +101,6 @@ def test_mutating_loaded_event_still_leaves_two_rows(db_session, patient_id):
     loaded = db_session.get(AuditEvent, first)
     assert loaded is not None
     assert loaded.payload["fired"] is False
-    rows = db_session.query(AuditEvent).all()
+    rows = db_session.query(AuditEvent).filter(AuditEvent.person_id == patient_id).all()
     assert len(rows) == 2
     assert {row.id for row in rows} == {first, second}

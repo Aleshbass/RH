@@ -34,10 +34,10 @@ def test_merge_explicit_empty_list_can_wipe():
     assert merged.aggravating == []
 
 
-def test_merge_explicit_empty_flags_can_wipe():
+def test_merge_explicit_empty_flags_does_not_wipe():
     existing = ExtractedTriage(flags={"fever": True})
     merged = merge_extraction(existing, {"flags": {}})
-    assert merged.flags == {}
+    assert merged.flags == {"fever": True}
 
 
 def test_merge_unset_keys_do_not_wipe_collections():

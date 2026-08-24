@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str = ""
     paystack_secret_key: str = ""
     paystack_webhook_secret: str = ""
+    joy_environment: str = "development"
+    internal_api_secret: str = ""
 
 
 def get_settings() -> Settings:

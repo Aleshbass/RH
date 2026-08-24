@@ -62,6 +62,8 @@ def client(
     settings = get_settings()
     settings.whatsapp_verify_token = "test-token"
     settings.whatsapp_app_secret = "test-secret"
+    settings.joy_environment = "development"
+    settings.internal_api_secret = ""
     monkeypatch.setattr("app.config.get_settings", lambda: settings)
 
     def _session() -> Generator[Session, None, None]:

@@ -14,13 +14,12 @@ def merge_extraction(existing: ExtractedTriage, incoming: dict) -> ExtractedTria
             continue
         if isinstance(value, dict):
             if not value:
-                merged[key] = {}
-            else:
-                current = dict(merged.get(key) or {})
-                for inner_key, inner_value in value.items():
-                    if inner_value is not None:
-                        current[inner_key] = inner_value
-                merged[key] = current
+                continue
+            current = dict(merged.get(key) or {})
+            for inner_key, inner_value in value.items():
+                if inner_value is True or inner_value is False:
+                    current[inner_key] = inner_value
+            merged[key] = current
             continue
         merged[key] = value
     return ExtractedTriage.model_validate(merged)

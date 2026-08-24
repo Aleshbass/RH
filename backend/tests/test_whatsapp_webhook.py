@@ -121,7 +121,9 @@ def test_worker_skips_duplicate_wa_message_id(
     process_inbound(db_session, wa_message_id, patient_phone, "hello", llm=fake_llm)
     process_inbound(db_session, wa_message_id, patient_phone, "hello again", llm=fake_llm)
     user_count = db_session.scalar(
-        select(func.count()).select_from(Message).where(Message.role == "user")
+        select(func.count())
+        .select_from(Message)
+        .where(Message.wa_message_id == wa_message_id)
     )
     stored = db_session.scalar(select(Message).where(Message.wa_message_id == wa_message_id))
     assert user_count == 1
@@ -135,6 +137,7 @@ def test_webhook_then_process_once_runs_handle_turn_and_sends(
     from app.queue.tasks import INBOUND_QUEUE, _redis
     from app.queue.worker import process_queue_once
 
+    fake_llm.reply = "Sorry about the knee — tell me more."
     sent: list[tuple[str, str]] = []
     monkeypatch.setattr(
         "app.queue.worker.send_whatsapp_text",
@@ -332,3 +335,87 @@ def test_enqueue_retries_after_lpush_failure():
         assert client.get(lock_key) == "1"
     finally:
         client.delete(INBOUND_QUEUE, lock_key)
+
+
+def test_simulate_turn_production_missing_secret_is_401(client, patient_phone: str):
+    from app.config import get_settings
+
+    settings = get_settings()
+    settings.joy_environment = "production"
+    settings.internal_api_secret = ""
+    response = client.post(
+        "/api/internal/simulate_turn",
+        json={"phone": patient_phone, "text": "hello"},
+    )
+    assert response.status_code == 401
+
+
+def test_simulate_turn_persists_extracted_across_http_requests(fake_llm: FakeLLM):
+    from fastapi.testclient import TestClient
+    from sqlalchemy import delete, select
+
+    from app.config import get_settings
+    from app.db import SessionLocal
+    from app.llm.gemini_client import get_llm_client
+    from app.main import app
+    from app.models.conversation import Conversation, Message
+    from app.models.patient import Patient
+    from app.models.triage_session import TriageSession
+    from app.models.types import ExtractedTriage
+
+    phone = f"+2348{uuid.uuid4().int % 10**9:09d}"
+    db = SessionLocal()
+    try:
+        patient = Patient(phone_e164=phone, name="Persist Ada", age=30, location="Lagos")
+        db.add(patient)
+        db.commit()
+        patient_id = patient.id
+    finally:
+        db.close()
+
+    settings = get_settings()
+    settings.joy_environment = "development"
+    settings.internal_api_secret = ""
+    fake_llm.reply = "Sorry about the knee — tell me the whole story when you can."
+    fake_llm.extraction = {"onset": "3 days", "body_location": "knee"}
+    app.dependency_overrides[get_llm_client] = lambda: fake_llm
+    app.dependency_overrides[get_settings] = lambda: settings
+    try:
+        with TestClient(app) as http:
+            first = http.post(
+                "/api/internal/simulate_turn",
+                json={"phone": phone, "text": "my knee has hurt for 3 days"},
+            )
+            assert first.status_code == 200
+            fake_llm.extraction = {}
+            fake_llm.reply = "this-should-not-leak-if-mid-triage"
+            second = http.post(
+                "/api/internal/simulate_turn",
+                json={"phone": phone, "text": "still the same knee"},
+            )
+            assert second.status_code == 200
+            assert "this-should-not-leak-if-mid-triage" not in second.json()["reply"]
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+        app.dependency_overrides.pop(get_settings, None)
+
+    check = SessionLocal()
+    try:
+        triage = check.scalar(select(TriageSession).where(TriageSession.patient_id == patient_id))
+        assert triage is not None
+        extracted = ExtractedTriage.model_validate(triage.extracted)
+        assert extracted.onset == "3 days"
+        assert extracted.body_location == "knee"
+    finally:
+        conversations = check.scalars(
+            select(Conversation).where(Conversation.person_id == patient_id)
+        ).all()
+        for conversation in conversations:
+            check.execute(delete(Message).where(Message.conversation_id == conversation.id))
+            check.delete(conversation)
+        check.execute(delete(TriageSession).where(TriageSession.patient_id == patient_id))
+        leftover = check.get(Patient, patient_id)
+        if leftover is not None:
+            check.delete(leftover)
+        check.commit()
+        check.close()

@@ -71,9 +71,13 @@ def test_unknown_sender_returns_begin_unknown_and_audits(db_session):
     assert result.reply_text == begin_unknown(db_session, phone)
     assert result.reply_text != llm.reply
     assert llm.complete_calls == 0
-    events = db_session.scalars(select(AuditEvent).where(AuditEvent.kind == AuditKind.IDENTITY)).all()
+    events = db_session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.kind == AuditKind.IDENTITY,
+            AuditEvent.actor_phone == phone,
+        )
+    ).all()
     assert events
-    assert events[0].actor_phone == phone
     assert events[0].person_id is None
 
 
@@ -102,7 +106,12 @@ def test_safety_sets_escalated_and_skips_batching(db_session, patient_phone, fak
     assert triage is not None
     assert triage.status == "escalated"
     assert "1 to 10" not in result.reply_text.lower()
-    safety_events = db_session.scalars(select(AuditEvent).where(AuditEvent.kind == AuditKind.SAFETY)).all()
+    safety_events = db_session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.kind == AuditKind.SAFETY,
+            AuditEvent.actor_phone == patient_phone,
+        )
+    ).all()
     assert safety_events
     assert safety_events[0].payload.get("fired") is True
     assert safety_events[0].payload.get("notify_family") is False
@@ -258,7 +267,40 @@ def test_physio_does_not_extract_msk_triage(db_session):
     assert llm.complete_calls == 0
     assert result.extracted is None or not result.extracted.body_location
     assert "later" in result.reply_text.lower()
-    assert db_session.scalars(select(TriageSession)).all() == []
+    assert (
+        db_session.scalars(
+            select(TriageSession).where(TriageSession.patient_id == physio.id)
+        ).all()
+        == []
+    )
+
+
+def test_mid_triage_does_not_forward_model_checklist(db_session, patient_identity, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    state = load(db_session, patient_identity)
+    save_turn(
+        db_session,
+        state,
+        "knee hurt 3 days",
+        "tell me more",
+        ExtractedTriage(onset="3 days", body_location="knee"),
+        PatientPhase.MID_TRIAGE,
+        "en",
+    )
+    fake_llm.reply = (
+        "When did it start? How bad is it 1-10? Any numbness? "
+        "What makes it worse? What are your goals?"
+    )
+    fake_llm.extraction = {}
+    result = handle_turn(db_session, patient_identity.phone_e164, "still the knee", fake_llm)
+    assert result.phase == "mid_triage"
+    assert "When did it start?" not in result.reply_text
+    assert "Any numbness?" not in result.reply_text
+    assert "What makes it worse?" not in result.reply_text
+    assert "What are your goals?" not in result.reply_text
+    assert "How bad is it 1-10?" not in result.reply_text
+    assert "I've got that" in result.reply_text
 
 
 def test_mid_triage_followup_is_not_only_a_severity_ask(db_session, patient_identity, fake_llm):
