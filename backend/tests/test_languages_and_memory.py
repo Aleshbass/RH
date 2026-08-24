@@ -22,8 +22,15 @@ _LANGUAGE_PICKER = ("please choose english or hausa", "please choose english")
 
 def test_each_language_two_turns_then_memory(db_session, fake_llm):
     from app.conversation.turn_handler import handle_turn
+    phones = {
+        "en": "+2348000005101",
+        "pcm": "+2348000005102",
+        "yo": "+2348000005103",
+        "ig": "+2348000005104",
+        "ha": "+2348000005105",
+    }
     for lang, line in LANGUAGES.items():
-        phone = f"+2348000000{hash(lang) % 100:02d}"
+        phone = phones[lang]
         fake_llm.language = lang
         fake_llm.extraction = {"onset": "2 weeks", "body_location": "back", "condition_area": "msk"}
         first = handle_turn(db_session, phone, line, fake_llm)
