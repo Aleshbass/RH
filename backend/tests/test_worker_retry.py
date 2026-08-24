@@ -236,3 +236,15 @@ def test_run_forever_stays_alive_after_failed_job(monkeypatch: pytest.MonkeyPatc
     except _Stop:
         pass
     assert calls["n"] == 2
+
+
+def test_empty_queue_timeout_is_not_a_crash(monkeypatch: pytest.MonkeyPatch):
+    from app.queue import worker
+    from app.queue.worker import process_queue_once
+
+    class _IdleRedis:
+        def brpoplpush(self, *_args, **_kwargs):
+            raise TimeoutError("Timeout reading from socket")
+
+    monkeypatch.setattr(worker, "_redis", lambda: _IdleRedis())
+    assert process_queue_once(timeout=1) is None

@@ -61,7 +61,10 @@ def process_inbound(
 
 
 def _claim(timeout: int) -> str | None:
-    return _redis().brpoplpush(INBOUND_QUEUE, PROCESSING_QUEUE, timeout=timeout)
+    try:
+        return _redis().brpoplpush(INBOUND_QUEUE, PROCESSING_QUEUE, timeout=timeout)
+    except TimeoutError:
+        return None
 
 
 def _ack(raw: str) -> None:

@@ -24,7 +24,14 @@ return 0
 
 
 def _redis() -> redis.Redis:
-    return redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
+    # Blocking pops (BRPOPLPUSH) must not inherit a socket timeout, or an empty
+    # queue looks like a crash every wait interval.
+    return redis.Redis.from_url(
+        get_settings().redis_url,
+        decode_responses=True,
+        socket_timeout=None,
+        socket_connect_timeout=10,
+    )
 
 
 def enqueue_inbound(
