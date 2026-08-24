@@ -1,0 +1,29 @@
+---
+description: Webhooks as source of truth; booking state machine; append-only audit
+alwaysApply: true
+---
+
+# Booking, webhooks, audit
+
+WhatsApp and Paystack webhooks are the source of truth. Ack fast, enqueue work. Do not poll payment or delivery state.
+
+## Booking states
+
+Only the Paystack webhook handler may move a booking to **confirmed**. Conversation code may initialize payment and talk about **processing**.
+
+Physio accept/decline and slot holds must not skip the payment confirmation rule.
+
+## Audit
+
+Append-only. Independently queryable. At minimum log:
+
+- triage outcome / progress
+- safety evaluator result
+- match ranking + chosen specialty
+- payout / referral-fee decisions
+
+Do not update audit rows in place. Insert new events.
+
+## Internal APIs
+
+`api/internal/*` exists so Retool, physio dashboard, partner portal, and receipt UIs (built by others) can read/write. Build the endpoints even though this repo does not build those UIs.

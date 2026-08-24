@@ -1,0 +1,35 @@
+---
+description: How agents work on Joy AI — sources of truth, repo boundary, work order
+alwaysApply: true
+---
+
+# Joy AI operating rules
+
+This workspace builds **Joy AI** in `joy-ai/` only. Joy is Rehabify's WhatsApp-first assistant (backend + AI + infrastructure). Client: Ademola Abass. Developer: Evans Agina.
+
+## Sources of truth (only these)
+
+Unless Vance explicitly expands the set, consider **only**:
+
+- `AGENTS.md`
+- `ARCHITECTURE.md`
+- `joy-system-prompt.md`
+- `Rehabify_Joy_Development_Contract.docx`
+- `Joy-PRD-and-Capability-Matrix.pdf`
+
+Prefer copies under `joy-ai/docs/` once they exist. If a ticket conflicts with architecture or the contract, **architecture and contract win** — flag the conflict, do not silently pick.
+
+## Hard exclusions
+
+- Do not read, copy logic from, or edit `RH/`, `rehabify-joy/`, or any file outside the sources above and `joy-ai/`.
+- Exception: **copy API keys/env values only** from `rehabify-joy/backend` (Gemini, DB, Redis, bucket, WhatsApp, Paystack). Never commit secrets. Never copy application code from there unless Vance says so.
+
+## Work order (do not skip)
+
+1. Vance reviews `.cursor/rules/` — no application code until he approves.
+2. Design spec, then **multiple plans** covering Contract §4. No coding off vibes.
+3. Implement one approved plan at a time inside `joy-ai/`.
+
+## Product shape
+
+Full Phase 1 contract is in scope from day one (one product, one module tree). Build order is intelligence-core first, then remaining personas/payments. See `08-build-order-and-plans.mdc`.

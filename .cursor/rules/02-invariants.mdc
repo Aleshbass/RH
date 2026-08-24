@@ -1,0 +1,28 @@
+---
+description: Non-negotiable architecture — safety, booking, identity, audit, memory, triage
+alwaysApply: true
+---
+
+# Architectural invariants
+
+These are code, not prompt instructions. Never "trust the model" to satisfy them.
+
+1. **Red flags are deterministic.** Live in `safety/`. Run every patient triage turn, independently of Gemini. Not a tool the model may skip. Safety output **always** overrides the LLM. Empathy/warmth may shape the *wording* of an escalation (care + reason + instruction in `escalation.py`) but must never change the *decision*.
+2. **Booking status advances only on confirmed webhooks** (Paystack). Never write `confirmed` from the conversation handler. If asked mid-chat, say payment is **processing**, not successful.
+3. **Persona is resolved before business logic.** Enforce in `identity/permissions.py`. Do not ask the prompt to police permissions.
+4. **Every triage, match, and payout decision** is written to an **append-only** audit log that is independently queryable (Contract §4).
+5. **Context persists across sessions and personas.** Never re-ask what is already on record. Relays (family↔physio, physio↔admin) carry context without manual handoff.
+6. **Triage discipline:** one open question first; mine it; batch leftovers into **one** grouped follow-up. Never a one-at-a-time checklist (v1 bug).
+
+```python
+# ❌ BAD — LLM decides emergency; chat marks booking paid
+if "chest pain" in message:
+    return "See a doctor"
+booking.status = "confirmed"
+
+# ✅ GOOD — rules engine + webhook
+safety = evaluator.run(extracted)  # every turn
+if safety.fired:
+    return escalate(safety)  # overrides model text
+# confirmed only in paystack webhook handler
+```

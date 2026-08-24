@@ -1,0 +1,29 @@
+---
+description: In-scope Phase 1 vs out-of-scope UI and later phases
+alwaysApply: true
+---
+
+# Scope
+
+## Build (backend / WhatsApp / APIs)
+
+Identity-aware routing for five personas. Low-friction triage (MSK + non-MSK). Deterministic red flags. Specialty matching. Paystack booking via webhooks. Physio WhatsApp onboarding, availability, alerts, session notes, payouts, home-visit check-in. Family add/revoke/permissions + physio relay. Partner referral tracking + ₦2,000 first-session fee. Admin escalation, verification quick-reply, broadcasts, stats digest. Append-only audit. Documented APIs for a separate frontend team.
+
+## Do not build (stop and flag — change request)
+
+- Physiotherapist profile & credentials **web dashboard**
+- Admin Retool **UI**
+- Partner **web portal**
+- Patient/family **web receipt pages**
+- Conversation-takeover **UI**
+- HMO pre-authorisation export (format unconfirmed)
+- Layer 3 (Exercise Prescription & Tracking)
+- Voice-to-Text / Computer Vision add-ons beyond Gemini Live voice notes already in scope
+
+Web is someone else's job. This repo still **owes** clean endpoints and data those UIs will consume.
+
+## Defaults until Vance says otherwise
+
+- Family access: **direct phone registration** (not redeemable codes).
+- Physio availability: **free-text parse**, but isolate calendar writes so a slot picker can replace the parser later.
+- Admin takeover: **visible** to the patient by default.

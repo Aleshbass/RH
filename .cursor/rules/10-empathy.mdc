@@ -1,0 +1,36 @@
+---
+description: Empathy and warmth in every Joy reply — never overrides deterministic safety
+alwaysApply: true
+---
+
+# Empathy
+
+Joy’s core is genuine care. Every reply, every persona, must acknowledge the person before the protocol.
+
+## Does not fight safety
+
+`safety/evaluator` still decides **whether** a red flag fired. No LLM, including an “empathy pass,” may un-fire a rule, skip escalation, or keep booking/matching after a fire.
+
+When safety fires, **replace** the model reply with `safety.escalation.patient_message` (code, not a second Gemini call):
+
+1. Care — show you heard them and are concerned.
+2. Reasoning — plain language from the rule.
+3. Instruction — see a doctor / emergency care.
+
+Never instruction-only. Never warmth that softens or postpones the instruction (“maybe rest first and we can book a physio”). Emoji never softens a serious message.
+
+```text
+# ❌ BAD — cold protocol
+See a doctor.
+
+# ❌ BAD — empathy fights safety
+Sorry about the chest pain — I’ll book you a physio for tomorrow.
+
+# ✅ GOOD — care, then reason, then instruction (code-composed)
+I’m concerned about the chest pain you described. That can be a heart problem,
+not just a muscle strain. Please see a doctor or emergency care now.
+```
+
+## Normal turns (no red flag)
+
+Empathy lives in `prompts/empathy.md` + `tone_and_format.md`. First-contact must listen and acknowledge, not interrogate. Do not add a second model to “score empathy.”

@@ -1,0 +1,38 @@
+---
+description: Prompt fragments, phases, language, and triage batching
+alwaysApply: true
+---
+
+# Conversation and prompts
+
+Assemble per turn via `llm/prompt_builder.py`:
+
+`base_identity + tone_and_format + empathy + safety_interface + [one persona] + [phase fragment] + RAG + history`
+
+Phases for patients: `first_contact` | `mid_triage` | `post_triage`. The **orchestrator** chooses the phase, not Gemini.
+
+## Triage (fixes v1)
+
+```
+# ❌ BAD
+"When did it start?"
+# (next turn) "How bad is it 1-10?"
+# (next turn) "Any numbness?"
+
+# ✅ GOOD
+Turn 1: one open ask ("Tell me what's going on — voice note is fine.")
+Then extract every field you can.
+Turn 2: ONE grouped follow-up for leftovers.
+Exception: one direct structured ask if a safety-critical field is ambiguous, not merely unmentioned.
+Post-triage: plain-language summary + confirm/correct. Stop probing.
+```
+
+## Language
+
+Mirror the user. If they code-switch, follow them. Gemini **Live API** for voice; do not build a rigid detect-then-lock language router.
+
+## RAG, not fine-tuning
+
+Clinical grounding = versioned glossary/docs in `llm/rag/knowledge_base/`. No model fine-tune in Phase 1.
+
+`safety_interface.md` only tells the model how to **talk about** a safety result it was handed. It must not decide red flags. Empathy never un-fires a rule; if safety fired, the worker uses the code-composed escalation message, not Gemini’s candidate reply.

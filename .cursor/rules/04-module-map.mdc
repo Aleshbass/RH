@@ -1,0 +1,27 @@
+---
+description: Target backend layout from ARCHITECTURE.md — do not invent a parallel tree
+alwaysApply: true
+---
+
+# Module map
+
+Follow `ARCHITECTURE.md`. Thin HTTP in `api/`. Business logic in domain packages. Prompts are files under `prompts/`, not hardcoded strings in Python.
+
+| Package | Owns |
+|---|---|
+| `identity/` | Phone → persona, permissions, unknown sender |
+| `conversation/` | State, language, orchestrator, turn, voice |
+| `safety/` | Rules + evaluator + escalation — **no LLM calls** |
+| `triage/` | Extraction, question batching, MSK, non-MSK, summary |
+| `matching/` | Specialty match + ranking |
+| `booking/` | Flow, Paystack client, status machine |
+| `physio/` | Onboarding, availability, alerts, notes, check-in, payouts |
+| `family/` | Access, permissions, relay |
+| `partner/` | Referral, fee confirmation, urgent flag |
+| `admin/` | Escalation, verification queue, broadcast, stats digest |
+| `audit/` | Append-only logger |
+| `llm/` | Gemini wrapper, prompt builder, RAG |
+| `api/webhooks/` | WhatsApp + Paystack (verify, enqueue) |
+| `api/internal/` | Physio profile, admin panel, partner portal, receipts **APIs** |
+
+If a file grows past one job, split it. Do not dump new features into `orchestrator.py`.
