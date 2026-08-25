@@ -7,15 +7,34 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.admin import Admin
 from app.models.family_member import FamilyMember
+from app.models.partner import Partner
+from app.models.patient import Patient
+from app.models.physiotherapist import Physiotherapist
 from app.models.types import PermissionTier
 
-_PHONE_RE = re.compile(r"(\+?234[\d\s-]{10,}|\b0\d{10}\b)")
-_ADD_RE = re.compile(r"(?i)\b(?:add|register)\b")
-_REVOKE_RE = re.compile(r"(?i)\b(?:revoke|remove)\b")
-_SET_RE = re.compile(r"(?i)\b(?:give|grant|change|set|make)\b")
+_PHONE_TOKEN = r"(?:\+?234[\d\s-]{10,}|\b0\d{10}\b)"
+_PHONE_RE = re.compile(_PHONE_TOKEN)
+_FAMILY_CUE_RE = re.compile(r"(?i)\b(?:family|access)\b")
+_START_ADD_RE = re.compile(r"(?i)^\s*add\b")
+_START_REVOKE_RE = re.compile(r"(?i)^\s*revoke\b")
+_START_REGISTER_RE = re.compile(r"(?i)^\s*register\b")
+_START_REMOVE_RE = re.compile(r"(?i)^\s*remove\b")
+_START_SET_RE = re.compile(r"(?i)^\s*(?:give|grant|change|set|make)\b")
+_ADJ_ADD_RE = re.compile(rf"(?i)\badd\s+{_PHONE_TOKEN}")
+_ADJ_REVOKE_RE = re.compile(rf"(?i)\brevoke\s+{_PHONE_TOKEN}")
+_ADJ_REGISTER_RE = re.compile(rf"(?i)\bregister\s+{_PHONE_TOKEN}")
+_ADJ_REMOVE_RE = re.compile(rf"(?i)\bremove\s+{_PHONE_TOKEN}")
+_ADJ_SET_RE = re.compile(rf"(?i)\b(?:give|grant|change|set|make)\s+{_PHONE_TOKEN}")
 _VIEW_ONLY_RE = re.compile(r"(?i)\bview[\s_-]?only\b")
 _FULL_RE = re.compile(r"(?i)\bfull(?:\s+access)?\b")
+
+_LINKED_ELSEWHERE = "That number is already linked to another patient."
+_PERSONA_IN_USE = (
+    "That number already belongs to a patient, physiotherapist, admin, or partner, "
+    "so I can't add it as family."
+)
 
 
 def to_e164(phone: str) -> str:
@@ -35,6 +54,13 @@ def _find_by_phone(session: Session, phone_e164: str) -> FamilyMember | None:
     return session.scalar(select(FamilyMember).where(FamilyMember.phone_e164 == phone_e164))
 
 
+def _persona_owns_phone(session: Session, phone: str) -> bool:
+    for model in (Patient, Physiotherapist, Admin, Partner):
+        if session.scalar(select(model.id).where(model.phone_e164 == phone)) is not None:
+            return True
+    return False
+
+
 def add_family(
     session: Session,
     patient_id: UUID,
@@ -42,10 +68,12 @@ def add_family(
     tier: PermissionTier,
 ) -> FamilyMember:
     phone = to_e164(phone_e164)
+    if _persona_owns_phone(session, phone):
+        raise ValueError(_PERSONA_IN_USE)
     existing = _find_by_phone(session, phone)
     if existing is not None:
         if existing.patient_id != patient_id and existing.revoked_at is None:
-            raise ValueError("phone already linked to another patient")
+            raise ValueError(_LINKED_ELSEWHERE)
         existing.patient_id = patient_id
         existing.permission_tier = tier
         existing.revoked_at = None
@@ -105,16 +133,22 @@ def _parse_tier(text: str) -> PermissionTier | None:
 
 
 def parse_family_intent(text: str) -> tuple[str, str, PermissionTier | None] | None:
-    match = _PHONE_RE.search(text or "")
+    raw = text or ""
+    match = _PHONE_RE.search(raw)
     if match is None:
         return None
-    phone = match.group(1)
-    if _REVOKE_RE.search(text):
+    phone = match.group(0)
+    if _ADJ_REVOKE_RE.search(raw) or _START_REVOKE_RE.search(raw):
         return ("revoke", phone, None)
-    if _ADD_RE.search(text):
-        return ("add", phone, _parse_tier(text))
-    if _SET_RE.search(text) and _parse_tier(text) is not None:
-        return ("set_tier", phone, _parse_tier(text))
+    if _ADJ_ADD_RE.search(raw) or _START_ADD_RE.search(raw):
+        return ("add", phone, _parse_tier(raw))
+    has_cue = _FAMILY_CUE_RE.search(raw) is not None
+    if has_cue and (_ADJ_REMOVE_RE.search(raw) or _START_REMOVE_RE.search(raw)):
+        return ("revoke", phone, None)
+    if has_cue and (_ADJ_REGISTER_RE.search(raw) or _START_REGISTER_RE.search(raw)):
+        return ("add", phone, _parse_tier(raw))
+    if (_ADJ_SET_RE.search(raw) or _START_SET_RE.search(raw)) and _parse_tier(raw) is not None:
+        return ("set_tier", phone, _parse_tier(raw))
     return None
 
 
@@ -140,13 +174,16 @@ def apply_family_turn(session: Session, patient_id: UUID, text: str) -> str | No
         try:
             member = set_tier(session, patient_id, phone, chosen)
         except ValueError:
-            member = add_family(session, patient_id, phone, chosen)
+            try:
+                member = add_family(session, patient_id, phone, chosen)
+            except ValueError as exc:
+                return str(exc)
         return f"I've updated {member.phone_e164} to {_tier_label(member.permission_tier)} access."
     chosen = tier or PermissionTier.VIEW_ONLY
     try:
         member = add_family(session, patient_id, phone, chosen)
-    except ValueError:
-        return "That number is already linked to another patient."
+    except ValueError as exc:
+        return str(exc)
     label = _tier_label(member.permission_tier)
     if member.permission_tier == PermissionTier.FULL_ACCESS:
         return (

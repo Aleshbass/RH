@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
-from app.family.access import add_family, revoke, set_tier
+from app.family.access import add_family, parse_family_intent, revoke, set_tier
 from app.identity.permissions import authorize
 from app.identity.resolver import resolve
 from app.models.family_member import FamilyMember
@@ -169,3 +169,128 @@ def test_no_redeemable_codes_and_no_secret_leaks():
     assert "paystack" not in lowered
     assert "sk_live" not in lowered
     assert "sk_test" not in lowered
+
+
+def test_self_add(db_session, patient, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    with pytest.raises(ValueError):
+        add_family(db_session, patient.id, patient.phone_e164, PermissionTier.VIEW_ONLY)
+
+    assert (
+        db_session.scalar(
+            select(FamilyMember).where(FamilyMember.phone_e164 == patient.phone_e164)
+        )
+        is None
+    )
+    identity = resolve(db_session, patient.phone_e164)
+    assert identity is not None
+    assert identity.persona == Persona.PATIENT
+    assert identity.person_id == patient.id
+
+    result = handle_turn(
+        db_session, patient.phone_e164, f"add {patient.phone_e164}", fake_llm
+    )
+    identity = resolve(db_session, patient.phone_e164)
+    assert identity.persona == Persona.PATIENT
+    assert identity.person_id == patient.id
+    lower = result.reply_text.lower()
+    assert "later" not in lower
+    assert any(token in lower for token in ("already", "own", "cannot", "can't", "patient"))
+
+
+def test_add_existing_patient(db_session, patient, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    other = Patient(
+        phone_e164="+2348110000021",
+        name="Bisi Adeyemi",
+        age=40,
+        location="Abuja",
+    )
+    db_session.add(other)
+    db_session.flush()
+
+    with pytest.raises(ValueError):
+        add_family(db_session, patient.id, other.phone_e164, PermissionTier.VIEW_ONLY)
+
+    assert (
+        db_session.scalar(
+            select(FamilyMember).where(FamilyMember.phone_e164 == other.phone_e164)
+        )
+        is None
+    )
+    other_identity = resolve(db_session, other.phone_e164)
+    assert other_identity is not None
+    assert other_identity.persona == Persona.PATIENT
+    assert other_identity.person_id == other.id
+
+    result = handle_turn(
+        db_session, patient.phone_e164, f"add {other.phone_e164}", fake_llm
+    )
+    other_identity = resolve(db_session, other.phone_e164)
+    assert other_identity.persona == Persona.PATIENT
+    assert other_identity.person_id == other.id
+    lower = result.reply_text.lower()
+    assert "later" not in lower
+    assert any(token in lower for token in ("already", "cannot", "can't", "patient"))
+
+
+def test_family_intent_requires_command_shape():
+    assert parse_family_intent("add +2348110000023")[0] == "add"
+    assert parse_family_intent("add +2348110000023 view-only")[0] == "add"
+    assert parse_family_intent("add +2348110000023 full")[0] == "add"
+    assert parse_family_intent("revoke +2348110000023")[0] == "revoke"
+    assert parse_family_intent("Add my mum +2348110000023")[0] == "add"
+    assert parse_family_intent("register family +2348110000023")[0] == "add"
+    assert parse_family_intent("remove family access +2348110000023")[0] == "revoke"
+
+    assert parse_family_intent("register +2348110000023") is None
+    assert parse_family_intent("remove +2348110000023") is None
+    assert parse_family_intent("I need to register +2348110000023") is None
+    assert parse_family_intent("please remove +2348110000023") is None
+    assert parse_family_intent("chest pain please add ice and call +2348110000023") is None
+
+
+def test_uncertain_family_parse_falls_through_to_safety(db_session, patient, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    fake_llm.extraction = {"flags": {"chest_pain": True}}
+    fake_llm.reply = "Let's book a physio for tomorrow!"
+    text = "chest pain please add ice and call +2348110000020"
+    assert parse_family_intent(text) is None
+    result = handle_turn(db_session, patient.phone_e164, text, fake_llm)
+    assert result.blocked_by_safety is True
+    assert result.safety is not None
+    assert result.safety.fired is True
+    assert resolve(db_session, "+2348110000020") is None
+    assert "book" not in result.reply_text.lower()
+
+
+def test_give_full_access_already_linked_replies_in_band(db_session, patient, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    other = Patient(
+        phone_e164="+2348110000022",
+        name="Chidi Okeke",
+        age=41,
+        location="Enugu",
+    )
+    db_session.add(other)
+    db_session.flush()
+    add_family(db_session, other.id, "+2348110000025", PermissionTier.VIEW_ONLY)
+
+    result = handle_turn(
+        db_session,
+        patient.phone_e164,
+        "give +2348110000025 full access",
+        fake_llm,
+    )
+    identity = resolve(db_session, "+2348110000025")
+    assert identity is not None
+    assert identity.persona == Persona.FAMILY
+    assert identity.linked_patient_id == other.id
+    assert identity.permission_tier == PermissionTier.VIEW_ONLY
+    lower = result.reply_text.lower()
+    assert "already" in lower or "linked" in lower
+    assert "later" not in lower
