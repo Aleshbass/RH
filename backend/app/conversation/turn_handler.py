@@ -320,27 +320,6 @@ def handle_turn(
             location=location,
         )
 
-    if identity.persona == Persona.PATIENT:
-        family_reply = apply_family_turn(session, identity.person_id, user_text)
-        if family_reply is not None:
-            state = load(session, identity)
-            language = mirror_language(user_text, state.last_known_language)
-            save_turn(
-                session,
-                state,
-                user_text,
-                family_reply,
-                state.extracted,
-                state.phase,
-                language,
-                wa_message_id,
-            )
-            return TurnResult(
-                reply_text=family_reply,
-                language=language,
-                phase=state.phase,
-            )
-
     if not authorize(identity, "triage"):
         return TurnResult(
             reply_text=_LATER_PATH,
@@ -381,6 +360,25 @@ def handle_turn(
             safety=safety,
             blocked_by_safety=True,
         )
+
+    if identity.persona == Persona.PATIENT:
+        family_reply = apply_family_turn(session, identity.person_id, user_text)
+        if family_reply is not None:
+            save_turn(
+                session,
+                state,
+                user_text,
+                family_reply,
+                state.extracted,
+                state.phase,
+                language,
+                wa_message_id,
+            )
+            return TurnResult(
+                reply_text=family_reply,
+                language=language,
+                phase=state.phase,
+            )
 
     candidate_reply = response.reply_text
     if extracted.condition_area is not None:
