@@ -33,6 +33,9 @@ def complete(session: Session, booking_id: UUID | str) -> Booking:
         raise ValueError("complete requires confirmed")
     booking.completed_at = datetime.now(timezone.utc)
     mark_completed(booking)
+    from app.partner.fee_confirmation import confirm_first_session_fee
+
+    confirm_first_session_fee(session, booking.id)
     return booking
 
 

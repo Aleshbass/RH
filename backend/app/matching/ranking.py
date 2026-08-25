@@ -43,6 +43,10 @@ def _json_distance(distance_km: float) -> float | None:
     return None if distance_km == inf else distance_km
 
 
+def patient_sort_key(patient: Patient) -> tuple[int, ...]:
+    return (0 if getattr(patient, "urgent", False) else 1,)
+
+
 def rank(
     patient: Patient,
     physios: list[Physiotherapist],
@@ -65,7 +69,8 @@ def rank(
         )
         for physio in physios
     ]
-    ranked.sort(key=lambda row: (row.distance_km, -row.rating, row.price_kobo))
+    boost = patient_sort_key(patient)
+    ranked.sort(key=lambda row: (*boost, row.distance_km, -row.rating, row.price_kobo))
     top = [
         row.model_copy(update={"display_name": f"Physio {chr(ord('A') + i)}"})
         for i, row in enumerate(ranked[:3])

@@ -252,3 +252,32 @@ def test_rank_raises_without_db_session(four_neuro_physios):
     )
     with pytest.raises(RuntimeError, match="MATCH audit"):
         rank(detached_patient, four_neuro_physios, ConditionArea.NEURO)
+
+
+def test_urgent_patients_sort_before_non_urgent_same_specialty(db_session):
+    from app.matching.ranking import patient_sort_key
+    from app.models.partner import Partner
+    from app.partner.urgent_flag import flag_urgent
+
+    partner = Partner(phone_e164="+2348000003980")
+    db_session.add(partner)
+    db_session.flush()
+    urgent = Patient(
+        phone_e164="+2348000003981",
+        name="Urgent Ada",
+        location="Lagos",
+        referred_by_partner_id=partner.id,
+    )
+    non_urgent = Patient(
+        phone_e164="+2348000003982",
+        name="Steady Chidi",
+        location="Lagos",
+        referred_by_partner_id=partner.id,
+    )
+    db_session.add_all([urgent, non_urgent])
+    db_session.flush()
+    flag_urgent(db_session, urgent.id, partner.id)
+    db_session.refresh(urgent)
+    ordered = sorted([non_urgent, urgent], key=patient_sort_key)
+    assert [row.id for row in ordered] == [urgent.id, non_urgent.id]
+    assert patient_sort_key(urgent) < patient_sort_key(non_urgent)

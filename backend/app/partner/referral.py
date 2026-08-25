@@ -15,6 +15,7 @@ from app.models.booking import Booking
 from app.models.conversation import Conversation, Message
 from app.models.family_member import FamilyMember
 from app.models.partner import Partner
+from app.models.partner_content_request import PartnerContentRequest
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
 from app.models.types import AuditKind, BookingStatus, Identity, PatientPhase, Persona
@@ -40,6 +41,14 @@ _CONFIRMED_NOTICE = (
     "A patient you referred ({name}) has confirmed their booking. "
     "I'll update you when their first session is complete."
 )
+_PARTNER_URGENT = "I've flagged {phone} as urgent. They'll be matched first."
+_PARTNER_URGENT_NEED_PHONE = (
+    "Send the patient's WhatsApp number to flag them as urgent."
+)
+_PARTNER_URGENT_NOT_YOURS = "I can only flag patients you referred."
+_PARTNER_CONTENT = "I've passed your content request to admin."
+_CONTENT_RE = re.compile(r"(?i)\bcontent\s+request\b|\brequest\s+(?:for\s+)?content\b")
+_URGENT_RE = re.compile(r"(?i)\burgent\b")
 
 
 def ensure_code(partner: Partner) -> str:
@@ -172,6 +181,14 @@ def apply_partner_turn(session: Session, partner_id: UUID, text: str) -> str:
     code = ensure_code(partner)
     inbound_code = find_referral_code(session, text)
     phone_match = _PHONE_RE.search(text or "")
+    if _CONTENT_RE.search(text or ""):
+        session.add(PartnerContentRequest(partner_id=partner.id, body=text or ""))
+        session.flush()
+        return _PARTNER_CONTENT
+    if _URGENT_RE.search(text or ""):
+        if phone_match is None:
+            return _PARTNER_URGENT_NEED_PHONE
+        return _apply_urgent_turn(session, partner, phone_match.group(0))
     if phone_match is None:
         return _PARTNER_NO_PHONE.format(code=code)
     try:
@@ -200,7 +217,10 @@ def notify_referring_partner(session: Session, booking_id: UUID | str) -> str | 
     if partner is None:
         return None
     name = (patient.name or "").strip() or patient.phone_e164
-    text = _CONFIRMED_NOTICE.format(name=name)
+    return send_partner_notice(session, partner, _CONFIRMED_NOTICE.format(name=name))
+
+
+def send_partner_notice(session: Session, partner: Partner, text: str) -> str:
     conversation = session.scalar(
         select(Conversation).where(
             Conversation.person_id == partner.id,
@@ -219,6 +239,23 @@ def notify_referring_partner(session: Session, booking_id: UUID | str) -> str | 
     session.flush()
     _enqueue_partner_notice(partner.phone_e164, text)
     return text
+
+
+def _apply_urgent_turn(session: Session, partner: Partner, raw_phone: str) -> str:
+    from app.partner.urgent_flag import flag_urgent
+
+    try:
+        phone = to_e164(raw_phone)
+    except ValueError:
+        return _PARTNER_URGENT_NEED_PHONE
+    try:
+        patient = direct_refer(session, partner.id, phone)
+    except ValueError:
+        return _PARTNER_OCCUPIED
+    flagged = flag_urgent(session, patient.id, partner.id)
+    if flagged is None:
+        return _PARTNER_URGENT_NOT_YOURS
+    return _PARTNER_URGENT.format(phone=patient.phone_e164)
 
 
 def _enqueue_partner_notice(phone: str, text: str) -> None:
