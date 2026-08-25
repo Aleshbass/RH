@@ -8,6 +8,7 @@ from app.booking.booking_flow import AWAITING_PAYMENT, handle_booking_turn
 from app.conversation.language import mirror_language
 from app.conversation.orchestrator import decide_booking_substate, decide_phase, has_narrative
 from app.conversation.state_manager import ConversationState, load, save_turn
+from app.family.access import apply_family_turn
 from app.identity.permissions import authorize
 from app.identity.resolver import resolve
 from app.identity.unknown_sender import (
@@ -318,6 +319,27 @@ def handle_turn(
             paystack=paystack,
             location=location,
         )
+
+    if identity.persona == Persona.PATIENT:
+        family_reply = apply_family_turn(session, identity.person_id, user_text)
+        if family_reply is not None:
+            state = load(session, identity)
+            language = mirror_language(user_text, state.last_known_language)
+            save_turn(
+                session,
+                state,
+                user_text,
+                family_reply,
+                state.extracted,
+                state.phase,
+                language,
+                wa_message_id,
+            )
+            return TurnResult(
+                reply_text=family_reply,
+                language=language,
+                phase=state.phase,
+            )
 
     if not authorize(identity, "triage"):
         return TurnResult(

@@ -22,7 +22,12 @@ def resolve(session: Session, phone_e164: str) -> Identity | None:
     if physio is not None:
         return Identity(persona=Persona.PHYSIO, person_id=physio.id, phone_e164=phone_e164)
 
-    family = session.scalar(select(FamilyMember).where(FamilyMember.phone_e164 == phone_e164))
+    family = session.scalar(
+        select(FamilyMember).where(
+            FamilyMember.phone_e164 == phone_e164,
+            FamilyMember.revoked_at.is_(None),
+        )
+    )
     if family is not None:
         return Identity(
             persona=Persona.FAMILY,
