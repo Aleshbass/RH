@@ -27,6 +27,7 @@ from app.models.types import (
     ExtractedTriage,
     Identity,
     PatientPhase,
+    Persona,
     SafetyResult,
     TurnResult,
 )
@@ -34,7 +35,10 @@ from app.safety.escalation import patient_message
 from app.safety.evaluator import evaluate
 from app.physio.availability import apply_availability_turn
 from app.physio.booking_alerts import apply_physio_reply
+from app.physio.home_visit_checkin import apply_checkin_turn
 from app.physio.onboarding import apply_onboarding_turn
+from app.physio.payouts import apply_payout_turn
+from app.physio.session_notes import apply_note_turn
 from app.triage.extraction import infer_condition_area, merge_extraction
 from app.triage.question_batching import grouped_followup, missing_fields
 from app.triage.summary import plain_summary
@@ -50,6 +54,12 @@ _LATER_PATH = (
     "This WhatsApp path is for later — I will be able to help you here in a later slice."
 )
 _MID_ACK = "Thanks, I've got that."
+_DASHBOARD_RE = re.compile(
+    r"(?i)\b(bio|profile photo|pricing|price list|\brates\b)\b"
+)
+_DASHBOARD_REPLY = (
+    "That lives on the web dashboard, not WhatsApp. I can't edit bio, photo, pricing, or credentials here."
+)
 
 
 def _is_summary_confirm(user_text: str) -> bool:
@@ -216,6 +226,7 @@ def _physio_turn(
     user_text: str,
     media: list[str] | None,
     wa_message_id: str | None,
+    llm: LLMClient,
 ) -> TurnResult:
     physio = session.get(Physiotherapist, identity.person_id)
     language = mirror_language(user_text, None)
@@ -227,7 +238,17 @@ def _physio_turn(
         )
     state = load(session, identity)
     conversation = session.get(Conversation, state.conversation_id)
-    reply = apply_physio_reply(session, physio.id, user_text)
+    reply = None
+    if _DASHBOARD_RE.search(user_text or ""):
+        reply = _DASHBOARD_REPLY
+    if reply is None:
+        reply = apply_physio_reply(session, physio.id, user_text)
+    if reply is None:
+        reply = apply_payout_turn(session, physio.id, user_text)
+    if reply is None:
+        reply = apply_checkin_turn(session, physio.id, user_text)
+    if reply is None:
+        reply = apply_note_turn(session, physio.id, user_text, llm)
     if reply is None and conversation is not None:
         reply = apply_availability_turn(session, physio.id, user_text, conversation)
     if reply is None:
@@ -273,9 +294,9 @@ def handle_turn(
             phase=PatientPhase.FIRST_CONTACT,
         )
 
-    if authorize(identity, "physio_onboard") or authorize(identity, "physio_availability"):
+    if identity.persona == Persona.PHYSIO:
         return _physio_turn(
-            session, identity, user_text, media, wa_message_id
+            session, identity, user_text, media, wa_message_id, llm
         )
 
     if not authorize(identity, "triage"):

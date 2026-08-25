@@ -6,6 +6,7 @@ from app.llm.gemini_client import LLMResponse
 class FakePaystack:
     def __init__(self) -> None:
         self.last_callback_url: str | None = None
+        self.last_transfer: dict[str, str | int] | None = None
 
     def initialize_transaction(
         self, email: str, amount_kobo: int, reference: str, callback_url: str
@@ -15,6 +16,17 @@ class FakePaystack:
             "authorization_url": f"https://checkout.paystack.com/{reference}",
             "reference": reference,
         }
+
+    def initiate_transfer(
+        self, amount_kobo: int, recipient: str, reference: str, reason: str = ""
+    ) -> dict[str, str]:
+        self.last_transfer = {
+            "amount_kobo": amount_kobo,
+            "recipient": recipient,
+            "reference": reference,
+            "reason": reason,
+        }
+        return {"transfer_code": f"TRF_{reference}", "reference": reference}
 
 
 class FakeLLM:

@@ -96,6 +96,13 @@ def cancel(booking: Booking) -> None:
     _flush(booking)
 
 
+def mark_completed(booking: Booking) -> None:
+    if booking.status != BookingStatus.CONFIRMED:
+        raise ValueError(f"cannot complete booking in status {booking.status}")
+    booking.status = BookingStatus.COMPLETED
+    _flush(booking)
+
+
 def _flush(booking: Booking) -> None:
     session = object_session(booking)
     if session is not None:

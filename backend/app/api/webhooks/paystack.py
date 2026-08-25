@@ -16,6 +16,7 @@ from app.models.patient import Patient
 from app.models.paystack_event import PaystackEvent
 from app.models.types import AuditKind, BookingStatus
 from app.physio.booking_alerts import notify_new_booking
+from app.physio.payouts import mark_payout_sent
 from app.queue.tasks import enqueue_booking_confirmed
 
 router = APIRouter()
@@ -82,6 +83,15 @@ async def paystack_webhook(
             )
             session.flush()
     except IntegrityError:
+        return {"status": "ok"}
+
+    if event_name == "transfer.success":
+        transfer_code = str(data.get("transfer_code") or "")
+        if transfer_code:
+            try:
+                mark_payout_sent(session, transfer_code=transfer_code)
+            except ValueError:
+                pass
         return {"status": "ok"}
 
     if event_name != "charge.success":

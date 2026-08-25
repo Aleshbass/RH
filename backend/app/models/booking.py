@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,6 +35,10 @@ class Booking(Base):
     paystack_reference: Mapped[str | None] = mapped_column(String, nullable=True)
     amount_kobo: Mapped[int] = mapped_column(Integer, nullable=False)
     physio_response: Mapped[str | None] = mapped_column(String, nullable=True)
+    checkin_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    checkin_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    checkin_lng: Mapped[float | None] = mapped_column(Float, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
