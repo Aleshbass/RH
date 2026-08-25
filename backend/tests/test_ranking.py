@@ -204,3 +204,16 @@ def test_rank_next_slot_is_none(db_session, patient, four_neuro_physios):
 
     out = rank(patient, four_neuro_physios, ConditionArea.NEURO)
     assert all(x.next_slot is None for x in out)
+
+
+def test_rank_raises_without_db_session(four_neuro_physios):
+    from app.matching.ranking import rank
+
+    detached_patient = Patient(
+        phone_e164="+2348000003999",
+        name="Detached Ada",
+        age=32,
+        location="Lagos",
+    )
+    with pytest.raises(RuntimeError, match="MATCH audit"):
+        rank(detached_patient, four_neuro_physios, ConditionArea.NEURO)

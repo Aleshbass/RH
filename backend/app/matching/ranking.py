@@ -62,23 +62,26 @@ def rank(
     top = ranked[:3]
 
     session = object_session(patient)
-    if session is not None:
-        append(
-            session,
-            kind=AuditKind.MATCH,
-            actor_phone=patient.phone_e164,
-            person_id=patient.id,
-            payload={
-                "area": area.value,
-                "candidates": [
-                    {
-                        "physio_id": str(row.physio_id),
-                        "distance_km": _json_distance(row.distance_km),
-                        "rating": row.rating,
-                        "price_kobo": row.price_kobo,
-                    }
-                    for row in top
-                ],
-            },
+    if session is None:
+        raise RuntimeError(
+            "rank requires patient to be attached to a SQLAlchemy session for MATCH audit"
         )
+    append(
+        session,
+        kind=AuditKind.MATCH,
+        actor_phone=patient.phone_e164,
+        person_id=patient.id,
+        payload={
+            "area": area.value,
+            "candidates": [
+                {
+                    "physio_id": str(row.physio_id),
+                    "distance_km": _json_distance(row.distance_km),
+                    "rating": row.rating,
+                    "price_kobo": row.price_kobo,
+                }
+                for row in top
+            ],
+        },
+    )
     return top
