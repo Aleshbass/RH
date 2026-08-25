@@ -84,6 +84,30 @@ def test_valid_charge_success_confirms(client, db_session, awaiting_booking, pay
     assert awaiting_booking.status == "confirmed"
 
 
+def test_confirmed_booking_accepts_new_event_id_without_second_enqueue(
+    client, db_session, awaiting_booking, paystack_signed_body
+):
+    from app.queue.tasks import BOOKING_CONFIRMED_QUEUE, _redis
+
+    redis_client = _redis()
+    redis_client.delete(BOOKING_CONFIRMED_QUEUE)
+    body, sig = paystack_signed_body
+    headers = {"x-paystack-signature": sig}
+    assert client.post("/webhooks/paystack", content=body, headers=headers).status_code == 200
+
+    payload = json.loads(body)
+    payload["data"]["id"] = int(PAYSTACK_EVENT_ID) + 1
+    second_body = json.dumps(payload).encode()
+    second_headers = {"x-paystack-signature": _sign(second_body)}
+    response = client.post(
+        "/webhooks/paystack", content=second_body, headers=second_headers
+    )
+    assert response.status_code == 200
+    db_session.refresh(awaiting_booking)
+    assert awaiting_booking.status == "confirmed"
+    assert redis_client.llen(BOOKING_CONFIRMED_QUEUE) == 1
+
+
 def test_duplicate_event_is_idempotent(client, db_session, awaiting_booking, paystack_signed_body):
     from app.queue.tasks import BOOKING_CONFIRMED_QUEUE, _redis
 

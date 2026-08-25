@@ -14,7 +14,7 @@ from app.db import get_session
 from app.models.booking import Booking
 from app.models.patient import Patient
 from app.models.paystack_event import PaystackEvent
-from app.models.types import AuditKind
+from app.models.types import AuditKind, BookingStatus
 from app.queue.tasks import enqueue_booking_confirmed
 
 router = APIRouter()
@@ -95,6 +95,9 @@ async def paystack_webhook(
                 "reference": reference,
             },
         )
+        return {"status": "ok"}
+
+    if booking.status == BookingStatus.CONFIRMED:
         return {"status": "ok"}
 
     advance_to_confirmed(session, booking.id, source="paystack_webhook")
