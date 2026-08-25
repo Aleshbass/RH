@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from math import atan2, cos, inf, radians, sin, sqrt
 from uuid import UUID
 
@@ -47,6 +47,14 @@ def patient_sort_key(patient: Patient) -> tuple[int, ...]:
     return (0 if getattr(patient, "urgent", False) else 1,)
 
 
+def _slot_sort_key(slot: datetime | None) -> datetime:
+    if slot is None:
+        return datetime.max.replace(tzinfo=timezone.utc)
+    if slot.tzinfo is None:
+        return slot.replace(tzinfo=timezone.utc)
+    return slot.astimezone(timezone.utc)
+
+
 def rank(
     patient: Patient,
     physios: list[Physiotherapist],
@@ -69,8 +77,14 @@ def rank(
         )
         for physio in physios
     ]
-    boost = patient_sort_key(patient)
-    ranked.sort(key=lambda row: (*boost, row.distance_km, -row.rating, row.price_kobo))
+
+    def quality(row: RankedPhysio) -> tuple[float, float, int]:
+        return (row.distance_km, -row.rating, row.price_kobo)
+
+    if getattr(patient, "urgent", False):
+        ranked.sort(key=lambda row: (_slot_sort_key(row.next_slot), *quality(row)))
+    else:
+        ranked.sort(key=quality)
     top = [
         row.model_copy(update={"display_name": f"Physio {chr(ord('A') + i)}"})
         for i, row in enumerate(ranked[:3])

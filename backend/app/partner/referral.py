@@ -41,7 +41,10 @@ _CONFIRMED_NOTICE = (
     "A patient you referred ({name}) has confirmed their booking. "
     "I'll update you when their first session is complete."
 )
-_PARTNER_URGENT = "I've flagged {phone} as urgent. They'll be matched first."
+_PARTNER_URGENT = (
+    "I've flagged {phone} as urgent. "
+    "I'll prioritise physios with sooner availability for them."
+)
 _PARTNER_URGENT_NEED_PHONE = (
     "Send the patient's WhatsApp number to flag them as urgent."
 )

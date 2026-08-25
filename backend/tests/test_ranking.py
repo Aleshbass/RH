@@ -254,6 +254,59 @@ def test_rank_raises_without_db_session(four_neuro_physios):
         rank(detached_patient, four_neuro_physios, ConditionArea.NEURO)
 
 
+def test_rank_urgent_prefers_sooner_slot_over_nearer_physio(db_session):
+    from app.matching.ranking import rank
+    from app.physio.availability import parse_availability, write_slots
+
+    urgent = Patient(
+        phone_e164="+2348000003971",
+        name="Urgent Ada",
+        location="Lagos",
+        lat=LAGOS_LAT,
+        lng=LAGOS_LNG,
+        urgent=True,
+    )
+    non_urgent = Patient(
+        phone_e164="+2348000003972",
+        name="Steady Chidi",
+        location="Lagos",
+        lat=LAGOS_LAT,
+        lng=LAGOS_LNG,
+        urgent=False,
+    )
+    db_session.add_all([urgent, non_urgent])
+    db_session.flush()
+
+    nearer_later = _physio(
+        db_session,
+        "+2348000003973",
+        lat=LAGOS_LAT,
+        lng=LAGOS_LNG,
+        price_kobo=15_000_00,
+        rating=4.5,
+    )
+    farther_sooner = _physio(
+        db_session,
+        "+2348000003974",
+        lat=LAGOS_LAT + 0.05,
+        lng=LAGOS_LNG,
+        price_kobo=15_000_00,
+        rating=4.5,
+    )
+    write_slots(
+        db_session, farther_sooner.id, parse_availability("free Mon-Fri 9-5")
+    )
+
+    physios = [nearer_later, farther_sooner]
+    urgent_out = rank(urgent, physios, ConditionArea.NEURO)
+    non_urgent_out = rank(non_urgent, physios, ConditionArea.NEURO)
+
+    assert urgent_out[0].physio_id == farther_sooner.id
+    assert urgent_out[0].next_slot is not None
+    assert non_urgent_out[0].physio_id == nearer_later.id
+    assert nearer_later.id in {row.physio_id for row in non_urgent_out}
+
+
 def test_urgent_patients_sort_before_non_urgent_same_specialty(db_session):
     from app.matching.ranking import patient_sort_key
     from app.models.partner import Partner

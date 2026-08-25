@@ -253,6 +253,9 @@ def test_partner_urgent_turn_flags_attributed_patient(db_session, partner, refer
     db_session.refresh(referred_patient)
     assert referred_patient.urgent is True
     assert "urgent" in result.reply_text.lower()
+    assert "matched first" not in result.reply_text.lower()
+    lowered = result.reply_text.lower()
+    assert "priority" in lowered or "sooner" in lowered or "availab" in lowered
 
 
 def test_partner_content_request_persists_row(db_session, partner, fake_llm):
