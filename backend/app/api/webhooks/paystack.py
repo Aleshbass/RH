@@ -17,6 +17,7 @@ from app.models.paystack_event import PaystackEvent
 from app.models.types import AuditKind, BookingStatus
 from app.physio.booking_alerts import notify_new_booking
 from app.physio.payouts import mark_payout_sent
+from app.partner.referral import notify_referring_partner
 from app.queue.tasks import enqueue_booking_confirmed
 
 router = APIRouter()
@@ -170,4 +171,5 @@ async def paystack_webhook(
             "Your booking is confirmed.",
         )
     notify_new_booking(session, booking.id)
+    notify_referring_partner(session, booking.id)
     return {"status": "ok"}

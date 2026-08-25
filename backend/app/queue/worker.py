@@ -19,6 +19,7 @@ from app.queue.tasks import (
     FAMILY_SAFETY_QUEUE,
     INBOUND_QUEUE,
     MAX_ATTEMPTS,
+    PARTNER_REFERRAL_QUEUE,
     PHYSIO_BOOKING_ALERT_QUEUE,
     PHYSIO_RELAY_QUEUE,
     PROCESSING_QUEUE,
@@ -224,6 +225,10 @@ def process_family_relay_once(timeout: int = 1) -> bool:
     return _drain_text_queue(FAMILY_RELAY_QUEUE, timeout=timeout)
 
 
+def process_partner_referral_once(timeout: int = 1) -> bool:
+    return _drain_text_queue(PARTNER_REFERRAL_QUEUE, timeout=timeout)
+
+
 def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
     client = _redis()
     try:
@@ -263,6 +268,10 @@ def run_forever(timeout: int = 5) -> None:
             process_family_relay_once(timeout=0)
         except Exception:
             logger.exception("family_relay job failed")
+        try:
+            process_partner_referral_once(timeout=0)
+        except Exception:
+            logger.exception("partner_referral job failed")
         try:
             process_queue_once(timeout=timeout)
         except Exception:

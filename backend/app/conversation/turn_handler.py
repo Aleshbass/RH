@@ -10,6 +10,7 @@ from app.conversation.orchestrator import decide_booking_substate, decide_phase,
 from app.conversation.state_manager import ConversationState, load, save_turn
 from app.family.access import apply_family_turn
 from app.family.relay import apply_pending_physio_answer, ask_physio, is_relay_ask
+from app.partner.referral import apply_inbound_code, apply_partner_turn, maybe_provision_from_referral
 from app.identity.permissions import authorize
 from app.identity.resolver import resolve
 from app.identity.unknown_sender import (
@@ -363,6 +364,33 @@ def _family_turn(
     )
 
 
+def _partner_turn(
+    session: Session,
+    identity: Identity,
+    user_text: str,
+    wa_message_id: str | None,
+) -> TurnResult:
+    language = mirror_language(user_text, None)
+    state = load(session, identity)
+    language = mirror_language(user_text, state.last_known_language)
+    reply = apply_partner_turn(session, identity.person_id, user_text)
+    save_turn(
+        session,
+        state,
+        user_text,
+        reply,
+        ExtractedTriage(),
+        PatientPhase.FIRST_CONTACT,
+        language,
+        wa_message_id,
+    )
+    return TurnResult(
+        reply_text=reply,
+        language=language,
+        phase=PatientPhase.FIRST_CONTACT,
+    )
+
+
 def handle_turn(
     session: Session,
     phone: str,
@@ -375,6 +403,8 @@ def handle_turn(
     location: tuple[float, float] | None = None,
 ) -> TurnResult:
     identity = resolve(session, phone)
+    if identity is None:
+        identity = maybe_provision_from_referral(session, phone, user_text)
     if identity is None:
         identity = maybe_provision_patient(session, phone, user_text)
     if identity is None:
@@ -417,6 +447,15 @@ def handle_turn(
             session, identity, user_text, wa_message_id, paystack=paystack
         )
 
+    if identity.persona == Persona.PARTNER:
+        if not authorize(identity, "partner_refer"):
+            return TurnResult(
+                reply_text=_LATER_PATH,
+                language=mirror_language(user_text, None),
+                phase=PatientPhase.FIRST_CONTACT,
+            )
+        return _partner_turn(session, identity, user_text, wa_message_id)
+
     if not authorize(identity, "triage"):
         return TurnResult(
             reply_text=_LATER_PATH,
@@ -425,6 +464,8 @@ def handle_turn(
         )
 
     state = load(session, identity)
+    if identity.persona == Persona.PATIENT:
+        apply_inbound_code(session, identity.person_id, user_text)
     phase = decide_phase(state)
     language = mirror_language(user_text, state.last_known_language)
     if _is_escalated(session, state):
