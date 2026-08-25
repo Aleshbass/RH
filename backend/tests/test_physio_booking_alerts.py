@@ -9,25 +9,27 @@ from app.models.triage_session import TriageSession
 from app.models.types import BookingStatus, ConditionArea
 
 
-@pytest.fixture
-def confirmed_booking(db_session):
+def _seed_patient_physio(db_session, *, patient_phone, physio_phone, physio=None):
     patient = Patient(
-        phone_e164="+2348000007001",
+        phone_e164=patient_phone,
         name="Ada Okonkwo",
         age=32,
         location="Lagos",
     )
-    physio = Physiotherapist(
-        phone_e164="+2348000007101",
-        specialty_tags=["msk"],
-        lat=6.5244,
-        lng=3.3792,
-        price_kobo=2_000_000,
-        rating=4.5,
-        verified=True,
-        service_radius_km=10.0,
-    )
-    db_session.add_all([patient, physio])
+    if physio is None:
+        physio = Physiotherapist(
+            phone_e164=physio_phone,
+            specialty_tags=["msk"],
+            lat=6.5244,
+            lng=3.3792,
+            price_kobo=2_000_000,
+            rating=4.5,
+            verified=True,
+            service_radius_km=10.0,
+        )
+        db_session.add_all([patient, physio])
+    else:
+        db_session.add(patient)
     db_session.flush()
     db_session.add(
         TriageSession(
@@ -42,6 +44,16 @@ def confirmed_booking(db_session):
             status="summarised",
         )
     )
+    return patient, physio
+
+
+@pytest.fixture
+def confirmed_booking(db_session):
+    patient, physio = _seed_patient_physio(
+        db_session,
+        patient_phone="+2348000007001",
+        physio_phone="+2348000007101",
+    )
     booking = create_draft(
         db_session,
         patient.id,
@@ -52,6 +64,26 @@ def confirmed_booking(db_session):
     )
     mark_awaiting_payment(booking, "ref_physio_alert")
     advance_to_confirmed(db_session, booking.id, source="paystack_webhook")
+    db_session.flush()
+    return booking
+
+
+@pytest.fixture
+def awaiting_payment_booking(db_session):
+    patient, physio = _seed_patient_physio(
+        db_session,
+        patient_phone="+2348000007002",
+        physio_phone="+2348000007102",
+    )
+    booking = create_draft(
+        db_session,
+        patient.id,
+        physio.id,
+        "teleconsult",
+        slot_start=None,
+        amount_kobo=2_000_000,
+    )
+    mark_awaiting_payment(booking, "ref_physio_unpaid")
     db_session.flush()
     return booking
 
@@ -148,3 +180,68 @@ def test_alert_and_reply_never_call_advance_to_confirmed():
         Path(__file__).resolve().parents[1] / "app" / "physio" / "booking_alerts.py"
     ).read_text()
     assert "advance_to_confirmed" not in src
+
+
+@pytest.mark.parametrize("reply", ["accept", "decline"])
+def test_accept_decline_on_awaiting_payment_does_not_set_physio_response(
+    db_session, awaiting_payment_booking, reply
+):
+    from app.physio.booking_alerts import apply_physio_reply
+
+    result = apply_physio_reply(db_session, awaiting_payment_booking.physio_id, reply)
+    db_session.refresh(awaiting_payment_booking)
+    assert result is None
+    assert awaiting_payment_booking.physio_response is None
+    assert awaiting_payment_booking.status == BookingStatus.AWAITING_PAYMENT
+
+
+def test_accept_targets_confirmed_not_newer_awaiting_payment(db_session, confirmed_booking):
+    from app.physio.booking_alerts import apply_physio_reply
+
+    physio = db_session.get(Physiotherapist, confirmed_booking.physio_id)
+    patient, _ = _seed_patient_physio(
+        db_session,
+        patient_phone="+2348000007003",
+        physio_phone="+2348000007103",
+        physio=physio,
+    )
+    unpaid = create_draft(
+        db_session,
+        patient.id,
+        physio.id,
+        "teleconsult",
+        slot_start=None,
+        amount_kobo=2_000_000,
+    )
+    mark_awaiting_payment(unpaid, "ref_physio_newer_unpaid")
+    db_session.flush()
+    confirmed_booking.created_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    unpaid.created_at = datetime(2026, 8, 25, tzinfo=timezone.utc)
+    db_session.flush()
+
+    apply_physio_reply(db_session, physio.id, "accept")
+    db_session.refresh(confirmed_booking)
+    db_session.refresh(unpaid)
+    assert confirmed_booking.status == BookingStatus.CONFIRMED
+    assert confirmed_booking.physio_response == "accepted"
+    assert unpaid.status == BookingStatus.AWAITING_PAYMENT
+    assert unpaid.physio_response is None
+
+
+def test_accept_without_confirmed_booking_reaches_onboarding(db_session, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+    from app.physio.booking_alerts import apply_physio_reply
+
+    physio = Physiotherapist(phone_e164="+2348000007201")
+    db_session.add(physio)
+    db_session.flush()
+
+    assert apply_physio_reply(db_session, physio.id, "accept") is None
+
+    result = handle_turn(db_session, physio.phone_e164, "accept", fake_llm)
+    db_session.refresh(physio)
+    lower = result.reply_text.lower()
+    assert "paid booking waiting" not in lower
+    assert physio.onboarding_status == "collecting"
+    assert "mrtb" in lower or "specialty" in lower or "credential" in lower
+    assert fake_llm.complete_prompts == []

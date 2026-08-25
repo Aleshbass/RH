@@ -23,7 +23,6 @@ _RESCHEDULE_RE = re.compile(r"(?i)\breschedule\b")
 
 _ACCEPTED_REPLY = "Thanks — you've accepted this booking."
 _DECLINED_REPLY = "Got it — you've declined this booking. Admin will follow up."
-_NO_BOOKING = "I don't have a paid booking waiting for a reply."
 
 
 def notify_new_booking(session: Session, booking_id: UUID | str) -> str:
@@ -40,11 +39,12 @@ def notify_new_booking(session: Session, booking_id: UUID | str) -> str:
 
 
 def apply_physio_reply(session: Session, physio_id: UUID, text: str) -> str | None:
-    booking = _latest_mutable_booking(session, physio_id)
+    confirmed = _latest_confirmed_booking(session, physio_id)
+    mutable = _latest_mutable_booking(session, physio_id)
     if _DECLINE_RE.search(text or ""):
-        if booking is None:
-            return _NO_BOOKING
-        _set_response(session, booking, "declined")
+        if confirmed is None:
+            return None
+        _set_response(session, confirmed, "declined")
         physio = session.get(Physiotherapist, physio_id)
         append(
             session,
@@ -53,33 +53,33 @@ def apply_physio_reply(session: Session, physio_id: UUID, text: str) -> str | No
             person_id=physio_id,
             payload={
                 "decision": "physio_declined",
-                "booking_id": str(booking.id),
-                "status": str(booking.status),
+                "booking_id": str(confirmed.id),
+                "status": str(confirmed.status),
             },
         )
         return _DECLINED_REPLY
     if _ACCEPT_RE.search(text or ""):
-        if booking is None:
-            return _NO_BOOKING
-        _set_response(session, booking, "accepted")
+        if confirmed is None:
+            return None
+        _set_response(session, confirmed, "accepted")
         return _ACCEPTED_REPLY
     if _CANCEL_RE.search(text or ""):
-        if booking is None:
+        if mutable is None:
             return None
         physio = session.get(Physiotherapist, physio_id)
         return cancel_notify(
             session,
-            booking,
+            mutable,
             actor_phone=physio.phone_e164 if physio is not None else "",
             person_id=physio_id,
         )
     if _RESCHEDULE_RE.search(text or ""):
-        if booking is None:
+        if mutable is None:
             return None
         slot = parse_slot(text)
         if slot is None:
             return "Tell me the new time (for example 2026-09-01T10:00:00+00:00)."
-        reschedule(booking, slot)
+        reschedule(mutable, slot)
         return f"I've moved the session to {slot.isoformat()}."
     return None
 
@@ -87,6 +87,17 @@ def apply_physio_reply(session: Session, physio_id: UUID, text: str) -> str | No
 def _set_response(session: Session, booking: Booking, value: str) -> None:
     booking.physio_response = value
     session.flush()
+
+
+def _latest_confirmed_booking(session: Session, physio_id: UUID) -> Booking | None:
+    return session.scalar(
+        select(Booking)
+        .where(
+            Booking.physio_id == physio_id,
+            Booking.status == BookingStatus.CONFIRMED,
+        )
+        .order_by(Booking.created_at.desc())
+    )
 
 
 def _latest_mutable_booking(session: Session, physio_id: UUID) -> Booking | None:
