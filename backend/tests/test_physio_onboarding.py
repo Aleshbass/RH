@@ -107,6 +107,34 @@ def test_submitted_tells_status_without_approving(db_session, physio):
     assert "48" in lower
 
 
+def test_collecting_credential_text_with_weekday_hours_does_not_recap_availability(
+    db_session, physio, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.availability_slot import AvailabilitySlot
+
+    handle_turn(db_session, physio.phone_e164, "MRTB 12345", fake_llm)
+    db_session.refresh(physio)
+    assert physio.onboarding_status == "collecting"
+
+    result = handle_turn(
+        db_session,
+        physio.phone_e164,
+        "I can send credentials Monday 2–4",
+        fake_llm,
+        media=["https://files/cred.jpg"],
+    )
+    db_session.refresh(physio)
+    lower = result.reply_text.lower()
+    assert "reply yes" not in lower
+    assert "calendar" not in lower
+    assert "specialty" in lower or "specialt" in lower
+    assert physio.onboarding_status == "collecting"
+    assert physio.mrtb_number == "12345"
+    assert physio.credential_urls == ["https://files/cred.jpg"]
+    assert db_session.query(AvailabilitySlot).filter_by(physio_id=physio.id).count() == 0
+
+
 def test_unknown_physio_claim_creates_row_and_onboards(db_session, fake_llm):
     from app.conversation.turn_handler import handle_turn
     from app.identity.resolver import resolve

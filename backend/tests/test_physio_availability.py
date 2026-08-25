@@ -74,6 +74,30 @@ def test_handle_turn_writes_slots_only_on_yes(db_session, physio, fake_llm):
     assert "09:00" in result.reply_text and "17:00" in result.reply_text
 
 
+def test_no_after_recap_clears_pending_later_yes_does_not_write(db_session, physio, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.availability_slot import AvailabilitySlot
+
+    handle_turn(db_session, physio.phone_e164, "free Mon-Fri 9-5", fake_llm)
+    handle_turn(db_session, physio.phone_e164, "no", fake_llm)
+    assert db_session.query(AvailabilitySlot).filter_by(physio_id=physio.id).count() == 0
+    handle_turn(db_session, physio.phone_e164, "yes", fake_llm)
+    assert db_session.query(AvailabilitySlot).filter_by(physio_id=physio.id).count() == 0
+
+
+def test_onboarding_reply_after_recap_clears_pending_later_yes_does_not_write(
+    db_session, physio, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.availability_slot import AvailabilitySlot
+
+    handle_turn(db_session, physio.phone_e164, "free Mon-Fri 9-5", fake_llm)
+    handle_turn(db_session, physio.phone_e164, "MRTB 12345", fake_llm)
+    assert db_session.query(AvailabilitySlot).filter_by(physio_id=physio.id).count() == 0
+    handle_turn(db_session, physio.phone_e164, "yes", fake_llm)
+    assert db_session.query(AvailabilitySlot).filter_by(physio_id=physio.id).count() == 0
+
+
 def test_availability_turn_does_not_run_patient_triage(db_session, physio):
     from app.conversation.turn_handler import handle_turn
     from app.models.triage_session import TriageSession

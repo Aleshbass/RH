@@ -51,6 +51,9 @@ _HOURS_RE = re.compile(
     r"(?i)(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:-|–|to)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?"
 )
 _CONFIRM_RE = re.compile(r"^\s*(yes|yeah|yep)\b", re.IGNORECASE)
+_SCHEDULE_INTENT_RE = re.compile(
+    r"(?i)\b(free|available|availability|hours|schedule|calendar)\b"
+)
 
 PENDING_WINDOWS_KEY = "pending_availability_windows"
 _LOOKAHEAD_DAYS = 21
@@ -137,7 +140,7 @@ def apply_availability_turn(
     conversation: Conversation,
 ) -> str | None:
     parsed = parse_availability(text)
-    if parsed:
+    if parsed and _is_schedule_intent(text):
         _set_pending(conversation, parsed)
         schedule = _format_windows(parsed)
         return (
@@ -151,7 +154,14 @@ def apply_availability_turn(
         schedule = _format_windows(pending)
         return f"Saved. You're free {schedule}."
 
+    if pending:
+        _clear_pending(conversation)
+
     return None
+
+
+def _is_schedule_intent(text: str) -> bool:
+    return bool(_SCHEDULE_INTENT_RE.search(text or ""))
 
 
 def _parse_days(text: str) -> list[int]:
