@@ -9,6 +9,7 @@ from app.audit.logger import append
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
 from app.models.types import AuditKind, ConditionArea
+from app.physio.availability import next_open_slot
 
 _EARTH_RADIUS_KM = 6371.0
 
@@ -47,6 +48,12 @@ def rank(
     physios: list[Physiotherapist],
     area: ConditionArea,
 ) -> list[RankedPhysio]:
+    session = object_session(patient)
+    if session is None:
+        raise RuntimeError(
+            "rank requires patient to be attached to a SQLAlchemy session for MATCH audit"
+        )
+
     ranked = [
         RankedPhysio(
             physio_id=physio.id,
@@ -54,7 +61,7 @@ def rank(
             price_kobo=physio.price_kobo,
             rating=physio.rating,
             distance_km=_distance_km(patient, physio),
-            next_slot=None,
+            next_slot=next_open_slot(session, physio.id),
         )
         for physio in physios
     ]
@@ -63,12 +70,6 @@ def rank(
         row.model_copy(update={"display_name": f"Physio {chr(ord('A') + i)}"})
         for i, row in enumerate(ranked[:3])
     ]
-
-    session = object_session(patient)
-    if session is None:
-        raise RuntimeError(
-            "rank requires patient to be attached to a SQLAlchemy session for MATCH audit"
-        )
     append(
         session,
         kind=AuditKind.MATCH,

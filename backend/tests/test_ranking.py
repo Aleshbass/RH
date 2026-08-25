@@ -218,6 +218,27 @@ def test_rank_next_slot_is_none(db_session, patient, four_neuro_physios):
     assert all(x.next_slot is None for x in out)
 
 
+def test_rank_next_slot_from_written_windows(db_session, patient, four_neuro_physios):
+    from app.matching.ranking import rank
+    from app.physio.availability import parse_availability, write_slots
+
+    write_slots(
+        db_session, four_neuro_physios[0].id, parse_availability("free Mon-Fri 9-5")
+    )
+    out = rank(patient, four_neuro_physios, ConditionArea.NEURO)
+    by_id = {row.physio_id: row for row in out}
+    slotted = by_id.get(four_neuro_physios[0].id)
+    if slotted is None:
+        slotted = next(row for row in out if row.next_slot is not None)
+    assert slotted.next_slot is not None
+    assert slotted.next_slot.weekday() <= 4
+    assert 9 <= slotted.next_slot.hour < 17
+    assert all(
+        by_id[pid].next_slot is None
+        for pid in (p.id for p in four_neuro_physios[1:3] if p.id in by_id)
+    )
+
+
 def test_rank_raises_without_db_session(four_neuro_physios):
     from app.matching.ranking import rank
 

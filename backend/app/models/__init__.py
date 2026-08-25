@@ -1,5 +1,6 @@
 from app.models.admin import Admin
 from app.models.audit_log import AuditEvent
+from app.models.availability_slot import AvailabilitySlot
 from app.models.base import Base
 from app.models.booking import Booking
 from app.models.conversation import Conversation, Message
@@ -25,6 +26,7 @@ from app.models.types import (
 __all__ = [
     "Admin",
     "AuditEvent",
+    "AvailabilitySlot",
     "AuditKind",
     "Base",
     "Booking",

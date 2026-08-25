@@ -32,6 +32,7 @@ from app.models.types import (
 )
 from app.safety.escalation import patient_message
 from app.safety.evaluator import evaluate
+from app.physio.availability import apply_availability_turn
 from app.physio.onboarding import apply_onboarding_turn
 from app.triage.extraction import infer_condition_area, merge_extraction
 from app.triage.question_batching import grouped_followup, missing_fields
@@ -208,7 +209,7 @@ def _reply_after_extract(
     return summary, PatientPhase.POST_TRIAGE
 
 
-def _physio_onboarding_turn(
+def _physio_turn(
     session: Session,
     identity: Identity,
     user_text: str,
@@ -216,15 +217,20 @@ def _physio_onboarding_turn(
     wa_message_id: str | None,
 ) -> TurnResult:
     physio = session.get(Physiotherapist, identity.person_id)
+    language = mirror_language(user_text, None)
     if physio is None:
         return TurnResult(
             reply_text=_LATER_PATH,
-            language=mirror_language(user_text, None),
+            language=language,
             phase=PatientPhase.FIRST_CONTACT,
         )
-    reply = apply_onboarding_turn(session, physio, user_text, media)
-    language = mirror_language(user_text, None)
     state = load(session, identity)
+    conversation = session.get(Conversation, state.conversation_id)
+    reply = None
+    if conversation is not None:
+        reply = apply_availability_turn(session, physio.id, user_text, conversation)
+    if reply is None:
+        reply = apply_onboarding_turn(session, physio, user_text, media)
     save_turn(
         session,
         state,
@@ -266,8 +272,8 @@ def handle_turn(
             phase=PatientPhase.FIRST_CONTACT,
         )
 
-    if authorize(identity, "physio_onboard"):
-        return _physio_onboarding_turn(
+    if authorize(identity, "physio_onboard") or authorize(identity, "physio_availability"):
+        return _physio_turn(
             session, identity, user_text, media, wa_message_id
         )
 
