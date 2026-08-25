@@ -16,7 +16,12 @@ from app.models.types import PermissionTier
 
 _PHONE_TOKEN = r"(?:\+?234[\d\s-]{10,}|\b0\d{10}\b)"
 _PHONE_RE = re.compile(_PHONE_TOKEN)
-_FAMILY_CUE_RE = re.compile(r"(?i)\b(?:family|access)\b")
+_KINSHIP_RE = re.compile(
+    r"(?i)\b(?:family|mum|mom|mummy|mama|mother|dad|daddy|papa|father|"
+    r"sister|brother|sis|bro|wife|husband|spouse|son|daughter|child|kids?|"
+    r"auntie|aunt|uncle|cousin|nana|grand(?:ma|pa|mother|father)|in-laws?)\b"
+)
+_ACCESS_CUE_RE = re.compile(r"(?i)\baccess\b")
 _START_ADD_RE = re.compile(r"(?i)^\s*add\b")
 _START_REVOKE_RE = re.compile(r"(?i)^\s*revoke\b")
 _START_REGISTER_RE = re.compile(r"(?i)^\s*register\b")
@@ -28,7 +33,8 @@ _ADJ_REGISTER_RE = re.compile(rf"(?i)\bregister\s+{_PHONE_TOKEN}")
 _ADJ_REMOVE_RE = re.compile(rf"(?i)\bremove\s+{_PHONE_TOKEN}")
 _ADJ_SET_RE = re.compile(rf"(?i)\b(?:give|grant|change|set|make)\s+{_PHONE_TOKEN}")
 _VIEW_ONLY_RE = re.compile(r"(?i)\bview[\s_-]?only\b")
-_FULL_RE = re.compile(r"(?i)\bfull(?:\s+access)?\b")
+_FULL_ACCESS_RE = re.compile(r"(?i)\bfull\s+access\b")
+_FULL_AFTER_PHONE_RE = re.compile(rf"(?i){_PHONE_TOKEN}\s*full\b")
 
 _LINKED_ELSEWHERE = "That number is already linked to another patient."
 _PERSONA_IN_USE = (
@@ -125,9 +131,10 @@ def revoke(session: Session, patient_id: UUID, phone_e164: str) -> None:
 
 
 def _parse_tier(text: str) -> PermissionTier | None:
-    if _VIEW_ONLY_RE.search(text or ""):
+    raw = text or ""
+    if _VIEW_ONLY_RE.search(raw):
         return PermissionTier.VIEW_ONLY
-    if _FULL_RE.search(text or ""):
+    if _FULL_ACCESS_RE.search(raw) or _FULL_AFTER_PHONE_RE.search(raw):
         return PermissionTier.FULL_ACCESS
     return None
 
@@ -138,17 +145,19 @@ def parse_family_intent(text: str) -> tuple[str, str, PermissionTier | None] | N
     if match is None:
         return None
     phone = match.group(0)
-    if _ADJ_REVOKE_RE.search(raw) or _START_REVOKE_RE.search(raw):
+    tier = _parse_tier(raw)
+    kinship = _KINSHIP_RE.search(raw) is not None
+    register_cue = kinship or _ACCESS_CUE_RE.search(raw) is not None
+    if _ADJ_REVOKE_RE.search(raw) or (kinship and _START_REVOKE_RE.search(raw)):
         return ("revoke", phone, None)
-    if _ADJ_ADD_RE.search(raw) or _START_ADD_RE.search(raw):
-        return ("add", phone, _parse_tier(raw))
-    has_cue = _FAMILY_CUE_RE.search(raw) is not None
-    if has_cue and (_ADJ_REMOVE_RE.search(raw) or _START_REMOVE_RE.search(raw)):
+    if _ADJ_ADD_RE.search(raw) or (kinship and _START_ADD_RE.search(raw)):
+        return ("add", phone, tier)
+    if register_cue and (_ADJ_REMOVE_RE.search(raw) or _START_REMOVE_RE.search(raw)):
         return ("revoke", phone, None)
-    if has_cue and (_ADJ_REGISTER_RE.search(raw) or _START_REGISTER_RE.search(raw)):
-        return ("add", phone, _parse_tier(raw))
-    if (_ADJ_SET_RE.search(raw) or _START_SET_RE.search(raw)) and _parse_tier(raw) is not None:
-        return ("set_tier", phone, _parse_tier(raw))
+    if register_cue and (_ADJ_REGISTER_RE.search(raw) or _START_REGISTER_RE.search(raw)):
+        return ("add", phone, tier)
+    if (_ADJ_SET_RE.search(raw) or (kinship and _START_SET_RE.search(raw))) and tier is not None:
+        return ("set_tier", phone, tier)
     return None
 
 

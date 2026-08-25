@@ -239,17 +239,31 @@ def test_add_existing_patient(db_session, patient, fake_llm):
 def test_family_intent_requires_command_shape():
     assert parse_family_intent("add +2348110000023")[0] == "add"
     assert parse_family_intent("add +2348110000023 view-only")[0] == "add"
-    assert parse_family_intent("add +2348110000023 full")[0] == "add"
+    adjacent_full = parse_family_intent("add +2348110000023 full")
+    assert adjacent_full[0] == "add"
+    assert adjacent_full[2] == PermissionTier.FULL_ACCESS
     assert parse_family_intent("revoke +2348110000023")[0] == "revoke"
     assert parse_family_intent("Add my mum +2348110000023")[0] == "add"
+    assert parse_family_intent("Add my dad +2348110000023")[0] == "add"
+    assert parse_family_intent("Add my sister +2348110000023")[0] == "add"
     assert parse_family_intent("register family +2348110000023")[0] == "add"
     assert parse_family_intent("remove family access +2348110000023")[0] == "revoke"
+    mum_full = parse_family_intent("Add my mum +2348110000023 she feels full")
+    assert mum_full[0] == "add"
+    assert mum_full[2] is None
 
     assert parse_family_intent("register +2348110000023") is None
     assert parse_family_intent("remove +2348110000023") is None
     assert parse_family_intent("I need to register +2348110000023") is None
     assert parse_family_intent("please remove +2348110000023") is None
     assert parse_family_intent("chest pain please add ice and call +2348110000023") is None
+    assert parse_family_intent(
+        "Add ice and call +2348110000023 if the chest pain continues"
+    ) is None
+    assert parse_family_intent(
+        "Make ice packs and call +2348110000023 if you feel full"
+    ) is None
+    assert parse_family_intent("Set a reminder and call +2348110000023") is None
 
 
 def test_uncertain_family_parse_falls_through_to_safety(db_session, patient, fake_llm):
@@ -264,6 +278,21 @@ def test_uncertain_family_parse_falls_through_to_safety(db_session, patient, fak
     assert result.safety is not None
     assert result.safety.fired is True
     assert resolve(db_session, "+2348110000020") is None
+    assert "book" not in result.reply_text.lower()
+
+
+def test_leading_add_ice_with_phone_still_hits_safety(db_session, patient, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    fake_llm.extraction = {"flags": {"chest_pain": True}}
+    fake_llm.reply = "Let's book a physio for tomorrow!"
+    text = "Add ice and call +2348110000026 if the chest pain continues"
+    assert parse_family_intent(text) is None
+    result = handle_turn(db_session, patient.phone_e164, text, fake_llm)
+    assert result.blocked_by_safety is True
+    assert result.safety is not None
+    assert result.safety.fired is True
+    assert resolve(db_session, "+2348110000026") is None
     assert "book" not in result.reply_text.lower()
 
 
