@@ -15,10 +15,12 @@ from app.models.types import AuditKind, PatientPhase, TurnResult
 from app.queue.tasks import (
     BOOKING_CONFIRMED_QUEUE,
     DEAD_LETTER_QUEUE,
+    FAMILY_RELAY_QUEUE,
     FAMILY_SAFETY_QUEUE,
     INBOUND_QUEUE,
     MAX_ATTEMPTS,
     PHYSIO_BOOKING_ALERT_QUEUE,
+    PHYSIO_RELAY_QUEUE,
     PROCESSING_QUEUE,
     _redis,
     send_whatsapp_text,
@@ -214,6 +216,14 @@ def process_family_safety_once(timeout: int = 1) -> bool:
     return _drain_text_queue(FAMILY_SAFETY_QUEUE, timeout=timeout)
 
 
+def process_physio_relay_once(timeout: int = 1) -> bool:
+    return _drain_text_queue(PHYSIO_RELAY_QUEUE, timeout=timeout)
+
+
+def process_family_relay_once(timeout: int = 1) -> bool:
+    return _drain_text_queue(FAMILY_RELAY_QUEUE, timeout=timeout)
+
+
 def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
     client = _redis()
     try:
@@ -245,6 +255,14 @@ def run_forever(timeout: int = 5) -> None:
             process_family_safety_once(timeout=0)
         except Exception:
             logger.exception("family_safety job failed")
+        try:
+            process_physio_relay_once(timeout=0)
+        except Exception:
+            logger.exception("physio_relay job failed")
+        try:
+            process_family_relay_once(timeout=0)
+        except Exception:
+            logger.exception("family_relay job failed")
         try:
             process_queue_once(timeout=timeout)
         except Exception:

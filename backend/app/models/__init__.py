@@ -10,6 +10,7 @@ from app.models.patient import Patient
 from app.models.payout import Payout
 from app.models.paystack_event import PaystackEvent
 from app.models.physiotherapist import Physiotherapist
+from app.models.relay import RelayThread
 from app.models.session_note import SessionNote
 from app.models.triage_session import TriageSession
 from app.models.types import (
@@ -48,6 +49,7 @@ __all__ = [
     "PermissionTier",
     "Persona",
     "Physiotherapist",
+    "RelayThread",
     "SafetyResult",
     "TriageSession",
     "TurnResult",

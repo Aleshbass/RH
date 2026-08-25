@@ -9,6 +9,7 @@ from app.conversation.language import mirror_language
 from app.conversation.orchestrator import decide_booking_substate, decide_phase, has_narrative
 from app.conversation.state_manager import ConversationState, load, save_turn
 from app.family.access import apply_family_turn
+from app.family.relay import apply_pending_physio_answer, ask_physio, is_relay_ask
 from app.identity.permissions import authorize
 from app.identity.resolver import resolve
 from app.identity.unknown_sender import (
@@ -246,6 +247,8 @@ def _physio_turn(
     state = load(session, identity)
     conversation = session.get(Conversation, state.conversation_id)
     reply = apply_physio_reply(session, physio.id, user_text, conversation)
+    if reply is None:
+        reply = apply_pending_physio_answer(session, physio.id, user_text, conversation)
     if reply is None and authorize(identity, "physio_payout"):
         reply = apply_payout_turn(session, physio.id, user_text, paystack=paystack)
     if reply is None:
@@ -325,7 +328,10 @@ def _family_turn(
     language = mirror_language(user_text, family_state.last_known_language)
     patient_state = load(session, _patient_actor(patient))
     reply = None
-    if authorize(identity, "book") or authorize(identity, "pay"):
+    if is_relay_ask(user_text):
+        thread = ask_physio(session, identity.person_id, user_text)
+        reply = thread.family_visible_text or ""
+    if reply is None and (authorize(identity, "book") or authorize(identity, "pay")):
         leftover = missing_fields(patient_state.extracted)
         book_intent = bool(re.search(r"\bbook\b", user_text, re.I))
         reply = handle_booking_turn(
