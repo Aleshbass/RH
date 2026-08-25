@@ -68,6 +68,22 @@ def enqueue_inbound(
     return bool(result)
 
 
+BOOKING_CONFIRMED_QUEUE = "joy:booking_confirmed"
+
+
+def enqueue_booking_confirmed(phone: str, booking_id: str, text: str) -> None:
+    _redis().lpush(
+        BOOKING_CONFIRMED_QUEUE,
+        json.dumps(
+            {
+                "phone": phone,
+                "booking_id": str(booking_id),
+                "text": text,
+            }
+        ),
+    )
+
+
 def send_whatsapp_text(phone: str, text: str) -> None:
     settings = get_settings()
     if not settings.whatsapp_access_token or not settings.whatsapp_phone_number_id:

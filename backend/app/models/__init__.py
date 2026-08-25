@@ -6,6 +6,7 @@ from app.models.conversation import Conversation, Message
 from app.models.family_member import FamilyMember
 from app.models.partner import Partner
 from app.models.patient import Patient
+from app.models.paystack_event import PaystackEvent
 from app.models.physiotherapist import Physiotherapist
 from app.models.triage_session import TriageSession
 from app.models.types import (
@@ -37,6 +38,7 @@ __all__ = [
     "Partner",
     "Patient",
     "PatientPhase",
+    "PaystackEvent",
     "PermissionTier",
     "Persona",
     "Physiotherapist",
