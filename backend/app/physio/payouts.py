@@ -16,7 +16,9 @@ from app.models.types import AuditKind, BookingStatus
 
 _PAYOUT_RE = re.compile(r"(?i)\b(payout|withdraw(?:al)?)\b")
 _EARNINGS_RE = re.compile(r"(?i)\b(earnings|weekly statement)\b")
-_AMOUNT_RE = re.compile(r"(?i)(\d[\d,]*)\s*(kobo)?")
+_KOBO_AMOUNT_RE = re.compile(r"(?i)(\d[\d,]*)\s*kobo")
+_NAIRA_AMOUNT_RE = re.compile(r"(?i)(?:₦\s*)(\d[\d,]*)|(\d[\d,]*)\s*naira")
+_BARE_AMOUNT_RE = re.compile(r"(?i)(\d[\d,]*)")
 
 
 def request_payout(
@@ -33,14 +35,11 @@ def request_payout(
         raise ValueError(f"physio not found: {physio_id}")
     reference = f"payout_{uuid4().hex}"
     recipient = f"RCP_{physio_id}"
-    result = _initiate_transfer(
-        paystack, amount_kobo, recipient, reference, reason="Joy physio payout"
-    )
     payout = Payout(
         physio_id=physio_id,
         amount_kobo=amount_kobo,
         status="requested",
-        transfer_code=str(result.get("transfer_code") or reference),
+        transfer_code=None,
     )
     session.add(payout)
     session.flush()
@@ -57,6 +56,14 @@ def request_payout(
             "transfer_code": payout.transfer_code,
         },
     )
+    try:
+        result = _initiate_transfer(
+            paystack, amount_kobo, recipient, reference, reason="Joy physio payout"
+        )
+        payout.transfer_code = str(result.get("transfer_code") or reference)
+        session.flush()
+    except Exception:
+        pass
     return payout
 
 
@@ -117,6 +124,11 @@ def apply_payout_turn(session: Session, physio_id: UUID, text: str, *, paystack=
         return "Tell me the payout amount in kobo, for example: payout 500000 kobo"
     payout = request_payout(session, physio_id, amount, paystack=paystack)
     naira = payout.amount_kobo / 100
+    if not payout.transfer_code:
+        return (
+            f"Payout of ₦{naira:,.0f} requested. "
+            "Paystack transfer failed — we'll retry."
+        )
     return f"Payout of ₦{naira:,.0f} requested."
 
 
@@ -127,12 +139,19 @@ def _initiate_transfer(paystack, amount_kobo: int, recipient: str, reference: st
 
 
 def _parse_amount_kobo(text: str) -> int | None:
-    match = _AMOUNT_RE.search(text)
-    if match is None:
+    kobo = _KOBO_AMOUNT_RE.search(text)
+    if kobo:
+        return int(kobo.group(1).replace(",", ""))
+    naira = _NAIRA_AMOUNT_RE.search(text)
+    if naira:
+        raw = int((naira.group(1) or naira.group(2)).replace(",", ""))
+        return raw * 100
+    amounts = list(_BARE_AMOUNT_RE.finditer(text))
+    if not amounts:
         return None
-    raw = int(match.group(1).replace(",", ""))
-    if match.group(2):
-        return raw
+    if len(amounts) > 1:
+        return None
+    raw = int(amounts[0].group(1).replace(",", ""))
     return raw * 100 if raw < 100_000 else raw
 
 

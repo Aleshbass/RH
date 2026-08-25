@@ -55,7 +55,9 @@ _LATER_PATH = (
 )
 _MID_ACK = "Thanks, I've got that."
 _DASHBOARD_RE = re.compile(
-    r"(?i)\b(bio|profile photo|pricing|price list|\brates\b)\b"
+    r"(?i)(?:\b(?:update|edit|change|set)\b.{0,40}\b"
+    r"(?:bio|photo|pricing|price list|rates|credentials)\b"
+    r"|\b(?:my bio|my pricing|my rates|profile photo|price list|my credentials)\b)"
 )
 _DASHBOARD_REPLY = (
     "That lives on the web dashboard, not WhatsApp. I can't edit bio, photo, pricing, or credentials here."
@@ -227,6 +229,7 @@ def _physio_turn(
     media: list[str] | None,
     wa_message_id: str | None,
     llm: LLMClient,
+    paystack=None,
 ) -> TurnResult:
     physio = session.get(Physiotherapist, identity.person_id)
     language = mirror_language(user_text, None)
@@ -238,17 +241,15 @@ def _physio_turn(
         )
     state = load(session, identity)
     conversation = session.get(Conversation, state.conversation_id)
-    reply = None
-    if _DASHBOARD_RE.search(user_text or ""):
-        reply = _DASHBOARD_REPLY
+    reply = apply_physio_reply(session, physio.id, user_text)
     if reply is None:
-        reply = apply_physio_reply(session, physio.id, user_text)
-    if reply is None:
-        reply = apply_payout_turn(session, physio.id, user_text)
+        reply = apply_payout_turn(session, physio.id, user_text, paystack=paystack)
     if reply is None:
         reply = apply_checkin_turn(session, physio.id, user_text)
     if reply is None:
         reply = apply_note_turn(session, physio.id, user_text, llm)
+    if reply is None and _DASHBOARD_RE.search(user_text or ""):
+        reply = _DASHBOARD_REPLY
     if reply is None and conversation is not None:
         reply = apply_availability_turn(session, physio.id, user_text, conversation)
     if reply is None:
@@ -296,7 +297,7 @@ def handle_turn(
 
     if identity.persona == Persona.PHYSIO:
         return _physio_turn(
-            session, identity, user_text, media, wa_message_id, llm
+            session, identity, user_text, media, wa_message_id, llm, paystack=paystack
         )
 
     if not authorize(identity, "triage"):

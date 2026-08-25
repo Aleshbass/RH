@@ -307,6 +307,11 @@ def test_handle_turn_physio_checkin_and_done(db_session, confirmed_home_visit, f
     assert "successfully paid" not in done.reply_text.lower()
 
 
+class _FailingPaystack:
+    def initiate_transfer(self, amount_kobo, recipient, reference, reason=""):
+        raise RuntimeError("Paystack transfer failed")
+
+
 def test_handle_turn_physio_payout(db_session, physio, fake_llm):
     from app.conversation.turn_handler import handle_turn
     from app.models.payout import Payout
@@ -316,6 +321,92 @@ def test_handle_turn_physio_payout(db_session, physio, fake_llm):
     assert rows
     assert rows[0].status == "requested"
     assert rows[0].amount_kobo == 500000
+    assert "requested" in result.reply_text.lower() or "payout" in result.reply_text.lower()
+
+
+def test_request_payout_persists_when_transfer_fails(db_session, physio):
+    from app.models.audit_log import AuditEvent
+    from app.models.payout import Payout
+    from app.models.types import AuditKind
+    from app.physio.payouts import request_payout
+
+    payout = request_payout(
+        db_session, physio.id, 500000, paystack=_FailingPaystack()
+    )
+    assert payout.status == "requested"
+    assert payout.amount_kobo == 500000
+    stored = db_session.get(Payout, payout.id)
+    assert stored is not None
+    assert stored.status == "requested"
+    kinds = [r.kind for r in db_session.query(AuditEvent).all()]
+    assert AuditKind.PAYOUT in kinds or "payout" in {str(k) for k in kinds}
+
+
+def test_handle_turn_payout_persists_when_transfer_fails(
+    db_session, physio, fake_llm, monkeypatch
+):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.audit_log import AuditEvent
+    from app.models.payout import Payout
+    from app.models.types import AuditKind
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("Paystack transfer failed")
+
+    monkeypatch.setattr("app.physio.payouts.initiate_transfer", _boom)
+    result = handle_turn(
+        db_session,
+        physio.phone_e164,
+        "payout 500000 kobo",
+        fake_llm,
+        paystack=_FailingPaystack(),
+    )
+    rows = db_session.query(Payout).filter_by(physio_id=physio.id).all()
+    assert rows
+    assert rows[0].status == "requested"
+    kinds = [r.kind for r in db_session.query(AuditEvent).all()]
+    assert AuditKind.PAYOUT in kinds or "payout" in {str(k) for k in kinds}
+    lower = result.reply_text.lower()
+    assert "requested" in lower or "payout" in lower
+    assert "payment is confirmed" not in lower
+    assert "successfully paid" not in lower
+
+
+def test_session_note_with_rates_still_files(db_session, confirmed_home_visit, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.session_note import SessionNote
+
+    physio = db_session.get(Physiotherapist, confirmed_home_visit.physio_id)
+    fake_llm.extraction = {
+        "subjective": "elevated heart rates after stairs",
+        "objective": "tachycardia on exertion",
+        "plan": "paced walking",
+    }
+    result = handle_turn(
+        db_session,
+        physio.phone_e164,
+        "session note: elevated heart rates after stairs",
+        fake_llm,
+    )
+    notes = db_session.query(SessionNote).filter_by(booking_id=confirmed_home_visit.id).all()
+    assert notes
+    assert notes[0].subjective == "elevated heart rates after stairs"
+    lower = result.reply_text.lower()
+    assert "dashboard" not in lower
+    assert "note" in lower or "subjective" in lower or "saved" in lower
+
+
+def test_payout_uses_kobo_amount_not_session_count(db_session, physio, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.payout import Payout
+
+    result = handle_turn(
+        db_session, physio.phone_e164, "payout for 2 sessions 500000 kobo", fake_llm
+    )
+    rows = db_session.query(Payout).filter_by(physio_id=physio.id).all()
+    assert rows
+    assert rows[0].amount_kobo == 500000
+    assert rows[0].amount_kobo != 200
     assert "requested" in result.reply_text.lower() or "payout" in result.reply_text.lower()
 
 
