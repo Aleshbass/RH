@@ -130,12 +130,13 @@ def test_patient_add_full_access_and_revoke_via_turn(db_session, patient, fake_l
     assert row.revoked_at is not None
 
 
-def test_family_sender_stays_on_later_path(db_session, patient, fake_llm):
+def test_family_sender_sees_progress_not_later_path(db_session, patient, fake_llm):
     from app.conversation.turn_handler import handle_turn
 
     add_family(db_session, patient.id, "+2348110000010", PermissionTier.VIEW_ONLY)
     result = handle_turn(db_session, "+2348110000010", "how is recovery", fake_llm)
-    assert "later" in result.reply_text.lower()
+    assert "later" not in result.reply_text.lower()
+    assert result.reply_text.strip()
 
 
 def test_family_permissions_wraps_identity_authorize():

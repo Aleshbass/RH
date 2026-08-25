@@ -15,6 +15,7 @@ from app.models.types import AuditKind, PatientPhase, TurnResult
 from app.queue.tasks import (
     BOOKING_CONFIRMED_QUEUE,
     DEAD_LETTER_QUEUE,
+    FAMILY_SAFETY_QUEUE,
     INBOUND_QUEUE,
     MAX_ATTEMPTS,
     PHYSIO_BOOKING_ALERT_QUEUE,
@@ -209,6 +210,10 @@ def process_physio_booking_alert_once(timeout: int = 1) -> bool:
     return _drain_text_queue(PHYSIO_BOOKING_ALERT_QUEUE, timeout=timeout)
 
 
+def process_family_safety_once(timeout: int = 1) -> bool:
+    return _drain_text_queue(FAMILY_SAFETY_QUEUE, timeout=timeout)
+
+
 def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
     client = _redis()
     try:
@@ -236,6 +241,10 @@ def run_forever(timeout: int = 5) -> None:
             process_physio_booking_alert_once(timeout=0)
         except Exception:
             logger.exception("physio_booking_alert job failed")
+        try:
+            process_family_safety_once(timeout=0)
+        except Exception:
+            logger.exception("family_safety job failed")
         try:
             process_queue_once(timeout=timeout)
         except Exception:

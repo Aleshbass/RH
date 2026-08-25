@@ -32,7 +32,7 @@ from app.models.types import (
     SafetyResult,
     TurnResult,
 )
-from app.safety.escalation import patient_message
+from app.safety.escalation import notify_family_on_safety, patient_message
 from app.safety.evaluator import evaluate
 from app.physio.availability import apply_availability_turn
 from app.physio.booking_alerts import apply_physio_reply
@@ -157,6 +157,8 @@ def _audit_turn(
     extracted: ExtractedTriage,
     safety: SafetyResult,
     phase: PatientPhase,
+    *,
+    notify_family: bool = False,
 ) -> None:
     append(
         session,
@@ -173,7 +175,7 @@ def _audit_turn(
         kind=AuditKind.SAFETY,
         actor_phone=identity.phone_e164,
         person_id=identity.person_id,
-        payload={**safety.model_dump(), "notify_family": False},
+        payload={**safety.model_dump(), "notify_family": notify_family},
     )
 
 
@@ -277,6 +279,84 @@ def _physio_turn(
     )
 
 
+def _linked_patient(session: Session, identity: Identity) -> Patient | None:
+    if identity.linked_patient_id is None:
+        return None
+    return session.get(Patient, identity.linked_patient_id)
+
+
+def _patient_actor(patient: Patient) -> Identity:
+    return Identity(
+        persona=Persona.PATIENT,
+        person_id=patient.id,
+        phone_e164=patient.phone_e164,
+    )
+
+
+def _family_progress_copy(patient: Patient, patient_state: ConversationState) -> str:
+    name = patient.name or "your family member"
+    summary = (patient_state.summary_text or "").strip()
+    if summary:
+        return f"Here's the latest on {name}:\n\n{summary}"
+    if has_narrative(patient_state.extracted):
+        return f"Here's the latest on {name}:\n\n{plain_summary(patient_state.extracted)}"
+    return (
+        f"I don't have a triage summary for {name} yet. "
+        "I'll share progress here once they have talked with me."
+    )
+
+
+def _family_turn(
+    session: Session,
+    identity: Identity,
+    user_text: str,
+    wa_message_id: str | None,
+    paystack=None,
+) -> TurnResult:
+    language = mirror_language(user_text, None)
+    patient = _linked_patient(session, identity)
+    if patient is None:
+        return TurnResult(
+            reply_text=_LATER_PATH,
+            language=language,
+            phase=PatientPhase.FIRST_CONTACT,
+        )
+    family_state = load(session, identity)
+    language = mirror_language(user_text, family_state.last_known_language)
+    patient_state = load(session, _patient_actor(patient))
+    reply = None
+    if authorize(identity, "book") or authorize(identity, "pay"):
+        leftover = missing_fields(patient_state.extracted)
+        book_intent = bool(re.search(r"\bbook\b", user_text, re.I))
+        reply = handle_booking_turn(
+            session,
+            patient_state,
+            patient,
+            patient_state.extracted,
+            user_text,
+            paystack=paystack,
+            summary_confirmed=book_intent and not leftover,
+        )
+    if reply is None:
+        reply = _family_progress_copy(patient, patient_state)
+    phase = decide_phase(patient_state)
+    save_turn(
+        session,
+        family_state,
+        user_text,
+        reply,
+        family_state.extracted,
+        phase,
+        language,
+        wa_message_id,
+    )
+    return TurnResult(
+        reply_text=reply,
+        language=language,
+        phase=phase,
+    )
+
+
 def handle_turn(
     session: Session,
     phone: str,
@@ -320,6 +400,17 @@ def handle_turn(
             location=location,
         )
 
+    if identity.persona == Persona.FAMILY:
+        if not authorize(identity, "view_progress"):
+            return TurnResult(
+                reply_text=_LATER_PATH,
+                language=mirror_language(user_text, None),
+                phase=PatientPhase.FIRST_CONTACT,
+            )
+        return _family_turn(
+            session, identity, user_text, wa_message_id, paystack=paystack
+        )
+
     if not authorize(identity, "triage"):
         return TurnResult(
             reply_text=_LATER_PATH,
@@ -349,8 +440,11 @@ def handle_turn(
 
     if safety.fired:
         reply = patient_message(safety)
+        notified = notify_family_on_safety(session, identity.person_id, safety)
         _set_triage_status(session, state, "escalated")
-        _audit_turn(session, identity, extracted, safety, phase)
+        _audit_turn(
+            session, identity, extracted, safety, phase, notify_family=notified
+        )
         save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id)
         return TurnResult(
             reply_text=reply,

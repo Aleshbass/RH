@@ -1,4 +1,11 @@
-from app.models.types import SafetyResult
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.conversation import Conversation, Message
+from app.models.family_member import FamilyMember
+from app.models.types import PatientPhase, Persona, SafetyResult
 
 _OPENERS: dict[str, str] = {
     "cauda_equina": (
@@ -46,3 +53,55 @@ def patient_message(result: SafetyResult) -> str:
         parts.append(reason)
     parts.append(_INSTRUCTION)
     return "\n\n".join(parts)
+
+
+def _enqueue_family_notice(phone: str, text: str) -> None:
+    try:
+        from app.queue.tasks import enqueue_notify_family_safety
+
+        enqueue_notify_family_safety(phone, text)
+    except Exception:
+        return
+
+
+def notify_family_on_safety(
+    session: Session, patient_id: UUID, result: SafetyResult
+) -> bool:
+    text = patient_message(result)
+    if not text:
+        return False
+    members = session.scalars(
+        select(FamilyMember).where(
+            FamilyMember.patient_id == patient_id,
+            FamilyMember.revoked_at.is_(None),
+        )
+    ).all()
+    if not members:
+        return False
+    notified = False
+    for member in members:
+        conversation = session.scalar(
+            select(Conversation).where(
+                Conversation.person_id == member.id,
+                Conversation.persona == Persona.FAMILY,
+            )
+        )
+        if conversation is None:
+            conversation = Conversation(
+                person_id=member.id,
+                persona=Persona.FAMILY,
+                phase=PatientPhase.FIRST_CONTACT,
+            )
+            session.add(conversation)
+            session.flush()
+        session.add(
+            Message(
+                conversation_id=conversation.id,
+                role="joy",
+                text=text,
+            )
+        )
+        _enqueue_family_notice(member.phone_e164, text)
+        notified = True
+    session.flush()
+    return notified
