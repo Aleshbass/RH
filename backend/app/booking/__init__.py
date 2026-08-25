@@ -1,3 +1,2 @@
-from app.booking.state import advance_to_confirmed
-
-__all__ = ["advance_to_confirmed"]
+# Booking package. Confirmation lives in booking.state and is called only from
+# api/webhooks/paystack.py.

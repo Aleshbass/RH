@@ -50,7 +50,7 @@ def rank(
     ranked = [
         RankedPhysio(
             physio_id=physio.id,
-            display_name=physio.phone_e164,
+            display_name="",
             price_kobo=physio.price_kobo,
             rating=physio.rating,
             distance_km=_distance_km(patient, physio),
@@ -59,7 +59,10 @@ def rank(
         for physio in physios
     ]
     ranked.sort(key=lambda row: (row.distance_km, -row.rating, row.price_kobo))
-    top = ranked[:3]
+    top = [
+        row.model_copy(update={"display_name": f"Physio {chr(ord('A') + i)}"})
+        for i, row in enumerate(ranked[:3])
+    ]
 
     session = object_session(patient)
     if session is None:

@@ -5,8 +5,10 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session, object_session
 
+from app.audit.logger import append
 from app.booking.paystack_client import initialize_transaction
-from app.booking.state import create_draft, mark_awaiting_payment
+from app.booking.state import cancel, create_draft, get_active_booking, mark_awaiting_payment
+from app.config import get_settings
 from app.conversation.state_manager import ConversationState
 from app.matching.ranking import rank
 from app.matching.specialty_match import eligible_physios
@@ -14,7 +16,7 @@ from app.models.booking import Booking
 from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
-from app.models.types import BookingStatus, ExtractedTriage
+from app.models.types import AuditKind, BookingStatus, ExtractedTriage
 from app.queue.tasks import _redis
 
 OFFERING_MATCHES = "offering_matches"
@@ -22,7 +24,7 @@ AWAITING_SLOT_MODE = "awaiting_slot_mode"
 AWAITING_PAYMENT = "awaiting_payment"
 
 SESSION_REMINDER_ZSET = "joy:session_reminders"
-PAYSTACK_CALLBACK_URL = "https://joy-ai-production.up.railway.app/api/health"
+_PLACEHOLDER_CALLBACK = "https://localhost/paystack/callback"
 
 _PATIENT_MUTABLE = frozenset({BookingStatus.CONFIRMED, BookingStatus.AWAITING_PAYMENT})
 
@@ -36,7 +38,8 @@ _SLOT_RE = re.compile(
     r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:[+-]\d{2}:\d{2}|Z)?)",
     re.I,
 )
-_INDEX_RE = re.compile(r"\b([1-9])\b")
+_INDEX_RE = re.compile(r"^\s*([1-9])\b")
+_PAY_NUDGE_RE = re.compile(r"\b(pay|payment|processing)\b", re.I)
 
 NO_SPECIALIST_YET = (
     "There's no specialist yet for this kind of rehab. "
@@ -99,8 +102,10 @@ def handle_booking_turn(
     if sub == AWAITING_PAYMENT:
         booking = _payment_booking(session, conversation, patient)
         if booking is not None and booking.status == BookingStatus.AWAITING_PAYMENT:
-            return _processing_reply(conversation)
-        _set_substate(conversation, None, {})
+            if _PAY_NUDGE_RE.search(user_text):
+                return _processing_reply(conversation)
+        else:
+            _set_substate(conversation, None, {})
 
     if summary_confirmed:
         return offer_matches(session, conversation, patient, extracted)
@@ -185,9 +190,20 @@ def _maybe_cancel(
     booking = _mutable_booking(session, patient.id)
     if booking is None:
         return None
-    booking.status = BookingStatus.CANCELLED
+    previous = str(booking.status)
+    cancel(booking)
+    append(
+        session,
+        kind=AuditKind.BOOKING,
+        actor_phone=patient.phone_e164,
+        person_id=patient.id,
+        payload={
+            "decision": "cancelled",
+            "booking_id": str(booking.id),
+            "previous_status": previous,
+        },
+    )
     _set_substate(conversation, None, {})
-    session.flush()
     return _CANCELLED
 
 
@@ -243,6 +259,13 @@ def _processing_reply(conversation: Conversation) -> str:
     if url:
         return f"{_PROCESSING} Pay here: {url}"
     return _PROCESSING
+
+
+def _paystack_callback_url() -> str:
+    configured = (get_settings().paystack_callback_url or "").strip()
+    if configured:
+        return configured
+    return _PLACEHOLDER_CALLBACK
 
 
 def _parse_index(user_text: str, n: int) -> int | None:
@@ -324,6 +347,11 @@ def _start_payment(
     physio = session.get(Physiotherapist, UUID(physio_ids[index - 1]))
     if physio is None:
         return NO_SPECIALIST_YET
+    active = get_active_booking(session, patient.id)
+    if active is not None:
+        if active.status in {BookingStatus.AWAITING_PAYMENT, BookingStatus.PROCESSING}:
+            return _processing_reply(conversation)
+        return "You already have a session booked. Reply cancel if you want to change it."
     booking = create_draft(
         session,
         patient.id,
@@ -334,13 +362,14 @@ def _start_payment(
     )
     reference = f"joy-{uuid4().hex}"
     email = f"{patient.phone_e164}@patients.rehabify.invalid"
+    callback_url = _paystack_callback_url()
     if paystack is not None:
         result = paystack.initialize_transaction(
-            email, physio.price_kobo, reference, PAYSTACK_CALLBACK_URL
+            email, physio.price_kobo, reference, callback_url
         )
     else:
         result = initialize_transaction(
-            email, physio.price_kobo, reference, PAYSTACK_CALLBACK_URL
+            email, physio.price_kobo, reference, callback_url
         )
     mark_awaiting_payment(booking, result["reference"])
     send_session_reminder(booking.id)

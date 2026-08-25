@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, object_session
 
 from app.models.booking import Booking
@@ -9,8 +10,30 @@ from app.models.types import BookingStatus
 _WEBHOOK_SOURCE = "paystack_webhook"
 _CONFIRMABLE = frozenset({BookingStatus.AWAITING_PAYMENT, BookingStatus.PROCESSING})
 _CANCELLABLE = frozenset(
-    {BookingStatus.DRAFT, BookingStatus.AWAITING_PAYMENT, BookingStatus.PROCESSING}
+    {
+        BookingStatus.DRAFT,
+        BookingStatus.AWAITING_PAYMENT,
+        BookingStatus.PROCESSING,
+        BookingStatus.CONFIRMED,
+    }
 )
+_ACTIVE = frozenset(
+    {
+        BookingStatus.DRAFT,
+        BookingStatus.AWAITING_PAYMENT,
+        BookingStatus.PROCESSING,
+        BookingStatus.CONFIRMED,
+    }
+)
+
+
+def get_active_booking(session: Session, patient_id: UUID) -> Booking | None:
+    return session.scalar(
+        select(Booking).where(
+            Booking.patient_id == patient_id,
+            Booking.status.in_(list(_ACTIVE)),
+        )
+    )
 
 
 def create_draft(
@@ -22,6 +45,8 @@ def create_draft(
     slot_start: datetime | None = None,
     amount_kobo: int,
 ) -> Booking:
+    if get_active_booking(session, patient_id) is not None:
+        raise RuntimeError("patient already has an active booking")
     booking = Booking(
         patient_id=patient_id,
         physio_id=physio_id,

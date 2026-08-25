@@ -41,6 +41,7 @@ _AUDIT_KINDS = (
     "referral_fee",
     "relay",
     "admin",
+    "booking",
 )
 
 assert set(_PERSONAS) == {p.value for p in Persona}

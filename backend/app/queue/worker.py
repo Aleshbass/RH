@@ -13,6 +13,7 @@ from app.llm.gemini_client import GeminiTimeoutError, LLMClient, get_llm_client
 from app.models.conversation import Message
 from app.models.types import AuditKind, PatientPhase, TurnResult
 from app.queue.tasks import (
+    BOOKING_CONFIRMED_QUEUE,
     DEAD_LETTER_QUEUE,
     INBOUND_QUEUE,
     MAX_ATTEMPTS,
@@ -173,8 +174,29 @@ def process_queue_once(
 process_one = process_queue_once
 
 
+def process_booking_confirmed_once(timeout: int = 1) -> bool:
+    client = _redis()
+    try:
+        if timeout <= 0:
+            payload_str = client.rpop(BOOKING_CONFIRMED_QUEUE)
+        else:
+            raw = client.brpop(BOOKING_CONFIRMED_QUEUE, timeout=timeout)
+            payload_str = None if raw is None else raw[1]
+    except TimeoutError:
+        return False
+    if not payload_str:
+        return False
+    payload = json.loads(payload_str)
+    send_whatsapp_text(str(payload["phone"]), str(payload["text"]))
+    return True
+
+
 def run_forever(timeout: int = 5) -> None:
     while True:
+        try:
+            process_booking_confirmed_once(timeout=0)
+        except Exception:
+            logger.exception("booking_confirmed job failed")
         try:
             process_queue_once(timeout=timeout)
         except Exception:

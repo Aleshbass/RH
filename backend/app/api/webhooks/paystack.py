@@ -19,6 +19,8 @@ from app.queue.tasks import enqueue_booking_confirmed
 
 router = APIRouter()
 
+_CONFIRMABLE = frozenset({BookingStatus.AWAITING_PAYMENT, BookingStatus.PROCESSING})
+
 
 def _valid_signature(body: bytes, header: str, secret: str) -> bool:
     if not secret or not header:
@@ -34,6 +36,22 @@ def _event_id(payload: dict) -> str:
     if data.get("id") is not None:
         return str(data["id"])
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def _audit_booking(
+    session: Session,
+    *,
+    actor_phone: str,
+    person_id,
+    payload: dict,
+) -> None:
+    append(
+        session,
+        kind=AuditKind.BOOKING,
+        actor_phone=actor_phone,
+        person_id=person_id,
+        payload=payload,
+    )
 
 
 @router.post("/webhooks/paystack")
@@ -71,9 +89,22 @@ async def paystack_webhook(
     if not reference:
         return {"status": "ok"}
 
-    booking = session.scalar(select(Booking).where(Booking.paystack_reference == reference))
+    booking = session.scalar(
+        select(Booking)
+        .where(Booking.paystack_reference == reference)
+        .with_for_update()
+    )
     if booking is None:
+        _audit_booking(
+            session,
+            actor_phone="paystack",
+            person_id=None,
+            payload={"decision": "unknown_reference", "reference": reference},
+        )
         return {"status": "ok"}
+
+    patient = session.get(Patient, booking.patient_id)
+    actor = patient.phone_e164 if patient is not None else "paystack"
 
     received_amount = data.get("amount")
     try:
@@ -81,11 +112,9 @@ async def paystack_webhook(
     except (TypeError, ValueError):
         received_kobo = None
     if received_kobo != booking.amount_kobo:
-        patient = session.get(Patient, booking.patient_id)
-        append(
+        _audit_booking(
             session,
-            kind=AuditKind.ADMIN,
-            actor_phone=patient.phone_e164 if patient is not None else "paystack",
+            actor_phone=actor,
             person_id=booking.patient_id,
             payload={
                 "decision": "amount_mismatch",
@@ -97,11 +126,32 @@ async def paystack_webhook(
         )
         return {"status": "ok"}
 
-    if booking.status == BookingStatus.CONFIRMED:
+    if booking.status not in _CONFIRMABLE:
+        _audit_booking(
+            session,
+            actor_phone=actor,
+            person_id=booking.patient_id,
+            payload={
+                "decision": "non_confirmable_charge_success",
+                "booking_id": str(booking.id),
+                "status": str(booking.status),
+                "reference": reference,
+            },
+        )
         return {"status": "ok"}
 
     advance_to_confirmed(session, booking.id, source="paystack_webhook")
-    patient = session.get(Patient, booking.patient_id)
+    _audit_booking(
+        session,
+        actor_phone=actor,
+        person_id=booking.patient_id,
+        payload={
+            "decision": "confirmed",
+            "booking_id": str(booking.id),
+            "reference": reference,
+            "amount_kobo": booking.amount_kobo,
+        },
+    )
     if patient is not None:
         enqueue_booking_confirmed(
             patient.phone_e164,

@@ -4,7 +4,7 @@ import re
 from sqlalchemy.orm import Session
 
 from app.audit.logger import append
-from app.booking.booking_flow import handle_booking_turn
+from app.booking.booking_flow import AWAITING_PAYMENT, handle_booking_turn
 from app.conversation.language import mirror_language
 from app.conversation.orchestrator import decide_booking_substate, decide_phase, has_narrative
 from app.conversation.state_manager import ConversationState, load, save_turn
@@ -192,6 +192,9 @@ def _reply_after_extract(
         )
         if booking_reply is not None:
             return booking_reply, PatientPhase.POST_TRIAGE
+
+    if booking_sub == AWAITING_PAYMENT:
+        return candidate_reply, PatientPhase.POST_TRIAGE
 
     summary = plain_summary(extracted)
     _store_summary(session, state, summary)

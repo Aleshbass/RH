@@ -125,6 +125,7 @@ def test_duplicate_event_is_idempotent(client, db_session, awaiting_booking, pay
 
 def test_amount_mismatch_does_not_confirm(client, db_session, awaiting_booking):
     from app.models.audit_log import AuditEvent
+    from app.models.types import AuditKind
 
     payload = {
         "event": "charge.success",
@@ -144,8 +145,14 @@ def test_amount_mismatch_does_not_confirm(client, db_session, awaiting_booking):
     assert response.status_code == 200
     db_session.refresh(awaiting_booking)
     assert awaiting_booking.status != "confirmed"
-    audits = db_session.query(AuditEvent).all()
-    assert any("amount" in json.dumps(row.payload).lower() for row in audits)
+    audits = db_session.query(AuditEvent).filter(AuditEvent.kind == AuditKind.BOOKING).all()
+    assert any(row.payload.get("decision") == "amount_mismatch" for row in audits)
+    admin_mismatches = [
+        row
+        for row in db_session.query(AuditEvent).filter(AuditEvent.kind == AuditKind.ADMIN).all()
+        if row.payload.get("decision") == "amount_mismatch"
+    ]
+    assert admin_mismatches == []
 
 
 def test_charge_success_enqueues_booking_confirmed(
@@ -221,3 +228,124 @@ def test_fake_paystack_initialize_transaction():
     )
     assert result["authorization_url"]
     assert result["reference"] == "ref_fake"
+
+
+def test_charge_success_on_cancelled_booking_returns_200(
+    client, db_session, awaiting_booking
+):
+    from app.booking.state import cancel
+    from app.models.audit_log import AuditEvent
+    from app.models.paystack_event import PaystackEvent
+    from app.models.types import AuditKind, BookingStatus
+
+    cancel(awaiting_booking)
+    db_session.flush()
+    payload = {
+        "event": "charge.success",
+        "data": {
+            "id": 888001,
+            "reference": awaiting_booking.paystack_reference,
+            "amount": awaiting_booking.amount_kobo,
+            "status": "success",
+        },
+    }
+    body = json.dumps(payload).encode()
+    response = client.post(
+        "/webhooks/paystack",
+        content=body,
+        headers={"x-paystack-signature": _sign(body)},
+    )
+    assert response.status_code == 200
+    db_session.refresh(awaiting_booking)
+    assert awaiting_booking.status == BookingStatus.CANCELLED
+    assert db_session.get(PaystackEvent, "888001") is not None
+    audits = (
+        db_session.query(AuditEvent).filter(AuditEvent.kind == AuditKind.BOOKING).all()
+    )
+    assert any(
+        row.payload.get("decision") in {"non_confirmable_charge_success", "anomaly"}
+        or row.payload.get("status") == BookingStatus.CANCELLED
+        for row in audits
+    )
+
+
+def test_charge_success_confirms_and_audits_booking(
+    client, db_session, awaiting_booking, paystack_signed_body
+):
+    from app.models.audit_log import AuditEvent
+    from app.models.types import AuditKind, BookingStatus
+
+    body, sig = paystack_signed_body
+    response = client.post(
+        "/webhooks/paystack", content=body, headers={"x-paystack-signature": sig}
+    )
+    assert response.status_code == 200
+    db_session.refresh(awaiting_booking)
+    assert awaiting_booking.status == BookingStatus.CONFIRMED
+    audits = (
+        db_session.query(AuditEvent).filter(AuditEvent.kind == AuditKind.BOOKING).all()
+    )
+    assert any(row.payload.get("decision") == "confirmed" for row in audits)
+
+
+def test_unknown_paystack_reference_returns_200_and_audits(
+    client, db_session, awaiting_booking
+):
+    from app.models.audit_log import AuditEvent
+    from app.models.types import AuditKind, BookingStatus
+
+    payload = {
+        "event": "charge.success",
+        "data": {
+            "id": 777001,
+            "reference": "ref_does_not_exist",
+            "amount": awaiting_booking.amount_kobo,
+            "status": "success",
+        },
+    }
+    body = json.dumps(payload).encode()
+    response = client.post(
+        "/webhooks/paystack",
+        content=body,
+        headers={"x-paystack-signature": _sign(body)},
+    )
+    assert response.status_code == 200
+    db_session.refresh(awaiting_booking)
+    assert awaiting_booking.status == BookingStatus.AWAITING_PAYMENT
+    audits = (
+        db_session.query(AuditEvent).filter(AuditEvent.kind == AuditKind.BOOKING).all()
+    )
+    assert any(row.payload.get("decision") == "unknown_reference" for row in audits)
+
+
+def test_booking_confirmed_queue_sends_whatsapp_without_confirming(
+    db_session, awaiting_booking, monkeypatch
+):
+    from app.booking.state import mark_processing
+    from app.models.types import BookingStatus
+    from app.queue import worker
+    from app.queue.tasks import BOOKING_CONFIRMED_QUEUE, enqueue_booking_confirmed, _redis
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        worker, "send_whatsapp_text", lambda phone, text: sent.append((phone, text))
+    )
+    client = _redis()
+    client.delete(BOOKING_CONFIRMED_QUEUE)
+    mark_processing(awaiting_booking)
+    db_session.flush()
+    try:
+        enqueue_booking_confirmed(
+            "+2348000006001", str(awaiting_booking.id), "Your booking is confirmed."
+        )
+        assert worker.process_booking_confirmed_once(timeout=1) is True
+        assert sent == [("+2348000006001", "Your booking is confirmed.")]
+        db_session.refresh(awaiting_booking)
+        assert awaiting_booking.status == BookingStatus.PROCESSING
+        assert awaiting_booking.status != BookingStatus.CONFIRMED
+        from pathlib import Path
+
+        worker_src = (Path(__file__).resolve().parents[1] / "app" / "queue" / "worker.py").read_text()
+        assert "advance_to_confirmed" not in worker_src
+    finally:
+        client.delete(BOOKING_CONFIRMED_QUEUE)

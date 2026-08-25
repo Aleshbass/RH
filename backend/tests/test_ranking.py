@@ -172,6 +172,9 @@ def test_missing_patient_coords_distance_is_inf_and_sorts_last(
         four_neuro_physios[1].id,
         four_neuro_physios[0].id,
     ]
+    phones = {row.phone_e164 for row in four_neuro_physios}
+    assert all(x.display_name not in phones for x in out)
+    assert [x.display_name for x in out] == ["Physio A", "Physio B", "Physio C"]
 
 
 def test_rank_appends_match_audit_with_candidate_ids_and_scores(
@@ -197,6 +200,15 @@ def test_rank_appends_match_audit_with_candidate_ids_and_scores(
         assert row["distance_km"] == expected_distance
         assert row["rating"] == ranked.rating
         assert row["price_kobo"] == ranked.price_kobo
+
+
+def test_rank_display_name_is_anonymous_not_phone(db_session, patient, four_neuro_physios):
+    from app.matching.ranking import rank
+
+    out = rank(patient, four_neuro_physios, ConditionArea.NEURO)
+    phones = {row.phone_e164 for row in four_neuro_physios}
+    assert [x.display_name for x in out] == ["Physio A", "Physio B", "Physio C"]
+    assert all(x.display_name not in phones for x in out)
 
 
 def test_rank_next_slot_is_none(db_session, patient, four_neuro_physios):

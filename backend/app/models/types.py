@@ -50,6 +50,7 @@ class AuditKind(StrEnum):
     REFERRAL_FEE = "referral_fee"
     RELAY = "relay"
     ADMIN = "admin"
+    BOOKING = "booking"
 
 
 class Identity(BaseModel):

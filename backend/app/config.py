@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str = ""
     paystack_secret_key: str = ""
     paystack_webhook_secret: str = ""
+    paystack_callback_url: str = ""
     joy_environment: str = "development"
     internal_api_secret: str = ""
 

@@ -143,7 +143,10 @@ def test_patient_picks_index_and_mode_gets_paystack_url(db_session, neuro_patien
     fake_llm.extraction = {}
     offer = handle_turn(db_session, neuro_patient_ready.phone, "yes that's correct", fake_llm)
     assert "confirmed" not in offer.reply_text.lower()
-    assert "+2348000008101" in offer.reply_text or "+2348000008102" in offer.reply_text
+    assert "Physio A" in offer.reply_text
+    assert "₦" in offer.reply_text
+    assert "+2348000008101" not in offer.reply_text
+    assert "+2348000008102" not in offer.reply_text
     assert "+2348000008103" not in offer.reply_text
 
     paystack = FakePaystack()
@@ -331,6 +334,7 @@ def test_reschedule_updates_slot_start_only_when_awaiting_or_confirmed(
     assert awaiting.slot_start == datetime(2026, 9, 1, 10, 0, tzinfo=timezone.utc)
     assert awaiting.status == BookingStatus.AWAITING_PAYMENT
 
+    handle_turn(db_session, neuro_patient_ready.phone, "cancel", fake_llm)
     draft = create_draft(
         db_session,
         neuro_patient_ready.patient.id,
@@ -403,10 +407,22 @@ def test_booking_flow_and_turn_handler_do_not_call_advance_to_confirmed():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "app"
+    allowed = {
+        (root / "api" / "webhooks" / "paystack.py").resolve(),
+        (root / "booking" / "state.py").resolve(),
+    }
+    offenders = [
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        if path.resolve() not in allowed and "advance_to_confirmed" in path.read_text()
+    ]
+    assert offenders == []
     flow = (root / "booking" / "booking_flow.py").read_text()
     handler = (root / "conversation" / "turn_handler.py").read_text()
     assert "advance_to_confirmed" not in flow
     assert "advance_to_confirmed" not in handler
+    assert "booking.status = BookingStatus.CANCELLED" not in flow
+    assert "cancel(" in flow
 
 
 def test_two_step_index_then_mode(db_session, neuro_patient_ready, fake_llm):
@@ -431,3 +447,166 @@ def test_two_step_index_then_mode(db_session, neuro_patient_ready, fake_llm):
     assert booking.mode == "home_visit"
     assert booking.status == BookingStatus.AWAITING_PAYMENT
     assert "confirmed" not in result.reply_text.lower()
+
+
+def test_awaiting_payment_non_payment_question_does_not_say_processing(
+    db_session, neuro_patient_ready, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    fake_llm.reply = "A home visit is when the physio comes to you."
+    fake_llm.extraction = {}
+    handle_turn(db_session, neuro_patient_ready.phone, "yes that's correct", fake_llm)
+    handle_turn(
+        db_session,
+        neuro_patient_ready.phone,
+        "1 teleconsult",
+        fake_llm,
+        paystack=FakePaystack(),
+    )
+    result = handle_turn(
+        db_session,
+        neuro_patient_ready.phone,
+        "what does a home visit include?",
+        fake_llm,
+    )
+    lower = result.reply_text.lower()
+    assert "processing" not in lower
+    assert "pay here" not in lower
+    assert "confirmed" not in lower
+    assert "checkout.paystack.com" not in result.reply_text
+
+
+def test_buried_digit_in_question_does_not_start_payment(
+    db_session, neuro_patient_ready, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    fake_llm.reply = "ok"
+    fake_llm.extraction = {}
+    handle_turn(db_session, neuro_patient_ready.phone, "yes that's correct", fake_llm)
+    result = handle_turn(
+        db_session,
+        neuro_patient_ready.phone,
+        "how far is number 1 from me for home visits?",
+        fake_llm,
+        paystack=FakePaystack(),
+    )
+    lower = result.reply_text.lower()
+    assert "pay here" not in lower
+    assert "checkout.paystack.com" not in result.reply_text
+    booking = db_session.scalar(
+        select(Booking).where(Booking.patient_id == neuro_patient_ready.patient.id)
+    )
+    assert booking is None
+    assert "confirmed" not in lower
+
+
+def test_one_active_booking_blocks_second_unpaid_then_allows_after_cancel(
+    db_session, neuro_patient_ready, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    fake_llm.reply = "ok"
+    fake_llm.extraction = {}
+    handle_turn(db_session, neuro_patient_ready.phone, "yes that's correct", fake_llm)
+    paystack = FakePaystack()
+    first = handle_turn(
+        db_session,
+        neuro_patient_ready.phone,
+        "1 teleconsult",
+        fake_llm,
+        paystack=paystack,
+    )
+    assert "checkout.paystack.com" in first.reply_text or "http" in first.reply_text
+    handle_turn(db_session, neuro_patient_ready.phone, "yes that's correct", fake_llm)
+    second = handle_turn(
+        db_session,
+        neuro_patient_ready.phone,
+        "1 teleconsult",
+        fake_llm,
+        paystack=FakePaystack(),
+    )
+    bookings = db_session.scalars(
+        select(Booking).where(Booking.patient_id == neuro_patient_ready.patient.id)
+    ).all()
+    unpaid = [
+        row
+        for row in bookings
+        if row.status in {BookingStatus.AWAITING_PAYMENT, BookingStatus.PROCESSING, BookingStatus.DRAFT}
+    ]
+    assert len(unpaid) == 1
+    assert "confirmed" not in second.reply_text.lower()
+
+    handle_turn(db_session, neuro_patient_ready.phone, "cancel", fake_llm)
+    handle_turn(db_session, neuro_patient_ready.phone, "yes that's correct", fake_llm)
+    again = handle_turn(
+        db_session,
+        neuro_patient_ready.phone,
+        "1 teleconsult",
+        fake_llm,
+        paystack=FakePaystack(),
+    )
+    after = db_session.scalars(
+        select(Booking).where(
+            Booking.patient_id == neuro_patient_ready.patient.id,
+            Booking.status == BookingStatus.AWAITING_PAYMENT,
+        )
+    ).all()
+    assert len(after) == 1
+    assert "confirmed" not in again.reply_text.lower()
+
+
+def test_paystack_callback_comes_from_settings_not_railway(
+    db_session, neuro_patient_ready, fake_llm, monkeypatch
+):
+    from app.config import get_settings
+    from app.conversation.turn_handler import handle_turn
+    from pathlib import Path
+
+    settings = get_settings()
+    settings.paystack_callback_url = "https://example.test/paystack/callback"
+    monkeypatch.setattr("app.booking.booking_flow.get_settings", lambda: settings)
+    fake_llm.reply = "ok"
+    fake_llm.extraction = {}
+    handle_turn(db_session, neuro_patient_ready.phone, "yes that's correct", fake_llm)
+    paystack = FakePaystack()
+    handle_turn(
+        db_session,
+        neuro_patient_ready.phone,
+        "1 teleconsult",
+        fake_llm,
+        paystack=paystack,
+    )
+    assert paystack.last_callback_url == "https://example.test/paystack/callback"
+    flow = (Path(__file__).resolve().parents[1] / "app" / "booking" / "booking_flow.py").read_text()
+    assert "joy-ai-production.up.railway.app" not in flow
+
+
+def test_patient_cancel_confirmed_booking_audits_booking_kind(
+    db_session, neuro_patient_ready, fake_llm
+):
+    from app.booking.state import advance_to_confirmed, create_draft, mark_awaiting_payment
+    from app.conversation.turn_handler import handle_turn
+
+    physio = neuro_patient_ready.physios[0]
+    booking = create_draft(
+        db_session,
+        neuro_patient_ready.patient.id,
+        physio.id,
+        "home_visit",
+        slot_start=None,
+        amount_kobo=physio.price_kobo,
+    )
+    mark_awaiting_payment(booking, "ref_cancel_confirmed_audit")
+    advance_to_confirmed(db_session, booking.id, source="paystack_webhook")
+    fake_llm.reply = "ok"
+    fake_llm.extraction = {}
+    handle_turn(db_session, neuro_patient_ready.phone, "please cancel", fake_llm)
+    events = db_session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.kind == AuditKind.BOOKING,
+            AuditEvent.person_id == neuro_patient_ready.patient.id,
+        )
+    ).all()
+    assert any(row.payload.get("decision") == "cancelled" for row in events)

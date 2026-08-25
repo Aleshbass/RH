@@ -105,3 +105,53 @@ def test_webhook_cannot_confirm_draft(db_session, patient, physio):
     except RuntimeError:
         db_session.refresh(booking)
         assert booking.status == BookingStatus.DRAFT
+
+
+def test_cancel_from_confirmed(db_session, patient, physio):
+    booking = create_draft(
+        db_session, patient.id, physio.id, "teleconsult", slot_start=None, amount_kobo=2000000
+    )
+    mark_awaiting_payment(booking, "ref_cancel_confirmed_state")
+    advance_to_confirmed(db_session, booking.id, source="paystack_webhook")
+    cancel(booking)
+    db_session.refresh(booking)
+    assert booking.status == BookingStatus.CANCELLED
+
+
+def test_create_draft_blocked_when_awaiting_payment(db_session, patient, physio):
+    first = create_draft(
+        db_session, patient.id, physio.id, "teleconsult", slot_start=None, amount_kobo=2000000
+    )
+    mark_awaiting_payment(first, "ref_active_guard")
+    with pytest.raises(RuntimeError, match="active booking"):
+        create_draft(
+            db_session, patient.id, physio.id, "home_visit", slot_start=None, amount_kobo=2000000
+        )
+    db_session.refresh(first)
+    assert first.status == BookingStatus.AWAITING_PAYMENT
+
+
+def test_create_draft_blocked_when_confirmed(db_session, patient, physio):
+    first = create_draft(
+        db_session, patient.id, physio.id, "teleconsult", slot_start=None, amount_kobo=2000000
+    )
+    mark_awaiting_payment(first, "ref_confirmed_guard")
+    advance_to_confirmed(db_session, first.id, source="paystack_webhook")
+    with pytest.raises(RuntimeError, match="active booking"):
+        create_draft(
+            db_session, patient.id, physio.id, "home_visit", slot_start=None, amount_kobo=2000000
+        )
+
+
+def test_create_draft_allowed_after_cancel(db_session, patient, physio):
+    first = create_draft(
+        db_session, patient.id, physio.id, "teleconsult", slot_start=None, amount_kobo=2000000
+    )
+    mark_awaiting_payment(first, "ref_after_cancel")
+    cancel(first)
+    second = create_draft(
+        db_session, patient.id, physio.id, "home_visit", slot_start=None, amount_kobo=1500000
+    )
+    db_session.refresh(second)
+    assert second.status == BookingStatus.DRAFT
+    assert second.id != first.id

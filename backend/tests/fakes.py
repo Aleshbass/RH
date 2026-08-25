@@ -4,9 +4,13 @@ from app.llm.gemini_client import LLMResponse
 
 
 class FakePaystack:
+    def __init__(self) -> None:
+        self.last_callback_url: str | None = None
+
     def initialize_transaction(
         self, email: str, amount_kobo: int, reference: str, callback_url: str
     ) -> dict[str, str]:
+        self.last_callback_url = callback_url
         return {
             "authorization_url": f"https://checkout.paystack.com/{reference}",
             "reference": reference,
