@@ -155,6 +155,29 @@ def test_amount_mismatch_does_not_confirm(client, db_session, awaiting_booking):
     assert admin_mismatches == []
 
 
+def test_charge_success_enqueues_physio_booking_alert(
+    client, db_session, awaiting_booking, paystack_signed_body
+):
+    from app.queue.tasks import PHYSIO_BOOKING_ALERT_QUEUE, _redis
+
+    redis_client = _redis()
+    redis_client.delete(PHYSIO_BOOKING_ALERT_QUEUE)
+    body, sig = paystack_signed_body
+    response = client.post(
+        "/webhooks/paystack", content=body, headers={"x-paystack-signature": sig}
+    )
+    assert response.status_code == 200
+    db_session.refresh(awaiting_booking)
+    assert awaiting_booking.status == "confirmed"
+    raw = redis_client.lpop(PHYSIO_BOOKING_ALERT_QUEUE)
+    assert raw is not None
+    job = json.loads(raw)
+    assert job["phone"] == "+2348000006101"
+    assert job["booking_id"] == str(awaiting_booking.id)
+    text = str(job.get("text") or "")
+    assert "Ada" in text
+
+
 def test_charge_success_enqueues_booking_confirmed(
     client, db_session, awaiting_booking, paystack_signed_body
 ):

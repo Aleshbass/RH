@@ -9,6 +9,7 @@ from app.models.base import Base, literal_str_enum, str_enum
 from app.models.types import BookingStatus
 
 BOOKING_MODES = ("teleconsult", "home_visit")
+PHYSIO_RESPONSES = ("accepted", "declined")
 
 
 class Booking(Base):
@@ -33,6 +34,7 @@ class Booking(Base):
     )
     paystack_reference: Mapped[str | None] = mapped_column(String, nullable=True)
     amount_kobo: Mapped[int] = mapped_column(Integer, nullable=False)
+    physio_response: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

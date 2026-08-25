@@ -33,6 +33,7 @@ from app.models.types import (
 from app.safety.escalation import patient_message
 from app.safety.evaluator import evaluate
 from app.physio.availability import apply_availability_turn
+from app.physio.booking_alerts import apply_physio_reply
 from app.physio.onboarding import apply_onboarding_turn
 from app.triage.extraction import infer_condition_area, merge_extraction
 from app.triage.question_batching import grouped_followup, missing_fields
@@ -226,8 +227,8 @@ def _physio_turn(
         )
     state = load(session, identity)
     conversation = session.get(Conversation, state.conversation_id)
-    reply = None
-    if conversation is not None:
+    reply = apply_physio_reply(session, physio.id, user_text)
+    if reply is None and conversation is not None:
         reply = apply_availability_turn(session, physio.id, user_text, conversation)
     if reply is None:
         reply = apply_onboarding_turn(session, physio, user_text, media)

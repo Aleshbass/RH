@@ -17,6 +17,7 @@ from app.queue.tasks import (
     DEAD_LETTER_QUEUE,
     INBOUND_QUEUE,
     MAX_ATTEMPTS,
+    PHYSIO_BOOKING_ALERT_QUEUE,
     PROCESSING_QUEUE,
     _redis,
     send_whatsapp_text,
@@ -175,12 +176,20 @@ process_one = process_queue_once
 
 
 def process_booking_confirmed_once(timeout: int = 1) -> bool:
+    return _drain_text_queue(BOOKING_CONFIRMED_QUEUE, timeout=timeout)
+
+
+def process_physio_booking_alert_once(timeout: int = 1) -> bool:
+    return _drain_text_queue(PHYSIO_BOOKING_ALERT_QUEUE, timeout=timeout)
+
+
+def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
     client = _redis()
     try:
         if timeout <= 0:
-            payload_str = client.rpop(BOOKING_CONFIRMED_QUEUE)
+            payload_str = client.rpop(queue)
         else:
-            raw = client.brpop(BOOKING_CONFIRMED_QUEUE, timeout=timeout)
+            raw = client.brpop(queue, timeout=timeout)
             payload_str = None if raw is None else raw[1]
     except TimeoutError:
         return False
@@ -197,6 +206,10 @@ def run_forever(timeout: int = 5) -> None:
             process_booking_confirmed_once(timeout=0)
         except Exception:
             logger.exception("booking_confirmed job failed")
+        try:
+            process_physio_booking_alert_once(timeout=0)
+        except Exception:
+            logger.exception("physio_booking_alert job failed")
         try:
             process_queue_once(timeout=timeout)
         except Exception:

@@ -182,32 +182,30 @@ def _payment_booking(
     return _mutable_booking(session, patient.id)
 
 
-def _maybe_cancel(
-    session: Session, conversation: Conversation, patient: Patient, user_text: str
-) -> str | None:
-    if not _CANCEL_RE.search(user_text):
-        return None
-    booking = _mutable_booking(session, patient.id)
-    if booking is None:
-        return None
+def cancel_notify(
+    session: Session,
+    booking: Booking,
+    *,
+    actor_phone: str,
+    person_id,
+) -> str:
     previous = str(booking.status)
     cancel(booking)
     append(
         session,
         kind=AuditKind.BOOKING,
-        actor_phone=patient.phone_e164,
-        person_id=patient.id,
+        actor_phone=actor_phone,
+        person_id=person_id,
         payload={
             "decision": "cancelled",
             "booking_id": str(booking.id),
             "previous_status": previous,
         },
     )
-    _set_substate(conversation, None, {})
     return _CANCELLED
 
 
-def _parse_slot(user_text: str) -> datetime | None:
+def parse_slot(user_text: str) -> datetime | None:
     match = _SLOT_RE.search(user_text)
     if not match:
         return None
@@ -221,17 +219,41 @@ def _parse_slot(user_text: str) -> datetime | None:
     return parsed
 
 
+def reschedule(booking: Booking, slot_start: datetime) -> None:
+    booking.slot_start = slot_start
+    db = object_session(booking)
+    if db is not None:
+        db.flush()
+
+
+def _maybe_cancel(
+    session: Session, conversation: Conversation, patient: Patient, user_text: str
+) -> str | None:
+    if not _CANCEL_RE.search(user_text):
+        return None
+    booking = _mutable_booking(session, patient.id)
+    if booking is None:
+        return None
+    reply = cancel_notify(
+        session,
+        booking,
+        actor_phone=patient.phone_e164,
+        person_id=patient.id,
+    )
+    _set_substate(conversation, None, {})
+    return reply
+
+
 def _maybe_reschedule(session: Session, patient: Patient, user_text: str) -> str | None:
     if not _RESCHEDULE_RE.search(user_text):
         return None
     booking = _mutable_booking(session, patient.id)
     if booking is None:
         return None
-    slot = _parse_slot(user_text)
+    slot = parse_slot(user_text)
     if slot is None:
         return _NEED_TIME
-    booking.slot_start = slot
-    session.flush()
+    reschedule(booking, slot)
     return f"I've moved the session to {slot.isoformat()}."
 
 

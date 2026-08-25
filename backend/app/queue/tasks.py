@@ -69,11 +69,25 @@ def enqueue_inbound(
 
 
 BOOKING_CONFIRMED_QUEUE = "joy:booking_confirmed"
+PHYSIO_BOOKING_ALERT_QUEUE = "joy:notify_physio_booking"
 
 
 def enqueue_booking_confirmed(phone: str, booking_id: str, text: str) -> None:
     _redis().lpush(
         BOOKING_CONFIRMED_QUEUE,
+        json.dumps(
+            {
+                "phone": phone,
+                "booking_id": str(booking_id),
+                "text": text,
+            }
+        ),
+    )
+
+
+def enqueue_notify_physio_booking(phone: str, booking_id: str, text: str) -> None:
+    _redis().lpush(
+        PHYSIO_BOOKING_ALERT_QUEUE,
         json.dumps(
             {
                 "phone": phone,
