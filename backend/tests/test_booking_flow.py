@@ -208,6 +208,76 @@ def test_patient_cancel_does_not_confirm(db_session, neuro_patient_ready, fake_l
     assert "confirmed" not in result.reply_text.lower()
 
 
+def test_cancel_from_awaiting_payment_next_turn_is_not_processing(
+    db_session, neuro_patient_ready, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    fake_llm.reply = "ok"
+    fake_llm.extraction = {}
+    handle_turn(db_session, neuro_patient_ready.phone, "yes that's correct", fake_llm)
+    pay = handle_turn(
+        db_session,
+        neuro_patient_ready.phone,
+        "1 teleconsult",
+        fake_llm,
+        paystack=FakePaystack(),
+    )
+    assert "checkout.paystack.com" in pay.reply_text or "http" in pay.reply_text
+    conversation = db_session.scalar(
+        select(Conversation).where(Conversation.person_id == neuro_patient_ready.patient.id)
+    )
+    assert conversation.booking_substate == "awaiting_payment"
+    assert (conversation.booking_context or {}).get("authorization_url")
+
+    handle_turn(db_session, neuro_patient_ready.phone, "cancel", fake_llm)
+    follow = handle_turn(db_session, neuro_patient_ready.phone, "thanks, what now?", fake_llm)
+    lower = follow.reply_text.lower()
+    assert "processing" not in lower
+    assert "checkout.paystack.com" not in follow.reply_text
+    assert "pay here" not in lower
+    assert "confirmed" not in lower
+
+
+def test_webhook_confirm_followup_does_not_say_processing(
+    db_session, neuro_patient_ready, fake_llm
+):
+    from app.booking.state import advance_to_confirmed
+    from app.conversation.turn_handler import handle_turn
+
+    fake_llm.reply = "ok"
+    fake_llm.extraction = {}
+    handle_turn(db_session, neuro_patient_ready.phone, "yes that's correct", fake_llm)
+    handle_turn(
+        db_session,
+        neuro_patient_ready.phone,
+        "1 teleconsult",
+        fake_llm,
+        paystack=FakePaystack(),
+    )
+    booking = db_session.scalar(
+        select(Booking).where(Booking.patient_id == neuro_patient_ready.patient.id)
+    )
+    conversation = db_session.scalar(
+        select(Conversation).where(Conversation.person_id == neuro_patient_ready.patient.id)
+    )
+    assert booking.status == BookingStatus.AWAITING_PAYMENT
+    assert conversation.booking_substate == "awaiting_payment"
+
+    advance_to_confirmed(db_session, booking.id, source="paystack_webhook")
+    db_session.refresh(booking)
+    db_session.refresh(conversation)
+    assert booking.status == BookingStatus.CONFIRMED
+    assert conversation.booking_substate == "awaiting_payment"
+
+    result = handle_turn(db_session, neuro_patient_ready.phone, "have I paid?", fake_llm)
+    lower = result.reply_text.lower()
+    assert "processing" not in lower
+    assert "confirmed" not in lower
+    db_session.refresh(conversation)
+    assert conversation.booking_substate != "awaiting_payment"
+
+
 def test_patient_cancel_confirmed_booking_stays_cancelled_not_confirmed(
     db_session, neuro_patient_ready, fake_llm
 ):

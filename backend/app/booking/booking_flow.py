@@ -79,7 +79,7 @@ def handle_booking_turn(
     if conversation is None:
         return None
 
-    cancelled = _maybe_cancel(session, patient, user_text)
+    cancelled = _maybe_cancel(session, conversation, patient, user_text)
     if cancelled is not None:
         return cancelled
 
@@ -97,7 +97,10 @@ def handle_booking_turn(
     if sub == AWAITING_SLOT_MODE:
         return _continue_slot_mode(session, conversation, patient, user_text, paystack)
     if sub == AWAITING_PAYMENT:
-        return _processing_reply(conversation)
+        booking = _payment_booking(session, conversation, patient)
+        if booking is not None and booking.status == BookingStatus.AWAITING_PAYMENT:
+            return _processing_reply(conversation)
+        _set_substate(conversation, None, {})
 
     if summary_confirmed:
         return offer_matches(session, conversation, patient, extracted)
@@ -160,13 +163,30 @@ def _mutable_booking(session: Session, patient_id: UUID) -> Booking | None:
     )
 
 
-def _maybe_cancel(session: Session, patient: Patient, user_text: str) -> str | None:
+def _payment_booking(
+    session: Session, conversation: Conversation, patient: Patient
+) -> Booking | None:
+    raw = (conversation.booking_context or {}).get("booking_id")
+    if raw:
+        try:
+            row = session.get(Booking, UUID(str(raw)))
+        except (ValueError, TypeError):
+            row = None
+        if row is not None:
+            return row
+    return _mutable_booking(session, patient.id)
+
+
+def _maybe_cancel(
+    session: Session, conversation: Conversation, patient: Patient, user_text: str
+) -> str | None:
     if not _CANCEL_RE.search(user_text):
         return None
     booking = _mutable_booking(session, patient.id)
     if booking is None:
         return None
     booking.status = BookingStatus.CANCELLED
+    _set_substate(conversation, None, {})
     session.flush()
     return _CANCELLED
 
@@ -207,10 +227,15 @@ def _maybe_paid_status(
 ) -> str | None:
     if not _PAID_RE.search(user_text):
         return None
-    booking = _mutable_booking(session, patient.id)
-    if booking is None and conversation.booking_substate != AWAITING_PAYMENT:
+    booking = _payment_booking(session, conversation, patient)
+    if booking is not None and booking.status == BookingStatus.CONFIRMED:
+        _set_substate(conversation, None, {})
         return None
-    return _processing_reply(conversation)
+    if booking is not None and booking.status == BookingStatus.AWAITING_PAYMENT:
+        return _processing_reply(conversation)
+    if booking is None and conversation.booking_substate == AWAITING_PAYMENT:
+        return _processing_reply(conversation)
+    return None
 
 
 def _processing_reply(conversation: Conversation) -> str:
