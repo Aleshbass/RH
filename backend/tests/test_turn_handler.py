@@ -32,10 +32,10 @@ def test_safety_overrides_model_cheer(db_session, patient_phone, fake_llm):
     assert "doctor" in result.reply_text.lower() or "emergency" in result.reply_text.lower() or "hospital" in result.reply_text.lower()
 
 
-def test_booking_cannot_confirm_from_conversation():
+def test_booking_cannot_confirm_from_conversation(db_session):
     from app.booking.state import advance_to_confirmed
     try:
-        advance_to_confirmed(booking_id="x")
+        advance_to_confirmed(db_session, booking_id="x", source="conversation")
         assert False, "must not confirm"
     except RuntimeError as exc:
         assert "webhook" in str(exc).lower()

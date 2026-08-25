@@ -1,6 +1,7 @@
 from app.models.admin import Admin
 from app.models.audit_log import AuditEvent
 from app.models.base import Base
+from app.models.booking import Booking
 from app.models.conversation import Conversation, Message
 from app.models.family_member import FamilyMember
 from app.models.partner import Partner
@@ -25,6 +26,7 @@ __all__ = [
     "AuditEvent",
     "AuditKind",
     "Base",
+    "Booking",
     "BookingStatus",
     "ConditionArea",
     "Conversation",
