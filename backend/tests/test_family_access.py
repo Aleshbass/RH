@@ -24,6 +24,83 @@ def patient(db_session) -> Patient:
     return row
 
 
+def test_add_family_appends_audit(db_session, patient):
+    from app.models.audit_log import AuditEvent
+    from app.models.types import AuditKind
+
+    member = add_family(db_session, patient.id, "+2348110000035", PermissionTier.VIEW_ONLY)
+    events = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.person_id == member.id)
+    ).all()
+    assert events
+    assert events[-1].kind == AuditKind.FAMILY
+    assert events[-1].payload.get("decision") == "added"
+    assert events[-1].payload.get("patient_id") == str(patient.id)
+    assert events[-1].actor_phone == patient.phone_e164
+
+
+def test_set_tier_appends_audit(db_session, patient):
+    from app.models.audit_log import AuditEvent
+    from app.models.types import AuditKind
+
+    member = add_family(db_session, patient.id, "+2348110000036", PermissionTier.VIEW_ONLY)
+    set_tier(db_session, patient.id, "+2348110000036", PermissionTier.FULL_ACCESS)
+    events = db_session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.person_id == member.id,
+            AuditEvent.kind == AuditKind.FAMILY,
+        )
+    ).all()
+    decisions = [row.payload.get("decision") for row in events]
+    assert "set_tier" in decisions
+    assert events[-1].payload.get("permission_tier") == PermissionTier.FULL_ACCESS.value
+
+
+def test_revoke_appends_audit(db_session, patient):
+    from app.models.audit_log import AuditEvent
+    from app.models.types import AuditKind
+
+    member = add_family(db_session, patient.id, "+2348110000037", PermissionTier.VIEW_ONLY)
+    assert revoke(db_session, patient.id, "+2348110000037") is True
+    events = db_session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.person_id == member.id,
+            AuditEvent.kind == AuditKind.FAMILY,
+        )
+    ).all()
+    decisions = [row.payload.get("decision") for row in events]
+    assert "revoked" in decisions
+    assert revoke(db_session, patient.id, "+2348110000037") is False
+    after = db_session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.person_id == member.id,
+            AuditEvent.kind == AuditKind.FAMILY,
+        )
+    ).all()
+    assert len(after) == len(events)
+
+
+def test_relink_after_revoke_appends_audit(db_session, patient):
+    from app.models.audit_log import AuditEvent
+    from app.models.types import AuditKind
+
+    first = add_family(db_session, patient.id, "+2348110000038", PermissionTier.VIEW_ONLY)
+    revoke(db_session, patient.id, "+2348110000038")
+    relinked = add_family(
+        db_session, patient.id, "+2348110000038", PermissionTier.FULL_ACCESS
+    )
+    assert relinked.id == first.id
+    events = db_session.scalars(
+        select(AuditEvent).where(
+            AuditEvent.person_id == first.id,
+            AuditEvent.kind == AuditKind.FAMILY,
+        )
+    ).all()
+    decisions = [row.payload.get("decision") for row in events]
+    assert "revoked" in decisions
+    assert "relinked" in decisions
+
+
 def test_view_only_cannot_pay(db_session, patient):
     member = add_family(db_session, patient.id, "+2348110000001", PermissionTier.VIEW_ONLY)
     identity = resolve(db_session, "+2348110000001")
@@ -70,6 +147,44 @@ def test_set_tier_grants_full_access(db_session, patient):
     assert identity is not None
     assert identity.permission_tier == PermissionTier.FULL_ACCESS
     assert authorize(identity, "pay") is True
+
+
+def test_revoke_returns_whether_it_revoked(db_session, patient):
+    add_family(db_session, patient.id, "+2348110000031", PermissionTier.VIEW_ONLY)
+    assert revoke(db_session, patient.id, "+2348110000031") is True
+    assert revoke(db_session, patient.id, "+2348110000031") is False
+    assert revoke(db_session, patient.id, "+2348110000032") is False
+
+
+def test_revoke_unknown_does_not_claim_they_cannot_see_progress(
+    db_session, patient, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    result = handle_turn(
+        db_session, patient.phone_e164, "revoke +2348110000033", fake_llm
+    )
+    lower = result.reply_text.lower()
+    assert "no longer see" not in lower
+    assert "progress" not in lower
+
+
+def test_revoke_already_revoked_does_not_claim_they_cannot_see_progress(
+    db_session, patient, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    add_family(db_session, patient.id, "+2348110000034", PermissionTier.VIEW_ONLY)
+    first = handle_turn(
+        db_session, patient.phone_e164, "revoke +2348110000034", fake_llm
+    )
+    assert "no longer see" in first.reply_text.lower()
+    second = handle_turn(
+        db_session, patient.phone_e164, "revoke +2348110000034", fake_llm
+    )
+    lower = second.reply_text.lower()
+    assert "no longer see" not in lower
+    assert "progress" not in lower
 
 
 def test_revoke_keeps_row(db_session, patient):

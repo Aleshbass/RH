@@ -26,6 +26,21 @@ _VALUE_DOMAINS = (
 )
 
 
+def test_audit_kind_includes_family():
+    assert "family" in {k.value for k in AuditKind}
+
+
+def test_audit_kind_family_migration_revises_relay_and_updates_check():
+    path = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0013_audit_kind_family.py"
+    assert path.is_file()
+    source = path.read_text()
+    assert "0012_family_relay" in source
+    assert "ck_audit_events_kind" in source
+    assert '"family"' in source
+    assert "drop_constraint" in source
+    assert "create_check_constraint" in source
+
+
 def test_extracted_triage_defaults():
     extracted = ExtractedTriage()
     assert extracted.condition_area is None

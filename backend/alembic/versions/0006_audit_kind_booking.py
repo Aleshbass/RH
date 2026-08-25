@@ -10,8 +10,6 @@ from typing import Sequence, Union
 
 from alembic import op
 
-from app.models.types import AuditKind
-
 revision: str = "0006_audit_kind_booking"
 down_revision: Union[str, Sequence[str], None] = "0005_booking_substate"
 branch_labels: Union[str, Sequence[str], None] = None
@@ -39,7 +37,8 @@ _PREVIOUS_KINDS = (
     "admin",
 )
 
-assert set(_AUDIT_KINDS) == {k.value for k in AuditKind}
+assert "booking" in _AUDIT_KINDS
+assert "booking" not in _PREVIOUS_KINDS
 
 
 def upgrade() -> None:

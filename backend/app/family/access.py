@@ -7,12 +7,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit.logger import append
 from app.models.admin import Admin
 from app.models.family_member import FamilyMember
 from app.models.partner import Partner
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
-from app.models.types import PermissionTier
+from app.models.types import AuditKind, PermissionTier
 
 _PHONE_TOKEN = r"(?:\+?234[\d\s-]{10,}|\b0\d{10}\b)"
 _PHONE_RE = re.compile(_PHONE_TOKEN)
@@ -73,6 +74,27 @@ def _persona_owns_phone(session: Session, phone: str) -> bool:
     return False
 
 
+def _audit_access(
+    session: Session,
+    patient_id: UUID,
+    member: FamilyMember,
+    decision: str,
+) -> None:
+    patient = session.get(Patient, patient_id)
+    append(
+        session,
+        kind=AuditKind.FAMILY,
+        actor_phone=patient.phone_e164 if patient is not None else "",
+        person_id=member.id,
+        payload={
+            "decision": decision,
+            "patient_id": str(patient_id),
+            "family_member_id": str(member.id),
+            "permission_tier": member.permission_tier.value,
+        },
+    )
+
+
 def add_family(
     session: Session,
     patient_id: UUID,
@@ -86,10 +108,14 @@ def add_family(
     if existing is not None:
         if existing.patient_id != patient_id and existing.revoked_at is None:
             raise ValueError(_LINKED_ELSEWHERE)
+        was_revoked = existing.revoked_at is not None
         existing.patient_id = patient_id
         existing.permission_tier = tier
         existing.revoked_at = None
         session.flush()
+        _audit_access(
+            session, patient_id, existing, "relinked" if was_revoked else "updated"
+        )
         return existing
     member = FamilyMember(
         phone_e164=phone,
@@ -98,6 +124,7 @@ def add_family(
     )
     session.add(member)
     session.flush()
+    _audit_access(session, patient_id, member, "added")
     return member
 
 
@@ -119,10 +146,11 @@ def set_tier(
         raise ValueError("family member not found")
     member.permission_tier = tier
     session.flush()
+    _audit_access(session, patient_id, member, "set_tier")
     return member
 
 
-def revoke(session: Session, patient_id: UUID, phone_e164: str) -> None:
+def revoke(session: Session, patient_id: UUID, phone_e164: str) -> bool:
     phone = to_e164(phone_e164)
     member = session.scalar(
         select(FamilyMember).where(
@@ -131,9 +159,11 @@ def revoke(session: Session, patient_id: UUID, phone_e164: str) -> None:
         )
     )
     if member is None or member.revoked_at is not None:
-        return
+        return False
     member.revoked_at = datetime.now(timezone.utc)
     session.flush()
+    _audit_access(session, patient_id, member, "revoked")
+    return True
 
 
 def _parse_tier(text: str) -> PermissionTier | None:
@@ -182,10 +212,15 @@ def apply_family_turn(session: Session, patient_id: UUID, text: str) -> str | No
         return None
     action, phone, tier = parsed
     if action == "revoke":
-        revoke(session, patient_id, phone)
+        phone_e164 = to_e164(phone)
+        if revoke(session, patient_id, phone):
+            return (
+                f"I've revoked access for {phone_e164}. "
+                "They can no longer see your progress."
+            )
         return (
-            f"I've revoked access for {to_e164(phone)}. "
-            "They can no longer see your progress."
+            f"I couldn't revoke {phone_e164}. "
+            "That number isn't an active family contact."
         )
     if action == "set_tier":
         chosen = tier or PermissionTier.VIEW_ONLY

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -18,6 +19,8 @@ from app.models.physiotherapist import Physiotherapist
 from app.models.relay import RelayThread
 from app.models.triage_session import TriageSession
 from app.models.types import AuditKind, BookingStatus, ExtractedTriage, PatientPhase, Persona
+
+logger = logging.getLogger(__name__)
 
 PENDING_RELAY_KEY = "pending_relay_thread_ids"
 
@@ -137,7 +140,7 @@ def apply_physio_answer(
     thread.family_visible_text = family_text
     thread.physio_visible_text = physio_ack
     thread.answered_at = datetime.now(timezone.utc)
-    if member is not None:
+    if member is not None and member.revoked_at is None:
         _write_joy(session, member.id, Persona.FAMILY, family_text)
         _enqueue_family(member.phone_e164, family_text)
     if physio is not None:
@@ -354,7 +357,7 @@ def _enqueue_physio(phone: str, text: str) -> None:
 
         enqueue_notify_physio_relay(phone, text)
     except Exception:
-        return
+        logger.exception("failed to enqueue physio relay")
 
 
 def _enqueue_family(phone: str, text: str) -> None:
@@ -363,4 +366,4 @@ def _enqueue_family(phone: str, text: str) -> None:
 
         enqueue_notify_family_relay(phone, text)
     except Exception:
-        return
+        logger.exception("failed to enqueue family relay")

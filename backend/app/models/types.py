@@ -51,6 +51,7 @@ class AuditKind(StrEnum):
     RELAY = "relay"
     ADMIN = "admin"
     BOOKING = "booking"
+    FAMILY = "family"
 
 
 class Identity(BaseModel):

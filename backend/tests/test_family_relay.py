@@ -81,6 +81,75 @@ def family_view(db_session, patient, physio):
     return member
 
 
+def test_enqueue_physio_failure_is_logged_not_raised(
+    db_session, family_view, caplog, monkeypatch
+):
+    import logging
+
+    from app.family.relay import ask_physio
+
+    monkeypatch.setattr(
+        "app.queue.tasks.enqueue_notify_physio_relay",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("redis down")),
+    )
+    with caplog.at_level(logging.ERROR):
+        thread = ask_physio(db_session, family_view.id, "how is recovery going?")
+    assert thread.family_visible_text
+    assert any(rec.exc_info for rec in caplog.records)
+    assert "enqueue" in caplog.text.lower()
+
+
+def test_enqueue_family_failure_is_logged_not_raised(
+    db_session, family_view, caplog, monkeypatch
+):
+    import logging
+
+    from app.family.relay import apply_physio_answer, ask_physio
+
+    monkeypatch.setattr(
+        "app.queue.tasks.enqueue_notify_physio_relay",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.queue.tasks.enqueue_notify_family_relay",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("redis down")),
+    )
+    thread = ask_physio(db_session, family_view.id, "how is recovery going?")
+    with caplog.at_level(logging.ERROR):
+        answer = apply_physio_answer(
+            db_session, thread.id, "doing well, continue the walks"
+        )
+    assert answer.physio_visible_text
+    assert any(rec.exc_info for rec in caplog.records)
+    assert "enqueue" in caplog.text.lower()
+
+
+def test_handle_turn_survives_relay_enqueue_failure(
+    db_session, family_view, physio, fake_llm, monkeypatch
+):
+    from app.conversation.turn_handler import handle_turn
+
+    monkeypatch.setattr(
+        "app.queue.tasks.enqueue_notify_physio_relay",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("redis down")),
+    )
+    monkeypatch.setattr(
+        "app.queue.tasks.enqueue_notify_family_relay",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("redis down")),
+    )
+    asked = handle_turn(
+        db_session,
+        family_view.phone_e164,
+        "ask the physio how recovery is going",
+        fake_llm,
+    )
+    assert asked.reply_text.strip()
+    answered = handle_turn(
+        db_session, physio.phone_e164, "doing well, continue the walks", fake_llm
+    )
+    assert answered.reply_text.strip()
+
+
 def test_relay_hides_physio_number(db_session, family_view, physio, patient):
     from app.family.relay import ask_physio, apply_physio_answer
     thread = ask_physio(db_session, family_view.id, "how is recovery going?")
@@ -308,6 +377,80 @@ def test_open_relay_does_not_swallow_physio_payout(
     assert booking.status == BookingStatus.CONFIRMED
 
 
+def test_revoked_family_does_not_receive_physio_answer(
+    db_session, family_view, physio, patient, fake_llm, monkeypatch
+):
+    from app.conversation.turn_handler import handle_turn
+    from app.family.access import revoke
+    from app.models.conversation import Message
+
+    family_outbound: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.queue.tasks.enqueue_notify_family_relay",
+        lambda phone, text: family_outbound.append((phone, text)),
+    )
+    monkeypatch.setattr(
+        "app.queue.tasks.enqueue_notify_physio_relay",
+        lambda phone, text: None,
+    )
+
+    handle_turn(
+        db_session,
+        family_view.phone_e164,
+        "ask the physio how recovery is going",
+        fake_llm,
+    )
+    revoke(db_session, patient.id, family_view.phone_e164)
+    family_outbound.clear()
+
+    result = handle_turn(
+        db_session, physio.phone_e164, "doing well, continue the walks", fake_llm
+    )
+    assert result.reply_text.strip()
+    assert family_outbound == []
+    family_joy = [
+        m
+        for m in db_session.query(Message).all()
+        if m.conversation.person_id == family_view.id and m.role == "joy"
+    ]
+    assert not any(
+        "doing well, continue the walks" in (m.text or "") for m in family_joy
+    )
+    assert not any("the physiotherapist said" in (m.text or "").lower() for m in family_joy)
+
+
+def test_apply_physio_answer_skips_revoked_family_whatsapp(
+    db_session, family_view, physio, monkeypatch
+):
+    from app.family.access import revoke
+    from app.family.relay import apply_physio_answer, ask_physio
+    from app.models.conversation import Message
+
+    family_outbound: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.queue.tasks.enqueue_notify_family_relay",
+        lambda phone, text: family_outbound.append((phone, text)),
+    )
+    monkeypatch.setattr(
+        "app.queue.tasks.enqueue_notify_physio_relay",
+        lambda phone, text: None,
+    )
+
+    thread = ask_physio(db_session, family_view.id, "how is recovery going?")
+    revoke(db_session, family_view.patient_id, family_view.phone_e164)
+    family_outbound.clear()
+    apply_physio_answer(db_session, thread.id, "doing well, continue the walks")
+    assert family_outbound == []
+    family_joy = [
+        m
+        for m in db_session.query(Message).all()
+        if m.conversation.person_id == family_view.id and m.role == "joy"
+    ]
+    assert not any(
+        "doing well, continue the walks" in (m.text or "") for m in family_joy
+    )
+
+
 def test_physio_free_text_answers_first_pending_thread(
     db_session, family_view, physio, patient, fake_llm
 ):
@@ -331,12 +474,11 @@ def test_physio_free_text_answers_first_pending_thread(
     )
     assert family_view.phone_e164 not in result.reply_text
     threads = db_session.scalars(
-        select(RelayThread)
-        .where(RelayThread.physio_id == physio.id)
-        .order_by(RelayThread.created_at.asc())
+        select(RelayThread).where(RelayThread.physio_id == physio.id)
     ).all()
     assert len(threads) == 2
-    first, second = threads
+    first = next(t for t in threads if "recovery" in t.question)
+    second = next(t for t in threads if "stairs" in t.question)
     assert first.answer == "doing well, continue the walks"
     assert first.answered_at is not None
     assert second.answer is None

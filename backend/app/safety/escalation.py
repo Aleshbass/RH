@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from sqlalchemy import select
@@ -6,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.models.conversation import Conversation, Message
 from app.models.family_member import FamilyMember
 from app.models.types import PatientPhase, Persona, SafetyResult
+
+logger = logging.getLogger(__name__)
 
 _OPENERS: dict[str, str] = {
     "cauda_equina": (
@@ -61,7 +64,7 @@ def _enqueue_family_notice(phone: str, text: str) -> None:
 
         enqueue_notify_family_safety(phone, text)
     except Exception:
-        return
+        logger.exception("failed to enqueue family safety notice")
 
 
 def notify_family_on_safety(

@@ -116,6 +116,25 @@ def test_full_access_can_initiate_payment_for_patient(db_session, family_full, f
     assert "pay" in result.reply_text.lower() or "http" in result.reply_text.lower() or "processing" in result.reply_text.lower()
 
 
+def test_enqueue_family_notice_failure_is_logged_not_raised(
+    db_session, patient, family_view, fake_llm, caplog, monkeypatch
+):
+    import logging
+
+    from app.conversation.turn_handler import handle_turn
+
+    monkeypatch.setattr(
+        "app.queue.tasks.enqueue_notify_family_safety",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("redis down")),
+    )
+    fake_llm.extraction = {"flags": {"chest_pain": True}}
+    with caplog.at_level(logging.ERROR):
+        result = handle_turn(db_session, patient.phone_e164, "chest pain", fake_llm)
+    assert result.blocked_by_safety is True
+    assert any(rec.exc_info for rec in caplog.records)
+    assert "enqueue" in caplog.text.lower()
+
+
 def test_safety_notifies_family(db_session, patient, family_view, fake_llm):
     fake_llm.extraction = {"flags": {"chest_pain": True}}
     from app.conversation.turn_handler import handle_turn
