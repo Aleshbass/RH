@@ -247,8 +247,6 @@ def _physio_turn(
     state = load(session, identity)
     conversation = session.get(Conversation, state.conversation_id)
     reply = apply_physio_reply(session, physio.id, user_text, conversation)
-    if reply is None:
-        reply = apply_pending_physio_answer(session, physio.id, user_text, conversation)
     if reply is None and authorize(identity, "physio_payout"):
         reply = apply_payout_turn(session, physio.id, user_text, paystack=paystack)
     if reply is None:
@@ -263,6 +261,8 @@ def _physio_turn(
         reply = _DASHBOARD_REPLY
     if reply is None and conversation is not None:
         reply = apply_availability_turn(session, physio.id, user_text, conversation)
+    if reply is None:
+        reply = apply_pending_physio_answer(session, physio.id, user_text, conversation)
     if reply is None:
         reply = apply_onboarding_turn(session, physio, user_text, media)
     save_turn(

@@ -19,7 +19,7 @@ from app.models.relay import RelayThread
 from app.models.triage_session import TriageSession
 from app.models.types import AuditKind, BookingStatus, ExtractedTriage, PatientPhase, Persona
 
-PENDING_RELAY_KEY = "pending_relay_thread_id"
+PENDING_RELAY_KEY = "pending_relay_thread_ids"
 
 UNASSIGNED_REPLY = (
     "Relay starts after a physio is assigned. "
@@ -141,7 +141,7 @@ def apply_physio_answer(
         _write_joy(session, member.id, Persona.FAMILY, family_text)
         _enqueue_family(member.phone_e164, family_text)
     if physio is not None:
-        _clear_pending_relay(session, physio.id)
+        _dequeue_pending_relay(session, physio.id, thread.id)
     _audit_relay(
         session,
         actor_phone=physio.phone_e164 if physio is not None else "",
@@ -159,23 +159,16 @@ def apply_pending_physio_answer(
     text: str,
     conversation: Conversation | None = None,
 ) -> str | None:
-    thread_id = _pending_thread_id(conversation)
-    thread = None
-    if thread_id is not None:
-        thread = session.get(RelayThread, thread_id)
-    if thread is None or thread.physio_id != physio_id or thread.answered_at is not None:
-        thread = session.scalar(
-            select(RelayThread)
-            .where(
-                RelayThread.physio_id == physio_id,
-                RelayThread.answered_at.is_(None),
-            )
-            .order_by(RelayThread.created_at.desc())
-        )
-    if thread is None:
+    queue = _pending_thread_ids(conversation)
+    if not queue:
         return None
-    result = apply_physio_answer(session, thread.id, text)
-    return result.physio_visible_text
+    for thread_id in queue:
+        thread = session.get(RelayThread, thread_id)
+        if thread is None or thread.physio_id != physio_id or thread.answered_at is not None:
+            continue
+        result = apply_physio_answer(session, thread.id, text)
+        return result.physio_visible_text
+    return None
 
 
 def _confirmed_booking(session: Session, patient_id: UUID) -> Booking | None:
@@ -279,7 +272,11 @@ def _write_joy(
         session.flush()
     if pending_thread_id is not None:
         ctx = dict(conversation.booking_context or {})
-        ctx[PENDING_RELAY_KEY] = str(pending_thread_id)
+        queue = _coerce_pending_ids(ctx.get(PENDING_RELAY_KEY))
+        sid = str(pending_thread_id)
+        if sid not in queue:
+            queue.append(sid)
+        ctx[PENDING_RELAY_KEY] = queue
         conversation.booking_context = ctx
         flag_modified(conversation, "booking_context")
     session.add(Message(conversation_id=conversation.id, role="joy", text=text))
@@ -287,19 +284,27 @@ def _write_joy(
     return conversation
 
 
-def _pending_thread_id(conversation: Conversation | None) -> UUID | None:
+def _coerce_pending_ids(raw) -> list[str]:
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, list):
+        return [str(item) for item in raw if item]
+    return [str(raw)]
+
+
+def _pending_thread_ids(conversation: Conversation | None) -> list[UUID]:
     if conversation is None:
-        return None
-    raw = (conversation.booking_context or {}).get(PENDING_RELAY_KEY)
-    if not raw:
-        return None
-    try:
-        return UUID(str(raw))
-    except (ValueError, TypeError):
-        return None
+        return []
+    ids: list[UUID] = []
+    for item in _coerce_pending_ids((conversation.booking_context or {}).get(PENDING_RELAY_KEY)):
+        try:
+            ids.append(UUID(item))
+        except (ValueError, TypeError):
+            continue
+    return ids
 
 
-def _clear_pending_relay(session: Session, physio_id: UUID) -> None:
+def _dequeue_pending_relay(session: Session, physio_id: UUID, thread_id: UUID) -> None:
     conversation = session.scalar(
         select(Conversation).where(
             Conversation.person_id == physio_id,
@@ -309,7 +314,12 @@ def _clear_pending_relay(session: Session, physio_id: UUID) -> None:
     if conversation is None:
         return
     ctx = dict(conversation.booking_context or {})
-    ctx.pop(PENDING_RELAY_KEY, None)
+    sid = str(thread_id)
+    queue = [item for item in _coerce_pending_ids(ctx.get(PENDING_RELAY_KEY)) if item != sid]
+    if queue:
+        ctx[PENDING_RELAY_KEY] = queue
+    else:
+        ctx.pop(PENDING_RELAY_KEY, None)
     conversation.booking_context = ctx or None
     flag_modified(conversation, "booking_context")
 

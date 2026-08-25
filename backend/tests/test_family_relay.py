@@ -270,3 +270,80 @@ def test_physio_whatsapp_answer_reaches_family_without_phones(
         select(Booking).where(Booking.patient_id == patient.id)
     )
     assert booking.status == BookingStatus.CONFIRMED
+
+
+def test_open_relay_does_not_swallow_physio_payout(
+    db_session, family_view, physio, patient, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.conversation import Message
+    from app.models.payout import Payout
+
+    handle_turn(
+        db_session,
+        family_view.phone_e164,
+        "ask the physio how recovery is going",
+        fake_llm,
+    )
+    result = handle_turn(
+        db_session, physio.phone_e164, "payout 500000 kobo", fake_llm
+    )
+    rows = db_session.query(Payout).filter_by(physio_id=physio.id).all()
+    assert rows
+    assert rows[0].amount_kobo == 500000
+    assert rows[0].status == "requested"
+    assert "requested" in result.reply_text.lower() or "payout" in result.reply_text.lower()
+    assert "the physiotherapist said" not in result.reply_text.lower()
+    family_joy = [
+        m
+        for m in db_session.query(Message).all()
+        if m.conversation.person_id == family_view.id and m.role == "joy"
+    ]
+    assert family_joy
+    assert "payout 500000 kobo" not in family_joy[-1].text.lower()
+    assert "the physiotherapist said" not in family_joy[-1].text.lower()
+    booking = db_session.scalar(
+        select(Booking).where(Booking.patient_id == patient.id)
+    )
+    assert booking.status == BookingStatus.CONFIRMED
+
+
+def test_physio_free_text_answers_first_pending_thread(
+    db_session, family_view, physio, patient, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.relay import RelayThread
+
+    handle_turn(
+        db_session,
+        family_view.phone_e164,
+        "ask the physio how recovery is going",
+        fake_llm,
+    )
+    handle_turn(
+        db_session,
+        family_view.phone_e164,
+        "ask the physio about the stairs",
+        fake_llm,
+    )
+    result = handle_turn(
+        db_session, physio.phone_e164, "doing well, continue the walks", fake_llm
+    )
+    assert family_view.phone_e164 not in result.reply_text
+    threads = db_session.scalars(
+        select(RelayThread)
+        .where(RelayThread.physio_id == physio.id)
+        .order_by(RelayThread.created_at.asc())
+    ).all()
+    assert len(threads) == 2
+    first, second = threads
+    assert first.answer == "doing well, continue the walks"
+    assert first.answered_at is not None
+    assert second.answer is None
+    assert second.answered_at is None
+    assert "doing well, continue the walks" in (first.family_visible_text or "")
+    assert "doing well, continue the walks" not in (second.family_visible_text or "")
+    booking = db_session.scalar(
+        select(Booking).where(Booking.patient_id == patient.id)
+    )
+    assert booking.status == BookingStatus.CONFIRMED
