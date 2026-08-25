@@ -8,6 +8,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
 
+ONBOARDING_STATUSES = ("collecting", "submitted", "verified", "rejected")
+
+
 class Physiotherapist(Base):
     __tablename__ = "physiotherapists"
 
@@ -24,6 +27,19 @@ class Physiotherapist(Base):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     service_radius_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mrtb_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    credential_urls: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    onboarding_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="collecting", server_default="collecting"
+    )
+    credentials_submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verification_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

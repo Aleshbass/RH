@@ -4,11 +4,21 @@ import unicodedata
 from sqlalchemy.orm import Session
 
 from app.models.patient import Patient
+from app.models.physiotherapist import Physiotherapist
 from app.models.types import Identity, Persona
 
 _UNKNOWN_SENDER_QUESTION = (
     "Are you looking for physiotherapy care, are you a physiotherapist, "
     "or did a family member add you here?"
+)
+
+_PHYSIO_CLAIM_RE = re.compile(
+    r"(?i)(?:"
+    r"\bi(?:\s+am|'m)\s+(?:a\s+)?physio(?:therapist)?\b|"
+    r"\bi(?:\s+am|'m)\s+(?:a\s+)?therapist\b|"
+    r"\b(?:apply(?:ing)?|join(?:ing)?)\s+as(?:\s+a)?\s+"
+    r"(?:physio(?:therapist)?|therapist)\b"
+    r")"
 )
 
 _ROLE_CLAIM_RE = re.compile(
@@ -74,6 +84,10 @@ def looks_like_role_claim(user_text: str) -> bool:
     return bool(_ROLE_CLAIM_RE.search(_normalize(user_text)))
 
 
+def looks_like_physio_claim(user_text: str) -> bool:
+    return bool(_PHYSIO_CLAIM_RE.search(_normalize(user_text)))
+
+
 def looks_like_symptom(user_text: str) -> bool:
     return any(_has_marker(user_text, marker) for marker in _SYMPTOM_MARKERS)
 
@@ -91,5 +105,20 @@ def maybe_provision_patient(
     return Identity(
         persona=Persona.PATIENT,
         person_id=patient.id,
+        phone_e164=phone_e164,
+    )
+
+
+def maybe_provision_physio(
+    session: Session, phone_e164: str, user_text: str
+) -> Identity | None:
+    if not looks_like_physio_claim(user_text):
+        return None
+    physio = Physiotherapist(phone_e164=phone_e164)
+    session.add(physio)
+    session.flush()
+    return Identity(
+        persona=Persona.PHYSIO,
+        person_id=physio.id,
         phone_e164=phone_e164,
     )

@@ -268,13 +268,40 @@ def test_physio_does_not_extract_msk_triage(db_session):
     result = handle_turn(db_session, physio.phone_e164, "my knee has been bad for 3 days", llm)
     assert llm.complete_calls == 0
     assert result.extracted is None or not result.extracted.body_location
-    assert "later" in result.reply_text.lower()
+    assert "later" not in result.reply_text.lower()
+    lower = result.reply_text.lower()
+    assert "mrtb" in lower or "credential" in lower or "specialty" in lower
     assert (
         db_session.scalars(
             select(TriageSession).where(TriageSession.patient_id == physio.id)
         ).all()
         == []
     )
+
+
+def test_physio_handle_turn_submits_complete_onboarding(db_session):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.physiotherapist import Physiotherapist
+
+    physio = Physiotherapist(phone_e164="+2348000001097")
+    db_session.add(physio)
+    db_session.flush()
+    llm = _CountingLLM(reply="should not be used")
+    result = handle_turn(
+        db_session,
+        physio.phone_e164,
+        "MRTB 12345, specialties neuro and msk",
+        llm,
+        media=["https://files/cred.jpg"],
+    )
+    db_session.refresh(physio)
+    assert llm.complete_calls == 0
+    assert physio.onboarding_status == "submitted"
+    assert physio.verification_due_at is not None
+    lower = result.reply_text.lower()
+    assert "submitted" in lower
+    assert "48" in lower
+    assert "verification" in lower
 
 
 def test_mid_triage_does_not_forward_model_checklist(db_session, patient_identity, fake_llm):

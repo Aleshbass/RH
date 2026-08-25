@@ -10,12 +10,17 @@ from app.conversation.orchestrator import decide_booking_substate, decide_phase,
 from app.conversation.state_manager import ConversationState, load, save_turn
 from app.identity.permissions import authorize
 from app.identity.resolver import resolve
-from app.identity.unknown_sender import begin_unknown, maybe_provision_patient
+from app.identity.unknown_sender import (
+    begin_unknown,
+    maybe_provision_patient,
+    maybe_provision_physio,
+)
 from app.llm.gemini_client import LLMClient
 from app.llm.prompt_builder import build
 from app.llm.rag.retriever import retrieve
 from app.models.conversation import Conversation
 from app.models.patient import Patient
+from app.models.physiotherapist import Physiotherapist
 from app.models.triage_session import TriageSession
 from app.models.types import (
     AuditKind,
@@ -27,6 +32,7 @@ from app.models.types import (
 )
 from app.safety.escalation import patient_message
 from app.safety.evaluator import evaluate
+from app.physio.onboarding import apply_onboarding_turn
 from app.triage.extraction import infer_condition_area, merge_extraction
 from app.triage.question_batching import grouped_followup, missing_fields
 from app.triage.summary import plain_summary
@@ -202,6 +208,40 @@ def _reply_after_extract(
     return summary, PatientPhase.POST_TRIAGE
 
 
+def _physio_onboarding_turn(
+    session: Session,
+    identity: Identity,
+    user_text: str,
+    media: list[str] | None,
+    wa_message_id: str | None,
+) -> TurnResult:
+    physio = session.get(Physiotherapist, identity.person_id)
+    if physio is None:
+        return TurnResult(
+            reply_text=_LATER_PATH,
+            language=mirror_language(user_text, None),
+            phase=PatientPhase.FIRST_CONTACT,
+        )
+    reply = apply_onboarding_turn(session, physio, user_text, media)
+    language = mirror_language(user_text, None)
+    state = load(session, identity)
+    save_turn(
+        session,
+        state,
+        user_text,
+        reply,
+        ExtractedTriage(),
+        PatientPhase.FIRST_CONTACT,
+        language,
+        wa_message_id,
+    )
+    return TurnResult(
+        reply_text=reply,
+        language=language,
+        phase=PatientPhase.FIRST_CONTACT,
+    )
+
+
 def handle_turn(
     session: Session,
     phone: str,
@@ -210,10 +250,13 @@ def handle_turn(
     wa_message_id: str | None = None,
     *,
     paystack=None,
+    media: list[str] | None = None,
 ) -> TurnResult:
     identity = resolve(session, phone)
     if identity is None:
         identity = maybe_provision_patient(session, phone, user_text)
+    if identity is None:
+        identity = maybe_provision_physio(session, phone, user_text)
     if identity is None:
         text = begin_unknown(session, phone)
         _audit_identity(session, phone)
@@ -221,6 +264,11 @@ def handle_turn(
             reply_text=text,
             language=mirror_language(user_text, None),
             phase=PatientPhase.FIRST_CONTACT,
+        )
+
+    if authorize(identity, "physio_onboard"):
+        return _physio_onboarding_turn(
+            session, identity, user_text, media, wa_message_id
         )
 
     if not authorize(identity, "triage"):

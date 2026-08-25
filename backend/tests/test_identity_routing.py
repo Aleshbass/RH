@@ -192,3 +192,20 @@ def test_physio_intent_does_not_auto_create_patient(db_session, fake_llm):
     assert identity is None or identity.persona == Persona.PHYSIO
     if identity is None:
         assert "physiotherapy" in result.reply_text.lower() or "physio" in result.reply_text.lower()
+
+
+def test_physio_claim_provisions_physiotherapist_not_patient(db_session, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    phone = "+2348000000210"
+    result = handle_turn(db_session, phone, "I am a physiotherapist", fake_llm)
+    identity = resolve(db_session, phone)
+    assert identity is not None
+    assert identity.persona == Persona.PHYSIO
+    assert db_session.scalar(select(Patient).where(Patient.phone_e164 == phone)) is None
+    physio = db_session.scalar(select(Physiotherapist).where(Physiotherapist.phone_e164 == phone))
+    assert physio is not None
+    assert physio.onboarding_status == "collecting"
+    assert "later" not in result.reply_text.lower()
+    lower = result.reply_text.lower()
+    assert "mrtb" in lower or "credential" in lower or "specialty" in lower
