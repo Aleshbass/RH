@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, literal_str_enum, str_enum
@@ -23,6 +23,8 @@ class Conversation(Base):
     phase: Mapped[PatientPhase] = mapped_column(str_enum(PatientPhase, "patient_phase"), nullable=False)
     last_known_language: Mapped[str | None] = mapped_column(String, nullable=True)
     summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    booking_substate: Mapped[str | None] = mapped_column(String, nullable=True)
+    booking_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation")
 
 

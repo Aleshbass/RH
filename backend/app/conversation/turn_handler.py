@@ -4,8 +4,9 @@ import re
 from sqlalchemy.orm import Session
 
 from app.audit.logger import append
+from app.booking.booking_flow import handle_booking_turn
 from app.conversation.language import mirror_language
-from app.conversation.orchestrator import decide_phase, has_narrative
+from app.conversation.orchestrator import decide_booking_substate, decide_phase, has_narrative
 from app.conversation.state_manager import ConversationState, load, save_turn
 from app.identity.permissions import authorize
 from app.identity.resolver import resolve
@@ -13,8 +14,8 @@ from app.identity.unknown_sender import begin_unknown, maybe_provision_patient
 from app.llm.gemini_client import LLMClient
 from app.llm.prompt_builder import build
 from app.llm.rag.retriever import retrieve
-from app.matching.specialty_match import NotReadyError, match_physios
 from app.models.conversation import Conversation
+from app.models.patient import Patient
 from app.models.triage_session import TriageSession
 from app.models.types import (
     AuditKind,
@@ -37,10 +38,6 @@ _NEGATED_CORRECT_RE = re.compile(
     re.IGNORECASE,
 )
 
-_MATCHING_NEXT_SLICE = (
-    "Thanks for confirming. Matching you with a specialist physio is the next slice. "
-    "I will share options when that is ready."
-)
 _LATER_PATH = (
     "This WhatsApp path is for later — I will be able to help you here in a later slice."
 )
@@ -166,23 +163,35 @@ def _reply_after_extract(
     candidate_reply: str,
     extracted: ExtractedTriage,
     incoming_phase: PatientPhase,
+    identity: Identity,
+    paystack=None,
 ) -> tuple[str, PatientPhase]:
     if not has_narrative(extracted) or incoming_phase == PatientPhase.FIRST_CONTACT:
         return candidate_reply, PatientPhase.FIRST_CONTACT
 
     leftover = missing_fields(extracted)
-    if leftover:
+    booking_sub = decide_booking_substate(state)
+    if leftover and not booking_sub:
         followup = grouped_followup(leftover)
         if not followup:
             return _MID_ACK, PatientPhase.MID_TRIAGE
         return f"{_MID_ACK} {followup}", PatientPhase.MID_TRIAGE
 
-    if incoming_phase == PatientPhase.POST_TRIAGE and _is_summary_confirm(user_text):
-        try:
-            match_physios(session, extracted)
-        except NotReadyError:
-            return _MATCHING_NEXT_SLICE, PatientPhase.POST_TRIAGE
-        return _MATCHING_NEXT_SLICE, PatientPhase.POST_TRIAGE
+    patient = session.get(Patient, identity.person_id)
+    if patient is not None:
+        booking_reply = handle_booking_turn(
+            session,
+            state,
+            patient,
+            extracted,
+            user_text,
+            paystack=paystack,
+            summary_confirmed=(
+                incoming_phase == PatientPhase.POST_TRIAGE and _is_summary_confirm(user_text)
+            ),
+        )
+        if booking_reply is not None:
+            return booking_reply, PatientPhase.POST_TRIAGE
 
     summary = plain_summary(extracted)
     _store_summary(session, state, summary)
@@ -196,6 +205,8 @@ def handle_turn(
     user_text: str,
     llm: LLMClient,
     wa_message_id: str | None = None,
+    *,
+    paystack=None,
 ) -> TurnResult:
     identity = resolve(session, phone)
     if identity is None:
@@ -262,7 +273,14 @@ def handle_turn(
             language = reply_response.language or language
 
     reply, outgoing = _reply_after_extract(
-        session, state, user_text, candidate_reply, extracted, phase
+        session,
+        state,
+        user_text,
+        candidate_reply,
+        extracted,
+        phase,
+        identity,
+        paystack=paystack,
     )
     _audit_turn(session, identity, extracted, safety, outgoing)
     save_turn(session, state, user_text, reply, extracted, outgoing, language, wa_message_id)

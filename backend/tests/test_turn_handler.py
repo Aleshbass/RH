@@ -187,8 +187,10 @@ def test_post_triage_confirm_does_not_claim_booked(db_session, patient_identity,
     result = handle_turn(db_session, patient_identity.phone_e164, "yes that's correct", fake_llm)
     lower = result.reply_text.lower()
     assert "booked" not in lower
+    assert "confirmed" not in lower
     assert result.blocked_by_safety is False
-    assert "match" in lower or "next" in lower
+    assert "next slice" not in lower
+    assert "no specialist yet" in lower or "physio" in lower
 
 
 def test_mid_triage_sends_one_grouped_followup(db_session, patient_identity, fake_llm):

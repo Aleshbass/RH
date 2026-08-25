@@ -26,6 +26,8 @@ class ConversationState:
     known_facts: dict
     conversation_id: UUID
     triage_session_id: UUID | None = None
+    booking_substate: str | None = None
+    booking_context: dict | None = None
 
 
 def _next_stamp() -> datetime:
@@ -155,6 +157,8 @@ def load(session: Session, identity: Identity) -> ConversationState:
         known_facts=_known_facts(session, patient_id),
         conversation_id=conversation.id,
         triage_session_id=triage.id if triage is not None else None,
+        booking_substate=conversation.booking_substate,
+        booking_context=conversation.booking_context,
     )
 
 
