@@ -68,4 +68,28 @@ async def inbound_webhook(
                             audio_media_id=media_id,
                             audio_mime=mime,
                         )
+                elif msg_type in {"image", "document"}:
+                    blob = message.get(msg_type) or {}
+                    media_ref = _media_ref(blob)
+                    caption = str(blob.get("caption") or "")
+                    if media_ref:
+                        enqueue_inbound(
+                            wa_message_id, phone, caption, media=[media_ref]
+                        )
+                elif msg_type == "location":
+                    loc = message.get("location") or {}
+                    lat = loc.get("latitude")
+                    lng = loc.get("longitude")
+                    if lat is not None and lng is not None:
+                        enqueue_inbound(
+                            wa_message_id,
+                            phone,
+                            "",
+                            location_lat=float(lat),
+                            location_lng=float(lng),
+                        )
     return {"status": "ok"}
+
+
+def _media_ref(blob: dict) -> str:
+    return str(blob.get("id") or blob.get("link") or blob.get("url") or "")

@@ -231,8 +231,10 @@ def test_rank_next_slot_from_written_windows(db_session, patient, four_neuro_phy
     if slotted is None:
         slotted = next(row for row in out if row.next_slot is not None)
     assert slotted.next_slot is not None
+    from zoneinfo import ZoneInfo
+    lagos_hour = slotted.next_slot.astimezone(ZoneInfo("Africa/Lagos")).hour
     assert slotted.next_slot.weekday() <= 4
-    assert 9 <= slotted.next_slot.hour < 17
+    assert 9 <= lagos_hour < 17
     assert all(
         by_id[pid].next_slot is None
         for pid in (p.id for p in four_neuro_physios[1:3] if p.id in by_id)

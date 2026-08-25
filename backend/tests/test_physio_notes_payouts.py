@@ -34,7 +34,11 @@ def _seed(db_session, *, patient_phone, physio_phone, mode="home_visit"):
 
 @pytest.fixture
 def physio(db_session):
-    row = Physiotherapist(phone_e164="+2348000008001")
+    row = Physiotherapist(
+        phone_e164="+2348000008001",
+        verified=True,
+        onboarding_status="verified",
+    )
     db_session.add(row)
     db_session.flush()
     return row
@@ -102,6 +106,50 @@ def confirmed_teleconsult(db_session):
     advance_to_confirmed(db_session, booking.id, source="paystack_webhook")
     db_session.flush()
     return booking
+
+
+class _FailingPaystack:
+    def initiate_transfer(self, amount_kobo, recipient, reference, reason=""):
+        raise RuntimeError("Paystack transfer failed")
+
+
+def test_unverified_physio_payout_creates_no_row(db_session, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.payout import Payout
+
+    physio = Physiotherapist(
+        phone_e164="+2348000008099",
+        verified=False,
+        onboarding_status="collecting",
+    )
+    db_session.add(physio)
+    db_session.flush()
+    result = handle_turn(db_session, physio.phone_e164, "payout 500000 kobo", fake_llm)
+    rows = db_session.query(Payout).filter_by(physio_id=physio.id).all()
+    assert rows == []
+    lower = result.reply_text.lower()
+    assert "verified" in lower or "verification" in lower
+
+
+def test_payout_turn_uses_authorize_physio_payout(db_session, physio, fake_llm, monkeypatch):
+    from app.conversation.turn_handler import handle_turn
+    from app.models.payout import Payout
+
+    physio.verified = True
+    db_session.flush()
+
+    def _deny_payout(identity, action):
+        if action == "physio_payout":
+            return False
+        if identity.persona.value == "physiotherapist":
+            return action in {"physio_onboard", "physio_availability"}
+        return False
+
+    monkeypatch.setattr("app.conversation.turn_handler.authorize", _deny_payout)
+    result = handle_turn(db_session, physio.phone_e164, "payout 500000 kobo", fake_llm)
+    rows = db_session.query(Payout).filter_by(physio_id=physio.id).all()
+    assert rows == []
+    assert result.reply_text
 
 
 def test_payout_is_audited(db_session, physio):
@@ -239,14 +287,53 @@ def test_request_payout_calls_fake_transfer(db_session, physio):
 
 
 def test_mark_payout_sent_from_fake_transfer(db_session, physio):
+    from app.models.audit_log import AuditEvent
+    from app.models.types import AuditKind
     from app.physio.payouts import mark_payout_sent, request_payout
 
+    physio.verified = True
+    db_session.flush()
     payout = request_payout(db_session, physio.id, 500000, paystack=FakePaystack())
     sent = mark_payout_sent(db_session, transfer_code=payout.transfer_code)
     db_session.refresh(payout)
     assert sent.status == "sent"
     assert payout.status == "sent"
     assert payout.sent_at is not None
+    payout_events = [
+        row
+        for row in db_session.query(AuditEvent).filter(AuditEvent.kind == AuditKind.PAYOUT).all()
+        if row.payload.get("payout_id") == str(payout.id)
+    ]
+    decisions = [row.payload.get("decision") for row in payout_events]
+    assert "requested" in decisions
+    assert "sent" in decisions
+    assert len(payout_events) >= 2
+
+
+def test_transfer_failure_appends_audit_and_does_not_raise(db_session, physio, caplog):
+    import logging
+
+    from app.models.audit_log import AuditEvent
+    from app.models.types import AuditKind
+    from app.physio.payouts import request_payout
+
+    physio.verified = True
+    db_session.flush()
+    with caplog.at_level(logging.ERROR):
+        payout = request_payout(
+            db_session, physio.id, 500000, paystack=_FailingPaystack()
+        )
+    assert payout.status == "requested"
+    assert payout.transfer_code is None
+    events = [
+        row
+        for row in db_session.query(AuditEvent).filter(AuditEvent.kind == AuditKind.PAYOUT).all()
+        if row.payload.get("payout_id") == str(payout.id)
+    ]
+    decisions = [row.payload.get("decision") for row in events]
+    assert "requested" in decisions
+    assert "transfer_failed" in decisions
+    assert any("transfer" in rec.message.lower() for rec in caplog.records)
 
 
 def test_earnings_statement_includes_period_totals(db_session, confirmed_home_visit):
@@ -305,11 +392,6 @@ def test_handle_turn_physio_checkin_and_done(db_session, confirmed_home_visit, f
     assert "complete" in done.reply_text.lower() or "done" in done.reply_text.lower()
     assert "payment is confirmed" not in done.reply_text.lower()
     assert "successfully paid" not in done.reply_text.lower()
-
-
-class _FailingPaystack:
-    def initiate_transfer(self, amount_kobo, recipient, reference, reason=""):
-        raise RuntimeError("Paystack transfer failed")
 
 
 def test_handle_turn_physio_payout(db_session, physio, fake_llm):

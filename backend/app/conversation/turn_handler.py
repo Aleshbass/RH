@@ -230,6 +230,7 @@ def _physio_turn(
     wa_message_id: str | None,
     llm: LLMClient,
     paystack=None,
+    location: tuple[float, float] | None = None,
 ) -> TurnResult:
     physio = session.get(Physiotherapist, identity.person_id)
     language = mirror_language(user_text, None)
@@ -241,14 +242,18 @@ def _physio_turn(
         )
     state = load(session, identity)
     conversation = session.get(Conversation, state.conversation_id)
-    reply = apply_physio_reply(session, physio.id, user_text)
-    if reply is None:
+    reply = apply_physio_reply(session, physio.id, user_text, conversation)
+    if reply is None and authorize(identity, "physio_payout"):
         reply = apply_payout_turn(session, physio.id, user_text, paystack=paystack)
     if reply is None:
-        reply = apply_checkin_turn(session, physio.id, user_text)
+        reply = apply_checkin_turn(session, physio.id, user_text, location=location)
     if reply is None:
         reply = apply_note_turn(session, physio.id, user_text, llm)
-    if reply is None and _DASHBOARD_RE.search(user_text or ""):
+    if (
+        reply is None
+        and physio.onboarding_status != "collecting"
+        and _DASHBOARD_RE.search(user_text or "")
+    ):
         reply = _DASHBOARD_REPLY
     if reply is None and conversation is not None:
         reply = apply_availability_turn(session, physio.id, user_text, conversation)
@@ -280,6 +285,7 @@ def handle_turn(
     *,
     paystack=None,
     media: list[str] | None = None,
+    location: tuple[float, float] | None = None,
 ) -> TurnResult:
     identity = resolve(session, phone)
     if identity is None:
@@ -296,8 +302,21 @@ def handle_turn(
         )
 
     if identity.persona == Persona.PHYSIO:
+        if not authorize(identity, "physio_onboard"):
+            return TurnResult(
+                reply_text=_LATER_PATH,
+                language=mirror_language(user_text, None),
+                phase=PatientPhase.FIRST_CONTACT,
+            )
         return _physio_turn(
-            session, identity, user_text, media, wa_message_id, llm, paystack=paystack
+            session,
+            identity,
+            user_text,
+            media,
+            wa_message_id,
+            llm,
+            paystack=paystack,
+            location=location,
         )
 
     if not authorize(identity, "triage"):

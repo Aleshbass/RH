@@ -116,6 +116,24 @@ def test_availability_turn_does_not_run_patient_triage(db_session, physio):
     )
 
 
+def test_next_open_slot_hours_are_africa_lagos_not_utc(db_session, physio):
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    from app.physio.availability import next_open_slot, parse_availability, write_slots
+
+    write_slots(db_session, physio.id, parse_availability("free Mon-Fri 9-5"))
+    # Wednesday 06:00 UTC = 07:00 WAT, so today's 09:00 WAT is still open.
+    now = datetime(2026, 8, 26, 6, 0, tzinfo=timezone.utc)
+    slot = next_open_slot(db_session, physio.id, now=now)
+    assert slot is not None
+    lagos = slot.astimezone(ZoneInfo("Africa/Lagos"))
+    assert lagos.hour == 9
+    assert lagos.minute == 0
+    utc = slot.astimezone(timezone.utc)
+    assert utc.hour == 8
+
+
 def test_rank_next_slot_reads_written_windows(db_session, physio):
     from app.matching.ranking import rank
     from app.models.patient import Patient
@@ -145,8 +163,10 @@ def test_rank_next_slot_reads_written_windows(db_session, physio):
     slot = out[0].next_slot
     assert slot is not None
     assert slot.tzinfo is not None
+    from zoneinfo import ZoneInfo
+    lagos_hour = slot.astimezone(ZoneInfo("Africa/Lagos")).hour
     assert slot.weekday() <= 4
-    assert 9 <= slot.hour < 17
+    assert 9 <= lagos_hour < 17
 
 
 def test_rank_next_slot_skips_confirmed_booking(db_session, physio):

@@ -152,13 +152,43 @@ def test_physio_reschedule_does_not_set_confirmed(db_session, confirmed_booking)
     assert confirmed_booking.slot_start == datetime(2026, 9, 1, 10, 0, tzinfo=timezone.utc)
 
 
-def test_physio_cancel_does_not_set_confirmed(db_session, confirmed_booking):
-    from app.physio.booking_alerts import apply_physio_reply
+def test_physio_bare_cancel_does_not_cancel_confirmed(
+    db_session, confirmed_booking, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
 
-    apply_physio_reply(db_session, confirmed_booking.physio_id, "cancel")
+    physio = db_session.get(Physiotherapist, confirmed_booking.physio_id)
+    result = handle_turn(db_session, physio.phone_e164, "cancel", fake_llm)
     db_session.refresh(confirmed_booking)
-    assert confirmed_booking.status != BookingStatus.CONFIRMED
+    assert confirmed_booking.status == BookingStatus.CONFIRMED
+    lower = result.reply_text.lower()
+    assert "yes" in lower
+    assert "cancel" in lower or "paid" in lower
+
+
+def test_physio_cancel_confirmed_after_yes(db_session, confirmed_booking, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    physio = db_session.get(Physiotherapist, confirmed_booking.physio_id)
+    first = handle_turn(db_session, physio.phone_e164, "cancel", fake_llm)
+    db_session.refresh(confirmed_booking)
+    assert confirmed_booking.status == BookingStatus.CONFIRMED
+    assert "yes" in first.reply_text.lower()
+    second = handle_turn(db_session, physio.phone_e164, "yes", fake_llm)
+    db_session.refresh(confirmed_booking)
     assert confirmed_booking.status == BookingStatus.CANCELLED
+    assert confirmed_booking.status != BookingStatus.CONFIRMED
+    assert "cancel" in second.reply_text.lower()
+
+
+def test_physio_cancel_unpaid_is_immediate(db_session, awaiting_payment_booking, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    physio = db_session.get(Physiotherapist, awaiting_payment_booking.physio_id)
+    result = handle_turn(db_session, physio.phone_e164, "cancel", fake_llm)
+    db_session.refresh(awaiting_payment_booking)
+    assert awaiting_payment_booking.status == BookingStatus.CANCELLED
+    assert "cancel" in result.reply_text.lower()
 
 
 def test_handle_turn_physio_decline_keeps_confirmed(db_session, confirmed_booking, fake_llm):

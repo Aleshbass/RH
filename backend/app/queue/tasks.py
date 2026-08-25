@@ -42,10 +42,13 @@ def enqueue_inbound(
     audio_url: str | None = None,
     audio_media_id: str | None = None,
     audio_mime: str | None = None,
+    media: list[str] | None = None,
+    location_lat: float | None = None,
+    location_lng: float | None = None,
 ) -> bool:
     client = _redis()
     lock_key = f"joy:wamid:{wa_message_id}"
-    payload_body: dict[str, str] = {
+    payload_body: dict = {
         "wa_message_id": wa_message_id,
         "phone": phone,
         "text": text,
@@ -56,6 +59,12 @@ def enqueue_inbound(
         payload_body["audio_media_id"] = audio_media_id
     if audio_mime:
         payload_body["audio_mime"] = audio_mime
+    if media:
+        payload_body["media"] = [str(item) for item in media if item]
+    if location_lat is not None:
+        payload_body["location_lat"] = location_lat
+    if location_lng is not None:
+        payload_body["location_lng"] = location_lng
     payload = json.dumps(payload_body)
     result = client.eval(
         _ENQUEUE_LUA,

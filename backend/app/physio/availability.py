@@ -4,6 +4,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -58,6 +59,7 @@ _SCHEDULE_INTENT_RE = re.compile(
 PENDING_WINDOWS_KEY = "pending_availability_windows"
 _LOOKAHEAD_DAYS = 21
 _SLOT_HOURS = 1
+_LAGOS = ZoneInfo("Africa/Lagos")
 
 
 @dataclass(frozen=True)
@@ -111,7 +113,10 @@ def next_open_slot(session: Session, physio_id: UUID, *, now: datetime | None = 
         if row.slot_start is not None
     ]
 
-    current = _as_utc(now or datetime.now(timezone.utc))
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(_LAGOS)
     duration = timedelta(hours=_SLOT_HOURS)
     for offset in range(_LOOKAHEAD_DAYS + 1):
         day = current.date() + timedelta(days=offset)
@@ -119,8 +124,8 @@ def next_open_slot(session: Session, physio_id: UUID, *, now: datetime | None = 
         for window in windows:
             if window.weekday != weekday:
                 continue
-            start = datetime.combine(day, _hhmm_time(window.start_hhmm), tzinfo=timezone.utc)
-            end = datetime.combine(day, _hhmm_time(window.end_hhmm), tzinfo=timezone.utc)
+            start = datetime.combine(day, _hhmm_time(window.start_hhmm), tzinfo=_LAGOS)
+            end = datetime.combine(day, _hhmm_time(window.end_hhmm), tzinfo=_LAGOS)
             cursor = start
             while cursor < end:
                 if cursor >= current and not _overlaps(cursor, duration, occupied):

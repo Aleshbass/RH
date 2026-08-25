@@ -135,6 +135,30 @@ def test_collecting_credential_text_with_weekday_hours_does_not_recap_availabili
     assert db_session.query(AvailabilitySlot).filter_by(physio_id=physio.id).count() == 0
 
 
+def test_collecting_credentials_phrase_reaches_onboarding_not_dashboard(
+    db_session, physio, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    handle_turn(db_session, physio.phone_e164, "MRTB 12345", fake_llm)
+    db_session.refresh(physio)
+    assert physio.onboarding_status == "collecting"
+
+    result = handle_turn(
+        db_session,
+        physio.phone_e164,
+        "here are my credentials",
+        fake_llm,
+        media=["https://files/cred.jpg"],
+    )
+    db_session.refresh(physio)
+    lower = result.reply_text.lower()
+    assert "dashboard" not in lower
+    assert physio.credential_urls == ["https://files/cred.jpg"]
+    assert physio.onboarding_status == "collecting"
+    assert "specialty" in lower or "specialt" in lower
+
+
 def test_unknown_physio_claim_creates_row_and_onboards(db_session, fake_llm):
     from app.conversation.turn_handler import handle_turn
     from app.identity.resolver import resolve

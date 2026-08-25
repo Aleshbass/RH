@@ -292,6 +292,224 @@ def test_webhook_audio_then_process_once_uses_transcript(
     assert sent[0][0] == patient_phone
 
 
+def _inbound_image_payload(
+    phone: str, wa_message_id: str, media_id: str, *, caption: str = ""
+) -> bytes:
+    image: dict = {"id": media_id, "mime_type": "image/jpeg"}
+    if caption:
+        image["caption"] = caption
+    payload = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messages": [
+                                {
+                                    "from": phone.lstrip("+"),
+                                    "id": wa_message_id,
+                                    "type": "image",
+                                    "image": image,
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ],
+    }
+    return json.dumps(payload).encode()
+
+
+def _inbound_document_payload(phone: str, wa_message_id: str, media_id: str) -> bytes:
+    payload = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messages": [
+                                {
+                                    "from": phone.lstrip("+"),
+                                    "id": wa_message_id,
+                                    "type": "document",
+                                    "document": {
+                                        "id": media_id,
+                                        "filename": "license.pdf",
+                                        "mime_type": "application/pdf",
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ],
+    }
+    return json.dumps(payload).encode()
+
+
+def _inbound_location_payload(
+    phone: str, wa_message_id: str, lat: float, lng: float
+) -> bytes:
+    payload = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messages": [
+                                {
+                                    "from": phone.lstrip("+"),
+                                    "id": wa_message_id,
+                                    "type": "location",
+                                    "location": {"latitude": lat, "longitude": lng},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ],
+    }
+    return json.dumps(payload).encode()
+
+
+def test_webhook_image_then_process_once_reaches_onboarding(
+    client, db_session: Session, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+):
+    from app.models.physiotherapist import Physiotherapist
+    from app.queue.tasks import INBOUND_QUEUE, _redis
+    from app.queue.worker import process_queue_once
+
+    physio = Physiotherapist(phone_e164="+2348000004011", onboarding_status="collecting")
+    db_session.add(physio)
+    db_session.flush()
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.queue.worker.send_whatsapp_text",
+        lambda phone, text: sent.append((phone, text)),
+    )
+    _redis().delete(INBOUND_QUEUE)
+
+    media_id = "IMGCRED123"
+    wa_message_id = f"wamid.image.{uuid.uuid4()}"
+    body = _inbound_image_payload(physio.phone_e164, wa_message_id, media_id)
+    response = client.post(
+        "/webhook",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Hub-Signature-256": _sign(body),
+        },
+    )
+    assert response.status_code == 200
+
+    result = process_queue_once(session=db_session, llm=fake_llm, timeout=1)
+    db_session.refresh(physio)
+    assert result is not None
+    assert result.reply_text
+    assert "dashboard" not in result.reply_text.lower()
+    assert physio.credential_urls == [media_id]
+    assert sent
+    assert sent[0][0] == physio.phone_e164
+    assert sent[0][1] == result.reply_text
+
+
+def test_webhook_document_then_process_once_sets_credential_url(
+    client, db_session: Session, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+):
+    from app.models.physiotherapist import Physiotherapist
+    from app.queue.tasks import INBOUND_QUEUE, _redis
+    from app.queue.worker import process_queue_once
+
+    physio = Physiotherapist(phone_e164="+2348000004012", onboarding_status="collecting")
+    db_session.add(physio)
+    db_session.flush()
+
+    monkeypatch.setattr("app.queue.worker.send_whatsapp_text", lambda phone, text: None)
+    _redis().delete(INBOUND_QUEUE)
+
+    media_id = "DOCCRED456"
+    wa_message_id = f"wamid.doc.{uuid.uuid4()}"
+    body = _inbound_document_payload(physio.phone_e164, wa_message_id, media_id)
+    response = client.post(
+        "/webhook",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Hub-Signature-256": _sign(body),
+        },
+    )
+    assert response.status_code == 200
+
+    result = process_queue_once(session=db_session, llm=fake_llm, timeout=1)
+    db_session.refresh(physio)
+    assert result is not None
+    assert result.reply_text
+    assert physio.credential_urls == [media_id]
+
+
+def test_webhook_location_then_process_once_checks_in(
+    client, db_session: Session, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+):
+    from app.booking.state import advance_to_confirmed, create_draft, mark_awaiting_payment
+    from app.models.patient import Patient
+    from app.models.physiotherapist import Physiotherapist
+    from app.queue.tasks import INBOUND_QUEUE, _redis
+    from app.queue.worker import process_queue_once
+
+    patient = Patient(
+        phone_e164="+2348000004013", name="Ada Okonkwo", age=32, location="Lagos"
+    )
+    physio = Physiotherapist(
+        phone_e164="+2348000004014",
+        specialty_tags=["msk"],
+        verified=True,
+        price_kobo=2_000_000,
+        rating=4.5,
+    )
+    db_session.add_all([patient, physio])
+    db_session.flush()
+    booking = create_draft(
+        db_session,
+        patient.id,
+        physio.id,
+        "home_visit",
+        slot_start=None,
+        amount_kobo=2_000_000,
+    )
+    mark_awaiting_payment(booking, "ref_loc_checkin")
+    advance_to_confirmed(db_session, booking.id, source="paystack_webhook")
+    db_session.flush()
+
+    monkeypatch.setattr("app.queue.worker.send_whatsapp_text", lambda phone, text: None)
+    _redis().delete(INBOUND_QUEUE)
+
+    wa_message_id = f"wamid.loc.{uuid.uuid4()}"
+    body = _inbound_location_payload(physio.phone_e164, wa_message_id, 6.5244, 3.3792)
+    response = client.post(
+        "/webhook",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Hub-Signature-256": _sign(body),
+        },
+    )
+    assert response.status_code == 200
+
+    result = process_queue_once(session=db_session, llm=fake_llm, timeout=1)
+    db_session.refresh(booking)
+    assert result is not None
+    assert booking.checkin_lat == pytest.approx(6.5244)
+    assert booking.checkin_lng == pytest.approx(3.3792)
+    assert booking.status == "confirmed"
+
+
 def test_simulate_turn_does_not_send_whatsapp(
     client, patient_phone: str, monkeypatch: pytest.MonkeyPatch
 ):

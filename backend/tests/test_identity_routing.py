@@ -137,6 +137,7 @@ def test_physio_may_onboard():
         phone_e164="+2348000002003",
     )
     assert authorize(identity, "physio_onboard") is True
+    assert authorize(identity, "physio_payout") is True
     assert authorize(identity, "pay") is False
 
 

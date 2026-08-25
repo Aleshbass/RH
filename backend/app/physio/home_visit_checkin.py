@@ -36,8 +36,19 @@ def complete(session: Session, booking_id: UUID | str) -> Booking:
     return booking
 
 
-def apply_checkin_turn(session: Session, physio_id: UUID, text: str) -> str | None:
+def apply_checkin_turn(
+    session: Session,
+    physio_id: UUID,
+    text: str,
+    location: tuple[float, float] | None = None,
+) -> str | None:
     booking = _latest_confirmed_booking(session, physio_id)
+    if location is not None:
+        if booking is None or booking.mode != "home_visit":
+            return None
+        lat, lng = location
+        checkin(session, booking.id, lat, lng)
+        return f"Checked in at {lat}, {lng}."
     if _COMPLETE_RE.search(text or ""):
         if booking is None:
             return None

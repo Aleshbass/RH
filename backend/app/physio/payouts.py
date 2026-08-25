@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
@@ -13,6 +14,8 @@ from app.models.booking import Booking
 from app.models.payout import Payout
 from app.models.physiotherapist import Physiotherapist
 from app.models.types import AuditKind, BookingStatus
+
+logger = logging.getLogger(__name__)
 
 _PAYOUT_RE = re.compile(r"(?i)\b(payout|withdraw(?:al)?)\b")
 _EARNINGS_RE = re.compile(r"(?i)\b(earnings|weekly statement)\b")
@@ -33,6 +36,8 @@ def request_payout(
     physio = session.get(Physiotherapist, physio_id)
     if physio is None:
         raise ValueError(f"physio not found: {physio_id}")
+    if physio.verified is not True:
+        raise ValueError("physio not verified")
     reference = f"payout_{uuid4().hex}"
     recipient = f"RCP_{physio_id}"
     payout = Payout(
@@ -63,7 +68,19 @@ def request_payout(
         payout.transfer_code = str(result.get("transfer_code") or reference)
         session.flush()
     except Exception:
-        pass
+        logger.exception("Paystack transfer failed for payout %s", payout.id)
+        append(
+            session,
+            kind=AuditKind.PAYOUT,
+            actor_phone=physio.phone_e164,
+            person_id=physio_id,
+            payload={
+                "decision": "transfer_failed",
+                "payout_id": str(payout.id),
+                "amount_kobo": amount_kobo,
+                "status": payout.status,
+            },
+        )
     return payout
 
 
@@ -83,6 +100,20 @@ def mark_payout_sent(
     payout.status = "sent"
     payout.sent_at = datetime.now(timezone.utc)
     session.flush()
+    physio = session.get(Physiotherapist, payout.physio_id)
+    append(
+        session,
+        kind=AuditKind.PAYOUT,
+        actor_phone=physio.phone_e164 if physio is not None else "",
+        person_id=payout.physio_id,
+        payload={
+            "decision": "sent",
+            "payout_id": str(payout.id),
+            "amount_kobo": payout.amount_kobo,
+            "status": payout.status,
+            "transfer_code": payout.transfer_code,
+        },
+    )
     return payout
 
 
@@ -122,7 +153,12 @@ def apply_payout_turn(session: Session, physio_id: UUID, text: str, *, paystack=
     amount = _parse_amount_kobo(text or "")
     if amount is None:
         return "Tell me the payout amount in kobo, for example: payout 500000 kobo"
-    payout = request_payout(session, physio_id, amount, paystack=paystack)
+    try:
+        payout = request_payout(session, physio_id, amount, paystack=paystack)
+    except ValueError as exc:
+        if "not verified" in str(exc).lower():
+            return "You're not verified yet — payouts open after verification."
+        raise
     naira = payout.amount_kobo / 100
     if not payout.transfer_code:
         return (

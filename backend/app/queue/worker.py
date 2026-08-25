@@ -25,6 +25,15 @@ from app.queue.tasks import (
 
 logger = logging.getLogger(__name__)
 
+
+def _payload_media(payload: dict) -> list[str] | None:
+    raw = payload.get("media")
+    if not raw:
+        return None
+    if isinstance(raw, str):
+        return [raw]
+    return [str(item) for item in raw if item]
+
 GEMINI_TIMEOUT_APOLOGY = "Sorry, I had a brief hiccup. Please send that again in a moment."
 
 
@@ -39,11 +48,17 @@ def process_inbound(
     audio_media_id: str | None = None,
     audio_mime: str | None = None,
     audio_bytes: bytes | None = None,
+    media: list[str] | None = None,
+    location_lat: float | None = None,
+    location_lng: float | None = None,
 ) -> TurnResult | None:
     existing = session.scalar(select(Message.id).where(Message.wa_message_id == wa_message_id))
     if existing is not None:
         return None
     client = llm or get_llm_client()
+    location = None
+    if location_lat is not None and location_lng is not None:
+        location = (float(location_lat), float(location_lng))
     try:
         user_text = transcript_from_audio(
             client,
@@ -53,7 +68,15 @@ def process_inbound(
             audio_mime=audio_mime,
             audio_bytes=audio_bytes,
         )
-        return handle_turn(session, phone, user_text, client, wa_message_id=wa_message_id)
+        return handle_turn(
+            session,
+            phone,
+            user_text,
+            client,
+            wa_message_id=wa_message_id,
+            media=media,
+            location=location,
+        )
     except GeminiTimeoutError:
         return TurnResult(
             reply_text=GEMINI_TIMEOUT_APOLOGY,
@@ -141,6 +164,9 @@ def process_queue_once(
             audio_url=payload.get("audio_url"),
             audio_media_id=payload.get("audio_media_id"),
             audio_mime=payload.get("audio_mime"),
+            media=_payload_media(payload),
+            location_lat=payload.get("location_lat"),
+            location_lng=payload.get("location_lng"),
         )
         if own_session:
             db.commit()

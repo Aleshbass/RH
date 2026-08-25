@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.audit.logger import append
 from app.booking.booking_flow import cancel_notify, parse_slot, reschedule
 from app.models.booking import Booking
+from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
 from app.models.triage_session import TriageSession
@@ -20,9 +21,11 @@ _ACCEPT_RE = re.compile(r"(?i)\baccept(?:ed)?\b")
 _DECLINE_RE = re.compile(r"(?i)\bdeclin(?:e|ed)\b")
 _CANCEL_RE = re.compile(r"(?i)\bcancel\b")
 _RESCHEDULE_RE = re.compile(r"(?i)\breschedule\b")
+_CONFIRM_RE = re.compile(r"^\s*(yes|yeah|yep)\b", re.IGNORECASE)
 
 _ACCEPTED_REPLY = "Thanks — you've accepted this booking."
 _DECLINED_REPLY = "Got it — you've declined this booking. Admin will follow up."
+PENDING_CANCEL_KEY = "pending_cancel_booking_id"
 
 
 def notify_new_booking(session: Session, booking_id: UUID | str) -> str:
@@ -38,9 +41,29 @@ def notify_new_booking(session: Session, booking_id: UUID | str) -> str:
     return text
 
 
-def apply_physio_reply(session: Session, physio_id: UUID, text: str) -> str | None:
+def apply_physio_reply(
+    session: Session,
+    physio_id: UUID,
+    text: str,
+    conversation: Conversation | None = None,
+) -> str | None:
     confirmed = _latest_confirmed_booking(session, physio_id)
     mutable = _latest_mutable_booking(session, physio_id)
+    pending_id = _pending_cancel_id(conversation)
+    if pending_id is not None and _CONFIRM_RE.search(text or ""):
+        _clear_pending_cancel(conversation)
+        booking = session.get(Booking, pending_id)
+        if booking is None or booking.physio_id != physio_id:
+            return None
+        physio = session.get(Physiotherapist, physio_id)
+        return cancel_notify(
+            session,
+            booking,
+            actor_phone=physio.phone_e164 if physio is not None else "",
+            person_id=physio_id,
+        )
+    if pending_id is not None:
+        _clear_pending_cancel(conversation)
     if _DECLINE_RE.search(text or ""):
         if confirmed is None:
             return None
@@ -64,6 +87,14 @@ def apply_physio_reply(session: Session, physio_id: UUID, text: str) -> str | No
         _set_response(session, confirmed, "accepted")
         return _ACCEPTED_REPLY
     if _CANCEL_RE.search(text or ""):
+        if confirmed is not None:
+            if conversation is not None:
+                _set_pending_cancel(conversation, confirmed.id)
+            patient = session.get(Patient, confirmed.patient_id)
+            name = _first_name(patient)
+            return (
+                f"This is a paid session with {name}. Reply yes to cancel it."
+            )
         if mutable is None:
             return None
         physio = session.get(Physiotherapist, physio_id)
@@ -87,6 +118,32 @@ def apply_physio_reply(session: Session, physio_id: UUID, text: str) -> str | No
 def _set_response(session: Session, booking: Booking, value: str) -> None:
     booking.physio_response = value
     session.flush()
+
+
+def _pending_cancel_id(conversation: Conversation | None) -> UUID | None:
+    if conversation is None:
+        return None
+    raw = (conversation.booking_context or {}).get(PENDING_CANCEL_KEY)
+    if not raw:
+        return None
+    try:
+        return UUID(str(raw))
+    except (ValueError, TypeError):
+        return None
+
+
+def _set_pending_cancel(conversation: Conversation, booking_id: UUID) -> None:
+    ctx = dict(conversation.booking_context or {})
+    ctx[PENDING_CANCEL_KEY] = str(booking_id)
+    conversation.booking_context = ctx
+
+
+def _clear_pending_cancel(conversation: Conversation | None) -> None:
+    if conversation is None:
+        return
+    ctx = dict(conversation.booking_context or {})
+    ctx.pop(PENDING_CANCEL_KEY, None)
+    conversation.booking_context = ctx or None
 
 
 def _latest_confirmed_booking(session: Session, physio_id: UUID) -> Booking | None:
