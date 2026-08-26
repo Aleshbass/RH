@@ -23,6 +23,11 @@ def upgrade() -> None:
         "patients",
         sa.Column("urgent", sa.Boolean(), nullable=False, server_default=sa.text("false")),
     )
+    op.create_index(
+        "ix_patients_referred_by_partner_id",
+        "patients",
+        ["referred_by_partner_id"],
+    )
     op.create_table(
         "referral_fees",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -79,6 +84,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "ix_patients_referred_by_partner_id",
+        table_name="patients",
+    )
     op.drop_index(
         "ix_partner_content_requests_partner_id",
         table_name="partner_content_requests",

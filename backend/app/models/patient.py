@@ -19,7 +19,7 @@ class Patient(Base):
     lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     lng: Mapped[float | None] = mapped_column(Float, nullable=True)
     referred_by_partner_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("partners.id"), nullable=True
+        PG_UUID(as_uuid=True), ForeignKey("partners.id"), nullable=True, index=True
     )
     urgent: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")

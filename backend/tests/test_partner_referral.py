@@ -114,6 +114,87 @@ def test_unknown_sender_code_provisions_and_attributes(db_session, partner, fake
     assert patient.referred_by_partner_id == partner.id
 
 
+def test_partner_steal_attempt_does_not_promise_booking(db_session, partner, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+    from app.partner.referral import direct_refer
+
+    other = Partner(phone_e164="+2348220000088")
+    db_session.add(other)
+    db_session.flush()
+    patient = direct_refer(db_session, other.id, "+2348220000501")
+    result = handle_turn(
+        db_session, partner.phone_e164, "refer +2348220000501", fake_llm
+    )
+    db_session.refresh(patient)
+    assert patient.referred_by_partner_id == other.id
+    lowered = result.reply_text.lower()
+    assert "already" in lowered
+    assert "attribut" in lowered
+    assert "confirm" not in lowered
+    assert "book" not in lowered
+    assert "fee" not in lowered
+    assert "₦" not in result.reply_text
+
+
+def test_partner_same_partner_retry_keeps_success_copy(db_session, partner, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    first = handle_turn(
+        db_session, partner.phone_e164, "refer +2348220000502", fake_llm
+    )
+    second = handle_turn(
+        db_session, partner.phone_e164, "refer +2348220000502", fake_llm
+    )
+    patient = db_session.scalar(
+        select(Patient).where(Patient.phone_e164 == "+2348220000502")
+    )
+    assert patient is not None
+    assert patient.referred_by_partner_id == partner.id
+    for result in (first, second):
+        lowered = result.reply_text.lower()
+        assert "confirm" in lowered or "book" in lowered
+        assert "already" not in lowered
+
+
+def test_partner_attributes_unattributed_existing_keeps_success_copy(
+    db_session, partner, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    existing = Patient(phone_e164="+2348220000503")
+    db_session.add(existing)
+    db_session.flush()
+    result = handle_turn(
+        db_session, partner.phone_e164, "refer +2348220000503", fake_llm
+    )
+    db_session.refresh(existing)
+    assert existing.referred_by_partner_id == partner.id
+    lowered = result.reply_text.lower()
+    assert "confirm" in lowered or "book" in lowered
+    assert "already" not in lowered
+
+
+def test_partner_urgent_steal_says_not_yours(db_session, partner, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+    from app.partner.referral import _PARTNER_URGENT_NOT_YOURS, direct_refer
+
+    other = Partner(phone_e164="+2348220000087")
+    db_session.add(other)
+    db_session.flush()
+    patient = direct_refer(db_session, other.id, "+2348220000504")
+    result = handle_turn(
+        db_session, partner.phone_e164, "urgent +2348220000504", fake_llm
+    )
+    db_session.refresh(patient)
+    assert patient.referred_by_partner_id == other.id
+    assert patient.urgent is not True
+    assert result.reply_text == _PARTNER_URGENT_NOT_YOURS
+    lowered = result.reply_text.lower()
+    assert "confirm" not in lowered
+    assert "book" not in lowered
+    assert "priorit" not in lowered
+
+
 def test_partner_inbound_phone_direct_refers(db_session, partner, fake_llm):
     from app.conversation.turn_handler import handle_turn
     from app.identity.permissions import authorize

@@ -200,6 +200,9 @@ def test_rank_appends_match_audit_with_candidate_ids_and_scores(
         assert row["distance_km"] == expected_distance
         assert row["rating"] == ranked.rating
         assert row["price_kobo"] == ranked.price_kobo
+        expected_slot = ranked.next_slot.isoformat() if ranked.next_slot else None
+        assert row["next_slot"] == expected_slot
+    assert payload["urgent"] is False
 
 
 def test_rank_display_name_is_anonymous_not_phone(db_session, patient, four_neuro_physios):
@@ -254,12 +257,29 @@ def test_rank_raises_without_db_session(four_neuro_physios):
         rank(detached_patient, four_neuro_physios, ConditionArea.NEURO)
 
 
-def test_rank_urgent_prefers_sooner_slot_over_nearer_physio(db_session):
-    from app.matching.ranking import rank
-    from app.physio.availability import parse_availability, write_slots
+def _two_physios_near_and_far(db_session):
+    nearer = _physio(
+        db_session,
+        "+2348000003973",
+        lat=LAGOS_LAT,
+        lng=LAGOS_LNG,
+        price_kobo=15_000_00,
+        rating=4.5,
+    )
+    farther = _physio(
+        db_session,
+        "+2348000003974",
+        lat=LAGOS_LAT + 0.05,
+        lng=LAGOS_LNG,
+        price_kobo=15_000_00,
+        rating=4.5,
+    )
+    return nearer, farther
 
+
+def _lagos_patients(db_session, *, urgent_phone: str, steady_phone: str):
     urgent = Patient(
-        phone_e164="+2348000003971",
+        phone_e164=urgent_phone,
         name="Urgent Ada",
         location="Lagos",
         lat=LAGOS_LAT,
@@ -267,7 +287,7 @@ def test_rank_urgent_prefers_sooner_slot_over_nearer_physio(db_session):
         urgent=True,
     )
     non_urgent = Patient(
-        phone_e164="+2348000003972",
+        phone_e164=steady_phone,
         name="Steady Chidi",
         location="Lagos",
         lat=LAGOS_LAT,
@@ -276,35 +296,102 @@ def test_rank_urgent_prefers_sooner_slot_over_nearer_physio(db_session):
     )
     db_session.add_all([urgent, non_urgent])
     db_session.flush()
+    return urgent, non_urgent
 
-    nearer_later = _physio(
-        db_session,
-        "+2348000003973",
-        lat=LAGOS_LAT,
-        lng=LAGOS_LNG,
-        price_kobo=15_000_00,
-        rating=4.5,
+
+def test_rank_urgent_prefers_sooner_slot_over_nearer_physio(db_session):
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from app.matching.ranking import rank
+    from app.models.audit_log import AuditEvent
+    from app.physio.availability import WeeklyWindow, write_slots
+
+    urgent, non_urgent = _lagos_patients(
+        db_session, urgent_phone="+2348000003971", steady_phone="+2348000003972"
     )
-    farther_sooner = _physio(
+    nearer_later, farther_sooner = _two_physios_near_and_far(db_session)
+
+    lagos = ZoneInfo("Africa/Lagos")
+    today = datetime.now(lagos).date()
+    earlier_day = today + timedelta(days=1)
+    later_day = today + timedelta(days=2)
+    write_slots(
         db_session,
-        "+2348000003974",
-        lat=LAGOS_LAT + 0.05,
-        lng=LAGOS_LNG,
-        price_kobo=15_000_00,
-        rating=4.5,
+        farther_sooner.id,
+        [WeeklyWindow(weekday=earlier_day.weekday(), start_hhmm="09:00", end_hhmm="17:00")],
     )
     write_slots(
-        db_session, farther_sooner.id, parse_availability("free Mon-Fri 9-5")
+        db_session,
+        nearer_later.id,
+        [WeeklyWindow(weekday=later_day.weekday(), start_hhmm="09:00", end_hhmm="17:00")],
     )
 
     physios = [nearer_later, farther_sooner]
     urgent_out = rank(urgent, physios, ConditionArea.NEURO)
     non_urgent_out = rank(non_urgent, physios, ConditionArea.NEURO)
 
-    assert urgent_out[0].physio_id == farther_sooner.id
     assert urgent_out[0].next_slot is not None
+    assert urgent_out[1].next_slot is not None
+    assert urgent_out[0].next_slot.astimezone(lagos).date() < urgent_out[1].next_slot.astimezone(
+        lagos
+    ).date()
+    assert urgent_out[0].physio_id == farther_sooner.id
     assert non_urgent_out[0].physio_id == nearer_later.id
     assert nearer_later.id in {row.physio_id for row in non_urgent_out}
+
+    events = (
+        db_session.query(AuditEvent)
+        .filter(AuditEvent.kind == AuditKind.MATCH, AuditEvent.person_id == urgent.id)
+        .all()
+    )
+    assert events
+    payload = events[-1].payload
+    assert payload["urgent"] is True
+    slots = [row["next_slot"] for row in payload["candidates"]]
+    assert all(isinstance(slot, str) and slot for slot in slots)
+
+
+def test_rank_urgent_same_lagos_day_nearer_still_wins(db_session):
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from app.matching.ranking import rank
+    from app.physio.availability import WeeklyWindow, write_slots
+
+    urgent, non_urgent = _lagos_patients(
+        db_session, urgent_phone="+2348000003975", steady_phone="+2348000003976"
+    )
+    nearer, farther = _two_physios_near_and_far(db_session)
+
+    lagos = ZoneInfo("Africa/Lagos")
+    same_day = datetime.now(lagos).date() + timedelta(days=1)
+    write_slots(
+        db_session,
+        farther.id,
+        [WeeklyWindow(weekday=same_day.weekday(), start_hhmm="09:00", end_hhmm="12:00")],
+    )
+    write_slots(
+        db_session,
+        nearer.id,
+        [WeeklyWindow(weekday=same_day.weekday(), start_hhmm="14:00", end_hhmm="17:00")],
+    )
+
+    physios = [nearer, farther]
+    urgent_out = rank(urgent, physios, ConditionArea.NEURO)
+    non_urgent_out = rank(non_urgent, physios, ConditionArea.NEURO)
+
+    assert urgent_out[0].next_slot is not None
+    assert urgent_out[1].next_slot is not None
+    assert (
+        urgent_out[0].next_slot.astimezone(lagos).date()
+        == urgent_out[1].next_slot.astimezone(lagos).date()
+    )
+    farther_row = next(row for row in urgent_out if row.physio_id == farther.id)
+    nearer_row = next(row for row in urgent_out if row.physio_id == nearer.id)
+    assert farther_row.next_slot < nearer_row.next_slot
+    assert urgent_out[0].physio_id == nearer.id
+    assert non_urgent_out[0].physio_id == nearer.id
 
 
 def test_urgent_patients_sort_before_non_urgent_same_specialty(db_session):

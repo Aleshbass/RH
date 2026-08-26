@@ -221,11 +221,26 @@ def test_fee_notifies_referring_partner(db_session, partner, referred_patient, c
 
 
 def test_flag_urgent_persists_for_referring_partner(db_session, partner, referred_patient):
+    from app.models.audit_log import AuditEvent
+    from app.models.types import AuditKind
     from app.partner.urgent_flag import flag_urgent
 
     flag_urgent(db_session, referred_patient.id, partner.id)
     db_session.refresh(referred_patient)
     assert referred_patient.urgent is True
+    events = (
+        db_session.query(AuditEvent)
+        .filter(
+            AuditEvent.kind == AuditKind.IDENTITY,
+            AuditEvent.person_id == referred_patient.id,
+        )
+        .all()
+    )
+    flagged = [row for row in events if row.payload.get("decision") == "flag_urgent"]
+    assert len(flagged) == 1
+    assert flagged[0].payload["partner_id"] == str(partner.id)
+    assert flagged[0].payload["patient_id"] == str(referred_patient.id)
+    assert flagged[0].actor_phone == partner.phone_e164
 
 
 def test_other_partner_cannot_flag_unattributed_patient(db_session, partner, referred_patient):
@@ -331,6 +346,7 @@ def test_alembic_is_0015_not_0009():
     assert 'down_revision: Union[str, Sequence[str], None] = "0014_referrals"' in source
     assert "referral_fees" in source
     assert "urgent" in source
+    assert "ix_patients_referred_by_partner_id" in source
 
 
 def test_no_partner_portal_module():

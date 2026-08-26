@@ -1,6 +1,7 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from math import atan2, cos, inf, radians, sin, sqrt
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 from sqlalchemy.orm import object_session
@@ -10,6 +11,8 @@ from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
 from app.models.types import AuditKind, ConditionArea
 from app.physio.availability import next_open_slot
+
+_LAGOS = ZoneInfo("Africa/Lagos")
 
 _EARTH_RADIUS_KM = 6371.0
 
@@ -44,15 +47,20 @@ def _json_distance(distance_km: float) -> float | None:
 
 
 def patient_sort_key(patient: Patient) -> tuple[int, ...]:
+    """Order multiple patients of the same specialty (portal / Plan 6).
+
+    Production ``rank()`` is per-patient and uses a sooner Lagos calendar-day
+    boost for urgent cases (then distance / rating / price). This helper is
+    for ordering several patients, not for ranking physios of one patient.
+    """
     return (0 if getattr(patient, "urgent", False) else 1,)
 
 
-def _slot_sort_key(slot: datetime | None) -> datetime:
+def _slot_day_key(slot: datetime | None) -> tuple[int, date]:
     if slot is None:
-        return datetime.max.replace(tzinfo=timezone.utc)
-    if slot.tzinfo is None:
-        return slot.replace(tzinfo=timezone.utc)
-    return slot.astimezone(timezone.utc)
+        return (1, date.max)
+    aware = slot if slot.tzinfo is not None else slot.replace(tzinfo=timezone.utc)
+    return (0, aware.astimezone(_LAGOS).date())
 
 
 def rank(
@@ -82,7 +90,7 @@ def rank(
         return (row.distance_km, -row.rating, row.price_kobo)
 
     if getattr(patient, "urgent", False):
-        ranked.sort(key=lambda row: (_slot_sort_key(row.next_slot), *quality(row)))
+        ranked.sort(key=lambda row: (*_slot_day_key(row.next_slot), *quality(row)))
     else:
         ranked.sort(key=quality)
     top = [
@@ -96,12 +104,14 @@ def rank(
         person_id=patient.id,
         payload={
             "area": area.value,
+            "urgent": bool(getattr(patient, "urgent", False)),
             "candidates": [
                 {
                     "physio_id": str(row.physio_id),
                     "distance_km": _json_distance(row.distance_km),
                     "rating": row.rating,
                     "price_kobo": row.price_kobo,
+                    "next_slot": row.next_slot.isoformat() if row.next_slot is not None else None,
                 }
                 for row in top
             ],

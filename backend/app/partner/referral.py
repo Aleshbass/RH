@@ -34,6 +34,9 @@ _PARTNER_NO_PHONE = (
 _PARTNER_REFERRED = (
     "I've started triage for {phone}. I'll confirm here when they book."
 )
+_PARTNER_ALREADY_ATTRIBUTED = (
+    "That patient is already attributed to another partner, so I can't credit this referral to you."
+)
 _PARTNER_OCCUPIED = (
     "That number already belongs to someone on Joy, so I can't refer it as a patient."
 )
@@ -206,6 +209,8 @@ def apply_partner_turn(session: Session, partner_id: UUID, text: str) -> str:
             patient = direct_refer(session, partner_id, phone)
     except ValueError:
         return _PARTNER_OCCUPIED
+    if patient.referred_by_partner_id != partner.id:
+        return _PARTNER_ALREADY_ATTRIBUTED
     return _PARTNER_REFERRED.format(phone=patient.phone_e164)
 
 
