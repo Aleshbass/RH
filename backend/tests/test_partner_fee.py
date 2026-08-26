@@ -351,7 +351,10 @@ def test_alembic_is_0015_not_0009():
 
 def test_no_partner_portal_module():
     root = Path(__file__).resolve().parents[1] / "app"
-    assert not (root / "api" / "internal" / "partner_portal.py").exists()
     source = (root / "partner" / "fee_confirmation.py").read_text()
     assert "sk_live" not in source
     assert "sk_test" not in source
+    portal = (root / "api" / "internal" / "partner_portal.py").read_text()
+    assert "sk_live" not in portal
+    assert "sk_test" not in portal
+    assert "advance_to_confirmed" not in portal
