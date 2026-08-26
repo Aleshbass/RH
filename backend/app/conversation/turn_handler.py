@@ -3,6 +3,14 @@ import re
 
 from sqlalchemy.orm import Session
 
+from app.admin.escalation_router import (
+    detect_off_platform,
+    flags_from_triage_text,
+    route_escalation,
+    route_safety,
+    takeover_notice,
+)
+from app.admin.verification_queue import apply_admin_turn
 from app.audit.logger import append
 from app.booking.booking_flow import AWAITING_PAYMENT, handle_booking_turn
 from app.conversation.language import mirror_language
@@ -21,6 +29,7 @@ from app.identity.unknown_sender import (
 from app.llm.gemini_client import LLMClient
 from app.llm.prompt_builder import build
 from app.llm.rag.retriever import retrieve
+from app.models.admin import Admin
 from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
@@ -181,6 +190,122 @@ def _audit_turn(
     )
 
 
+def _safety_fire_reply(
+    session: Session,
+    identity: Identity,
+    state: ConversationState,
+    user_text: str,
+    extracted: ExtractedTriage,
+    safety: SafetyResult,
+    phase: PatientPhase,
+    language: str,
+    wa_message_id: str | None = None,
+) -> TurnResult:
+    reply = patient_message(safety)
+    notified = notify_family_on_safety(session, identity.person_id, safety)
+    _set_triage_status(session, state, "escalated")
+    route_safety(session, safety, {"patient_id": str(identity.person_id)})
+    _audit_turn(
+        session, identity, extracted, safety, phase, notify_family=notified
+    )
+    save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id)
+    return TurnResult(
+        reply_text=reply,
+        language=language,
+        phase=phase,
+        extracted=extracted,
+        safety=safety,
+        blocked_by_safety=True,
+    )
+
+
+def _maybe_route_off_platform(
+    session: Session, user_text: str, *, patient_id=None, physio_id=None
+) -> None:
+    if detect_off_platform(user_text) is None:
+        return
+    payload: dict = {"text": user_text}
+    if patient_id is not None:
+        payload["patient_id"] = str(patient_id)
+    if physio_id is not None:
+        payload["physio_id"] = str(physio_id)
+    route_escalation(session, "off_platform", payload)
+
+
+def _patient_takeover_turn(
+    session: Session,
+    identity: Identity,
+    state: ConversationState,
+    conversation: Conversation,
+    user_text: str,
+    phase: PatientPhase,
+    language: str,
+    wa_message_id: str | None = None,
+) -> TurnResult:
+    flags = flags_from_triage_text(user_text)
+    incoming = {"flags": flags} if flags else {}
+    extracted = _apply_inferred_area(merge_extraction(state.extracted, incoming))
+    safety = evaluate(extracted)
+    if safety.fired:
+        return _safety_fire_reply(
+            session,
+            identity,
+            state,
+            user_text,
+            extracted,
+            safety,
+            phase,
+            language,
+            wa_message_id,
+        )
+    reply = takeover_notice(conversation)
+    save_turn(
+        session, state, user_text, reply, extracted, phase, language, wa_message_id
+    )
+    return TurnResult(
+        reply_text=reply,
+        language=language,
+        phase=phase,
+        extracted=extracted,
+        safety=safety,
+        blocked_by_safety=False,
+    )
+
+
+def _admin_turn(
+    session: Session,
+    identity: Identity,
+    user_text: str,
+    wa_message_id: str | None,
+) -> TurnResult:
+    language = mirror_language(user_text, None)
+    admin = session.get(Admin, identity.person_id)
+    if admin is None:
+        return TurnResult(
+            reply_text=_LATER_PATH,
+            language=language,
+            phase=PatientPhase.FIRST_CONTACT,
+        )
+    state = load(session, identity)
+    language = mirror_language(user_text, state.last_known_language)
+    reply = apply_admin_turn(session, admin, user_text)
+    save_turn(
+        session,
+        state,
+        user_text,
+        reply,
+        ExtractedTriage(),
+        PatientPhase.FIRST_CONTACT,
+        language,
+        wa_message_id,
+    )
+    return TurnResult(
+        reply_text=reply,
+        language=language,
+        phase=PatientPhase.FIRST_CONTACT,
+    )
+
+
 def _reply_after_extract(
     session: Session,
     state: ConversationState,
@@ -247,6 +372,7 @@ def _physio_turn(
         )
     state = load(session, identity)
     conversation = session.get(Conversation, state.conversation_id)
+    prior_status = physio.onboarding_status
     reply = apply_physio_reply(session, physio.id, user_text, conversation)
     if reply is None and authorize(identity, "physio_payout"):
         reply = apply_payout_turn(session, physio.id, user_text, paystack=paystack)
@@ -266,6 +392,13 @@ def _physio_turn(
         reply = apply_pending_physio_answer(session, physio.id, user_text, conversation)
     if reply is None:
         reply = apply_onboarding_turn(session, physio, user_text, media)
+    _maybe_route_off_platform(session, user_text, physio_id=physio.id)
+    if prior_status != "submitted" and physio.onboarding_status == "submitted":
+        route_escalation(
+            session,
+            "verification",
+            {"physio_id": str(physio.id)},
+        )
     save_turn(
         session,
         state,
@@ -456,6 +589,15 @@ def handle_turn(
             )
         return _partner_turn(session, identity, user_text, wa_message_id)
 
+    if identity.persona == Persona.ADMIN:
+        if not authorize(identity, "admin"):
+            return TurnResult(
+                reply_text=_LATER_PATH,
+                language=mirror_language(user_text, None),
+                phase=PatientPhase.FIRST_CONTACT,
+            )
+        return _admin_turn(session, identity, user_text, wa_message_id)
+
     if not authorize(identity, "triage"):
         return TurnResult(
             reply_text=_LATER_PATH,
@@ -466,11 +608,29 @@ def handle_turn(
     state = load(session, identity)
     if identity.persona == Persona.PATIENT:
         apply_inbound_code(session, identity.person_id, user_text)
+        _maybe_route_off_platform(session, user_text, patient_id=identity.person_id)
     phase = decide_phase(state)
     language = mirror_language(user_text, state.last_known_language)
     if _is_escalated(session, state):
         return _resend_safety_block(
             session, identity, state, user_text, phase, language, wa_message_id
+        )
+
+    conversation = session.get(Conversation, state.conversation_id)
+    if (
+        identity.persona == Persona.PATIENT
+        and conversation is not None
+        and conversation.human_takeover
+    ):
+        return _patient_takeover_turn(
+            session,
+            identity,
+            state,
+            conversation,
+            user_text,
+            phase,
+            language,
+            wa_message_id,
         )
 
     extra_context = ""
@@ -486,20 +646,16 @@ def handle_turn(
     safety = evaluate(extracted)
 
     if safety.fired:
-        reply = patient_message(safety)
-        notified = notify_family_on_safety(session, identity.person_id, safety)
-        _set_triage_status(session, state, "escalated")
-        _audit_turn(
-            session, identity, extracted, safety, phase, notify_family=notified
-        )
-        save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id)
-        return TurnResult(
-            reply_text=reply,
-            language=language,
-            phase=phase,
-            extracted=extracted,
-            safety=safety,
-            blocked_by_safety=True,
+        return _safety_fire_reply(
+            session,
+            identity,
+            state,
+            user_text,
+            extracted,
+            safety,
+            phase,
+            language,
+            wa_message_id,
         )
 
     if identity.persona == Persona.PATIENT:

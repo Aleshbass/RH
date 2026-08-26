@@ -34,6 +34,9 @@ class Physiotherapist(Base):
     onboarding_status: Mapped[str] = mapped_column(
         String, nullable=False, default="collecting", server_default="collecting"
     )
+    needs_web_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     credentials_submitted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

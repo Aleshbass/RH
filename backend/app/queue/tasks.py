@@ -83,6 +83,7 @@ FAMILY_SAFETY_QUEUE = "joy:notify_family_safety"
 PHYSIO_RELAY_QUEUE = "joy:notify_physio_relay"
 FAMILY_RELAY_QUEUE = "joy:notify_family_relay"
 PARTNER_REFERRAL_QUEUE = "joy:notify_partner_referral"
+ADMIN_ESCALATION_QUEUE = "joy:notify_admin_escalation"
 
 
 def enqueue_booking_confirmed(phone: str, booking_id: str, text: str) -> None:
@@ -135,6 +136,13 @@ def enqueue_notify_family_relay(phone: str, text: str) -> None:
 def enqueue_notify_partner_referral(phone: str, text: str) -> None:
     _redis().lpush(
         PARTNER_REFERRAL_QUEUE,
+        json.dumps({"phone": phone, "text": text}),
+    )
+
+
+def enqueue_notify_admin_escalation(phone: str, text: str) -> None:
+    _redis().lpush(
+        ADMIN_ESCALATION_QUEUE,
         json.dumps({"phone": phone, "text": text}),
     )
 

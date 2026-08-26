@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,6 +25,12 @@ class Conversation(Base):
     summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     booking_substate: Mapped[str | None] = mapped_column(String, nullable=True)
     booking_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    human_takeover: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    takeover_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation")
 
 

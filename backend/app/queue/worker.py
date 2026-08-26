@@ -13,6 +13,7 @@ from app.llm.gemini_client import GeminiTimeoutError, LLMClient, get_llm_client
 from app.models.conversation import Message
 from app.models.types import AuditKind, PatientPhase, TurnResult
 from app.queue.tasks import (
+    ADMIN_ESCALATION_QUEUE,
     BOOKING_CONFIRMED_QUEUE,
     DEAD_LETTER_QUEUE,
     FAMILY_RELAY_QUEUE,
@@ -229,6 +230,10 @@ def process_partner_referral_once(timeout: int = 1) -> bool:
     return _drain_text_queue(PARTNER_REFERRAL_QUEUE, timeout=timeout)
 
 
+def process_admin_escalation_once(timeout: int = 1) -> bool:
+    return _drain_text_queue(ADMIN_ESCALATION_QUEUE, timeout=timeout)
+
+
 def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
     client = _redis()
     try:
@@ -272,6 +277,10 @@ def run_forever(timeout: int = 5) -> None:
             process_partner_referral_once(timeout=0)
         except Exception:
             logger.exception("partner_referral job failed")
+        try:
+            process_admin_escalation_once(timeout=0)
+        except Exception:
+            logger.exception("admin_escalation job failed")
         try:
             process_queue_once(timeout=timeout)
         except Exception:
