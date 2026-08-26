@@ -490,9 +490,16 @@ def test_alembic_is_0016_not_0010():
 
 def test_no_retool_or_hmo_export():
     root = Path(__file__).resolve().parents[1] / "app"
-    assert not (root / "admin" / "broadcast.py").exists()
-    assert not (root / "admin" / "stats_digest.py").exists()
     assert not (root / "api" / "internal" / "admin_panel.py").exists()
-    source = (root / "admin" / "escalation_router.py").read_text()
-    assert "hmo" not in source.lower()
-    assert "retool" not in source.lower()
+    assert not (root / "api" / "internal" / "physio_profile.py").exists()
+    assert not (root / "api" / "internal" / "partner_portal.py").exists()
+    assert not (root / "api" / "internal" / "receipts.py").exists()
+    for relative in (
+        "admin/escalation_router.py",
+        "admin/broadcast.py",
+        "admin/stats_digest.py",
+        "api/internal/jobs.py",
+    ):
+        source = (root / relative).read_text()
+        assert "hmo" not in source.lower()
+        assert "retool" not in source.lower()

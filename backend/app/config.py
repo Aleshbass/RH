@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     paystack_callback_url: str = ""
     joy_environment: str = "development"
     internal_api_secret: str = ""
+    internal_job_token: str = ""
 
 
 def get_settings() -> Settings:

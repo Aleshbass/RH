@@ -16,6 +16,7 @@ class Physiotherapist(Base):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     phone_e164: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    city: Mapped[str | None] = mapped_column(String, nullable=True)
     specialty_tags: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
