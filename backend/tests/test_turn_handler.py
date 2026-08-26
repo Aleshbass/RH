@@ -5,10 +5,11 @@ from app.identity.resolver import resolve
 from app.identity.unknown_sender import begin_unknown
 from app.models.audit_log import AuditEvent
 from app.models.conversation import Conversation
+from app.models.patient import Patient
+from app.models.physiotherapist import Physiotherapist
 from app.models.triage_session import TriageSession
 from app.models.types import AuditKind, ExtractedTriage, PatientPhase
 from tests.fakes import FakeLLM
-
 
 def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     from app.conversation.turn_handler import handle_turn
@@ -62,15 +63,17 @@ def test_first_contact_does_not_append_severity_checklist(db_session, patient_ph
     assert result.reply_text == fake_llm.reply
 
 
-def test_unknown_sender_returns_begin_unknown_and_audits(db_session):
+def test_unknown_sender_uses_gemini_when_unclear_and_audits(db_session):
     from app.conversation.turn_handler import handle_turn
 
     phone = "+2348000001099"
-    llm = _CountingLLM(reply="should not be used")
+    llm = _CountingLLM(
+        reply="Hey — are you here for physio care, joining as a physiotherapist, or helping family?",
+        extraction={"intent": "unclear"},
+    )
     result = handle_turn(db_session, phone, "hello", llm)
-    assert result.reply_text == begin_unknown(db_session, phone)
-    assert result.reply_text != llm.reply
-    assert llm.complete_calls == 0
+    assert result.reply_text == llm.reply
+    assert llm.complete_calls == 1
     events = db_session.scalars(
         select(AuditEvent).where(
             AuditEvent.kind == AuditKind.IDENTITY,
@@ -79,6 +82,57 @@ def test_unknown_sender_returns_begin_unknown_and_audits(db_session):
     ).all()
     assert events
     assert events[0].person_id is None
+
+
+def test_unknown_care_seeker_provisions_patient_and_uses_gemini(db_session, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    phone = "+2348000001101"
+    fake_llm.reply = (
+        "Thanks for reaching out — I'm Joy. Tell me what's going on with your body; "
+        "a voice note is fine."
+    )
+    result = handle_turn(db_session, phone, "I'm looking for physiotherapy care", fake_llm)
+    identity = resolve(db_session, phone)
+    assert identity is not None
+    assert identity.persona.value == "patient"
+    assert db_session.scalar(select(Patient).where(Patient.phone_e164 == phone)) is not None
+    assert result.reply_text == fake_llm.reply
+    assert fake_llm.complete_prompts  # patient triage path used Gemini
+
+
+def test_unknown_curly_apostrophe_physio_claim_provisions(db_session, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    phone = "+2348000001102"
+    # WhatsApp-style curly apostrophe in I’m
+    result = handle_turn(db_session, phone, "I’m a physiotherapist", fake_llm)
+    identity = resolve(db_session, phone)
+    assert identity is not None
+    assert identity.persona.value == "physiotherapist"
+    assert db_session.scalar(
+        select(Physiotherapist).where(Physiotherapist.phone_e164 == phone)
+    ) is not None
+    lower = result.reply_text.lower()
+    assert "mrtb" in lower or "credential" in lower or "specialty" in lower
+
+
+def test_unknown_family_claim_explains_add_flow_without_looping_script(
+    db_session, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    phone = "+2348000001103"
+    fake_llm.reply = (
+        "Got it — you're here for family. Ask them to add this number from their chat "
+        "with me, then come back."
+    )
+    fake_llm.extraction = {"intent": "family"}
+    result = handle_turn(db_session, phone, "A family member added me here", fake_llm)
+    assert resolve(db_session, phone) is None
+    assert db_session.scalar(select(Patient).where(Patient.phone_e164 == phone)) is None
+    assert result.reply_text == fake_llm.reply
+    assert result.reply_text != begin_unknown(db_session, phone)
 
 
 def test_safety_discards_model_reply_without_second_llm_call(db_session, patient_phone):

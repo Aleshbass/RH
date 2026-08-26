@@ -21,11 +21,7 @@ from app.family.relay import apply_pending_physio_answer, ask_physio, is_relay_a
 from app.partner.referral import apply_inbound_code, apply_partner_turn, maybe_provision_from_referral
 from app.identity.permissions import authorize
 from app.identity.resolver import resolve
-from app.identity.unknown_sender import (
-    begin_unknown,
-    maybe_provision_patient,
-    maybe_provision_physio,
-)
+from app.identity.unknown_sender import resolve_unknown_sender
 from app.llm.gemini_client import LLMClient
 from app.llm.prompt_builder import build
 from app.llm.rag.retriever import retrieve
@@ -539,17 +535,15 @@ def handle_turn(
     if identity is None:
         identity = maybe_provision_from_referral(session, phone, user_text)
     if identity is None:
-        identity = maybe_provision_patient(session, phone, user_text)
-    if identity is None:
-        identity = maybe_provision_physio(session, phone, user_text)
-    if identity is None:
-        text = begin_unknown(session, phone)
-        _audit_identity(session, phone)
-        return TurnResult(
-            reply_text=text,
-            language=mirror_language(user_text, None),
-            phase=PatientPhase.FIRST_CONTACT,
-        )
+        decision = resolve_unknown_sender(session, phone, user_text, llm)
+        if decision.identity is None:
+            _audit_identity(session, phone)
+            return TurnResult(
+                reply_text=decision.reply_text,
+                language=mirror_language(user_text, None),
+                phase=PatientPhase.FIRST_CONTACT,
+            )
+        identity = decision.identity
 
     if identity.persona == Persona.PHYSIO:
         if not authorize(identity, "physio_onboard"):

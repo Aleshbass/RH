@@ -210,3 +210,27 @@ def test_physio_claim_provisions_physiotherapist_not_patient(db_session, fake_ll
     assert "later" not in result.reply_text.lower()
     lower = result.reply_text.lower()
     assert "mrtb" in lower or "credential" in lower or "specialty" in lower
+
+
+def test_looking_for_care_provisions_patient(db_session, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    phone = "+2348000000211"
+    fake_llm.reply = "Tell me what's going on — I'm listening."
+    handle_turn(db_session, phone, "I'm looking for physiotherapy care", fake_llm)
+    identity = resolve(db_session, phone)
+    assert identity is not None
+    assert identity.persona == Persona.PATIENT
+    assert db_session.scalar(select(Patient).where(Patient.phone_e164 == phone)) is not None
+
+
+def test_gemini_intent_patient_provisions_when_phrasing_is_novel(db_session, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    phone = "+2348000000212"
+    fake_llm.extraction = {"intent": "patient"}
+    fake_llm.reply = "Okay — what's been bothering you?"
+    handle_turn(db_session, phone, "can someone help my recovery please", fake_llm)
+    identity = resolve(db_session, phone)
+    assert identity is not None
+    assert identity.persona == Persona.PATIENT

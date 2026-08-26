@@ -178,4 +178,12 @@ def send_whatsapp_text(phone: str, text: str) -> None:
         },
         timeout=15.0,
     )
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        body = getattr(exc.response, "text", "") or ""
+        raise httpx.HTTPStatusError(
+            f"{exc.response.status_code} for Graph messages: {body[:500]}",
+            request=exc.request,
+            response=exc.response,
+        ) from exc

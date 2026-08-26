@@ -303,3 +303,12 @@ def run_forever(timeout: int = 5) -> None:
             process_queue_once(timeout=timeout)
         except Exception:
             logger.exception("inbound job failed")
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    logger.info("Joy inbound worker starting")
+    run_forever()
