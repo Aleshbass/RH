@@ -40,6 +40,7 @@ def quick_reply_verify(
     elif choice == "reject":
         physio.onboarding_status = "rejected"
         physio.verified = False
+        physio.needs_web_review = False
     else:
         physio.onboarding_status = "submitted"
         physio.needs_web_review = True

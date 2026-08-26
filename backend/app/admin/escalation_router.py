@@ -21,7 +21,43 @@ _TAKEOVER_NOTICE = (
 _TAKEOVER_CONTINUE = "A human is helping you on this chat."
 _TAKEOVER_CLEARED = "I'm back with you on this chat."
 
-_CHEST_PAIN = "chest pain"
+# Documented ExtractedTriage.flags keys → small keyword list. evaluate() still decides.
+_FLAG_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "saddle_anesthesia": (
+        "saddle anesthesia",
+        "saddle numbness",
+        "numbness around the saddle",
+        "saddle area",
+    ),
+    "bladder_bowel_change": (
+        "bladder",
+        "bowel control",
+        "bowel incontinence",
+        "can't pee",
+        "cannot pee",
+    ),
+    "bilateral_leg_weakness": (
+        "both legs",
+        "weakness in both legs",
+        "bilateral leg weakness",
+    ),
+    "unexplained_weight_loss": ("weight loss", "losing weight"),
+    "night_pain": ("night pain", "pain at night", "wakes me at night"),
+    "fever": ("fever",),
+    "night_sweats": ("night sweats", "sweating at night"),
+    "history_of_cancer": ("cancer",),
+    "recent_trauma": ("recent trauma", "car accident", "fell from"),
+    "chest_pain": ("chest pain",),
+    "sudden_neuro_deficit": (
+        "sudden weakness",
+        "can't speak",
+        "cannot speak",
+        "face droop",
+        "sudden neuro",
+        "slurred speech",
+    ),
+    "unexplained_numbness": ("unexplained numbness",),
+}
 
 
 def detect_off_platform(text: str) -> str | None:
@@ -34,8 +70,9 @@ def detect_off_platform(text: str) -> str | None:
 def flags_from_triage_text(text: str) -> dict[str, bool]:
     lower = (text or "").lower()
     flags: dict[str, bool] = {}
-    if _CHEST_PAIN in lower:
-        flags["chest_pain"] = True
+    for key, keywords in _FLAG_KEYWORDS.items():
+        if any(keyword in lower for keyword in keywords):
+            flags[key] = True
     return flags
 
 

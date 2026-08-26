@@ -111,6 +111,20 @@ def test_quick_reject_physio(db_session, submitted_physio, admin_identity):
     assert submitted_physio.verified is False
 
 
+def test_web_then_reject_clears_needs_web_review(
+    db_session, submitted_physio, admin_identity
+):
+    from app.admin.verification_queue import quick_reply_verify
+
+    quick_reply_verify(db_session, submitted_physio.id, "web")
+    db_session.refresh(submitted_physio)
+    assert submitted_physio.needs_web_review is True
+    quick_reply_verify(db_session, submitted_physio.id, "reject")
+    db_session.refresh(submitted_physio)
+    assert submitted_physio.onboarding_status == "rejected"
+    assert submitted_physio.needs_web_review is False
+
+
 def test_quick_web_leaves_submitted_and_needs_review(
     db_session, submitted_physio, admin_identity
 ):
@@ -266,6 +280,39 @@ def test_takeover_still_runs_safety_and_routes_admin(
     assert "book" not in result.reply_text.lower()
     assert any(m in result.reply_text.lower() for m in ("concern", "sorry", "care", "worried"))
     assert "doctor" in result.reply_text.lower() or "emergency" in result.reply_text.lower() or "hospital" in result.reply_text.lower()
+    admin_msgs = [
+        row
+        for row in db_session.query(Message).all()
+        if row.role == "joy"
+        and row.conversation.persona == Persona.ADMIN
+        and row.conversation.person_id == admin_row.id
+    ]
+    assert admin_msgs
+
+
+def test_takeover_safety_fires_on_saddle_anesthesia_without_gemini(
+    db_session, patient_conversation, admin_row
+):
+    from app.admin.escalation_router import set_takeover
+    from app.conversation.turn_handler import handle_turn
+
+    set_takeover(db_session, patient_conversation.id, True)
+    patient = db_session.get(Patient, patient_conversation.person_id)
+    llm = FakeLLM(reply="Let's book a physio for tomorrow!")
+    result = handle_turn(
+        db_session,
+        patient.phone_e164,
+        "I have numbness around the saddle area",
+        llm,
+    )
+    assert llm.complete_prompts == []
+    assert result.blocked_by_safety is True
+    assert result.safety is not None and result.safety.fired is True
+    assert "cauda" in (result.safety.rule_ids or []) or "saddle" in (
+        result.safety.reason_plain_language or ""
+    ).lower()
+    assert "doctor" in result.reply_text.lower() or "emergency" in result.reply_text.lower()
+    assert "book" not in result.reply_text.lower()
     admin_msgs = [
         row
         for row in db_session.query(Message).all()
