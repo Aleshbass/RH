@@ -6,7 +6,7 @@ Auth for the routes below: header `X-Internal-Key` must match Settings `internal
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/internal/audit?kind=&person_id=&from=&to=` | List `audit_events` ascending by `created_at`. Filters optional. No PATCH/PUT/DELETE. |
+| GET | `/api/internal/audit?kind=&person_id=&from=&to=&limit=&offset=` | List `audit_events` ascending by `(created_at, id)`. Filters optional. Default `limit` 100, max 500. `offset` default 0. No PATCH/PUT/DELETE. |
 | GET | `/api/internal/physios/{id}/profile` | Credentials / pricing / specialty / city JSON. |
 | PUT | `/api/internal/physios/{id}/profile` | Update `credential_urls`, `price_kobo`, `specialty_tags`, `city`, `mrtb_number`. Does not set `verified`. |
 | GET | `/api/internal/partners/{id}/referrals` | Patients with `referred_by_partner_id` plus `referral_fees` rows. |

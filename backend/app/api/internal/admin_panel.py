@@ -31,6 +31,8 @@ def list_audit_events(
     person_id: UUID | None = None,
     from_: datetime | None = Query(default=None, alias="from"),
     to: datetime | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> dict:
     stmt = select(AuditEvent)
     if kind is not None:
@@ -41,6 +43,10 @@ def list_audit_events(
         stmt = stmt.where(AuditEvent.created_at >= from_)
     if to is not None:
         stmt = stmt.where(AuditEvent.created_at <= to)
-    stmt = stmt.order_by(AuditEvent.created_at.asc(), AuditEvent.id.asc())
+    stmt = (
+        stmt.order_by(AuditEvent.created_at.asc(), AuditEvent.id.asc())
+        .offset(offset)
+        .limit(limit)
+    )
     events = session.scalars(stmt).all()
     return {"events": [_event_row(event) for event in events]}

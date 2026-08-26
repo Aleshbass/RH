@@ -207,6 +207,13 @@ def test_digest_includes_bookings_revenue_and_active_physios(db_session):
     assert len(confirmed_or_done) == 2
 
 
+def test_broadcast_physios_in_city_empty_match_raises(db_session, admin_row):
+    from app.admin.broadcast import send_broadcast
+
+    with pytest.raises((ValueError, LookupError, RuntimeError)):
+        send_broadcast(db_session, admin_row.id, "physios_in_city:Kano", "hello Kano")
+
+
 def test_stats_digest_job_unauthorized_without_token(client):
     response = client.post("/api/internal/jobs/stats_digest")
     assert response.status_code == 401

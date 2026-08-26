@@ -25,6 +25,7 @@ from app.queue.tasks import (
     PHYSIO_BOOKING_ALERT_QUEUE,
     PHYSIO_RELAY_QUEUE,
     PROCESSING_QUEUE,
+    TAKEOVER_QUEUE,
     _redis,
     send_whatsapp_text,
 )
@@ -239,6 +240,10 @@ def process_broadcast_once(timeout: int = 1) -> bool:
     return _drain_text_queue(BROADCAST_QUEUE, timeout=timeout)
 
 
+def process_takeover_once(timeout: int = 1) -> bool:
+    return _drain_text_queue(TAKEOVER_QUEUE, timeout=timeout)
+
+
 def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
     client = _redis()
     try:
@@ -290,6 +295,10 @@ def run_forever(timeout: int = 5) -> None:
             process_broadcast_once(timeout=0)
         except Exception:
             logger.exception("broadcast job failed")
+        try:
+            process_takeover_once(timeout=0)
+        except Exception:
+            logger.exception("takeover job failed")
         try:
             process_queue_once(timeout=timeout)
         except Exception:

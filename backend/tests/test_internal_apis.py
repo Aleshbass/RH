@@ -66,7 +66,11 @@ def confirmed_booking(db_session):
 
 
 def test_audit_is_independently_queryable(client, db_session, safety_audit_row):
-    response = client.get("/api/internal/audit", params={"kind": "safety"}, headers={"X-Internal-Key": "test-key"})
+    response = client.get(
+        "/api/internal/audit",
+        params={"kind": "safety", "person_id": str(safety_audit_row.person_id)},
+        headers={"X-Internal-Key": "test-key"},
+    )
     assert response.status_code == 200
     ids = [row["id"] for row in response.json()["events"]]
     assert str(safety_audit_row.id) in ids
@@ -332,6 +336,95 @@ def test_receipt_does_not_confirm_unpaid_booking(client, db_session):
     db_session.refresh(booking)
     assert booking.status == BookingStatus.AWAITING_PAYMENT
     assert booking.status != BookingStatus.CONFIRMED
+
+
+def test_audit_default_limit_is_100(client, db_session, patient_identity):
+    for i in range(101):
+        append(
+            db_session,
+            kind=AuditKind.TRIAGE,
+            actor_phone=patient_identity.phone_e164,
+            person_id=patient_identity.person_id,
+            payload={"n": i},
+        )
+    response = client.get("/api/internal/audit", headers=HEADERS)
+    assert response.status_code == 200
+    assert len(response.json()["events"]) == 100
+
+
+def test_audit_limit_and_offset(client, db_session, patient_identity):
+    from app.models.audit_log import AuditEvent
+
+    rows = []
+    for i in range(5):
+        row = AuditEvent(
+            kind=AuditKind.MATCH,
+            actor_phone=patient_identity.phone_e164,
+            person_id=patient_identity.person_id,
+            payload={"n": i},
+            created_at=datetime(2026, 8, 1, 10, i, tzinfo=timezone.utc),
+        )
+        db_session.add(row)
+        rows.append(row)
+    db_session.flush()
+    first = client.get(
+        "/api/internal/audit",
+        params={"person_id": str(patient_identity.person_id), "kind": "match", "limit": 2},
+        headers=HEADERS,
+    )
+    assert first.status_code == 200
+    assert len(first.json()["events"]) == 2
+    second = client.get(
+        "/api/internal/audit",
+        params={
+            "person_id": str(patient_identity.person_id),
+            "kind": "match",
+            "limit": 2,
+            "offset": 2,
+        },
+        headers=HEADERS,
+    )
+    assert second.status_code == 200
+    first_ids = [row["id"] for row in first.json()["events"]]
+    second_ids = [row["id"] for row in second.json()["events"]]
+    assert first_ids == [str(rows[0].id), str(rows[1].id)]
+    assert second_ids == [str(rows[2].id), str(rows[3].id)]
+
+
+def test_audit_limit_rejects_over_500(client):
+    response = client.get(
+        "/api/internal/audit",
+        params={"limit": 501},
+        headers=HEADERS,
+    )
+    assert response.status_code == 422
+
+
+def test_receipt_paid_at_prefers_confirmed_at(client, confirmed_booking, db_session):
+    confirmed = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+    completed = datetime(2026, 8, 2, 15, 0, tzinfo=timezone.utc)
+    confirmed_booking.confirmed_at = confirmed
+    confirmed_booking.completed_at = completed
+    db_session.flush()
+    response = client.get(
+        f"/api/internal/receipts/{confirmed_booking.id}",
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    paid_at = response.json()["paid_at"]
+    assert paid_at.startswith("2026-08-01T12:00:00")
+
+
+def test_alembic_is_0018_booking_confirmed_at():
+    from pathlib import Path
+
+    versions = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+    path = versions / "0018_booking_confirmed_at.py"
+    assert path.is_file()
+    source = path.read_text()
+    assert 'revision: str = "0018_booking_confirmed_at"' in source
+    assert "0017_physio_city" in source
+    assert "confirmed_at" in source
 
 
 def test_internal_api_files_do_not_confirm_bookings_or_ship_html_ui():

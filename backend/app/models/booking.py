@@ -39,6 +39,7 @@ class Booking(Base):
     checkin_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     checkin_lng: Mapped[float | None] = mapped_column(Float, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

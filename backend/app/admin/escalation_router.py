@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.models.admin import Admin
 from app.models.conversation import Conversation, Message
+from app.models.patient import Patient
 from app.models.types import PatientPhase, Persona, SafetyResult
-from app.queue.tasks import ADMIN_ESCALATION_QUEUE
+from app.queue.tasks import ADMIN_ESCALATION_QUEUE, TAKEOVER_QUEUE
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,11 @@ _FLAG_KEYWORDS: dict[str, tuple[str, ...]] = {
         "saddle area",
     ),
     "bladder_bowel_change": (
-        "bladder",
+        "bladder control",
+        "bladder incontinence",
+        "loss of bladder",
+        "can't control bladder",
+        "cannot control bladder",
         "bowel control",
         "bowel incontinence",
         "can't pee",
@@ -43,9 +48,15 @@ _FLAG_KEYWORDS: dict[str, tuple[str, ...]] = {
     ),
     "unexplained_weight_loss": ("weight loss", "losing weight"),
     "night_pain": ("night pain", "pain at night", "wakes me at night"),
-    "fever": ("fever",),
+    "fever": ("have a fever", "has a fever", "high fever", "with fever", "feverish"),
     "night_sweats": ("night sweats", "sweating at night"),
-    "history_of_cancer": ("cancer",),
+    "history_of_cancer": (
+        "history of cancer",
+        "had cancer",
+        "have cancer",
+        "has cancer",
+        "cancer history",
+    ),
     "recent_trauma": ("recent trauma", "car accident", "fell from"),
     "chest_pain": ("chest pain",),
     "sudden_neuro_deficit": (
@@ -91,6 +102,7 @@ def set_takeover(session: Session, conversation_id: UUID, on: bool) -> str:
         conversation.takeover_notified_at = datetime.now(timezone.utc)
         text = _TAKEOVER_NOTICE
         session.add(Message(conversation_id=conversation.id, role="joy", text=text))
+        _enqueue_takeover_notice(session, conversation, text)
         session.flush()
         return text
     conversation.human_takeover = False
@@ -169,3 +181,24 @@ def _enqueue_admin_notice(phone: str, text: str) -> None:
         enqueue_notify_admin_escalation(phone, text)
     except Exception:
         logger.exception("failed to enqueue admin escalation notice")
+
+
+def _phone_for_conversation(session: Session, conversation: Conversation) -> str | None:
+    if conversation.persona == Persona.PATIENT:
+        row = session.get(Patient, conversation.person_id)
+        return row.phone_e164 if row is not None else None
+    return None
+
+
+def _enqueue_takeover_notice(
+    session: Session, conversation: Conversation, text: str
+) -> None:
+    phone = _phone_for_conversation(session, conversation)
+    if not phone:
+        return
+    try:
+        from app.queue.tasks import enqueue_notify_takeover
+
+        enqueue_notify_takeover(phone, text)
+    except Exception:
+        logger.exception("failed to enqueue takeover notice")

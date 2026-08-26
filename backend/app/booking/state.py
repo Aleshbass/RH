@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -86,6 +86,7 @@ def advance_to_confirmed(session: Session, booking_id: UUID | str, *, source: st
     if booking.status not in _CONFIRMABLE:
         raise RuntimeError(f"cannot confirm booking in status {booking.status}")
     booking.status = BookingStatus.CONFIRMED
+    booking.confirmed_at = datetime.now(timezone.utc)
     session.flush()
 
 

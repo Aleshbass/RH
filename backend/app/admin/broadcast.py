@@ -25,6 +25,8 @@ def send_broadcast(session: Session, admin_id: UUID, segment: str, body: str) ->
         raise PermissionError("only an admin can send a broadcast")
     kind, city = _parse_segment(segment)
     recipients = _recipients(session, kind, city)
+    if kind == _PHYSIOS_IN_CITY and not recipients:
+        raise ValueError(f"no physiotherapists matched city {city}")
     text = body or ""
     for persona, row in recipients:
         _write_joy(session, persona, row.id, row.phone_e164, text)

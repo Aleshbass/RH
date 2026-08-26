@@ -22,7 +22,7 @@ def get_receipt(booking_id: UUID, session: Session = Depends(get_session)) -> di
         raise HTTPException(status_code=404, detail="receipt not found")
     patient = session.get(Patient, booking.patient_id)
     physio = session.get(Physiotherapist, booking.physio_id)
-    paid_at = booking.completed_at or booking.created_at
+    paid_at = booking.confirmed_at or booking.completed_at or booking.created_at
     return {
         "amount_kobo": booking.amount_kobo,
         "paid_at": paid_at.isoformat() if paid_at else None,

@@ -51,6 +51,7 @@ def test_conversation_cannot_confirm(db_session, patient, physio):
     except RuntimeError:
         db_session.refresh(booking)
         assert booking.status == BookingStatus.AWAITING_PAYMENT
+        assert booking.confirmed_at is None
 
 
 def test_webhook_source_confirms(db_session, patient, physio):
@@ -59,6 +60,8 @@ def test_webhook_source_confirms(db_session, patient, physio):
     advance_to_confirmed(db_session, booking.id, source="paystack_webhook")
     db_session.refresh(booking)
     assert booking.status == BookingStatus.CONFIRMED
+    assert booking.confirmed_at is not None
+    assert booking.confirmed_at.tzinfo is not None
 
 
 def test_create_draft_status_is_draft(db_session, patient, physio):

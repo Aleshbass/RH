@@ -1,4 +1,5 @@
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
@@ -473,6 +474,190 @@ def test_admin_whatsapp_quick_reply_web(
     db_session.refresh(submitted_physio)
     assert submitted_physio.onboarding_status == "submitted"
     assert submitted_physio.needs_web_review is True
+
+
+def test_takeover_enqueues_whatsapp_to_patient(db_session, patient_conversation):
+    from app.admin.escalation_router import TAKEOVER_QUEUE, set_takeover
+    from app.queue.tasks import _redis
+
+    patient = db_session.get(Patient, patient_conversation.person_id)
+    client = _redis()
+    client.delete(TAKEOVER_QUEUE)
+    try:
+        text = set_takeover(db_session, patient_conversation.id, True)
+        db_session.refresh(patient_conversation)
+        assert patient_conversation.takeover_notified_at is not None
+        assert "human" in text.lower() or "team" in text.lower()
+        jobs = []
+        while True:
+            raw = client.rpop(TAKEOVER_QUEUE)
+            if raw is None:
+                break
+            import json
+
+            jobs.append(json.loads(raw))
+        phones = {job["phone"] for job in jobs}
+        assert patient.phone_e164 in phones
+        assert any(job["text"] == text for job in jobs)
+        assert any(
+            "human" in (job["text"] or "").lower() or "team" in (job["text"] or "").lower()
+            for job in jobs
+        )
+    finally:
+        client.delete(TAKEOVER_QUEUE)
+
+
+def test_admin_turn_broadcast_all_patients(
+    db_session, admin_row, patient_conversation, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    result = handle_turn(
+        db_session,
+        admin_row.phone_e164,
+        "broadcast all_patients clinic closed Monday",
+        fake_llm,
+    )
+    assert "later" not in result.reply_text.lower()
+    patient = db_session.get(Patient, patient_conversation.person_id)
+    joy = [
+        row
+        for row in db_session.query(Message).all()
+        if row.role == "joy"
+        and row.conversation.persona == Persona.PATIENT
+        and row.conversation.person_id == patient.id
+    ]
+    assert joy
+    assert joy[-1].text == "clinic closed Monday"
+    assert "1" in result.reply_text or "sent" in result.reply_text.lower()
+
+
+def test_admin_turn_digest_returns_digest_text(db_session, admin_row, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    result = handle_turn(db_session, admin_row.phone_e164, "digest", fake_llm)
+    assert "later" not in result.reply_text.lower()
+    assert "booking" in result.reply_text.lower()
+
+
+def test_admin_turn_takeover_on_and_off(
+    db_session, admin_row, patient_conversation, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    on = handle_turn(
+        db_session,
+        admin_row.phone_e164,
+        f"takeover on {patient_conversation.id}",
+        fake_llm,
+    )
+    db_session.refresh(patient_conversation)
+    assert patient_conversation.human_takeover is True
+    assert patient_conversation.takeover_notified_at is not None
+    assert "later" not in on.reply_text.lower()
+    off = handle_turn(
+        db_session,
+        admin_row.phone_e164,
+        f"takeover off {patient_conversation.id}",
+        fake_llm,
+    )
+    db_session.refresh(patient_conversation)
+    assert patient_conversation.human_takeover is False
+    assert "later" not in off.reply_text.lower()
+
+
+def test_admin_help_mentions_broadcast_digest_takeover(db_session, admin_row):
+    from app.admin.verification_queue import apply_admin_turn
+
+    text = apply_admin_turn(db_session, admin_row, "hello")
+    lower = text.lower()
+    assert "broadcast" in lower
+    assert "digest" in lower
+    assert "takeover" in lower
+    assert "approve" in lower
+
+
+def test_admin_unknown_physio_uuid_does_not_raise(
+    db_session, admin_row, admin_identity, fake_llm
+):
+    from app.admin.verification_queue import apply_admin_turn
+    from app.conversation.turn_handler import handle_turn
+
+    missing = uuid4()
+    reply = apply_admin_turn(db_session, admin_row, f"approve {missing}")
+    assert "couldn't find" in reply.lower()
+    result = handle_turn(
+        db_session,
+        admin_identity.phone_e164,
+        f"reject {missing}",
+        fake_llm,
+    )
+    assert "couldn't find" in result.reply_text.lower()
+    assert "later" not in result.reply_text.lower()
+
+
+def test_admin_turn_broadcast_empty_city_is_explicit_error(
+    db_session, admin_row, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    result = handle_turn(
+        db_session,
+        admin_row.phone_e164,
+        "broadcast physios_in_city:Kano nobody here",
+        fake_llm,
+    )
+    lower = result.reply_text.lower()
+    assert "later" not in lower
+    assert "0" != result.reply_text.strip()
+    assert (
+        "no physio" in lower
+        or "couldn't find" in lower
+        or "no match" in lower
+        or "none" in lower
+        or "empty" in lower
+        or "kano" in lower
+    )
+
+
+def test_admin_turn_broadcast_uses_authorize(
+    db_session, admin_row, patient_conversation, monkeypatch
+):
+    from app.admin.verification_queue import apply_admin_turn
+
+    monkeypatch.setattr(
+        "app.admin.verification_queue.authorize", lambda *args, **kwargs: False
+    )
+    reply = apply_admin_turn(
+        db_session, admin_row, "broadcast all_patients should not send"
+    )
+    lower = reply.lower()
+    assert "allow" in lower or "not" in lower or "permission" in lower
+    patient = db_session.get(Patient, patient_conversation.person_id)
+    joy = [
+        row
+        for row in db_session.query(Message).all()
+        if row.role == "joy"
+        and row.conversation.persona == Persona.PATIENT
+        and row.conversation.person_id == patient.id
+        and row.text == "should not send"
+    ]
+    assert not joy
+
+
+def test_flags_from_triage_text_ignores_sticky_substrings():
+    from app.admin.escalation_router import flags_from_triage_text
+    from app.safety.evaluator import evaluate
+    from app.models.types import ExtractedTriage
+
+    gallbladder = flags_from_triage_text("gallbladder pain after meals")
+    assert gallbladder.get("bladder_bowel_change") is not True
+    weight = flags_from_triage_text("trying to lose weight")
+    assert weight.get("unexplained_weight_loss") is not True
+    assert evaluate(ExtractedTriage(flags=gallbladder)).fired is False
+    assert flags_from_triage_text("loss of bladder control").get("bladder_bowel_change")
+    assert flags_from_triage_text("history of cancer").get("history_of_cancer")
+    assert flags_from_triage_text("I have a high fever").get("fever")
 
 
 def test_alembic_is_0016_not_0010():
