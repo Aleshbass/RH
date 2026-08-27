@@ -2,6 +2,7 @@ import json
 import logging
 import time
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -42,6 +43,18 @@ def _payload_media(payload: dict) -> list[str] | None:
     return [str(item) for item in raw if item]
 
 GEMINI_TIMEOUT_APOLOGY = "Sorry, I had a brief hiccup. Please send that again in a moment."
+VOICE_FAIL_REPLY = (
+    "I couldn't process that voice note. Please try sending it again, or type what you said."
+)
+
+
+def _has_audio_payload(
+    *,
+    audio_url: str | None,
+    audio_media_id: str | None,
+    audio_bytes: bytes | None,
+) -> bool:
+    return bool(audio_url or audio_media_id or audio_bytes)
 
 
 def process_inbound(
@@ -66,6 +79,11 @@ def process_inbound(
     location = None
     if location_lat is not None and location_lng is not None:
         location = (float(location_lat), float(location_lng))
+    has_audio = _has_audio_payload(
+        audio_url=audio_url,
+        audio_media_id=audio_media_id,
+        audio_bytes=audio_bytes,
+    )
     try:
         user_text = transcript_from_audio(
             client,
@@ -75,6 +93,36 @@ def process_inbound(
             audio_mime=audio_mime,
             audio_bytes=audio_bytes,
         )
+    except GeminiTimeoutError:
+        if has_audio:
+            return TurnResult(
+                reply_text=VOICE_FAIL_REPLY,
+                language="en",
+                phase=PatientPhase.FIRST_CONTACT,
+            )
+        return TurnResult(
+            reply_text=GEMINI_TIMEOUT_APOLOGY,
+            language="en",
+            phase=PatientPhase.FIRST_CONTACT,
+        )
+    except (httpx.HTTPError, OSError, ValueError, KeyError):
+        if has_audio:
+            logger.exception("voice ingest failed for %s", wa_message_id)
+            return TurnResult(
+                reply_text=VOICE_FAIL_REPLY,
+                language="en",
+                phase=PatientPhase.FIRST_CONTACT,
+            )
+        raise
+
+    if has_audio and not (user_text or "").strip():
+        return TurnResult(
+            reply_text=VOICE_FAIL_REPLY,
+            language="en",
+            phase=PatientPhase.FIRST_CONTACT,
+        )
+
+    try:
         return handle_turn(
             session,
             phone,

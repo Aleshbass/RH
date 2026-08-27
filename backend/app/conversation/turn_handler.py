@@ -51,12 +51,30 @@ from app.triage.extraction import enrich_from_user_text, infer_condition_area, m
 from app.triage.question_batching import grouped_followup, missing_fields
 from app.triage.summary import plain_summary
 
-_YES_RE = re.compile(r"\b(yes|yeah|yep)\b", re.IGNORECASE)
-_CORRECT_RE = re.compile(r"\bcorrect\b", re.IGNORECASE)
-_NEGATED_CORRECT_RE = re.compile(
-    r"\b(?:not|no|never)\b.{0,40}\bcorrect\b|\bcorrect\b.{0,20}\b(?:not|no)\b",
+_YES_RE = re.compile(
+    r"\b(yes|yeah|yep|yup|yea|yh|ya|ok|okay|sure|alright)\b",
     re.IGNORECASE,
 )
+_CONFIRM_RE = re.compile(
+    r"\b(confirmed|confirm)\b",
+    re.IGNORECASE,
+)
+_AFFIRM_PHRASE_RE = re.compile(
+    r"\b(?:this|that|it)\s+is\s+right\b"
+    r"|\b(?:sounds|looks)\s+good\b"
+    r"|\ball\s+good\b"
+    r"|\bthat'?s\s+right\b"
+    r"|\bthat'?s\s+correct\b"
+    r"|\ball\s+right\b"
+    r"|\b(?:looks|seems)\s+correct\b",
+    re.IGNORECASE,
+)
+_NEGATED_CONFIRM_RE = re.compile(
+    r"\b(?:not|no|never|n't)\b.{0,40}\b(?:correct|right|confirm|confirmed)\b"
+    r"|\b(?:correct|right|confirm|confirmed)\b.{0,20}\b(?:not|no)\b",
+    re.IGNORECASE,
+)
+
 
 _LATER_PATH = (
     "This WhatsApp path is for later — I will be able to help you here in a later slice."
@@ -73,9 +91,16 @@ _DASHBOARD_REPLY = (
 
 
 def _is_summary_confirm(user_text: str) -> bool:
-    if _YES_RE.search(user_text):
+    text = (user_text or "").strip()
+    if not text:
+        return False
+    if _NEGATED_CONFIRM_RE.search(text):
+        return False
+    if _YES_RE.search(text):
         return True
-    if _CORRECT_RE.search(user_text) and not _NEGATED_CORRECT_RE.search(user_text):
+    if _AFFIRM_PHRASE_RE.search(text):
+        return True
+    if _CONFIRM_RE.search(text):
         return True
     return False
 

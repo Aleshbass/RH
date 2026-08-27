@@ -1,5 +1,7 @@
 from sqlalchemy import select
 
+import pytest
+
 from app.conversation.state_manager import load, save_turn
 from app.identity.resolver import resolve
 from app.identity.unknown_sender import begin_unknown
@@ -245,6 +247,46 @@ def test_post_triage_confirm_does_not_claim_booked(db_session, patient_identity,
     assert result.blocked_by_safety is False
     assert "next slice" not in lower
     assert "no specialist yet" in lower or "physio" in lower
+
+
+@pytest.mark.parametrize(
+    "confirm_text",
+    [
+        "Yh this is right",
+        "Confirmed",
+        "this is right",
+        "ok",
+        "sounds good",
+    ],
+)
+def test_post_triage_accepts_common_confirm_phrases(
+    db_session, patient_identity, fake_llm, confirm_text
+):
+    from app.conversation.turn_handler import handle_turn
+
+    complete = ExtractedTriage(
+        onset="4 days",
+        severity=9,
+        body_location="left knee",
+        goals="get back to running",
+        condition_area="msk",
+    )
+    state = load(db_session, patient_identity)
+    save_turn(db_session, state, "knee", "summary", complete, PatientPhase.POST_TRIAGE, "en")
+    row = db_session.get(Conversation, state.conversation_id)
+    row.summary_text = (
+        "Here's what I understood: left knee, for 4 days, severity 9 out of 10, "
+        "hoping to get back to running, (msk physio). "
+        "Please confirm this is right, or tell me what to correct?"
+    )
+    db_session.flush()
+
+    fake_llm.reply = "should not loop the summary"
+    result = handle_turn(db_session, patient_identity.phone_e164, confirm_text, fake_llm)
+    lower = result.reply_text.lower()
+    assert "please confirm this is right" not in lower
+    assert "here's what i understood" not in lower
+    assert "no specialist yet" in lower or "teleconsult" in lower or "home_visit" in lower or "physio" in lower
 
 
 def test_mid_triage_sends_one_grouped_followup(db_session, patient_identity, fake_llm):

@@ -3,6 +3,7 @@ import hmac
 import json
 import uuid
 
+import httpx
 import pytest
 import redis
 from sqlalchemy import func, select
@@ -290,6 +291,105 @@ def test_webhook_audio_then_process_once_uses_transcript(
     assert stored.text == "my knee still hurts"
     assert sent
     assert sent[0][0] == patient_phone
+
+
+def test_audio_fetch_failure_sends_apology_not_silent(
+    client, db_session: Session, patient_phone: str, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+):
+    from app.queue.tasks import DEAD_LETTER_QUEUE, INBOUND_QUEUE, PROCESSING_QUEUE, _redis
+    from app.queue.worker import process_queue_once
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.queue.worker.send_whatsapp_text",
+        lambda phone, text: sent.append((phone, text)),
+    )
+    client_redis = _redis()
+    client_redis.delete(INBOUND_QUEUE, PROCESSING_QUEUE, DEAD_LETTER_QUEUE)
+
+    media_id = "MEDIA_FAIL"
+    wa_message_id = f"wamid.audio.fail.{uuid.uuid4()}"
+
+    def _get(url: str, *args, **kwargs):
+        raise httpx.HTTPStatusError(
+            "401",
+            request=httpx.Request("GET", url),
+            response=httpx.Response(401),
+        )
+
+    monkeypatch.setattr("httpx.get", _get)
+
+    body = _inbound_audio_payload(patient_phone, wa_message_id, media_id)
+    response = client.post(
+        "/webhook",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Hub-Signature-256": _sign(body),
+        },
+    )
+    assert response.status_code == 200
+
+    result = process_queue_once(session=db_session, llm=fake_llm, timeout=1)
+    assert result is not None
+    lower = result.reply_text.lower()
+    assert "voice" in lower or "hear" in lower or "again" in lower
+    assert sent
+    assert client_redis.llen(DEAD_LETTER_QUEUE) == 0
+    assert client_redis.llen(PROCESSING_QUEUE) == 0
+
+
+def test_empty_voice_transcript_asks_to_retry(
+    db_session: Session, patient_phone: str, fake_llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
+):
+    from app.queue.tasks import INBOUND_QUEUE, PROCESSING_QUEUE, DEAD_LETTER_QUEUE, enqueue_inbound, _redis
+    from app.queue.worker import process_queue_once
+
+    fake_llm.voice_transcript = "   "
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.queue.worker.send_whatsapp_text",
+        lambda phone, text: sent.append((phone, text)),
+    )
+
+    class _Meta:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"url": "https://cdn.example.test/note.ogg", "mime_type": "audio/ogg"}
+
+    class _Audio:
+        content = b"ogg-bytes"
+        headers = {"content-type": "audio/ogg"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def _get(url: str, *args, **kwargs):
+        if "MEDIA_EMPTY" in str(url):
+            return _Meta()
+        return _Audio()
+
+    monkeypatch.setattr("httpx.get", _get)
+    client = _redis()
+    client.delete(INBOUND_QUEUE, PROCESSING_QUEUE, DEAD_LETTER_QUEUE)
+    wa_message_id = f"wamid.audio.empty.{uuid.uuid4()}"
+    assert (
+        enqueue_inbound(
+            wa_message_id,
+            patient_phone,
+            "",
+            audio_media_id="MEDIA_EMPTY",
+            audio_mime="audio/ogg",
+        )
+        is True
+    )
+    result = process_queue_once(session=db_session, llm=fake_llm, timeout=1)
+    assert result is not None
+    lower = result.reply_text.lower()
+    assert "voice" in lower or "again" in lower or "type" in lower
+    assert sent
 
 
 def _inbound_image_payload(
