@@ -414,6 +414,68 @@ def test_mid_triage_followup_is_not_only_a_severity_ask(db_session, patient_iden
     assert result.reply_text.count("?") <= 2
 
 
+def test_mid_triage_keeps_severity_when_llm_omits_number(db_session, patient_identity, fake_llm):
+    from app.conversation.turn_handler import handle_turn
+
+    state = load(db_session, patient_identity)
+    save_turn(
+        db_session,
+        state,
+        "knee hurt 4 days",
+        "how bad and goals?",
+        ExtractedTriage(
+            onset="4 days",
+            body_location="knee",
+            condition_area="msk",
+        ),
+        PatientPhase.MID_TRIAGE,
+        "en",
+    )
+    fake_llm.reply = "Thanks — noted."
+    # LLM mines goals but drops the leading severity digit — common live failure mode.
+    fake_llm.extraction = {"goals": "get back to running"}
+    result = handle_turn(
+        db_session,
+        patient_identity.phone_e164,
+        "8 / i hope to get back to running, i'm athlete you see...",
+        fake_llm,
+    )
+    assert result.extracted is not None
+    assert result.extracted.severity == 8
+    assert result.extracted.goals
+    lower = result.reply_text.lower()
+    assert "1 to 10" not in lower
+    assert "saddle" not in lower
+    assert "bladder" not in lower
+    assert result.phase == "post_triage"
+
+
+def test_first_contact_with_story_batches_leftovers_not_second_open_ask(
+    db_session, patient_identity, fake_llm
+):
+    from app.conversation.turn_handler import handle_turn
+
+    fake_llm.reply = (
+        "Oh, I'm sorry about your knee. Please tell me a bit more about what's going on?"
+    )
+    fake_llm.extraction = {
+        "onset": "4 days",
+        "body_location": "knee",
+        "condition_area": "msk",
+    }
+    result = handle_turn(
+        db_session,
+        patient_identity.phone_e164,
+        "my knee hurts, it's been hurting for the past 4 days",
+        fake_llm,
+    )
+    assert result.phase == "mid_triage"
+    lower = result.reply_text.lower()
+    assert "tell me a bit more" not in lower
+    assert "1 to 10" in lower or "hoping" in lower
+    assert result.reply_text.count("?") <= 2
+
+
 def test_thats_not_correct_does_not_confirm_summary(db_session, patient_identity, fake_llm):
     from app.conversation.turn_handler import handle_turn
 

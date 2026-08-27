@@ -33,11 +33,17 @@ def test_each_language_two_turns_then_memory(db_session, fake_llm):
         phone = phones[lang]
         fake_llm.language = lang
         fake_llm.extraction = {"onset": "2 weeks", "body_location": "back", "condition_area": "msk"}
+        fake_llm.reply = "Sorry about your back — I'm listening."
         first = handle_turn(db_session, phone, line, fake_llm)
         assert first.language == lang
         lower_first = first.reply_text.lower()
-        assert not any(probe in lower_first for probe in _CHECKLIST_PROBES)
+        # Story already mined: one grouped leftover ask is OK. Do not re-ask onset
+        # or run a language picker. Cauda/severity may appear in that single batch.
+        assert "when did it start" not in lower_first
+        assert "how bad is it 1-10" not in lower_first
         assert not any(picker in lower_first for picker in _LANGUAGE_PICKER)
+        assert first.phase == "mid_triage"
+        assert first.reply_text.count("?") <= 2
         # Second turn must use persisted last_known_language, not a leftover FakeLLM echo.
         fake_llm.language = None
         fake_llm.extraction = {"severity": 6}

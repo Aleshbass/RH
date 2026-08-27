@@ -138,6 +138,66 @@ def test_shoulder_msk_does_not_require_cauda_flags():
     assert missing_fields(extracted) == []
 
 
+def test_knee_get_back_to_goals_do_not_require_cauda():
+    """Goals like 'get back to running' must not trip the 'back' cauda marker."""
+    extracted = ExtractedTriage(
+        onset="4 days",
+        severity=8,
+        body_location="left knee",
+        goals="get back to running",
+        condition_area=ConditionArea.MSK,
+        aggravating=["stairs", "long distances"],
+    )
+    assert "safety_flags" not in missing_fields(extracted)
+    assert missing_fields(extracted) == []
+
+
+def test_lower_back_pain_still_requires_cauda():
+    extracted = ExtractedTriage(
+        onset="1 week",
+        severity=7,
+        body_location="lower back",
+        goals="get back to work",
+        condition_area=ConditionArea.MSK,
+    )
+    assert "safety_flags" in missing_fields(extracted)
+
+
+def test_enrich_severity_from_slash_reply_when_llm_omits_it():
+    from app.triage.extraction import enrich_from_user_text
+
+    existing = ExtractedTriage(
+        onset="4 days",
+        body_location="knee",
+        goals="get back to running",
+        condition_area=ConditionArea.MSK,
+    )
+    enriched = enrich_from_user_text(
+        existing,
+        "8 / i hope to get back to running, i'm athlete you see...",
+    )
+    assert enriched.severity == 8
+
+
+def test_enrich_severity_ignores_duration_numbers():
+    from app.triage.extraction import enrich_from_user_text
+
+    existing = ExtractedTriage(body_location="knee")
+    enriched = enrich_from_user_text(
+        existing,
+        "my knee hurts, it's been hurting for the past 4 days",
+    )
+    assert enriched.severity is None
+
+
+def test_enrich_severity_from_out_of_ten():
+    from app.triage.extraction import enrich_from_user_text
+
+    existing = ExtractedTriage(body_location="knee")
+    enriched = enrich_from_user_text(existing, "9 that's how bad it feels")
+    assert enriched.severity == 9
+
+
 def test_grouped_followup_none_when_complete():
     extracted = ExtractedTriage(
         onset="2 weeks",

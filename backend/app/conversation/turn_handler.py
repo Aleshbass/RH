@@ -47,7 +47,7 @@ from app.physio.home_visit_checkin import apply_checkin_turn
 from app.physio.onboarding import apply_onboarding_turn
 from app.physio.payouts import apply_payout_turn
 from app.physio.session_notes import apply_note_turn
-from app.triage.extraction import infer_condition_area, merge_extraction
+from app.triage.extraction import enrich_from_user_text, infer_condition_area, merge_extraction
 from app.triage.question_batching import grouped_followup, missing_fields
 from app.triage.summary import plain_summary
 
@@ -302,6 +302,19 @@ def _admin_turn(
     )
 
 
+def _mid_followup_reply(candidate_reply: str, followup: str, incoming_phase: PatientPhase) -> str:
+    """Prefer a care-only model sentence on first story dump; never a second open ask."""
+    care = (candidate_reply or "").strip()
+    if incoming_phase == PatientPhase.FIRST_CONTACT and care and "?" not in care:
+        return f"{care} {followup}"
+    return f"{_MID_ACK} {followup}"
+
+
+def _thin_first_contact(extracted: ExtractedTriage) -> bool:
+    """Body-part-only mentions still get the open ask; a timed story gets the batch."""
+    return not extracted.onset and extracted.severity is None
+
+
 def _reply_after_extract(
     session: Session,
     state: ConversationState,
@@ -312,16 +325,27 @@ def _reply_after_extract(
     identity: Identity,
     paystack=None,
 ) -> tuple[str, PatientPhase]:
-    if not has_narrative(extracted) or incoming_phase == PatientPhase.FIRST_CONTACT:
+    if not has_narrative(extracted):
         return candidate_reply, PatientPhase.FIRST_CONTACT
 
     leftover = missing_fields(extracted)
     booking_sub = decide_booking_substate(state)
+    if (
+        incoming_phase == PatientPhase.FIRST_CONTACT
+        and leftover
+        and _thin_first_contact(extracted)
+    ):
+        return candidate_reply, PatientPhase.FIRST_CONTACT
+
     if leftover and not booking_sub:
         followup = grouped_followup(leftover)
         if not followup:
             return _MID_ACK, PatientPhase.MID_TRIAGE
-        return f"{_MID_ACK} {followup}", PatientPhase.MID_TRIAGE
+        # Mined story already in hand: one grouped leftover ask, not another open probe.
+        return (
+            _mid_followup_reply(candidate_reply, followup, incoming_phase),
+            PatientPhase.MID_TRIAGE,
+        )
 
     patient = session.get(Patient, identity.person_id)
     if patient is not None:
@@ -637,6 +661,7 @@ def handle_turn(
     language = response.language or language
 
     extracted = _apply_inferred_area(merge_extraction(state.extracted, response.extraction_json))
+    extracted = enrich_from_user_text(extracted, user_text)
     safety = evaluate(extracted)
 
     if safety.fired:
