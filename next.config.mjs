@@ -1,3 +1,5 @@
+import path from 'path';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Disable ESLint during build to prevent build failures
@@ -30,6 +32,18 @@ const nextConfig = {
       /Critical dependency: the request of a dependency is an expression/,
       /require function is used in a way in which dependencies cannot be statically extracted/,
     ];
+
+    // Polyfill useEffectEvent for fumadocs in React 19 builds
+    config.plugins.push(
+      new webpack.NormalModuleReplacementPlugin(
+        /^react$/,
+        (resource) => {
+          if (resource.context && resource.context.includes('fumadocs')) {
+            resource.request = path.resolve(process.cwd(), 'lib/react-shim.js');
+          }
+        }
+      )
+    );
 
     // Bundle analyzer in development
     if (!dev && !isServer) {
