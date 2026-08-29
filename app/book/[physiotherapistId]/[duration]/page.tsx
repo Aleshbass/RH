@@ -53,14 +53,34 @@ function getSessionInfo(duration: number) {
     return { title: "Initial Consultation", description: "Comprehensive assessment & treatment plan" };
 }
 
+// Helper: check if a string looks like a valid Convex document ID
+function looksLikeConvexId(value: string): boolean {
+    return /^[a-zA-Z0-9_]+$/.test(value) && value.length > 10;
+}
+
 export default function BookingPage() {
     const params = useParams();
     const router = useRouter();
     const { user, isSignedIn } = useUser();
 
-    const physiotherapistId = params.physiotherapistId as Id<"users">;
+    const rawParam = params.physiotherapistId as string;
     const durationParam = params.duration as string;
     const sessionDuration = durationParam ? parseInt(durationParam) : 60;
+
+    // Determine if the URL param is a slug or a raw Convex ID
+    const isRawId = looksLikeConvexId(rawParam);
+
+    // Try resolving as a slug (skip if it already looks like a raw Convex ID)
+    const slugResult = useQuery(
+        api.marketplace.search.resolveBookingSlug,
+        isRawId ? "skip" : { slug: rawParam }
+    );
+
+    // Determine the real userId
+    const physiotherapistId: Id<"users"> | null =
+        isRawId
+            ? (rawParam as Id<"users">)
+            : slugResult?.userId ?? null;
 
     // Get session title and description based on duration
     const sessionInfo = useMemo(() => getSessionInfo(sessionDuration), [sessionDuration]);
@@ -91,10 +111,11 @@ export default function BookingPage() {
     const [selectedPackage, setSelectedPackage] = useState<1 | 4 | 8 | 12>(1);
     const [packageBreakdown, setPackageBreakdown] = useState<SimplePackageBreakdown | null>(null);
 
-    // Fetch profile
-    const profile = useQuery(api.marketplace.search.getPhysiotherapistProfile, {
-        physiotherapistId,
-    });
+    // Fetch profile — skip until we have a valid user ID
+    const profile = useQuery(
+        api.marketplace.search.getPhysiotherapistProfile,
+        physiotherapistId ? { physiotherapistId } : "skip"
+    );
 
     // Create booking mutation
     const createBooking = useMutation(
@@ -209,7 +230,12 @@ export default function BookingPage() {
         }
     }, [sessionRate, packageBreakdown]);
 
-    if (profile === undefined) {
+    // Still loading: slug resolution in progress or profile query pending
+    const isLoading =
+        (!isRawId && slugResult === undefined) ||
+        (physiotherapistId !== null && profile === undefined);
+
+    if (isLoading) {
         return (
             <div className="min-h-screen bg-[#121212] flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
@@ -722,7 +748,7 @@ export default function BookingPage() {
                                     <p className="text-center text-xs text-gray-500">
                                         Already have an account?{" "}
                                         <Link
-                                            href={`/sign-in?redirect=/book/${physiotherapistId}/${sessionDuration}`}
+                                            href={`/sign-in?redirect=/book/${rawParam}/${sessionDuration}`}
                                             className="text-teal-400 hover:underline"
                                         >
                                             Sign in instead

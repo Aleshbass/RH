@@ -14,9 +14,28 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabify.com";
 
     try {
+        // Determine the real user ID — resolve slug first, fall back to raw param
+        let userId: string = physiotherapistId;
+
+        // Check if this looks like a slug (contains hyphens) vs a raw Convex ID
+        if (physiotherapistId.includes("-")) {
+            const slugResult = await fetchQuery(api.marketplace.search.resolveBookingSlug, {
+                slug: physiotherapistId,
+            });
+            if (slugResult?.userId) {
+                userId = slugResult.userId;
+            } else {
+                // Slug not found — return generic metadata
+                return {
+                    title: "Book a Session | Rehabify Health",
+                    description: "Book a physiotherapy session",
+                };
+            }
+        }
+
         // Fetch the physio profile for dynamic OG tags
         const profile = await fetchQuery(api.marketplace.search.getPhysiotherapistProfile, {
-            physiotherapistId: physiotherapistId as Id<"users">,
+            physiotherapistId: userId as Id<"users">,
         });
 
         if (!profile) {

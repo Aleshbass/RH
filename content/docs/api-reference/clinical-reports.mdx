@@ -1,0 +1,55 @@
+---
+title: Clinical Reports & Outcomes API
+description: Access standardized outcome measures, progress notes, and discharge summaries.
+---
+
+# Clinical Reports & Outcomes API
+
+Rehabify provides closed-loop clinical auditability. Referring doctors and HMO medical directors can query objective patient outcome data and download signed PDF summaries.
+
+---
+
+## 1. Get Clinical Outcome Summary
+
+`GET /api/v1/partners/reports/:referral_id`
+
+### Example Response (`200 OK`)
+
+```json
+{
+  "referral_id": "ref_839210aa9",
+  "patient_name": "Chioma Okeke",
+  "referring_doctor": "Dr. A. Balogun",
+  "diagnosis": "Cervical Radiculopathy",
+  "treatment_period": {
+    "start_date": "2026-08-01",
+    "discharge_date": "2026-08-28"
+  },
+  "metrics": {
+    "initial_pain_score": 8,
+    "final_pain_score": 1,
+    "pain_reduction_percentage": 87.5,
+    "functional_score_initial": 32,
+    "functional_score_final": 88,
+    "scale_used": "Neck Disability Index (NDI)"
+  },
+  "sessions_summary": {
+    "prescribed": 8,
+    "completed": 8,
+    "adherence_rate": "100%"
+  },
+  "clinical_conclusion": "Patient demonstrated complete resolution of upper limb radiating paresthesia. Cervical active ROM restored to within normal limits. Discharged to independent home exercise routine.",
+  "discharge_summary_pdf_url": "https://physioaroundme.com/api/storage/discharge_ref_839210aa9.pdf"
+}
+```
+
+---
+
+## 2. Standardized Outcome Metrics Included
+
+All Rehabify clinical summaries standardize on validated clinical assessment tools:
+
+* **Visual Analog Scale (VAS) / Numeric Pain Rating Scale (NPRS)** (0–10 scale)
+* **Patient-Specific Functional Scale (PSFS)** (0–10 rating across 3 daily tasks)
+* **Neck Disability Index (NDI) & Oswestry Disability Index (ODI)**
+* **Active Range of Motion (Goniometry measurements in degrees)**

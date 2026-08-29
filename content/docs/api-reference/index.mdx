@@ -1,0 +1,44 @@
+---
+title: API Reference Overview
+description: Full REST API specification for Rehabify Health Partner services.
+---
+
+# API Reference Overview
+
+The Rehabify REST API gives healthcare partners programmatic access to patient triage, therapist matching, HMO pre-authorization, session scheduling, and clinical outcome metrics.
+
+---
+
+## Core Endpoints
+
+| Resource | Method | Endpoint | Description |
+| :--- | :--- | :--- | :--- |
+| **Referrals** | `POST` | `/api/v1/partners/referrals` | Create patient referral & trigger automated intake |
+| **Referrals** | `GET` | `/api/v1/partners/referrals/:id` | Get referral progress and therapist assignment |
+| **Eligibility** | `POST` | `/api/v1/partners/eligibility` | Check HMO/corporate member coverage & session allowance |
+| **Providers** | `GET` | `/api/v1/partners/providers` | Search verified physiotherapists by location and specialty |
+| **Sessions** | `GET` | `/api/v1/partners/sessions` | Retrieve scheduled and completed session history |
+| **Clinical Reports** | `GET` | `/api/v1/partners/reports/:patientId` | Fetch clinical progress notes and discharge summaries |
+
+---
+
+## Request Headers
+
+Every request must include:
+
+| Header | Value | Description |
+| :--- | :--- | :--- |
+| `Authorization` | `Bearer sk_live_...` | Your secret API key |
+| `Content-Type` | `application/json` | Required for `POST` and `PUT` requests |
+| `Accept` | `application/json` | Standard response format |
+| `Idempotency-Key` | *(optional)* `uuidv4` | Prevents accidental duplicate session bookings |
+
+---
+
+## Rate Limits
+
+| Tier | Request Rate | Monthly API Calls |
+| :--- | :--- | :--- |
+| **Starter (Free)** | WhatsApp Deep-links only | Unlimited Deep-links |
+| **Professional** | 10 requests / second | 500 API calls / month |
+| **Enterprise** | 50 requests / second | Unlimited calls |

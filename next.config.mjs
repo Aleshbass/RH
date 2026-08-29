@@ -211,4 +211,10 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+import { createMDX } from 'fumadocs-mdx/next';
+
+const withMDX = createMDX();
+
+export default withMDX(nextConfig);
+
+

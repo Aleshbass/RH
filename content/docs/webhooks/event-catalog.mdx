@@ -1,0 +1,109 @@
+---
+title: Webhook Event Catalog
+description: Complete catalog of all webhook event types and sample JSON payloads.
+---
+
+# Webhook Event Catalog
+
+Below is the list of events emitted by the Rehabify webhook system.
+
+---
+
+## 1. `patient.intake_completed`
+Fired when a referred patient successfully finishes their conversational intake via Joy on WhatsApp.
+
+```json
+{
+  "event": "patient.intake_completed",
+  "data": {
+    "referral_id": "ref_839210aa9",
+    "patient": {
+      "name": "Chioma Okeke",
+      "phone": "+2348029988776",
+      "preferred_modality": "home_visit",
+      "preferred_time_of_day": "morning"
+    },
+    "intake_completed_at": "2026-08-16T08:22:00.000Z"
+  }
+}
+```
+
+---
+
+## 2. `provider.matched`
+Fired when an MRTBN-certified physiotherapist is assigned to the patient's care plan.
+
+```json
+{
+  "event": "provider.matched",
+  "data": {
+    "referral_id": "ref_839210aa9",
+    "provider": {
+      "id": "phy_98124801",
+      "name": "Dr. Eniola Ojuko (PT)",
+      "license_number": "MRTBN/PT/2018/1944",
+      "rating": 4.95
+    },
+    "matched_at": "2026-08-16T08:35:00.000Z"
+  }
+}
+```
+
+---
+
+## 3. `session.scheduled`
+Fired when a session date and time are confirmed between the patient and therapist.
+
+```json
+{
+  "event": "session.scheduled",
+  "data": {
+    "session_id": "ses_001928a",
+    "referral_id": "ref_839210aa9",
+    "session_number": 1,
+    "scheduled_start": "2026-08-18T10:00:00.000Z",
+    "scheduled_end": "2026-08-18T11:00:00.000Z",
+    "modality": "home_visit",
+    "location_address": "Block 4, Flat 2, Lekki Phase 1, Lagos"
+  }
+}
+```
+
+---
+
+## 4. `session.completed`
+Fired immediately after a physiotherapist finishes a session and submits their objective clinical progress note.
+
+```json
+{
+  "event": "session.completed",
+  "data": {
+    "session_id": "ses_001928a",
+    "referral_id": "ref_839210aa9",
+    "session_number": 1,
+    "completed_at": "2026-08-18T11:10:00.000Z",
+    "pain_score_before": 8,
+    "pain_score_after": 5,
+    "clinical_summary": "Initial evaluation and mobilization completed. Patient responded well to gentle manual therapy."
+  }
+}
+```
+
+---
+
+## 5. `treatment_plan.discharged`
+Fired when the patient achieves full recovery milestones and is discharged from active physiotherapy care.
+
+```json
+{
+  "event": "treatment_plan.discharged",
+  "data": {
+    "referral_id": "ref_839210aa9",
+    "patient_name": "Chioma Okeke",
+    "discharged_at": "2026-08-28T16:00:00.000Z",
+    "total_sessions_completed": 8,
+    "final_outcome": "rehabilitated",
+    "discharge_pdf_url": "https://physioaroundme.com/api/storage/discharge_ref_839210aa9.pdf"
+  }
+}
+```

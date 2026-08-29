@@ -1,0 +1,63 @@
+---
+title: Providers API
+description: Search and discover MRTBN-verified physiotherapists across Nigeria.
+---
+
+# Providers API
+
+Search Rehabify's network of licensed physiotherapists by location, clinical specialty, gender preference, and session modalities.
+
+---
+
+## Search Providers
+
+`GET /api/v1/partners/providers`
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `city` | `string` | No | Filter by city (e.g. `Lagos`, `Abuja`, `Port Harcourt`, `Ibadan`) |
+| `area` | `string` | No | Neighborhood / district (e.g. `Ikeja`, `Lekki`, `Maitama`) |
+| `specialty` | `string` | No | `orthopedics` \| `neuro_rehab` \| `sports_physio` \| `geriatrics` \| `pediatrics` |
+| `modality` | `string` | No | `home_visit` \| `in_clinic` \| `virtual` |
+| `verified_only` | `boolean` | No | Default: `true` |
+| `limit` | `integer` | No | Number of results (Default: `20`, Max: `100`) |
+
+### Example Request
+
+```bash tab="cURL"
+curl "https://api.physioaroundme.com/api/v1/partners/providers?city=Lagos&specialty=sports_physio&modality=home_visit" \
+  -H "Authorization: Bearer sk_live_99281..."
+```
+
+### Example Response (`200 OK`)
+
+```json
+{
+  "total": 14,
+  "providers": [
+    {
+      "id": "phy_98124801",
+      "name": "Dr. Eniola Ojuko (PT)",
+      "mrtbn_license": "MRTBN/PT/2018/1944",
+      "rating": 4.95,
+      "review_count": 84,
+      "years_of_experience": 8,
+      "specialties": [
+        "Sports Injury Rehabilitation",
+        "Knee & ACL Recovery",
+        "Manual Therapy"
+      ],
+      "locations_served": ["Ikeja", "Maryland", "Magodo", "Omole"],
+      "session_modalities": {
+        "home_visit": true,
+        "in_clinic": true,
+        "virtual": true
+      },
+      "clinic_affiliation": "Mainland Orthopedic Recovery Clinic",
+      "next_available_slot": "2026-08-17T11:00:00.000Z"
+    }
+  ]
+}
+```

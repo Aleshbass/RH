@@ -1,0 +1,50 @@
+---
+title: Getting Started Overview
+description: Learn how to connect your application to the Rehabify Health platform.
+---
+
+# Getting Started with Rehabify
+
+Integrating Rehabify into your healthcare product, clinic EHR, or wellness platform requires just three foundational steps:
+
+<Steps>
+  <Step>
+    ### Obtain Your API Keys
+    Register an organization account on the [Partner Portal](/partnerships) to generate your Sandbox (`pk_test_...`, `sk_test_...`) and Production (`pk_live_...`, `sk_live_...`) API keys.
+  </Step>
+  <Step>
+    ### Choose Your Integration Channel
+    * **REST API**: For programmatic patient referral and HMO pre-authorizations.
+    * **JavaScript Embed Widget**: For drop-in patient booking on websites.
+    * **WhatsApp Deep-Links**: For zero-code referral campaigns and doctor QR codes.
+  </Step>
+  <Step>
+    ### Configure Webhook Notifications
+    Set up an HTTPS endpoint on your server to receive real-time updates when patients complete intake, attend sessions, or receive clinical discharge summaries.
+  </Step>
+</Steps>
+
+---
+
+## Environments & Base URLs
+
+| Environment | Base URL | Purpose |
+| :--- | :--- | :--- |
+| **Sandbox (Testing)** | `https://api.physioaroundme.com/api/v1` | Development and staging tests using mock test data |
+| **Production** | `https://api.physioaroundme.com/api/v1` | Live referrals with real physiotherapist assignments |
+
+---
+
+## API Request Anatomy
+
+All API requests must be sent over **HTTPS** with standard JSON headers:
+
+```http
+POST /api/v1/partners/referrals HTTP/1.1
+Host: api.physioaroundme.com
+Authorization: Bearer sk_test_51Mz...
+Content-Type: application/json
+Accept: application/json
+```
+
+Ready to send your first API request? Follow the [5-Minute Quickstart Guide](/docs/getting-started/quickstart).

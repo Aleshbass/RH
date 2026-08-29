@@ -1,0 +1,16 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "---Getting Started---",
+    "getting-started",
+    "---API & Integrations---",
+    "api-reference",
+    "webhooks",
+    "sdks-widgets",
+    "---Solutions & Guides---",
+    "guides",
+    "---Testing---",
+    "sandbox"
+  ]
+}

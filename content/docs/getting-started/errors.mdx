@@ -1,0 +1,59 @@
+---
+title: Errors & Status Codes
+description: Understand error formats, HTTP status codes, and troubleshooting steps.
+---
+
+# Errors & Troubleshooting
+
+Rehabify returns standard HTTP status codes along with a structured JSON error object for failed requests.
+
+---
+
+## Error Response Format
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "invalid_phone_number",
+    "message": "The provided phone number '+234800000' is not a valid Nigerian mobile number.",
+    "param": "patient.phone",
+    "doc_url": "https://physioaroundme.com/docs/getting-started/errors#invalid_phone_number"
+  }
+}
+```
+
+---
+
+## HTTP Status Codes
+
+| Code | Status | Meaning |
+| :--- | :--- | :--- |
+| `200` | **OK** | The request was successful. |
+| `201` | **Created** | The referral or resource was created successfully. |
+| `400` | **Bad Request** | Required parameters missing or malformed JSON payload. |
+| `401` | **Unauthorized** | Missing, invalid, or expired API key. |
+| `403` | **Forbidden** | Your API key does not have the required permission scope. |
+| `404` | **Not Found** | The requested resource (e.g. `referral_id`) does not exist. |
+| `429` | **Too Many Requests** | You have exceeded your rate limit tier. |
+| `500` | **Internal Server Error** | Something went wrong on Rehabify servers. Contact support. |
+
+---
+
+## Common Error Codes
+
+### `invalid_api_key`
+* **Cause**: The API key in the `Authorization` header is malformed, revoked, or belongs to another environment.
+* **Fix**: Verify you are sending `Bearer sk_test_...` or `Bearer sk_live_...`.
+
+### `invalid_phone_number`
+* **Cause**: Phone number does not adhere to E.164 international format (e.g. `+2348031234567`).
+* **Fix**: Sanitize phone numbers before submission by prepending `+234` for Nigerian lines.
+
+### `pre_auth_expired`
+* **Cause**: The HMO pre-authorization code provided has lapsed past its 7-day validity window.
+* **Fix**: Request a new pre-authorization token from the HMO sponsor or generate a fresh referral.
+
+### `rate_limit_exceeded`
+* **Cause**: Your account exceeded the API calls allowed for your tier (e.g., 500 calls/mo on Growth Tier).
+* **Fix**: Upgrade your tier on the [Pricing Page](/partnerships#pricing) or implement exponential client-side backoff.
