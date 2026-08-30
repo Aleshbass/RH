@@ -1,5 +1,5 @@
 import { Metadata } from "next";
-import { fetchQuery } from "convex/nextjs";
+import { getConvexClient } from "@/lib/convex-client";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 
@@ -11,15 +11,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { physiotherapistId } = await params;
 
     // Base URL for OG image generation
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabify.com";
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
 
     try {
+        const convex = getConvexClient();
+
         // Determine the real user ID — resolve slug first, fall back to raw param
         let userId: string = physiotherapistId;
 
         // Check if this looks like a slug (contains hyphens) vs a raw Convex ID
         if (physiotherapistId.includes("-")) {
-            const slugResult = await fetchQuery(api.marketplace.search.resolveBookingSlug, {
+            const slugResult = await convex.query(api.marketplace.search.resolveBookingSlug, {
                 slug: physiotherapistId,
             });
             if (slugResult?.userId) {
@@ -34,7 +36,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         }
 
         // Fetch the physio profile for dynamic OG tags
-        const profile = await fetchQuery(api.marketplace.search.getPhysiotherapistProfile, {
+        const profile = await convex.query(api.marketplace.search.getPhysiotherapistProfile, {
             physiotherapistId: userId as Id<"users">,
         });
 
