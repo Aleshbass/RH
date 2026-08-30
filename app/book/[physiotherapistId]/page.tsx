@@ -341,11 +341,8 @@ export default function PhysioBookingPage() {
                             </span>
                         </p>
                         <div className="space-y-3">
-                            <a href="/dashboard/physiotherapist/settings" className="block w-full py-3 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors">
+                            <a href="/dashboard/physiotherapist/settings/marketplace" className="block w-full py-3 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors text-center">
                                 Enable My Profile
-                            </a>
-                            <a href="/marketplace" className="block w-full py-3 px-4 border border-gray-700 hover:border-gray-600 text-gray-300 rounded-lg font-medium transition-colors">
-                                Browse Other Physiotherapists
                             </a>
                         </div>
                     </div>

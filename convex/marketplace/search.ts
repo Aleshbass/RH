@@ -254,23 +254,13 @@ export const getPhysiotherapistProfile = query({
       .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistId))
       .first();
 
-    // Return null if profile doesn't exist or if explicitly opted out
-    if (!profile || profile.isAvailableOnMarketplace === false) {
+    // Return null ONLY if explicitly opted out
+    if (profile && profile.isAvailableOnMarketplace === false) {
       return null;
     }
 
     const user = await ctx.db.get(args.physiotherapistId);
     if (!user) {
-      return null;
-    }
-
-    // Check approval status
-    const approvalStatus = await ctx.db
-      .query("accountApprovalStatus")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistId))
-      .first();
-
-    if (!approvalStatus || approvalStatus.status !== "approved") {
       return null;
     }
 
@@ -297,60 +287,57 @@ export const getPhysiotherapistProfile = query({
       })
     );
 
-    // Note: Profile view tracking moved to separate mutation
-    // Call incrementProfileView mutation from client if needed
-
     return {
       id: user._id,
-      profileId: profile._id,
-      fullName: `${user.firstName} ${user.lastName}`,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
+      profileId: profile?._id,
+      fullName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Physiotherapist",
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      email: user.email || "",
       phoneNumber: user.phoneNumber,
       imageUrl: user.imageUrl,
       credentials: [
-        profile.certificationBoard,
-        profile.licenseNumber ? "Licensed Physiotherapist" : null,
+        profile?.certificationBoard,
+        profile?.licenseNumber ? "Licensed Physiotherapist" : null,
       ].filter(Boolean),
-      bio: profile.bio,
-      specializations: profile.specializations || [],
-      yearsOfExperience: profile.yearsOfExperience || 0,
-      location: profile.location,
-      latitude: profile.latitude,
-      longitude: profile.longitude,
-      languagesSpoken: profile.languagesSpoken || [],
+      bio: profile?.bio || "",
+      specializations: profile?.specializations || [],
+      yearsOfExperience: profile?.yearsOfExperience || 0,
+      location: profile?.location,
+      latitude: profile?.latitude,
+      longitude: profile?.longitude,
+      languagesSpoken: profile?.languagesSpoken || [],
 
       // Pricing
-      hourlyRate: profile.hourlyRate ? profile.hourlyRate / 100 : 0,
-      initialConsultRate: profile.initialConsultRate
+      hourlyRate: profile?.hourlyRate ? profile.hourlyRate / 100 : 0,
+      initialConsultRate: profile?.initialConsultRate
         ? profile.initialConsultRate / 100
         : 0,
-      packageRates: (profile.packageRates || []).map((pkg) => ({
+      packageRates: (profile?.packageRates || []).map((pkg) => ({
         ...pkg,
         price: pkg.price / 100,
       })),
-      packageDiscountPercent: (profile as any).packageDiscountPercent || 0,
+      packageDiscountPercent: (profile as any)?.packageDiscountPercent || 0,
 
       // Ratings
-      averageRating: profile.averageRating || 0,
-      reviewCount: profile.reviewCount || 0,
+      averageRating: profile?.averageRating || 0,
+      reviewCount: profile?.reviewCount || 0,
       reviews: reviewsWithDetails,
 
       // Verification
       isVerified:
-        profile.verificationBadge?.status === "verified" ||
-        profile.verificationBadge?.status === "pro_verified",
-      verificationBadge: profile.verificationBadge,
+        profile?.verificationBadge?.status === "verified" ||
+        profile?.verificationBadge?.status === "pro_verified",
+      verificationBadge: profile?.verificationBadge || { status: "none" },
 
       // Availability
-      offersOnlineSessions: profile.offersOnlineSessions || false,
-      offersInPersonSessions: profile.offersInPersonSessions || false,
-      availabilitySchedule: profile.availabilitySchedule,
+      offersOnlineSessions: profile?.offersOnlineSessions ?? true,
+      offersInPersonSessions: profile?.offersInPersonSessions ?? true,
+      availabilitySchedule: profile?.availabilitySchedule,
 
       // Stats
-      profileViews: profile.profileViews || 0,
-      bookingsThroughMarketplace: profile.bookingsThroughMarketplace || 0,
+      profileViews: profile?.profileViews || 0,
+      bookingsThroughMarketplace: profile?.bookingsThroughMarketplace || 0,
     };
   },
 });
