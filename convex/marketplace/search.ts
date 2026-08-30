@@ -264,6 +264,16 @@ export const getPhysiotherapistProfile = query({
       return null;
     }
 
+    // Check approval status
+    const approvalStatus = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistId))
+      .first();
+
+    if (!approvalStatus || approvalStatus.status !== "approved") {
+      return null;
+    }
+
     // Get reviews
     const reviews = await ctx.db
       .query("marketplaceReviews")
