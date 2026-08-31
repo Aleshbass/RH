@@ -60,6 +60,15 @@ async def inbound_webhook(
                     audio = message.get("audio") or {}
                     media_id = str(audio.get("id") or "")
                     mime = str(audio.get("mime_type") or "audio/ogg")
+                    duration = audio.get("seconds")
+                    if duration is None:
+                        duration = audio.get("duration")
+                    duration_seconds = None
+                    if duration is not None:
+                        try:
+                            duration_seconds = float(duration)
+                        except (TypeError, ValueError):
+                            duration_seconds = None
                     if media_id:
                         enqueue_inbound(
                             wa_message_id,
@@ -67,6 +76,7 @@ async def inbound_webhook(
                             "",
                             audio_media_id=media_id,
                             audio_mime=mime,
+                            audio_duration_seconds=duration_seconds,
                         )
                 elif msg_type in {"image", "document"}:
                     blob = message.get(msg_type) or {}

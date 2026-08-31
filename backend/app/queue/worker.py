@@ -8,7 +8,12 @@ from sqlalchemy.orm import Session
 
 from app.audit.logger import append
 from app.conversation.turn_handler import handle_turn
-from app.conversation.voice import transcript_from_audio
+from app.conversation.voice import (
+    MAX_VOICE_SECONDS,
+    VOICE_TOO_LONG_REPLY,
+    VoiceTooLongError,
+    transcript_from_audio,
+)
 from app.db import SessionLocal
 from app.llm.gemini_client import GeminiTimeoutError, LLMClient, get_llm_client
 from app.models.conversation import Message
@@ -57,6 +62,15 @@ def _has_audio_payload(
     return bool(audio_url or audio_media_id or audio_bytes)
 
 
+def _coerce_duration(raw) -> float | None:
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def process_inbound(
     session: Session,
     wa_message_id: str,
@@ -68,6 +82,7 @@ def process_inbound(
     audio_media_id: str | None = None,
     audio_mime: str | None = None,
     audio_bytes: bytes | None = None,
+    audio_duration_seconds: float | None = None,
     media: list[str] | None = None,
     location_lat: float | None = None,
     location_lng: float | None = None,
@@ -84,6 +99,13 @@ def process_inbound(
         audio_media_id=audio_media_id,
         audio_bytes=audio_bytes,
     )
+    declared = _coerce_duration(audio_duration_seconds)
+    if declared is not None and declared > MAX_VOICE_SECONDS:
+        return TurnResult(
+            reply_text=VOICE_TOO_LONG_REPLY,
+            language="en",
+            phase=PatientPhase.FIRST_CONTACT,
+        )
     try:
         user_text = transcript_from_audio(
             client,
@@ -92,6 +114,13 @@ def process_inbound(
             audio_media_id=audio_media_id,
             audio_mime=audio_mime,
             audio_bytes=audio_bytes,
+            audio_duration_seconds=declared,
+        )
+    except VoiceTooLongError:
+        return TurnResult(
+            reply_text=VOICE_TOO_LONG_REPLY,
+            language="en",
+            phase=PatientPhase.FIRST_CONTACT,
         )
     except GeminiTimeoutError:
         if has_audio:
@@ -219,6 +248,7 @@ def process_queue_once(
             audio_url=payload.get("audio_url"),
             audio_media_id=payload.get("audio_media_id"),
             audio_mime=payload.get("audio_mime"),
+            audio_duration_seconds=payload.get("audio_duration_seconds"),
             media=_payload_media(payload),
             location_lat=payload.get("location_lat"),
             location_lng=payload.get("location_lng"),

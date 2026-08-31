@@ -42,6 +42,7 @@ def enqueue_inbound(
     audio_url: str | None = None,
     audio_media_id: str | None = None,
     audio_mime: str | None = None,
+    audio_duration_seconds: float | None = None,
     media: list[str] | None = None,
     location_lat: float | None = None,
     location_lng: float | None = None,
@@ -59,6 +60,8 @@ def enqueue_inbound(
         payload_body["audio_media_id"] = audio_media_id
     if audio_mime:
         payload_body["audio_mime"] = audio_mime
+    if audio_duration_seconds is not None:
+        payload_body["audio_duration_seconds"] = float(audio_duration_seconds)
     if media:
         payload_body["media"] = [str(item) for item in media if item]
     if location_lat is not None:
