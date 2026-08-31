@@ -83,7 +83,8 @@ class SafetyResult(BaseModel):
     fired: bool
     rule_ids: list[str]
     reason_plain_language: str
-    action: str  # "escalate_doctor" | "continue"
+    action: str  # continue | specialist_review | medical_review | escalate_doctor
+    risk_level: str = "GREEN"  # GREEN | AMBER | ORANGE | RED
 
 
 class TurnResult(BaseModel):

@@ -15,18 +15,45 @@ _OPENERS: dict[str, str] = {
         "I'm concerned about the numbness around your saddle area and what it "
         "could mean for the nerves in your lower spine."
     ),
+    "LB-001": (
+        "I'm concerned about bladder or bowel changes with your back problem."
+    ),
+    "LB-002": (
+        "I'm concerned about the numbness around your saddle area and what it "
+        "could mean for the nerves in your lower spine."
+    ),
+    "LB-003": (
+        "I'm concerned about weakness in your legs with this problem."
+    ),
     "infection": (
         "I'm concerned these fevers or night sweats could mean an infection."
     ),
+    "GEN-003": (
+        "I'm concerned these fevers or night sweats could mean an infection."
+    ),
     "malignancy_screen": (
+        "I'm concerned about these warning signs in your history and symptoms."
+    ),
+    "GEN-004": (
+        "I'm concerned about these warning signs in your history and symptoms."
+    ),
+    "GEN-005": (
         "I'm concerned about these warning signs in your history and symptoms."
     ),
     "major_trauma": (
         "I'm concerned about this recent injury and whether something is "
         "seriously damaged."
     ),
+    "GEN-001": (
+        "I'm concerned about this recent injury and whether something is "
+        "seriously damaged."
+    ),
     "cardiac": "I'm concerned about the chest pain you described.",
+    "GEN-CARDIAC": "I'm concerned about the chest pain you described.",
     "acute_neuro": (
+        "I'm concerned about this sudden change in your nerves or strength."
+    ),
+    "GEN-NEURO": (
         "I'm concerned about this sudden change in your nerves or strength."
     ),
 }
@@ -35,14 +62,31 @@ _DEFAULT_OPENER = (
     "I'm concerned about what you're describing, and I want to be careful with you."
 )
 
-_INSTRUCTION = (
+_RED_INSTRUCTION = (
     "Please see a doctor or go to an emergency hospital now. "
     "This needs medical care today, not a later appointment."
 )
 
+_ORANGE_INSTRUCTION = (
+    "Please see a doctor or urgent medical assessment before we book routine "
+    "physiotherapy. Once a clinician says rehab is appropriate, I can help you match."
+)
+
+_AMBER_MESSAGE = (
+    "Based on what you've shared, I want a clinician to take a quick look before "
+    "we continue with the usual Rehabify pathway. "
+    "I can arrange a short specialist triage review (about 5 minutes) instead of "
+    "jumping straight to a standard physio booking. "
+    "Reply YES if you'd like me to arrange that review, or tell me if something "
+    "has changed."
+)
+
 
 def patient_message(result: SafetyResult) -> str:
-    if not result.fired:
+    level = (result.risk_level or "").upper()
+    if level == "AMBER" or result.action == "specialist_review":
+        return _AMBER_MESSAGE
+    if not result.fired and level not in {"ORANGE", "RED"}:
         return ""
     if len(result.rule_ids) == 1:
         opener = _OPENERS.get(result.rule_ids[0], _DEFAULT_OPENER)
@@ -54,7 +98,10 @@ def patient_message(result: SafetyResult) -> str:
     parts = [opener]
     if reason:
         parts.append(reason)
-    parts.append(_INSTRUCTION)
+    if level == "ORANGE" or result.action == "medical_review":
+        parts.append(_ORANGE_INSTRUCTION)
+    else:
+        parts.append(_RED_INSTRUCTION)
     return "\n\n".join(parts)
 
 

@@ -136,12 +136,14 @@ def route_escalation(session: Session, kind: str, payload: dict | None = None) -
 
 
 def route_safety(session: Session, safety: SafetyResult, extra: dict | None = None) -> None:
-    if not safety.fired:
+    # RED/ORANGE fire; AMBER specialist_review also needs admin visibility.
+    if not safety.fired and safety.action != "specialist_review":
         return
     payload = {
         "rule_ids": list(safety.rule_ids),
         "reason": safety.reason_plain_language,
         "action": safety.action,
+        "risk_level": safety.risk_level,
         **(extra or {}),
     }
     route_escalation(session, "safety", payload)

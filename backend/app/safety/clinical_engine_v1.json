@@ -1,0 +1,1096 @@
+{
+  "engine": {
+    "name": "Rehabify Clinical Safety Engine",
+    "version": "1.0.0",
+    "scope": "MSK",
+    "purpose": "Identify potential safety concerns, determine whether a patient can proceed through the Rehabify MSK pathway, or route them to a 5-minute specialist triage review or appropriate medical/emergency care.",
+    "principles": {
+      "ai_does_not_make_final_safety_decision": true,
+      "uncertainty_routes_to_specialist_review": true,
+      "safety_overrides_convenience": true,
+      "previous_clearance_does_not_override_new_symptoms": true,
+      "no_autonomous_diagnosis": true
+    },
+    "outcomes": {
+      "GREEN": {
+        "meaning": "Suitable to continue the Rehabify MSK pathway based on information available.",
+        "allow_standard_consultation": true,
+        "allow_exercise_pathway": true,
+        "allow_5_min_review": false
+      },
+      "AMBER": {
+        "meaning": "Unclear or potentially concerning but not clearly an emergency.",
+        "allow_standard_consultation": false,
+        "allow_exercise_pathway": false,
+        "allow_5_min_review": true
+      },
+      "ORANGE": {
+        "meaning": "Requires appropriate medical or urgent clinical assessment before routine Rehabify rehabilitation.",
+        "allow_standard_consultation": false,
+        "allow_exercise_pathway": false,
+        "allow_5_min_review": false,
+        "requires_medical_review": true
+      },
+      "RED": {
+        "meaning": "Potential emergency presentation requiring immediate emergency guidance.",
+        "allow_standard_consultation": false,
+        "allow_exercise_pathway": false,
+        "allow_5_min_review": false,
+        "requires_emergency_action": true
+      }
+    }
+  },
+  "general_rules": [
+    {
+      "rule_id": "GEN-001",
+      "name": "Major trauma",
+      "body_region": "all",
+      "priority": 90,
+      "questions": [
+        {
+          "id": "GEN-001-Q1",
+          "text": "Did this problem start after a serious accident, major fall, road traffic accident, or significant injury?",
+          "type": "yes_no"
+        }
+      ],
+      "logic": {
+        "yes": "ORANGE",
+        "no": "CONTINUE",
+        "unclear": "AMBER"
+      },
+      "actions": {
+        "ORANGE": {
+          "block_exercise": true,
+          "block_routine_rehab": true,
+          "recommend_medical_assessment": true,
+          "audit": true
+        },
+        "AMBER": {
+          "book_5_min_specialist_review": true,
+          "block_exercise": true
+        }
+      }
+    },
+    {
+      "rule_id": "GEN-002",
+      "name": "Rapid deterioration",
+      "body_region": "all",
+      "priority": 80,
+      "questions": [
+        {
+          "id": "GEN-002-Q1",
+          "text": "Are your symptoms getting significantly worse very quickly?",
+          "type": "yes_no"
+        }
+      ],
+      "logic": {
+        "yes": "AMBER",
+        "no": "CONTINUE",
+        "unclear": "AMBER"
+      },
+      "actions": {
+        "AMBER": {
+          "book_5_min_specialist_review": true,
+          "block_exercise": true
+        }
+      }
+    },
+    {
+      "rule_id": "GEN-003",
+      "name": "Systemically unwell",
+      "body_region": "all",
+      "priority": 85,
+      "questions": [
+        {
+          "id": "GEN-003-Q1",
+          "text": "Have you recently had a fever, chills, night sweats, or felt significantly unwell alongside this problem?",
+          "type": "yes_no"
+        }
+      ],
+      "logic": {
+        "yes": "AMBER",
+        "no": "CONTINUE",
+        "unclear": "AMBER"
+      },
+      "actions": {
+        "AMBER": {
+          "book_5_min_specialist_review": true,
+          "block_exercise": true
+        }
+      }
+    },
+    {
+      "rule_id": "GEN-004",
+      "name": "Unexplained systemic change",
+      "body_region": "all",
+      "priority": 70,
+      "questions": [
+        {
+          "id": "GEN-004-Q1",
+          "text": "Have you had any unexplained weight loss, loss of appetite, or other major change in your general health recently?",
+          "type": "yes_no"
+        }
+      ],
+      "logic": {
+        "yes": "AMBER",
+        "no": "CONTINUE",
+        "unclear": "AMBER"
+      },
+      "actions": {
+        "AMBER": {
+          "book_5_min_specialist_review": true,
+          "block_exercise": true
+        }
+      }
+    },
+    {
+      "rule_id": "GEN-005",
+      "name": "Previous cancer with new MSK symptoms",
+      "body_region": "all",
+      "priority": 85,
+      "questions": [
+        {
+          "id": "GEN-005-Q1",
+          "text": "Have you ever been treated for cancer?",
+          "type": "yes_no"
+        }
+      ],
+      "follow_up_if_yes": [
+        {
+          "id": "GEN-005-Q2",
+          "text": "Is this a new or unusual pain or symptom for you?",
+          "type": "yes_no"
+        }
+      ],
+      "logic": {
+        "yes_plus_new_symptom": "AMBER",
+        "yes_without_new_symptom": "CONTINUE",
+        "no": "CONTINUE",
+        "unclear": "AMBER"
+      },
+      "actions": {
+        "AMBER": {
+          "book_5_min_specialist_review": true,
+          "block_exercise": true
+        }
+      }
+    },
+    {
+      "rule_id": "GEN-006",
+      "name": "Severe unexplained pain",
+      "body_region": "all",
+      "priority": 70,
+      "questions": [
+        {
+          "id": "GEN-006-Q1",
+          "text": "Is the pain severe, unusual for you, or difficult to control?",
+          "type": "yes_no"
+        }
+      ],
+      "logic": {
+        "yes": "AMBER",
+        "no": "CONTINUE",
+        "unclear": "AMBER"
+      },
+      "actions": {
+        "AMBER": {
+          "book_5_min_specialist_review": true,
+          "block_exercise": true
+        }
+      }
+    },
+    {
+      "rule_id": "GEN-007",
+      "name": "Unclear presentation",
+      "body_region": "all",
+      "priority": 60,
+      "trigger": [
+        "presentation_does_not_fit_clear_msk_pattern",
+        "important_information_missing",
+        "conflicting_patient_answers",
+        "joy_low_confidence",
+        "symptoms_outside_supported_pathways"
+      ],
+      "logic": {
+        "triggered": "AMBER"
+      },
+      "actions": {
+        "AMBER": {
+          "book_5_min_specialist_review": true,
+          "block_exercise": true
+        }
+      }
+    }
+  ],
+  "regions": {
+    "low_back": {
+      "display_name": "Low Back",
+      "rules": [
+        {
+          "rule_id": "LB-001",
+          "name": "Cauda equina bladder or bowel symptoms",
+          "priority": 100,
+          "questions": [
+            {
+              "id": "LB-001-Q1",
+              "text": "Since your back problem started, have you developed a new difficulty starting to pee, inability to pee, or new loss of bladder control?",
+              "type": "yes_no"
+            },
+            {
+              "id": "LB-001-Q2",
+              "text": "Have you developed new loss of bowel control or difficulty knowing when you need to open your bowels?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes_to_any": "RED",
+            "no_to_all": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "RED": {
+              "stop_triage": true,
+              "block_exercise": true,
+              "block_routine_booking": true,
+              "emergency_guidance": true,
+              "create_urgent_alert": true,
+              "audit": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "LB-002",
+          "name": "Saddle or perineal sensory change",
+          "priority": 100,
+          "questions": [
+            {
+              "id": "LB-002-Q1",
+              "text": "Have you noticed new numbness or loss of feeling around your genitals, anus, buttocks, or the area that would touch a bicycle seat?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "RED",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "RED": {
+              "stop_triage": true,
+              "block_exercise": true,
+              "block_routine_booking": true,
+              "emergency_guidance": true,
+              "create_urgent_alert": true,
+              "audit": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "LB-003",
+          "name": "Severe or progressive neurological deficit",
+          "priority": 95,
+          "questions": [
+            {
+              "id": "LB-003-Q1",
+              "text": "Have you developed new or worsening weakness in one or both legs?",
+              "type": "yes_no"
+            },
+            {
+              "id": "LB-003-Q2",
+              "text": "Has the weakness become severe or rapidly worse?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes_to_Q2": "RED",
+            "yes_to_Q1_only": "AMBER",
+            "no_to_all": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "RED": {
+              "stop_triage": true,
+              "block_exercise": true,
+              "emergency_guidance": true,
+              "create_urgent_alert": true,
+              "audit": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "LB-004",
+          "name": "Bilateral neurological symptoms",
+          "priority": 95,
+          "questions": [
+            {
+              "id": "LB-004-Q1",
+              "text": "Are you having pain, numbness, tingling or weakness going down both legs?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "LB-005",
+          "name": "Major trauma",
+          "priority": 90,
+          "questions": [
+            {
+              "id": "LB-005-Q1",
+              "text": "Did your back pain start after a serious accident, major fall or significant injury?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "ORANGE",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "ORANGE": {
+              "block_exercise": true,
+              "block_routine_rehab": true,
+              "recommend_medical_assessment": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true
+            }
+          }
+        },
+        {
+          "rule_id": "LB-006",
+          "name": "Possible serious systemic back pain",
+          "priority": 80,
+          "questions": [
+            {
+              "id": "LB-006-Q1",
+              "text": "Is the back pain unusually severe at rest or at night, especially if it is new or different from your usual pain?",
+              "type": "yes_no"
+            },
+            {
+              "id": "LB-006-Q2",
+              "text": "Have you had fever, unexplained weight loss, or felt significantly unwell with the back pain?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes_to_any": "AMBER",
+            "no_to_all": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        }
+      ]
+    },
+    "neck": {
+      "display_name": "Neck",
+      "rules": [
+        {
+          "rule_id": "NK-001",
+          "name": "Cervical neurological deterioration",
+          "priority": 95,
+          "questions": [
+            {
+              "id": "NK-001-Q1",
+              "text": "Have you developed new or worsening weakness in your arms or legs?",
+              "type": "yes_no"
+            },
+            {
+              "id": "NK-001-Q2",
+              "text": "Have you developed new problems with walking, balance, coordination, or using your hands?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes_to_Q2": "RED",
+            "yes_to_Q1_only": "AMBER",
+            "no_to_all": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "RED": {
+              "stop_triage": true,
+              "block_exercise": true,
+              "emergency_guidance": true,
+              "create_urgent_alert": true,
+              "audit": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "NK-002",
+          "name": "Major neck trauma",
+          "priority": 95,
+          "questions": [
+            {
+              "id": "NK-002-Q1",
+              "text": "Did the neck pain start after a serious accident, fall or significant injury?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "ORANGE",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "ORANGE": {
+              "block_exercise": true,
+              "block_routine_rehab": true,
+              "recommend_medical_assessment": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true
+            }
+          }
+        },
+        {
+          "rule_id": "NK-003",
+          "name": "Rapidly worsening neck symptoms",
+          "priority": 80,
+          "questions": [
+            {
+              "id": "NK-003-Q1",
+              "text": "Is the neck pain severe and getting significantly worse very quickly?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "NK-004",
+          "name": "Possible spinal cord symptoms",
+          "priority": 100,
+          "questions": [
+            {
+              "id": "NK-004-Q1",
+              "text": "Have you suddenly developed major difficulty walking, severe loss of coordination, or loss of bladder or bowel control?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "RED",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "RED": {
+              "stop_triage": true,
+              "block_exercise": true,
+              "emergency_guidance": true,
+              "create_urgent_alert": true,
+              "audit": true
+            }
+          }
+        }
+      ]
+    },
+    "shoulder": {
+      "display_name": "Shoulder",
+      "rules": [
+        {
+          "rule_id": "SH-001",
+          "name": "Significant shoulder trauma",
+          "priority": 80,
+          "questions": [
+            {
+              "id": "SH-001-Q1",
+              "text": "Did the shoulder problem start after a significant fall, accident, collision or injury?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "SH-002",
+          "name": "Sudden major loss of shoulder function",
+          "priority": 80,
+          "questions": [
+            {
+              "id": "SH-002-Q1",
+              "text": "Have you suddenly become unable to use or lift the arm normally?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "SH-003",
+          "name": "Possible non-MSK shoulder presentation",
+          "priority": 90,
+          "questions": [
+            {
+              "id": "SH-003-Q1",
+              "text": "Are you also experiencing chest pain, significant shortness of breath, fainting, or feeling seriously unwell?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "RED",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "RED": {
+              "stop_triage": true,
+              "block_exercise": true,
+              "emergency_guidance": true,
+              "audit": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true
+            }
+          }
+        }
+      ]
+    },
+    "elbow": {
+      "display_name": "Elbow",
+      "rules": [
+        {
+          "rule_id": "EL-001",
+          "name": "Significant elbow trauma",
+          "priority": 80,
+          "questions": [
+            {
+              "id": "EL-001-Q1",
+              "text": "Did this start after a significant fall, accident or injury?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "EL-002",
+          "name": "Sudden neurological or functional loss",
+          "priority": 85,
+          "questions": [
+            {
+              "id": "EL-002-Q1",
+              "text": "Have you suddenly lost significant strength, sensation, or normal use of the arm or hand?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        }
+      ]
+    },
+    "wrist_hand": {
+      "display_name": "Wrist / Hand",
+      "rules": [
+        {
+          "rule_id": "WH-001",
+          "name": "Significant wrist or hand trauma",
+          "priority": 80,
+          "questions": [
+            {
+              "id": "WH-001-Q1",
+              "text": "Did this start after a significant fall, accident or injury?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "WH-002",
+          "name": "Major neurological or functional loss",
+          "priority": 85,
+          "questions": [
+            {
+              "id": "WH-002-Q1",
+              "text": "Have you suddenly lost significant strength, sensation, or normal use of the hand?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        }
+      ]
+    },
+    "mid_back": {
+      "display_name": "Mid / Upper Back",
+      "rules": [
+        {
+          "rule_id": "MB-001",
+          "name": "Unexplained thoracic pain",
+          "priority": 75,
+          "questions": [
+            {
+              "id": "MB-001-Q1",
+              "text": "Is this new mid-back pain unexplained, severe at rest or at night, or associated with feeling unwell?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "MB-002",
+          "name": "Chest or breathing symptoms",
+          "priority": 100,
+          "questions": [
+            {
+              "id": "MB-002-Q1",
+              "text": "Are you having chest pain, significant shortness of breath, fainting, or feeling seriously unwell with the back pain?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "RED",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "RED": {
+              "stop_triage": true,
+              "block_exercise": true,
+              "emergency_guidance": true,
+              "audit": true
+            }
+          }
+        }
+      ]
+    },
+    "hip": {
+      "display_name": "Hip",
+      "rules": [
+        {
+          "rule_id": "HP-001",
+          "name": "Acute hip trauma with inability to weight bear",
+          "priority": 95,
+          "questions": [
+            {
+              "id": "HP-001-Q1",
+              "text": "Did this start after a significant fall, accident or injury?",
+              "type": "yes_no"
+            },
+            {
+              "id": "HP-001-Q2",
+              "text": "Are you unable to stand or put weight through that leg?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes_to_both": "ORANGE",
+            "yes_to_Q1_only": "AMBER",
+            "no_to_all": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "ORANGE": {
+              "block_exercise": true,
+              "block_routine_rehab": true,
+              "recommend_medical_assessment": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "HP-002",
+          "name": "Acute unexplained severe hip pain",
+          "priority": 75,
+          "questions": [
+            {
+              "id": "HP-002-Q1",
+              "text": "Did the severe hip pain come on suddenly without a clear injury?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        }
+      ]
+    },
+    "knee": {
+      "display_name": "Knee",
+      "rules": [
+        {
+          "rule_id": "KN-001",
+          "name": "Knee trauma with inability to weight bear",
+          "priority": 90,
+          "questions": [
+            {
+              "id": "KN-001-Q1",
+              "text": "Did this start after a significant fall, twist, collision or injury?",
+              "type": "yes_no"
+            },
+            {
+              "id": "KN-001-Q2",
+              "text": "Are you currently unable to put weight through the leg?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes_to_both": "ORANGE",
+            "yes_to_Q1_only": "AMBER",
+            "no_to_all": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "ORANGE": {
+              "block_exercise": true,
+              "block_routine_rehab": true,
+              "recommend_medical_assessment": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "KN-002",
+          "name": "Rapid severe knee swelling or deterioration",
+          "priority": 75,
+          "questions": [
+            {
+              "id": "KN-002-Q1",
+              "text": "Did the knee suddenly become very swollen, severely painful, or significantly worse over a short period?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "KN-003",
+          "name": "Possible infection or systemic illness",
+          "priority": 90,
+          "questions": [
+            {
+              "id": "KN-003-Q1",
+              "text": "Is the knee hot, very swollen and painful, especially if you also have a fever or feel unwell?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "ORANGE",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "ORANGE": {
+              "block_exercise": true,
+              "block_routine_rehab": true,
+              "recommend_medical_assessment": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true
+            }
+          }
+        }
+      ]
+    },
+    "ankle_foot": {
+      "display_name": "Ankle / Foot",
+      "rules": [
+        {
+          "rule_id": "AF-001",
+          "name": "Acute ankle or foot trauma with inability to weight bear",
+          "priority": 85,
+          "questions": [
+            {
+              "id": "AF-001-Q1",
+              "text": "Did this start after a significant fall, twist, accident or injury?",
+              "type": "yes_no"
+            },
+            {
+              "id": "AF-001-Q2",
+              "text": "Are you currently unable to take a few normal steps on the leg?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes_to_both": "ORANGE",
+            "yes_to_Q1_only": "AMBER",
+            "no_to_all": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "ORANGE": {
+              "block_exercise": true,
+              "block_routine_rehab": true,
+              "recommend_medical_assessment": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        },
+        {
+          "rule_id": "AF-002",
+          "name": "Severe swelling or rapid deterioration",
+          "priority": 70,
+          "questions": [
+            {
+              "id": "AF-002-Q1",
+              "text": "Has the foot or ankle become severely swollen, very painful, or significantly worse very quickly?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "AMBER",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        }
+      ]
+    },
+    "jaw": {
+      "display_name": "Jaw / TMJ",
+      "rules": [
+        {
+          "rule_id": "JW-001",
+          "name": "Jaw symptoms with systemic or neurological concern",
+          "priority": 100,
+          "questions": [
+            {
+              "id": "JW-001-Q1",
+              "text": "Are you having chest pain, significant shortness of breath, fainting, or feeling seriously unwell along with the jaw symptoms?",
+              "type": "yes_no"
+            }
+          ],
+          "logic": {
+            "yes": "RED",
+            "no": "CONTINUE",
+            "unclear": "AMBER"
+          },
+          "actions": {
+            "RED": {
+              "stop_triage": true,
+              "block_exercise": true,
+              "emergency_guidance": true,
+              "audit": true
+            },
+            "AMBER": {
+              "book_5_min_specialist_review": true
+            }
+          }
+        }
+      ]
+    },
+    "general_other_msk": {
+      "display_name": "Other MSK",
+      "rules": [
+        {
+          "rule_id": "OTHER-001",
+          "name": "Presentation outside supported MSK pathways",
+          "priority": 60,
+          "trigger": [
+            "body_region_not_supported",
+            "symptoms_not_clearly_msk",
+            "uncertain_clinical_pattern"
+          ],
+          "logic": {
+            "triggered": "AMBER"
+          },
+          "actions": {
+            "AMBER": {
+              "book_5_min_specialist_review": true,
+              "block_exercise": true
+            }
+          }
+        }
+      ]
+    }
+  },
+  "exercise_gate": {
+    "rule": "Exercise can only be prescribed when safety_status is GREEN or when a qualified clinician has explicitly authorised an exercise pathway.",
+    "blocked_statuses": [
+      "AMBER",
+      "ORANGE",
+      "RED",
+      "UNKNOWN"
+    ],
+    "allowed_status": [
+      "GREEN",
+      "CLINICIAN_APPROVED"
+    ]
+  },
+  "specialist_review": {
+    "duration_minutes": 5,
+    "purpose": [
+      "rapid_triage",
+      "initial_safety_review",
+      "initial_advice",
+      "determine_next_step"
+    ],
+    "not_a_full_consultation": true,
+    "does_not_replace_standard_consultation": true,
+    "possible_outcomes": [
+      "PROCEED_TO_MSK_PATHWAY",
+      "BOOK_STANDARD_CONSULTATION",
+      "MEDICAL_REVIEW",
+      "URGENT_ESCALATION"
+    ]
+  },
+  "decision_priority": [
+    "RED",
+    "ORANGE",
+    "AMBER",
+    "GREEN"
+  ],
+  "global_actions": {
+    "RED": {
+      "stop_standard_triage": true,
+      "block_exercise": true,
+      "block_routine_rehab": true,
+      "show_approved_emergency_guidance": true,
+      "create_urgent_alert": true,
+      "create_audit_event": true
+    },
+    "ORANGE": {
+      "block_exercise": true,
+      "block_routine_rehab": true,
+      "recommend_medical_review": true,
+      "create_audit_event": true
+    },
+    "AMBER": {
+      "block_exercise": true,
+      "offer_5_min_specialist_review": true,
+      "create_audit_event": true
+    },
+    "GREEN": {
+      "allow_msk_pathway": true,
+      "allow_standard_consultation": true,
+      "allow_approved_exercise_pathway": true
+    }
+  }
+}

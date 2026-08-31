@@ -13,6 +13,7 @@ from app.models.referral_fee import ReferralFee
 from app.models.paystack_event import PaystackEvent
 from app.models.physiotherapist import Physiotherapist
 from app.models.relay import RelayThread
+from app.models.safety_engine_config import SafetyEngineConfig
 from app.models.session_note import SessionNote
 from app.models.triage_session import TriageSession
 from app.models.types import (
@@ -54,6 +55,7 @@ __all__ = [
     "Persona",
     "Physiotherapist",
     "RelayThread",
+    "SafetyEngineConfig",
     "SafetyResult",
     "TriageSession",
     "TurnResult",

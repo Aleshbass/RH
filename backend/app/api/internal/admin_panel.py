@@ -50,3 +50,20 @@ def list_audit_events(
     )
     events = session.scalars(stmt).all()
     return {"events": [_event_row(event) for event in events]}
+
+
+@router.get("/api/internal/safety-engine")
+def get_safety_engine(session: Session = Depends(get_session)) -> dict:
+    """Return the active clinical safety engine (DB row, else packaged JSON)."""
+    from app.safety.clinical_engine import engine_version, load_engine, load_engine_from_db
+
+    db_config = load_engine_from_db(session)
+    if db_config is not None:
+        version = str((db_config.get("engine") or {}).get("version") or engine_version())
+        return {"source": "database", "version": version, "config": db_config}
+    file_config = load_engine()
+    return {
+        "source": "package",
+        "version": engine_version(),
+        "config": file_config,
+    }

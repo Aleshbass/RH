@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, literal_str_enum, str_enum
 from app.models.types import ConditionArea
 
-TRIAGE_STATUSES = ("open", "summarised", "escalated")
+TRIAGE_STATUSES = ("open", "summarised", "escalated", "specialist_review")
 
 
 class TriageSession(Base):

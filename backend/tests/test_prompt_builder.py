@@ -3,8 +3,10 @@ def test_builder_includes_persona_and_phase(patient_identity):
     from app.models.types import ExtractedTriage, PatientPhase
 
     text = build(patient_identity, PatientPhase.FIRST_CONTACT, ExtractedTriage(), "en", [], "")
+    assert "Joy — Master System Prompt" in text
     assert "currently speaking with: patient" in text.lower() or "patient" in text.lower()
     assert "first_contact" in text
-    assert "Do not open with a checklist" in text or "ONE open question" in text
-    assert "empathy" in text.lower() or "genuine care" in text.lower() or "acknowledge" in text.lower()
-    assert "red flag" in text.lower() or "safety" in text.lower()
+    assert "Golden Rule" in text or "Do not make the user do work" in text
+    assert "Empathetic" in text or "empathy" in text.lower() or "warm" in text.lower()
+    assert "CLINICAL SAFETY ENGINE" in text or "safety" in text.lower()
+    assert "GREEN" in text and "RED" in text

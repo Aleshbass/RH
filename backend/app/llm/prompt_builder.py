@@ -2,15 +2,14 @@ from pathlib import Path
 from typing import Any
 
 from app.models.types import ExtractedTriage, Identity, PatientPhase, Persona
+from app.safety.clinical_engine import prompt_digest
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
+# Client Joy Master Prompt is the primary system guidance.
 _ALWAYS = (
-    "base_identity.md",
-    "tone_and_format.md",
-    "empathy.md",
+    "joy_master_prompt.md",
     "safety_interface.md",
-    "triage_discipline.md",
 )
 
 _PERSONA_FILES = {
@@ -58,6 +57,7 @@ def build(
     phase_value = _phase_value(phase)
     parts = [_load(name) for name in _ALWAYS]
     parts.append(_load(_PERSONA_FILES[identity.persona]))
+    parts.append(prompt_digest())
     parts.append(f"PHASE: {phase_value}")
     parts.append(f"EXTRACTED:\n{extracted.model_dump_json(indent=2)}")
     parts.append(f"LANGUAGE: {language}")

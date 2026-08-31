@@ -284,8 +284,8 @@ def test_post_triage_accepts_common_confirm_phrases(
     fake_llm.reply = "should not loop the summary"
     result = handle_turn(db_session, patient_identity.phone_e164, confirm_text, fake_llm)
     lower = result.reply_text.lower()
-    assert "please confirm this is right" not in lower
     assert "here's what i understood" not in lower
+    assert "please confirm this summary" not in lower
     assert "no specialist yet" in lower or "teleconsult" in lower or "home_visit" in lower or "physio" in lower
 
 

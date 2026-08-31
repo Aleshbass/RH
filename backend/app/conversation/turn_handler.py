@@ -80,6 +80,7 @@ _LATER_PATH = (
     "This WhatsApp path is for later — I will be able to help you here in a later slice."
 )
 _MID_ACK = "Thanks, I've got that."
+_POLICY_CONTEXT_KEY = "policy_accepted"
 _DASHBOARD_RE = re.compile(
     r"(?i)(?:\b(?:update|edit|change|set)\b.{0,40}\b"
     r"(?:bio|photo|pricing|price list|rates|credentials)\b"
@@ -141,6 +142,20 @@ def _is_escalated(session: Session, state: ConversationState) -> bool:
     return triage is not None and triage.status == "escalated"
 
 
+def _is_specialist_review(session: Session, state: ConversationState) -> bool:
+    if state.triage_session_id is None:
+        return False
+    triage = session.get(TriageSession, state.triage_session_id)
+    return triage is not None and triage.status == "specialist_review"
+
+
+_SPECIALIST_YES_ACK = (
+    "Got you — I'll arrange that short specialist triage review. "
+    "A clinician will pick this up shortly. Payment links for paid reviews "
+    "will come once Paystack is live; for now I've flagged your case for review."
+)
+
+
 def _resend_safety_block(
     session: Session,
     identity: Identity,
@@ -152,6 +167,8 @@ def _resend_safety_block(
 ) -> TurnResult:
     safety = evaluate(state.extracted)
     reply = patient_message(safety)
+    if _is_specialist_review(session, state) and _YES_RE.search(user_text or ""):
+        reply = _SPECIALIST_YES_ACK
     _audit_turn(session, identity, state.extracted, safety, phase)
     save_turn(
         session, state, user_text, reply, state.extracted, phase, language, wa_message_id
@@ -267,6 +284,18 @@ def _patient_takeover_turn(
     incoming = {"flags": flags} if flags else {}
     extracted = _apply_inferred_area(merge_extraction(state.extracted, incoming))
     safety = evaluate(extracted)
+    if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
+        return _amber_specialist_reply(
+            session,
+            identity,
+            state,
+            user_text,
+            extracted,
+            safety,
+            phase,
+            language,
+            wa_message_id,
+        )
     if safety.fired:
         return _safety_fire_reply(
             session,
@@ -327,12 +356,52 @@ def _admin_turn(
     )
 
 
-def _mid_followup_reply(candidate_reply: str, followup: str, incoming_phase: PatientPhase) -> str:
-    """Prefer a care-only model sentence on first story dump; never a second open ask."""
-    care = (candidate_reply or "").strip()
-    if incoming_phase == PatientPhase.FIRST_CONTACT and care and "?" not in care:
-        return f"{care} {followup}"
-    return f"{_MID_ACK} {followup}"
+def _policy_accepted(state: ConversationState) -> bool:
+    ctx = state.booking_context or {}
+    if ctx.get(_POLICY_CONTEXT_KEY) is True:
+        return True
+    facts = state.known_facts or {}
+    return facts.get(_POLICY_CONTEXT_KEY) is True
+
+
+def _mark_policy_accepted(session: Session, state: ConversationState) -> None:
+    conversation = session.get(Conversation, state.conversation_id)
+    if conversation is None:
+        return
+    ctx = dict(conversation.booking_context or {})
+    ctx[_POLICY_CONTEXT_KEY] = True
+    conversation.booking_context = ctx
+    state.booking_context = ctx
+    session.flush()
+
+
+def _amber_specialist_reply(
+    session: Session,
+    identity: Identity,
+    state: ConversationState,
+    user_text: str,
+    extracted: ExtractedTriage,
+    safety: SafetyResult,
+    phase: PatientPhase,
+    language: str,
+    wa_message_id: str | None = None,
+) -> TurnResult:
+    reply = patient_message(safety)
+    notified = notify_family_on_safety(session, identity.person_id, safety)
+    _set_triage_status(session, state, "specialist_review")
+    route_safety(session, safety, {"patient_id": str(identity.person_id)})
+    _audit_turn(
+        session, identity, extracted, safety, phase, notify_family=notified
+    )
+    save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id)
+    return TurnResult(
+        reply_text=reply,
+        language=language,
+        phase=phase,
+        extracted=extracted,
+        safety=safety,
+        blocked_by_safety=True,
+    )
 
 
 def _thin_first_contact(extracted: ExtractedTriage) -> bool:
@@ -374,6 +443,11 @@ def _reply_after_extract(
 
     patient = session.get(Patient, identity.person_id)
     if patient is not None:
+        summary_confirmed = (
+            incoming_phase == PatientPhase.POST_TRIAGE and _is_summary_confirm(user_text)
+        )
+        if summary_confirmed and not _policy_accepted(state):
+            _mark_policy_accepted(session, state)
         booking_reply = handle_booking_turn(
             session,
             state,
@@ -381,9 +455,7 @@ def _reply_after_extract(
             extracted,
             user_text,
             paystack=paystack,
-            summary_confirmed=(
-                incoming_phase == PatientPhase.POST_TRIAGE and _is_summary_confirm(user_text)
-            ),
+            summary_confirmed=summary_confirmed,
         )
         if booking_reply is not None:
             return booking_reply, PatientPhase.POST_TRIAGE
@@ -654,7 +726,7 @@ def handle_turn(
         _maybe_route_off_platform(session, user_text, patient_id=identity.person_id)
     phase = decide_phase(state)
     language = mirror_language(user_text, state.last_known_language)
-    if _is_escalated(session, state):
+    if _is_escalated(session, state) or _is_specialist_review(session, state):
         return _resend_safety_block(
             session, identity, state, user_text, phase, language, wa_message_id
         )
@@ -688,6 +760,19 @@ def handle_turn(
     extracted = _apply_inferred_area(merge_extraction(state.extracted, response.extraction_json))
     extracted = enrich_from_user_text(extracted, user_text)
     safety = evaluate(extracted)
+
+    if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
+        return _amber_specialist_reply(
+            session,
+            identity,
+            state,
+            user_text,
+            extracted,
+            safety,
+            phase,
+            language,
+            wa_message_id,
+        )
 
     if safety.fired:
         return _safety_fire_reply(
