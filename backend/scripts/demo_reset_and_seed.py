@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select
 
 from app.db import SessionLocal
 from app.models.availability_slot import AvailabilitySlot
@@ -84,28 +84,35 @@ _WEEKLY = [
 
 
 def _clear_queues() -> None:
-    client = _redis()
-    for key in (
-        INBOUND_QUEUE,
-        PROCESSING_QUEUE,
-        DEAD_LETTER_QUEUE,
-        BOOKING_CONFIRMED_QUEUE,
-        PHYSIO_BOOKING_ALERT_QUEUE,
-        FAMILY_SAFETY_QUEUE,
-        PHYSIO_RELAY_QUEUE,
-        FAMILY_RELAY_QUEUE,
-        PARTNER_REFERRAL_QUEUE,
-        ADMIN_ESCALATION_QUEUE,
-        BROADCAST_QUEUE,
-        TAKEOVER_QUEUE,
-    ):
-        client.delete(key)
-    for key in client.scan_iter("joy:wamid:*"):
-        client.delete(key)
     try:
-        client.delete("joy:session_reminders")
-    except Exception:
-        pass
+        client = _redis()
+    except Exception as exc:
+        print(f"  (skip Redis clear — unreachable from here: {exc})")
+        return
+    try:
+        for key in (
+            INBOUND_QUEUE,
+            PROCESSING_QUEUE,
+            DEAD_LETTER_QUEUE,
+            BOOKING_CONFIRMED_QUEUE,
+            PHYSIO_BOOKING_ALERT_QUEUE,
+            FAMILY_SAFETY_QUEUE,
+            PHYSIO_RELAY_QUEUE,
+            FAMILY_RELAY_QUEUE,
+            PARTNER_REFERRAL_QUEUE,
+            ADMIN_ESCALATION_QUEUE,
+            BROADCAST_QUEUE,
+            TAKEOVER_QUEUE,
+        ):
+            client.delete(key)
+        for key in client.scan_iter("joy:wamid:*"):
+            client.delete(key)
+        try:
+            client.delete("joy:session_reminders")
+        except Exception:
+            pass
+    except Exception as exc:
+        print(f"  (skip Redis clear — {exc})")
 
 
 def _wipe_user_state(session) -> dict[str, int]:
@@ -134,9 +141,7 @@ def _wipe_user_state(session) -> dict[str, int]:
     # Drop prior physio slots + physios so demo seed is clean.
     counts["availability_slots"] = _count_delete(AvailabilitySlot)
     counts["physiotherapists"] = _count_delete(Physiotherapist)
-    # Keep admins; trim noisy audit for a cleaner demo query surface.
-    result = session.execute(text("DELETE FROM audit_events"))
-    counts["audit_events"] = result.rowcount or 0
+    # audit_events is append-only (DB trigger) — leave it.
     session.flush()
     return counts
 
