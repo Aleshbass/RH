@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
     ArrowRight, 
     CheckCircle2, 
-    Sparkles, 
     ShieldCheck, 
     Clock, 
     Activity, 
@@ -56,9 +55,8 @@ export function HowItWorks() {
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true }}
                         transition={{ duration: 0.5 }}
-                        className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#005b57]/10 border border-[#005b57]/15 mb-5 shadow-sm"
+                        className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-[#005b57]/10 border border-[#005b57]/15 mb-5 shadow-sm"
                     >
-                        <Sparkles className="w-3.5 h-3.5 text-[#005b57]" />
                         <span className="text-xs font-bold uppercase tracking-widest text-[#005b57]">
                             How Rehabify Works
                         </span>

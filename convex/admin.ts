@@ -899,3 +899,185 @@ export const getMarketplaceTransactions = query({
     return enriched;
   },
 });
+
+// ==== ADMIN USER DETAIL VIEW ====
+
+/**
+ * Get full details of a user including their physiotherapist profile,
+ * patient relationships, appointment stats, and documents.
+ * Admin-only access.
+ */
+export const getAdminUserDetails = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
+
+    const user = await ctx.db.get(args.userId);
+    if (!user) {
+      return null;
+    }
+
+    // Get physiotherapist profile if the user is a physiotherapist
+    let physioProfile = null;
+    if (user.role === "physiotherapist" && user.physiotherapistProfileId) {
+      physioProfile = await ctx.db.get(user.physiotherapistProfileId);
+    }
+    // Fallback: query by userId if the link is missing
+    if (user.role === "physiotherapist" && !physioProfile) {
+      physioProfile = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .unique();
+    }
+
+    // Get patient profile if the user is a patient
+    let patientProfile = null;
+    if (user.role === "patient" && user.patientProfileId) {
+      patientProfile = await ctx.db.get(user.patientProfileId);
+    }
+
+    // Get clinic info if linked
+    let clinic = null;
+    if (user.clinicId) {
+      clinic = await ctx.db.get(user.clinicId);
+    }
+    // Also check physio profile's clinicId
+    if (!clinic && physioProfile?.clinicId) {
+      clinic = await ctx.db.get(physioProfile.clinicId);
+    }
+
+    // Count patient relationships (for physiotherapists)
+    let patientCount = 0;
+    if (user.role === "physiotherapist") {
+      const relationships = await ctx.db
+        .query("patientPhysiotherapistRelationships")
+        .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", user._id))
+        .collect();
+      patientCount = relationships.filter((r) => r.status === "active").length;
+    }
+
+    // Count appointments
+    let appointmentCount = 0;
+    let upcomingAppointments = 0;
+    const now = Date.now();
+    if (user.role === "physiotherapist") {
+      const appointments = await ctx.db
+        .query("appointments")
+        .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id))
+        .collect();
+      appointmentCount = appointments.length;
+      upcomingAppointments = appointments.filter(
+        (a) => a.startTime > now && a.status !== "cancelled"
+      ).length;
+    }
+
+    // Get recent appointments
+    let recentAppointments: Array<{
+      _id: Id<"appointments">;
+      startTime: number;
+      endTime: number;
+      serviceType: string;
+      status: string;
+      appointmentType?: string;
+      isOnline?: boolean;
+      patientName: string;
+    }> = [];
+    if (user.role === "physiotherapist") {
+      const appts = await ctx.db
+        .query("appointments")
+        .withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id))
+        .order("desc")
+        .take(5);
+
+      recentAppointments = await Promise.all(
+        appts.map(async (a) => {
+          const patient = await ctx.db.get(a.patientId);
+          const patientName = patient
+            ? `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || patient.email || "Patient"
+            : "Patient";
+          return {
+            _id: a._id,
+            startTime: a.startTime,
+            endTime: a.endTime,
+            serviceType: a.serviceType,
+            status: a.status,
+            appointmentType: a.appointmentType,
+            isOnline: a.isOnline,
+            patientName,
+          };
+        })
+      );
+    }
+
+    // Get active patients list
+    let activePatientsList: Array<{
+      _id: Id<"patientPhysiotherapistRelationships">;
+      patientId: Id<"users">;
+      status: string;
+      startDate: number;
+      name: string;
+      email?: string;
+      imageUrl?: string;
+    }> = [];
+    if (user.role === "physiotherapist") {
+      const relationships = await ctx.db
+        .query("patientPhysiotherapistRelationships")
+        .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", user._id))
+        .take(6);
+
+      activePatientsList = await Promise.all(
+        relationships.map(async (rel) => {
+          const pUser = await ctx.db.get(rel.patientId);
+          return {
+            _id: rel._id,
+            patientId: rel.patientId,
+            status: rel.status,
+            startDate: rel.startDate,
+            name: pUser
+              ? `${pUser.firstName || ""} ${pUser.lastName || ""}`.trim() || pUser.email || "Patient"
+              : "Patient",
+            email: pUser?.email,
+            imageUrl: pUser?.imageUrl,
+          };
+        })
+      );
+    }
+
+    // Get marketplace reviews count and rating
+    let reviewStats = { count: 0, averageRating: 0 };
+    if (physioProfile) {
+      reviewStats = {
+        count: physioProfile.reviewCount || 0,
+        averageRating: physioProfile.averageRating || 0,
+      };
+    }
+
+    // Get account approval status
+    const approvalStatus = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .unique();
+
+    return {
+      user,
+      physioProfile,
+      patientProfile,
+      clinic: clinic ? { _id: clinic._id, name: clinic.name } : null,
+      stats: {
+        patientCount,
+        appointmentCount,
+        upcomingAppointments,
+        reviewStats,
+      },
+      recentAppointments,
+      activePatientsList,
+      approvalStatus: approvalStatus
+        ? {
+            status: approvalStatus.status,
+            reviewedAt: approvalStatus.reviewedAt,
+            declineReason: approvalStatus.comments,
+          }
+        : null,
+    };
+  },
+});

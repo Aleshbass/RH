@@ -14,7 +14,6 @@ import {
 import {
   ChevronDown,
   ChevronRight,
-  Sparkles,
   Building2,
   UserCheck,
   Heart,
@@ -260,7 +259,7 @@ const navLinks: NavItem[] = [
     name: "For Patients",
     href: "/start-treatment",
     type: "link",
-    icon: Sparkles,
+    icon: Heart,
     badge: "Get Care",
   },
   {
@@ -587,8 +586,7 @@ export default function Header() {
                 <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#004744] via-[#005b57] to-[#00807b] p-4 text-white shadow-md">
                   <div className="relative z-10 flex items-center justify-between">
                     <div className="space-y-1 max-w-[210px]">
-                      <span className="inline-flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider text-teal-200 bg-white/10 px-2 py-0.5 rounded-full backdrop-blur-sm">
-                        <Sparkles className="w-3 h-3 text-teal-300" />
+                      <span className="inline-flex items-center text-[10px] uppercase font-bold tracking-wider text-teal-200 bg-white/10 px-2.5 py-0.5 rounded-full backdrop-blur-sm">
                         Quick Access
                       </span>
                       <h4 className="text-sm font-bold text-white leading-snug">

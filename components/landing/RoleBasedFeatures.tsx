@@ -5,7 +5,6 @@ import { motion } from "framer-motion";
 import { 
   ShieldCheck, 
   Clock, 
-  Sparkles, 
   BadgePercent, 
   ArrowRight, 
   CheckCircle2, 
@@ -35,9 +34,8 @@ export default function RoleBasedFeatures() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 border border-white shadow-sm backdrop-blur-md mb-5"
+            className="inline-flex items-center px-4 py-1.5 rounded-full bg-white/80 border border-white shadow-sm backdrop-blur-md mb-5"
           >
-            <Sparkles className="w-3.5 h-3.5 text-[#005b57]" />
             <span className="text-xs font-bold uppercase tracking-widest text-[#005b57]">
               The Rehabify Advantage
             </span>

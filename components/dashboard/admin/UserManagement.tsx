@@ -53,7 +53,8 @@ import {
   Stethoscope,
   Building2,
   User,
-  Trash2
+  Trash2,
+  Eye
 } from 'lucide-react'
 import { ColumnDef } from '@tanstack/react-table'
 import { format } from 'date-fns'
@@ -344,35 +345,41 @@ export function UserManagement() {
       id: 'actions',
       header: 'Actions',
       cell: ({ row }) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => openRoleDialog(row.original)}>
-              <UserCog className="mr-2 h-4 w-4" />
-              Change Role
-            </DropdownMenuItem>
-            {row.original.role !== 'admin' && (
-              <DropdownMenuItem onClick={() => openRoleDialog(row.original)}>
-                <Crown className="mr-2 h-4 w-4" />
-                Promote to Admin
+        <div onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push(`/dashboard/admin/users/${row.original._id}`)}>
+                <Eye className="mr-2 h-4 w-4" />
+                View Details
               </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem 
-              className="text-red-600 focus:text-red-600" 
-              onClick={() => setUserToDelete(row.original)}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete User
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuItem onClick={() => openRoleDialog(row.original)}>
+                <UserCog className="mr-2 h-4 w-4" />
+                Change Role
+              </DropdownMenuItem>
+              {row.original.role !== 'admin' && (
+                <DropdownMenuItem onClick={() => openRoleDialog(row.original)}>
+                  <Crown className="mr-2 h-4 w-4" />
+                  Promote to Admin
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                className="text-red-600 focus:text-red-600" 
+                onClick={() => setUserToDelete(row.original)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete User
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       ),
     },
   ]
@@ -502,6 +509,9 @@ export function UserManagement() {
             data={filteredUsers}
             columns={userColumns}
             searchKey="email"
+            onRowClick={(user: UserData) => {
+              router.push(`/dashboard/admin/users/${user._id}`)
+            }}
           />
         </CardContent>
       </Card>

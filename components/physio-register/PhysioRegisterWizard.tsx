@@ -11,6 +11,7 @@ import { api } from '@/convex/_generated/api';
 import { toast } from 'sonner';
 import { Id } from '@/convex/_generated/dataModel';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { SignIn, SignUp, useUser, useSignUp as useClerkSignUp } from '@clerk/nextjs';
 
 import { Button } from '@/components/ui/button';
@@ -382,11 +383,11 @@ export default function PhysioRegisterWizard() {
                 <div className="flex gap-3 justify-center">
                     {registrySlug && (
                         <Button asChild className="bg-[#005b57] hover:bg-[#00443e]">
-                            <a href={`/physio-register/${registrySlug}`}>View Your Profile</a>
+                            <Link href={`/physio-register/${registrySlug}`}>View Your Profile</Link>
                         </Button>
                     )}
                     <Button asChild variant="outline">
-                        <a href="/physio-register">Browse the Register</a>
+                        <Link href="/physio-register">Browse the Register</Link>
                     </Button>
                 </div>
             </div>

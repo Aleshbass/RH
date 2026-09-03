@@ -52,9 +52,9 @@ export function ProblemSection() {
 
               {/* Heading — concise */}
               <h2 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-white mb-5 tracking-tight leading-[1.15] font-cal">
-                Pain shouldn&apos;t be{" "}
+                Quality rehabilitation care{" "}
                 <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
-                  a life sentence.
+                  should never be out of reach.
                 </span>
               </h2>
 
