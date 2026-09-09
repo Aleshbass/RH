@@ -1,0 +1,79 @@
+---
+title: JavaScript Embed Widget
+description: Embed a seamless physiotherapy booking popup on any website using a single script tag.
+---
+
+# JavaScript Embed Widget
+
+The Rehabify JavaScript Embed Widget lets your users discover therapists and schedule sessions without leaving your website.
+
+---
+
+## 1. Add the Script Tag
+
+Paste the script before the closing `</body>` tag on your website:
+
+```html
+<script 
+  src="https://cdn.physioaroundme.com/widget/v1/rehabify.js" 
+  data-partner-key="pk_live_your_public_key"
+  async>
+</script>
+```
+
+---
+
+## 2. Trigger the Booking Modal
+
+Add a button with the `data-rehabify-trigger` attribute, or call the JavaScript SDK directly:
+
+### Option A: HTML Data Attribute (No JavaScript)
+
+```html
+<button 
+  data-rehabify-trigger
+  data-specialty="sports_physio"
+  data-city="Lagos"
+  class="btn-recovery">
+  Book Physical Therapy Recovery
+</button>
+```
+
+### Option B: Programmatic JavaScript Trigger
+
+```javascript
+// Open with pre-filled patient info
+window.RehabifyWidget.open({
+  partnerKey: 'pk_live_your_public_key',
+  patient: {
+    name: 'Adaora Eze',
+    phone: '+2348031234567',
+    email: 'adaora@example.com'
+  },
+  clinical: {
+    diagnosis: 'Post-Workout Hamstring Strain',
+    preferredModality: 'home_visit'
+  },
+  onSuccess: function(booking) {
+    console.log('Session booked successfully:', booking.bookingId);
+  },
+  onClose: function() {
+    console.log('Modal closed');
+  }
+});
+```
+
+---
+
+## Customizing Widget Theme
+
+You can pass custom branding options directly in the initialization object:
+
+```javascript
+window.RehabifyWidget.setTheme({
+  primaryColor: '#0D9488',
+  borderRadius: '12px',
+  darkMode: false,
+  partnerLogoUrl: 'https://yourgym.com/logo.png'
+});
+```

@@ -1,0 +1,41 @@
+---
+title: Retry Policy & Delivery
+description: Understand how Rehabify retries webhook deliveries upon failure.
+---
+
+# Webhook Retry Policy
+
+Rehabify guarantees **at-least-once delivery** for all webhook events. If your endpoint is down, slow, or responds with an HTTP status other than `2xx`, our dispatcher will automatically retry with exponential backoff.
+
+---
+
+## Retry Schedule
+
+We attempt up to **8 delivery retries** over a 24-hour period:
+
+| Attempt | Delay | Cumulative Elapsed Time |
+| :--- | :--- | :--- |
+| **Initial** | Immediate | 0s |
+| **Retry 1** | 15 seconds | 15s |
+| **Retry 2** | 1 minute | 1m 15s |
+| **Retry 3** | 5 minutes | 6m 15s |
+| **Retry 4** | 30 minutes | 36m 15s |
+| **Retry 5** | 2 hours | 2h 36m |
+| **Retry 6** | 6 hours | 8h 36m |
+| **Retry 7** | 12 hours | 20h 36m |
+| **Final Retry** | 24 hours | 44h 36m |
+
+---
+
+## Idempotency & Duplicate Handling
+
+Because network delays can cause duplicate delivery attempts, **your webhook handler should be idempotent**.
+
+> [!TIP]
+> Always store the `X-Rehabify-Delivery-Id` or event `id` in your database. If you receive a webhook with an ID you have already processed, return `200 OK` immediately without re-executing business logic.
+
+---
+
+## Response Timeout
+
+Your webhook endpoint must respond with an HTTP status within **10,000 ms (10 seconds)**. Requests exceeding 10 seconds are terminated and flagged for retry.

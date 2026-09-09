@@ -1,92 +1,286 @@
 "use client";
 
+import React, { useState } from "react";
 import { motion } from "framer-motion";
+import { 
+    ArrowRight, 
+    Send, 
+    CheckCircle2, 
+    FileText, 
+    Clock, 
+    TrendingUp, 
+    ShieldCheck, 
+    Stethoscope, 
+    Building2 
+} from "lucide-react";
+import { IconBrandWhatsapp } from "@tabler/icons-react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 
-const benefits = [
-    "One-click referrals (30 seconds, patient gets booking link automatically)",
-    "Earn per patient (passive income on every successful referral)",
-    "See what happens (outcomes tracking — attended, improved, completed treatment)",
-    "Keep patients in your care ecosystem (closed-loop communication)",
-];
+const WHATSAPP_REFERRAL_URL = `https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I'd like to refer a patient through Rehabify.")}`;
 
 export function DoctorsClinicsSection() {
-    return (
-        <section className="py-20 sm:py-24 bg-white">
-            <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="max-w-6xl mx-auto">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-                        {/* Left: Text */}
-                        <motion.div
-                            initial={{ opacity: 0, x: -20 }}
-                            whileInView={{ opacity: 1, x: 0 }}
-                            viewport={{ once: true }}
-                            transition={{ duration: 0.5 }}
-                        >
-                            <span className="inline-block text-xs font-bold uppercase tracking-widest text-[#005b57] mb-4">
-                                For Doctors &amp; Clinics
-                            </span>
-                            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 leading-tight mb-4">
-                                Finally, a referral system that actually works
-                            </h2>
-                            <p className="text-lg text-gray-600 mb-8">
-                                Your patients need physiotherapy. You want to help, but you don&apos;t have time to research providers, make calls, or wonder if they ever showed up. Refer through Rehabify:
-                            </p>
-                            <ul className="space-y-4 mb-10">
-                                {benefits.map((benefit, i) => (
-                                    <motion.li
-                                        key={i}
-                                        initial={{ opacity: 0, x: -10 }}
-                                        whileInView={{ opacity: 1, x: 0 }}
-                                        viewport={{ once: true }}
-                                        transition={{ duration: 0.4, delay: i * 0.08 }}
-                                        className="flex items-start gap-3"
-                                    >
-                                        <div className="mt-1 w-5 h-5 rounded-full bg-[#e6f0ef] flex items-center justify-center shrink-0">
-                                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                                                <path d="M2 5l2 2 4-4" stroke="#005b57" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                            </svg>
-                                        </div>
-                                        <span className="text-gray-700">{benefit}</span>
-                                    </motion.li>
-                                ))}
-                            </ul>
-                            <Link
-                                href="/sign-up?redirect=/role-selection?role=doctor"
-                                className="group inline-flex items-center gap-2 bg-[#002e2c] hover:bg-[#004a46] text-white font-semibold py-3.5 px-8 rounded-full transition-all duration-300 hover:scale-105 shadow-lg shadow-[#002e2c]/20"
-                            >
-                                <span>Refer a Patient Now</span>
-                                <ArrowRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
-                            </Link>
-                        </motion.div>
+    const [referralSent, setReferralSent] = useState(false);
 
-                        {/* Right: Stats card */}
-                        <motion.div
-                            initial={{ opacity: 0, x: 20 }}
-                            whileInView={{ opacity: 1, x: 0 }}
-                            viewport={{ once: true }}
-                            transition={{ duration: 0.5, delay: 0.2 }}
-                            className="flex flex-col gap-5"
-                        >
-                            {[
-                                { stat: "60-90%", label: "of patients self-refer chaotically with no structured pathway" },
-                                { stat: "30s", label: "is all it takes to refer a patient through Rehabify" },
-                                { stat: "100%", label: "closed-loop feedback — you see if they attended and improved" },
-                            ].map((item, i) => (
-                                <div
-                                    key={i}
-                                    className="bg-[#FAF6E7] border border-[#002e2c]/10 rounded-2xl p-6 flex items-center gap-6"
-                                >
-                                    <div className="text-4xl font-bold text-[#005b57] shrink-0 w-24 text-center">
-                                        {item.stat}
-                                    </div>
-                                    <p className="text-gray-700 text-sm leading-relaxed">{item.label}</p>
-                                </div>
-                            ))}
-                        </motion.div>
-                    </div>
+    const handleSimulate = (e: React.FormEvent) => {
+        e.preventDefault();
+        setReferralSent(true);
+        setTimeout(() => setReferralSent(false), 4000);
+    };
+
+    return (
+        <section id="for-doctors" className="py-24 sm:py-32 bg-[#F8F9FA] relative overflow-hidden">
+            {/* Background subtle grid & lighting inspired by Aceternity UI */}
+            <div className="absolute inset-0 pointer-events-none">
+                <div 
+                    className="absolute inset-0 opacity-[0.03]"
+                    style={{
+                        backgroundImage: `radial-gradient(#005b57 1px, transparent 1px)`,
+                        backgroundSize: '24px 24px'
+                    }}
+                />
+                <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[#005b57]/5 rounded-full blur-[100px]" />
+                <div className="absolute bottom-0 left-0 w-[450px] h-[450px] bg-emerald-500/5 rounded-full blur-[100px]" />
+            </div>
+
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                
+                {/* Header */}
+                <div className="text-center max-w-3xl mx-auto mb-16 sm:mb-20">
+                    <motion.div
+                        initial={{ opacity: 0, y: 16 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5 }}
+                        className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#005b57]/10 border border-[#005b57]/15 mb-5 shadow-sm"
+                    >
+                        <Stethoscope className="w-3.5 h-3.5 text-[#005b57]" />
+                        <span className="text-xs font-bold uppercase tracking-widest text-[#005b57]">
+                            For Doctors & Clinics
+                        </span>
+                    </motion.div>
+
+                    <motion.h2
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5, delay: 0.1 }}
+                        className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 tracking-tight leading-[1.15] mb-4 font-cal"
+                    >
+                        A referral system that{" "}
+                        <span className="text-[#005b57]">actually works</span>
+                    </motion.h2>
+
+                    <motion.p
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5, delay: 0.2 }}
+                        className="text-base sm:text-lg text-gray-600 font-sans max-w-2xl mx-auto leading-relaxed"
+                    >
+                        Refer in 30 seconds. Track patient recovery in real-time. Keep care seamless and closed-loop.
+                    </motion.p>
                 </div>
+
+                {/* Aceternity Bento Grid for Referrals */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 max-w-6xl mx-auto mb-12">
+                    
+                    {/* ── CARD 1: Interactive 30-Second Referral Simulator (7 Cols) ── */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 24 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5 }}
+                        className="lg:col-span-7 bg-white rounded-3xl p-7 sm:p-9 border border-gray-200/90 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgba(0,91,87,0.08)] transition-all duration-300 flex flex-col justify-between"
+                    >
+                        <div>
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold mb-4">
+                                <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>30-Second Hand-Off</span>
+                            </div>
+                            <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2 font-cal">
+                                1-Click Patient Referral
+                            </h3>
+                            <p className="text-gray-600 text-sm leading-relaxed mb-6 font-sans">
+                                Send patient details in seconds. We instantly match them with verified physiotherapists and update your dashboard.
+                            </p>
+
+                            {/* UI Micro-Mockup: Referral Generator */}
+                            <form onSubmit={handleSimulate} className="bg-[#FAF6E7]/80 rounded-2xl p-4 sm:p-5 border border-[#e8dfc8] space-y-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    <div className="bg-white rounded-xl px-3 py-2 border border-gray-200/80">
+                                        <span className="text-[10px] font-bold text-gray-400 block uppercase">Patient Name</span>
+                                        <span className="text-xs font-bold text-gray-800">Tunde Adeleke</span>
+                                    </div>
+                                    <div className="bg-white rounded-xl px-3 py-2 border border-gray-200/80">
+                                        <span className="text-[10px] font-bold text-gray-400 block uppercase">Condition</span>
+                                        <span className="text-xs font-bold text-[#005b57]">Post-Op Knee Rehab</span>
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    className="w-full flex items-center justify-center gap-2 bg-[#005b57] hover:bg-[#00443e] text-white py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-[0.99]"
+                                >
+                                    {referralSent ? (
+                                        <>
+                                            <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                                            <span>Referral Dispatched & Synced! ✓</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Send className="w-3.5 h-3.5" />
+                                            <span>Dispatch Instant WhatsApp Booking</span>
+                                        </>
+                                    )}
+                                </button>
+
+                                {referralSent && (
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: "auto" }}
+                                        className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center text-xs text-emerald-800 font-semibold"
+                                    >
+                                        ⚡ Booking link sent to patient · Therapist matched in Ikeja
+                                    </motion.div>
+                                )}
+                            </form>
+                        </div>
+
+                        {/* Feature Badges */}
+                        <div className="pt-5 mt-4 border-t border-gray-100 flex flex-wrap gap-4 text-xs text-gray-700 font-medium">
+                            <span className="flex items-center gap-1.5">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Zero phone tag
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Automated follow-up
+                            </span>
+                        </div>
+                    </motion.div>
+
+                    {/* ── CARD 2: Closed-Loop Clinical Visibility with Cloudinary Image (5 Cols) ── */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 24 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5, delay: 0.15 }}
+                        className="lg:col-span-5 bg-white rounded-3xl p-7 sm:p-9 border border-gray-200/90 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgba(0,91,87,0.08)] transition-all duration-300 flex flex-col justify-between relative overflow-hidden group"
+                    >
+                        <div>
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-[#005b57] border border-teal-200 text-xs font-bold mb-4">
+                                <FileText className="w-3.5 h-3.5 text-[#005b57]" />
+                                <span>100% Closed-Loop</span>
+                            </div>
+                            <h3 className="text-2xl font-bold text-gray-900 mb-2 font-cal">
+                                Full Clinical Visibility
+                            </h3>
+                            <p className="text-gray-600 text-sm leading-relaxed mb-4 font-sans">
+                                Get direct progress notes and discharge summaries so you always know your patient&apos;s recovery status.
+                            </p>
+                        </div>
+
+                        {/* Cloudinary Image Integration with Doctor Notes overlay */}
+                        <div className="relative rounded-2xl overflow-hidden h-44 sm:h-52 border border-black/5 shadow-inner mt-2 group/img">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                                src="https://res.cloudinary.com/dubeogufg/image/upload/f_auto,q_auto/v1741105204/IMG_6327_ffervx.png"
+                                alt="Physiotherapy session documentation"
+                                className="w-full h-full object-cover object-center group-hover/img:scale-105 transition-transform duration-700"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+                            
+                            <div className="absolute bottom-3 left-3 right-3 text-white text-xs backdrop-blur-md bg-white/20 border border-white/30 rounded-xl px-3.5 py-2 flex items-center justify-between">
+                                <span className="font-bold flex items-center gap-1.5">
+                                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                                    Clinical Summary Synced
+                                </span>
+                                <span className="text-emerald-300 font-semibold text-[11px]">Active Care</span>
+                            </div>
+                        </div>
+                    </motion.div>
+
+                </div>
+
+                {/* 3 Value Pillars (Stats & Highlights) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto mb-14">
+                    
+                    <motion.div
+                        initial={{ opacity: 0, y: 16 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.4, delay: 0.1 }}
+                        className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-sm flex items-start gap-4"
+                    >
+                        <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-xl flex items-center justify-center shrink-0">
+                            30s
+                        </div>
+                        <div>
+                            <h4 className="font-bold text-gray-900 text-base mb-1">Instant Hand-off</h4>
+                            <p className="text-xs text-gray-500 leading-relaxed">No phone calls or manual tracking. One form on WhatsApp or web portal.</p>
+                        </div>
+                    </motion.div>
+
+                    <motion.div
+                        initial={{ opacity: 0, y: 16 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.4, delay: 0.2 }}
+                        className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-sm flex items-start gap-4"
+                    >
+                        <div className="w-12 h-12 rounded-xl bg-teal-50 text-[#005b57] font-bold text-xl flex items-center justify-center shrink-0">
+                            100%
+                        </div>
+                        <div>
+                            <h4 className="font-bold text-gray-900 text-base mb-1">Closed-Loop Reports</h4>
+                            <p className="text-xs text-gray-500 leading-relaxed">View session attendance, recovery milestones, and discharge notes.</p>
+                        </div>
+                    </motion.div>
+
+                    <motion.div
+                        initial={{ opacity: 0, y: 16 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.4, delay: 0.3 }}
+                        className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-sm flex items-start gap-4"
+                    >
+                        <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 font-bold text-lg flex items-center justify-center shrink-0">
+                            <TrendingUp className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h4 className="font-bold text-gray-900 text-base mb-1">Partner Incentives</h4>
+                            <p className="text-xs text-gray-500 leading-relaxed">Earn structured referral bonuses on every successfully treated patient.</p>
+                        </div>
+                    </motion.div>
+
+                </div>
+
+                {/* Bottom Referral CTAs */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.5, delay: 0.4 }}
+                    className="text-center flex flex-col sm:flex-row items-center justify-center gap-4"
+                >
+                    <a
+                        href={WHATSAPP_REFERRAL_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group inline-flex items-center gap-2.5 bg-[#005b57] hover:bg-[#00443e] text-white font-semibold py-4 px-8 rounded-full transition-all duration-300 shadow-lg shadow-[#005b57]/20 transform hover:-translate-y-0.5"
+                    >
+                        <IconBrandWhatsapp className="w-5 h-5" />
+                        <span>Refer a Patient on WhatsApp</span>
+                        <ArrowRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
+                    </a>
+
+                    <Link
+                        href="/sign-up?redirect=/role-selection?role=doctor"
+                        className="inline-flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-800 font-semibold py-4 px-8 rounded-full transition-all duration-300 shadow-sm"
+                    >
+                        <Building2 className="w-4 h-4 text-gray-600" />
+                        <span>Register Your Clinic / Hospital</span>
+                    </Link>
+                </motion.div>
+
             </div>
         </section>
     );

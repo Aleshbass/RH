@@ -9,6 +9,8 @@ import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@clerk/nextjs';
 import HeroBackground from './HeroBackground';
+import { AnimatedTooltip } from '@/components/ui/animated-tooltip';
+import { FlipWords } from '@/components/ui/flip-words';
 
 const TYPING_PHRASES = [
   "My back has been hurting for weeks...",
@@ -17,6 +19,51 @@ const TYPING_PHRASES = [
   "Ẹhin mi n dun mi lọpọlọpọ...",
   "I need a physiotherapist near me...",
   "Can you help with sports injuries?",
+];
+
+const socialProofPeople = [
+  {
+    id: 1,
+    name: "Amaka O.",
+    designation: "Recovered from back pain",
+    image:
+      "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=250&q=80",
+  },
+  {
+    id: 2,
+    name: "Dr. Chidera N.",
+    designation: "Physiotherapist, Lekki",
+    image:
+      "https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=250&q=80",
+  },
+  {
+    id: 3,
+    name: "Fatima A.",
+    designation: "Post-stroke recovery",
+    image:
+      "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80",
+  },
+  {
+    id: 4,
+    name: "Emeka I.",
+    designation: "Sports injury rehab",
+    image:
+      "https://images.unsplash.com/photo-1507152832244-10d45c7eda57?auto=format&fit=crop&w=250&q=80",
+  },
+  {
+    id: 5,
+    name: "Ngozi U.",
+    designation: "Knee recovery",
+    image:
+      "https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=250&q=80",
+  },
+  {
+    id: 6,
+    name: "Tunde B.",
+    designation: "Physiotherapist, Ikeja",
+    image:
+      "https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?auto=format&fit=crop&w=250&q=80",
+  },
 ];
 
 function TypingAnimation() {
@@ -106,7 +153,8 @@ export function LandingHero() {
   const dashboardProps = getDashboardProps();
 
   const whatsappNumber = "2348061525811";
-  const whatsappMessage = encodeURIComponent("Hi Joy, I need help with my recovery.");
+  const whatsappPreMessage = "Hi Joy! 👋🏾 I need help with my recovery.";
+  const whatsappMessage = encodeURIComponent(whatsappPreMessage);
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
 
   return (
@@ -124,10 +172,11 @@ export function LandingHero() {
             className="w-full lg:w-[55%] text-center lg:text-left order-1 lg:pr-8"
           >
 
-            <h1 className="text-[2.5rem] sm:text-5xl md:text-6xl lg:text-6xl xl:text-7xl font-extrabold tracking-tight text-[#1A1A1A] mb-5 leading-[1.1]">
-              Recovery at your{" "}
-              <br className="hidden sm:block" />
-              fingertips.
+            <h1 className="text-[2.25rem] sm:text-5xl md:text-6xl lg:text-6xl xl:text-7xl font-extrabold tracking-tight text-[#1A1A1A] mb-5 leading-[1.15]">
+              <span className="block">Recovery at your</span>
+              <span className="block mt-1 sm:mt-2 min-h-[1.2em]">
+                <FlipWords words={["fingertips.", "doorstep.", "schedule.", "home."]} className="text-[#005b57] font-extrabold !px-0" />
+              </span>
             </h1>
 
             <p className="text-lg sm:text-xl md:text-2xl text-[#555] mb-8 font-medium max-w-lg mx-auto lg:mx-0">
@@ -152,6 +201,16 @@ export function LandingHero() {
                   </span>
                 </Link>
               )}
+            </div>
+
+            {/* Social Proof — Animated Tooltips */}
+            <div className="flex flex-col items-center lg:items-start gap-3 mt-8">
+              <div className="flex flex-row items-center">
+                <AnimatedTooltip items={socialProofPeople} />
+              </div>
+              <p className="text-sm text-[#777] font-medium">
+                Trusted by <span className="text-[#1A1A1A] font-semibold">500+</span> Nigerians recovering today
+              </p>
             </div>
           </motion.div>
 

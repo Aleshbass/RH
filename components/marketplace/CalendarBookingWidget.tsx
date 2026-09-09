@@ -65,7 +65,7 @@ function generateMockSlots(
     const interval = sessionDuration <= 30 ? 15 : 30; // 15-min intervals for short sessions
     const now = Date.now();
 
-    let currentDay = new Date(startDate);
+    const currentDay = new Date(startDate);
     currentDay.setHours(0, 0, 0, 0);
 
     while (currentDay.getTime() <= endDate) {

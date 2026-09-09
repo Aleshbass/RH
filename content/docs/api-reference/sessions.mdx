@@ -1,0 +1,67 @@
+---
+title: Sessions API
+description: Track scheduled appointments, session logs, and attendance.
+---
+
+# Sessions API
+
+The Sessions API allows partners to monitor appointment scheduling, therapist arrival/check-ins, and session completion timestamps.
+
+---
+
+## 1. List Patient Sessions
+
+`GET /api/v1/partners/sessions`
+
+### Query Parameters
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `referral_id` | `string` | Filter sessions for a specific referral |
+| `patient_phone` | `string` | Filter sessions by patient phone number |
+| `status` | `string` | `scheduled` \| `in_progress` \| `completed` \| `cancelled` |
+| `from_date` | `string` | ISO 8601 start date (e.g. `2026-08-01`) |
+| `to_date` | `string` | ISO 8601 end date (e.g. `2026-08-31`) |
+
+### Example Request
+
+```bash tab="cURL"
+curl "https://api.physioaroundme.com/api/v1/partners/sessions?referral_id=ref_839210aa9" \
+  -H "Authorization: Bearer sk_live_99281..."
+```
+
+### Example Response (`200 OK`)
+
+```json
+{
+  "total_sessions": 4,
+  "sessions": [
+    {
+      "session_id": "ses_001928a",
+      "session_number": 1,
+      "session_type": "Initial Comprehensive Assessment",
+      "scheduled_at": "2026-08-10T10:00:00.000Z",
+      "completed_at": "2026-08-10T11:15:00.000Z",
+      "status": "completed",
+      "provider_name": "Dr. Babatunde Fashola (PT)",
+      "modality": "home_visit",
+      "pain_score_before": 8,
+      "pain_score_after": 5,
+      "notes_summary": "Initial evaluation completed. Lumbar spine flexion limited to 45 deg. Commenced core stabilization."
+    },
+    {
+      "session_id": "ses_001928b",
+      "session_number": 2,
+      "session_type": "Therapeutic Exercise & Manual Mobilization",
+      "scheduled_at": "2026-08-14T14:30:00.000Z",
+      "completed_at": "2026-08-14T15:25:00.000Z",
+      "status": "completed",
+      "provider_name": "Dr. Babatunde Fashola (PT)",
+      "modality": "home_visit",
+      "pain_score_before": 5,
+      "pain_score_after": 3,
+      "notes_summary": "Significant improvement in gait stability. Patient tolerated gentle Grade II Maitland mobilizations."
+    }
+  ]
+}
+```

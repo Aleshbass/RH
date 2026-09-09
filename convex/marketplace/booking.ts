@@ -132,7 +132,9 @@ export const createMarketplaceBooking = mutation({
 /**
  * Guest Booking — no Clerk auth required.
  * Used when patients check out without creating an account.
- * Stores guestEmail + guestPhone on the booking record.
+ * Creates a lightweight guest user record (clerkId: "guest-{uuid}") so
+ * patientId is a valid FK and admin queries resolve correctly.
+ * When the guest later signs up, claimGuestBookings re-links everything.
  */
 export const guestCreateMarketplaceBooking = mutation({
     args: {
@@ -164,15 +166,40 @@ export const guestCreateMarketplaceBooking = mutation({
             throw new Error("Physiotherapist not available for booking");
         }
 
+        // ── Create (or reuse) a guest user record so patientId is a real FK ──
+        // Check if a guest user already exists with this email
+        let guestUserId: typeof args.physiotherapistId;
+
+        const existingGuestUser = await ctx.db
+            .query("users")
+            .withIndex("by_email", (q) => q.eq("email", args.guestEmail))
+            .first();
+
+        if (existingGuestUser) {
+            // Reuse the existing record (signed-up or guest)
+            guestUserId = existingGuestUser._id;
+        } else {
+            // Create a minimal guest user record
+            const guestClerkId = `guest-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+            const nameParts = (args.guestName || "").split(" ").filter(Boolean);
+            guestUserId = await ctx.db.insert("users", {
+                clerkId: guestClerkId,
+                email: args.guestEmail,
+                phoneNumber: args.guestPhone,
+                firstName: nameParts[0] || "Guest",
+                lastName: nameParts.slice(1).join(" ") || "",
+                role: "patient",
+                onboarded: false,   // Not onboarded — no Clerk session yet
+            });
+        }
+
         const fees = calculateMarketplaceFees(args.serviceAmount);
         const effectiveSessionType =
             args.packageSessions && args.packageSessions > 1 ? "package" : args.sessionType;
 
-        // Guest users don't have a patientId — use physiotherapistId as placeholder
-        // The booking will be linked to a real patient after they sign up (future enhancement)
         const bookingId = await ctx.db.insert("marketplaceBookings", {
             physiotherapistId: args.physiotherapistId,
-            patientId: args.physiotherapistId, // placeholder — overridden on account creation
+            patientId: guestUserId,        // ← real FK, not a placeholder
             sessionType: effectiveSessionType,
             sessionDate: args.sessionDate,
             sessionDuration: args.sessionDuration,
@@ -202,6 +229,7 @@ export const guestCreateMarketplaceBooking = mutation({
         return { bookingId, fees };
     },
 });
+
 
 /**
  * Get marketplace booking by ID (for server-side use by payment API)

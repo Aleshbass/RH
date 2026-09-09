@@ -214,14 +214,50 @@ export const MobileNavMenu = ({
 export const MobileNavToggle = ({
   isOpen,
   onClick,
+  className,
 }: {
   isOpen: boolean;
   onClick: () => void;
+  className?: string;
 }) => {
-  return isOpen ? (
-    <IconX className="text-black dark:text-white" onClick={onClick} />
-  ) : (
-    <IconMenu2 className="text-black dark:text-white" onClick={onClick} />
+  return (
+    <motion.button
+      whileTap={{ scale: 0.9 }}
+      onClick={onClick}
+      aria-label={isOpen ? "Close Menu" : "Open Menu"}
+      aria-expanded={isOpen}
+      className={cn(
+        "relative flex h-10 w-10 items-center justify-center rounded-full bg-gray-100/80 hover:bg-[#e6f0ef] text-[#002e2c] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57]",
+        className
+      )}
+    >
+      <div className="flex h-4 w-5 flex-col justify-between items-center">
+        <motion.span
+          animate={{
+            rotate: isOpen ? 45 : 0,
+            y: isOpen ? 7 : 0,
+          }}
+          transition={{ duration: 0.25, ease: "easeInOut" }}
+          className="h-[2px] w-full rounded-full bg-[#002e2c] origin-center"
+        />
+        <motion.span
+          animate={{
+            opacity: isOpen ? 0 : 1,
+            scaleX: isOpen ? 0 : 1,
+          }}
+          transition={{ duration: 0.2, ease: "easeInOut" }}
+          className="h-[2px] w-full rounded-full bg-[#002e2c]"
+        />
+        <motion.span
+          animate={{
+            rotate: isOpen ? -45 : 0,
+            y: isOpen ? -7 : 0,
+          }}
+          transition={{ duration: 0.25, ease: "easeInOut" }}
+          className="h-[2px] w-full rounded-full bg-[#002e2c] origin-center"
+        />
+      </div>
+    </motion.button>
   );
 };
 

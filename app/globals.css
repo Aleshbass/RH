@@ -3,6 +3,8 @@
 @import "stream-chat-react/dist/css/v2/index.css";
 @import "react-day-picker/dist/style.css";
 
+@source "../node_modules/fumadocs-ui/dist/**/*.js";
+
 @variant dark (&:is(.dark *));
 
 /* Theme variables */

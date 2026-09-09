@@ -51,6 +51,7 @@ import type * as actions_patients_simpleCompleteOnboarding from "../actions/pati
 import type * as admin from "../admin.js";
 import type * as adminPartnerships from "../adminPartnerships.js";
 import type * as adminReferrals from "../adminReferrals.js";
+import type * as admin_marketplaceBookings from "../admin/marketplaceBookings.js";
 import type * as admin_marketplaceEarnings from "../admin/marketplaceEarnings.js";
 import type * as admin_fix from "../admin_fix.js";
 import type * as admin_purge from "../admin_purge.js";
@@ -198,6 +199,7 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   adminPartnerships: typeof adminPartnerships;
   adminReferrals: typeof adminReferrals;
+  "admin/marketplaceBookings": typeof admin_marketplaceBookings;
   "admin/marketplaceEarnings": typeof admin_marketplaceEarnings;
   admin_fix: typeof admin_fix;
   admin_purge: typeof admin_purge;

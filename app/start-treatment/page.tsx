@@ -266,7 +266,7 @@ export default function StartTreatmentPage() {
                         const lower = placeName.toLowerCase();
                         
                         // Try to inherit tier from local data if it's a known city
-                        let bestMatch = ALL_CITIES.find(c => lower.includes(c.name.toLowerCase()));
+                        const bestMatch = ALL_CITIES.find(c => lower.includes(c.name.toLowerCase()));
                         
                         if (!bestMatch) {
                             // Unmapped city -> "Other Location" (Tier 4)

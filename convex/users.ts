@@ -1660,8 +1660,23 @@ export const updatePhysiotherapistProfile = mutation({
     }
 
     // Update Profile fields
-    if (!user.physiotherapistProfileId) {
-      throw new Error("Physiotherapist profile not found");
+    let profileId = user.physiotherapistProfileId;
+
+    // Fallback: if the user record is missing the profileId backlink,
+    // try looking up the profile directly from physiotherapistProfiles table
+    if (!profileId) {
+      const profileByUserId = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
+        .first();
+
+      if (profileByUserId) {
+        profileId = profileByUserId._id;
+        // Self-heal: patch the user record so future calls don't need this fallback
+        await ctx.db.patch(user._id, { physiotherapistProfileId: profileId });
+      } else {
+        throw new Error("Physiotherapist profile not found");
+      }
     }
 
     const profileUpdates: any = {};
@@ -1673,7 +1688,7 @@ export const updatePhysiotherapistProfile = mutation({
     if (args.isAvailableOnMarketplace !== undefined) profileUpdates.isAvailableOnMarketplace = args.isAvailableOnMarketplace;
 
     if (Object.keys(profileUpdates).length > 0) {
-      await ctx.db.patch(user.physiotherapistProfileId, profileUpdates);
+      await ctx.db.patch(profileId, profileUpdates);
     }
   },
 });

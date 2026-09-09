@@ -1,0 +1,100 @@
+---
+title: Referrals API
+description: Create and manage patient referrals programmatically.
+---
+
+# Referrals API
+
+The Referrals API allows hospitals, clinics, telemedicine doctors, and employers to route patients to verified physiotherapists with zero paperwork.
+
+---
+
+## 1. Create Patient Referral
+
+`POST /api/v1/partners/referrals`
+
+Creates a referral record and immediately dispatches a smart WhatsApp intake session to the patient's phone number.
+
+### Request Body Parameters
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `patient.first_name` | `string` | **Yes** | Patient's given name |
+| `patient.last_name` | `string` | **Yes** | Patient's family name |
+| `patient.phone` | `string` | **Yes** | E.164 phone number (e.g. `+2348031234567`) |
+| `patient.email` | `string` | No | Patient's email for session receipts |
+| `patient.city` | `string` | **Yes** | City for physical therapist matching (e.g. `Lagos`) |
+| `patient.area` | `string` | No | Neighborhood / LGA (e.g. `Ikeja`, `Lekki Phase 1`) |
+| `clinical_notes.diagnosis` | `string` | **Yes** | Primary condition (e.g. `Post-Op ACL Tear`, `CVA Rehab`) |
+| `clinical_notes.recommended_sessions` | `integer` | No | Number of sessions prescribed (Default: `4`) |
+| `clinical_notes.priority` | `string` | No | `standard` \| `urgent` \| `high` |
+| `clinical_notes.referring_doctor` | `string` | No | Name of referring physician |
+| `billing_mode` | `string` | **Yes** | `patient_self_pay` \| `hmo_direct_billing` \| `corporate_sponsored` |
+| `callback_url` | `string` | No | Webhook URL for status notifications |
+
+### Example Request
+
+```bash tab="cURL"
+curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
+  -H "Authorization: Bearer sk_live_99281..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "patient": {
+      "first_name": "Chioma",
+      "last_name": "Okeke",
+      "phone": "+2348029988776",
+      "city": "Lagos",
+      "area": "Victoria Island"
+    },
+    "clinical_notes": {
+      "diagnosis": "Cervical Radiculopathy",
+      "recommended_sessions": 8,
+      "priority": "standard",
+      "referring_doctor": "Dr. A. Balogun"
+    },
+    "billing_mode": "patient_self_pay"
+  }'
+```
+
+### Example Response (`201 Created`)
+
+```json
+{
+  "status": "success",
+  "referral_id": "ref_839210aa9",
+  "tracking_url": "https://physioaroundme.com/track/ref_839210aa9",
+  "intake_status": "pending_whatsapp_response",
+  "patient": {
+    "name": "Chioma Okeke",
+    "phone": "+2348029988776"
+  },
+  "created_at": "2026-08-16T08:15:00.000Z"
+}
+```
+
+---
+
+## 2. Get Referral Status
+
+`GET /api/v1/partners/referrals/:referral_id`
+
+Retrieves the current status, matched therapist profile, and session completion count for an existing referral.
+
+### Example Response (`200 OK`)
+
+```json
+{
+  "referral_id": "ref_839210aa9",
+  "status": "in_treatment",
+  "assigned_physiotherapist": {
+    "name": "Dr. Babatunde Fashola (PT)",
+    "license_number": "MRTBN/PT/2021/889",
+    "rating": 4.9,
+    "phone": "+2348011223344"
+  },
+  "sessions_completed": 3,
+  "sessions_total": 8,
+  "last_session_at": "2026-08-14T14:30:00.000Z",
+  "next_session_at": "2026-08-18T10:00:00.000Z"
+}
+```

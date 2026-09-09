@@ -37,7 +37,7 @@ const PageContent = () => (
     <FoundersCarousel />
     <SpeakToAPhysio />
     <MediloanSection />
-    <RehabifyLearnSection />
+    {/* <RehabifyLearnSection /> */}
     <TrustSafety />
     <FAQ />
   </div>

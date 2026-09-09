@@ -159,8 +159,8 @@ export const AppointmentBookingModal: React.FC<AppointmentBookingModalProps> = (
       endTime,
       notesForTherapist: formData.notes,
       selectedResources: formData.selectedResources,
-      priority: 'low' as 'low',
-      appointmentType: 'telehealth' as 'telehealth',
+      priority: 'low' as const,
+      appointmentType: 'telehealth' as const,
       isPinned: false,
       manualMeetingLink: formData.manualMeetingLink || undefined,
     };

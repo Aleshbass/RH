@@ -18,11 +18,11 @@ const Footer = () => {
           <h2 className="text-4xl md:text-5xl font-bold mb-4">Start Your Recovery Journey Now</h2>
           <p className="text-gray-300 mb-8 max-w-2xl mx-auto">No more choosing between health and finances. No more waiting weeks. No more wondering if you found the right physiotherapist.</p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <Link href="/start-treatment">
+            <a href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I need help with my recovery.")}`} target="_blank" rel="noopener noreferrer">
               <button className="bg-white text-[#005b57] font-bold py-3 px-6 rounded-lg hover:bg-gray-200 transition-colors cursor-pointer">
                 Start Your Recovery
               </button>
-            </Link>
+            </a>
             <button
               onClick={() => setIsDemoModalOpen(true)}
               className="bg-transparent border border-white text-white font-bold py-3 px-6 rounded-lg hover:bg-white hover:text-[#005b57] transition-colors cursor-pointer"
@@ -62,6 +62,7 @@ const Footer = () => {
             <h3 className="font-bold mb-4">Company</h3>
             <ul>
               <li className="mb-2"><a href="/about" className="text-gray-300 hover:text-white">About Us</a></li>
+              <li className="mb-2"><Link href="/partnerships" className="text-gray-300 hover:text-white transition-colors">Partnerships</Link></li>
               <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Careers</a></li>
               <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Contact</a></li>
             </ul>
@@ -92,12 +93,14 @@ const Footer = () => {
             </ul>
           </div>
           
-          {/* Partners Section */}
           <div className="col-span-1 sm:col-span-2 md:col-span-5 border-t border-gray-700 pt-8 mt-4">
             <h3 className="font-bold mb-4">Partners</h3>
             <div className="flex flex-col gap-2">
-              <Link href="/partners/mediloan" className="text-emerald-400 hover:text-emerald-300 font-semibold text-lg transition-colors">
-                MediLoan by MyItura →
+              <Link href="/partnerships" className="text-emerald-400 hover:text-emerald-300 font-semibold text-lg transition-colors">
+                Become a Partner →
+              </Link>
+              <Link href="/partners/mediloan" className="text-gray-300 hover:text-white transition-colors">
+                MediLoan by MyItura
               </Link>
             </div>
           </div>

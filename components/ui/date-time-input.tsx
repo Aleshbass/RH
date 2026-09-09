@@ -81,7 +81,7 @@ export function SmartDatetimeInput({
 
     // If there is already a selected date, update its time
     // If calendar is hidden (time-only mode), use today's date
-    let baseDate = selectedDate ? new Date(selectedDate) : new Date();
+    const baseDate = selectedDate ? new Date(selectedDate) : new Date();
     baseDate.setSeconds(0, 0);
     baseDate.setHours(hours);
     baseDate.setMinutes(minutes);

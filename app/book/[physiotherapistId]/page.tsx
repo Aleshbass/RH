@@ -272,24 +272,49 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
     );
 }
 
+// Helper: check if a string looks like a valid Convex document ID
+// Convex IDs are alphanumeric strings — slugs contain hyphens
+function looksLikeConvexId(value: string): boolean {
+    return /^[a-zA-Z0-9_]+$/.test(value) && value.length > 10;
+}
+
 // ── Main Booking Page ─────────────────────────────────────────────────────────
 export default function PhysioBookingPage() {
     const params = useParams();
     const router = useRouter();
     const rawParam = params.physiotherapistId as string;
 
-    // Try resolving as a slug first
-    const slugResult = useQuery(api.marketplace.search.resolveBookingSlug, { slug: rawParam });
+    // Determine if the URL param is a slug or a raw Convex ID
+    const isRawId = looksLikeConvexId(rawParam);
 
-    // Determine the real userId — slug match takes priority, otherwise try raw param as ID
-    const resolvedUserId = slugResult?.userId ?? (rawParam as Id<"users">);
+    // Try resolving as a slug (skip if it already looks like a raw Convex ID)
+    const slugResult = useQuery(
+        api.marketplace.search.resolveBookingSlug,
+        isRawId ? "skip" : { slug: rawParam }
+    );
 
-    // Fetch physio profile with the resolved user ID
-    const profile = useQuery(api.marketplace.search.getPhysiotherapistProfile, {
-        physiotherapistId: resolvedUserId,
-    });
+    // Determine the real userId:
+    // - If it's a raw Convex ID, use it directly
+    // - If slug resolved, use the resolved userId
+    // - If slug lookup is still loading (undefined), we don't have an ID yet
+    // - If slug lookup returned null (no match), there's no valid ID
+    const resolvedUserId: Id<"users"> | null =
+        isRawId
+            ? (rawParam as Id<"users">)
+            : slugResult?.userId ?? null;
 
-    if (profile === undefined || slugResult === undefined) {
+    // Fetch physio profile — skip until we have a valid user ID
+    const profile = useQuery(
+        api.marketplace.search.getPhysiotherapistProfile,
+        resolvedUserId ? { physiotherapistId: resolvedUserId } : "skip"
+    );
+
+    // Still loading: slug resolution in progress or profile query pending
+    const isLoading =
+        (!isRawId && slugResult === undefined) || // slug still resolving
+        (resolvedUserId !== null && profile === undefined); // profile still loading
+
+    if (isLoading) {
         return (
             <div className="min-h-screen bg-[#121212] flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
@@ -316,11 +341,8 @@ export default function PhysioBookingPage() {
                             </span>
                         </p>
                         <div className="space-y-3">
-                            <a href="/dashboard/physiotherapist/settings" className="block w-full py-3 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors">
+                            <a href="/dashboard/physiotherapist/settings/marketplace" className="block w-full py-3 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors text-center">
                                 Enable My Profile
-                            </a>
-                            <a href="/marketplace" className="block w-full py-3 px-4 border border-gray-700 hover:border-gray-600 text-gray-300 rounded-lg font-medium transition-colors">
-                                Browse Other Physiotherapists
                             </a>
                         </div>
                     </div>

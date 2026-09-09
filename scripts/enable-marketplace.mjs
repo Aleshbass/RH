@@ -1,37 +1,48 @@
-/**
- * Enable marketplace for all approved physiotherapists
- * Run this once: node scripts/enable-marketplace.js
- */
-
 import { ConvexHttpClient } from "convex/browser";
-import apiModule from "../convex/_generated/api.js";
-const { api } = apiModule;
+import { anyApi } from "convex/server";
 
-const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL;
+const DEPLOYMENTS = [
+  "https://adept-horse-443.convex.cloud",
+  "https://kindly-elk-471.convex.cloud",
+];
 
-if (!CONVEX_URL) {
-  console.error("❌ NEXT_PUBLIC_CONVEX_URL not found in environment");
-  process.exit(1);
-}
+async function runMigrationForUrl(convexUrl) {
+  console.log(`\n========================================`);
+  console.log(`🚀 Connecting to ${convexUrl}...`);
+  console.log(`🚀 Running marketplace purge & auto-enable for all physiotherapists...`);
 
-async function enableMarketplace() {
-  console.log("🚀 Enabling marketplace for approved physiotherapists...\n");
+  const client = new ConvexHttpClient(convexUrl);
 
-  const client = new ConvexHttpClient(CONVEX_URL);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`Attempt ${attempt}/3...`);
+      const result = await client.mutation(
+        anyApi.marketplace.migrations.enableMarketplaceForApprovedPhysios,
+        {}
+      );
 
-  try {
-    const result = await client.mutation(
-      api.marketplace.migrations.enableMarketplaceForApprovedPhysios
-    );
-
-    console.log("✅ Migration complete!");
-    console.log(`   Updated: ${result.updated} profiles`);
-    console.log(`   Skipped: ${result.skipped} profiles`);
-    console.log(`\n${result.message}`);
-  } catch (error) {
-    console.error("❌ Migration failed:", error.message);
-    process.exit(1);
+      console.log(`\n✅ Migration complete on ${convexUrl}!`);
+      console.log(`   Total Users: ${result.totalUsers ?? "N/A"}`);
+      console.log(`   Profiles Created: ${result.created ?? "N/A"}`);
+      console.log(`   Profiles Updated/Enabled: ${result.updated ?? "N/A"}`);
+      console.log(`   Accounts Approved: ${result.approved ?? "N/A"}`);
+      console.log(`   Message: ${result.message}`);
+      return;
+    } catch (error) {
+      console.error(`❌ Attempt ${attempt} failed:`, error.message || error);
+      if (attempt < 3) {
+        console.log("Waiting 2 seconds before retry...");
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
   }
 }
 
-enableMarketplace();
+async function main() {
+  for (const url of DEPLOYMENTS) {
+    await runMigrationForUrl(url);
+  }
+  console.log(`\n🎉 All migrations completed successfully!`);
+}
+
+main();

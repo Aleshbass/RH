@@ -1,50 +1,26 @@
 // @ts-nocheck
 /**
  * Marketplace Migration Scripts
- * One-time mutations to set up marketplace for existing users
+ * Sets isAvailableOnMarketplace = true for all physiotherapist profiles
  */
 
 import { mutation, internalMutation } from "../_generated/server";
 
 /**
- * Auto-enable marketplace for all approved physiotherapists
- * Run this once to migrate existing approved users to marketplace
+ * Enable marketplace for all physiotherapist profiles in the database.
+ * Strictly sets isAvailableOnMarketplace = true on existing profiles.
  */
-export const enableMarketplaceForApprovedPhysios = mutation({
+export const enableMarketplaceForAllPhysios = mutation({
   handler: async (ctx) => {
-    // Get all approved physiotherapists
-    const approvals = await ctx.db
-      .query("accountApprovalStatus")
-      .filter((q) => q.eq(q.field("status"), "approved"))
-      .collect();
+    const allProfiles = await ctx.db.query("physiotherapistProfiles").collect();
 
     let updated = 0;
-    let skipped = 0;
+    let alreadyEnabled = 0;
 
-    for (const approval of approvals) {
-      // Get user to verify they're a physiotherapist
-      const user = await ctx.db.get(approval.userId);
-      if (!user || user.role !== "physiotherapist") {
-        skipped++;
-        continue;
-      }
-
-      // Get their profile
-      const profile = await ctx.db
-        .query("physiotherapistProfiles")
-        .withIndex("by_user_id", (q) => q.eq("userId", approval.userId))
-        .first();
-
-      if (!profile) {
-        skipped++;
-        continue;
-      }
-
-      // Only update if not already set
+    for (const profile of allProfiles) {
       if (profile.isAvailableOnMarketplace !== true) {
         await ctx.db.patch(profile._id, {
           isAvailableOnMarketplace: true,
-          // Initialize marketplace fields if not present
           profileViews: profile.profileViews || 0,
           bookingsThroughMarketplace: profile.bookingsThroughMarketplace || 0,
           totalMarketplaceEarnings: profile.totalMarketplaceEarnings || 0,
@@ -54,18 +30,24 @@ export const enableMarketplaceForApprovedPhysios = mutation({
         });
         updated++;
       } else {
-        skipped++;
+        alreadyEnabled++;
       }
     }
 
     return {
       success: true,
+      totalProfiles: allProfiles.length,
       updated,
-      skipped,
-      message: `Updated ${updated} profiles, skipped ${skipped}`,
+      alreadyEnabled,
+      message: `Updated ${updated} profiles to isAvailableOnMarketplace = true (${alreadyEnabled} were already enabled).`,
     };
   },
 });
+
+/**
+ * Backwards-compatible alias for admin dashboard migration button
+ */
+export const enableMarketplaceForApprovedPhysios = enableMarketplaceForAllPhysios;
 
 /**
  * Initialize default marketplace settings for a single physiotherapist
@@ -81,16 +63,8 @@ export const initializeMarketplaceProfile = internalMutation({
       return { success: false, error: "Profile not found" };
     }
 
-    // Check if approved
-    const approval = await ctx.db
-      .query("accountApprovalStatus")
-      .withIndex("by_user_id", (q) => q.eq("userId", userId as any))
-      .first();
-
-    const isApproved = approval?.status === "approved";
-
     await ctx.db.patch(profile._id, {
-      isAvailableOnMarketplace: isApproved,
+      isAvailableOnMarketplace: true,
       profileViews: profile.profileViews || 0,
       bookingsThroughMarketplace: profile.bookingsThroughMarketplace || 0,
       totalMarketplaceEarnings: profile.totalMarketplaceEarnings || 0,
@@ -99,6 +73,6 @@ export const initializeMarketplaceProfile = internalMutation({
       verificationBadge: profile.verificationBadge || { status: "none" },
     });
 
-    return { success: true, isApproved };
+    return { success: true };
   },
 });

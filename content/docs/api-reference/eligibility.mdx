@@ -1,0 +1,79 @@
+---
+title: Eligibility & Pre-Auth API
+description: Verify HMO insurance policies and corporate employee session allowances.
+---
+
+# Eligibility & Pre-Authorization API
+
+The Eligibility API enables HMOs, insurance administrators, and HR benefit managers to verify patient coverage in real time before scheduling physical therapy sessions.
+
+---
+
+## Verify Policy / Member Coverage
+
+`POST /api/v1/partners/eligibility`
+
+Checks whether a patient's insurance policy or corporate benefit tier includes physiotherapy and returns the remaining approved session balance.
+
+### Request Body Parameters
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `policy_number` | `string` | **Yes** | HMO Member ID or Corporate Staff ID |
+| `member_phone` | `string` | **Yes** | Member's verified phone number |
+| `hmo_code` | `string` | **Yes** | `RELIANCE` \| `AXA_MANSARD` \| `HYGEIA` \| `LEADWAY` \| `BASTION` |
+| `procedure_code` | `string` | No | Default: `PHYSIO_STD_SESSION` |
+
+### Example Request
+
+```bash tab="cURL"
+curl -X POST https://api.physioaroundme.com/api/v1/partners/eligibility \
+  -H "Authorization: Bearer sk_live_99281..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "policy_number": "REL-99218-B",
+    "member_phone": "+2348039988112",
+    "hmo_code": "RELIANCE",
+    "procedure_code": "PHYSIO_POST_SURGICAL"
+  }'
+```
+
+### Example Response (`200 OK`)
+
+```json
+{
+  "status": "eligible",
+  "member": {
+    "name": "Emeka Nnamdi",
+    "plan_tier": "Gold Comprehensive",
+    "policy_status": "active",
+    "expiry_date": "2027-01-31"
+  },
+  "coverage": {
+    "physiotherapy_covered": true,
+    "annual_session_limit": 12,
+    "sessions_remaining": 9,
+    "co_pay_amount_kobo": 0,
+    "pre_auth_required": false
+  },
+  "pre_auth_token": "auth_tok_881920aa1"
+}
+```
+
+---
+
+## Error Handling for Ineligible Members
+
+If a member has exhausted their session allowance or their policy is inactive, Rehabify returns an `ineligible` status:
+
+```json
+{
+  "status": "ineligible",
+  "reason": "annual_limit_exceeded",
+  "message": "Member has utilized all 12 approved physiotherapy sessions for the current policy year.",
+  "fallback_option": {
+    "can_self_pay": true,
+    "negotiated_rate_kobo": 1200000
+  }
+}
+```

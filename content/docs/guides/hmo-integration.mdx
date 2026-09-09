@@ -1,0 +1,79 @@
+---
+title: HMO & Insurer Integration Guide
+description: Complete blueprint for Health Maintenance Organizations to offer frictionless physiotherapy care.
+---
+
+# HMO & Insurer Integration Guide
+
+This guide walks through how HMOs (such as Reliance, AXA Mansard, Hygeia, and Leadway) can integrate Rehabify to provide pre-authorized physiotherapy sessions for enrollees without paper claims.
+
+---
+
+## The Workflow
+
+```mermaid
+sequenceDiagram
+    participant Member as HMO Member
+    participant HMO as HMO App / Portal
+    participant Rehabify as Rehabify API
+    participant Physio as Verified Physio
+    
+    Member->>HMO: Requests Physio Care / Doctor Recommendation
+    HMO->>Rehabify: POST /v1/partners/referrals (with HMO policy code)
+    Rehabify->>Member: Joy WhatsApp Intake & Scheduling
+    Physio->>Member: Delivers Care (Home or Clinic)
+    Physio->>Rehabify: Logs Clinical Outcomes
+    Rehabify->>HMO: Webhook (session.completed + clinical report)
+```
+
+---
+
+## 1. Verify Eligibility & Create Pre-Auth
+
+Before creating a referral, check the member's remaining annual session allowance:
+
+```bash tab="cURL"
+curl -X POST https://api.physioaroundme.com/api/v1/partners/eligibility \
+  -H "Authorization: Bearer sk_live_your_hmo_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "policy_number": "AXA-009182",
+    "member_phone": "+2348031122334",
+    "hmo_code": "AXA_MANSARD"
+  }'
+```
+
+---
+
+## 2. Dispatch the Referral
+
+Send the referral with `billing_mode: "hmo_direct_billing"`. Rehabify will bill the HMO directly at the agreed bulk rate:
+
+```bash tab="cURL"
+curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
+  -H "Authorization: Bearer sk_live_your_hmo_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "patient": {
+      "first_name": "Kelechi",
+      "last_name": "Iheanacho",
+      "phone": "+2348031122334",
+      "city": "Lagos",
+      "area": "Victoria Island"
+    },
+    "clinical_notes": {
+      "diagnosis": "Post-Op Meniscus Repair",
+      "recommended_sessions": 6
+    },
+    "billing_mode": "hmo_direct_billing"
+  }'
+```
+
+---
+
+## 3. Receive Closed-Loop Invoices & Medical Summaries
+
+When each session is completed, Rehabify fires a `session.completed` webhook containing:
+1. Exact session duration & GPS check-in verification.
+2. Objective pain score reduction.
+3. Monthly itemized billing invoice reference for automatic reconciliation.

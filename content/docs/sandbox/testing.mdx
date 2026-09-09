@@ -1,0 +1,50 @@
+---
+title: Sandbox & Testing Environment
+description: Test credentials, mock webhooks, and sandbox patient fixtures.
+---
+
+# Sandbox & Testing Environment
+
+The Rehabify Sandbox allows engineering teams to build, test, and simulate the entire end-to-end integration lifecycle without sending real WhatsApp messages or charging live credit cards.
+
+---
+
+## Test API Credentials
+
+Use the following sandbox test keys during development:
+
+| Key Type | Key Value |
+| :--- | :--- |
+| **Sandbox Public Key** | `pk_test_rehab_sandbox_990182` |
+| **Sandbox Secret Key** | `sk_test_rehab_sandbox_sec_881290` |
+| **Sandbox Webhook Secret** | `whsec_test_mock_secret_key_4411` |
+
+---
+
+## Test Patient Phone Numbers
+
+Simulate specific intake scenarios using these dedicated test phone numbers:
+
+| Test Phone Number | Simulated Scenario | Triggered Webhook |
+| :--- | :--- | :--- |
+| `+2348000000001` | Instant Intake Success | `patient.intake_completed` within 5 seconds |
+| `+2348000000002` | Provider Auto-Matched | `provider.matched` within 10 seconds |
+| `+2348000000003` | Session Auto-Completed | `session.completed` with sample pain reduction score |
+| `+2348000000004` | Ineligible Policy | Returns `400 Bad Request` with `ineligible` status |
+| `+2348000000005` | Replay Attack / Webhook Fail | Simulates HTTP 500 error on webhook endpoint |
+
+---
+
+## Mock Webhook Delivery Simulator
+
+You can manually trigger test webhook deliveries to your endpoint using cURL:
+
+```bash tab="cURL"
+curl -X POST https://api.physioaroundme.com/api/v1/sandbox/trigger-webhook \
+  -H "Authorization: Bearer sk_test_rehab_sandbox_sec_881290" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "session.completed",
+    "target_url": "https://api.yourdomain.com/webhooks/rehabify"
+  }'
+```
