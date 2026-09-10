@@ -12,7 +12,9 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0016_rh_identity_mappings"
-down_revision: Union[str, Sequence[str], None] = "0015_referral_fees"
+# The revision name reflects when this work was authored. Its parent must be the
+# current production migration head so Alembic has a single upgrade path.
+down_revision: Union[str, Sequence[str], None] = "0019_safety_engine_config"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
