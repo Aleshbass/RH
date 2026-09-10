@@ -251,3 +251,4 @@ def test_plain_summary_asks_confirm_or_correct():
     assert "2 weeks" in lower
     assert "confirm" in lower or "correct" in lower
     assert "?" in text
+    assert "accept" not in lower

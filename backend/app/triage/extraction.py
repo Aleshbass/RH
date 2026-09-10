@@ -35,7 +35,7 @@ def merge_extraction(existing: ExtractedTriage, incoming: dict) -> ExtractedTria
                 continue
             current = dict(merged.get(key) or {})
             for inner_key, inner_value in value.items():
-                if inner_value is True or inner_value is False:
+                if inner_value is not None:
                     current[inner_key] = inner_value
             merged[key] = current
             continue

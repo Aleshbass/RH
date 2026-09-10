@@ -15,6 +15,7 @@ from app.audit.logger import append
 from app.booking.booking_flow import AWAITING_PAYMENT, handle_booking_turn
 from app.conversation.language import mirror_language
 from app.conversation.orchestrator import decide_booking_substate, decide_phase, has_narrative
+from app.conversation.stage_machine import assert_transition
 from app.conversation.state_manager import ConversationState, load, save_turn
 from app.family.access import apply_family_turn
 from app.family.relay import apply_pending_physio_answer, ask_physio, is_relay_ask
@@ -32,6 +33,7 @@ from app.models.physiotherapist import Physiotherapist
 from app.models.triage_session import TriageSession
 from app.models.types import (
     AuditKind,
+    ConversationStage,
     ExtractedTriage,
     Identity,
     PatientPhase,
@@ -39,6 +41,7 @@ from app.models.types import (
     SafetyResult,
     TurnResult,
 )
+from app.safety.protocol_runtime import NO, YES, normalize_answer, schedule_questions
 from app.safety.escalation import notify_family_on_safety, patient_message
 from app.safety.evaluator import evaluate
 from app.physio.availability import apply_availability_turn
@@ -81,6 +84,7 @@ _LATER_PATH = (
 )
 _MID_ACK = "Thanks, I've got that."
 _POLICY_CONTEXT_KEY = "policy_accepted"
+_POLICY_PRESENTED_KEY = "policy_presented"
 _DASHBOARD_RE = re.compile(
     r"(?i)(?:\b(?:update|edit|change|set)\b.{0,40}\b"
     r"(?:bio|photo|pricing|price list|rates|credentials)\b"
@@ -106,6 +110,12 @@ def _is_summary_confirm(user_text: str) -> bool:
     return False
 
 
+def _is_explicit_policy_acceptance(user_text: str) -> bool:
+    """A summary 'yes' is intentionally insufficient consent."""
+    text = (user_text or "").casefold()
+    return bool(re.search(r"\b(?:i\s+)?(?:accept|agree to)\b.{0,80}\b(?:policy|terms|consultation)\b", text))
+
+
 def _history(state: ConversationState) -> list[dict[str, str]]:
     return [{"role": message.role, "text": message.text} for message in state.recent_messages]
 
@@ -125,6 +135,23 @@ def _apply_inferred_area(extracted: ExtractedTriage) -> ExtractedTriage:
     if area is None:
         return extracted
     return extracted.model_copy(update={"condition_area": area})
+
+
+def _record_fact_sources(extracted: ExtractedTriage, source_message_id: str | None) -> ExtractedTriage:
+    """Keep a trace to the WhatsApp message for clinically important facts."""
+    if not source_message_id:
+        return extracted
+    sourceable = (
+        "main_complaint", "body_region", "body_location", "onset", "duration", "mechanism",
+        "symptoms", "radiation", "aggravating", "relieving", "functional_limitations",
+        "main_concern", "relevant_medical_history", "comorbidities", "goals",
+    )
+    sources = dict(extracted.fact_sources)
+    for field in sourceable:
+        value = getattr(extracted, field)
+        if value and field not in sources:
+            sources[field] = source_message_id
+    return extracted.model_copy(update={"fact_sources": sources})
 
 
 def _set_triage_status(session: Session, state: ConversationState, status: str) -> None:
@@ -246,7 +273,12 @@ def _safety_fire_reply(
     _audit_turn(
         session, identity, extracted, safety, phase, notify_family=notified
     )
-    save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id)
+    escalation_stage = (
+        ConversationStage.EMERGENCY_ESCALATION
+        if safety.risk_level == "RED"
+        else ConversationStage.MEDICAL_ESCALATION
+    )
+    save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id, stage=escalation_stage)
     return TurnResult(
         reply_text=reply,
         language=language,
@@ -358,21 +390,54 @@ def _admin_turn(
 
 def _policy_accepted(state: ConversationState) -> bool:
     ctx = state.booking_context or {}
-    if ctx.get(_POLICY_CONTEXT_KEY) is True:
+    if ctx.get(_POLICY_CONTEXT_KEY) is True or isinstance(ctx.get(_POLICY_CONTEXT_KEY), dict):
         return True
     facts = state.known_facts or {}
     return facts.get(_POLICY_CONTEXT_KEY) is True
 
 
-def _mark_policy_accepted(session: Session, state: ConversationState) -> None:
+def _mark_policy_accepted(session: Session, state: ConversationState, *, actor_phone: str, person_id, message_id: str | None) -> None:
     conversation = session.get(Conversation, state.conversation_id)
     if conversation is None:
         return
     ctx = dict(conversation.booking_context or {})
-    ctx[_POLICY_CONTEXT_KEY] = True
+    presentation = dict(ctx.get(_POLICY_PRESENTED_KEY) or {})
+    if not presentation:
+        raise ValueError("policy must be presented before it can be accepted")
+    ctx[_POLICY_CONTEXT_KEY] = {
+        "accepted_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        "acceptance_message_id": message_id,
+        "actor_phone": actor_phone,
+        **presentation,
+    }
+    conversation.booking_context = ctx
+    state.booking_context = ctx
+    append(
+        session, kind=AuditKind.POLICY, actor_phone=actor_phone, person_id=person_id,
+        payload={"event": "accepted", **ctx[_POLICY_CONTEXT_KEY]},
+    )
+    session.flush()
+
+
+def _present_policy(session: Session, state: ConversationState) -> str:
+    """Fail closed until RH supplies the canonical policy endpoint in Phase 3."""
+    conversation = session.get(Conversation, state.conversation_id)
+    if conversation is None:
+        return "I need to refresh the Consultation & Booking Policy before we continue."
+    ctx = dict(conversation.booking_context or {})
+    # This is intentionally an explicitly labelled development fallback. A live
+    # booking path must replace it with RH's /policy/current response.
+    policy = {"version": "pending-rh-policy", "url": "https://physioaroundme.com/consultation-booking-policy"}
+    policy["presented_at"] = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    ctx[_POLICY_PRESENTED_KEY] = policy
     conversation.booking_context = ctx
     state.booking_context = ctx
     session.flush()
+    return (
+        "Your triage summary is confirmed. Before I look for a specialist, please review "
+        f"our Consultation & Booking Policy (version {policy['version']}): {policy['url']}\n\n"
+        "Reply with ‘I accept the Consultation & Booking Policy’ when you are ready to continue."
+    )
 
 
 def _amber_specialist_reply(
@@ -393,7 +458,10 @@ def _amber_specialist_reply(
     _audit_turn(
         session, identity, extracted, safety, phase, notify_family=notified
     )
-    save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id)
+    save_turn(
+        session, state, user_text, reply, extracted, phase, language, wa_message_id,
+        stage=ConversationStage.SPECIALIST_REVIEW,
+    )
     return TurnResult(
         reply_text=reply,
         language=language,
@@ -418,6 +486,7 @@ def _reply_after_extract(
     incoming_phase: PatientPhase,
     identity: Identity,
     paystack=None,
+    wa_message_id: str | None = None,
 ) -> tuple[str, PatientPhase]:
     if not has_narrative(extracted):
         return candidate_reply, PatientPhase.FIRST_CONTACT
@@ -441,13 +510,28 @@ def _reply_after_extract(
             PatientPhase.MID_TRIAGE,
         )
 
+    scheduled = schedule_questions(extracted)
+    if scheduled and not booking_sub:
+        questions = "\n".join(f"{index + 1}. {question.text}" for index, question in enumerate(scheduled))
+        return (
+            "Before I summarise, I need to complete a short safety check. Please answer Yes, No, "
+            f"or say if you are unsure for each question:\n{questions}",
+            PatientPhase.MID_TRIAGE,
+        )
+
     patient = session.get(Patient, identity.person_id)
     if patient is not None:
         summary_confirmed = (
             incoming_phase == PatientPhase.POST_TRIAGE and _is_summary_confirm(user_text)
         )
         if summary_confirmed and not _policy_accepted(state):
-            _mark_policy_accepted(session, state)
+            return _present_policy(session, state), PatientPhase.POST_TRIAGE
+        if not _policy_accepted(state) and _is_explicit_policy_acceptance(user_text):
+            _mark_policy_accepted(
+                session, state, actor_phone=identity.phone_e164,
+                person_id=identity.person_id, message_id=wa_message_id,
+            )
+            return "Thank you — I’ve recorded your policy acceptance. I’ll now find suitable specialist options.", PatientPhase.POST_TRIAGE
         booking_reply = handle_booking_turn(
             session,
             state,
@@ -752,13 +836,31 @@ def handle_turn(
     if state.known_facts:
         extra_context = f"KNOWN_FACTS:\n{json.dumps(state.known_facts, ensure_ascii=False)}"
     extract_prompt = build(
-        identity, phase, state.extracted, language, _user_history(state), "", extra_context
+        identity, state.stage, state.extracted, language, _user_history(state), "", extra_context
     )
     response = llm.complete(extract_prompt, user_text)
     language = response.language or language
 
     extracted = _apply_inferred_area(merge_extraction(state.extracted, response.extraction_json))
     extracted = enrich_from_user_text(extracted, user_text)
+    extracted = _record_fact_sources(extracted, wa_message_id)
+    # A bare affirmative/negative is mapped only to the first outstanding,
+    # backend-scheduled question. Complex or multilingual answers remain
+    # UNCLEAR for the constrained classifier path; they are never silently NO.
+    pending_questions = schedule_questions(extracted, limit=1)
+    if phase == PatientPhase.MID_TRIAGE and pending_questions:
+        normalized = normalize_answer(user_text)
+        if normalized in {YES, NO}:
+            answers = dict(extracted.safety_answers)
+            answers[pending_questions[0].id] = normalized
+            order = list(extracted.safety_question_order)
+            if pending_questions[0].id not in order:
+                order.append(pending_questions[0].id)
+            extracted = extracted.model_copy(update={
+                "safety_answers": answers,
+                "safety_question_order": order,
+                "safety_protocol_version": "1.0.0",
+            })
     safety = evaluate(extracted)
 
     if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
@@ -811,7 +913,7 @@ def handle_turn(
         rag_snippet = retrieve(extracted.condition_area)
         if rag_snippet:
             reply_prompt = build(
-                identity, phase, extracted, language, _history(state), rag_snippet, extra_context
+                identity, state.stage, extracted, language, _history(state), rag_snippet, extra_context
             )
             reply_response = llm.complete(reply_prompt, user_text)
             candidate_reply = reply_response.reply_text
@@ -826,9 +928,19 @@ def handle_turn(
         phase,
         identity,
         paystack=paystack,
+        wa_message_id=wa_message_id,
     )
     _audit_turn(session, identity, extracted, safety, outgoing)
-    save_turn(session, state, user_text, reply, extracted, outgoing, language, wa_message_id)
+    target_stage = (
+        ConversationStage.STORY_CAPTURE if outgoing == PatientPhase.FIRST_CONTACT else
+        ConversationStage.SAFETY_SCREEN if outgoing == PatientPhase.MID_TRIAGE else
+        ConversationStage.POLICY_REVIEW if _POLICY_PRESENTED_KEY in (state.booking_context or {}) and not _policy_accepted(state) else
+        ConversationStage.POLICY_ACCEPTANCE if _policy_accepted(state) and state.stage == ConversationStage.POLICY_REVIEW else
+        ConversationStage.SPECIALIST_MATCHING if _policy_accepted(state) else
+        ConversationStage.TRIAGE_SUMMARY
+    )
+    stage = assert_transition(state.stage, target_stage)
+    save_turn(session, state, user_text, reply, extracted, outgoing, language, wa_message_id, stage=stage)
     return TurnResult(
         reply_text=reply,
         language=language,

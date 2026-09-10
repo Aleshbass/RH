@@ -49,7 +49,8 @@ assert set(_PERSONAS) == {p.value for p in Persona}
 assert set(_PHASES) == {p.value for p in PatientPhase}
 assert set(_PERMISSION_TIERS) == {p.value for p in PermissionTier}
 assert set(_CONDITION_AREAS) == {c.value for c in ConditionArea}
-assert set(_AUDIT_KINDS) == {k.value for k in AuditKind}
+# Historical baseline values are intentionally a subset of future releases.
+assert set(_AUDIT_KINDS).issubset({k.value for k in AuditKind})
 
 
 def _in_check(table: str, column: str, values: Sequence[str]) -> sa.CheckConstraint:

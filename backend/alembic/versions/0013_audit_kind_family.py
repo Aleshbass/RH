@@ -41,7 +41,9 @@ _PREVIOUS_KINDS = (
     "booking",
 )
 
-assert set(_AUDIT_KINDS) == {k.value for k in AuditKind}
+# This historical migration must remain importable after later audit kinds are
+# added. Its check describes the values it introduced, not the current enum.
+assert set(_AUDIT_KINDS).issubset({k.value for k in AuditKind})
 
 
 def upgrade() -> None:

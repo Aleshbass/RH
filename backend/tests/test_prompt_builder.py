@@ -1,12 +1,13 @@
-def test_builder_includes_persona_and_phase(patient_identity):
+def test_builder_includes_only_current_persona_and_stage():
     from app.llm.prompt_builder import build
-    from app.models.types import ExtractedTriage, PatientPhase
+    from app.models.types import ConversationStage, ExtractedTriage, Identity, Persona
+    from uuid import uuid4
 
-    text = build(patient_identity, PatientPhase.FIRST_CONTACT, ExtractedTriage(), "en", [], "")
-    assert "Joy — Master System Prompt" in text
+    identity = Identity(persona=Persona.PATIENT, person_id=uuid4(), phone_e164="+2348000000001")
+    text = build(identity, ConversationStage.STORY_CAPTURE, ExtractedTriage(), "en", [], "")
+    assert "Joy — Master System Prompt" not in text
     assert "currently speaking with: patient" in text.lower() or "patient" in text.lower()
-    assert "first_contact" in text
-    assert "Golden Rule" in text or "Do not make the user do work" in text
+    assert "STORY_CAPTURE" in text
+    assert "backend owns" in text.lower()
     assert "Empathetic" in text or "empathy" in text.lower() or "warm" in text.lower()
-    assert "CLINICAL SAFETY ENGINE" in text or "safety" in text.lower()
-    assert "GREEN" in text and "RED" in text
+    assert "CLINICAL SAFETY ENGINE" not in text

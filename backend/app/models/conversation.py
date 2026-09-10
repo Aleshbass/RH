@@ -21,6 +21,9 @@ class Conversation(Base):
     person_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     persona: Mapped[Persona] = mapped_column(str_enum(Persona, "persona"), nullable=False)
     phase: Mapped[PatientPhase] = mapped_column(str_enum(PatientPhase, "patient_phase"), nullable=False)
+    # A string deliberately avoids a second database enum migration whenever a
+    # code-owned stage is added, while the stage machine validates every value.
+    stage: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'STORY_CAPTURE'"))
     last_known_language: Mapped[str | None] = mapped_column(String, nullable=True)
     summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     booking_substate: Mapped[str | None] = mapped_column(String, nullable=True)

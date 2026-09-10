@@ -161,7 +161,7 @@ def test_safety_package_has_no_llm_imports() -> None:
         assert "import app.llm" not in source, path
 
 
-def test_prompt_builder_includes_master_prompt_and_engine():
+def test_prompt_builder_uses_core_and_stage_prompt_not_master_prompt():
     from app.llm.prompt_builder import build
     from app.models.types import Identity, PatientPhase, Persona
     from uuid import uuid4
@@ -174,6 +174,7 @@ def test_prompt_builder_includes_master_prompt_and_engine():
         [],
         "",
     )
-    assert "Joy — Master System Prompt" in prompt
-    assert "CLINICAL SAFETY ENGINE" in prompt
-    assert "Golden Rule" in prompt or "Do not make the user do work" in prompt
+    assert "Joy — Master System Prompt" not in prompt
+    assert "backend owns" in prompt.lower()
+    assert "CLINICAL SAFETY ENGINE" not in prompt
+    assert "privacy" in prompt.lower()

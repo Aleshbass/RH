@@ -1,16 +1,13 @@
 from pathlib import Path
 from typing import Any
 
-from app.models.types import ExtractedTriage, Identity, PatientPhase, Persona
-from app.safety.clinical_engine import prompt_digest
+from app.models.types import ConversationStage, ExtractedTriage, Identity, PatientPhase, Persona
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
-# Client Joy Master Prompt is the primary system guidance.
-_ALWAYS = (
-    "joy_master_prompt.md",
-    "safety_interface.md",
-)
+_CORE = "joy_core.md"
+
+_STAGE_FILES = {stage: f"stages/{stage.value.lower()}.md" for stage in ConversationStage}
 
 _PERSONA_FILES = {
     Persona.PATIENT: "patient.md",
@@ -25,7 +22,7 @@ def _load(name: str) -> str:
     return (_PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
 
 
-def _phase_value(phase: PatientPhase | str) -> str:
+def _phase_value(phase: PatientPhase | ConversationStage | str) -> str:
     return phase.value if isinstance(phase, PatientPhase) else str(phase)
 
 
@@ -47,7 +44,7 @@ def _format_history(history: list[Any]) -> str:
 
 def build(
     identity: Identity,
-    phase: PatientPhase | str,
+    phase: PatientPhase | ConversationStage | str,
     extracted: ExtractedTriage,
     language: str,
     history: list[Any],
@@ -55,9 +52,14 @@ def build(
     extra_context: str = "",
 ) -> str:
     phase_value = _phase_value(phase)
-    parts = [_load(name) for name in _ALWAYS]
+    parts = [_load(_CORE)]
     parts.append(_load(_PERSONA_FILES[identity.persona]))
-    parts.append(prompt_digest())
+    try:
+        stage = ConversationStage(phase_value)
+    except ValueError:
+        stage = None
+    if stage is not None:
+        parts.append(_load(_STAGE_FILES[stage]))
     parts.append(f"PHASE: {phase_value}")
     parts.append(f"EXTRACTED:\n{extracted.model_dump_json(indent=2)}")
     parts.append(f"LANGUAGE: {language}")

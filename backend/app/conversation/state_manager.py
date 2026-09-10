@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.models.conversation import Conversation, Message
 from app.models.patient import Patient
 from app.models.triage_session import TriageSession
-from app.models.types import ExtractedTriage, Identity, PatientPhase, Persona
+from app.models.types import ConversationStage, ExtractedTriage, Identity, PatientPhase, Persona
 
 RECENT_MESSAGE_LIMIT = 12
 
@@ -19,6 +19,7 @@ _last_stamp: datetime | None = None
 @dataclass
 class ConversationState:
     phase: PatientPhase
+    stage: ConversationStage
     last_known_language: str | None
     summary_text: str | None
     recent_messages: list[Message]
@@ -72,7 +73,9 @@ def _merge_extracted(existing: ExtractedTriage, incoming: ExtractedTriage) -> Ex
                 continue
             current = dict(merged.get(key) or {})
             for inner_key, inner_value in value.items():
-                if inner_value is True or inner_value is False:
+                # Facts may carry a source id, confidence, or normalized safety
+                # answer as well as legacy boolean flags. Never discard them.
+                if inner_value is not None:
                     current[inner_key] = inner_value
             merged[key] = current
             continue
@@ -114,6 +117,7 @@ def load(session: Session, identity: Identity) -> ConversationState:
             person_id=identity.person_id,
             persona=identity.persona,
             phase=PatientPhase.FIRST_CONTACT,
+            stage=ConversationStage.STORY_CAPTURE.value,
         )
         try:
             with session.begin_nested():
@@ -150,6 +154,7 @@ def load(session: Session, identity: Identity) -> ConversationState:
 
     return ConversationState(
         phase=conversation.phase,
+        stage=ConversationStage(getattr(conversation, "stage", None) or ConversationStage.STORY_CAPTURE),
         last_known_language=conversation.last_known_language,
         summary_text=conversation.summary_text,
         recent_messages=recent_messages,
@@ -171,11 +176,14 @@ def save_turn(
     phase: PatientPhase,
     language: str,
     wa_message_id: str | None = None,
+    stage: ConversationStage | None = None,
 ) -> None:
     conversation = session.get(Conversation, state.conversation_id)
     if conversation is None:
         raise ValueError("conversation missing")
     conversation.phase = phase
+    if stage is not None:
+        conversation.stage = stage.value
     conversation.last_known_language = language
 
     session.add(
@@ -207,5 +215,7 @@ def save_turn(
             state.extracted = merged
 
     state.phase = phase
+    if stage is not None:
+        state.stage = stage
     state.last_known_language = language
     session.flush()

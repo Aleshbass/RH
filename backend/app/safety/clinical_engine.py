@@ -97,7 +97,11 @@ def load_engine() -> dict[str, Any]:
     Alembic also seeds the same JSON into ``safety_engine_configs`` so ops and
     internal APIs can query the active engine without opening the repo.
     """
-    return json.loads(_ENGINE_PATH.read_text(encoding="utf-8"))
+    engine = json.loads(_ENGINE_PATH.read_text(encoding="utf-8"))
+    # Local import avoids a module cycle while keeping the JSON fail-closed.
+    from app.safety.protocol_runtime import validate_protocol
+    validate_protocol(engine)
+    return engine
 
 
 def engine_version() -> str:
