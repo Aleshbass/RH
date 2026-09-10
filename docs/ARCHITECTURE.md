@@ -19,6 +19,26 @@ the file extensions and framework-specific glue.
 
 ## 1. Why this shape
 
+### RH integration target (Phase 0, 9 September 2026)
+
+Read [the API contract](JOY_RH_API_CONTRACT.md) and [decision record](JOY_RH_PHASE0_DECISIONS.md)
+alongside this document. RH remains Next.js on Vercel with Convex; Joy remains on Railway
+with Postgres and Redis. RH owns provider, availability, booking, appointment and payment
+records. Joy owns conversation, clinical evidence, deterministic safety, consent and audit.
+Gemini extracts and phrases; it cannot grant safety clearance or authorize booking.
+
+RH verifies Paystack webhooks and sends durable signed events to Joy. Payment success is
+necessary but insufficient for appointment confirmation: RH also requires provider acceptance,
+current safety eligibility, consent and slot allocation. Joy never creates confirmation.
+Use GREEN/AMBER/ORANGE/RED protocols; incomplete evidence remains internally UNKNOWN and
+cannot permit booking. Group missing questions while preserving each approved question's ID.
+
+The file tree below is the original standalone design, retained as a migration map, not the
+target ownership model. Local Paystack/provider/booking modules must become RH adapters;
+Paystack verification moves to RH, and Joy receives RH integration events. Do not build a
+second operational ledger from the legacy tree. Endpoint paths and state transitions in the
+new contract govern that migration; clinical and contractual approval still govern release.
+
 Three requirements from the PRD drive the whole structure, more than any individual feature:
 
 1. **The red-flag safety layer must be deterministic and separate from the LLM** (PRD §6, §Safety

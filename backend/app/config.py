@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     joy_environment: str = "development"
     internal_api_secret: str = ""
     internal_job_token: str = ""
+    rh_api_base_url: str = ""
+    rh_api_key_id: str = ""
+    rh_api_hmac_secret: str = ""
 
 
 def get_settings() -> Settings:

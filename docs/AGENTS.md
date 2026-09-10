@@ -1,7 +1,7 @@
 # AGENTS.md — Working guide for AI coding agents on this repo
 
 Drop this in the repo root (or `.cursor/rules/`) so any agent working in Cursor has the same
-constraints you do. Point it at `docs/ARCHITECTURE.md` and `docs/prompts/joy-system-prompt.md`
+constraints you do. Point it at `docs/ARCHITECTURE.md` and `docs/joy-system-prompt.md`
 for the detailed design; this file is the operating rules layer.
 
 ## What this project is
@@ -30,6 +30,15 @@ What this backend **does** owe the frontend team: clean, documented APIs and dat
 for all of the above. Build those endpoints even though you're not building what calls them.
 
 ## Non-negotiable architectural rules
+
+Integration target: read `docs/JOY_RH_API_CONTRACT.md` and
+`docs/JOY_RH_PHASE0_DECISIONS.md`. RH owns providers, availability, bookings,
+appointments and payments in Convex; Joy owns conversation and clinical state in Postgres.
+RH alone verifies Paystack payment webhooks. Payment evidence is necessary, not sufficient:
+final confirmation also requires provider acceptance, current safety, consent and allocation.
+Joy reflects signed RH events; neither Gemini nor the conversation handler confirms bookings.
+Use versioned deterministic protocols with traceable answers and grouped missing questions.
+These are integration clarifications, not permission to override the contract or clinical review.
 
 1. **Red-flag detection is deterministic, not an LLM call.** It lives in `safety/` and runs
    independently every triage turn. Never implement it as a prompt instruction or a tool the model
