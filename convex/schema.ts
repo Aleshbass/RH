@@ -70,6 +70,21 @@ export default defineSchema({
     .index("by_role", ["role"]) // To query users by role (especially after onboarding)
     .index("by_clinic_id", ["clinicId"]),
 
+  // Short-lived replay reservations for authenticated Joy service requests.
+  // This deliberately stores no phone number or clinical request payload.
+  joyIntegrationRequests: defineTable({
+    requestId: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  }).index("by_request_id", ["requestId"]),
+
+  // Separate nonce reservations protect the RH-to-Convex bridge itself.
+  joyIntegrationGatewayNonces: defineTable({
+    nonce: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  }).index("by_nonce", ["nonce"]),
+
   // Clinics table: Information about physiotherapy clinics
   clinics: defineTable({
     name: v.string(),

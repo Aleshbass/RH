@@ -124,8 +124,8 @@ export default function PhysioProfilePage() {
     );
   }
 
-  const colleagueVerifications = verifications?.filter(v => v.verifierType === 'colleague') || [];
-  const patientReviews = verifications?.filter(v => v.verifierType === 'patient') || [];
+  const colleagueVerifications = verifications?.filter((v: any) => v.verifierType === 'colleague') || [];
+  const patientReviews = verifications?.filter((v: any) => v.verifierType === 'patient') || [];
   const displayedVerifications = showAllVerifications ? colleagueVerifications : colleagueVerifications.slice(0, 3);
   const displayedReviews = showAllVerifications ? patientReviews : patientReviews.slice(0, 3);
 

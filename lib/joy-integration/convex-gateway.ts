@@ -1,0 +1,25 @@
+import { createHmac, randomUUID } from "crypto";
+
+type GatewayOperation = "record_external_request" | "resolve_patient" | "resolve_physiotherapist";
+
+export class GatewayError extends Error {}
+
+export async function callJoyConvexGateway(operation: GatewayOperation, payload: Record<string, unknown>): Promise<unknown> {
+  const url = process.env.CONVEX_JOY_GATEWAY_URL;
+  const secret = process.env.CONVEX_JOY_GATEWAY_SECRET;
+  if (!url || !secret) throw new GatewayError("Joy Convex gateway is not configured");
+
+  const body = JSON.stringify(payload);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonce = randomUUID();
+  const canonical = ["POST", `/joy-integration/${operation}`, timestamp, nonce, body].join("\n");
+  const signature = createHmac("sha256", secret).update(canonical, "utf8").digest("hex");
+  const response = await fetch(`${url.replace(/\/$/, "")}/joy-integration/${operation}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Joy-Gateway-Timestamp": timestamp, "X-Joy-Gateway-Nonce": nonce, "X-Joy-Gateway-Signature": signature },
+    body,
+    cache: "no-store",
+  });
+  if (!response.ok) throw new GatewayError(`Joy Convex gateway returned ${response.status}`);
+  return response.json();
+}

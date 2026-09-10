@@ -459,7 +459,7 @@ export default function BookingPage() {
                 {/* Step: Select Time */}
                 {step === "select-time" && (
                     <div className="w-full max-w-5xl space-y-6">
-                        <CalendarBookingWidget
+                        {physiotherapistId && <CalendarBookingWidget
                             physiotherapistId={physiotherapistId}
                             physiotherapistName={profile.fullName}
                             physiotherapistImage={profile.imageUrl}
@@ -469,7 +469,7 @@ export default function BookingPage() {
                             offersOnlineSessions={profile.offersOnlineSessions}
                             timezone="Africa/Lagos"
                             onSlotSelect={handleSlotSelect}
-                        />
+                        />}
 
                         {/* Continue Button */}
                         {selectedSlot && (

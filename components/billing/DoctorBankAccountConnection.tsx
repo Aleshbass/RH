@@ -161,7 +161,7 @@ export function DoctorBankAccountConnection({ doctorId, onConnectionSuccess }: D
                 <div className="space-y-4">
                     <h3 className="text-lg font-medium text-gray-900">Connected Accounts</h3>
                     <div className="grid gap-4 sm:grid-cols-2">
-                        {savedAccounts.map((account) => (
+                        {savedAccounts.map((account: any) => (
                             <Card key={account._id} className="relative overflow-hidden">
                                 <CardContent className="p-6">
                                     <div className="flex items-start justify-between">

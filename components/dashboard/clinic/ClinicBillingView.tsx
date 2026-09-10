@@ -448,7 +448,7 @@ export default function ClinicBillingView() {
                 <InvoicePaymentModal
                     open={showPaymentModal}
                     onOpenChange={setShowPaymentModal}
-                    invoice={selectedInvoice}
+                    invoice={{ ...selectedInvoice, patient: selectedInvoice.patient ?? undefined }}
                 />
             )}
         </div>

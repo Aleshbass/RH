@@ -950,7 +950,7 @@ export default function AdminUserDetailPage() {
                 <CardContent className="p-6">
                   {activePatientsList && activePatientsList.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {activePatientsList.map((patient) => (
+                      {activePatientsList.map((patient: any) => (
                         <div
                           key={patient._id}
                           className="flex items-center justify-between p-3 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors"
@@ -1007,7 +1007,7 @@ export default function AdminUserDetailPage() {
                 <CardContent className="p-6">
                   {recentAppointments && recentAppointments.length > 0 ? (
                     <div className="space-y-2.5">
-                      {recentAppointments.map((appt) => (
+                      {recentAppointments.map((appt: any) => (
                         <div
                           key={appt._id}
                           className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border bg-card hover:bg-muted/40 transition-colors gap-2"
