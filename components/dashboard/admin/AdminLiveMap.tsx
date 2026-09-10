@@ -40,7 +40,7 @@ export default function AdminLiveMap() {
         >
           <NavigationControl position="top-right" showCompass={false} />
 
-          {locations?.map((loc) => (
+          {locations?.map((loc: any) => (
             <Marker
               key={loc._id}
               longitude={loc.longitude}

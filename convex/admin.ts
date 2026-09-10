@@ -967,7 +967,10 @@ export const getAdminUserDetails = query({
         .collect();
       appointmentCount = appointments.length;
       upcomingAppointments = appointments.filter(
-        (a) => a.startTime > now && a.status !== "cancelled"
+        (a) =>
+          a.startTime > now &&
+          a.status !== "cancelled_by_patient" &&
+          a.status !== "cancelled_by_therapist"
       ).length;
     }
 

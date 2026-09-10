@@ -28,7 +28,7 @@ export default function PhysioRegisterDirectoryPage() {
   const [sortBy, setSortBy] = useState<SortBy>('ranking');
 
   // Debounce search
-  const debounceRef = React.useRef<NodeJS.Timeout>();
+  const debounceRef = React.useRef<NodeJS.Timeout | null>(null);
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);

@@ -42,7 +42,7 @@ export default function AdminPartnershipsPage() {
     }
   };
 
-  const filteredInquiries = inquiries.filter((inquiry) => {
+  const filteredInquiries = inquiries.filter((inquiry: any) => {
     const matchesSearch =
       inquiry.organizationName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       inquiry.contactName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -100,7 +100,7 @@ export default function AdminPartnershipsPage() {
             </p>
           </div>
         ) : (
-          filteredInquiries.map((inquiry) => (
+          filteredInquiries.map((inquiry: any) => (
             <div
               key={inquiry._id}
               className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col md:flex-row"

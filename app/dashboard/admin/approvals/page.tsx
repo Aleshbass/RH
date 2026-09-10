@@ -23,6 +23,7 @@ type ApprovalWithUser = {
     lastName?: string;
     email?: string;
     imageUrl?: string;
+    phoneNumber?: string;
     [key: string]: unknown;
   } | null;
 };
@@ -568,4 +569,4 @@ function ApprovalsPageSkeleton() {
       </div>
     </div>
   );
-} 
+}
