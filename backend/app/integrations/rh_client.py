@@ -57,6 +57,32 @@ class PhysiotherapistResolution:
     capabilities: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class PolicyDocument:
+    policy_id: str
+    version: str
+    url: str
+    content_sha256: str
+    effective_at: str | None
+    acceptance_text: str
+    language: str
+    approval_status: str
+
+    @property
+    def is_approved(self) -> bool:
+        return self.approval_status == "APPROVED"
+
+
+@dataclass(frozen=True)
+class RHMatch:
+    physiotherapist_id: str
+    display_name: str | None
+    specialties: list[str]
+    service_modes: list[str]
+    amount_kobo: int
+    match_reasons: list[str]
+
+
 class RHClient:
     def __init__(self, base_url: str, key_id: str, hmac_secret: str, *, client: httpx.Client | None = None) -> None:
         if not base_url or not key_id or not hmac_secret:
@@ -114,3 +140,56 @@ class RHClient:
     def resolve_physiotherapist(self, phone: str, actor: RHActor) -> PhysiotherapistResolution:
         data = self._request("POST", "/api/v1/joy/physiotherapists/resolve", payload={"phone": phone, "actor": actor.as_payload()})
         return PhysiotherapistResolution(resolution=data["resolution"], physiotherapist_id=data.get("physiotherapist_id"), display_name=data.get("display_name"), capabilities=data.get("capabilities"))
+
+    def current_policy(self, *, service_type: str | None = None, language: str | None = None) -> PolicyDocument:
+        query = "&".join(
+            f"{key}={value}" for key, value in (("service_type", service_type), ("language", language)) if value
+        )
+        path = "/api/v1/joy/policy/current" + (f"?{query}" if query else "")
+        data = self._request("GET", path)
+        required = ("policy_id", "version", "url", "content_sha256", "acceptance_text", "language", "approval_status")
+        if any(not isinstance(data.get(key), str) for key in required):
+            raise RHIntegrationError("INVALID_RESPONSE", "RH returned incomplete policy metadata", retryable=True)
+        return PolicyDocument(
+            policy_id=data["policy_id"], version=data["version"], url=data["url"],
+            content_sha256=data["content_sha256"], effective_at=data.get("effective_at"),
+            acceptance_text=data["acceptance_text"], language=data["language"],
+            approval_status=data["approval_status"],
+        )
+
+    def match_physios(self, *, patient_id: str, assessment_id: str, assessment_revision: int, required_specialties: list[str], service_mode: str, actor: RHActor, location: str | None = None) -> list[RHMatch]:
+        payload: dict[str, Any] = {
+            "patient_id": patient_id, "assessment_id": assessment_id,
+            "assessment_revision": assessment_revision, "required_specialties": required_specialties,
+            "service_mode": service_mode, "actor": actor.as_payload(),
+        }
+        if location:
+            payload["location"] = location
+        data = self._request("POST", "/api/v1/joy/matches", payload=payload)
+        providers = data.get("providers")
+        if not isinstance(providers, list):
+            raise RHIntegrationError("INVALID_RESPONSE", "RH returned invalid match results", retryable=True)
+        return [RHMatch(
+            physiotherapist_id=item["physiotherapist_id"], display_name=item.get("display_name"),
+            specialties=list(item.get("specialties") or []), service_modes=list(item.get("service_modes") or []),
+            amount_kobo=int(item["amount_kobo"]), match_reasons=list(item.get("match_reasons") or []),
+        ) for item in providers if isinstance(item, dict)]
+
+    def availability(self, physiotherapist_id: str, *, start_ms: int, end_ms: int, duration_minutes: int, service_mode: str) -> dict[str, Any]:
+        path = (
+            f"/api/v1/joy/physiotherapists/{physiotherapist_id}/availability?from={start_ms}&to={end_ms}"
+            f"&duration_minutes={duration_minutes}&service_mode={service_mode}&time_zone=Africa/Lagos"
+        )
+        return self._request("GET", path)
+
+
+def configured_rh_client() -> RHClient:
+    """Create the integration client only when all service credentials exist."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    return RHClient(
+        settings.rh_api_base_url,
+        settings.rh_api_key_id,
+        settings.rh_api_hmac_secret,
+    )

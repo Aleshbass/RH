@@ -26,6 +26,7 @@ from app.identity.unknown_sender import resolve_unknown_sender
 from app.llm.gemini_client import LLMClient
 from app.llm.prompt_builder import build
 from app.llm.rag.retriever import retrieve
+from app.integrations.rh_client import RHIntegrationError, configured_rh_client
 from app.models.admin import Admin
 from app.models.conversation import Conversation
 from app.models.patient import Patient
@@ -420,14 +421,32 @@ def _mark_policy_accepted(session: Session, state: ConversationState, *, actor_p
 
 
 def _present_policy(session: Session, state: ConversationState) -> str:
-    """Fail closed until RH supplies the canonical policy endpoint in Phase 3."""
+    """Present only a current, RH-approved canonical policy; otherwise fail closed."""
     conversation = session.get(Conversation, state.conversation_id)
     if conversation is None:
         return "I need to refresh the Consultation & Booking Policy before we continue."
     ctx = dict(conversation.booking_context or {})
-    # This is intentionally an explicitly labelled development fallback. A live
-    # booking path must replace it with RH's /policy/current response.
-    policy = {"version": "pending-rh-policy", "url": "https://physioaroundme.com/consultation-booking-policy"}
+    try:
+        document = configured_rh_client().current_policy(language=state.last_known_language or "en")
+    except RHIntegrationError:
+        return (
+            "I can’t retrieve the current Consultation & Booking Policy right now, so I can’t continue "
+            "to specialist matching yet. Please try again shortly."
+        )
+    if not document.is_approved:
+        return (
+            "Our Consultation & Booking Policy is not yet available for acceptance, so I can’t continue "
+            "to specialist matching yet."
+        )
+    policy = {
+        "policy_id": document.policy_id,
+        "version": document.version,
+        "url": document.url,
+        "content_sha256": document.content_sha256,
+        "effective_at": document.effective_at,
+        "acceptance_text": document.acceptance_text,
+        "language": document.language,
+    }
     policy["presented_at"] = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     ctx[_POLICY_PRESENTED_KEY] = policy
     conversation.booking_context = ctx
@@ -436,7 +455,7 @@ def _present_policy(session: Session, state: ConversationState) -> str:
     return (
         "Your triage summary is confirmed. Before I look for a specialist, please review "
         f"our Consultation & Booking Policy (version {policy['version']}): {policy['url']}\n\n"
-        "Reply with ‘I accept the Consultation & Booking Policy’ when you are ready to continue."
+        f"Reply with ‘{policy['acceptance_text']}’ when you are ready to continue."
     )
 
 

@@ -34,3 +34,27 @@ def test_resolve_patient_signs_the_exact_json_payload() -> None:
 
     assert result.resolution == "EXISTING"
     assert result.patient_id == "rh_patient_1"
+
+
+def test_current_policy_signs_query_string_and_requires_complete_metadata() -> None:
+    secret = "test-secret"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/joy/policy/current"
+        assert request.url.query == b"language=en"
+        canonical = "\n".join([
+            request.method, f"{request.url.path}?{request.url.query.decode()}",
+            request.headers["X-Timestamp"], request.headers["X-Request-Id"], "", "",
+            hashlib.sha256(request.content).hexdigest(),
+        ]).encode()
+        assert request.headers["X-Signature"] == hmac.new(secret.encode(), canonical, hashlib.sha256).hexdigest()
+        return httpx.Response(200, json={"data": {
+            "policy_id": "policy_1", "version": "2026-09", "url": "https://rh.test/policy",
+            "content_sha256": "a" * 64, "effective_at": "2026-09-10T00:00:00Z",
+            "acceptance_text": "I accept", "language": "en", "approval_status": "APPROVED",
+        }})
+
+    client = RHClient("https://rh.test", "joy-test", secret, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    policy = client.current_policy(language="en")
+    assert policy.is_approved is True
+    assert policy.version == "2026-09"
