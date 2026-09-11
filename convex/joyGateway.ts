@@ -1,5 +1,5 @@
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 const encoder = new TextEncoder();
 
@@ -61,4 +61,30 @@ export const resolvePhysiotherapist = httpAction(async (ctx, request) => {
   if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
   if (typeof parsed.data.phone !== "string") return new Response("Invalid payload", { status: 400 });
   return Response.json(await ctx.runQuery((internal as any).joyIntegration.resolvePhysiotherapistByPhone, { phone: parsed.data.phone }));
+});
+
+export const findMatches = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/find_matches");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const { patient_id, required_specialties, service_mode, location, limit } = parsed.data;
+  if (typeof patient_id !== "string" || !Array.isArray(required_specialties) || !required_specialties.every((value) => typeof value === "string") || !["home_visit", "clinic", "online"].includes(String(service_mode))) return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runQuery((internal as any).joyIntegration.findMatches, {
+    patientId: patient_id, requiredSpecialties: required_specialties, serviceMode: service_mode,
+    location: typeof location === "string" ? location : undefined, limit: typeof limit === "number" ? limit : 3,
+  }));
+});
+
+export const resolveAvailabilityProfile = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/resolve_availability_profile");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const { physiotherapist_id, service_mode, start, end, duration_minutes } = parsed.data;
+  if (typeof physiotherapist_id !== "string" || !["home_visit", "clinic", "online"].includes(String(service_mode)) || typeof start !== "number" || typeof end !== "number" || typeof duration_minutes !== "number") return new Response("Invalid payload", { status: 400 });
+  const profile = await ctx.runQuery((internal as any).joyIntegration.resolveProfileForAvailability, { physiotherapistId: physiotherapist_id, serviceMode: service_mode });
+  if (!profile || !profile.amountKobo) return Response.json({ slots: [] });
+  const slots = await ctx.runQuery((api as any).calendar.availability.getAvailableSlots, {
+    physiotherapistId: profile.physiotherapistUserId, startDate: start, endDate: end, sessionDuration: duration_minutes,
+  });
+  return Response.json({ slots, amount_kobo: profile.amountKobo, currency: "NGN" });
 });

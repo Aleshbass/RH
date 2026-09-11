@@ -150,6 +150,14 @@ export default defineSchema({
     offersOnlineSessions: v.optional(v.boolean()),
     offersInPersonSessions: v.optional(v.boolean()),
 
+    // Joy uses only these controlled fields for service matching. Existing
+    // free-text specializations remain intact for the marketplace UI.
+    joySpecialtyTags: v.optional(v.array(v.string())),
+    joyServiceModes: v.optional(v.array(v.union(
+      v.literal("home_visit"), v.literal("clinic"), v.literal("online")
+    ))),
+    joyServiceAreas: v.optional(v.array(v.string())),
+
     // Verification & Monetization
     verificationBadge: v.optional(v.object({
       status: v.union(
