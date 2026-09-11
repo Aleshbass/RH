@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
+import { buildSsoRedirectUrls, toSafeInternalPath } from "@/lib/auth/ssoRedirect";
 
 
 export default function CustomSignUp() {
@@ -15,7 +16,10 @@ export default function CustomSignUp() {
   const { isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTarget = searchParams?.get("redirect") || searchParams?.get("redirect_url") || "/role-selection";
+  const redirectTarget = toSafeInternalPath(
+    searchParams?.get("redirect") || searchParams?.get("redirect_url"),
+    "/role-selection",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -24,6 +28,21 @@ export default function CustomSignUp() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [pendingVerification, setPendingVerification] = useState(false);
+
+  const withTimeout = async <T,>(operation: Promise<T>, action: string): Promise<T> => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${action} is taking longer than expected. Please check your connection and try again.`));
+      }, 20_000);
+    });
+
+    try {
+      return await Promise.race([operation, timeout]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  };
 
   const fadeIn: Variants = {
     hidden: { opacity: 0, y: 20 },
@@ -86,10 +105,12 @@ export default function CustomSignUp() {
     try {
       // Some Clerk configurations don't accept name fields at create() time
       // Pass only core fields first, then update names in a separate call.
-      await signUp?.create({
+      if (!signUp) throw new Error("Sign-up is still loading. Please refresh and try again.");
+
+      await withTimeout(signUp.create({
         emailAddress: email,
         password,
-      });
+      }), "Creating your account");
 
       // Best-effort update of profile names. If not allowed, ignore the error.
       try {
@@ -98,10 +119,33 @@ export default function CustomSignUp() {
         // ignore; not all instances allow updating these fields at this step
       }
 
-      await signUp?.prepareEmailAddressVerification({ strategy: "email_code" });
+      await withTimeout(
+        signUp.prepareEmailAddressVerification({ strategy: "email_code" }),
+        "Sending the verification code",
+      );
       setPendingVerification(true);
     } catch (err: unknown) {
       setError(extractErrorMessage(err, "An error occurred"));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendEmailVerification = async () => {
+    if (!signUp) {
+      setError("Sign-up is still loading. Please refresh and try again.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError("");
+    try {
+      await withTimeout(
+        signUp.prepareEmailAddressVerification({ strategy: "email_code" }),
+        "Resending the verification code",
+      );
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err, "We could not resend the verification code. Please try again."));
     } finally {
       setIsLoading(false);
     }
@@ -133,19 +177,20 @@ export default function CustomSignUp() {
     setError("");
 
     try {
-      // Store redirect target in localStorage as backup for SSO callback
-      if (redirectTarget && redirectTarget !== '/role-selection') {
-        localStorage.setItem('authRedirectUrl', redirectTarget);
-      }
+      // Store every target (including the default) as a callback fallback.
+      localStorage.setItem('authRedirectUrl', redirectTarget);
+      const ssoUrls = buildSsoRedirectUrls(redirectTarget);
 
       // Use signIn flow for OAuth; Clerk will create or reuse accounts automatically
-      await signIn?.authenticateWithRedirect({
+      if (!signIn) throw new Error("Google sign-in is still loading. Please refresh and try again.");
+
+      await withTimeout(signIn.authenticateWithRedirect({
         strategy: "oauth_google",
         // Use Clerk's recommended callback route
-        redirectUrl: "/sso-callback",
+        redirectUrl: ssoUrls.redirectUrl,
         // Final destination after OAuth completes
-        redirectUrlComplete: redirectTarget,
-      });
+        redirectUrlComplete: ssoUrls.redirectUrlComplete,
+      }), "Starting Google sign-in");
     } catch (err: unknown) {
       console.error("Google sign-up error:", err);
       setError(extractErrorMessage(err, "Google sign-up failed"));
@@ -262,7 +307,18 @@ export default function CustomSignUp() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPendingVerification(false)}
+                  onClick={handleResendEmailVerification}
+                  disabled={isLoading}
+                  className="w-full text-sm text-[#005b57] hover:text-[#00443e] underline disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isLoading ? "Sending a new code…" : "Resend verification code"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    setPendingVerification(false);
+                  }}
                   className="w-full text-sm text-[#005b57] hover:text-[#00443e] underline"
                 >
                   ← Back to sign up

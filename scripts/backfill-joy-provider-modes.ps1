@@ -18,7 +18,9 @@ do {
     $batchNumber += 1
     $payload = @{ secret = $env:JOY_PROVIDER_BOOTSTRAP_SECRET; dryRun = $dryRun }
     if ($null -ne $cursor) { $payload.cursor = $cursor }
-    $argumentsJson = $payload | ConvertTo-Json -Compress
+    # Windows PowerShell strips double quotes while forwarding an argument to
+    # npx.cmd. Convex accepts JSON5, so use single quotes to preserve strings.
+    $argumentsJson = ($payload | ConvertTo-Json -Compress).Replace('"', "'")
 
     Write-Host "Running Joy provider bootstrap batch $batchNumber (maximum 30 profiles; dryRun=$dryRun)..." -ForegroundColor Cyan
     $convexArgs = @("convex", "run")

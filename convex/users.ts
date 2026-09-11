@@ -794,8 +794,14 @@ export const createAdminUser = mutation({
     email: v.string(),
     firstName: v.string(),
     lastName: v.string(),
+    bootstrapSecret: v.string(),
   },
   handler: async (ctx, args) => {
+    const configuredSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
+    if (!configuredSecret || args.bootstrapSecret !== configuredSecret) {
+      throw new Error("Unauthorized admin bootstrap request");
+    }
+
     // Check if user already exists
     const existingUser = await ctx.db
       .query("users")

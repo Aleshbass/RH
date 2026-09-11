@@ -20,16 +20,10 @@ const logger = pino({
     })
   },
   timestamp: pino.stdTimeFunctions.isoTime,
-  ...(process.env.NODE_ENV === 'development' && {
-    transport: {
-      target: 'pino-pretty',
-      options: {
-        colorize: true,
-        translateTime: 'SYS:standard',
-        ignore: 'pid,hostname'
-      }
-    }
-  })
+  // Do not use pino-pretty's worker transport here. During Next.js development
+  // recompilation Turbopack can remove the generated worker chunk, causing
+  // logging itself to throw "the worker has exited" inside API routes.
+  // Pino's standard destination is safe for both development and production.
 })
 
 // Structured logging interface

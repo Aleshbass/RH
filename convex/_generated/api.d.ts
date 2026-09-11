@@ -92,6 +92,7 @@ import type * as http from "../http.js";
 import type * as imagekit from "../imagekit.js";
 import type * as joyGateway from "../joyGateway.js";
 import type * as joyIntegration from "../joyIntegration.js";
+import type * as joyProviderBootstrap from "../joyProviderBootstrap.js";
 import type * as location from "../location.js";
 import type * as locationTracking from "../locationTracking.js";
 import type * as marketplace_booking from "../marketplace/booking.js";
@@ -242,6 +243,7 @@ declare const fullApi: ApiFromModules<{
   imagekit: typeof imagekit;
   joyGateway: typeof joyGateway;
   joyIntegration: typeof joyIntegration;
+  joyProviderBootstrap: typeof joyProviderBootstrap;
   location: typeof location;
   locationTracking: typeof locationTracking;
   "marketplace/booking": typeof marketplace_booking;

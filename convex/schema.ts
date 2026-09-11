@@ -1011,7 +1011,21 @@ export default defineSchema({
 
   // Inbound patient referrals from referring doctors/partners
   inboundReferrals: defineTable({
-    referringDoctorId: v.id("users"), // The doctor who made the referral
+    // Partner-originated legacy referrals may not have an RH doctor account.
+    // Doctor-created referrals still always set this field.
+    referringDoctorId: v.optional(v.id("users")),
+
+    // Optional metadata supplied by approved partner referral integrations.
+    // These fields are absent from doctor-created referrals.
+    partnerId: v.optional(v.string()),
+    partnerExternalId: v.optional(v.string()),
+    trackingCode: v.optional(v.string()),
+    callbackUrl: v.optional(v.string()),
+    billingMode: v.optional(v.string()),
+    priority: v.optional(v.string()),
+    recommendedSessions: v.optional(v.number()),
+    city: v.optional(v.string()),
+    area: v.optional(v.string()),
 
     // Patient Details Provided Before Registration
     patientFirstName: v.string(),

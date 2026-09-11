@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
+import { buildSsoRedirectUrls, toSafeInternalPath } from "@/lib/auth/ssoRedirect";
 
 
 export default function CustomSignIn() {
@@ -14,7 +15,10 @@ export default function CustomSignIn() {
   const { isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTarget = searchParams?.get("redirect") || searchParams?.get("redirect_url") || "/dashboard";
+  const redirectTarget = toSafeInternalPath(
+    searchParams?.get("redirect") || searchParams?.get("redirect_url"),
+    "/dashboard",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -157,18 +161,17 @@ export default function CustomSignIn() {
     setError("");
 
     try {
-      // Store redirect target in localStorage as backup for SSO callback
-      if (redirectTarget && redirectTarget !== '/dashboard') {
-        localStorage.setItem('authRedirectUrl', redirectTarget);
-      }
+      // Store every target (including the default) as a callback fallback.
+      localStorage.setItem('authRedirectUrl', redirectTarget);
+      const ssoUrls = buildSsoRedirectUrls(redirectTarget);
 
       await signIn?.authenticateWithRedirect({
         strategy: "oauth_google",
         // Use Clerk's callback route we created to complete the OAuth flow
         // This prevents 404s when providers redirect back
-        redirectUrl: "/sso-callback",
+        redirectUrl: ssoUrls.redirectUrl,
         // After Clerk completes, send user to the original destination
-        redirectUrlComplete: redirectTarget,
+        redirectUrlComplete: ssoUrls.redirectUrlComplete,
       });
     } catch (err: unknown) {
       console.error("Google sign-in error:", err);

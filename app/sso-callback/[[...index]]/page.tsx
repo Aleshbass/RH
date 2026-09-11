@@ -1,13 +1,15 @@
 'use client';
 
 import { AuthenticateWithRedirectCallback, useAuth } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Suspense } from 'react';
+import { toSafeInternalPath } from '@/lib/auth/ssoRedirect';
 
 function SSOCallbackContent() {
   const { isSignedIn, isLoaded } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [hasRedirected, setHasRedirected] = useState(false);
 
   // After auth completes, check localStorage for redirect URL
@@ -16,16 +18,19 @@ function SSOCallbackContent() {
       setHasRedirected(true);
 
       // Check localStorage for stored redirect URL
+      const queryRedirect = searchParams.get('post_auth_redirect');
       const storedRedirect = localStorage.getItem('authRedirectUrl');
-      if (storedRedirect) {
-        localStorage.removeItem('authRedirectUrl');
-        router.push(storedRedirect);
-      } else {
-        // Default redirect
-        router.push('/dashboard');
-      }
+      localStorage.removeItem('authRedirectUrl');
+
+      // Query value is bound to the OAuth initiation URL; localStorage is a
+      // fallback for providers that strip callback query parameters.
+      const destination = toSafeInternalPath(
+        queryRedirect || storedRedirect,
+        '/role-selection',
+      );
+      router.replace(destination);
     }
-  }, [isLoaded, isSignedIn, hasRedirected, router]);
+  }, [isLoaded, isSignedIn, hasRedirected, router, searchParams]);
 
   return (
     <div className="text-center">
