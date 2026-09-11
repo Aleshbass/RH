@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "crypto";
 
-type GatewayOperation = "record_external_request" | "resolve_patient" | "resolve_physiotherapist";
+type GatewayOperation = "record_external_request" | "resolve_patient" | "resolve_physiotherapist" | "find_matches" | "resolve_availability_profile";
 
 export class GatewayError extends Error {}
 
