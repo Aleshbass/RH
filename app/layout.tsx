@@ -125,11 +125,26 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+import { headers } from "next/headers";
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  let isSubdomainHost = false;
+  try {
+    const headersList = await headers();
+    const host = (headersList.get("host") || "").toLowerCase();
+    const isSubdomainHeader = headersList.get("x-is-b2b-subdomain") === "true";
+    isSubdomainHost =
+      isSubdomainHeader ||
+      host.startsWith("docs.") ||
+      host.startsWith("api.") ||
+      host.startsWith("partners.");
+  } catch {
+    // Fallback for static generation
+  }
 
   return (
     <html lang="en">
@@ -142,7 +157,7 @@ export default function RootLayout({
             <ConvexClientProvider>
               <SyncUserWithConvex />
 
-              <ConditionalLayout>
+              <ConditionalLayout isSubdomainHost={isSubdomainHost}>
                 {children}
               </ConditionalLayout>
             </ConvexClientProvider>

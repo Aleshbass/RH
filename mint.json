@@ -1,0 +1,115 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Rehabify Health",
+  "logo": {
+    "dark": "/public/images/logo-dark.svg",
+    "light": "/public/images/logo-light.svg"
+  },
+  "favicon": "/public/favicon.ico",
+  "colors": {
+    "primary": "#0D9488",
+    "light": "#14B8A6",
+    "dark": "#0F766E",
+    "background": {
+      "dark": "#0B0F17",
+      "light": "#F8FAFC"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "Main Platform",
+      "url": "https://physioaroundme.com"
+    },
+    {
+      "name": "Partnerships Hub",
+      "url": "https://physioaroundme.com/partnerships"
+    },
+    {
+      "name": "Care Tracker",
+      "url": "https://physioaroundme.com/track"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Get API Keys",
+    "url": "https://physioaroundme.com/partnerships#contact"
+  },
+  "tabs": [
+    {
+      "name": "Guides",
+      "url": "guides"
+    },
+    {
+      "name": "API Reference",
+      "url": "api-reference"
+    },
+    {
+      "name": "Webhooks",
+      "url": "webhooks"
+    },
+    {
+      "name": "SDKs & Widgets",
+      "url": "sdks-widgets"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "content/docs/index",
+        "content/docs/getting-started/index",
+        "content/docs/getting-started/quickstart",
+        "content/docs/getting-started/authentication",
+        "content/docs/getting-started/errors"
+      ]
+    },
+    {
+      "group": "API Reference",
+      "pages": [
+        "content/docs/api-reference/index",
+        "content/docs/api-reference/referrals",
+        "content/docs/api-reference/eligibility",
+        "content/docs/api-reference/providers",
+        "content/docs/api-reference/sessions",
+        "content/docs/api-reference/clinical-reports"
+      ]
+    },
+    {
+      "group": "Webhooks & Events",
+      "pages": [
+        "content/docs/webhooks/index",
+        "content/docs/webhooks/event-catalog",
+        "content/docs/webhooks/signature-verification",
+        "content/docs/webhooks/retry-policy"
+      ]
+    },
+    {
+      "group": "SDKs & Widgets",
+      "pages": [
+        "content/docs/sdks-widgets/index",
+        "content/docs/sdks-widgets/whatsapp-deep-links",
+        "content/docs/sdks-widgets/embed-widget",
+        "content/docs/sdks-widgets/react-component"
+      ]
+    },
+    {
+      "group": "Partner Solutions",
+      "pages": [
+        "content/docs/guides/index",
+        "content/docs/guides/hmo-integration",
+        "content/docs/guides/hospital-clinic-referral",
+        "content/docs/guides/corporate-wellness",
+        "content/docs/guides/gym-fitness-recovery"
+      ]
+    },
+    {
+      "group": "Sandbox Testing",
+      "pages": [
+        "content/docs/sandbox/testing"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/Aleshbass/RH",
+    "website": "https://physioaroundme.com"
+  }
+}

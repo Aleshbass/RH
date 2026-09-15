@@ -1,0 +1,107 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Rehabify Health",
+  "logo": {
+    "dark": "/public/images/logo-dark.svg",
+    "light": "/public/images/logo-light.svg"
+  },
+  "favicon": "/public/favicon.ico",
+  "colors": {
+    "primary": "#0D9488",
+    "light": "#14B8A6",
+    "dark": "#0F766E",
+    "background": {
+      "dark": "#0B0F17",
+      "light": "#F8FAFC"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "Main Platform",
+      "url": "https://physioaroundme.com"
+    },
+    {
+      "name": "Partnerships Hub",
+      "url": "https://physioaroundme.com/partnerships"
+    },
+    {
+      "name": "Care Tracker",
+      "url": "https://physioaroundme.com/track"
+    }
+  ],
+  "tabs": [
+    {
+      "name": "Guides",
+      "url": "guides"
+    },
+    {
+      "name": "API Reference",
+      "url": "api-reference"
+    },
+    {
+      "name": "Webhooks",
+      "url": "webhooks"
+    },
+    {
+      "name": "SDKs & Widgets",
+      "url": "sdks-widgets"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "index",
+        "getting-started/index",
+        "getting-started/quickstart",
+        "getting-started/authentication",
+        "getting-started/errors"
+      ]
+    },
+    {
+      "group": "API Reference",
+      "pages": [
+        "api-reference/index",
+        "api-reference/referrals",
+        "api-reference/eligibility",
+        "api-reference/providers",
+        "api-reference/sessions",
+        "api-reference/clinical-reports"
+      ]
+    },
+    {
+      "group": "Webhooks & Events",
+      "pages": [
+        "webhooks/index",
+        "webhooks/event-catalog",
+        "webhooks/signature-verification",
+        "webhooks/retry-policy"
+      ]
+    },
+    {
+      "group": "SDKs & Widgets",
+      "pages": [
+        "sdks-widgets/index",
+        "sdks-widgets/whatsapp-deep-links",
+        "sdks-widgets/embed-widget",
+        "sdks-widgets/react-component"
+      ]
+    },
+    {
+      "group": "Partner Solutions",
+      "pages": [
+        "guides/index",
+        "guides/hmo-integration",
+        "guides/hospital-clinic-referral",
+        "guides/corporate-wellness",
+        "guides/gym-fitness-recovery"
+      ]
+    },
+    {
+      "group": "Sandbox Testing",
+      "pages": [
+        "sandbox/testing"
+      ]
+    }
+  ]
+}

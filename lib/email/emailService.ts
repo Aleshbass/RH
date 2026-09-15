@@ -25,7 +25,10 @@ export type EmailTemplate =
   | 'CLINIC_STAFF_INVITE_DECLINED_OWNER'
   | 'GOOGLE_MEET_LINK'
   | 'PARTNERSHIP_INQUIRY'
-  | 'PAYMENT_RECEIPT';
+  | 'PAYMENT_RECEIPT'
+  | 'PARTNER_APPLICATION_SUBMITTED'
+  | 'PARTNER_APPLICATION_APPROVED'
+  | 'PARTNER_APPLICATION_DECLINED';
 
 // Data interfaces for each email template
 export interface InvitationCreatedData {
@@ -217,6 +220,33 @@ export interface PaymentReceiptData {
   role: 'patient' | 'physiotherapist' | 'admin';
 }
 
+export interface PartnerApplicationSubmittedData {
+  organizationName: string;
+  organizationType: string;
+  contactName?: string;
+  contactEmail: string;
+  contactPhone?: string;
+  coverageStates?: string[];
+  reviewLink: string;
+  submittedAt?: string | number | Date;
+}
+
+export interface PartnerApplicationApprovedData {
+  organizationName: string;
+  partnerCode: string;
+  contactName?: string;
+  dashboardLink: string;
+  portalLink: string;
+  approvedBy?: string;
+}
+
+export interface PartnerApplicationDeclinedData {
+  organizationName: string;
+  contactName?: string;
+  reason?: string;
+  supportLink: string;
+}
+
 // Discriminated union for EmailOptions
 export type EmailOptions =
   | { to: string; subject?: string; template: 'INVITATION_CREATED'; data: InvitationCreatedData }
@@ -241,7 +271,10 @@ export type EmailOptions =
   | { to: string; subject?: string; template: 'CLINIC_STAFF_INVITE_DECLINED_OWNER'; data: ClinicStaffInviteOwnerNoticeData }
   | { to: string; subject?: string; template: 'GOOGLE_MEET_LINK'; data: GoogleMeetLinkData }
   | { to: string; subject?: string; template: 'PARTNERSHIP_INQUIRY'; data: PartnershipInquiryData }
-  | { to: string; subject?: string; template: 'PAYMENT_RECEIPT'; data: PaymentReceiptData };
+  | { to: string; subject?: string; template: 'PAYMENT_RECEIPT'; data: PaymentReceiptData }
+  | { to: string; subject?: string; template: 'PARTNER_APPLICATION_SUBMITTED'; data: PartnerApplicationSubmittedData }
+  | { to: string; subject?: string; template: 'PARTNER_APPLICATION_APPROVED'; data: PartnerApplicationApprovedData }
+  | { to: string; subject?: string; template: 'PARTNER_APPLICATION_DECLINED'; data: PartnerApplicationDeclinedData };
 
 /**
  * Send an email using the specified template and data
@@ -924,6 +957,328 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
               </p>
             </div>
           </div>
+        `
+      };
+
+    case 'PARTNERSHIP_INQUIRY':
+      return {
+        subject: options.subject || `New Partnership Inquiry: ${options.data.organization}`,
+        body: `
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb;">
+            <div style="background: linear-gradient(135deg, #002e2c 0%, #005b57 100%); padding: 32px 24px; text-align: center;">
+              <h1 style="color: #ffffff; font-size: 22px; font-weight: 700; margin: 0;">New Partnership Inquiry</h1>
+              <p style="color: rgba(255,255,255,0.85); font-size: 14px; margin: 8px 0 0 0;">Submitted via Rehabify Health Website</p>
+            </div>
+            <div style="padding: 32px 24px;">
+              <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                <p style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280;"><strong>Organization:</strong> ${options.data.organization}</p>
+                <p style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280;"><strong>Contact Name:</strong> ${options.data.name}</p>
+                <p style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280;"><strong>Email:</strong> <a href="mailto:${options.data.email}" style="color: #005b57;">${options.data.email}</a></p>
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+                  <p style="margin: 0 0 4px 0; font-size: 13px; font-weight: 600; color: #374151;">Message:</p>
+                  <p style="margin: 0; font-size: 14px; color: #4b5563; white-space: pre-wrap;">${options.data.message}</p>
+                </div>
+              </div>
+              <div style="text-align: center;">
+                <a href="https://rehabify.com/dashboard/admin/partnerships" style="display: inline-block; background-color: #005b57; color: white; font-weight: 600; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-size: 14px;">
+                  Open Admin Partnerships
+                </a>
+              </div>
+            </div>
+          </div>
+        `
+      };
+
+    case 'PARTNER_APPLICATION_SUBMITTED':
+      return {
+        subject: options.subject || `Action Required: New Partner Application - ${options.data.organizationName}`,
+        body: `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; background-color: #f5f5f7; margin: 0; padding: 24px 8px; table-layout: fixed; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+            <tr>
+              <td align="center" style="padding: 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 580px; width: 100%; background-color: #ffffff; border-radius: 18px; border: 1px solid #e5e5ea; box-shadow: 0 8px 30px rgba(0,0,0,0.05); overflow: hidden; table-layout: fixed;">
+                  
+                  <!-- Header with Cloudinary Hosted Logo -->
+                  <tr>
+                    <td align="center" style="padding: 36px 24px 24px 24px; border-bottom: 1px solid #f2f2f7;">
+                      <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 40px; width: auto; display: block; margin: 0 auto 18px auto;" />
+                      <div style="display: inline-block; background-color: #f2f2f7; color: #1d1d1f; border-radius: 9999px; padding: 5px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px;">
+                        Partner Network Operations
+                      </div>
+                      <h1 style="color: #1d1d1f; font-size: 23px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px 0;">New Partner Application</h1>
+                      <p style="color: #86868b; font-size: 14px; margin: 0; line-height: 1.4;">Clinical credentialing & governance review required</p>
+                    </td>
+                  </tr>
+
+                  <!-- Body Content -->
+                  <tr>
+                    <td style="padding: 28px 24px;">
+                      <p style="color: #1d1d1f; font-size: 15px; line-height: 1.5; margin: 0 0 20px 0;">
+                        A new healthcare organization has registered on the <strong>Rehabify Partner Portal</strong> and is awaiting clinical authorization:
+                      </p>
+
+                      <!-- Inset Grouped Detail Card (Fully Contained & Immune to Overflow) -->
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 100%; border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; background-color: #fbfbfd; border: 1px solid #e5e5ea; border-radius: 14px; margin-bottom: 28px;">
+                        <tr>
+                          <td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4; text-align: left;">
+                            <div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; line-height: 1.2;">
+                              Organization
+                            </div>
+                            <div style="color: #1d1d1f; font-size: 15px; font-weight: 600; line-height: 1.4; word-break: break-word; overflow-wrap: break-word;">
+                              ${options.data.organizationName}
+                            </div>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4; text-align: left;">
+                            <div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; line-height: 1.2;">
+                              Partner Type
+                            </div>
+                            <div>
+                              <span style="display: inline-block; background-color: #e6f4f1; color: #005b57; font-weight: 600; font-size: 11px; padding: 4px 10px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.04em;">
+                                ${options.data.organizationType}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        ${options.data.contactName ? `
+                        <tr>
+                          <td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4; text-align: left;">
+                            <div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; line-height: 1.2;">
+                              Liaison Contact
+                            </div>
+                            <div style="color: #1d1d1f; font-size: 14px; font-weight: 500; line-height: 1.4; word-break: break-word; overflow-wrap: break-word;">
+                              ${options.data.contactName}
+                            </div>
+                          </td>
+                        </tr>` : ''}
+                        <tr>
+                          <td style="padding: 14px 18px; border-bottom: ${options.data.contactPhone || (options.data.coverageStates && options.data.coverageStates.length > 0) ? '1px solid #f0f0f4' : 'none'}; text-align: left;">
+                            <div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; line-height: 1.2;">
+                              Official Email
+                            </div>
+                            <div style="color: #1d1d1f; font-size: 14px; line-height: 1.4; word-break: break-all; overflow-wrap: break-word;">
+                              <a href="mailto:${options.data.contactEmail}" style="color: #0066cc; text-decoration: none; font-size: 14px; font-weight: 500; word-break: break-all;">
+                                ${options.data.contactEmail}
+                              </a>
+                            </div>
+                          </td>
+                        </tr>
+                        ${options.data.contactPhone ? `
+                        <tr>
+                          <td style="padding: 14px 18px; border-bottom: ${options.data.coverageStates && options.data.coverageStates.length > 0 ? '1px solid #f0f0f4' : 'none'}; text-align: left;">
+                            <div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; line-height: 1.2;">
+                              Phone Number
+                            </div>
+                            <div style="color: #1d1d1f; font-size: 14px; font-weight: 500; line-height: 1.4; word-break: break-word; overflow-wrap: break-word;">
+                              ${options.data.contactPhone}
+                            </div>
+                          </td>
+                        </tr>` : ''}
+                        ${options.data.coverageStates && options.data.coverageStates.length > 0 ? `
+                        <tr>
+                          <td style="padding: 14px 18px; text-align: left;">
+                            <div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; line-height: 1.2;">
+                              Coverage States
+                            </div>
+                            <div style="color: #1d1d1f; font-size: 14px; font-weight: 500; line-height: 1.4; word-break: break-word; overflow-wrap: break-word;">
+                              ${options.data.coverageStates.join(', ')}
+                            </div>
+                          </td>
+                        </tr>` : ''}
+                      </table>
+
+                      <!-- Apple-style Primary Button -->
+                      <div style="text-align: center; margin: 28px 0 12px 0;">
+                        <a href="${options.data.reviewLink}" style="display: inline-block; background-color: #004D4A; color: #ffffff; font-size: 15px; font-weight: 600; padding: 14px 34px; border-radius: 9999px; text-decoration: none; letter-spacing: -0.01em; box-shadow: 0 4px 14px rgba(0,77,74,0.22);">
+                          Review & Approve Application →
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+
+                  <!-- Refined Apple Minimalist Footer -->
+                  <tr>
+                    <td align="center" style="background-color: #fafafc; padding: 24px; border-top: 1px solid #f2f2f7;">
+                      <p style="color: #86868b; font-size: 12px; margin: 0 0 6px 0; line-height: 1.4;">
+                        Rehabify Health Clinical Operations · Licensed MRTBN Digital Health Network
+                      </p>
+                      <p style="color: #86868b; font-size: 12px; margin: 0 0 6px 0;">
+                        Liaison: <a href="mailto:partners@physioaroundme.com" style="color: #0066cc; text-decoration: none;">partners@physioaroundme.com</a>
+                      </p>
+                      <p style="color: #c7c7cc; font-size: 11px; margin: 0;">
+                        &copy; ${new Date().getFullYear()} Rehabify Health Inc. All rights reserved.
+                      </p>
+                    </td>
+                  </tr>
+
+                </table>
+              </td>
+            </tr>
+          </table>
+        `
+      };
+
+    case 'PARTNER_APPLICATION_APPROVED':
+      return {
+        subject: options.subject || `Welcome to Rehabify Health! Partnership Approved for ${options.data.organizationName}`,
+        body: `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; background-color: #f5f5f7; margin: 0; padding: 24px 8px; table-layout: fixed; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+            <tr>
+              <td align="center" style="padding: 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 580px; width: 100%; background-color: #ffffff; border-radius: 18px; border: 1px solid #e5e5ea; box-shadow: 0 8px 30px rgba(0,0,0,0.05); overflow: hidden; table-layout: fixed;">
+                  
+                  <!-- Header with Cloudinary Hosted Logo -->
+                  <tr>
+                    <td align="center" style="padding: 36px 24px 24px 24px; border-bottom: 1px solid #f2f2f7;">
+                      <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 40px; width: auto; display: block; margin: 0 auto 18px auto;" />
+                      <div style="display: inline-block; background-color: #d1fae5; color: #065f46; border-radius: 9999px; padding: 5px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px;">
+                        ✓ Organization Approved & Verified
+                      </div>
+                      <h1 style="color: #1d1d1f; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px 0;">Welcome to Rehabify Health</h1>
+                      <p style="color: #86868b; font-size: 14px; margin: 0; line-height: 1.4;">Your partner integration is provisioned and ready</p>
+                    </td>
+                  </tr>
+
+                  <!-- Body Content -->
+                  <tr>
+                    <td style="padding: 28px 24px;">
+                      <p style="color: #1d1d1f; font-size: 16px; line-height: 1.5; margin: 0 0 16px 0;">
+                        Hello <strong>${options.data.contactName || options.data.organizationName}</strong>,
+                      </p>
+
+                      <p style="color: #48484a; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+                        We are delighted to confirm that your partnership registration for <strong>${options.data.organizationName}</strong> has been authorized by Rehabify Health.
+                      </p>
+
+                      <!-- Credentials Callout Table -->
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; overflow: hidden; margin-bottom: 28px;">
+                        <tr>
+                          <td style="padding: 18px 20px; word-break: break-word;">
+                            <div style="color: #166534; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px;">
+                              Assigned Partner Credentials
+                            </div>
+                            <div style="margin-bottom: 8px; font-size: 14px; color: #14532d;">
+                              <span style="color: #4ade80;">•</span> <strong>Partner Code:</strong> <code style="background-color: #ffffff; color: #166534; padding: 3px 10px; border-radius: 6px; font-family: SFMono-Regular, Consolas, monospace; font-size: 13px; font-weight: 700; border: 1px solid #bbf7d0;">${options.data.partnerCode}</code>
+                            </div>
+                            <div style="font-size: 14px; color: #14532d;">
+                              <span style="color: #4ade80;">•</span> <strong>Status:</strong> <span style="font-weight: 600; color: #15803d;">Active & Fully Provisioned</span>
+                            </div>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <!-- Feature Highlights -->
+                      <div style="margin-bottom: 28px;">
+                        <h4 style="color: #1d1d1f; font-size: 14px; font-weight: 600; margin: 0 0 12px 0;">Available In Your Portal:</h4>
+                        <div style="font-size: 13px; color: #48484a; line-height: 1.8;">
+                          <div style="padding: 4px 0;"><strong style="color: #1d1d1f;">🔗 Co-Branded Referral Links:</strong> Create custom links with automated 30-day cookie tracking.</div>
+                          <div style="padding: 4px 0;"><strong style="color: #1d1d1f;">🩺 Direct Patient Triage:</strong> Submit patient referrals with live treatment tracking.</div>
+                          <div style="padding: 4px 0;"><strong style="color: #1d1d1f;">⚡ Developer REST API:</strong> Integrate patient referrals directly with your EHR or mobile app.</div>
+                          <div style="padding: 4px 0;"><strong style="color: #1d1d1f;">📊 Settlement Ledger:</strong> Transparent real-time reporting and CSV financial exports.</div>
+                        </div>
+                      </div>
+
+                      <!-- Apple-style Primary Button -->
+                      <div style="text-align: center; margin: 32px 0 12px 0;">
+                        <a href="${options.data.portalLink}" style="display: inline-block; background-color: #004D4A; color: #ffffff; font-size: 15px; font-weight: 600; padding: 14px 38px; border-radius: 9999px; text-decoration: none; letter-spacing: -0.01em; box-shadow: 0 4px 14px rgba(0,77,74,0.25);">
+                          Access Your Partner Portal →
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+
+                  <!-- Refined Apple Minimalist Footer -->
+                  <tr>
+                    <td align="center" style="background-color: #fafafc; padding: 24px; border-top: 1px solid #f2f2f7;">
+                      <p style="color: #86868b; font-size: 13px; margin: 0 0 8px 0;">
+                        Need integration assistance? Contact our engineering team at <a href="mailto:partners@physioaroundme.com" style="color: #0066cc; text-decoration: none; font-weight: 500;">partners@physioaroundme.com</a>
+                      </p>
+                      <p style="color: #c7c7cc; font-size: 11px; margin: 0;">
+                        &copy; ${new Date().getFullYear()} Rehabify Health Inc. · Licensed MRTBN Healthcare Network
+                      </p>
+                    </td>
+                  </tr>
+
+                </table>
+              </td>
+            </tr>
+          </table>
+        `
+      };
+
+    case 'PARTNER_APPLICATION_DECLINED':
+      return {
+        subject: options.subject || `Update regarding your Rehabify Health Partner Application`,
+        body: `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; background-color: #f5f5f7; margin: 0; padding: 24px 8px; table-layout: fixed; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+            <tr>
+              <td align="center" style="padding: 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 580px; width: 100%; background-color: #ffffff; border-radius: 18px; border: 1px solid #e5e5ea; box-shadow: 0 8px 30px rgba(0,0,0,0.05); overflow: hidden; table-layout: fixed;">
+                  
+                  <!-- Header with Cloudinary Hosted Logo -->
+                  <tr>
+                    <td align="center" style="padding: 36px 24px 24px 24px; border-bottom: 1px solid #f2f2f7;">
+                      <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 40px; width: auto; display: block; margin: 0 auto 18px auto;" />
+                      <div style="display: inline-block; background-color: #fee2e2; color: #991b1b; border-radius: 9999px; padding: 5px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px;">
+                        Application Status Update
+                      </div>
+                      <h1 style="color: #1d1d1f; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px 0;">Partner Application Review</h1>
+                      <p style="color: #86868b; font-size: 14px; margin: 0; line-height: 1.4;">${options.data.organizationName}</p>
+                    </td>
+                  </tr>
+
+                  <!-- Body Content -->
+                  <tr>
+                    <td style="padding: 28px 24px;">
+                      <p style="color: #1d1d1f; font-size: 15px; line-height: 1.5; margin: 0 0 16px 0;">
+                        Hello <strong>${options.data.contactName || options.data.organizationName}</strong>,
+                      </p>
+
+                      <p style="color: #48484a; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+                        Thank you for submitting an application to join the Rehabify Partner Network. Following review by our clinical governance and compliance team, we are unable to approve this registration at this time.
+                      </p>
+
+                      <!-- Status Callout Table -->
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 14px; overflow: hidden; margin-bottom: 24px;">
+                        <tr>
+                          <td style="padding: 18px 20px; word-break: break-word;">
+                            <div style="color: #991b1b; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;">
+                              Review Finding
+                            </div>
+                            <p style="margin: 0; color: #7f1d1d; font-size: 14px; line-height: 1.5;">
+                              ${options.data.reason || 'Our clinical governance committee could not verify this application with the information currently provided.'}
+                            </p>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <p style="color: #48484a; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+                        If you believe this determination was made in error or have supplemental licensing documents to submit, please reach out directly to <a href="mailto:partners@physioaroundme.com" style="color: #0066cc; text-decoration: none; font-weight: 500;">partners@physioaroundme.com</a>:
+                      </p>
+
+                      <!-- Apple-style Secondary Button -->
+                      <div style="text-align: center; margin: 24px 0 12px 0;">
+                        <a href="${options.data.supportLink}" style="display: inline-block; background-color: #1d1d1f; color: #ffffff; font-size: 14px; font-weight: 600; padding: 13px 32px; border-radius: 9999px; text-decoration: none; letter-spacing: -0.01em;">
+                          Contact Clinical Support →
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+
+                  <!-- Refined Apple Minimalist Footer -->
+                  <tr>
+                    <td align="center" style="background-color: #fafafc; padding: 24px; border-top: 1px solid #f2f2f7;">
+                      <p style="color: #86868b; font-size: 12px; margin: 0;">
+                        &copy; ${new Date().getFullYear()} Rehabify Health Clinical Governance · Licensed MRTBN Network
+                      </p>
+                    </td>
+                  </tr>
+
+                </table>
+              </td>
+            </tr>
+          </table>
         `
       };
 

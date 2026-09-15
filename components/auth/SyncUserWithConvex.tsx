@@ -4,6 +4,7 @@ import { api } from "@/convex/_generated/api";
 import { useUser } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef } from "react";
+import { getPartnerReferralCookie } from "@/lib/referralCookie";
 
 export default function SyncUserWithConvex() {
   const { user, isLoaded } = useUser();
@@ -42,6 +43,9 @@ export default function SyncUserWithConvex() {
           clerkId: user.id,
           attempt: retryCountRef.current + 1
         });
+
+        // Retrieve unexpired partner referral attribution from 30-day cookie/storage if present
+        const referralAttribution = getPartnerReferralCookie();
         
         await storeUserInConvex({
           clerkId: user.id,
@@ -49,6 +53,8 @@ export default function SyncUserWithConvex() {
           firstName: user.firstName ?? undefined,
           lastName: user.lastName ?? undefined,
           imageUrl: user.imageUrl ?? undefined,
+          referredByPartnerCode: referralAttribution?.partnerId ?? undefined,
+          referralPublicCode: referralAttribution?.publicCode ?? undefined,
         });
         
         console.log('User sync completed successfully');

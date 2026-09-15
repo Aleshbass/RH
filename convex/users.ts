@@ -165,6 +165,8 @@ export const storeUserFromClerk = mutation({
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
+    referredByPartnerCode: v.optional(v.string()),
+    referralPublicCode: v.optional(v.string()),
   },
   async handler(ctx, args) {
     const identity = await ctx.auth.getUserIdentity();
@@ -208,23 +210,31 @@ export const storeUserFromClerk = mutation({
         updates.imageUrl = args.imageUrl;
       }
 
+      // If user did not previously have partner attribution and a referral code is now provided, persist it
+      if (args.referredByPartnerCode && !existingUser.referredByPartnerCode) {
+        updates.referredByPartnerCode = args.referredByPartnerCode;
+      }
+      if (args.referralPublicCode && !existingUser.referralPublicCode) {
+        updates.referralPublicCode = args.referralPublicCode;
+      }
+
       if (Object.keys(updates).length > 0) {
         await ctx.db.patch(existingUser._id, updates);
       }
       return existingUser._id;
     } else {
       // User does not exist, create a new one
-      // Ensure your user schema has a 'name' field or adjust accordingly
       return await ctx.db.insert("users", {
         clerkId: args.clerkId,
         email: args.email,
         firstName: args.firstName,
         lastName: args.lastName,
         imageUrl: args.imageUrl,
+        referredByPartnerCode: args.referredByPartnerCode,
+        referralPublicCode: args.referralPublicCode,
         onboarded: false, // Default value
         hasCompletedOnboarding: false,
         onboardingVersion: 1,
-        // role: undefined, // Set a default role if applicable or leave as undefined
       });
     }
   },

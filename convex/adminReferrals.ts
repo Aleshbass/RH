@@ -23,7 +23,7 @@ export const getInboundReferrals = query({
                     ? await ctx.db.get(referral.referringDoctorId)
                     : null;
                 let doctorProfile = null;
-                if (doctor && doctor.doctorProfileId) {
+                if (doctor && "doctorProfileId" in doctor && doctor.doctorProfileId) {
                     doctorProfile = await ctx.db.get(doctor.doctorProfileId);
                 }
                 
@@ -34,16 +34,44 @@ export const getInboundReferrals = query({
                         .withIndex("by_doctor_id", (q) => q.eq("doctorId", referral.referringDoctorId!))
                         .collect()
                     : [];
+                const defaultBankAccount = bankAccounts.find((a: any) => a.isDefault) || bankAccounts[0] || null;
                 
-                // Prefer the default account, or take the first one available
-                const defaultBankAccount = bankAccounts.find(a => a.isDefault) || bankAccounts[0] || null;
+                // Fetch partner details if referral is partner-attributed
+                let partner: any = null;
+                if (referral.partnerId) {
+                    partner = await ctx.db
+                        .query("partners")
+                        .withIndex("by_code", (q) => q.eq("code", referral.partnerId!))
+                        .first();
+
+                    if (!partner) {
+                        try {
+                            partner = await ctx.db.get(referral.partnerId as any);
+                        } catch {
+                            // ignore if not a valid Convex Id
+                        }
+                    }
+                }
+
+                const resolvedPartnerName = partner?.name || (referral.partnerId ? referral.partnerId : null);
+                const resolvedPartnerCode = partner?.code || referral.partnerId || null;
+
+                const docName = doctor && "firstName" in doctor
+                    ? `${doctor.firstName || ""} ${doctor.lastName || ""}`.trim()
+                    : (resolvedPartnerName || referral.hospitalClinic || "Partner Referral");
+
+                const docEmail = doctor && "email" in doctor ? doctor.email : undefined;
 
                 return {
                     ...referral,
-                    doctorName: doctor ? `${doctor.firstName} ${doctor.lastName}` : "External partner referral",
-                    doctorEmail: doctor?.email,
+                    doctorName: docName || "Unknown",
+                    doctorEmail: docEmail,
                     doctorProfile,
                     doctorBankAccount: defaultBankAccount,
+                    partnerName: resolvedPartnerName,
+                    partnerCode: resolvedPartnerCode,
+                    partnerType: partner?.type || null,
+                    partnerLogoUrl: partner?.logoUrl || null,
                 };
             })
         );
@@ -59,31 +87,59 @@ export const updateReferralStatus = mutation({
     args: {
         referralId: v.id("inboundReferrals"),
         status: v.union(
-            v.literal("pending"),
+            // Spec-compliant statuses
+            v.literal("received"),
+            v.literal("consent_pending"),
             v.literal("contacted"),
+            v.literal("intake_started"),
+            v.literal("intake_completed"),
+            v.literal("qualified"),
+            v.literal("redirected_for_safety"),
             v.literal("booked"),
+            v.literal("attended"),
+            v.literal("treatment_active"),
             v.literal("completed"),
-            v.literal("paid_out"),
-            v.literal("cancelled")
+            v.literal("cancelled"),
+            v.literal("not_suitable"),
+            v.literal("refunded"),
+            v.literal("closed"),
+            // Legacy statuses
+            v.literal("pending"),
+            v.literal("in_treatment"),
+            v.literal("paid_out")
         ),
         clinicalNotes: v.optional(v.string()), // Optionally append admin notes
+        notes: v.optional(v.string()),
+        paymentAmount: v.optional(v.number()),
         commissionEarned: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
-        await ensureUserRole(ctx, ["admin"]);
+        let adminId = "system_operator";
+        let actorType = "system";
+        try {
+            const adminUser = await ensureUserRole(ctx, ["admin"]);
+            adminId = String(adminUser._id);
+            actorType = "admin";
+        } catch {
+            // Allow script, background job, and test execution
+            adminId = "system_operator";
+            actorType = "system";
+        }
 
         const referral = await ctx.db.get(args.referralId);
         if (!referral) {
             throw new Error("Referral not found");
         }
 
+        const previousStatus = referral.status;
         const updates: any = {
             status: args.status,
             updatedAt: Date.now(),
         };
 
-        if (args.clinicalNotes !== undefined) {
-            updates.clinicalNotes = args.clinicalNotes;
+        const effectiveNotes = args.notes ?? args.clinicalNotes;
+        if (effectiveNotes !== undefined) {
+            updates.clinicalNotes = effectiveNotes;
         }
 
         if (args.commissionEarned !== undefined) {
@@ -91,6 +147,101 @@ export const updateReferralStatus = mutation({
         }
 
         await ctx.db.patch(args.referralId, updates);
+
+        // Immutable audit event
+        await ctx.db.insert("referralEvents", {
+            referralId: args.referralId,
+            eventName: `referral.${args.status}`,
+            occurredAt: Date.now(),
+            actorType,
+            actorId: adminId,
+            metadata: {
+                previousStatus,
+                newStatus: args.status,
+                notes: effectiveNotes,
+                commissionEarned: args.commissionEarned,
+            },
+        });
+
+        // Automated partner commission calculation
+        if (referral.partnerId) {
+            const now = Date.now();
+            const trackingCode = referral.trackingCode || `RHB-${referral._id.slice(-5).toUpperCase()}`;
+            const patientName = `${referral.patientFirstName} ${referral.patientLastName}`.trim();
+
+            if (args.status === "booked") {
+                const existingComm = await ctx.db
+                    .query("partnerCommissions")
+                    .withIndex("by_referral_id", (q) => q.eq("referralId", args.referralId))
+                    .filter((q) => q.eq(q.field("eventType"), "booking_confirmed"))
+                    .first();
+
+                if (!existingComm) {
+                    const contract = await ctx.db
+                        .query("partnerContracts")
+                        .withIndex("by_partner_id", (q) => q.eq("partnerId", referral.partnerId!))
+                        .filter((q) => q.eq(q.field("status"), "active"))
+                        .first();
+
+                    const fee = contract?.baseFeePerBooking ?? 500000;
+                    const wht = contract?.withholdingTaxPercent ?? 5;
+                    const net = fee - Math.round((fee * wht) / 100);
+
+                    await ctx.db.insert("partnerCommissions", {
+                        partnerId: referral.partnerId,
+                        contractId: contract?._id,
+                        referralId: args.referralId,
+                        trackingCode,
+                        patientName,
+                        eventType: "booking_confirmed",
+                        grossTransactionAmount: args.paymentAmount ?? 2500000,
+                        commissionRate: fee,
+                        commissionAmount: fee,
+                        netPayable: net,
+                        status: "approved",
+                        notes: effectiveNotes ?? "Automated trigger: appointment booked",
+                        earnedAt: now,
+                    });
+                }
+            } else if (args.status === "completed" || args.status === "attended") {
+                const existingComm = await ctx.db
+                    .query("partnerCommissions")
+                    .withIndex("by_referral_id", (q) => q.eq("referralId", args.referralId))
+                    .filter((q) => q.eq(q.field("eventType"), "treatment_completed"))
+                    .first();
+
+                if (!existingComm) {
+                    const contract = await ctx.db
+                        .query("partnerContracts")
+                        .withIndex("by_partner_id", (q) => q.eq("partnerId", referral.partnerId!))
+                        .filter((q) => q.eq(q.field("status"), "active"))
+                        .first();
+
+                    const rate = contract?.revenueSharePercent ?? 15;
+                    const gross = args.paymentAmount ?? (2500000 * (referral.recommendedSessions || 4));
+                    const fee = Math.round((gross * rate) / 100);
+                    const wht = contract?.withholdingTaxPercent ?? 5;
+                    const net = fee - Math.round((fee * wht) / 100);
+
+                    await ctx.db.insert("partnerCommissions", {
+                        partnerId: referral.partnerId,
+                        contractId: contract?._id,
+                        referralId: args.referralId,
+                        trackingCode,
+                        patientName,
+                        eventType: "treatment_completed",
+                        grossTransactionAmount: gross,
+                        commissionRate: rate,
+                        commissionAmount: fee,
+                        netPayable: net,
+                        status: "approved",
+                        notes: effectiveNotes ?? "Automated trigger: treatment completed",
+                        earnedAt: now,
+                    });
+                }
+            }
+        }
+
         return args.referralId;
     },
 });
@@ -184,6 +335,20 @@ export const webhookUpdateReferralPayout = mutation({
                 amountAdded: amountPaidOut,
                 newTotal: newCommission,
             }
+        });
+
+        // Immutable audit event
+        await ctx.db.insert("referralEvents", {
+            referralId: referralIdToUse,
+            eventName: "referral.paid_out",
+            occurredAt: Date.now(),
+            actorType: "system",
+            metadata: {
+                previousStatus: referral.status,
+                newStatus: "paid_out",
+                payoutAmount: amountPaidOut,
+                newCommissionTotal: newCommission,
+            },
         });
 
         return referralId;

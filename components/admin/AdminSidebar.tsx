@@ -285,6 +285,13 @@ export function AdminSidebar({ className }: AdminSidebarProps) {
 
   const pendingApprovals = pendingApprovalsList?.length || 0
 
+  // Get pending partner applications count for admins
+  const pendingPartnerAppsList = useQuery(
+    api.adminPartnerships.getPartnerApplications,
+    userData?.role === 'admin' ? { status: 'pending' } : 'skip'
+  )
+  const pendingPartnerApps = pendingPartnerAppsList?.length || 0
+
   // Update badge counts for navigation items
   const navigationWithBadges = navigationGroups.map(group => ({
     ...group,
@@ -294,6 +301,9 @@ export function AdminSidebar({ className }: AdminSidebarProps) {
       }
       if (item.href === '/dashboard/admin/approvals') {
         return { ...item, badge: pendingApprovals || 0 }
+      }
+      if (item.href === '/dashboard/admin/partnerships') {
+        return { ...item, badge: pendingPartnerApps || 0 }
       }
       return item
     })
