@@ -2,6 +2,8 @@
 @import "mapbox-gl/dist/mapbox-gl.css";
 @import "stream-chat-react/dist/css/v2/index.css";
 @import "react-day-picker/dist/style.css";
+/* @import "fumadocs-ui/css/neutral.css"; */
+/* @import "fumadocs-ui/css/preset.css"; */
 
 @source "../node_modules/fumadocs-ui/dist/**/*.js";
 

@@ -1,9 +1,84 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
 const isProtectedRoute = createRouteMatcher(["/server"]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) await auth.protect();
+  const url = req.nextUrl;
+  const hostname = req.headers.get("host") || "";
+  const currentHost = hostname.replace(/:\d+$/, "").toLowerCase(); // strip port e.g. :3000
+
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-current-host", currentHost);
+
+  // 1. Subdomain: docs.physioaroundme.com (or docs.localhost)
+  if (currentHost.startsWith("docs.")) {
+    requestHeaders.set("x-is-b2b-subdomain", "true");
+    requestHeaders.set("x-subdomain-type", "docs");
+    if (url.pathname.startsWith("/api")) {
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    }
+    const pathname =
+      url.pathname === "/"
+        ? "/docs"
+        : url.pathname.startsWith("/docs")
+          ? url.pathname
+          : `/docs${url.pathname}`;
+    return NextResponse.rewrite(new URL(pathname, req.url), {
+      request: { headers: requestHeaders },
+    });
+  }
+
+  // 2. Subdomain: partners.physioaroundme.com (or partners.localhost)
+  if (currentHost.startsWith("partners.")) {
+    requestHeaders.set("x-is-b2b-subdomain", "true");
+    requestHeaders.set("x-subdomain-type", "partners");
+    if (url.pathname.startsWith("/api")) {
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    }
+    // Allow care tracker links (/track and /track/[id]) to resolve directly
+    if (url.pathname.startsWith("/track")) {
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    }
+    // Redirect docs requests to the docs subdomain
+    if (url.pathname === "/docs" || url.pathname.startsWith("/docs/")) {
+      const docsHost = currentHost.replace("partners.", "docs.");
+      const protocol = req.headers.get("x-forwarded-proto") || (currentHost.includes("localhost") ? "http" : "https");
+      return NextResponse.redirect(new URL(url.pathname, `${protocol}://${docsHost}`));
+    }
+    const pathname =
+      url.pathname === "/"
+        ? "/partners/portal"
+        : url.pathname.startsWith("/partners/portal")
+          ? url.pathname
+          : `/partners/portal${url.pathname}`;
+    return NextResponse.rewrite(new URL(pathname, req.url), {
+      request: { headers: requestHeaders },
+    });
+  }
+
+  // 3. Subdomain: api.physioaroundme.com (or api.localhost)
+  if (currentHost.startsWith("api.")) {
+    requestHeaders.set("x-is-b2b-subdomain", "true");
+    requestHeaders.set("x-subdomain-type", "api");
+    let pathname = url.pathname;
+    if (!pathname.startsWith("/api")) {
+      pathname = pathname === "/" ? "/api" : `/api${pathname}`;
+    }
+    return NextResponse.rewrite(new URL(pathname, req.url), {
+      request: { headers: requestHeaders },
+    });
+  }
+
+  // Backwards-compatibility: /dashboard/partner redirects to /partners/portal
+  if (url.pathname === "/dashboard/partner" || url.pathname.startsWith("/dashboard/partner/")) {
+    const newPath = url.pathname.replace("/dashboard/partner", "/partners/portal");
+    return NextResponse.redirect(new URL(newPath, req.url));
+  }
+
+  if (isProtectedRoute(req)) {
+    await auth.protect();
+  }
 });
 
 export const config = {

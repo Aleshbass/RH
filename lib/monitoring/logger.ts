@@ -19,17 +19,7 @@ const logger = pino({
       service: 'rehabify-health'
     })
   },
-  timestamp: pino.stdTimeFunctions.isoTime,
-  ...(process.env.NODE_ENV === 'development' && {
-    transport: {
-      target: 'pino-pretty',
-      options: {
-        colorize: true,
-        translateTime: 'SYS:standard',
-        ignore: 'pid,hostname'
-      }
-    }
-  })
+  timestamp: pino.stdTimeFunctions.isoTime
 })
 
 // Structured logging interface
@@ -96,19 +86,35 @@ export class Logger {
   }
 
   debug(message: string, context?: LogContext): void {
-    this.logger.debug(this.formatMessage(message, context))
+    try {
+      this.logger.debug(this.formatMessage(message, context))
+    } catch {
+      console.debug(message, context)
+    }
   }
 
   info(message: string, context?: LogContext): void {
-    this.logger.info(this.formatMessage(message, context))
+    try {
+      this.logger.info(this.formatMessage(message, context))
+    } catch {
+      console.info(message, context)
+    }
   }
 
   warn(message: string, context?: LogContext): void {
-    this.logger.warn(this.formatMessage(message, context))
+    try {
+      this.logger.warn(this.formatMessage(message, context))
+    } catch {
+      console.warn(message, context)
+    }
   }
 
   error(message: string, context?: LogContext): void {
-    this.logger.error(this.formatMessage(message, context))
+    try {
+      this.logger.error(this.formatMessage(message, context))
+    } catch {
+      console.error(message, context)
+    }
   }
 
   // Specialized logging methods for common use cases

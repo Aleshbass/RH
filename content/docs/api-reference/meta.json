@@ -2,6 +2,7 @@
   "title": "API Reference",
   "pages": [
     "index",
+    "partner-integration-v1",
     "referrals",
     "eligibility",
     "providers",

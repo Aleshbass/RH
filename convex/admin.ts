@@ -438,7 +438,8 @@ export const getUserApprovalRequests = query({
       v.literal("patient"),
       v.literal("family_member"),
       v.literal("doctor"),
-      v.literal("admin")
+      v.literal("admin"),
+      v.literal("partner")
     )),
     submittedAt: v.number(),
     profile: v.optional(v.any()),
@@ -927,7 +928,7 @@ export const getAdminUserDetails = query({
       physioProfile = await ctx.db
         .query("physiotherapistProfiles")
         .withIndex("by_user_id", (q) => q.eq("userId", user._id))
-        .unique();
+        .first();
     }
 
     // Get patient profile if the user is a patient
@@ -967,7 +968,7 @@ export const getAdminUserDetails = query({
         .collect();
       appointmentCount = appointments.length;
       upcomingAppointments = appointments.filter(
-        (a) => a.startTime > now && a.status !== "cancelled"
+        (a) => a.startTime > now && a.status !== "cancelled_by_patient" && a.status !== "cancelled_by_therapist"
       ).length;
     }
 
@@ -1056,7 +1057,7 @@ export const getAdminUserDetails = query({
     const approvalStatus = await ctx.db
       .query("accountApprovalStatus")
       .withIndex("by_user_id", (q) => q.eq("userId", user._id))
-      .unique();
+      .first();
 
     return {
       user,

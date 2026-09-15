@@ -18,7 +18,11 @@ function getConvexClient(): ConvexHttpClient {
 
 export async function POST(request: NextRequest) {
   try {
-    const { type, data } = await request.json()
+    const text = await request.text()
+    if (!text || !text.trim()) {
+      return NextResponse.json({ success: true })
+    }
+    const { type, data = {} } = JSON.parse(text)
     
     // Log the analytics event
     log.info(`Analytics event: ${type}`, {

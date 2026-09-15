@@ -19,6 +19,7 @@ Creates a referral record and immediately dispatches a smart WhatsApp intake ses
 
 | Parameter | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
+| `partner_reference` | `string` | No | Your internal case or patient ID (e.g. `HMO-REF-2026-0091`). Enables you to track patients using your own system's ID. |
 | `patient.first_name` | `string` | **Yes** | Patient's given name |
 | `patient.last_name` | `string` | **Yes** | Patient's family name |
 | `patient.phone` | `string` | **Yes** | E.164 phone number (e.g. `+2348031234567`) |
@@ -28,7 +29,7 @@ Creates a referral record and immediately dispatches a smart WhatsApp intake ses
 | `clinical_notes.diagnosis` | `string` | **Yes** | Primary condition (e.g. `Post-Op ACL Tear`, `CVA Rehab`) |
 | `clinical_notes.recommended_sessions` | `integer` | No | Number of sessions prescribed (Default: `4`) |
 | `clinical_notes.priority` | `string` | No | `standard` \| `urgent` \| `high` |
-| `clinical_notes.referring_doctor` | `string` | No | Name of referring physician |
+| `clinical_notes.referring_doctor` | `string` | No | Name of referring physician or clinic |
 | `billing_mode` | `string` | **Yes** | `patient_self_pay` \| `hmo_direct_billing` \| `corporate_sponsored` |
 | `callback_url` | `string` | No | Webhook URL for status notifications |
 
@@ -39,6 +40,7 @@ curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
   -H "Authorization: Bearer sk_live_99281..." \
   -H "Content-Type: application/json" \
   -d '{
+    "partner_reference": "HMO-REF-2026-0091",
     "patient": {
       "first_name": "Chioma",
       "last_name": "Okeke",
@@ -61,40 +63,68 @@ curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
 ```json
 {
   "status": "success",
-  "referral_id": "ref_839210aa9",
-  "tracking_url": "https://physioaroundme.com/track/ref_839210aa9",
+  "referral_id": "jd73a819...",
+  "tracking_code": "RHB-72941",
+  "partner_reference": "HMO-REF-2026-0091",
+  "tracking_url": "https://physioaroundme.com/track/RHB-72941",
   "intake_status": "pending_whatsapp_response",
   "patient": {
     "name": "Chioma Okeke",
     "phone": "+2348029988776"
   },
-  "created_at": "2026-08-16T08:15:00.000Z"
+  "created_at": 1757512345678
 }
 ```
 
 ---
 
-## 2. Get Referral Status
+## 2. Get Referral Status & Live Tracking
 
 `GET /api/v1/partners/referrals/:referral_id`
 
-Retrieves the current status, matched therapist profile, and session completion count for an existing referral.
+Retrieves real-time care progression, matched therapist profile, and session counts. 
+
+> [!TIP]
+> The `:referral_id` parameter can be **any of the following**:
+> 1. **Your Own Partner Reference ID** (e.g. `HMO-REF-2026-0091`)
+> 2. **Rehabify Tracking Code** (e.g. `RHB-72941`)
+> 3. **Internal Referral ID** (e.g. `jd73a819...`)
+
+### Example Request
+
+```bash tab="cURL"
+# Track using your own internal case ID!
+curl -X GET https://api.physioaroundme.com/api/v1/partners/referrals/HMO-REF-2026-0091 \
+  -H "Authorization: Bearer sk_live_99281..."
+```
 
 ### Example Response (`200 OK`)
 
 ```json
 {
-  "referral_id": "ref_839210aa9",
-  "status": "in_treatment",
+  "status": "success",
+  "referral_id": "jd73a819...",
+  "tracking_code": "RHB-72941",
+  "partner_reference": "HMO-REF-2026-0091",
+  "tracking_url": "https://physioaroundme.com/track/RHB-72941",
+  "current_status": "in_treatment",
+  "patient": {
+    "firstName": "Chioma",
+    "lastName": "Okeke",
+    "phone": "+2348029988776",
+    "city": "Lagos"
+  },
   "assigned_physiotherapist": {
-    "name": "Dr. Babatunde Fashola (PT)",
-    "license_number": "MRTBN/PT/2021/889",
+    "name": "Dr. Chidera Nnamdi (PT)",
+    "licenseNumber": "MRTBN/PT/2021/4921",
+    "specialization": "Orthopedic Rehabilitation",
     "rating": 4.9,
     "phone": "+2348011223344"
   },
   "sessions_completed": 3,
   "sessions_total": 8,
   "last_session_at": "2026-08-14T14:30:00.000Z",
-  "next_session_at": "2026-08-18T10:00:00.000Z"
+  "next_session_at": "2026-08-18T10:00:00.000Z",
+  "created_at": "2026-08-10T09:00:00.000Z"
 }
 ```

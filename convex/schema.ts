@@ -29,7 +29,8 @@ export default defineSchema({
       v.literal("patient"),
       v.literal("family_member"),
       v.literal("doctor"),
-      v.literal("admin")
+      v.literal("admin"),
+      v.literal("partner")
     )),
     onboarded: v.boolean(), // Flag to indicate if user has completed initial profile setup
     onboardingSkipped: v.optional(v.boolean()), // True if user skipped optional onboarding steps (can complete later)
@@ -64,11 +65,16 @@ export default defineSchema({
       dateFormat: v.optional(v.string()),
       timeFormat: v.optional(v.string()),
     })),
+
+    // Partner Referral Attribution
+    referredByPartnerCode: v.optional(v.string()),
+    referralPublicCode: v.optional(v.string()),
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"])
     .index("by_role", ["role"]) // To query users by role (especially after onboarding)
-    .index("by_clinic_id", ["clinicId"]),
+    .index("by_clinic_id", ["clinicId"])
+    .index("by_referred_partner", ["referredByPartnerCode"]),
 
   // Clinics table: Information about physiotherapy clinics
   clinics: defineTable({
@@ -988,28 +994,73 @@ export default defineSchema({
 
   // Inbound patient referrals from referring doctors/partners
   inboundReferrals: defineTable({
-    referringDoctorId: v.id("users"), // The doctor who made the referral
+    referringDoctorId: v.optional(v.id("users")), // The doctor who made the referral (optional if partner API)
+    partnerId: v.optional(v.string()), // Slug or ID of external partner (e.g. "wellahealth")
+    partnerExternalId: v.optional(v.string()), // Partner's own generated reference ID (e.g. "WELLA-2026-000123")
+    trackingCode: v.optional(v.string()), // Human-readable unique code (e.g. "RHB-72941")
+
+    // Attribution — links back to partner referral link system
+    linkId: v.optional(v.id("partnerReferralLinks")), // Which referral link generated this
+    campaignName: v.optional(v.string()), // Denormalized from link for quick access
+    firstClickAt: v.optional(v.number()), // When the partner link was first opened
+    conversionSource: v.optional(v.string()), // "partner_link", "api", "doctor_referral", "manual"
 
     // Patient Details Provided Before Registration
     patientFirstName: v.string(),
     patientLastName: v.string(),
     patientEmail: v.optional(v.string()),
     patientPhone: v.string(),
+    city: v.optional(v.string()), // City for physical therapist matching (e.g. "Lagos")
+    state: v.optional(v.string()), // State (e.g. "Lagos")
+    area: v.optional(v.string()), // Neighborhood / LGA (e.g. "Ikeja", "Victoria Island")
+    preferredLanguage: v.optional(v.string()), // "en", "yo", "ig", "ha"
     hospitalClinic: v.optional(v.string()), // The hospital/clinic the referral is coming from
     condition: v.optional(v.string()),
-    clinicalNotes: v.optional(v.string()), // Reason for referral, initial diagnosis
+    reason: v.optional(v.string()), // Patient-stated reason (e.g. "back_pain")
+    clinicalNotes: v.optional(v.string()), // Reason for referral, initial diagnosis (admin-only, never exposed to partners)
+    priority: v.optional(v.string()), // "standard", "urgent", "high"
+    recommendedSessions: v.optional(v.number()), // Prescribed session count
+    billingMode: v.optional(v.string()), // "patient_self_pay", "hmo_direct_billing", "corporate_sponsored"
+    callbackUrl: v.optional(v.string()), // Partner webhook callback URL
+
+    // Care mode & contact preferences
+    preferredCareMode: v.optional(v.string()), // "remote", "face_to_face", "patient_choice"
+    preferredContactChannel: v.optional(v.string()), // "whatsapp", "email", "sms"
+    nextStep: v.optional(v.string()), // "contact_me" or "start_joy"
+
+    // Consent tracking
+    consentGranted: v.optional(v.boolean()),
+    consentCapturedAt: v.optional(v.number()),
+    consentMethod: v.optional(v.string()), // "partner_landing", "wellahealth_app", "whatsapp"
+    consentPrivacyNoticeVersion: v.optional(v.string()), // e.g. "2026-09-01"
 
     // Tracking the patient lifecycle
     patientId: v.optional(v.id("users")), // Linked once they sign up
     appointmentId: v.optional(v.id("appointments")), // Associated first appointment
+    assignedPhysiotherapistId: v.optional(v.id("users")), // Matched physiotherapist
 
+    // Controlled referral statuses (spec-compliant 16 statuses + legacy compat)
     status: v.union(
-      v.literal("pending"),    // Referral submitted, patient hasn't booked yet
-      v.literal("contacted"),  // Rehabify team contacted them
-      v.literal("booked"),     // First session scheduled
-      v.literal("completed"),  // First session completed
-      v.literal("paid_out"),   // Commission paid to referrer
-      v.literal("cancelled")
+      // ── Spec statuses ──
+      v.literal("received"),              // Referral accepted by Rehabify
+      v.literal("consent_pending"),       // Valid consent evidence required
+      v.literal("contacted"),             // Patient contact attempted or completed
+      v.literal("intake_started"),        // Patient began Rehabify intake
+      v.literal("intake_completed"),      // Required intake information received
+      v.literal("qualified"),             // Appropriate for a Rehabify pathway
+      v.literal("redirected_for_safety"), // Directed to appropriate care; no clinical detail disclosed
+      v.literal("booked"),                // Appointment confirmed
+      v.literal("attended"),              // Paid appointment attended
+      v.literal("treatment_active"),      // Active rehabilitation episode
+      v.literal("completed"),             // Care episode completed
+      v.literal("cancelled"),             // Appointment or referral cancelled
+      v.literal("not_suitable"),          // Not appropriate for the available service
+      v.literal("refunded"),              // Related patient payment refunded
+      v.literal("closed"),               // No further partner-facing activity expected
+      // ── Legacy statuses (backward compat) ──
+      v.literal("pending"),              // Maps to "received" conceptually
+      v.literal("in_treatment"),         // Maps to "treatment_active"
+      v.literal("paid_out")              // Maps to "closed"
     ),
 
     // Financial Tracking
@@ -1021,7 +1072,11 @@ export default defineSchema({
     .index("by_referring_doctor", ["referringDoctorId"])
     .index("by_patient", ["patientId"])
     .index("by_status", ["status"])
-    .index("by_referring_doctor_and_status", ["referringDoctorId", "status"]),
+    .index("by_referring_doctor_and_status", ["referringDoctorId", "status"])
+    .index("by_partner_external_id", ["partnerExternalId"])
+    .index("by_tracking_code", ["trackingCode"])
+    .index("by_partner_id", ["partnerId"])
+    .index("by_link_id", ["linkId"]),
 
   // MyItura MediLoan applications — formally initiated with the MyItura SDK
   loanApplications: defineTable({
@@ -2575,6 +2630,63 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_status", ["status"]).index("by_created", ["createdAt"]),
 
+  // Enterprise & Healthcare Partners (HMOs, Hospitals, Corporate Wellness, BNPL, Gyms, Pharmacies, Employers)
+  partners: defineTable({
+    name: v.string(),                         // e.g. "Wellahealth", "Reliance HMO"
+    code: v.string(),                         // Unique partner slug, e.g. "wellahealth"
+    apiKey: v.string(),                       // Secret API key e.g. "sk_live_..." or "sk_test_..."
+    type: v.union(
+      v.literal("hmo"),
+      v.literal("hospital"),
+      v.literal("corporate"),
+      v.literal("gym"),
+      v.literal("telemedicine"),
+      v.literal("pharmacy"),
+      v.literal("employer"),
+      v.literal("digital_health")
+    ),
+    // Identity & Branding
+    logoUrl: v.optional(v.string()),          // Partner logo for branded landing pages
+    logoStorageId: v.optional(v.id("_storage")), // Uploaded logo file in Convex storage
+    internalCode: v.optional(v.string()),     // Internal reference code
+    // Contacts
+    contactEmail: v.string(),                 // Primary contact
+    contactPhone: v.optional(v.string()),
+    financeContactEmail: v.optional(v.string()),
+    technicalContactEmail: v.optional(v.string()),
+    privacyContactEmail: v.optional(v.string()),
+    // Coverage
+    coverageStates: v.optional(v.array(v.string())),   // ["Lagos", "Abuja"]
+    coverageCities: v.optional(v.array(v.string())),   // ["Ikeja", "Victoria Island"]
+    supportedCareModes: v.optional(v.array(v.string())), // ["remote", "face_to_face"]
+    supportedServices: v.optional(v.array(v.string())), // ["all_rehabilitation"] or specific pathways
+    // API & Webhooks
+    webhookUrl: v.optional(v.string()),
+    webhookSecret: v.optional(v.string()),
+    // Ownership & Clerk integration
+    ownerClerkId: v.optional(v.string()),     // Linking partner organization to creator Clerk user
+    ownerEmail: v.optional(v.string()),       // Creator email
+    // Approval & Verification
+    approvalStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected")
+    )),                                       // 'approved' for seeded/approved, 'pending' for self-serve
+    rejectionReason: v.optional(v.string()),
+    approvedAt: v.optional(v.number()),
+    approvedBy: v.optional(v.string()),
+    // Status
+    isActive: v.boolean(),
+    tier: v.string(),                         // "sandbox", "standard", "enterprise"
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_code", ["code"])
+    .index("by_api_key", ["apiKey"])
+    .index("by_type", ["type"])
+    .index("by_owner_clerk_id", ["ownerClerkId"])
+    .index("by_approval_status", ["approvalStatus"]),
+
   // Patient-submitted loan interest requests.
   // These are NOT yet initiated with MyItura — they are pending Rehabify admin action.
   // When admin clicks "Initiate", a real loan is created in loanApplications.
@@ -2612,5 +2724,177 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_patient_user", ["patientUserId"])
     .index("by_created", ["createdAt"]),
+
+  // ─── Partner Referral Links ──────────────────────────────────
+  // Trackable links generated for each partner/campaign
+  partnerReferralLinks: defineTable({
+    partnerId: v.string(),                   // Partner code (e.g. "wellahealth")
+    publicCode: v.string(),                  // Short URL slug e.g. "wella-7KQ2"
+    campaignName: v.optional(v.string()),    // "Wellahealth rehabilitation referrals"
+    serviceScope: v.optional(v.string()),    // "all_rehabilitation" or specific pathway
+    defaultCareMode: v.optional(v.string()), // "remote", "face_to_face", "patient_choice"
+    status: v.union(
+      v.literal("active"),
+      v.literal("inactive"),
+      v.literal("expired")
+    ),
+    expiresAt: v.optional(v.number()),
+    // Analytics (denormalized counters for quick display)
+    clicks: v.optional(v.number()),
+    leads: v.optional(v.number()),
+    joyStarts: v.optional(v.number()),
+    bookings: v.optional(v.number()),
+    payments: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_public_code", ["publicCode"])
+    .index("by_partner_id", ["partnerId"])
+    .index("by_status", ["status"]),
+
+  // ─── Referral Events (Immutable Audit Trail) ─────────────────
+  // Every status change, admin action, and milestone creates an event
+  referralEvents: defineTable({
+    referralId: v.id("inboundReferrals"),
+    eventName: v.string(),                   // e.g. "received", "contacted", "booked", "appointment.attended"
+    occurredAt: v.number(),
+    actorType: v.optional(v.string()),        // "system", "admin", "partner", "patient"
+    actorId: v.optional(v.string()),          // User ID or partner code
+    metadata: v.optional(v.any()),            // Additional context (e.g. { previousStatus, newStatus })
+  })
+    .index("by_referral_id", ["referralId"])
+    .index("by_event_name", ["eventName"])
+    .index("by_occurred_at", ["occurredAt"]),
+
+  // ─── Patient Consents ────────────────────────────────────────
+  // Consent evidence and withdrawal history for partner referrals
+  patientConsents: defineTable({
+    referralId: v.optional(v.id("inboundReferrals")),
+    patientPhone: v.optional(v.string()),
+    patientEmail: v.optional(v.string()),
+    granted: v.boolean(),
+    capturedAt: v.number(),
+    method: v.string(),                      // "partner_landing", "whatsapp", "wellahealth_app", "phone"
+    privacyNoticeVersion: v.string(),        // e.g. "2026-09-01"
+    withdrawnAt: v.optional(v.number()),
+    withdrawalReason: v.optional(v.string()),
+  })
+    .index("by_referral_id", ["referralId"])
+    .index("by_patient_phone", ["patientPhone"])
+    .index("by_captured_at", ["capturedAt"]),
+
+  // ─── Partner Contact Requests ────────────────────────────────
+  // Outreach tasks created when patient selects "contact me" on landing page
+  partnerContactRequests: defineTable({
+    referralId: v.id("inboundReferrals"),
+    channel: v.union(
+      v.literal("whatsapp"),
+      v.literal("email"),
+      v.literal("sms"),
+      v.literal("phone")
+    ),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("assigned"),
+      v.literal("attempted"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+    assignedTo: v.optional(v.id("users")),   // Admin/staff handling outreach
+    attemptCount: v.optional(v.number()),
+    lastAttemptAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_referral_id", ["referralId"])
+    .index("by_status", ["status"])
+    .index("by_assigned_to", ["assignedTo"]),
+
+  // ─── Partner Contracts ───────────────────────────────────────
+  // Versioned commercial agreements between Rehabify and partners
+  partnerContracts: defineTable({
+    partnerId: v.string(),                   // Partner code e.g. "wellahealth"
+    contractNumber: v.string(),              // e.g. "CTR-2026-001"
+    status: v.union(
+      v.literal("draft"),
+      v.literal("active"),
+      v.literal("expired"),
+      v.literal("terminated")
+    ),
+    effectiveFrom: v.number(),
+    effectiveTo: v.optional(v.number()),
+    paymentTermsDays: v.number(),            // e.g. 30 (Net-30)
+    payoutCurrency: v.string(),              // e.g. "NGN"
+    modelType: v.union(
+      v.literal("fixed_per_patient"),
+      v.literal("percentage_revenue_share"),
+      v.literal("tiered_volume"),
+      v.literal("hybrid")
+    ),
+    baseFeePerBooking: v.optional(v.number()), // Fixed fee in kobo e.g. 500000 = ₦5,000
+    revenueSharePercent: v.optional(v.number()), // Percentage e.g. 15 for 15%
+    activationBonusPerPatient: v.optional(v.number()), // Fixed bonus in kobo e.g. 200000 = ₦2,000
+    vatApplicable: v.boolean(),
+    withholdingTaxPercent: v.optional(v.number()), // e.g. 5 for 5% WHT
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_partner_id", ["partnerId"])
+    .index("by_status", ["status"])
+    .index("by_contract_number", ["contractNumber"]),
+
+  // ─── Partner Commission Tiers ────────────────────────────────
+  // Volume tiers for partners on tiered volume or hybrid contracts
+  partnerCommissionTiers: defineTable({
+    contractId: v.optional(v.id("partnerContracts")),
+    partnerId: v.string(),
+    tierName: v.string(),                    // "Bronze", "Silver", "Gold", "Platinum"
+    minReferrals: v.number(),                // 1, 21, 51, 101
+    maxReferrals: v.optional(v.number()),    // 20, 50, 100, undefined for unlimited
+    feePerReferral: v.optional(v.number()),  // in kobo
+    revenueSharePercent: v.optional(v.number()), // %
+    bonusAmount: v.optional(v.number()),     // Tier achievement bonus in kobo
+    createdAt: v.number(),
+  })
+    .index("by_partner_id", ["partnerId"])
+    .index("by_contract_id", ["contractId"]),
+
+  // ─── Partner Commission Ledger ───────────────────────────────
+  // Per-transaction immutable commission earnings
+  partnerCommissions: defineTable({
+    partnerId: v.string(),
+    contractId: v.optional(v.id("partnerContracts")),
+    referralId: v.id("inboundReferrals"),
+    trackingCode: v.string(),
+    patientName: v.string(),
+    eventType: v.union(
+      v.literal("booking_confirmed"),
+      v.literal("session_attended"),
+      v.literal("treatment_completed"),
+      v.literal("activation_bonus")
+    ),
+    grossTransactionAmount: v.number(),      // Amount patient paid or treatment cost in kobo
+    commissionRate: v.number(),              // Percentage (e.g. 15) or fixed fee in kobo
+    commissionAmount: v.number(),            // Commission earned in kobo
+    netPayable: v.number(),                  // After WHT deduction in kobo
+    status: v.union(
+      v.literal("pending_approval"),
+      v.literal("approved"),
+      v.literal("settled"),
+      v.literal("cancelled")
+    ),
+    settlementId: v.optional(v.string()),    // Linked statement id e.g. "SETTLE-2026-09"
+    notes: v.optional(v.string()),
+    earnedAt: v.number(),
+    settledAt: v.optional(v.number()),
+  })
+    .index("by_partner_id", ["partnerId"])
+    .index("by_referral_id", ["referralId"])
+    .index("by_status", ["status"])
+    .index("by_settlement_id", ["settlementId"])
+    .index("by_earned_at", ["earnedAt"]),
 
 });

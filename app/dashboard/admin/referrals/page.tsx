@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
-import { Id } from '@/convex/_generated/dataModel'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,12 +12,15 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { formatCurrency } from '@/lib/utils'
-import { Settings, FileText, CheckCircle, RefreshCcw, DollarSign } from 'lucide-react'
+import { Settings, Search, Building2, UserCheck, Filter, X, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 
-type ReferralStatus = 'pending' | 'contacted' | 'booked' | 'completed' | 'paid_out' | 'cancelled'
+type ReferralStatus = 'pending' | 'contacted' | 'booked' | 'in_treatment' | 'completed' | 'paid_out' | 'cancelled'
 
-export default function AdminReferralsPage() {
+function AdminReferralsContent() {
+    const searchParams = useSearchParams()
+    const initialPartner = searchParams.get('partner') || 'all'
+
     const referrals = useQuery(api.adminReferrals.getInboundReferrals)
     const updateReferral = useMutation(api.adminReferrals.updateReferralStatus)
 
@@ -27,6 +30,11 @@ export default function AdminReferralsPage() {
     const [commission, setCommission] = useState('')
     const [notes, setNotes] = useState('')
     const [isUpdating, setIsUpdating] = useState(false)
+
+    // Search and filter states
+    const [searchTerm, setSearchTerm] = useState('')
+    const [partnerFilter, setPartnerFilter] = useState(initialPartner)
+    const [statusFilter, setStatusFilter] = useState('all')
 
     const openUpdateModal = (referral: any) => {
         setSelectedReferral(referral)
@@ -58,92 +66,316 @@ export default function AdminReferralsPage() {
         }
     }
 
+    // Extract unique partner organizations from referrals list
+    const partnerOptions = useMemo(() => {
+        if (!referrals) return []
+        const partnerMap = new Map<string, { code: string; name: string; count: number }>()
+
+        for (const r of referrals) {
+            const code = r.partnerCode || (r.partnerId ? String(r.partnerId) : null)
+            const name = r.partnerName || code
+            if (code && name) {
+                const existing = partnerMap.get(code)
+                if (existing) {
+                    existing.count += 1
+                } else {
+                    partnerMap.set(code, { code, name, count: 1 })
+                }
+            }
+        }
+
+        return Array.from(partnerMap.values())
+    }, [referrals])
+
+    // Filter referrals based on search term, partner filter, and status filter
+    const filteredReferrals = useMemo(() => {
+        if (!referrals) return []
+
+        return referrals.filter((referral: any) => {
+            // Partner filter
+            if (partnerFilter !== 'all') {
+                const matchesCode = (referral.partnerCode || '').toLowerCase() === partnerFilter.toLowerCase()
+                const matchesId = (referral.partnerId || '').toLowerCase() === partnerFilter.toLowerCase()
+                const matchesName = (referral.partnerName || '').toLowerCase() === partnerFilter.toLowerCase()
+                if (!matchesCode && !matchesId && !matchesName) return false
+            }
+
+            // Status filter
+            if (statusFilter !== 'all' && referral.status !== statusFilter) {
+                return false
+            }
+
+            // Search term
+            if (searchTerm.trim()) {
+                const term = searchTerm.toLowerCase().trim()
+                const patientName = `${referral.patientFirstName || ''} ${referral.patientLastName || ''}`.toLowerCase()
+                const phone = (referral.patientPhone || '').toLowerCase()
+                const email = (referral.patientEmail || '').toLowerCase()
+                const trackingCode = (referral.trackingCode || '').toLowerCase()
+                const partnerExt = (referral.partnerExternalId || '').toLowerCase()
+                const partnerName = (referral.partnerName || '').toLowerCase()
+                const doctorName = (referral.doctorName || '').toLowerCase()
+                const condition = (referral.condition || '').toLowerCase()
+
+                const matchesSearch =
+                    patientName.includes(term) ||
+                    phone.includes(term) ||
+                    email.includes(term) ||
+                    trackingCode.includes(term) ||
+                    partnerExt.includes(term) ||
+                    partnerName.includes(term) ||
+                    doctorName.includes(term) ||
+                    condition.includes(term)
+
+                if (!matchesSearch) return false
+            }
+
+            return true
+        })
+    }, [referrals, partnerFilter, statusFilter, searchTerm])
+
+    const hasActiveFilters = searchTerm.trim() !== '' || partnerFilter !== 'all' || statusFilter !== 'all'
+
+    const clearFilters = () => {
+        setSearchTerm('')
+        setPartnerFilter('all')
+        setStatusFilter('all')
+    }
+
     if (referrals === undefined) {
         return <div className="p-8 text-center text-gray-500 animate-pulse">Loading intake queue...</div>
     }
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-2xl font-bold tracking-tight text-gray-900">Inbound Referrals</h1>
-                <p className="text-sm text-gray-500">Manage patient referrals from the referring doctor network.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight text-gray-900">Inbound Referrals</h1>
+                    <p className="text-sm text-gray-500">
+                        Manage patient referrals from healthcare partners and referring doctor networks.
+                    </p>
+                </div>
+
+                {/* Filter / Search stats badge */}
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">
+                        Showing <strong>{filteredReferrals.length}</strong> of <strong>{referrals.length}</strong> referrals
+                    </span>
+                    {hasActiveFilters && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={clearFilters}
+                            className="text-xs text-red-600 hover:text-red-700 h-8 px-2 flex items-center gap-1"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                            Clear Filters
+                        </Button>
+                    )}
+                </div>
+            </div>
+
+            {/* Filter and Search Bar Controls */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+                {/* Search Bar */}
+                <div className="sm:col-span-6 relative">
+                    <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                    <Input
+                        placeholder="Search patient, phone, tracking code, partner..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9 text-xs sm:text-sm"
+                    />
+                </div>
+
+                {/* Partner Organization Filter */}
+                <div className="sm:col-span-3">
+                    <Select value={partnerFilter} onValueChange={setPartnerFilter}>
+                        <SelectTrigger className="text-xs sm:text-sm">
+                            <div className="flex items-center gap-2 truncate">
+                                <Building2 className="w-4 h-4 text-teal-600 shrink-0" />
+                                <SelectValue placeholder="All Partners" />
+                            </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Healthcare Partners ({referrals.length})</SelectItem>
+                            {partnerOptions.map((p) => (
+                                <SelectItem key={p.code} value={p.code}>
+                                    {p.name} ({p.count})
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                {/* Lifecycle Status Filter */}
+                <div className="sm:col-span-3">
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger className="text-xs sm:text-sm">
+                            <div className="flex items-center gap-2 truncate">
+                                <Filter className="w-4 h-4 text-gray-500 shrink-0" />
+                                <SelectValue placeholder="All Statuses" />
+                            </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Statuses</SelectItem>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="contacted">Contacted</SelectItem>
+                            <SelectItem value="booked">Booked</SelectItem>
+                            <SelectItem value="in_treatment">In Treatment</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="paid_out">Paid Out</SelectItem>
+                            <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
             </div>
 
             <Card>
-                <CardHeader>
-                    <CardTitle>Intake Queue</CardTitle>
-                    <CardDescription>Review new referrals and update their statuses to track closed-loop progress.</CardDescription>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">Intake Queue</CardTitle>
+                    <CardDescription>
+                        Review inbound patient referrals, verify partner attribution, and progress closed-loop clinical care.
+                    </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left">
-                            <thead className="text-xs text-gray-500 uppercase bg-gray-50">
+                            <thead className="text-xs text-gray-500 uppercase bg-gray-50/80 border-y border-gray-200">
                                 <tr>
                                     <th className="px-6 py-3 font-semibold">Patient</th>
-                                    <th className="px-6 py-3 font-semibold">Contact / Clinic</th>
-                                    <th className="px-6 py-3 font-semibold">Referring Doctor</th>
+                                    <th className="px-6 py-3 font-semibold">Contact & Location</th>
+                                    <th className="px-6 py-3 font-semibold">Partner / Referrer</th>
                                     <th className="px-6 py-3 font-semibold">Date</th>
                                     <th className="px-6 py-3 font-semibold">Status / Kickback</th>
                                     <th className="px-6 py-3 font-semibold text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 bg-white">
-                                {referrals.map((referral: any) => (
-                                    <tr key={referral._id} className="hover:bg-gray-50 transition-colors">
+                                {filteredReferrals.map((referral: any) => (
+                                    <tr key={referral._id} className="hover:bg-gray-50/80 transition-colors">
+                                        {/* Patient Details */}
                                         <td className="px-6 py-4">
-                                            <div className="font-medium text-gray-900">
-                                                {referral.patientFirstName} {referral.patientLastName}
+                                            <div className="font-medium text-gray-900 flex items-center gap-1.5 flex-wrap">
+                                                <span>{referral.patientFirstName} {referral.patientLastName}</span>
+                                                {referral.trackingCode && (
+                                                    <a
+                                                        href={`/track/${referral.trackingCode}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="font-mono text-[10px] bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded border border-teal-200 hover:bg-teal-100 inline-flex items-center gap-0.5"
+                                                        title="Open live care tracking page"
+                                                    >
+                                                        <span>{referral.trackingCode}</span>
+                                                        <ExternalLink className="w-2.5 h-2.5" />
+                                                    </a>
+                                                )}
                                             </div>
-                                            <div className="text-xs text-gray-500 mt-1 truncate max-w-[150px]">
-                                                {referral.condition || 'General'}
+                                            {referral.partnerExternalId && (
+                                                <div className="text-[11px] font-mono text-teal-700 mt-0.5">
+                                                    Ext Ref: {referral.partnerExternalId}
+                                                </div>
+                                            )}
+                                            <div className="text-xs text-gray-500 mt-1 truncate max-w-[170px]">
+                                                {referral.condition || referral.reason || 'General Rehabilitation'}
                                             </div>
                                         </td>
+
+                                        {/* Contact & Location */}
                                         <td className="px-6 py-4">
-                                            <div className="text-gray-900">{referral.patientPhone}</div>
-                                            <div className="text-xs text-gray-400 mt-0.5">{referral.patientEmail}</div>
-                                            {referral.hospitalClinic && (
-                                                <div className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded mt-1 inline-block">
-                                                    {referral.hospitalClinic}
+                                            <div className="text-gray-900 font-medium text-xs">{referral.patientPhone}</div>
+                                            {referral.patientEmail && (
+                                                <div className="text-xs text-gray-400 mt-0.5 truncate max-w-[180px]">
+                                                    {referral.patientEmail}
+                                                </div>
+                                            )}
+                                            {(referral.city || referral.state) && (
+                                                <div className="text-[11px] text-gray-500 mt-1">
+                                                    {[referral.city, referral.state].filter(Boolean).join(', ')}
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <div className="text-gray-700">{referral.doctorName}</div>
+
+                                        {/* Partner Attribution & Referring Doctor */}
+                                        <td className="px-6 py-4 space-y-1.5">
+                                            {referral.partnerName || referral.partnerCode ? (
+                                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-teal-50 text-teal-800 border border-teal-200 text-xs font-medium">
+                                                    <Building2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                                    <span className="font-semibold">{referral.partnerName || referral.partnerCode}</span>
+                                                    {referral.partnerType && (
+                                                        <span className="text-[10px] uppercase text-teal-600 font-mono">
+                                                            ({referral.partnerType})
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="inline-flex items-center gap-1 text-xs text-gray-700 font-medium">
+                                                    <UserCheck className="w-3.5 h-3.5 text-gray-400" />
+                                                    <span>{referral.doctorName}</span>
+                                                </div>
+                                            )}
+
+                                            {referral.hospitalClinic && referral.partnerName !== referral.hospitalClinic && (
+                                                <div className="text-[11px] text-gray-500">
+                                                    Clinic: {referral.hospitalClinic}
+                                                </div>
+                                            )}
                                         </td>
-                                        <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
-                                            {new Date(referral.createdAt).toLocaleDateString()}
+
+                                        {/* Date */}
+                                        <td className="px-6 py-4 text-gray-500 text-xs whitespace-nowrap">
+                                            {new Date(referral.createdAt).toLocaleDateString(undefined, {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
+                                            })}
                                         </td>
+
+                                        {/* Status & Kickback */}
                                         <td className="px-6 py-4">
                                             <Badge variant={
                                                 referral.status === 'completed' || referral.status === 'paid_out' ? 'default' :
-                                                    referral.status === 'booked' ? 'secondary' :
-                                                        referral.status === 'cancelled' ? 'destructive' :
-                                                            'outline'
+                                                    referral.status === 'in_treatment' ? 'default' :
+                                                        referral.status === 'booked' ? 'secondary' :
+                                                            referral.status === 'cancelled' ? 'destructive' :
+                                                                'outline'
                                             }>
                                                 {referral.status.replace('_', ' ').toUpperCase()}
                                             </Badge>
                                             {referral.commissionEarned && (
-                                                <div className="text-xs font-semibold text-green-600 mt-2">
+                                                <div className="text-xs font-semibold text-green-600 mt-1.5">
                                                     {formatCurrency(referral.commissionEarned)}
                                                 </div>
                                             )}
                                         </td>
+
+                                        {/* Actions */}
                                         <td className="px-6 py-4 text-right">
                                             <Button
                                                 variant="outline"
                                                 size="sm"
                                                 onClick={() => openUpdateModal(referral)}
+                                                className="text-xs h-8"
                                             >
-                                                <Settings className="w-4 h-4 mr-2" />
+                                                <Settings className="w-3.5 h-3.5 mr-1.5" />
                                                 Manage
                                             </Button>
                                         </td>
                                     </tr>
                                 ))}
-                                {referrals.length === 0 && (
+                                {filteredReferrals.length === 0 && (
                                     <tr>
-                                        <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
-                                            No inbound referrals found in the queue.
+                                        <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                                            {hasActiveFilters ? (
+                                                <div className="space-y-2">
+                                                    <p className="font-medium text-gray-700">No referrals match your current search or filter.</p>
+                                                    <Button variant="outline" size="sm" onClick={clearFilters} className="text-xs">
+                                                        Reset All Filters
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                "No inbound referrals found in the queue."
+                                            )}
                                         </td>
                                     </tr>
                                 )}
@@ -173,6 +405,7 @@ export default function AdminReferralsPage() {
                                     <SelectItem value="pending">Pending</SelectItem>
                                     <SelectItem value="contacted">Contacted</SelectItem>
                                     <SelectItem value="booked">Booked (Session Scheduled)</SelectItem>
+                                    <SelectItem value="in_treatment">In Treatment (Active Sessions)</SelectItem>
                                     <SelectItem value="completed">Completed (Outcome Sent)</SelectItem>
                                     <SelectItem value="paid_out">Paid Out (Commission Sent)</SelectItem>
                                     <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -234,5 +467,13 @@ export default function AdminReferralsPage() {
                 </DialogContent>
             </Dialog>
         </div>
+    )
+}
+
+export default function AdminReferralsPage() {
+    return (
+        <Suspense fallback={<div className="p-8 text-center text-gray-500 animate-pulse">Loading inbound referrals...</div>}>
+            <AdminReferralsContent />
+        </Suspense>
     )
 }
