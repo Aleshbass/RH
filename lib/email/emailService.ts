@@ -323,23 +323,6 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
  */
 export function getEmailContent(options: EmailOptions): { subject: string; body: string } {
   switch (options.template) {
-    case 'PARTNERSHIP_INQUIRY':
-      return {
-        subject: options.subject || `New Partnership Inquiry from ${options.data.organization}`,
-        body: `
-          <h1>New Partnership Inquiry</h1>
-          <p>You have received a new partnership inquiry from the landing page.</p>
-          <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; font-weight: bold;">Name: ${options.data.name}</p>
-            <p style="margin: 8px 0 0 0; font-weight: bold;">Email: <a href="mailto:${options.data.email}">${options.data.email}</a></p>
-            <p style="margin: 8px 0 0 0; font-weight: bold;">Organization: ${options.data.organization}</p>
-            <p style="margin: 16px 0 8px 0; font-weight: bold;">Message:</p>
-            <p style="margin: 0; white-space: pre-wrap;">${options.data.message}</p>
-          </div>
-          <p>Please follow up directly via email.</p>
-        `
-      };
-
     case 'PAYMENT_RECEIPT': {
       const amountStr = (options.data.amount / 100).toLocaleString('en-NG', { style: 'currency', currency: options.data.currency });
       let receiptMessage = '';

@@ -438,7 +438,8 @@ export const getUserApprovalRequests = query({
       v.literal("patient"),
       v.literal("family_member"),
       v.literal("doctor"),
-      v.literal("admin")
+      v.literal("admin"),
+      v.literal("partner")
     )),
     submittedAt: v.number(),
     profile: v.optional(v.any()),
