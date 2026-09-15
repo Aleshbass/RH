@@ -34,75 +34,104 @@ const Footer = () => {
         </div>
 
         {/* Links Section */}
-        <div className="py-12 border-t border-gray-700 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-8">
-          <div className="col-span-1 sm:col-span-2 md:col-span-1">
+        <div className="py-12 border-t border-gray-700 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8">
+          <div className="col-span-1 sm:col-span-2 md:col-span-3 lg:col-span-1">
             <Image src="/logos/White MainRehabify.svg" width={150} height={40} alt="Rehabify Logo" className="object-contain mb-4" />
-            <p className="text-gray-400">Revolutionizing physiotherapy through technology.</p>
+            <p className="text-gray-400 text-sm">Revolutionizing physiotherapy through technology and seamless care pathways.</p>
           </div>
           <div>
-            <h3 className="font-bold mb-4">Professionals</h3>
-            <ul>
-              <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Patient Management</a></li>
-              <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Exercise Library</a></li>
-              <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Telehealth</a></li>
-              <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Analytics</a></li>
-              <li className="mb-2"><Link href="/integrations" className="text-gray-300 hover:text-white">Integrations</Link></li>
+            <h3 className="font-bold mb-4 text-white">Professionals</h3>
+            <ul className="space-y-2 text-sm">
+              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Patient Management</a></li>
+              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Exercise Library</a></li>
+              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Telehealth</a></li>
+              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Analytics</a></li>
+              <li><Link href="/integrations" className="text-gray-300 hover:text-white transition-colors">Integrations</Link></li>
             </ul>
           </div>
           <div>
-            <h3 className="font-bold mb-4">Resources</h3>
-            <ul>
-              <li className="mb-2"><a href="/learn" className="text-gray-300 hover:text-white">Rehabify Learn</a></li>
-              <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Blog</a></li>
-              <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Case Studies</a></li>
-              <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Help Center</a></li>
+            <h3 className="font-bold mb-4 text-white">Partners</h3>
+            <ul className="space-y-2 text-sm">
+              <li>
+                <Link href="/partnerships" className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors">
+                  Partner Program →
+                </Link>
+              </li>
+              <li>
+                <a href="https://partners.physioaroundme.com" className="text-gray-300 hover:text-white transition-colors">
+                  Partner Portal
+                </a>
+              </li>
+              <li>
+                <Link href="/track" className="text-gray-300 hover:text-white transition-colors">
+                  Track a Referral
+                </Link>
+              </li>
+              <li>
+                <Link href="/partners/mediloan" className="text-gray-300 hover:text-white transition-colors">
+                  MediLoan by MyItura
+                </Link>
+              </li>
             </ul>
           </div>
           <div>
-            <h3 className="font-bold mb-4">Company</h3>
-            <ul>
-              <li className="mb-2"><a href="/about" className="text-gray-300 hover:text-white">About Us</a></li>
-              <li className="mb-2"><Link href="/partnerships" className="text-gray-300 hover:text-white transition-colors">Partnerships</Link></li>
-              <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Careers</a></li>
-              <li className="mb-2"><a href="#" className="text-gray-300 hover:text-white">Contact</a></li>
+            <h3 className="font-bold mb-4 text-white">Developers</h3>
+            <ul className="space-y-2 text-sm">
+              <li>
+                <a href="https://docs.physioaroundme.com" className="text-gray-300 hover:text-white transition-colors">
+                  API Documentation
+                </a>
+              </li>
+              <li>
+                <a href="https://docs.physioaroundme.com/api-reference" className="text-gray-300 hover:text-white transition-colors">
+                  API Reference
+                </a>
+              </li>
+              <li>
+                <a href="https://docs.physioaroundme.com/api-reference/partner-integration-v1" className="text-gray-300 hover:text-white transition-colors">
+                  Integration Guide
+                </a>
+              </li>
+              <li>
+                <a href="https://api.physioaroundme.com" className="text-gray-300 hover:text-white transition-colors">
+                  API Health
+                </a>
+              </li>
             </ul>
           </div>
           <div>
-            <h3 className="font-bold mb-4">Legal</h3>
-            <ul>
-              <li className="mb-2">
+            <h3 className="font-bold mb-4 text-white">Company</h3>
+            <ul className="space-y-2 text-sm">
+              <li><a href="/about" className="text-gray-300 hover:text-white transition-colors">About Us</a></li>
+              <li><a href="/learn" className="text-gray-300 hover:text-white transition-colors">Rehabify Learn</a></li>
+              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Careers</a></li>
+              <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Contact</a></li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-bold mb-4 text-white">Legal</h3>
+            <ul className="space-y-2 text-sm">
+              <li>
                 <Link href="/terms-and-conditions" className="text-gray-300 hover:text-white transition-colors">
                   Terms & Conditions
                 </Link>
               </li>
-              <li className="mb-2">
+              <li>
                 <Link href="/privacy-policy" className="text-gray-300 hover:text-white transition-colors">
                   Privacy Policy
                 </Link>
               </li>
-              <li className="mb-2">
+              <li>
                 <Link href="/payment-policy" className="text-gray-300 hover:text-white transition-colors">
                   Payment Policy
                 </Link>
               </li>
-              <li className="mb-2">
+              <li>
                 <Link href="/payout-policy" className="text-gray-300 hover:text-white transition-colors">
                   Payout Policy
                 </Link>
               </li>
             </ul>
-          </div>
-          
-          <div className="col-span-1 sm:col-span-2 md:col-span-5 border-t border-gray-700 pt-8 mt-4">
-            <h3 className="font-bold mb-4">Partners</h3>
-            <div className="flex flex-col gap-2">
-              <Link href="/partnerships" className="text-emerald-400 hover:text-emerald-300 font-semibold text-lg transition-colors">
-                Become a Partner →
-              </Link>
-              <Link href="/partners/mediloan" className="text-gray-300 hover:text-white transition-colors">
-                MediLoan by MyItura
-              </Link>
-            </div>
           </div>
         </div>
 
