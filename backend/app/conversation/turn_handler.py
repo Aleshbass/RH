@@ -12,7 +12,7 @@ from app.admin.escalation_router import (
 )
 from app.admin.verification_queue import apply_admin_turn
 from app.audit.logger import append
-from app.booking.booking_flow import AWAITING_PAYMENT, handle_booking_turn
+from app.booking.booking_flow import AWAITING_PAYMENT, handle_booking_turn, offer_matches
 from app.conversation.language import mirror_language
 from app.conversation.orchestrator import decide_booking_substate, decide_phase, has_narrative
 from app.conversation.stage_machine import assert_transition
@@ -550,7 +550,7 @@ def _reply_after_extract(
                 session, state, actor_phone=identity.phone_e164,
                 person_id=identity.person_id, message_id=wa_message_id,
             )
-            return "Thank you — I’ve recorded your policy acceptance. I’ll now find suitable specialist options.", PatientPhase.POST_TRIAGE
+            return offer_matches(session, session.get(Conversation, state.conversation_id), patient, extracted), PatientPhase.POST_TRIAGE
         booking_reply = handle_booking_turn(
             session,
             state,

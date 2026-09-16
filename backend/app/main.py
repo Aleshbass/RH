@@ -7,6 +7,8 @@ from app.api.internal.jobs import router as jobs_router
 from app.api.internal.partner_portal import router as partner_portal_router
 from app.api.internal.physio_profile import router as physio_profile_router
 from app.api.internal.receipts import router as receipts_router
+from app.api.internal.rh_safety_eligibility import router as rh_safety_eligibility_router
+from app.api.internal.rh_events import router as rh_events_router
 from app.api.internal.simulate import router as simulate_router
 from app.api.webhooks.paystack import router as paystack_router
 from app.api.webhooks.whatsapp import router as whatsapp_router
@@ -27,3 +29,5 @@ app.include_router(admin_panel_router)
 app.include_router(physio_profile_router)
 app.include_router(partner_portal_router)
 app.include_router(receipts_router)
+app.include_router(rh_safety_eligibility_router)
+app.include_router(rh_events_router)

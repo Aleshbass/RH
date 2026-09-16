@@ -11,6 +11,7 @@ from app.models.patient import Patient
 from app.models.payout import Payout
 from app.models.referral_fee import ReferralFee
 from app.models.rh_identity_mapping import RHIdentityMapping
+from app.models.rh_integration_event import RHIntegrationEvent
 from app.models.paystack_event import PaystackEvent
 from app.models.physiotherapist import Physiotherapist
 from app.models.relay import RelayThread
@@ -49,6 +50,7 @@ __all__ = [
     "Patient",
     "ReferralFee",
     "RHIdentityMapping",
+    "RHIntegrationEvent",
     "PatientPhase",
     "Payout",
     "PaystackEvent",

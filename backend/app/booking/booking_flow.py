@@ -16,12 +16,20 @@ from app.models.booking import Booking
 from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
+from app.models.rh_identity_mapping import RHIdentityMapping
+from app.models.triage_session import TriageSession
 from app.models.types import AuditKind, BookingStatus, ExtractedTriage
+from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
 from app.queue.tasks import _redis
 
 OFFERING_MATCHES = "offering_matches"
 AWAITING_SLOT_MODE = "awaiting_slot_mode"
 AWAITING_PAYMENT = "awaiting_payment"
+AWAITING_RH_SERVICE_MODE = "rh_awaiting_service_mode"
+AWAITING_RH_PROVIDER = "rh_awaiting_provider"
+AWAITING_RH_SLOT = "rh_awaiting_slot"
+AWAITING_RH_PAYMENT = "rh_awaiting_payment"
+AWAITING_RH_REPLACEMENT = "rh_awaiting_replacement"
 
 SESSION_REMINDER_ZSET = "joy:session_reminders"
 _PLACEHOLDER_CALLBACK = "https://localhost/paystack/callback"
@@ -95,6 +103,16 @@ def handle_booking_turn(
         return paid
 
     sub = conversation.booking_substate
+    if sub == AWAITING_RH_REPLACEMENT:
+        return _continue_rh_replacement(session, conversation, patient, user_text)
+    if sub == AWAITING_RH_SERVICE_MODE:
+        return _continue_rh_service_mode(session, conversation, patient, extracted, user_text)
+    if sub == AWAITING_RH_PROVIDER:
+        return _continue_rh_provider(session, conversation, patient, user_text)
+    if sub == AWAITING_RH_SLOT:
+        return _continue_rh_slot(session, conversation, patient, user_text)
+    if sub == AWAITING_RH_PAYMENT:
+        return _rh_payment_status(conversation, user_text)
     if sub == OFFERING_MATCHES:
         return _continue_offering(session, conversation, patient, user_text, paystack)
     if sub == AWAITING_SLOT_MODE:
@@ -119,34 +137,186 @@ def offer_matches(
     patient: Patient,
     extracted: ExtractedTriage,
 ) -> str:
-    area = extracted.condition_area
-    if area is None:
+    # RH is the operational source of truth. Do not use the legacy local matching
+    # and payment lifecycle for new WhatsApp bookings.
+    if extracted.condition_area is None:
         _set_substate(conversation, None, {})
         return NO_SPECIALIST_YET
+    context = dict(conversation.booking_context or {})
+    context["condition_area"] = extracted.condition_area.value
+    _set_substate(conversation, AWAITING_RH_SERVICE_MODE, context)
+    return "How would you like the session: home visit, clinic, or online?"
 
-    physios = eligible_physios(session, area)
-    if not physios:
-        _set_substate(conversation, None, {})
-        return NO_SPECIALIST_YET
 
-    ranked = rank(patient, physios, area)
-    if not ranked:
-        _set_substate(conversation, None, {})
-        return NO_SPECIALIST_YET
+def _rh_actor(patient: Patient, rh_patient_id: str | None = None) -> RHActor:
+    return RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=rh_patient_id)
 
-    lines = ["Here are specialists I can offer:"]
-    for i, row in enumerate(ranked, start=1):
-        naira = row.price_kobo // 100
-        lines.append(
-            f"{i}. {row.display_name} — ₦{naira:,} — rating {row.rating:g} — {area.value}"
+
+def _rh_patient_id(session: Session, patient: Patient) -> str | None:
+    mapping = session.scalar(select(RHIdentityMapping).where(
+        RHIdentityMapping.persona == "patient", RHIdentityMapping.joy_person_id == patient.id,
+    ))
+    if mapping is not None:
+        return mapping.rh_record_id
+    try:
+        resolved = configured_rh_client().resolve_patient(
+            patient.phone_e164, str(patient.id), _rh_actor(patient), name=patient.name,
         )
-    lines.append(_OFFER_FOOTER)
-    _set_substate(
-        conversation,
-        OFFERING_MATCHES,
-        {"physio_ids": [str(row.physio_id) for row in ranked]},
-    )
+    except RHIntegrationError:
+        return None
+    if not resolved.patient_id:
+        return None
+    session.add(RHIdentityMapping(persona="patient", joy_person_id=patient.id, rh_record_id=resolved.patient_id))
+    session.flush()
+    return resolved.patient_id
+
+
+def _required_specialties(extracted: ExtractedTriage) -> list[str]:
+    area = extracted.condition_area
+    return [area.value] if area is not None else []
+
+
+def _rh_mode(user_text: str) -> str | None:
+    text = user_text.lower()
+    if "home" in text:
+        return "home_visit"
+    if "clinic" in text:
+        return "clinic"
+    if "online" in text or "tele" in text or "video" in text:
+        return "online"
+    return None
+
+
+def _continue_rh_service_mode(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, user_text: str) -> str:
+    mode = _rh_mode(user_text)
+    if mode is None:
+        return "Please reply with home visit, clinic, or online."
+    rh_patient_id = _rh_patient_id(session, patient)
+    tags = _required_specialties(extracted)
+    if not rh_patient_id or not tags:
+        return "I can’t securely prepare specialist options right now. Please try again shortly."
+    try:
+        matches = configured_rh_client().match_physios(
+            patient_id=rh_patient_id, assessment_id=str(_current_assessment(session, patient)), assessment_revision=1,
+            required_specialties=tags, service_mode=mode, location=patient.location,
+            actor=_rh_actor(patient, rh_patient_id),
+        )
+    except RHIntegrationError:
+        return "I can’t retrieve live specialist availability right now. Please try again shortly."
+    if not matches:
+        _set_substate(conversation, None, {})
+        return NO_SPECIALIST_YET
+    providers = [m.__dict__ for m in matches]
+    lines = ["Here are the verified specialists available for your care:"]
+    for index, match in enumerate(matches, 1):
+        lines.append(f"{index}. {match.display_name or 'Physiotherapist'} — ₦{match.amount_kobo // 100:,}")
+    lines.append("Reply with the number of the specialist you prefer.")
+    _set_substate(conversation, AWAITING_RH_PROVIDER, {
+        "rh_patient_id": rh_patient_id, "service_mode": mode, "required_specialties": tags,
+        "providers": providers,
+    })
+    append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"decision": "rh_matches_presented", "service_mode": mode, "provider_ids": [m.physiotherapist_id for m in matches]})
     return "\n".join(lines)
+
+
+def _current_assessment(session: Session, patient: Patient) -> UUID:
+    triage = session.scalar(select(TriageSession).where(TriageSession.patient_id == patient.id).order_by(TriageSession.created_at.desc()))
+    if triage is None:
+        raise ValueError("triage assessment is missing")
+    return triage.id
+
+
+def _slot_choices(client, provider_id: str, mode: str) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    result = client.availability(provider_id, start_ms=int(now.timestamp() * 1000), end_ms=int((now + timedelta(days=7)).timestamp() * 1000), duration_minutes=60, service_mode=mode)
+    slots = result.get("slots") or []
+    return [slot for slot in slots if isinstance(slot, dict) and isinstance(slot.get("start"), (int, float))][:8]
+
+
+def _continue_rh_provider(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str:
+    ctx = dict(conversation.booking_context or {})
+    providers = list(ctx.get("providers") or [])
+    selected = _parse_index(user_text, len(providers))
+    if selected is None:
+        return f"Reply with a number from 1 to {len(providers)}."
+    provider = providers[selected - 1]
+    try:
+        slots = _slot_choices(configured_rh_client(), str(provider["physiotherapist_id"]), str(ctx["service_mode"]))
+    except RHIntegrationError:
+        return "I can’t retrieve that specialist’s live slots right now. Please try again shortly."
+    if not slots:
+        return "That specialist has no bookable slots in the next seven days. Please choose another specialist."
+    ctx.update({"selected_provider": provider, "slots": slots})
+    _set_substate(conversation, AWAITING_RH_SLOT, ctx)
+    lines = [f"Available times with {provider.get('display_name') or 'this specialist'}:"]
+    for index, slot in enumerate(slots, 1):
+        lines.append(f"{index}. {datetime.fromtimestamp(slot['start'] / 1000, timezone.utc).astimezone().strftime('%a %d %b, %I:%M %p')}")
+    lines.append("Reply with the time number you prefer.")
+    return "\n".join(lines)
+
+
+def _continue_rh_slot(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str:
+    ctx = dict(conversation.booking_context or {})
+    slots = list(ctx.get("slots") or [])
+    selected = _parse_index(user_text, len(slots))
+    provider = ctx.get("selected_provider") or {}
+    if selected is None or not provider:
+        return f"Reply with a time number from 1 to {len(slots)}."
+    policy = ctx.get("policy_accepted") or {}
+    rh_patient_id = ctx.get("rh_patient_id")
+    if not rh_patient_id or not policy:
+        return "I need to refresh your booking details before continuing. Please try again."
+    slot = slots[selected - 1]
+    try:
+        booking = configured_rh_client().create_pending_booking(
+            patient_id=str(rh_patient_id), physiotherapist_id=str(provider["physiotherapist_id"]),
+            slot_start=int(slot["start"]), duration_minutes=60, service_mode=str(ctx["service_mode"]),
+            session_type="physiotherapy", triage_summary_reference=str(_current_assessment(session, patient)),
+            assessment_id=str(_current_assessment(session, patient)), assessment_revision=1,
+            protocol_version="clinical_engine_v1", policy_version=str(policy["version"]),
+            policy_acceptance_reference=str(policy.get("acceptance_message_id") or policy["version"]),
+            conversation_id=str(conversation.id), actor=_rh_actor(patient, str(rh_patient_id)),
+            idempotency_key=f"joy-booking-{conversation.id}-{slot['start']}",
+            required_specialties=list(ctx.get("required_specialties") or []), patient_address=patient.location,
+        )
+        payment = configured_rh_client().initialize_booking_payment(
+            booking.booking_id, patient_id=str(rh_patient_id), email=f"{patient.phone_e164}@patients.rehabify.invalid",
+            actor=_rh_actor(patient, str(rh_patient_id)), idempotency_key=f"joy-payment-{booking.booking_id}",
+        )
+    except RHIntegrationError:
+        return "I couldn’t reserve that live slot. It may just have been taken; please choose another time."
+    ctx.update({"rh_booking_id": booking.booking_id, "authorization_url": payment.authorization_url})
+    _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
+    append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"decision": "rh_pending_payment_created", "rh_booking_id": booking.booking_id})
+    return f"Your slot is held. Complete payment securely here: {payment.authorization_url}"
+
+
+def _rh_payment_status(conversation: Conversation, user_text: str) -> str | None:
+    if _PAY_NUDGE_RE.search(user_text) or _PAID_RE.search(user_text):
+        return "Your payment is being verified. I’ll confirm the appointment here after the specialist accepts it."
+    return None
+
+
+def _continue_rh_replacement(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str:
+    ctx = dict(conversation.booking_context or {})
+    choices = list(ctx.get("replacement_choices") or [])
+    choice = _parse_index(user_text, len(choices))
+    if choice is None:
+        return f"Reply with a replacement time number from 1 to {len(choices)}."
+    selected = choices[choice - 1]
+    try:
+        configured_rh_client().reassign_booking(
+            str(ctx["rh_booking_id"]), patient_id=str(ctx["rh_patient_id"]),
+            physiotherapist_id=str(selected["physiotherapist_id"]), slot_start=int(selected["slot_start"]),
+            actor=_rh_actor(patient, str(ctx["rh_patient_id"])),
+            idempotency_key=f"joy-reassignment-{ctx['rh_booking_id']}-{selected['slot_start']}",
+        )
+    except RHIntegrationError:
+        return "I couldn’t hold that replacement time. Please choose another option."
+    _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
+    return "I’ve sent your replacement booking request to the specialist. I’ll confirm it here once they accept."
 
 
 def _set_substate(conversation: Conversation, substate: str | None, context: dict) -> None:
@@ -231,6 +401,21 @@ def _maybe_cancel(
 ) -> str | None:
     if not _CANCEL_RE.search(user_text):
         return None
+    context = dict(conversation.booking_context or {})
+    rh_booking_id = context.get("rh_booking_id")
+    rh_patient_id = context.get("rh_patient_id")
+    if rh_booking_id and rh_patient_id:
+        try:
+            configured_rh_client().cancel_booking(
+                str(rh_booking_id), patient_id=str(rh_patient_id), reason="patient_requested",
+                actor=_rh_actor(patient, str(rh_patient_id)), idempotency_key=f"joy-cancel-{rh_booking_id}",
+            )
+        except RHIntegrationError:
+            return "I can’t cancel this appointment right now. Please try again shortly."
+        _set_substate(conversation, None, context)
+        append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+               payload={"decision": "rh_booking_cancelled", "rh_booking_id": str(rh_booking_id)})
+        return _CANCELLED
     booking = _mutable_booking(session, patient.id)
     if booking is None:
         return None
@@ -265,6 +450,18 @@ def _maybe_paid_status(
 ) -> str | None:
     if not _PAID_RE.search(user_text):
         return None
+    context = conversation.booking_context or {}
+    rh_booking_id = context.get("rh_booking_id")
+    rh_patient_id = context.get("rh_patient_id")
+    if rh_booking_id and rh_patient_id:
+        try:
+            status = configured_rh_client().booking_status(str(rh_booking_id), patient_id=str(rh_patient_id))
+        except RHIntegrationError:
+            return "I can’t check the payment status right now. Please try again shortly."
+        if status.get("booking_status") == "confirmed":
+            _set_substate(conversation, None, dict(context))
+            return "Your appointment is confirmed. I’ll send the details here."
+        return "Your payment is being verified. I’ll confirm the appointment here after the specialist accepts it."
     booking = _payment_booking(session, conversation, patient)
     if booking is not None and booking.status == BookingStatus.CONFIRMED:
         _set_substate(conversation, None, {})

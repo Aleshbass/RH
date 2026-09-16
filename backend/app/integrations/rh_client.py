@@ -44,7 +44,7 @@ class RHActor:
 
 @dataclass(frozen=True)
 class PatientResolution:
-    resolution: Literal["EXISTING", "NOT_FOUND", "AMBIGUOUS"]
+    resolution: Literal["EXISTING", "CREATED", "NOT_FOUND", "AMBIGUOUS"]
     patient_id: str | None = None
     display_name: str | None = None
 
@@ -81,6 +81,23 @@ class RHMatch:
     service_modes: list[str]
     amount_kobo: int
     match_reasons: list[str]
+
+
+@dataclass(frozen=True)
+class RHBooking:
+    booking_id: str
+    booking_status: str
+    payment_status: str
+    amount_kobo: int
+    hold_expires_at: int | None = None
+
+
+@dataclass(frozen=True)
+class RHPaymentInitialization:
+    booking_id: str
+    reference: str
+    authorization_url: str
+    payment_status: str
 
 
 class RHClient:
@@ -181,6 +198,40 @@ class RHClient:
             f"&duration_minutes={duration_minutes}&service_mode={service_mode}&time_zone=Africa/Lagos"
         )
         return self._request("GET", path)
+
+    def create_pending_booking(self, *, patient_id: str, physiotherapist_id: str, slot_start: int, duration_minutes: int, service_mode: str, session_type: str, triage_summary_reference: str, assessment_id: str, assessment_revision: int, protocol_version: str, policy_version: str, policy_acceptance_reference: str, conversation_id: str, actor: RHActor, idempotency_key: str, required_specialties: list[str], patient_address: str | None = None) -> RHBooking:
+        payload: dict[str, Any] = {
+            "patient_id": patient_id, "physiotherapist_id": physiotherapist_id, "slot_start": slot_start,
+            "duration_minutes": duration_minutes, "service_mode": service_mode, "session_type": session_type,
+            "triage_summary_reference": triage_summary_reference, "assessment_id": assessment_id,
+            "assessment_revision": assessment_revision, "protocol_version": protocol_version,
+            "policy_version": policy_version, "policy_acceptance_reference": policy_acceptance_reference,
+            "joy_conversation_id": conversation_id, "required_specialties": required_specialties,
+            "actor": actor.as_payload(),
+        }
+        if patient_address:
+            payload["patient_address"] = patient_address
+        data = self._request("POST", "/api/v1/joy/bookings", payload=payload, idempotency_key=idempotency_key)
+        return RHBooking(booking_id=data["booking_id"], booking_status=data["booking_status"], payment_status=data["payment_status"], amount_kobo=int(data["amount_kobo"]), hold_expires_at=data.get("hold_expires_at"))
+
+    def initialize_booking_payment(self, booking_id: str, *, patient_id: str, email: str, actor: RHActor, idempotency_key: str) -> RHPaymentInitialization:
+        data = self._request("POST", f"/api/v1/joy/bookings/{booking_id}/payment", payload={"patient_id": patient_id, "email": email, "actor": actor.as_payload()}, idempotency_key=idempotency_key)
+        if not isinstance(data.get("authorization_url"), str) or not isinstance(data.get("reference"), str):
+            raise RHIntegrationError("INVALID_RESPONSE", "RH returned incomplete payment initialization", retryable=True)
+        return RHPaymentInitialization(booking_id=data["booking_id"], reference=data["reference"], authorization_url=data["authorization_url"], payment_status=data["payment_status"])
+
+    def booking_status(self, booking_id: str, *, patient_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/v1/joy/bookings/{booking_id}?persona=patient&patient_id={patient_id}")
+
+    def cancel_booking(self, booking_id: str, *, patient_id: str, reason: str, actor: RHActor, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/api/v1/joy/bookings/{booking_id}/cancel", payload={"patient_id": patient_id, "reason": reason, "actor": actor.as_payload()}, idempotency_key=idempotency_key)
+
+    def replacement_candidates(self, booking_id: str, *, patient_id: str, actor: RHActor) -> list[RHMatch]:
+        data = self._request("POST", f"/api/v1/joy/bookings/{booking_id}/replacement-candidates", payload={"patient_id": patient_id, "actor": actor.as_payload()})
+        return [RHMatch(physiotherapist_id=item["physiotherapist_id"], display_name=item.get("display_name"), specialties=list(item.get("specialties") or []), service_modes=list(item.get("service_modes") or []), amount_kobo=int(item["amount_kobo"]), match_reasons=[]) for item in data.get("candidates", [])]
+
+    def reassign_booking(self, booking_id: str, *, patient_id: str, physiotherapist_id: str, slot_start: int, actor: RHActor, idempotency_key: str) -> dict[str, Any]:
+        return self._request("POST", f"/api/v1/joy/bookings/{booking_id}/reassign", payload={"patient_id": patient_id, "physiotherapist_id": physiotherapist_id, "slot_start": slot_start, "actor": actor.as_payload()}, idempotency_key=idempotency_key)
 
 
 def configured_rh_client() -> RHClient:
