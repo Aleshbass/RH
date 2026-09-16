@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'
+import { callJoyConvexGateway } from '@/lib/joy-integration/convex-gateway'
+import { deliverJoyEvent } from '@/lib/joy-integration/events'
 
 /**
  * Paystack Webhook Handler
@@ -80,8 +82,9 @@ export async function POST(request: NextRequest) {
         ErrorTracker.captureException(error as Error, {
             action: 'paystack_webhook_error',
         })
-        // Return 200 even on internal errors so Paystack doesn't retry indefinitely
-        return NextResponse.json({ received: true })
+        // A verified webhook that could not be durably recorded must be retried.
+        // Replay protection in the RH payment path makes retries safe.
+        return NextResponse.json({ error: 'processing failed' }, { status: 500 })
     }
 }
 
@@ -114,6 +117,33 @@ async function handlePaymentSuccess(data: {
     })
 
     try {
+        // Joy payment attempts are resolved from RH's durable reference, not
+        // from untrusted client metadata. Payment evidence does not create an
+        // appointment: provider acceptance and current safety remain gates.
+        try {
+            const joyPayment = await callJoyConvexGateway('record_payment_webhook', {
+                reference: data.reference,
+                amount_kobo: data.amount,
+                currency: data.currency,
+                paystack_event_id: String(data.id ?? data.reference),
+            }) as { handled?: boolean; duplicate?: boolean; booking_id?: string; patient_id?: string; physiotherapist_id?: string; provider_response_due_at?: number };
+            if (joyPayment.handled) {
+                if (!joyPayment.duplicate && joyPayment.booking_id) {
+                    const eventData = { booking_id: joyPayment.booking_id, patient_id: joyPayment.patient_id, physiotherapist_id: joyPayment.physiotherapist_id, payment_reference: data.reference, provider_response_due_at: joyPayment.provider_response_due_at };
+                    await deliverJoyEvent(`pay-${data.reference}`, 'booking.payment_confirmed', eventData);
+                    await deliverJoyEvent(`provider-response-${joyPayment.booking_id}`, 'booking.provider_response_requested', eventData);
+                }
+                log.info('Recorded verified Joy payment evidence', {
+                    action: 'joy_payment_webhook_recorded', metadata: { reference: data.reference },
+                });
+                return;
+            }
+        } catch (joyError) {
+            // A gateway outage must be retried by Paystack rather than silently
+            // falling through to an unrelated invoice path.
+            if (String(data.reference || '').startsWith('JOY_')) throw joyError;
+        }
+
         // Lazy-import to avoid heavy type instantiation at module level
         const { ConvexHttpClient } = await import('convex/browser')
         const { api } = await import('@/convex/_generated/api') as any
@@ -212,6 +242,7 @@ async function handlePaymentSuccess(data: {
             action: 'paystack_success_handler_error',
             extra: { reference: data.reference }
         })
+        if (String(data.reference || '').startsWith('JOY_')) throw error
     }
 }
 
