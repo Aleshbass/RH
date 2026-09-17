@@ -28,6 +28,7 @@ import {
   Clock,
   TrendingUp,
   TrendingDown,
+  Handshake,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -110,6 +111,10 @@ export default function AdminDashboard() {
   const systemHealth = useQuery(api.admin.getSystemHealth)
   const recentActivity = useQuery(api.admin.getUserActivityLogs, { limit: 5 })
   const pendingApprovals = useQuery(api.users.getPendingApprovals)
+  const pendingPartnerships = useQuery(
+    api.adminPartnerships.getPartnerApplications,
+    currentUser?.role === 'admin' ? { status: 'pending' } : 'skip'
+  )
   
   // Get current user to verify admin status
   const currentUser = useQuery(api.users.getMyUser)
@@ -326,6 +331,29 @@ export default function AdminDashboard() {
                     {pendingApprovals.length}
                   </Badge>
                 )}
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" className="w-full justify-between" asChild>
+              <Link href="/dashboard/admin/partnerships">
+                <span className="flex items-center">
+                  <Handshake className="h-4 w-4 mr-2 text-teal-700" />
+                  Partnerships & Integrations
+                </span>
+                {pendingPartnerships && pendingPartnerships.length > 0 && (
+                  <Badge variant="destructive" className="ml-2">
+                    {pendingPartnerships.length} pending
+                  </Badge>
+                )}
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" className="w-full justify-between" asChild>
+              <Link href="/dashboard/admin/referrals">
+                <span className="flex items-center">
+                  <UserPlus className="h-4 w-4 mr-2 text-blue-700" />
+                  Inbound Patient Referrals
+                </span>
                 <ChevronRight className="h-4 w-4" />
               </Link>
             </Button>

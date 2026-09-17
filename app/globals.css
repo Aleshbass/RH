@@ -5,6 +5,25 @@
 /* @import "fumadocs-ui/css/neutral.css"; */
 /* @import "fumadocs-ui/css/preset.css"; */
 
+/* Shiki code syntax highlighting (VS Code themes) */
+pre.shiki,
+.shiki,
+.shiki code {
+  color: var(--shiki-dark, #e1e4e8);
+}
+
+.shiki span {
+  color: var(--shiki-dark, inherit);
+}
+
+html.dark .shiki span {
+  color: var(--shiki-dark, inherit);
+}
+
+.shiki .line.highlighted {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
 @source "../node_modules/fumadocs-ui/dist/**/*.js";
 
 @variant dark (&:is(.dark *));

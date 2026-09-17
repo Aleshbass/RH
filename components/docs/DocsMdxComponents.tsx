@@ -137,15 +137,23 @@ export function Tab({ children }: { children: React.ReactNode }) {
   return <div>{children}</div>;
 }
 
+function extractText(node: any): string {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (!node) return "";
+  if (Array.isArray(node)) return node.map(extractText).join("");
+  if (node.props?.children) return extractText(node.props.children);
+  return "";
+}
+
 // Pre / CodeBlock with Copy Button
 export function PreCode({
   children,
+  className,
   ...props
 }: React.HTMLAttributes<HTMLPreElement>) {
   const [copied, setCopied] = useState(false);
-  const textContent = React.Children.toArray(children)
-    .map((child: any) => (typeof child === "string" ? child : child?.props?.children || ""))
-    .join("");
+  const textContent = extractText(children);
 
   const handleCopy = () => {
     if (navigator.clipboard) {
@@ -161,13 +169,13 @@ export function PreCode({
         <span>Code</span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 text-zinc-400 hover:text-white px-2 py-0.5 rounded-md hover:bg-white/10 transition"
+          className="flex items-center gap-1.5 text-zinc-400 hover:text-white px-2 py-0.5 rounded-md hover:bg-white/10 transition cursor-pointer"
         >
           {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
           <span>{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
-      <pre className="p-4 overflow-x-auto text-xs font-mono leading-relaxed" {...props}>
+      <pre className={`p-4 overflow-x-auto text-xs font-mono leading-relaxed shiki ${className || ""}`} {...props}>
         {children}
       </pre>
     </div>
