@@ -84,4 +84,6 @@ crons.interval(
   {}
 );
 
+crons.interval("expire-joy-provider-responses", { minutes: 5 }, internal.joyIntegration.dispatchExpiredJoyProviderResponses, {});
+
 export default crons;

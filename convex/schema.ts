@@ -214,6 +214,8 @@ export default defineSchema({
     gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
     address: v.optional(v.string()),
     city: v.optional(v.string()),
+    // Neighbourhood/LGA, used with city for Joy home-visit matching.
+    area: v.optional(v.string()),
     country: v.optional(v.string()),
     medicalHistorySummary: v.optional(v.string()), // Brief summary
     // Detailed medical history could be a separate table or structured object
@@ -2366,6 +2368,8 @@ export default defineSchema({
     sessionDate: v.optional(v.number()), // Scheduled date
     sessionDuration: v.number(), // minutes
     isOnline: v.boolean(),
+    joyServiceMode: v.optional(v.union(v.literal("home_visit"), v.literal("clinic"), v.literal("online"))),
+    joyRequiredSpecialties: v.optional(v.array(v.string())),
     patientAddress: v.optional(v.string()), // Exact address for in-person sessions
 
     // Package booking fields
@@ -2410,6 +2414,28 @@ export default defineSchema({
     patientNotes: v.optional(v.string()),
     cancellationReason: v.optional(v.string()),
 
+    // Immutable origin information. These fields make reporting and payment
+    // reconciliation independent of free-text notes or Paystack metadata.
+    sourceSystem: v.optional(v.union(
+      v.literal("joy_ai"), v.literal("rh_marketplace_web"), v.literal("rh_patient_dashboard"),
+      v.literal("rh_admin"), v.literal("rh_clinic")
+    )),
+    sourceChannel: v.optional(v.string()),
+    sourceEntryPoint: v.optional(v.string()),
+    joyConversationId: v.optional(v.string()),
+    joyAssessmentId: v.optional(v.string()),
+    joyAssessmentRevision: v.optional(v.number()),
+    joyEligibilityReference: v.optional(v.string()),
+    joyPolicyVersion: v.optional(v.string()),
+    joyPolicyAcceptanceReference: v.optional(v.string()),
+    originRequestId: v.optional(v.string()),
+    originIdempotencyKey: v.optional(v.string()),
+    originatedAt: v.optional(v.number()),
+    holdExpiresAt: v.optional(v.number()),
+    providerResponse: v.optional(v.union(v.literal("pending"), v.literal("accepted"), v.literal("rejected"))),
+    providerResponseDueAt: v.optional(v.number()),
+    replacementStatus: v.optional(v.union(v.literal("not_needed"), v.literal("awaiting_patient_slot"), v.literal("admin_follow_up"))),
+
     // Guest details
     isGuestBooking: v.optional(v.boolean()),
     guestEmail: v.optional(v.string()),
@@ -2424,7 +2450,97 @@ export default defineSchema({
     .index("by_payment_reference", ["paymentReference"])
     .index("by_booking_status", ["bookingStatus"])
     .index("by_payment_status", ["paymentStatus"])
-    .index("by_session_date", ["sessionDate"]),
+    .index("by_session_date", ["sessionDate"])
+    .index("by_origin_idempotency", ["originIdempotencyKey"]),
+
+  // A durable record exists before a Paystack initialization request. It is
+  // intentionally distinct from the booking so abandoned/failed attempts are
+  // auditable without changing the booking's immutable provenance.
+  joyPaymentAttempts: defineTable({
+    bookingId: v.id("marketplaceBookings"),
+    reference: v.string(),
+    amountKobo: v.number(),
+    currency: v.literal("NGN"),
+    status: v.union(v.literal("initializing"), v.literal("initialized"), v.literal("failed"), v.literal("verified")),
+    authorizationUrl: v.optional(v.string()),
+    safeAccessCode: v.optional(v.string()),
+    failureCategory: v.optional(v.string()),
+    sourceSystem: v.literal("joy_ai"),
+    sourceChannel: v.literal("whatsapp"),
+    originRequestId: v.string(),
+    originIdempotencyKey: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    verifiedAt: v.optional(v.number()),
+  })
+    .index("by_booking", ["bookingId"])
+    .index("by_reference", ["reference"])
+    .index("by_origin_idempotency", ["originIdempotencyKey"]),
+
+  // Durable RH-to-Joy event outbox. Delivery is tracked separately from the
+  // business transaction so a transient Joy outage never loses confirmation.
+  joyEventOutbox: defineTable({
+    eventId: v.string(),
+    eventType: v.string(),
+    payload: v.any(),
+    status: v.union(v.literal("pending"), v.literal("delivered"), v.literal("failed")),
+    attempts: v.number(),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    deliveredAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_event_id", ["eventId"]).index("by_status", ["status"]),
+
+  joyAdminFollowUps: defineTable({
+    bookingId: v.id("marketplaceBookings"),
+    recipientEmail: v.string(),
+    reason: v.string(),
+    status: v.union(v.literal("open"), v.literal("resolved")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_booking", ["bookingId"]).index("by_status", ["status"]),
+
+  // Paid five-minute AMBER review. This is deliberately separate from a
+  // marketplace booking: a reviewer is allocated only after verified payment,
+  // never fabricated merely to create a payment link.
+  joySpecialistReviews: defineTable({
+    patientId: v.id("users"),
+    assessmentId: v.string(),
+    assessmentRevision: v.number(),
+    protocolVersion: v.string(),
+    eligibilityReference: v.string(),
+    policyVersion: v.string(),
+    policyAcceptanceReference: v.string(),
+    priceKobo: v.number(),
+    durationMinutes: v.number(),
+    paymentStatus: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.literal("refunded")),
+    reviewStatus: v.union(v.literal("pending_payment"), v.literal("awaiting_assignment"), v.literal("assigned"), v.literal("completed"), v.literal("cancelled")),
+    paymentReference: v.optional(v.string()),
+    paidAt: v.optional(v.number()),
+    reviewerId: v.optional(v.id("users")),
+    scheduledAt: v.optional(v.number()),
+    sourceSystem: v.literal("joy_ai"),
+    sourceChannel: v.literal("whatsapp"),
+    sourceEntryPoint: v.literal("specialist_review"),
+    joyConversationId: v.string(),
+    originRequestId: v.string(),
+    originIdempotencyKey: v.string(),
+    originatedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_patient", ["patientId"]).index("by_payment_reference", ["paymentReference"]).index("by_origin_idempotency", ["originIdempotencyKey"]),
+
+  joySpecialistReviewPaymentAttempts: defineTable({
+    reviewId: v.id("joySpecialistReviews"),
+    reference: v.string(),
+    amountKobo: v.number(),
+    status: v.union(v.literal("initializing"), v.literal("initialized"), v.literal("failed"), v.literal("verified")),
+    authorizationUrl: v.optional(v.string()),
+    originRequestId: v.string(),
+    originIdempotencyKey: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_review", ["reviewId"]).index("by_reference", ["reference"]).index("by_origin_idempotency", ["originIdempotencyKey"]),
 
   // Marketplace Transactions (verification badges, featured listings, commissions)
   marketplaceTransactions: defineTable({

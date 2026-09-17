@@ -22,11 +22,14 @@ export async function POST(request: Request) {
     if (actor.persona !== "patient" || actor.sender_phone !== phone) {
       return errorResponse(requestId, new JoyAuthError(403, "FORBIDDEN", "Actor may only resolve their own patient identity"));
     }
-    const result = await callJoyConvexGateway("resolve_patient", { phone });
-    const data = result as { resolution: "MATCH" | "NOT_FOUND" | "AMBIGUOUS"; patient_id?: string; display_name?: string };
-    return success(requestId, data.resolution === "MATCH"
-      ? { resolution: "EXISTING", patient_id: data.patient_id, display_name: data.display_name }
-      : { resolution: data.resolution });
+    const result = await callJoyConvexGateway("resolve_or_create_patient", {
+      phone,
+      joy_person_id: authenticated.data.joy_person_id,
+      name: authenticated.data.name,
+      email: authenticated.data.email,
+    });
+    const data = result as { resolution: "EXISTING" | "CREATED" | "AMBIGUOUS"; patient_id?: string; display_name?: string };
+    return success(requestId, data);
   } catch (error) {
     return errorResponse(requestId, error);
   }

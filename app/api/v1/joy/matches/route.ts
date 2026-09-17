@@ -11,9 +11,14 @@ const requestSchema = z.object({
   assessment_revision: z.number().int().positive(),
   required_specialties: z.array(z.string().min(1)).min(1).max(8),
   service_mode: z.enum(["home_visit", "clinic", "online"]),
-  location: z.string().min(2).max(160).optional(),
+  city: z.string().min(2).max(80).optional(),
+  area: z.string().min(2).max(80).optional(),
   actor: actorSchema,
-}).strict();
+}).strict().superRefine((value, ctx) => {
+  if (value.service_mode === "home_visit" && (!value.city || !value.area)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "City and area are required for home visits" });
+  }
+});
 
 export async function POST(request: Request) {
   let requestId = request.headers.get("X-Request-Id") ?? "unknown";
@@ -26,7 +31,7 @@ export async function POST(request: Request) {
     }
     const providers = await callJoyConvexGateway("find_matches", {
       patient_id: input.patient_id, required_specialties: input.required_specialties,
-      service_mode: input.service_mode, location: input.location, limit: 3,
+      service_mode: input.service_mode, city: input.city, area: input.area, limit: 3,
     });
     return success(requestId, { providers });
   } catch (error) {
