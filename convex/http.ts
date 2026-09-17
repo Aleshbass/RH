@@ -3,7 +3,7 @@ import { calendarWebhook, webhookHealth } from "./calendar/webhook";
 import {
   recordExternalRequest, resolvePatient, resolvePhysiotherapist, findMatches,
   resolveAvailabilityProfile, createPendingBooking, getBooking,
-  preparePaymentAttempt, recordPaymentInitialization, recordPaymentWebhook, cancelBooking, enqueueEvent, markEventDelivery, respondToBooking, replacementCandidates, reassignBooking,
+  preparePaymentAttempt, recordPaymentInitialization, recordPaymentWebhook, createSpecialistReview, prepareSpecialistReviewPayment, recordSpecialistReviewPaymentInitialization, recordSpecialistReviewPaymentWebhook, cancelBooking, enqueueEvent, markEventDelivery, respondToBooking, replacementCandidates, reassignBooking,
 } from "./joyGateway";
 
 const http = httpRouter();
@@ -31,6 +31,10 @@ http.route({ path: "/joy-integration/cancel_booking", method: "POST", handler: c
 http.route({ path: "/joy-integration/prepare_payment_attempt", method: "POST", handler: preparePaymentAttempt });
 http.route({ path: "/joy-integration/record_payment_initialization", method: "POST", handler: recordPaymentInitialization });
 http.route({ path: "/joy-integration/record_payment_webhook", method: "POST", handler: recordPaymentWebhook });
+http.route({ path: "/joy-integration/create_specialist_review", method: "POST", handler: createSpecialistReview });
+http.route({ path: "/joy-integration/prepare_specialist_review_payment", method: "POST", handler: prepareSpecialistReviewPayment });
+http.route({ path: "/joy-integration/record_specialist_review_payment_initialization", method: "POST", handler: recordSpecialistReviewPaymentInitialization });
+http.route({ path: "/joy-integration/record_specialist_review_payment_webhook", method: "POST", handler: recordSpecialistReviewPaymentWebhook });
 http.route({ path: "/joy-integration/enqueue_event", method: "POST", handler: enqueueEvent });
 http.route({ path: "/joy-integration/mark_event_delivery", method: "POST", handler: markEventDelivery });
 http.route({ path: "/joy-integration/respond_to_booking", method: "POST", handler: respondToBooking });

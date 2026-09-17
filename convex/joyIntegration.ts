@@ -5,6 +5,8 @@ import { Id } from "./_generated/dataModel";
 
 const HOUR_MS = 60 * 60 * 1000;
 const BOOKING_HOLD_MS = 30 * 60 * 1000;
+export const AMBER_SPECIALIST_REVIEW_PRICE_KOBO = 600_000;
+export const AMBER_SPECIALIST_REVIEW_DURATION_MINUTES = 5;
 
 const LEGACY_SPECIALTY_TAGS: Record<string, string> = {
   musculoskeletal: "MSK_GENERAL",
@@ -337,6 +339,84 @@ export const recordJoyPaymentWebhook = internalMutation({
     // acceptance. A later authorized workflow may create the appointment.
     await ctx.db.patch(booking._id, { paymentStatus: "completed", paidAt: Date.now(), paymentReference: args.reference, updatedAt: Date.now(), providerResponse: "pending", providerResponseDueAt: Date.now() + 5 * HOUR_MS });
     return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: Date.now() + 5 * HOUR_MS, event_id: args.paystackEventId };
+  },
+});
+
+/** A paid AMBER review is a distinct service, not a routine consultation. */
+export const createJoySpecialistReview = internalMutation({
+  args: {
+    patientId: v.id("users"), assessmentId: v.string(), assessmentRevision: v.number(),
+    protocolVersion: v.string(), eligibilityReference: v.string(), policyVersion: v.string(),
+    policyAcceptanceReference: v.string(), conversationId: v.string(), requestId: v.string(),
+    idempotencyKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("joySpecialistReviews").withIndex("by_origin_idempotency", q => q.eq("originIdempotencyKey", args.idempotencyKey)).first();
+    if (existing) return { review_id: existing._id, payment_status: existing.paymentStatus, review_status: existing.reviewStatus, amount_kobo: existing.priceKobo };
+    const patient = await ctx.db.get(args.patientId);
+    if (!patient || patient.role !== "patient") throw new Error("Patient not found");
+    const now = Date.now();
+    const reviewId = await ctx.db.insert("joySpecialistReviews", {
+      patientId: args.patientId, assessmentId: args.assessmentId, assessmentRevision: args.assessmentRevision,
+      protocolVersion: args.protocolVersion, eligibilityReference: args.eligibilityReference,
+      policyVersion: args.policyVersion, policyAcceptanceReference: args.policyAcceptanceReference,
+      priceKobo: AMBER_SPECIALIST_REVIEW_PRICE_KOBO, durationMinutes: AMBER_SPECIALIST_REVIEW_DURATION_MINUTES,
+      paymentStatus: "pending", reviewStatus: "pending_payment", sourceSystem: "joy_ai", sourceChannel: "whatsapp",
+      sourceEntryPoint: "specialist_review", joyConversationId: args.conversationId, originRequestId: args.requestId,
+      originIdempotencyKey: args.idempotencyKey, originatedAt: now, createdAt: now, updatedAt: now,
+    });
+    return { review_id: reviewId, payment_status: "pending", review_status: "pending_payment", amount_kobo: AMBER_SPECIALIST_REVIEW_PRICE_KOBO };
+  },
+});
+
+export const prepareJoySpecialistReviewPayment = internalMutation({
+  args: { reviewId: v.id("joySpecialistReviews"), patientId: v.id("users"), requestId: v.string(), idempotencyKey: v.string(), reference: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("joySpecialistReviewPaymentAttempts").withIndex("by_origin_idempotency", q => q.eq("originIdempotencyKey", args.idempotencyKey)).first();
+    if (existing) return { attempt_id: existing._id, review_id: existing.reviewId, reference: existing.reference, amount_kobo: existing.amountKobo, authorization_url: existing.authorizationUrl };
+    const review = await ctx.db.get(args.reviewId);
+    if (!review || review.patientId !== args.patientId || review.reviewStatus !== "pending_payment" || review.paymentStatus !== "pending") throw new Error("Review is not available for payment");
+    const now = Date.now();
+    const attemptId = await ctx.db.insert("joySpecialistReviewPaymentAttempts", { reviewId: review._id, reference: args.reference, amountKobo: AMBER_SPECIALIST_REVIEW_PRICE_KOBO, status: "initializing", originRequestId: args.requestId, originIdempotencyKey: args.idempotencyKey, createdAt: now, updatedAt: now });
+    await ctx.db.patch(review._id, { paymentReference: args.reference, updatedAt: now });
+    return { attempt_id: attemptId, review_id: review._id, reference: args.reference, amount_kobo: AMBER_SPECIALIST_REVIEW_PRICE_KOBO };
+  },
+});
+
+export const recordJoySpecialistReviewPaymentInitialization = internalMutation({
+  args: { attemptId: v.id("joySpecialistReviewPaymentAttempts"), authorizationUrl: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.get(args.attemptId);
+    if (!attempt) throw new Error("Review payment attempt not found");
+    await ctx.db.patch(attempt._id, { status: args.authorizationUrl ? "initialized" : "failed", authorizationUrl: args.authorizationUrl, updatedAt: Date.now() });
+    return { status: args.authorizationUrl ? "initialized" : "failed" };
+  },
+});
+
+export const recordJoySpecialistReviewPaymentWebhook = internalMutation({
+  args: { reference: v.string(), amountKobo: v.number(), currency: v.string(), paystackEventId: v.string() },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.query("joySpecialistReviewPaymentAttempts").withIndex("by_reference", q => q.eq("reference", args.reference)).first();
+    if (!attempt) return { handled: false };
+    if (args.currency !== "NGN" || args.amountKobo !== AMBER_SPECIALIST_REVIEW_PRICE_KOBO) throw new Error("Paystack amount or currency mismatch");
+    if (attempt.status === "verified") return { handled: true, duplicate: true, review_id: attempt.reviewId };
+    const review = await ctx.db.get(attempt.reviewId);
+    if (!review) throw new Error("Review not found");
+    const now = Date.now();
+    await ctx.db.patch(attempt._id, { status: "verified", updatedAt: now });
+    // Only profiles explicitly tagged by RH as AMBER reviewers can be allocated.
+    // Absence of such a roster is a visible admin queue, never a fallback to an
+    // unrelated general physio or a fabricated appointment.
+    const profiles = await ctx.db.query("physiotherapistProfiles").withIndex("by_marketplace_availability", q => q.eq("isAvailableOnMarketplace", true)).collect();
+    let reviewerId: Id<"users"> | undefined;
+    for (const profile of profiles) {
+      if (!profile.joySpecialtyTags?.includes("AMBER_REVIEWER")) continue;
+      const approval = await ctx.db.query("accountApprovalStatus").withIndex("by_user_id", q => q.eq("userId", profile.userId)).first();
+      if (approval?.status === "approved") { reviewerId = profile.userId; break; }
+    }
+    const reviewStatus = reviewerId ? "assigned" : "awaiting_assignment";
+    await ctx.db.patch(review._id, { paymentStatus: "completed", paidAt: now, paymentReference: args.reference, reviewerId, reviewStatus, updatedAt: now });
+    return { handled: true, duplicate: false, review_id: review._id, patient_id: review.patientId, reviewer_id: reviewerId, review_status: reviewStatus, event_id: args.paystackEventId };
   },
 });
 

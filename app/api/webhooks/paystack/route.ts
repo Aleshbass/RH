@@ -144,6 +144,29 @@ async function handlePaymentSuccess(data: {
             if (String(data.reference || '').startsWith('JOY_')) throw joyError;
         }
 
+        try {
+            const specialistReviewPayment = await callJoyConvexGateway('record_specialist_review_payment_webhook', {
+                reference: data.reference,
+                amount_kobo: data.amount,
+                currency: data.currency,
+                paystack_event_id: String(data.id ?? data.reference),
+            }) as { handled?: boolean; duplicate?: boolean; review_id?: string; patient_id?: string; reviewer_id?: string; review_status?: string };
+            if (specialistReviewPayment.handled) {
+                if (!specialistReviewPayment.duplicate && specialistReviewPayment.review_id) {
+                    await deliverJoyEvent(`review-payment-${data.reference}`, 'specialist_review.payment_confirmed', {
+                        review_id: specialistReviewPayment.review_id,
+                        patient_id: specialistReviewPayment.patient_id,
+                        payment_reference: data.reference,
+                        reviewer_id: specialistReviewPayment.reviewer_id,
+                        assignment_status: specialistReviewPayment.review_status ?? 'awaiting_assignment',
+                    });
+                }
+                return;
+            }
+        } catch (reviewError) {
+            if (String(data.reference || '').startsWith('JOYREV_')) throw reviewError;
+        }
+
         // Lazy-import to avoid heavy type instantiation at module level
         const { ConvexHttpClient } = await import('convex/browser')
         const { api } = await import('@/convex/_generated/api') as any

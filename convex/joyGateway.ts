@@ -182,6 +182,41 @@ export const recordPaymentWebhook = httpAction(async (ctx, request) => {
   return Response.json(await ctx.runMutation((internal as any).joyIntegration.recordJoyPaymentWebhook, { reference: data.reference, amountKobo: data.amount_kobo, currency: data.currency, paystackEventId: data.paystack_event_id }));
 });
 
+export const createSpecialistReview = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/create_specialist_review");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const data = parsed.data;
+  const fields = ["patient_id", "assessment_id", "protocol_version", "eligibility_reference", "policy_version", "policy_acceptance_reference", "conversation_id", "request_id", "idempotency_key"];
+  if (!fields.every(key => typeof data[key] === "string") || typeof data.assessment_revision !== "number") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyIntegration.createJoySpecialistReview, { patientId: data.patient_id, assessmentId: data.assessment_id, assessmentRevision: data.assessment_revision, protocolVersion: data.protocol_version, eligibilityReference: data.eligibility_reference, policyVersion: data.policy_version, policyAcceptanceReference: data.policy_acceptance_reference, conversationId: data.conversation_id, requestId: data.request_id, idempotencyKey: data.idempotency_key }));
+});
+
+export const prepareSpecialistReviewPayment = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/prepare_specialist_review_payment");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const data = parsed.data;
+  if (!["review_id", "patient_id", "request_id", "idempotency_key", "reference"].every(key => typeof data[key] === "string")) return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyIntegration.prepareJoySpecialistReviewPayment, { reviewId: data.review_id, patientId: data.patient_id, requestId: data.request_id, idempotencyKey: data.idempotency_key, reference: data.reference }));
+});
+
+export const recordSpecialistReviewPaymentInitialization = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/record_specialist_review_payment_initialization");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce)) || typeof parsed.data.attempt_id !== "string") return new Response("Invalid request", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyIntegration.recordJoySpecialistReviewPaymentInitialization, { attemptId: parsed.data.attempt_id, authorizationUrl: typeof parsed.data.authorization_url === "string" ? parsed.data.authorization_url : undefined }));
+});
+
+export const recordSpecialistReviewPaymentWebhook = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/record_specialist_review_payment_webhook");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const data = parsed.data;
+  if (typeof data.reference !== "string" || typeof data.amount_kobo !== "number" || typeof data.currency !== "string" || typeof data.paystack_event_id !== "string") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyIntegration.recordJoySpecialistReviewPaymentWebhook, { reference: data.reference, amountKobo: data.amount_kobo, currency: data.currency, paystackEventId: data.paystack_event_id }));
+});
+
 export const enqueueEvent = httpAction(async (ctx, request) => {
   const parsed = await readJson(request, "/joy-integration/enqueue_event");
   if (parsed instanceof Response) return parsed;

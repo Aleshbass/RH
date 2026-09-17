@@ -2494,6 +2494,48 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_booking", ["bookingId"]).index("by_status", ["status"]),
 
+  // Paid five-minute AMBER review. This is deliberately separate from a
+  // marketplace booking: a reviewer is allocated only after verified payment,
+  // never fabricated merely to create a payment link.
+  joySpecialistReviews: defineTable({
+    patientId: v.id("users"),
+    assessmentId: v.string(),
+    assessmentRevision: v.number(),
+    protocolVersion: v.string(),
+    eligibilityReference: v.string(),
+    policyVersion: v.string(),
+    policyAcceptanceReference: v.string(),
+    priceKobo: v.number(),
+    durationMinutes: v.number(),
+    paymentStatus: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"), v.literal("refunded")),
+    reviewStatus: v.union(v.literal("pending_payment"), v.literal("awaiting_assignment"), v.literal("assigned"), v.literal("completed"), v.literal("cancelled")),
+    paymentReference: v.optional(v.string()),
+    paidAt: v.optional(v.number()),
+    reviewerId: v.optional(v.id("users")),
+    scheduledAt: v.optional(v.number()),
+    sourceSystem: v.literal("joy_ai"),
+    sourceChannel: v.literal("whatsapp"),
+    sourceEntryPoint: v.literal("specialist_review"),
+    joyConversationId: v.string(),
+    originRequestId: v.string(),
+    originIdempotencyKey: v.string(),
+    originatedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_patient", ["patientId"]).index("by_payment_reference", ["paymentReference"]).index("by_origin_idempotency", ["originIdempotencyKey"]),
+
+  joySpecialistReviewPaymentAttempts: defineTable({
+    reviewId: v.id("joySpecialistReviews"),
+    reference: v.string(),
+    amountKobo: v.number(),
+    status: v.union(v.literal("initializing"), v.literal("initialized"), v.literal("failed"), v.literal("verified")),
+    authorizationUrl: v.optional(v.string()),
+    originRequestId: v.string(),
+    originIdempotencyKey: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_review", ["reviewId"]).index("by_reference", ["reference"]).index("by_origin_idempotency", ["originIdempotencyKey"]),
+
   // Marketplace Transactions (verification badges, featured listings, commissions)
   marketplaceTransactions: defineTable({
     userId: v.id("users"), // Physiotherapist
