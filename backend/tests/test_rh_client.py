@@ -7,6 +7,23 @@ import httpx
 from app.integrations.rh_client import RHActor, RHClient
 
 
+def test_patient_location_uses_structured_city_and_area() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PATCH"
+        assert request.url.path == "/api/v1/joy/patients/rh_patient_1/location"
+        assert json.loads(request.content) == {
+            "city": "Abuja", "area": "Jabi",
+            "actor": {"persona": "patient", "sender_phone": "+2348012345678"},
+        }
+        return httpx.Response(200, json={"data": {"patient_id": "rh_patient_1", "city": "Abuja", "area": "Jabi"}})
+
+    client = RHClient("https://rh.test", "joy-test", "test-secret", client=httpx.Client(transport=httpx.MockTransport(handler)))
+    client.update_patient_location(
+        "rh_patient_1", city="Abuja", area="Jabi",
+        actor=RHActor(persona="patient", sender_phone="+2348012345678"),
+    )
+
+
 def test_resolve_patient_signs_the_exact_json_payload() -> None:
     secret = "test-secret"
 

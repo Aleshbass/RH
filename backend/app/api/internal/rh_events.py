@@ -51,6 +51,31 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
         patient = session.get(Patient, mapping.joy_person_id) if mapping else None
         if patient:
             enqueue_booking_confirmed(patient.phone_e164, str(data.get("booking_id") or ""), "Your appointment is confirmed. I’ll send your appointment details here.")
+    elif event_type == "booking.meeting_link_ready":
+        data = payload.get("data") or {}
+        rh_patient_id = str(data.get("patient_id") or "")
+        meeting_url = str(data.get("meeting_url") or "")
+        mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.rh_record_id == rh_patient_id))
+        patient = session.get(Patient, mapping.joy_person_id) if mapping else None
+        if patient and meeting_url.startswith("https://"):
+            enqueue_booking_confirmed(
+                patient.phone_e164,
+                str(data.get("booking_id") or ""),
+                f"Your online appointment is ready. Join securely here: {meeting_url}",
+            )
+            append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+                   payload={"event": "online_meeting_link_disclosed", "booking_id": str(data.get("booking_id") or ""), "platform": data.get("platform")})
+    elif event_type == "booking.meeting_link_failed":
+        data = payload.get("data") or {}
+        rh_patient_id = str(data.get("patient_id") or "")
+        mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.rh_record_id == rh_patient_id))
+        patient = session.get(Patient, mapping.joy_person_id) if mapping else None
+        if patient:
+            enqueue_booking_confirmed(
+                patient.phone_e164,
+                str(data.get("booking_id") or ""),
+                "Your online appointment is confirmed, but the joining link is still being prepared. Our care team will send it here shortly.",
+            )
     elif event_type == "booking.provider_rejected":
         _prepare_replacement(session, payload.get("data") or {})
     elif event_type == "specialist_review.payment_confirmed":

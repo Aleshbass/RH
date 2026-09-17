@@ -15,6 +15,10 @@ class Patient(Base):
     phone_e164: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     name: Mapped[str | None] = mapped_column(String, nullable=True)
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Booking location is deliberately structured.  The legacy display string
+    # remains for compatibility with existing records and appointment notes.
+    city: Mapped[str | None] = mapped_column(String, nullable=True)
+    area: Mapped[str | None] = mapped_column(String, nullable=True)
     location: Mapped[str | None] = mapped_column(String, nullable=True)
     lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     lng: Mapped[float | None] = mapped_column(Float, nullable=True)

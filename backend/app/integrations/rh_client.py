@@ -174,14 +174,24 @@ class RHClient:
             approval_status=data["approval_status"],
         )
 
-    def match_physios(self, *, patient_id: str, assessment_id: str, assessment_revision: int, required_specialties: list[str], service_mode: str, actor: RHActor, location: str | None = None) -> list[RHMatch]:
+    def update_patient_location(self, patient_id: str, *, city: str, area: str, actor: RHActor) -> None:
+        self._request(
+            "PATCH",
+            f"/api/v1/joy/patients/{patient_id}/location",
+            payload={"city": city, "area": area, "actor": actor.as_payload()},
+            idempotency_key=f"joy-patient-location-{patient_id}-{city.casefold()}-{area.casefold()}",
+        )
+
+    def match_physios(self, *, patient_id: str, assessment_id: str, assessment_revision: int, required_specialties: list[str], service_mode: str, actor: RHActor, city: str | None = None, area: str | None = None) -> list[RHMatch]:
         payload: dict[str, Any] = {
             "patient_id": patient_id, "assessment_id": assessment_id,
             "assessment_revision": assessment_revision, "required_specialties": required_specialties,
             "service_mode": service_mode, "actor": actor.as_payload(),
         }
-        if location:
-            payload["location"] = location
+        if city:
+            payload["city"] = city
+        if area:
+            payload["area"] = area
         data = self._request("POST", "/api/v1/joy/matches", payload=payload)
         providers = data.get("providers")
         if not isinstance(providers, list):

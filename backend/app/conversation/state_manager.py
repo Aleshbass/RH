@@ -57,6 +57,10 @@ def _known_facts(session: Session, patient_id: UUID | None) -> dict:
         facts["name"] = patient.name
     if patient.age is not None:
         facts["age"] = patient.age
+    if patient.city is not None:
+        facts["city"] = patient.city
+    if patient.area is not None:
+        facts["area"] = patient.area
     if patient.location is not None:
         facts["location"] = patient.location
     return facts

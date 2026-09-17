@@ -26,6 +26,7 @@ OFFERING_MATCHES = "offering_matches"
 AWAITING_SLOT_MODE = "awaiting_slot_mode"
 AWAITING_PAYMENT = "awaiting_payment"
 AWAITING_RH_SERVICE_MODE = "rh_awaiting_service_mode"
+AWAITING_RH_LOCATION = "rh_awaiting_location"
 AWAITING_RH_PROVIDER = "rh_awaiting_provider"
 AWAITING_RH_SLOT = "rh_awaiting_slot"
 AWAITING_RH_PAYMENT = "rh_awaiting_payment"
@@ -107,6 +108,8 @@ def handle_booking_turn(
         return _continue_rh_replacement(session, conversation, patient, user_text)
     if sub == AWAITING_RH_SERVICE_MODE:
         return _continue_rh_service_mode(session, conversation, patient, extracted, user_text)
+    if sub == AWAITING_RH_LOCATION:
+        return _continue_rh_location(session, conversation, patient, extracted, user_text)
     if sub == AWAITING_RH_PROVIDER:
         return _continue_rh_provider(session, conversation, patient, user_text)
     if sub == AWAITING_RH_SLOT:
@@ -187,24 +190,53 @@ def _rh_mode(user_text: str) -> str | None:
     return None
 
 
-def _continue_rh_service_mode(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, user_text: str) -> str:
-    mode = _rh_mode(user_text)
-    if mode is None:
-        return "Please reply with home visit, clinic, or online."
-    rh_patient_id = _rh_patient_id(session, patient)
-    tags = _required_specialties(extracted)
-    if not rh_patient_id or not tags:
-        return "I can’t securely prepare specialist options right now. Please try again shortly."
+_LOCATION_LABELLED_RE = re.compile(
+    r"(?:city\s*[:=-]?\s*(?P<city>[^,;]+)[,;\s]+)?(?:area|neighbourhood|neighborhood)\s*[:=-]?\s*(?P<area>[^,;]+)",
+    re.I,
+)
+
+
+def _parse_city_area(user_text: str) -> tuple[str, str] | None:
+    """Parse the deliberately small WhatsApp location format: ``Area, City``.
+
+    We do not geocode or infer an address. Matching needs only the service city
+    and local area, and an unclear answer must be requested again rather than
+    silently widened to another city.
+    """
+    text = " ".join(user_text.strip().split())
+    labelled = _LOCATION_LABELLED_RE.fullmatch(text)
+    if labelled and labelled.group("city") and labelled.group("area"):
+        return labelled.group("city").strip(" ."), labelled.group("area").strip(" .")
+    parts = [part.strip(" .") for part in re.split(r"[,;]", text) if part.strip(" .")]
+    if len(parts) == 2:
+        area, city = parts
+        if len(city) >= 2 and len(area) >= 2:
+            return city, area
+    return None
+
+
+def _location_prompt() -> str:
+    return "For a home visit, what city and area are you in? Reply in this format: Area, City — for example, Jabi, Abuja."
+
+
+def _find_rh_matches(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, *, mode: str, rh_patient_id: str, tags: list[str]) -> str:
+    if mode == "home_visit" and (not patient.city or not patient.area):
+        _set_substate(conversation, AWAITING_RH_LOCATION, {
+            "rh_patient_id": rh_patient_id, "service_mode": mode, "required_specialties": tags,
+        })
+        return _location_prompt()
     try:
         matches = configured_rh_client().match_physios(
             patient_id=rh_patient_id, assessment_id=str(_current_assessment(session, patient)), assessment_revision=1,
-            required_specialties=tags, service_mode=mode, location=patient.location,
-            actor=_rh_actor(patient, rh_patient_id),
+            required_specialties=tags, service_mode=mode, city=patient.city if mode == "home_visit" else None,
+            area=patient.area if mode == "home_visit" else None, actor=_rh_actor(patient, rh_patient_id),
         )
     except RHIntegrationError:
         return "I can’t retrieve live specialist availability right now. Please try again shortly."
     if not matches:
         _set_substate(conversation, None, {})
+        if mode == "home_visit":
+            return "There are no verified specialists currently serving your area for this care. I can’t offer a home visit there right now. You can ask about clinic or online care instead."
         return NO_SPECIALIST_YET
     providers = [m.__dict__ for m in matches]
     lines = ["Here are the verified specialists available for your care:"]
@@ -218,6 +250,40 @@ def _continue_rh_service_mode(session: Session, conversation: Conversation, pati
     append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_matches_presented", "service_mode": mode, "provider_ids": [m.physiotherapist_id for m in matches]})
     return "\n".join(lines)
+
+
+def _continue_rh_service_mode(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, user_text: str) -> str:
+    mode = _rh_mode(user_text)
+    if mode is None:
+        return "Please reply with home visit, clinic, or online."
+    rh_patient_id = _rh_patient_id(session, patient)
+    tags = _required_specialties(extracted)
+    if not rh_patient_id or not tags:
+        return "I can’t securely prepare specialist options right now. Please try again shortly."
+    return _find_rh_matches(session, conversation, patient, extracted, mode=mode, rh_patient_id=rh_patient_id, tags=tags)
+
+
+def _continue_rh_location(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, user_text: str) -> str:
+    parsed = _parse_city_area(user_text)
+    if parsed is None:
+        return _location_prompt()
+    city, area = parsed
+    ctx = dict(conversation.booking_context or {})
+    rh_patient_id = str(ctx.get("rh_patient_id") or "")
+    mode = str(ctx.get("service_mode") or "")
+    tags = list(ctx.get("required_specialties") or [])
+    if not rh_patient_id or mode != "home_visit" or not tags:
+        _set_substate(conversation, None, {})
+        return "I need to refresh the booking details before continuing. Please choose home visit, clinic, or online again."
+    try:
+        configured_rh_client().update_patient_location(rh_patient_id, city=city, area=area, actor=_rh_actor(patient, rh_patient_id))
+    except RHIntegrationError:
+        return "I can’t securely save your booking location right now. Please try again shortly."
+    patient.city, patient.area, patient.location = city, area, f"{area}, {city}"
+    session.flush()
+    append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"decision": "patient_booking_location_saved", "city": city, "area": area})
+    return _find_rh_matches(session, conversation, patient, extracted, mode=mode, rh_patient_id=rh_patient_id, tags=tags)
 
 
 def _current_assessment(session: Session, patient: Patient) -> UUID:

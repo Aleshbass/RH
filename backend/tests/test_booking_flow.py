@@ -18,6 +18,14 @@ LAGOS_LAT = 6.5244
 LAGOS_LNG = 3.3792
 
 
+def test_home_visit_city_area_parser_accepts_area_then_city() -> None:
+    from app.booking.booking_flow import _parse_city_area
+
+    assert _parse_city_area("Jabi, Abuja") == ("Abuja", "Jabi")
+    assert _parse_city_area("city: Abuja, area: Jabi") == ("Abuja", "Jabi")
+    assert _parse_city_area("Abuja") is None
+
+
 def _physio(session, phone, tags, *, price_kobo=20_000_00, rating=4.5, verified=True):
     row = Physiotherapist(
         phone_e164=phone,
