@@ -5,6 +5,7 @@ import { Id } from "./_generated/dataModel";
 
 const HOUR_MS = 60 * 60 * 1000;
 const BOOKING_HOLD_MS = 30 * 60 * 1000;
+const encoder = new TextEncoder();
 export const AMBER_SPECIALIST_REVIEW_PRICE_KOBO = 600_000;
 export const AMBER_SPECIALIST_REVIEW_DURATION_MINUTES = 5;
 
@@ -139,7 +140,8 @@ export const findMatches = internalQuery({
     patientId: v.id("users"),
     requiredSpecialties: v.array(v.string()),
     serviceMode: v.union(v.literal("home_visit"), v.literal("clinic"), v.literal("online")),
-    location: v.optional(v.string()),
+    city: v.optional(v.string()),
+    area: v.optional(v.string()),
     limit: v.number(),
   },
   handler: async (ctx, args) => {
@@ -148,7 +150,8 @@ export const findMatches = internalQuery({
     const profiles = await ctx.db.query("physiotherapistProfiles")
       .withIndex("by_marketplace_availability", (q) => q.eq("isAvailableOnMarketplace", true))
       .collect();
-    const requestedLocation = args.location ? normalized(args.location) : "";
+    const requestedCity = args.city ? normalized(args.city) : "";
+    const requestedArea = args.area ? normalized(args.area) : "";
     const results = [];
     for (const profile of profiles) {
       const approval = await ctx.db.query("accountApprovalStatus")
@@ -161,7 +164,8 @@ export const findMatches = internalQuery({
       if (!args.requiredSpecialties.every((tag) => tags.includes(tag))) continue;
       if (args.serviceMode === "home_visit") {
         const areas = (profile.joyServiceAreas ?? []).map(normalized);
-        if (!requestedLocation || !areas.includes(requestedLocation)) continue;
+        const coverage = areas.includes(requestedArea) ? requestedArea : areas.includes(requestedCity) ? requestedCity : null;
+        if (!requestedCity || !requestedArea || !coverage) continue;
       }
       if (!profile.availabilitySchedule) continue;
       const user = await ctx.db.get(profile.userId);
@@ -175,7 +179,7 @@ export const findMatches = internalQuery({
         specialties: tags,
         service_modes: modes,
         amount_kobo: rate,
-        match_reasons: ["verified specialty", "approved marketplace provider", "configured service mode"],
+        match_reasons: ["verified specialty", "approved marketplace provider", "configured service mode", ...(args.serviceMode === "home_visit" ? ["serves your city or area"] : [])],
       });
     }
     return results.slice(0, Math.min(Math.max(args.limit, 1), 3));
@@ -342,6 +346,23 @@ export const recordJoyPaymentWebhook = internalMutation({
   },
 });
 
+/** Persist the minimal, patient-supplied service area used for Joy home visits. */
+export const updateJoyPatientLocation = internalMutation({
+  args: { patientId: v.id("users"), city: v.string(), area: v.string() },
+  handler: async (ctx, args) => {
+    const patient = await ctx.db.get(args.patientId);
+    if (!patient || patient.role !== "patient") throw new Error("Patient not found");
+    const city = args.city.trim();
+    const area = args.area.trim();
+    if (!city || !area) throw new Error("City and area are required");
+    const profile = await ctx.db.query("patientProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.patientId)).first();
+    if (profile) await ctx.db.patch(profile._id, { city, area, address: `${area}, ${city}` });
+    else await ctx.db.insert("patientProfiles", { userId: args.patientId, city, area, address: `${area}, ${city}` });
+    return { patient_id: args.patientId, city, area };
+  },
+});
+
 /** A paid AMBER review is a distinct service, not a routine consultation. */
 export const createJoySpecialistReview = internalMutation({
   args: {
@@ -460,7 +481,88 @@ export const respondToJoyBooking = internalMutation({
       isOnline: booking.isOnline, location: booking.patientAddress,
     });
     await ctx.db.patch(booking._id, { providerResponse: "accepted", bookingStatus: "confirmed", appointmentId, updatedAt: Date.now() });
+    if (booking.isOnline) {
+      await ctx.scheduler.runAfter(0, internal.joyIntegration.createJoyOnlineMeeting, {
+        bookingId: booking._id, appointmentId, patientId: booking.patientId, physiotherapistId: booking.physiotherapistId,
+        startTime: booking.sessionDate, endTime: booking.sessionDate + booking.sessionDuration * 60_000,
+      });
+    }
     return { outcome: "confirmed", booking_id: booking._id, appointment_id: appointmentId, patient_id: booking.patientId };
+  },
+});
+
+export const storeJoyStreamMeeting = internalMutation({
+  args: { appointmentId: v.id("appointments"), meetingLink: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.appointmentId, { meetingLink: args.meetingLink, isOnline: true });
+  },
+});
+
+async function signEvent(timestamp: string, eventId: string, body: string, secret: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode([timestamp, eventId, body].join("\n")));
+  return Array.from(new Uint8Array(signature)).map(value => value.toString(16).padStart(2, "0")).join("");
+}
+
+/** Durable, signed RH-to-Joy event delivery for asynchronous operations. */
+export const deliverJoyEvent = internalAction({
+  args: { eventId: v.string(), eventType: v.string(), data: v.any() },
+  handler: async (ctx, args) => {
+    const payload = { event_id: args.eventId, event_type: args.eventType, api_version: "1", occurred_at: new Date().toISOString(), data: args.data };
+    await ctx.runMutation(internal.joyIntegration.enqueueJoyEvent, { eventId: args.eventId, eventType: args.eventType, payload });
+    const url = process.env.JOY_EVENT_URL;
+    const secret = process.env.JOY_EVENT_HMAC_SECRET;
+    if (!url || !secret) return { delivered: false, reason: "event_receiver_not_configured" };
+    const body = JSON.stringify(payload);
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    try {
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-RH-Event-Timestamp": timestamp, "X-RH-Event-Signature": await signEvent(timestamp, args.eventId, body, secret) }, body });
+      if (!response.ok) throw new Error(`Joy event receiver returned ${response.status}`);
+      await ctx.runMutation(internal.joyIntegration.markJoyEventDelivery, { eventId: args.eventId, delivered: true });
+      return { delivered: true };
+    } catch (error) {
+      await ctx.runMutation(internal.joyIntegration.markJoyEventDelivery, { eventId: args.eventId, delivered: false, error: error instanceof Error ? error.message : "delivery failed" });
+      return { delivered: false };
+    }
+  },
+});
+
+/** Creates the configured online room after a paid Joy booking is accepted. */
+export const createJoyOnlineMeeting = internalAction({
+  args: {
+    bookingId: v.id("marketplaceBookings"), appointmentId: v.id("appointments"), patientId: v.id("users"), physiotherapistId: v.id("users"),
+    startTime: v.number(), endTime: v.number(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      // Joy online appointments always use the approved Stream workflow. Do
+      // not silently switch to Google Meet: its OAuth approval is not part of
+      // the supported Joy operational path.
+      const platform = "stream" as const;
+      const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+      const roomId = `joy-${args.appointmentId}`;
+      const meetingUrl = `${appBase.replace(/\/$/, "")}/video-call/${roomId}`;
+      await ctx.runMutation(internal.videoCalls.createVideoCallRecord, {
+        roomId, streamCallId: roomId, meetingLink: meetingUrl, platform, appointmentId: args.appointmentId,
+        initiatorId: args.physiotherapistId, participants: [args.patientId, args.physiotherapistId], callType: "appointment",
+        title: "Rehabify online physiotherapy appointment",
+        settings: { recordingEnabled: false, chatEnabled: true, maxParticipants: 2, waitingRoomEnabled: true, screenShareEnabled: true, prejoinUiEnabled: true, ejectAtRoomExp: true, language: "en", geo: "us-west" },
+        streamConfig: { callId: roomId, createdAt: new Date().toISOString() },
+      });
+      await ctx.runMutation(internal.joyIntegration.storeJoyStreamMeeting, { appointmentId: args.appointmentId, meetingLink: meetingUrl });
+      await ctx.runAction(internal.joyIntegration.deliverJoyEvent, {
+        eventId: `booking-meeting-link-${args.bookingId}`, eventType: "booking.meeting_link_ready",
+        data: { booking_id: args.bookingId, appointment_id: args.appointmentId, patient_id: args.patientId, meeting_url: meetingUrl, platform, start_time: args.startTime },
+      });
+    } catch (error) {
+      await ctx.runMutation(internal.joyIntegration.createJoyOnlineMeetingFollowUp, {
+        bookingId: args.bookingId, reason: "online_meeting_link_generation_failed",
+      });
+      await ctx.runAction(internal.joyIntegration.deliverJoyEvent, {
+        eventId: `booking-meeting-link-failed-${args.bookingId}`, eventType: "booking.meeting_link_failed",
+        data: { booking_id: args.bookingId, appointment_id: args.appointmentId, patient_id: args.patientId, reason: "meeting_link_generation_failed" },
+      });
+    }
   },
 });
 
@@ -545,6 +647,18 @@ export const createJoyAdminFollowUp = internalMutation({
     const now = Date.now();
     const id = await ctx.db.insert("joyAdminFollowUps", { bookingId: args.bookingId, recipientEmail: "abassademolakuwam@gmail.com", reason: args.reason, status: "open", createdAt: now, updatedAt: now });
     await ctx.db.patch(args.bookingId, { replacementStatus: "admin_follow_up", updatedAt: now });
+    return { follow_up_id: id, duplicate: false };
+  },
+});
+
+/** Meeting-link failures need operations attention without changing rematch state. */
+export const createJoyOnlineMeetingFollowUp = internalMutation({
+  args: { bookingId: v.id("marketplaceBookings"), reason: v.string() },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("joyAdminFollowUps").withIndex("by_booking", q => q.eq("bookingId", args.bookingId)).first();
+    if (existing) return { follow_up_id: existing._id, duplicate: true };
+    const now = Date.now();
+    const id = await ctx.db.insert("joyAdminFollowUps", { bookingId: args.bookingId, recipientEmail: "abassademolakuwam@gmail.com", reason: args.reason, status: "open", createdAt: now, updatedAt: now });
     return { follow_up_id: id, duplicate: false };
   },
 });

@@ -214,6 +214,8 @@ export default defineSchema({
     gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"), v.literal("prefer_not_to_say"))),
     address: v.optional(v.string()),
     city: v.optional(v.string()),
+    // Neighbourhood/LGA, used with city for Joy home-visit matching.
+    area: v.optional(v.string()),
     country: v.optional(v.string()),
     medicalHistorySummary: v.optional(v.string()), // Brief summary
     // Detailed medical history could be a separate table or structured object
