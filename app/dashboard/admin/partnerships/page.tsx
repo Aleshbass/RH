@@ -141,22 +141,26 @@ export default function AdminPartnershipsPage() {
     }
   };
 
-  // Filter inquiries
-  const filteredInquiries = (inquiries || []).filter((inquiry) => {
-    const matchesSearch =
-      inquiry.organizationName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inquiry.contactName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inquiry.email.toLowerCase().includes(searchTerm.toLowerCase());
+  // Filter inquiries with resilient property fallbacks
+  const filteredInquiries = (inquiries || []).filter((inquiry: any) => {
+    const org = (inquiry.organization || inquiry.organizationName || "").toLowerCase();
+    const contact = (inquiry.name || inquiry.contactName || "").toLowerCase();
+    const mail = (inquiry.email || "").toLowerCase();
+    const q = searchTerm.toLowerCase();
+
+    const matchesSearch = org.includes(q) || contact.includes(q) || mail.includes(q);
     const matchesStatus = statusFilter === "all" || inquiry.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  // Filter partner applications
-  const filteredApplications = (partnerApplications || []).filter((partner) => {
-    const matchesSearch =
-      partner.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      partner.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      partner.contactEmail.toLowerCase().includes(searchTerm.toLowerCase());
+  // Filter partner applications with resilient property fallbacks
+  const filteredApplications = (partnerApplications || []).filter((partner: any) => {
+    const name = (partner.name || "").toLowerCase();
+    const code = (partner.code || "").toLowerCase();
+    const email = (partner.contactEmail || partner.ownerEmail || "").toLowerCase();
+    const q = searchTerm.toLowerCase();
+
+    const matchesSearch = name.includes(q) || code.includes(q) || email.includes(q);
     const matchesStatus = statusFilter === "all" || partner.approvalStatus === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -483,13 +487,18 @@ export default function AdminPartnershipsPage() {
                   <div className="flex justify-between items-start mb-4">
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-semibold text-gray-900">{inquiry.organizationName}</h3>
-                        <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
-                          {inquiry.organizationType}
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {inquiry.organization || (inquiry as any).organizationName || "Partner Organization"}
+                        </h3>
+                        <span className="inline-flex items-center rounded-full bg-teal-50 px-2 py-1 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-700/10">
+                          {(inquiry as any).organizationType || "Enterprise Partner"}
                         </span>
                       </div>
                       <p className="text-sm text-gray-500 mt-1">
-                        Submitted on {format(inquiry._creationTime, "MMM d, yyyy 'at' h:mm a")}
+                        Submitted on{" "}
+                        {inquiry.createdAt
+                          ? format(inquiry.createdAt, "MMM d, yyyy 'at' h:mm a")
+                          : format(inquiry._creationTime, "MMM d, yyyy 'at' h:mm a")}
                       </p>
                     </div>
                     <Select
@@ -523,7 +532,9 @@ export default function AdminPartnershipsPage() {
                       </div>
                       <div>
                         <p className="text-xs font-medium text-gray-500">Contact Person</p>
-                        <p className="text-sm text-gray-900 font-medium">{inquiry.contactName}</p>
+                        <p className="text-sm text-gray-900 font-medium">
+                          {inquiry.name || (inquiry as any).contactName || "Contact"}
+                        </p>
                         <a
                           href={`mailto:${inquiry.email}`}
                           className="text-sm text-teal-600 hover:text-teal-700 hover:underline flex items-center gap-1 mt-0.5"
@@ -538,16 +549,22 @@ export default function AdminPartnershipsPage() {
                         <Phone className="h-4 w-4 text-gray-500" />
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-gray-500">Phone & Size</p>
-                        <a
-                          href={`tel:${inquiry.phone}`}
-                          className="text-sm text-teal-600 hover:text-teal-700 hover:underline flex items-center gap-1 font-medium"
-                        >
-                          {inquiry.phone} <ExternalLink className="h-3 w-3" />
-                        </a>
-                        <p className="text-sm text-gray-600 mt-0.5">
-                          {inquiry.employeeCount} expected patients/staff
-                        </p>
+                        <p className="text-xs font-medium text-gray-500">Phone & Details</p>
+                        {(inquiry as any).phone ? (
+                          <a
+                            href={`tel:${(inquiry as any).phone}`}
+                            className="text-sm text-teal-600 hover:text-teal-700 hover:underline flex items-center gap-1 font-medium"
+                          >
+                            {(inquiry as any).phone} <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : (
+                          <p className="text-sm text-gray-500">Not specified</p>
+                        )}
+                        {(inquiry as any).employeeCount && (
+                          <p className="text-sm text-gray-600 mt-0.5">
+                            {(inquiry as any).employeeCount} expected patients/staff
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

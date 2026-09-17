@@ -1792,7 +1792,7 @@ print(res.json())`;
   // --------------------------------------------------------------------------
   // STATE 3: Authenticated, Application Pending Review
   // --------------------------------------------------------------------------
-  if (userPartnerData?.status === "pending") {
+  if (userPartnerData?.status === "pending" && !userPartnerData?.isAdmin) {
     const pendingPartner = userPartnerData.partner;
     return (
       <div className="max-w-2xl mx-auto py-16 px-4 sm:px-6">
@@ -1867,7 +1867,7 @@ print(res.json())`;
   // --------------------------------------------------------------------------
   // STATE 4: Authenticated, Application Rejected
   // --------------------------------------------------------------------------
-  if (userPartnerData?.status === "rejected") {
+  if (userPartnerData?.status === "rejected" && !userPartnerData?.isAdmin) {
     return (
       <div className="max-w-md mx-auto py-16 px-4">
         <div className="bg-white rounded-3xl border border-red-200 p-8 text-center space-y-5 shadow-xs">
