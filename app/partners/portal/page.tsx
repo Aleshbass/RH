@@ -519,6 +519,7 @@ export default function PartnerPortalDashboard() {
     try {
       const res = await createReferralMutation({
         partnerCode,
+        environment,
         partnerExternalId: referralFormData.partnerExternalId.trim() || undefined,
         patientFirstName: referralFormData.patientFirstName.trim(),
         patientLastName: referralFormData.patientLastName.trim(),
