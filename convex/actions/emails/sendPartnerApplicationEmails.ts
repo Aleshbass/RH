@@ -19,6 +19,11 @@ export const sendPartnerApplicationSubmittedAdminEmail = action({
     coverageStates: v.optional(v.array(v.string())),
     reviewLink: v.optional(v.string()),
   },
+  returns: v.object({
+    success: v.boolean(),
+    messageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+  }),
   handler: async (ctx, args) => {
     try {
       const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
@@ -63,6 +68,11 @@ export const sendPartnerApplicationApprovedEmail = action({
     portalLink: v.optional(v.string()),
     approvedBy: v.optional(v.string()),
   },
+  returns: v.object({
+    success: v.boolean(),
+    messageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+  }),
   handler: async (ctx, args) => {
     try {
       const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
@@ -105,6 +115,11 @@ export const sendPartnerApplicationDeclinedEmail = action({
     reason: v.optional(v.string()),
     supportLink: v.optional(v.string()),
   },
+  returns: v.object({
+    success: v.boolean(),
+    messageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+  }),
   handler: async (ctx, args) => {
     try {
       const supportLink = args.supportLink || "mailto:partners@physioaroundme.com";

@@ -1485,7 +1485,7 @@ export const getPartnerAnalyticsTimeseries = query({
     let teleRehabCount = 0;
 
     referrals.forEach((r) => {
-      const mode = (r.preferredCareMode || r.careMode || "clinic").toLowerCase();
+      const mode = (r.preferredCareMode || (r as any).careMode || "clinic").toLowerCase();
       if (mode.includes("home")) {
         homeVisitCount++;
       } else if (mode.includes("virtual") || mode.includes("tele") || mode.includes("remote")) {

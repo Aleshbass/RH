@@ -593,8 +593,10 @@ async function eventSignature(timestamp: string, eventId: string, body: string, 
 /** Five-hour provider timeout path. It fails safely: the booking is never confirmed
  * by a timeout; Joy receives the same replacement-selection event as a rejection. */
 export const dispatchExpiredJoyProviderResponses = internalAction({
-  args: {}, handler: async (ctx) => {
-    const { expired } = await ctx.runMutation(internal.joyIntegration.expireJoyProviderResponses, {});
+  args: {},
+  handler: async (ctx): Promise<{ expired: number; delivered: number; configuration_missing?: boolean }> => {
+    const res: any = await ctx.runMutation(internal.joyIntegration.expireJoyProviderResponses, {});
+    const expired: Array<{ booking_id: string; patient_id: any }> = res.expired || [];
     const url = process.env.JOY_EVENT_URL;
     const secret = process.env.JOY_EVENT_HMAC_SECRET;
     if (!url || !secret) return { expired: expired.length, delivered: 0, configuration_missing: true };

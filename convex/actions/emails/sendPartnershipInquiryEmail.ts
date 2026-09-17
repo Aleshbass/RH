@@ -12,6 +12,11 @@ export const sendPartnershipInquiryEmail = action({
     organization: v.string(),
     message: v.string(),
   },
+  returns: v.object({
+    success: v.boolean(),
+    messageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+  }),
   handler: async (ctx, args) => {
     try {
       const result = await sendEmail({

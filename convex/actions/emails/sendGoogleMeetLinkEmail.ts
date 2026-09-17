@@ -15,6 +15,11 @@ export const sendGoogleMeetLinkEmail = internalAction({
         calendarLink: v.optional(v.string()),
         appointmentDate: v.number(),
     },
+    returns: v.object({
+        success: v.boolean(),
+        messageId: v.optional(v.string()),
+        error: v.optional(v.string()),
+    }),
     handler: async (_ctx, args) => {
         try {
             console.log('[EMAIL SERVICE] Sending Google Meet link to', args.to);
