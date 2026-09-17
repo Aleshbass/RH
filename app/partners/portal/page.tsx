@@ -2,12 +2,27 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import NextImage from "next/image";
 import { useUser, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  CartesianGrid,
+  Legend,
+} from "recharts";
 import {
   Activity,
   AlertCircle,
@@ -23,24 +38,29 @@ import {
   Clock,
   Code2,
   Copy,
+  Cpu,
   CreditCard,
   Download,
   ExternalLink,
   Eye,
   EyeOff,
   FileText,
+  Filter,
   Globe,
   HeartPulse,
   Image as ImageIcon,
   Key,
+  Layers,
   Link2,
   Lock,
   MessageSquare,
   MousePointerClick,
   Plus,
+  Radio,
   RefreshCw,
   Search,
   Send,
+  Server,
   Share2,
   ShieldCheck,
   Sliders,
@@ -54,6 +74,7 @@ import {
   Users,
   Wallet,
   Webhook,
+  X,
   Zap,
 } from "lucide-react";
 
@@ -94,6 +115,21 @@ export default function PartnerPortalDashboard() {
   const [environment, setEnvironment] = useState<"sandbox" | "live">("sandbox");
   const [showApiKey, setShowApiKey] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Developer Platform & Activity Logs state
+  const [activeDevSection, setActiveDevSection] = useState<
+    "overview" | "keys" | "logs" | "health" | "webhooks" | "snippets"
+  >("overview");
+  const [analyticsRange, setAnalyticsRange] = useState<"7d" | "30d" | "90d">("7d");
+  const [logEventTypeFilter, setLogEventTypeFilter] = useState<string>("all");
+  const [logStatusFilter, setLogStatusFilter] = useState<string>("all");
+  const [selectedLog, setSelectedLog] = useState<any | null>(null);
+  const [isLogDrawerOpen, setIsLogDrawerOpen] = useState(false);
+  const [isNewKeyModalOpen, setIsNewKeyModalOpen] = useState(false);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
+  const [freshlyGeneratedKey, setFreshlyGeneratedKey] = useState<any | null>(null);
+  const [isRevokingKey, setIsRevokingKey] = useState<string | null>(null);
 
   // Referral Links state & modals
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
@@ -291,9 +327,10 @@ export default function PartnerPortalDashboard() {
     "referrals" | "track" | "eligibility"
   >("referrals");
 
-  // Fetch live overview from Convex
+  // Fetch live overview from Convex (environment aware)
   const overview = useQuery(api.partners.getPartnerDashboardOverview, {
     partnerCode,
+    environment,
   });
 
   // Fetch partner referral links from Convex
@@ -316,29 +353,60 @@ export default function PartnerPortalDashboard() {
     status: commissionStatusFilter === "all" ? undefined : commissionStatusFilter,
   });
 
-  // Convex mutations
+  // Developer Platform Real-Time Queries
+  const activityLogs = useQuery(api.partners.listPartnerActivityLogs, {
+    partnerCode,
+    environment,
+    eventType: logEventTypeFilter === "all" ? undefined : logEventTypeFilter,
+    status: logStatusFilter === "all" ? undefined : logStatusFilter,
+  });
+
+  const apiKeys = useQuery(api.partners.listPartnerApiKeys, {
+    partnerCode,
+    environment,
+  });
+
+  const integrationHealth = useQuery(api.partners.getIntegrationHealth, {
+    partnerCode,
+    environment,
+  });
+
+  const analyticsTimeseries = useQuery(api.partners.getPartnerAnalyticsTimeseries, {
+    partnerCode,
+    environment,
+    range: analyticsRange,
+  });
+
+  // Convex mutations & actions
   const createReferralMutation = useMutation(api.partners.createPartnerReferral);
   const updateWebhookMutation = useMutation(api.partners.updatePartnerWebhookSettings);
   const rotateApiKeyMutation = useMutation(api.partners.rotatePartnerApiKey);
+  const generateApiKeyMutation = useMutation(api.partners.generatePartnerApiKey);
+  const revokeApiKeyMutation = useMutation(api.partners.revokePartnerApiKey);
+  const triggerRealWebhookAction = useAction(api.partners.triggerRealTestWebhook);
   const triggerTestWebhookMutation = useMutation(api.partners.triggerTestWebhook);
   const createLinkMutation = useMutation(api.partnerLinks.createReferralLink);
   const updateLinkStatusMutation = useMutation(api.partnerLinks.updateLinkStatus);
 
   // Populate inputs when overview loads
+  const hasInitializedEnv = useRef(false);
   useEffect(() => {
-    if (overview?.partnerInfo?.webhookUrl) {
+    if (overview?.partnerInfo?.webhookUrl && !webhookUrlInput) {
       setWebhookUrlInput(overview.partnerInfo.webhookUrl);
     }
     if (overview?.partnerInfo) {
-      setBrandingForm({
-        name: overview.partnerInfo.name || "",
-        logoUrl: overview.partnerInfo.logoUrl || "",
-        contactEmail: overview.partnerInfo.contactEmail || "",
-        contactPhone: overview.partnerInfo.contactPhone || "",
-        coverageStates: (overview.partnerInfo.coverageStates || ["Lagos", "Abuja"]).join(", "),
-        coverageCities: (overview.partnerInfo.coverageCities || ["Ikeja", "Victoria Island"]).join(", "),
-      });
-      setEnvironment(overview.partnerInfo.isSandbox ? "sandbox" : "live");
+      setBrandingForm((prev) => ({
+        name: prev.name || overview.partnerInfo.name || "",
+        logoUrl: prev.logoUrl || overview.partnerInfo.logoUrl || "",
+        contactEmail: prev.contactEmail || overview.partnerInfo.contactEmail || "",
+        contactPhone: prev.contactPhone || overview.partnerInfo.contactPhone || "",
+        coverageStates: prev.coverageStates || (overview.partnerInfo.coverageStates || ["Lagos", "Abuja"]).join(", "),
+        coverageCities: prev.coverageCities || (overview.partnerInfo.coverageCities || ["Ikeja", "Victoria Island"]).join(", "),
+      }));
+      if (!hasInitializedEnv.current) {
+        setEnvironment(overview.partnerInfo.isSandbox ? "sandbox" : "live");
+        hasInitializedEnv.current = true;
+      }
     }
   }, [overview?.partnerInfo]);
 
@@ -542,43 +610,110 @@ export default function PartnerPortalDashboard() {
   const handleRotateKey = async () => {
     if (
       !confirm(
-        "Are you sure you want to rotate your partner API key? Any live integration using the existing key will immediately lose access."
+        `Are you sure you want to rotate your ${environment.toUpperCase()} partner API key? Existing integrations using the old key will be revoked.`
       )
     ) {
       return;
     }
     try {
-      const res = await rotateApiKeyMutation({ partnerCode });
-      toast.success("API key rotated. Please store your new key securely.");
+      const res = await rotateApiKeyMutation({ partnerCode, environment });
+      toast.success(`${environment.toUpperCase()} API key rotated. Please store your new key securely.`);
       copyToClipboard(res.apiKey, "New API Key");
     } catch (err: any) {
       toast.error(err.message || "Failed to rotate API key");
     }
   };
 
-  // Handle triggering test webhook
+  // Handle generating a new named API key
+  const handleCreateNewKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newKeyName.trim()) {
+      toast.error("Please enter a label for your new key");
+      return;
+    }
+    setIsGeneratingKey(true);
+    try {
+      const res = await generateApiKeyMutation({
+        partnerCode,
+        name: newKeyName.trim(),
+        environment,
+      });
+      setFreshlyGeneratedKey(res);
+      toast.success("New API key generated successfully!");
+      setNewKeyName("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate API key");
+    } finally {
+      setIsGeneratingKey(false);
+    }
+  };
+
+  // Handle revoking an API key
+  const handleRevokeKey = async (keyId: Id<"partnerApiKeys">) => {
+    if (
+      !confirm(
+        "Are you sure you want to revoke this API key? This action is immediate and cannot be undone."
+      )
+    ) {
+      return;
+    }
+    setIsRevokingKey(keyId);
+    try {
+      await revokeApiKeyMutation({ keyId, partnerCode });
+      toast.success("API key revoked");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to revoke key");
+    } finally {
+      setIsRevokingKey(null);
+    }
+  };
+
+  // Handle triggering real test webhook (cryptographically signed HTTP POST)
   const handleTriggerTestWebhook = async () => {
     setIsTriggeringWebhook(true);
     setTestWebhookResult(null);
     try {
-      const res = await triggerTestWebhookMutation({
+      const res = await triggerRealWebhookAction({
         partnerCode,
+        environment,
         eventType: "referral.status_updated",
+        customUrl: webhookUrlInput.trim() || undefined,
       });
       setTestWebhookResult(res);
-      if (res.statusCode === 200) {
-        toast.success("Test webhook payload generated successfully");
+      if (res.success) {
+        toast.success(`Webhook delivered in ${res.latencyMs}ms (HTTP ${res.statusCode})`);
       } else {
-        toast.error(`Webhook simulator returned status ${res.statusCode}`);
+        toast.warning(res.errorMessage || `Webhook delivery returned HTTP ${res.statusCode}`);
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to trigger test webhook");
       setTestWebhookResult({
+        success: false,
         error: err.message,
         statusCode: 500,
       });
     } finally {
       setIsTriggeringWebhook(false);
+    }
+  };
+
+  // Handle resending a logged webhook delivery
+  const handleResendWebhook = async (log: any) => {
+    try {
+      toast.info(`Retrying webhook to ${log.url}...`);
+      const res = await triggerRealWebhookAction({
+        partnerCode,
+        environment,
+        eventType: log.eventType,
+        customUrl: log.url,
+      });
+      if (res.success) {
+        toast.success(`Webhook resent in ${res.latencyMs}ms (HTTP ${res.statusCode})`);
+      } else {
+        toast.warning(res.errorMessage || `Resend returned HTTP ${res.statusCode}`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resend webhook");
     }
   };
 
@@ -831,15 +966,25 @@ print(res.json())`;
 
           {/* Primary Authentication Action Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 w-full max-w-md pt-2">
-            <SignInButton mode="modal">
-              <button className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2">
+            <SignInButton
+              mode="modal"
+              fallbackRedirectUrl="/partners/portal"
+              forceRedirectUrl="/partners/portal"
+            >
+              <button className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer">
                 <Lock className="w-4 h-4 text-emerald-400" />
                 <span>Sign In to Portal</span>
               </button>
             </SignInButton>
 
-            <SignUpButton mode="modal">
-              <button className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#FAF6E7]/80 hover:bg-[#FAF6E7] text-[#002e2c] border border-[#002e2c]/15 font-semibold text-sm active:scale-[0.98] transition-all shadow-xs flex items-center justify-center gap-2">
+            <SignUpButton
+              mode="modal"
+              fallbackRedirectUrl="/partners/portal"
+              forceRedirectUrl="/partners/portal"
+              signInFallbackRedirectUrl="/partners/portal"
+              signInForceRedirectUrl="/partners/portal"
+            >
+              <button className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#FAF6E7]/80 hover:bg-[#FAF6E7] text-[#002e2c] border border-[#002e2c]/15 font-semibold text-sm active:scale-[0.98] transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer">
                 <Building2 className="w-4 h-4 text-[#005b57]" />
                 <span>Apply for Partner Access</span>
               </button>
@@ -1710,8 +1855,8 @@ print(res.json())`;
 
           <div className="text-xs text-[#52706e] pt-2">
             Questions regarding your review status? Contact our clinical team at{" "}
-            <a href="mailto:integrations@rehabifyhealth.com" className="text-[#005b57] font-semibold underline">
-              integrations@rehabifyhealth.com
+            <a href="mailto:partners@physioaroundme.com" className="text-[#005b57] font-semibold underline">
+              partners@physioaroundme.com
             </a>
           </div>
         </div>
@@ -1874,6 +2019,38 @@ print(res.json())`;
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
+        {/* Sandbox vs Live Notice Banner */}
+        {environment === "sandbox" && (
+          <div className="rounded-2xl border border-amber-300/80 bg-amber-50/90 p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-950">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-200/70 text-amber-900 rounded-xl shrink-0">
+                <Zap className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-xs uppercase tracking-wider text-amber-950">
+                    ⚡ SANDBOX MODE ACTIVE
+                  </span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900">
+                    Isolated Test Environment
+                  </span>
+                </div>
+                <p className="text-xs text-amber-900/80 mt-0.5 leading-relaxed">
+                  Inbound referrals are stamped as sandbox tests. Webhooks are dispatched with test signatures. Real patients and WhatsApp bots will not be dispatched.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setEnvironment("live")}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold transition shadow-xs"
+              >
+                Switch to Production
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Apple-style Partner Overview Hero Card */}
         <div className="relative rounded-3xl border border-[#002e2c]/10 bg-white p-6 sm:p-8 shadow-[0_4px_24px_rgba(0,46,44,0.03)]">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -2040,6 +2217,242 @@ print(res.json())`;
                   <button onClick={() => setActiveTab("commissions")} className="text-[#005b57] font-semibold hover:underline">
                     View Ledger →
                   </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Visual Analytics Engine (Recharts with Brand Colors) */}
+            <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#002e2c]/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-[#005b57]/10 text-[#005b57]">
+                    <TrendingUp className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-[#002e2c] flex items-center gap-2">
+                      <span>Clinical Care & Referral Volume Analytics</span>
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                          environment === "live"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {environment}
+                      </span>
+                    </h2>
+                    <p className="text-xs text-[#52706e]">
+                      Live admissions, care completion rates, and modality breakdown
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded-xl bg-[#002e2c]/5 border border-[#002e2c]/10 flex gap-1">
+                    {(["7d", "30d", "90d"] as const).map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => setAnalyticsRange(r)}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold uppercase transition ${
+                          analyticsRange === r
+                            ? "bg-white text-[#002e2c] shadow-xs"
+                            : "text-[#52706e] hover:text-[#002e2c]"
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* 1. Referral Volume Over Time (Area Chart) */}
+                <div className="lg:col-span-2 rounded-2xl bg-[#FAF6E7]/40 border border-[#002e2c]/10 p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#002e2c]">
+                        Daily Patient Volume Trends
+                      </h3>
+                      <p className="text-[11px] text-[#52706e]">
+                        New referrals vs booked physiotherapy appointments
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4 text-[11px] font-semibold">
+                      <span className="flex items-center gap-1.5 text-[#005b57]">
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#005b57]" />
+                        Total Referrals
+                      </span>
+                      <span className="flex items-center gap-1.5 text-[#F59E0B]">
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#F59E0B]" />
+                        Care Booked
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="h-64 w-full pt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={analyticsTimeseries?.volumeData || []}
+                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="brandEmeraldGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#005b57" stopOpacity={0.4} />
+                            <stop offset="95%" stopColor="#005b57" stopOpacity={0.0} />
+                          </linearGradient>
+                          <linearGradient id="brandYellowGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#F59E0B" stopOpacity={0.4} />
+                            <stop offset="95%" stopColor="#F59E0B" stopOpacity={0.0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#002e2c" strokeOpacity={0.06} />
+                        <XAxis
+                          dataKey="date"
+                          stroke="#52706e"
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={{ stroke: "#002e2c", strokeOpacity: 0.1 }}
+                        />
+                        <YAxis
+                          stroke="#52706e"
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={{ stroke: "#002e2c", strokeOpacity: 0.1 }}
+                          allowDecimals={false}
+                        />
+                        <RechartsTooltip
+                          contentStyle={{
+                            backgroundColor: "#002e2c",
+                            borderRadius: "14px",
+                            border: "1px solid rgba(250, 246, 231, 0.1)",
+                            color: "#FAF6E7",
+                            fontSize: "12px",
+                            boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
+                          }}
+                          itemStyle={{ color: "#FAF6E7" }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="referrals"
+                          name="Inbound Referrals"
+                          stroke="#005b57"
+                          strokeWidth={2.5}
+                          fillOpacity={1}
+                          fill="url(#brandEmeraldGrad)"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="booked"
+                          name="Care Booked"
+                          stroke="#F59E0B"
+                          strokeWidth={2}
+                          fillOpacity={1}
+                          fill="url(#brandYellowGrad)"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* 2. Modality Split (Donut Chart) */}
+                <div className="rounded-2xl bg-[#FAF6E7]/40 border border-[#002e2c]/10 p-5 space-y-3 flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#002e2c]">
+                      Care Modality Split
+                    </h3>
+                    <p className="text-[11px] text-[#52706e]">
+                      Clinic sessions vs home visits & tele-rehab
+                    </p>
+                  </div>
+
+                  <div className="h-44 w-full flex items-center justify-center">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsPieChart>
+                        <Pie
+                          data={analyticsTimeseries?.careModeData || []}
+                          innerRadius={45}
+                          outerRadius={70}
+                          paddingAngle={4}
+                          dataKey="value"
+                        >
+                          {(analyticsTimeseries?.careModeData || []).map((entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} stroke="#FAF6E7" strokeWidth={2} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip
+                          contentStyle={{
+                            backgroundColor: "#002e2c",
+                            borderRadius: "12px",
+                            color: "#FAF6E7",
+                            fontSize: "11px",
+                            border: "none",
+                          }}
+                        />
+                      </RechartsPieChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 border-t border-[#002e2c]/10 text-xs">
+                    {(analyticsTimeseries?.careModeData || []).map((entry: any) => (
+                      <div key={entry.name} className="flex items-center justify-between">
+                        <span className="flex items-center gap-2 text-[#52706e]">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.fill }} />
+                          {entry.name}
+                        </span>
+                        <span className="font-semibold text-[#002e2c]">{entry.value}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Clinical Funnel Progression (Bar Chart) */}
+              <div className="rounded-2xl bg-[#FAF6E7]/40 border border-[#002e2c]/10 p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#002e2c]">
+                      Patient Clinical Progression Funnel
+                    </h3>
+                    <p className="text-[11px] text-[#52706e]">
+                      Conversion from referral ingestion to completed recovery
+                    </p>
+                  </div>
+                </div>
+
+                <div className="h-44 w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={analyticsTimeseries?.funnelData || []}
+                      layout="vertical"
+                      margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#002e2c" strokeOpacity={0.06} />
+                      <XAxis type="number" stroke="#52706e" fontSize={11} tickLine={false} />
+                      <YAxis
+                        dataKey="stage"
+                        type="category"
+                        stroke="#52706e"
+                        fontSize={11}
+                        tickLine={false}
+                        width={130}
+                      />
+                      <RechartsTooltip
+                        contentStyle={{
+                          backgroundColor: "#002e2c",
+                          borderRadius: "12px",
+                          color: "#FAF6E7",
+                          fontSize: "12px",
+                          border: "none",
+                        }}
+                      />
+                      <Bar dataKey="count" radius={[0, 8, 8, 0]}>
+                        {(analyticsTimeseries?.funnelData || []).map((entry: any, index: number) => (
+                          <Cell key={`funnel-${index}`} fill={entry.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
             </div>
@@ -2517,162 +2930,538 @@ print(res.json())`;
         {/* ------------------------------------------------------------------ */}
         {/* TAB 5: DEVELOPERS & APIS */}
         {/* ------------------------------------------------------------------ */}
+        {/* ------------------------------------------------------------------ */}
+        {/* TAB 5: DEVELOPER & APIS (Enterprise Suite) */}
+        {/* ------------------------------------------------------------------ */}
         {activeTab === "developers" && (
           <div className="space-y-8">
-            <div>
-              <h2 className="text-xl font-semibold text-[#002e2c]">Developer Console & Webhooks</h2>
-              <p className="text-xs text-[#52706e]">
-                Integrate Rehabify programmatically into your Hospital Information System, HMO platform, or wellness app.
-              </p>
-            </div>
-
-            {/* API Credentials Card */}
-            <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#002e2c]/10 pb-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-[#002e2c]">API Secret Key</h3>
-                  <p className="text-xs text-[#52706e]">Authenticate server-to-server requests using Bearer authentication.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-semibold text-[#002e2c]">
+                    Enterprise Developer Platform & Webhooks
+                  </h2>
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                      environment === "live"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-amber-100 text-amber-800"
+                    }`}
+                  >
+                    {environment} mode
+                  </span>
                 </div>
-                <button
-                  onClick={handleRotateKey}
-                  className="px-3.5 py-1.5 rounded-xl border border-red-200 text-red-700 hover:bg-red-50 text-xs font-semibold transition flex items-center gap-1.5"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>Rotate API Key</span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <input
-                  type={showApiKey ? "text" : "password"}
-                  readOnly
-                  value={currentPartnerInfo?.apiKey || "sk_test_rehabify_sandbox"}
-                  className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/15 text-[#002e2c] font-mono text-xs focus:outline-none"
-                />
-                <button
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="p-3 rounded-xl border border-[#002e2c]/15 bg-white text-[#52706e] hover:text-[#002e2c] transition shadow-xs"
-                >
-                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-                <button
-                  onClick={() =>
-                    copyToClipboard(currentPartnerInfo?.apiKey || "sk_test_rehabify_sandbox", "API Key")
-                  }
-                  className="p-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] hover:bg-[#004744] transition shadow-xs"
-                >
-                  <Copy className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Webhook Configuration Card */}
-            <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
-              <div className="border-b border-[#002e2c]/10 pb-4">
-                <h3 className="text-sm font-semibold text-[#002e2c]">Real-Time Webhook Endpoint</h3>
-                <p className="text-xs text-[#52706e]">
-                  Receive cryptographically signed events whenever a patient's care status advances or a session is completed.
+                <p className="text-xs text-[#52706e] mt-0.5">
+                  Server-to-server credentials, real-time activity logs, latency inspection, endpoint health, and FHIR-compliant webhook dispatching.
                 </p>
               </div>
 
-              <form onSubmit={handleSaveWebhook} className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <input
-                    type="url"
-                    required
-                    placeholder="https://api.yourhmo.com/rehabify-webhooks"
-                    value={webhookUrlInput}
-                    onChange={(e) => setWebhookUrlInput(e.target.value)}
-                    className="flex-1 px-4 py-3 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/15 text-[#002e2c] font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
-                  />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setFreshlyGeneratedKey(null);
+                    setIsNewKeyModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#002e2c] hover:bg-[#004744] text-[#FAF6E7] text-xs font-semibold transition shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Generate New Key</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Segmented Sub-Navigation for Developers */}
+            <div className="border-b border-[#002e2c]/10 pb-px">
+              <div className="flex space-x-1 overflow-x-auto no-scrollbar p-1 bg-[#002e2c]/5 rounded-2xl max-w-fit">
+                {[
+                  { id: "overview", label: "Overview & Credentials", icon: Key },
+                  { id: "keys", label: "API Key Management", icon: ShieldCheck, badge: apiKeys?.length || 0 },
+                  { id: "logs", label: "Activity & Webhook Logs", icon: Activity, badge: activityLogs?.length || 0 },
+                  { id: "health", label: "Integration Health", icon: HeartPulse },
+                  { id: "webhooks", label: "Webhook Config", icon: Webhook },
+                  { id: "snippets", label: "Code Playground", icon: Code2 },
+                ].map((sec) => {
+                  const Icon = sec.icon;
+                  const isActive = activeDevSection === sec.id;
+                  return (
+                    <button
+                      key={sec.id}
+                      onClick={() => setActiveDevSection(sec.id as any)}
+                      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+                        isActive
+                          ? "bg-white text-[#002e2c] shadow-xs"
+                          : "text-[#52706e] hover:text-[#002e2c]"
+                      }`}
+                    >
+                      <Icon className={`w-3.5 h-3.5 ${isActive ? "text-[#005b57]" : "text-[#52706e]"}`} />
+                      <span>{sec.label}</span>
+                      {sec.badge !== undefined && sec.badge > 0 && (
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? "bg-[#002e2c] text-[#FAF6E7]" : "bg-[#002e2c]/10 text-[#002e2c]"}`}>
+                          {sec.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Sub-Section 1: OVERVIEW & CREDENTIALS */}
+            {(activeDevSection === "overview" || activeDevSection === "keys") && (
+              <div className="space-y-6">
+                {/* Primary Key Display */}
+                <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#002e2c]/10 pb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-semibold text-[#002e2c]">Primary Secret API Key</h3>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${environment === "live" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                          {environment}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#52706e]">
+                        Authenticate API calls using standard Bearer authorization.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleRotateKey}
+                        className="px-3.5 py-1.5 rounded-xl border border-red-200 text-red-700 hover:bg-red-50 text-xs font-semibold transition flex items-center gap-1.5 shadow-xs"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Rotate Primary Key</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <input
+                      type={showApiKey ? "text" : "password"}
+                      readOnly
+                      value={currentPartnerInfo?.apiKey || "sk_test_rehabify_sandbox"}
+                      className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/15 text-[#002e2c] font-mono text-xs focus:outline-none select-all"
+                    />
+                    <button
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="p-3 rounded-xl border border-[#002e2c]/15 bg-white text-[#52706e] hover:text-[#002e2c] transition shadow-xs"
+                      title={showApiKey ? "Hide Key" : "Show Key"}
+                    >
+                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() =>
+                        copyToClipboard(currentPartnerInfo?.apiKey || "sk_test_rehabify_sandbox", "API Key")
+                      }
+                      className="p-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] hover:bg-[#004744] transition shadow-xs"
+                      title="Copy API Key"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2 text-xs border-t border-[#002e2c]/5">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#52706e] tracking-wider block">Key Prefix</span>
+                      <span className="font-mono font-semibold text-[#002e2c]">{currentPartnerInfo?.keyPrefix || "sk_test_..."}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#52706e] tracking-wider block">Environment</span>
+                      <span className="font-semibold capitalize text-[#005b57]">{environment}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#52706e] tracking-wider block">Key Status</span>
+                      <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        Active
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-[#52706e] tracking-wider block">Last Used</span>
+                      <span className="text-[#52706e]">Recorded automatically</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Multi-Key Table */}
+                <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-[#002e2c]">Provisioned API Keys</h3>
+                      <p className="text-xs text-[#52706e]">All active and revoked keys configured for {partnerCode} in {environment} mode.</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setFreshlyGeneratedKey(null);
+                        setIsNewKeyModalOpen(true);
+                      }}
+                      className="text-xs font-semibold text-[#005b57] hover:underline flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Create New Key</span>
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-[#002e2c]/10 text-[#52706e]">
+                          <th className="pb-3 font-semibold">Key Name</th>
+                          <th className="pb-3 font-semibold">Prefix</th>
+                          <th className="pb-3 font-semibold">Env</th>
+                          <th className="pb-3 font-semibold">Status</th>
+                          <th className="pb-3 font-semibold">Created</th>
+                          <th className="pb-3 font-semibold">Last Used</th>
+                          <th className="pb-3 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#002e2c]/5">
+                        {(!apiKeys || apiKeys.length === 0) ? (
+                          <tr>
+                            <td colSpan={7} className="py-6 text-center text-[#52706e]">
+                              No provisioned keys found for this environment.
+                            </td>
+                          </tr>
+                        ) : (
+                          apiKeys.map((k: any) => (
+                            <tr key={k._id} className="hover:bg-[#FAF6E7]/30 transition">
+                              <td className="py-3 font-semibold text-[#002e2c]">{k.name}</td>
+                              <td className="py-3 font-mono text-[#52706e]">{k.keyPrefix}</td>
+                              <td className="py-3">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${k.environment === "live" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                                  {k.environment}
+                                </span>
+                              </td>
+                              <td className="py-3">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${k.status === "active" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-zinc-100 text-zinc-600"}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${k.status === "active" ? "bg-emerald-500" : "bg-zinc-400"}`} />
+                                  {k.status?.toUpperCase()}
+                                </span>
+                              </td>
+                              <td className="py-3 text-[#52706e]">
+                                {new Date(k.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              </td>
+                              <td className="py-3 text-[#52706e]">
+                                {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "Never"}
+                              </td>
+                              <td className="py-3 text-right">
+                                {k.status === "active" && k._id !== "sandbox_default_key" && k._id !== "initial_partner_key" && (
+                                  <button
+                                    onClick={() => handleRevokeKey(k._id)}
+                                    disabled={isRevokingKey === k._id}
+                                    className="text-xs text-red-600 hover:text-red-800 font-semibold disabled:opacity-50"
+                                  >
+                                    {isRevokingKey === k._id ? "Revoking..." : "Revoke"}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-Section 2: ACTIVITY LOGS & AUDIT TRAIL */}
+            {(activeDevSection === "overview" || activeDevSection === "logs") && (
+              <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#002e2c]/10 pb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#002e2c] flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-[#005b57]" />
+                      <span>Activity & Callback Audit Stream</span>
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[#002e2c]/5 text-[#005b57]">
+                        {activityLogs?.length || 0} events
+                      </span>
+                    </h3>
+                    <p className="text-xs text-[#52706e]">
+                      Every inbound referral API call and outbound webhook delivery is recorded with millisecond latency, HTTP status, and sanitized payloads.
+                    </p>
+                  </div>
+
+                  {/* Filter controls */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={logEventTypeFilter}
+                      onChange={(e) => setLogEventTypeFilter(e.target.value)}
+                      className="bg-[#FAF6E7]/80 border border-[#002e2c]/15 text-xs text-[#002e2c] font-semibold px-3 py-1.5 rounded-xl focus:outline-none"
+                    >
+                      <option value="all">All Events</option>
+                      <option value="referral.created">referral.created</option>
+                      <option value="referral.status_updated">referral.status_updated</option>
+                      <option value="webhook.delivery">webhook.delivery</option>
+                      <option value="test.ping">test.ping</option>
+                    </select>
+
+                    <select
+                      value={logStatusFilter}
+                      onChange={(e) => setLogStatusFilter(e.target.value)}
+                      className="bg-[#FAF6E7]/80 border border-[#002e2c]/15 text-xs text-[#002e2c] font-semibold px-3 py-1.5 rounded-xl focus:outline-none"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="success">Success (2xx)</option>
+                      <option value="error">Error (4xx/5xx)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Activity Logs Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-[#002e2c]/10 text-[#52706e]">
+                        <th className="pb-3 font-semibold">Timestamp</th>
+                        <th className="pb-3 font-semibold">Event ID</th>
+                        <th className="pb-3 font-semibold">Type</th>
+                        <th className="pb-3 font-semibold">Direction</th>
+                        <th className="pb-3 font-semibold">Status</th>
+                        <th className="pb-3 font-semibold">Duration</th>
+                        <th className="pb-3 font-semibold">Tracking Code</th>
+                        <th className="pb-3 font-semibold text-right">Inspect</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#002e2c]/5">
+                      {(!activityLogs || activityLogs.length === 0) ? (
+                        <tr>
+                          <td colSpan={8} className="py-12 text-center text-[#52706e]">
+                            <Activity className="w-8 h-8 text-[#52706e] mx-auto opacity-40 mb-2" />
+                            <p className="font-semibold text-[#002e2c]">No activity logged yet</p>
+                            <p className="text-[11px] max-w-sm mx-auto mt-1">
+                              Send a test webhook below or make an API request with your key to stream real-time events.
+                            </p>
+                          </td>
+                        </tr>
+                      ) : (
+                        activityLogs.map((log: any) => (
+                          <tr
+                            key={log._id}
+                            onClick={() => {
+                              setSelectedLog(log);
+                              setIsLogDrawerOpen(true);
+                            }}
+                            className="hover:bg-[#FAF6E7]/40 cursor-pointer transition"
+                          >
+                            <td className="py-3 font-mono text-[#52706e]">
+                              {new Date(log.occurredAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                            </td>
+                            <td className="py-3 font-mono font-semibold text-[#002e2c]">
+                              {log.eventId?.slice(0, 14)}...
+                            </td>
+                            <td className="py-3">
+                              <span className="px-2 py-0.5 rounded-lg text-[10px] font-mono bg-[#002e2c]/5 text-[#005b57] border border-[#002e2c]/10">
+                                {log.eventType}
+                              </span>
+                            </td>
+                            <td className="py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${log.direction === "inbound" ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-purple-50 text-purple-700 border border-purple-200"}`}>
+                                {log.direction === "inbound" ? "Inbound API" : "Outbound Callback"}
+                              </span>
+                            </td>
+                            <td className="py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${log.status === "success" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                                {log.statusCode} {log.status?.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="py-3 font-mono text-[#002e2c]">
+                              {log.latencyMs}ms
+                            </td>
+                            <td className="py-3 font-mono text-[#52706e]">
+                              {log.trackingCode || "—"}
+                            </td>
+                            <td className="py-3 text-right">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedLog(log);
+                                  setIsLogDrawerOpen(true);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-[#FAF6E7] hover:bg-[#002e2c] hover:text-[#FAF6E7] text-[#002e2c] font-semibold text-[11px] transition shadow-xs"
+                              >
+                                View
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-Section 3: INTEGRATION HEALTH & ACTIVE ENDPOINTS */}
+            {(activeDevSection === "overview" || activeDevSection === "health") && (
+              <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
+                <div className="border-b border-[#002e2c]/10 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#002e2c] flex items-center gap-2">
+                      <HeartPulse className="w-4 h-4 text-[#005b57]" />
+                      <span>Live Integration Health & Active Endpoints</span>
+                    </h3>
+                    <p className="text-xs text-[#52706e]">
+                      Continuous telemetry monitoring latency and operational status across all Rehabify developer APIs.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs font-semibold">
+                    <span className="flex items-center gap-1.5 text-emerald-700">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                      24h Success Rate: {integrationHealth?.successRate || 99.8}%
+                    </span>
+                    <span className="text-[#52706e]">
+                      Avg Latency: <strong className="text-[#002e2c]">{integrationHealth?.avgLatencyMs || 84}ms</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(integrationHealth?.endpoints || []).map((ep: any) => (
+                    <div
+                      key={ep.name}
+                      className="p-4 rounded-2xl bg-[#FAF6E7]/40 border border-[#002e2c]/10 flex items-start justify-between gap-4"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-xs text-[#002e2c]">{ep.name}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${ep.status === "operational" ? "bg-emerald-100 text-emerald-800" : ep.status === "degraded" ? "bg-amber-100 text-amber-800" : "bg-zinc-100 text-zinc-600"}`}>
+                            {ep.status?.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="font-mono text-[11px] text-[#52706e] break-all">
+                          <strong className="text-[#005b57] font-semibold">{ep.method}</strong> {ep.path}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="font-mono text-xs font-bold text-[#002e2c] block">{ep.latencyMs}ms</span>
+                        <span className="text-[10px] text-[#52706e]">{ep.uptime} uptime</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Sub-Section 4: WEBHOOK CONFIGURATION & REAL DELIVERY */}
+            {(activeDevSection === "overview" || activeDevSection === "webhooks") && (
+              <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
+                <div className="border-b border-[#002e2c]/10 pb-4">
+                  <h3 className="text-sm font-semibold text-[#002e2c] flex items-center gap-2">
+                    <Webhook className="w-4 h-4 text-[#005b57]" />
+                    <span>Real-Time Webhook Listener & Signature Dispatcher</span>
+                  </h3>
+                  <p className="text-xs text-[#52706e]">
+                    Rehabify delivers JSON webhook events with an HMAC-SHA256 signature in the <code className="font-mono font-semibold">X-Rehabify-Signature</code> header.
+                  </p>
+                </div>
+
+                <form onSubmit={handleSaveWebhook} className="space-y-4">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <input
+                      type="url"
+                      required
+                      placeholder="https://api.yourhmo.com/rehabify-webhooks"
+                      value={webhookUrlInput}
+                      onChange={(e) => setWebhookUrlInput(e.target.value)}
+                      className="flex-1 px-4 py-3 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/15 text-[#002e2c] font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isSavingWebhook}
+                      className="px-5 py-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] transition shadow-xs disabled:opacity-50"
+                    >
+                      {isSavingWebhook ? "Saving..." : "Save Endpoint"}
+                    </button>
+                  </div>
+                </form>
+
+                <div className="pt-4 border-t border-[#002e2c]/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <span className="text-xs font-semibold text-[#002e2c]">Webhook Signing Secret</span>
+                    <span className="block font-mono text-xs text-[#52706e]">{currentPartnerInfo?.webhookSecret || "whsec_..."}</span>
+                  </div>
                   <button
-                    type="submit"
-                    disabled={isSavingWebhook}
-                    className="px-5 py-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] transition shadow-xs disabled:opacity-50"
+                    onClick={handleTriggerTestWebhook}
+                    disabled={isTriggeringWebhook}
+                    className="px-4 py-2.5 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/15 text-[#002e2c] text-xs font-semibold hover:bg-[#002e2c] hover:text-[#FAF6E7] transition flex items-center gap-2 shadow-xs disabled:opacity-50"
                   >
-                    {isSavingWebhook ? "Saving..." : "Save Endpoint"}
+                    <Send className="w-3.5 h-3.5 text-[#005b57]" />
+                    <span>{isTriggeringWebhook ? "Dispatching HTTP POST..." : "Send Test Webhook Now"}</span>
                   </button>
                 </div>
-              </form>
 
-              {/* Webhook test simulator */}
-              <div className="pt-4 border-t border-[#002e2c]/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <span className="text-xs font-semibold text-[#002e2c]">Webhook Secret</span>
-                  <span className="block font-mono text-xs text-[#52706e]">{currentPartnerInfo?.webhookSecret || "whsec_..."}</span>
-                </div>
-                <button
-                  onClick={handleTriggerTestWebhook}
-                  disabled={isTriggeringWebhook}
-                  className="px-4 py-2 rounded-xl bg-white border border-[#002e2c]/15 text-[#002e2c] text-xs font-semibold hover:bg-[#FAF6E7] transition flex items-center gap-2 shadow-xs disabled:opacity-50"
-                >
-                  <Send className="w-3.5 h-3.5 text-[#005b57]" />
-                  <span>{isTriggeringWebhook ? "Sending..." : "Test Webhook Delivery"}</span>
-                </button>
+                {testWebhookResult && (
+                  <div className="p-5 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-mono text-xs overflow-x-auto shadow-inner space-y-2">
+                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                      <span className="font-semibold text-emerald-400">
+                        Delivery Result: HTTP {testWebhookResult.statusCode} ({testWebhookResult.latencyMs}ms)
+                      </span>
+                      <span className="text-[10px] text-zinc-400">Event ID: {testWebhookResult.eventId}</span>
+                    </div>
+                    <pre className="text-[11px] text-emerald-100/90 leading-relaxed">
+                      {JSON.stringify(testWebhookResult, null, 2)}
+                    </pre>
+                  </div>
+                )}
               </div>
+            )}
 
-              {testWebhookResult && (
-                <div className="p-4 rounded-2xl bg-[#FAF6E7] border border-[#002e2c]/10 font-mono text-xs text-[#002e2c] overflow-x-auto">
-                  <div className="font-semibold text-emerald-800 mb-2">Delivery Result: 200 OK</div>
-                  <pre>{JSON.stringify(testWebhookResult.payload || testWebhookResult, null, 2)}</pre>
-                </div>
-              )}
-            </div>
-
-            {/* Code Snippets Card */}
-            <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-[#002e2c]">Integration Code Playground</h3>
-                  <p className="text-xs text-[#52706e]">Copy ready-to-use snippets in your preferred language.</p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="p-1 rounded-xl bg-[#002e2c]/5 border border-[#002e2c]/10 flex gap-1">
-                    {(["curl", "javascript", "python"] as const).map((lang) => (
-                      <button
-                        key={lang}
-                        onClick={() => setCodeLang(lang)}
-                        className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition ${
-                          codeLang === lang
-                            ? "bg-white text-[#002e2c] shadow-xs"
-                            : "text-[#52706e] hover:text-[#002e2c]"
-                        }`}
-                      >
-                        {lang}
-                      </button>
-                    ))}
+            {/* Sub-Section 5: CODE PLAYGROUND */}
+            {(activeDevSection === "overview" || activeDevSection === "snippets") && (
+              <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#002e2c]">Integration Code Playground</h3>
+                    <p className="text-xs text-[#52706e]">Production-ready code snippets with your real API credentials.</p>
                   </div>
 
-                  <div className="p-1 rounded-xl bg-[#002e2c]/5 border border-[#002e2c]/10 flex gap-1">
-                    {(["referrals", "track", "eligibility"] as const).map((ep) => (
-                      <button
-                        key={ep}
-                        onClick={() => setCodeEndpoint(ep)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition ${
-                          codeEndpoint === ep
-                            ? "bg-white text-[#002e2c] shadow-xs"
-                            : "text-[#52706e] hover:text-[#002e2c]"
-                        }`}
-                      >
-                        {ep}
-                      </button>
-                    ))}
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 rounded-xl bg-[#002e2c]/5 border border-[#002e2c]/10 flex gap-1">
+                      {(["curl", "javascript", "python"] as const).map((lang) => (
+                        <button
+                          key={lang}
+                          onClick={() => setCodeLang(lang)}
+                          className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition ${
+                            codeLang === lang
+                              ? "bg-white text-[#002e2c] shadow-xs"
+                              : "text-[#52706e] hover:text-[#002e2c]"
+                          }`}
+                        >
+                          {lang}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="p-1 rounded-xl bg-[#002e2c]/5 border border-[#002e2c]/10 flex gap-1">
+                      {(["referrals", "track", "eligibility"] as const).map((ep) => (
+                        <button
+                          key={ep}
+                          onClick={() => setCodeEndpoint(ep)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition ${
+                            codeEndpoint === ep
+                              ? "bg-white text-[#002e2c] shadow-xs"
+                              : "text-[#52706e] hover:text-[#002e2c]"
+                          }`}
+                        >
+                          {ep}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="relative rounded-2xl bg-[#002e2c] text-[#FAF6E7] p-5 font-mono text-xs overflow-x-auto shadow-inner">
-                <button
-                  onClick={() => copyToClipboard(getCodeSnippet(), "Code snippet")}
-                  className="absolute top-4 right-4 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition"
-                >
-                  <Copy className="w-3 h-3" />
-                  <span>Copy</span>
-                </button>
-                <pre>{getCodeSnippet()}</pre>
+                <div className="relative rounded-2xl bg-[#002e2c] text-[#FAF6E7] p-5 font-mono text-xs overflow-x-auto shadow-inner">
+                  <button
+                    onClick={() => copyToClipboard(getCodeSnippet(), "Code snippet")}
+                    className="absolute top-4 right-4 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy</span>
+                  </button>
+                  <pre>{getCodeSnippet()}</pre>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -2703,21 +3492,14 @@ print(res.json())`;
                   />
                 </div>
 
-                {/* Company Logo input & live preview */}
+                {/* Company Logo Upload & Live Preview */}
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-2">
-                    Company Logo URL
+                    Company Logo
                   </label>
-                  <div className="flex items-center gap-4">
-                    <input
-                      type="url"
-                      placeholder="https://yourorganization.com/logo.png"
-                      value={brandingForm.logoUrl}
-                      onChange={(e) => setBrandingForm({ ...brandingForm, logoUrl: e.target.value })}
-                      className="flex-1 px-4 py-3 rounded-xl bg-[#FAF6E7]/60 border border-[#002e2c]/15 text-[#002e2c] text-sm focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
-                    />
-                    {brandingForm.logoUrl ? (
-                      <div className="w-16 h-16 rounded-2xl border border-[#002e2c]/15 bg-white p-2 flex items-center justify-center shrink-0 shadow-xs">
+                  {brandingForm.logoUrl ? (
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 rounded-2xl border border-[#002e2c]/15 bg-white p-2.5 flex items-center justify-center shrink-0 shadow-xs">
                         <img
                           src={brandingForm.logoUrl}
                           alt="Company Logo Preview"
@@ -2727,15 +3509,143 @@ print(res.json())`;
                           }}
                         />
                       </div>
-                    ) : (
-                      <div className="w-16 h-16 rounded-2xl border border-[#002e2c]/10 bg-[#FAF6E7] flex items-center justify-center text-[#52706e] shrink-0">
-                        <ImageIcon className="w-6 h-6 text-[#52706e]" />
+                      <div className="flex flex-col gap-2">
+                        <span className="text-xs text-[#002e2c] font-medium">Logo uploaded</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBrandingForm({ ...brandingForm, logoUrl: "" });
+                            }}
+                            className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Remove
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => logoFileInputRef.current?.click()}
+                            className="text-xs text-[#005b57] hover:text-[#002e2c] font-medium flex items-center gap-1 cursor-pointer"
+                          >
+                            <Upload className="w-3 h-3" />
+                            Replace
+                          </button>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                  <p className="text-xs text-[#52706e] mt-2">
-                    Recommended: Transparent PNG or SVG on white background. Displayed on public referral links and doctor correspondence.
-                  </p>
+                      <input
+                        ref={logoFileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.size > 5 * 1024 * 1024) {
+                              toast.error("Logo file size must be less than 5MB");
+                              return;
+                            }
+                            try {
+                              const uploadUrl = await generateUploadUrlMutation({
+                                fileName: file.name,
+                                fileType: file.type || "application/octet-stream",
+                              });
+                              const res = await fetch(uploadUrl, {
+                                method: "POST",
+                                headers: { "Content-Type": file.type || "application/octet-stream" },
+                                body: file,
+                              });
+                              if (!res.ok) throw new Error("Upload failed");
+                              const { storageId } = await res.json();
+                              await updateBrandingMutation({
+                                partnerCode,
+                                logoStorageId: storageId,
+                              });
+                              toast.success("Logo updated successfully");
+                            } catch (err: any) {
+                              toast.error(err.message || "Failed to upload logo");
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      className={`relative border-2 border-dashed rounded-2xl p-6 text-center transition-colors cursor-pointer ${
+                        isDraggingLogo
+                          ? "border-[#005b57] bg-[#005b57]/5"
+                          : "border-[#002e2c]/15 hover:border-[#002e2c]/30 bg-[#FAF6E7]/40"
+                      }`}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDraggingLogo(true);
+                      }}
+                      onDragLeave={() => setIsDraggingLogo(false)}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        setIsDraggingLogo(false);
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) {
+                          await handleLogoFileSelect(file);
+                          if (logoStorageId) {
+                            await updateBrandingMutation({
+                              partnerCode,
+                              logoStorageId,
+                            });
+                          }
+                        }
+                      }}
+                      onClick={() => logoFileInputRef.current?.click()}
+                    >
+                      <input
+                        ref={logoFileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.size > 5 * 1024 * 1024) {
+                              toast.error("Logo file size must be less than 5MB");
+                              return;
+                            }
+                            try {
+                              const uploadUrl = await generateUploadUrlMutation({
+                                fileName: file.name,
+                                fileType: file.type || "application/octet-stream",
+                              });
+                              const res = await fetch(uploadUrl, {
+                                method: "POST",
+                                headers: { "Content-Type": file.type || "application/octet-stream" },
+                                body: file,
+                              });
+                              if (!res.ok) throw new Error("Upload failed");
+                              const { storageId } = await res.json();
+                              await updateBrandingMutation({
+                                partnerCode,
+                                logoStorageId: storageId,
+                              });
+                              toast.success("Logo updated successfully");
+                            } catch (err: any) {
+                              toast.error(err.message || "Failed to upload logo");
+                            }
+                          }
+                        }}
+                      />
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="w-12 h-12 rounded-2xl bg-[#FAF6E7] border border-[#002e2c]/10 flex items-center justify-center">
+                          <UploadCloud className="w-6 h-6 text-[#52706e]" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-[#002e2c]">
+                            Drop your logo here, or <span className="text-[#005b57] underline">browse</span>
+                          </p>
+                          <p className="text-[11px] text-[#52706e] mt-1">
+                            PNG, JPG, SVG or WebP · Max 5MB · Transparent background recommended
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3135,6 +4045,240 @@ print(res.json())`;
                     className="flex-1 py-2.5 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] disabled:opacity-50"
                   >
                     {isSubmittingReferral ? "Submitting..." : "Submit Referral"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Slide-over Log Inspector Drawer */}
+      {isLogDrawerOpen && selectedLog && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+            onClick={() => setIsLogDrawerOpen(false)}
+          />
+          <div className="fixed inset-y-0 right-0 max-w-xl w-full bg-white shadow-2xl flex flex-col z-10 border-l border-[#002e2c]/15">
+            {/* Drawer Header */}
+            <div className="p-6 border-b border-[#002e2c]/10 flex items-center justify-between bg-[#FAF6E7]/50">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${selectedLog.status === "success" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+                    HTTP {selectedLog.statusCode}
+                  </span>
+                  <span className="font-mono text-xs text-[#002e2c] font-bold">{selectedLog.eventId}</span>
+                </div>
+                <p className="text-xs text-[#52706e] font-mono">{selectedLog.method} {selectedLog.url}</p>
+              </div>
+              <button
+                onClick={() => setIsLogDrawerOpen(false)}
+                className="p-2 rounded-xl text-[#52706e] hover:text-[#002e2c] hover:bg-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Drawer Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 text-xs">
+              {/* Telemetry Summary */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-[#FAF6E7]/60 border border-[#002e2c]/10">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-[#52706e] block">Latency</span>
+                  <span className="font-mono font-bold text-[#002e2c]">{selectedLog.latencyMs}ms</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-[#52706e] block">Direction</span>
+                  <span className="font-semibold text-[#005b57] capitalize">{selectedLog.direction}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-[#52706e] block">Trace ID</span>
+                  <span className="font-mono text-[10px] text-[#52706e] truncate block">{selectedLog.traceId || "—"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-[#52706e] block">Request ID</span>
+                  <span className="font-mono text-[10px] text-[#52706e] truncate block">{selectedLog.requestId || "—"}</span>
+                </div>
+              </div>
+
+              {/* Request Payload */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between font-semibold text-[#002e2c]">
+                  <span>Request Payload (JSON)</span>
+                  <button
+                    onClick={() => copyToClipboard(JSON.stringify(selectedLog.requestPayload, null, 2), "Request payload")}
+                    className="text-[11px] text-[#005b57] hover:underline flex items-center gap-1"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy</span>
+                  </button>
+                </div>
+                <div className="p-4 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-mono text-[11px] overflow-x-auto max-h-60 shadow-inner">
+                  <pre>{JSON.stringify(selectedLog.requestPayload || {}, null, 2)}</pre>
+                </div>
+              </div>
+
+              {/* Response Payload */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between font-semibold text-[#002e2c]">
+                  <span>Response Payload (JSON)</span>
+                  <button
+                    onClick={() => copyToClipboard(JSON.stringify(selectedLog.responsePayload, null, 2), "Response payload")}
+                    className="text-[11px] text-[#005b57] hover:underline flex items-center gap-1"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy</span>
+                  </button>
+                </div>
+                <div className="p-4 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-mono text-[11px] overflow-x-auto max-h-60 shadow-inner">
+                  <pre>{JSON.stringify(selectedLog.responsePayload || {}, null, 2)}</pre>
+                </div>
+              </div>
+
+              {/* Error Details if any */}
+              {selectedLog.errorMessage && (
+                <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900 space-y-1">
+                  <span className="font-bold text-[11px] uppercase tracking-wider block">Error Message</span>
+                  <p className="font-mono text-xs">{selectedLog.errorMessage}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="p-4 border-t border-[#002e2c]/10 bg-[#FAF6E7]/30 flex items-center justify-between gap-3">
+              <span className="text-[11px] text-[#52706e] font-mono">
+                {new Date(selectedLog.occurredAt).toLocaleString()}
+              </span>
+              {selectedLog.direction === "outbound" && (
+                <button
+                  onClick={() => handleResendWebhook(selectedLog)}
+                  className="px-4 py-2 rounded-xl bg-[#002e2c] hover:bg-[#004744] text-[#FAF6E7] text-xs font-semibold transition flex items-center gap-1.5 shadow-xs"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Resend Webhook</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generate New API Key Modal */}
+      {isNewKeyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-[#002e2c]/15 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-[#002e2c]">Generate New API Key</h3>
+                <p className="text-xs text-[#52706e]">Provision a dedicated secret key for your backend systems.</p>
+              </div>
+              <button
+                onClick={() => setIsNewKeyModalOpen(false)}
+                className="p-2 text-[#52706e] hover:text-[#002e2c] rounded-xl"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {freshlyGeneratedKey ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                    <CheckCircle className="w-4 h-4" />
+                    <span>API Key Generated Successfully!</span>
+                  </div>
+                  <p className="text-xs text-emerald-900/90 leading-relaxed">
+                    Please copy this secret key now. For your security, you will not be able to view the full key again.
+                  </p>
+                  <div className="flex items-center gap-2 pt-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={freshlyGeneratedKey.key}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-emerald-300 font-mono text-xs text-[#002e2c] select-all"
+                    />
+                    <button
+                      onClick={() => copyToClipboard(freshlyGeneratedKey.key, "New API Key")}
+                      className="p-2.5 rounded-xl bg-[#002e2c] text-[#FAF6E7] hover:bg-[#004744] transition shrink-0 shadow-xs"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setFreshlyGeneratedKey(null);
+                    setIsNewKeyModalOpen(false);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-xs hover:bg-[#004744] transition shadow-xs"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleCreateNewKey} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-1.5">
+                    Key Name / Description
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Staging Server, EMR Webhook Worker"
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/15 text-[#002e2c] text-xs focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#52706e] mb-1.5">
+                    Target Environment
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEnvironment("sandbox")}
+                      className={`p-3 rounded-xl border text-xs font-semibold text-left transition ${
+                        environment === "sandbox"
+                          ? "border-amber-500 bg-amber-50 text-amber-900"
+                          : "border-[#002e2c]/10 hover:border-[#002e2c]/20"
+                      }`}
+                    >
+                      <span className="block font-bold">Sandbox</span>
+                      <span className="text-[11px] text-[#52706e]">Test credentials (sk_test_...)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEnvironment("live")}
+                      className={`p-3 rounded-xl border text-xs font-semibold text-left transition ${
+                        environment === "live"
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                          : "border-[#002e2c]/10 hover:border-[#002e2c]/20"
+                      }`}
+                    >
+                      <span className="block font-bold">Production</span>
+                      <span className="text-[11px] text-[#52706e]">Live credentials (sk_live_...)</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-[#002e2c]/10 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsNewKeyModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-[#002e2c]/15 text-xs font-semibold text-[#002e2c] hover:bg-[#FAF6E7]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isGeneratingKey}
+                    className="flex-1 py-2.5 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] disabled:opacity-50 transition shadow-xs"
+                  >
+                    {isGeneratingKey ? "Generating..." : "Generate Key"}
                   </button>
                 </div>
               </form>

@@ -4,7 +4,8 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "@/convex/_generated/api";
 
 export async function POST(req: NextRequest) {
-  const { partner, response } = await authenticatePartner(req);
+  const startTime = Date.now();
+  const { partner, response, requestId, traceId } = await authenticatePartner(req);
   if (!partner) return response!;
 
   try {
@@ -62,9 +63,18 @@ export async function POST(req: NextRequest) {
           error: {
             code: "missing_patient_name",
             message: "Both patient first name and last name are required.",
+            request_id: requestId,
+            trace_id: traceId,
           },
         },
-        { status: 400 }
+        {
+          status: 400,
+          headers: {
+            "X-Rehabify-Request-Id": requestId,
+            "X-Rehabify-Trace-Id": traceId,
+            "X-Rehabify-Environment": partner.environment,
+          },
+        }
       );
     }
 
@@ -75,9 +85,39 @@ export async function POST(req: NextRequest) {
             code: "missing_patient_phone",
             message:
               "Patient phone number is required for WhatsApp intake dispatch.",
+            request_id: requestId,
+            trace_id: traceId,
           },
         },
-        { status: 400 }
+        {
+          status: 400,
+          headers: {
+            "X-Rehabify-Request-Id": requestId,
+            "X-Rehabify-Trace-Id": traceId,
+            "X-Rehabify-Environment": partner.environment,
+          },
+        }
+    const normalizedPhone = String(patientPhone).replace(/\s+/g, "");
+
+    // Sandbox Test Scenario 4: Policy Ineligible Simulation
+    if (partner.environment === "sandbox" && normalizedPhone.endsWith("8000000004")) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "ineligible_policy",
+            message: "Patient insurance policy is expired or ineligible for coverage.",
+            request_id: requestId,
+            trace_id: traceId,
+          },
+        },
+        {
+          status: 400,
+          headers: {
+            "X-Rehabify-Request-Id": requestId,
+            "X-Rehabify-Trace-Id": traceId,
+            "X-Rehabify-Environment": partner.environment,
+          },
+        }
       );
     }
 
@@ -98,7 +138,42 @@ export async function POST(req: NextRequest) {
       recommendedSessions: Number(recommendedSessions) || 4,
       billingMode: String(billingMode).trim(),
       callbackUrl: callbackUrl ? String(callbackUrl).trim() : undefined,
+      environment: partner.environment,
     });
+
+    const latencyMs = Math.max(1, Date.now() - startTime);
+
+    // Asynchronously record inbound audit trail in partnerActivityLogs
+    convex
+      .mutation(api.partners.logPartnerActivity, {
+        partnerId: partner.code,
+        environment: partner.environment,
+        eventId: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        eventType: "referral.created",
+        direction: "inbound",
+        url: req.nextUrl.pathname,
+        method: "POST",
+        statusCode: 201,
+        latencyMs,
+        status: "success",
+        requestId,
+        traceId,
+        trackingCode: result.trackingCode,
+        patientName: `${patientFirstName} ${patientLastName}`,
+        requestPayload: {
+          patient: { firstName: patientFirstName, lastName: patientLastName, phone: patientPhone },
+          condition,
+          priority,
+          recommendedSessions,
+        },
+        responsePayload: {
+          status: "success",
+          referral_id: result.referralId,
+          tracking_code: result.trackingCode,
+        },
+        occurredAt: Date.now(),
+      })
+      .catch((err) => console.error("Failed to log activity:", err));
 
     const host = req.headers.get("host") || "physioaroundme.com";
     const protocol = host.includes("localhost") ? "http" : "https";
@@ -108,6 +183,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         status: "success",
+        environment: partner.environment,
         referral_id: result.referralId,
         tracking_code: result.trackingCode,
         partner_reference: result.partnerExternalId || null,
@@ -120,26 +196,65 @@ export async function POST(req: NextRequest) {
           phone: patientPhone,
         },
         created_at: result.createdAt,
+        request_id: requestId,
+        trace_id: traceId,
       },
-      { status: 201 }
+      {
+        status: 201,
+        headers: {
+          "X-Rehabify-Request-Id": requestId,
+          "X-Rehabify-Trace-Id": traceId,
+          "X-Rehabify-Environment": partner.environment,
+        },
+      }
     );
   } catch (error) {
     console.error("Failed to create referral:", error);
+
+    const convex = getConvexClient();
+    convex
+      .mutation(api.partners.logPartnerActivity, {
+        partnerId: partner.code,
+        environment: partner.environment,
+        eventId: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        eventType: "referral.created",
+        direction: "inbound",
+        url: req.nextUrl.pathname,
+        method: "POST",
+        statusCode: 500,
+        latencyMs: Math.max(1, Date.now() - startTime),
+        status: "error",
+        requestId,
+        traceId,
+        errorMessage: error instanceof Error ? error.message : "Internal server error",
+        occurredAt: Date.now(),
+      })
+      .catch((err) => console.error("Failed to log error activity:", err));
+
     return NextResponse.json(
       {
         error: {
           code: "referral_creation_failed",
           message:
             error instanceof Error ? error.message : "Internal server error",
+          request_id: requestId,
+          trace_id: traceId,
         },
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          "X-Rehabify-Request-Id": requestId,
+          "X-Rehabify-Trace-Id": traceId,
+          "X-Rehabify-Environment": partner.environment,
+        },
+      }
     );
   }
 }
 
 export async function GET(req: NextRequest) {
-  const { partner, response } = await authenticatePartner(req);
+  const { partner, response, requestId, traceId } = await authenticatePartner(req);
   if (!partner) return response!;
 
   try {
@@ -150,16 +265,29 @@ export async function GET(req: NextRequest) {
     const convex = getConvexClient();
     const referrals = await convex.query(api.partners.listPartnerReferrals, {
       partnerCode: partner.code,
+      environment: partner.environment,
       status,
       limit,
     });
 
-    return NextResponse.json({
-      status: "success",
-      count: referrals.length,
-      partner: partner.name,
-      referrals,
-    });
+    return NextResponse.json(
+      {
+        status: "success",
+        environment: partner.environment,
+        count: referrals.length,
+        partner: partner.name,
+        referrals,
+        request_id: requestId,
+        trace_id: traceId,
+      },
+      {
+        headers: {
+          "X-Rehabify-Request-Id": requestId,
+          "X-Rehabify-Trace-Id": traceId,
+          "X-Rehabify-Environment": partner.environment,
+        },
+      }
+    );
   } catch (error) {
     console.error("Failed to list referrals:", error);
     return NextResponse.json(
@@ -168,9 +296,18 @@ export async function GET(req: NextRequest) {
           code: "referral_list_failed",
           message:
             error instanceof Error ? error.message : "Internal server error",
+          request_id: requestId,
+          trace_id: traceId,
         },
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: {
+          "X-Rehabify-Request-Id": requestId,
+          "X-Rehabify-Trace-Id": traceId,
+          "X-Rehabify-Environment": partner.environment,
+        },
+      }
     );
   }
 }

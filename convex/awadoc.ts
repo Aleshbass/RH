@@ -116,20 +116,43 @@ export const getAvailablePhysios = query({
             )
             .collect();
 
-        // Filter by service area (location) — single-direction normalized match
-        if (args.serviceArea && args.serviceArea !== "ALL") {
-            const area = args.serviceArea.toLowerCase().trim();
-            physios = physios.filter((p) => {
-                const loc = (p.location ?? "").toLowerCase().trim();
-                return loc.includes(area);
-            });
+        // Filter by mode if specified
+        const mode = args.preferredMode?.toLowerCase().trim();
+        if (mode === "virtual") {
+            physios = physios.filter((p) => p.offersOnlineSessions ?? true);
+        } else if (mode === "physical" || mode === "in_person") {
+            physios = physios.filter((p) => p.offersInPersonSessions ?? true);
         }
 
-        // Filter by mode if specified
-        if (args.preferredMode === "virtual") {
-            physios = physios.filter((p) => p.offersOnlineSessions);
-        } else if (args.preferredMode === "physical") {
-            physios = physios.filter((p) => p.offersInPersonSessions);
+        // Filter by service area (location) if specified
+        if (args.serviceArea && args.serviceArea !== "ALL") {
+            const area = args.serviceArea.toLowerCase().trim();
+            const locationMatched = physios.filter((p) => {
+                const loc = (p.location ?? "").toLowerCase().trim();
+                // If therapist has a location, bidirectional case-insensitive substring match
+                if (loc.length > 0 && (loc.includes(area) || area.includes(loc))) {
+                    return true;
+                }
+                // If mode is virtual, therapists can serve regardless of location
+                if (mode === "virtual" && (p.offersOnlineSessions ?? true)) {
+                    return true;
+                }
+                // If therapist has no explicit location, don't drop if virtual sessions are allowed (unless strictly physical)
+                if (!loc && mode !== "physical" && mode !== "in_person" && (p.offersOnlineSessions ?? true)) {
+                    return true;
+                }
+                return false;
+            });
+
+            if (locationMatched.length > 0) {
+                physios = locationMatched;
+            } else {
+                // Fallback: If no physios matched location physically, fall back to virtual physios instead of returning 0
+                const virtualFallback = physios.filter((p) => p.offersOnlineSessions ?? true);
+                if (virtualFallback.length > 0) {
+                    physios = virtualFallback;
+                }
+            }
         }
 
         // Enrich with user data (no email exposed — PII protection)
@@ -145,7 +168,7 @@ export const getAvailablePhysios = query({
                     specializations: profile.specializations ?? [],
                     location: profile.location ?? "",
                     hourlyRate: profile.hourlyRate ?? 1500000, // ₦15,000 base rate per 60-min session
-                    offersOnlineSessions: profile.offersOnlineSessions ?? false,
+                    offersOnlineSessions: profile.offersOnlineSessions ?? true,
                     offersInPersonSessions: profile.offersInPersonSessions ?? true,
                     yearsOfExperience: profile.yearsOfExperience ?? 0,
                     averageRating: profile.averageRating ?? 0,

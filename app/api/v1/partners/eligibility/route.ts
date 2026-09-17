@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticatePartner } from "@/lib/partner-auth";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "@/convex/_generated/api";
 
 export async function POST(req: NextRequest) {
-  const { partner, response } = await authenticatePartner(req);
+  const startTime = Date.now();
+  const { partner, response, requestId, traceId } = await authenticatePartner(req);
   if (!partner) return response!;
 
   try {
@@ -42,6 +45,34 @@ export async function POST(req: NextRequest) {
     }
 
     const approvedSessions = Math.min(requestedSessions, 12);
+
+    const convex = getConvexClient();
+    const latencyMs = Math.max(1, Date.now() - startTime);
+
+    convex
+      .mutation(api.partners.logPartnerActivity, {
+        partnerId: partner.code,
+        environment: partner.environment,
+        eventId: `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        eventType: "eligibility.checked",
+        direction: "inbound",
+        url: "/api/v1/partners/eligibility",
+        method: "POST",
+        statusCode: 200,
+        latencyMs,
+        status: isEligible ? "success" : "error",
+        requestId,
+        traceId,
+        patientName,
+        requestPayload: { member_id: memberId, patient_name: patientName, service_type: serviceType },
+        responsePayload: {
+          status: isEligible ? "eligible" : "ineligible",
+          pre_auth_code: isEligible ? preAuthCode : null,
+          approved_sessions: isEligible ? approvedSessions : 0,
+        },
+        occurredAt: Date.now(),
+      })
+      .catch((err) => console.error("Failed to log eligibility activity:", err));
 
     return NextResponse.json({
       status: "eligible",

@@ -18,9 +18,16 @@ export const enableMarketplaceForAllPhysios = mutation({
     let alreadyEnabled = 0;
 
     for (const profile of allProfiles) {
-      if (profile.isAvailableOnMarketplace !== true) {
+      const needsUpdate =
+        profile.isAvailableOnMarketplace !== true ||
+        profile.offersInPersonSessions !== true ||
+        profile.offersOnlineSessions !== true;
+
+      if (needsUpdate) {
         await ctx.db.patch(profile._id, {
           isAvailableOnMarketplace: true,
+          offersInPersonSessions: true,
+          offersOnlineSessions: true,
           profileViews: profile.profileViews || 0,
           bookingsThroughMarketplace: profile.bookingsThroughMarketplace || 0,
           totalMarketplaceEarnings: profile.totalMarketplaceEarnings || 0,
@@ -39,10 +46,15 @@ export const enableMarketplaceForAllPhysios = mutation({
       totalProfiles: allProfiles.length,
       updated,
       alreadyEnabled,
-      message: `Updated ${updated} profiles to isAvailableOnMarketplace = true (${alreadyEnabled} were already enabled).`,
+      message: `Updated ${updated} profiles to availability defaults (${alreadyEnabled} were already up to date).`,
     };
   },
 });
+
+/**
+ * Explicit mutation name for backfilling physio availability defaults
+ */
+export const backfillPhysioDefaults = enableMarketplaceForAllPhysios;
 
 /**
  * Backwards-compatible alias for admin dashboard migration button

@@ -13,6 +13,9 @@ export const upsertPhysiotherapistProfessionalDetails = mutation({
     languagesSpoken: v.optional(v.array(v.string())),
     clinicId: v.optional(v.id("clinics")), // Added optional clinicId
     location: v.optional(v.string()), // Added location field
+    offersInPersonSessions: v.optional(v.boolean()),
+    offersOnlineSessions: v.optional(v.boolean()),
+    isAvailableOnMarketplace: v.optional(v.boolean()),
     // Add any other fields relevant to professional details here
   },
   handler: async (ctx, args) => {
@@ -37,6 +40,9 @@ export const upsertPhysiotherapistProfessionalDetails = mutation({
       ...(args.languagesSpoken && { languagesSpoken: args.languagesSpoken }),
       ...(args.clinicId && { clinicId: args.clinicId }), // Include clinicId if provided
       ...(args.location && { location: args.location }), // Include location if provided
+      ...(args.offersInPersonSessions !== undefined && { offersInPersonSessions: args.offersInPersonSessions }),
+      ...(args.offersOnlineSessions !== undefined && { offersOnlineSessions: args.offersOnlineSessions }),
+      ...(args.isAvailableOnMarketplace !== undefined && { isAvailableOnMarketplace: args.isAvailableOnMarketplace }),
     };
 
     if (existingProfile) {
@@ -51,6 +57,8 @@ export const upsertPhysiotherapistProfessionalDetails = mutation({
       const newProfileId = await ctx.db.insert("physiotherapistProfiles", {
         userId: user._id,
         isAvailableOnMarketplace: true,
+        offersInPersonSessions: true,
+        offersOnlineSessions: true,
         ...(args.clinicId && { clinicId: args.clinicId }), // Add clinicId if provided
         ...profileData, // Spread other profile data, ensuring clinicId from args takes precedence if set
       } as any); // Using 'as any' temporarily if schema has strict non-optional clinicId and it's not in profileData. Ideally, ensure profileData type matches schema or handle clinicId more explicitly.

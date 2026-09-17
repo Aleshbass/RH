@@ -26,3 +26,4 @@ export * from './notifications';
 export * from './patients';
 export * from './onboarding';
 export * from './clinics';
+export { dispatchWebhookEvent } from './partners/dispatchWebhook';

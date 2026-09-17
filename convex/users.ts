@@ -284,6 +284,9 @@ const physiotherapistProfileDataValidator = v.object({
   latitude: v.optional(v.float64()),
   longitude: v.optional(v.float64()),
   availabilitySchedule: v.optional(v.any()),
+  isAvailableOnMarketplace: v.optional(v.boolean()),
+  offersInPersonSessions: v.optional(v.boolean()),
+  offersOnlineSessions: v.optional(v.boolean()),
 });
 
 const patientProfileDataValidator = v.object({
@@ -383,7 +386,15 @@ export const completeUserProfile = mutation({
         try {
           if (user.physiotherapistProfileId) {
             console.log("[completeUserProfile] Existing physiotherapistProfileId found:", user.physiotherapistProfileId, "Updating profile.");
-            await ctx.db.patch(user.physiotherapistProfileId, { ...physioData });
+            
+            const existingProfile = await ctx.db.get(user.physiotherapistProfileId);
+            
+            await ctx.db.patch(user.physiotherapistProfileId, {
+              ...physioData,
+              isAvailableOnMarketplace: physioData.isAvailableOnMarketplace ?? existingProfile?.isAvailableOnMarketplace ?? true,
+              offersInPersonSessions: physioData.offersInPersonSessions ?? existingProfile?.offersInPersonSessions ?? true,
+              offersOnlineSessions: physioData.offersOnlineSessions ?? existingProfile?.offersOnlineSessions ?? true,
+            });
             physioProfileId = user.physiotherapistProfileId;
             console.log("[completeUserProfile] Physiotherapist profile updated. ID:", physioProfileId);
           } else {
@@ -391,7 +402,9 @@ export const completeUserProfile = mutation({
             physioProfileId = await ctx.db.insert("physiotherapistProfiles", {
               userId: user._id,
               ...physioData,
-              isAvailableOnMarketplace: true,
+              isAvailableOnMarketplace: physioData.isAvailableOnMarketplace ?? true,
+              offersInPersonSessions: physioData.offersInPersonSessions ?? true,
+              offersOnlineSessions: physioData.offersOnlineSessions ?? true,
             });
             console.log("[completeUserProfile] New physiotherapist profile created. ID:", physioProfileId);
           }

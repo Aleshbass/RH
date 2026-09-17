@@ -44,6 +44,7 @@ import type * as actions_notifications_cleanupDuplicates from "../actions/notifi
 import type * as actions_notifications_index from "../actions/notifications/index.js";
 import type * as actions_notifications_sendNotification from "../actions/notifications/sendNotification.js";
 import type * as actions_onboarding from "../actions/onboarding.js";
+import type * as actions_partners_dispatchWebhook from "../actions/partners/dispatchWebhook.js";
 import type * as actions_patients_alternateInvites from "../actions/patients/alternateInvites.js";
 import type * as actions_patients_completeOnboarding from "../actions/patients/completeOnboarding.js";
 import type * as actions_patients_index from "../actions/patients/index.js";
@@ -199,6 +200,7 @@ declare const fullApi: ApiFromModules<{
   "actions/notifications/index": typeof actions_notifications_index;
   "actions/notifications/sendNotification": typeof actions_notifications_sendNotification;
   "actions/onboarding": typeof actions_onboarding;
+  "actions/partners/dispatchWebhook": typeof actions_partners_dispatchWebhook;
   "actions/patients/alternateInvites": typeof actions_patients_alternateInvites;
   "actions/patients/completeOnboarding": typeof actions_patients_completeOnboarding;
   "actions/patients/index": typeof actions_patients_index;

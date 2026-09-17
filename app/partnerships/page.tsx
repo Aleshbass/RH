@@ -206,7 +206,7 @@ function CodeSample() {
   const codeSnippets = {
     referral: `// Create a patient referral
 const response = await fetch(
-  'https://api.rehabifyhealth.com/v1/referrals',
+  'https://api.physioaroundme.com/v1/referrals',
   {
     method: 'POST',
     headers: {
@@ -230,7 +230,7 @@ const referral = await response.json();
 //   therapist: "Dr. Emeka Obi", ... }`,
     widget: `<!-- Drop-in Booking Widget -->
 <script 
-  src="https://cdn.rehabifyhealth.com/widget.js"
+  src="https://cdn.physioaroundme.com/widget.js"
   data-partner-id="partner_xyz"
   data-theme="light"
   data-accent="#005b57"

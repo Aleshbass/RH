@@ -320,6 +320,8 @@ export const acceptClinicInvitation = mutation({
         userId: user._id,
         clinicId: invitation.clinicId,
         isAvailableOnMarketplace: true,
+        offersInPersonSessions: true,
+        offersOnlineSessions: true,
       });
       // Link profile to user
       await ctx.db.patch(user._id, {
@@ -1763,6 +1765,8 @@ export const createStaffDirect = mutation({
         userId: staffId,
         clinicId: clinic._id,
         isAvailableOnMarketplace: true,
+        offersInPersonSessions: true,
+        offersOnlineSessions: true,
       } as any);
     }
 

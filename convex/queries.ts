@@ -173,6 +173,8 @@ export const ensurePhysiotherapistProfile = mutation({
           languagesSpoken: [],
           // clinicId is optional and can be set later
           isAvailableOnMarketplace: true,
+          offersInPersonSessions: true,
+          offersOnlineSessions: true,
         });
 
         // Update user with the new profile ID

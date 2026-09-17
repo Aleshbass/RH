@@ -1089,6 +1089,9 @@ export default defineSchema({
     // Financial Tracking
     commissionEarned: v.optional(v.number()), // Amount earned by referrer in kobo
 
+    // Isolation between Sandbox / Testing and Live Production
+    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -1099,6 +1102,7 @@ export default defineSchema({
     .index("by_partner_external_id", ["partnerExternalId"])
     .index("by_tracking_code", ["trackingCode"])
     .index("by_partner_id", ["partnerId"])
+    .index("by_partner_and_environment", ["partnerId", "environment"])
     .index("by_link_id", ["linkId"]),
 
   // MyItura MediLoan applications — formally initiated with the MyItura SDK
@@ -2683,9 +2687,15 @@ export default defineSchema({
     coverageCities: v.optional(v.array(v.string())),   // ["Ikeja", "Victoria Island"]
     supportedCareModes: v.optional(v.array(v.string())), // ["remote", "face_to_face"]
     supportedServices: v.optional(v.array(v.string())), // ["all_rehabilitation"] or specific pathways
-    // API & Webhooks
+    // API & Webhooks (Dual Environment: Sandbox & Live)
     webhookUrl: v.optional(v.string()),
     webhookSecret: v.optional(v.string()),
+    liveApiKey: v.optional(v.string()),
+    testApiKey: v.optional(v.string()),
+    liveWebhookUrl: v.optional(v.string()),
+    testWebhookUrl: v.optional(v.string()),
+    liveWebhookSecret: v.optional(v.string()),
+    testWebhookSecret: v.optional(v.string()),
     // Ownership & Clerk integration
     ownerClerkId: v.optional(v.string()),     // Linking partner organization to creator Clerk user
     ownerEmail: v.optional(v.string()),       // Creator email
@@ -2706,6 +2716,8 @@ export default defineSchema({
   })
     .index("by_code", ["code"])
     .index("by_api_key", ["apiKey"])
+    .index("by_live_api_key", ["liveApiKey"])
+    .index("by_test_api_key", ["testApiKey"])
     .index("by_type", ["type"])
     .index("by_owner_clerk_id", ["ownerClerkId"])
     .index("by_approval_status", ["approvalStatus"]),
@@ -2919,5 +2931,53 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_settlement_id", ["settlementId"])
     .index("by_earned_at", ["earnedAt"]),
+
+  // ─── Partner API Keys (Multi-Key Management & Lifecycle) ─────
+  partnerApiKeys: defineTable({
+    partnerId: v.string(), // partner slug/code, e.g. "wellahealth"
+    name: v.string(),      // e.g. "Default Key", "Staging Server", "EMR Webhook Worker"
+    key: v.string(),       // full secret key e.g. "sk_live_..." or "sk_test_..."
+    keyPrefix: v.string(), // e.g. "sk_live_38fx..."
+    environment: v.union(v.literal("sandbox"), v.literal("live")),
+    status: v.union(v.literal("active"), v.literal("revoked"), v.literal("rolling")),
+    createdAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
+  })
+    .index("by_key", ["key"])
+    .index("by_partner", ["partnerId"])
+    .index("by_partner_and_env", ["partnerId", "environment"])
+    .index("by_partner_env_status", ["partnerId", "environment", "status"]),
+
+  // ─── Partner Activity & Webhook Callback Audit Trail ─────────
+  partnerActivityLogs: defineTable({
+    partnerId: v.string(),
+    environment: v.union(v.literal("sandbox"), v.literal("live")),
+    eventId: v.string(),                       // e.g. "evt_live_72941" or "req_9921"
+    eventType: v.string(),                     // e.g. "referral.received", "webhook.delivery", "api.referral_create", "test.ping"
+    direction: v.union(v.literal("inbound"), v.literal("outbound")),
+    url: v.string(),                           // endpoint URL or callback URL
+    method: v.string(),                        // "POST", "GET"
+    statusCode: v.number(),                    // 200, 201, 400, 500
+    latencyMs: v.number(),                     // Real duration in milliseconds
+    status: v.union(v.literal("success"), v.literal("error")),
+    queryId: v.optional(v.string()),           // optional query correlation id
+    requestId: v.optional(v.string()),         // unique request id (req_...)
+    traceId: v.optional(v.string()),           // trace / span id (trc_...)
+    patientName: v.optional(v.string()),       // patient name if referral context
+    trackingCode: v.optional(v.string()),      // RHB-XXXXX tracking code
+    requestHeaders: v.optional(v.any()),       // Sanitized request headers
+    requestPayload: v.optional(v.any()),       // Sanitized JSON payload
+    responseHeaders: v.optional(v.any()),      // Sanitized response headers
+    responsePayload: v.optional(v.any()),      // Sanitized response payload
+    errorMessage: v.optional(v.string()),      // Error summary if failed
+    occurredAt: v.number(),                    // Unix timestamp
+  })
+    .index("by_partner", ["partnerId"])
+    .index("by_partner_and_env", ["partnerId", "environment"])
+    .index("by_partner_env_occurred", ["partnerId", "environment", "occurredAt"])
+    .index("by_event_id", ["eventId"])
+    .index("by_event_type", ["eventType"])
+    .index("by_status", ["status"]),
 
 });

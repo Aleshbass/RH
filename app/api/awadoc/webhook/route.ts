@@ -76,15 +76,19 @@ export async function POST(request: NextRequest) {
 
         switch (eventType) {
             case "therapy.availability.query":
+            case "consultation.availability.query":
                 response = await handleAvailabilityQuery(body);
                 break;
             case "therapy.request":
+            case "consultation.request":
                 response = await handleTherapyRequest(body);
                 break;
             case "therapy.confirmed":
+            case "consultation.confirmed":
                 response = await handleTherapyConfirmed(body);
                 break;
             case "therapy.session.assigned":
+            case "consultation.session.assigned":
                 response = await handleSessionAssigned(body);
                 break;
             default:
@@ -140,7 +144,7 @@ function categoriseError(message: string): string {
 // ── Event handlers ──────────────────────────────────────
 
 /**
- * therapy.availability.query
+ * therapy.availability.query / consultation.availability.query
  *
  * AwaDoc user is searching for available therapy/physiotherapy specialists.
  * We return our available physios formatted as AwaDoc specialists.
@@ -154,9 +158,19 @@ async function handleAvailabilityQuery(body: any) {
         ? "ALL"
         : rawServiceArea;
     const rawPreferredMode: string | null = body.context?.schedule?.preferred_mode ?? null;
-    const preferredMode = rawPreferredMode && rawPreferredMode.toLowerCase() !== "any"
-        ? rawPreferredMode
-        : null;
+    let preferredMode: string | undefined = undefined;
+    if (rawPreferredMode) {
+        const modeClean = rawPreferredMode.toLowerCase().trim();
+        if (modeClean === "home_visit" || modeClean === "physical" || modeClean === "in_person") {
+            preferredMode = "physical";
+        } else if (modeClean === "virtual" || modeClean === "telehealth" || modeClean === "online") {
+            preferredMode = "virtual";
+        } else if (modeClean === "any" || modeClean === "both" || modeClean === "all") {
+            preferredMode = undefined;
+        } else {
+            preferredMode = rawPreferredMode;
+        }
+    }
 
     console.log("[AwaDoc] Availability query params:", { queryId, serviceArea, rawServiceArea, preferredMode, rawPreferredMode });
 
@@ -206,7 +220,7 @@ async function handleAvailabilityQuery(body: any) {
     });
 
     return {
-        status: "available",
+        status: specialists.length > 0 ? "available" : "unavailable",
         query_id: queryId,
         queried_at: new Date().toISOString(),
         specialists,
@@ -214,7 +228,7 @@ async function handleAvailabilityQuery(body: any) {
 }
 
 /**
- * therapy.request
+ * therapy.request / consultation.request
  *
  * AwaDoc user selected a physio and wants to book a therapy session.
  * We create an awadocSession and respond with confirmation + pricing.
@@ -224,7 +238,9 @@ async function handleTherapyRequest(body: any) {
     const userId: string = body.user?.id ?? "";
     const userName: string = body.user?.name ?? "";
     const specialistType: string = body.context?.specialist_type ?? AWADOC_SPECIALIST_TYPE;
-    const preferredMode: string = body.context?.schedule?.preferred_mode ?? "home_visit";
+    const rawMode = (body.context?.schedule?.preferred_mode ?? "home_visit").toLowerCase().trim();
+    const isVirtual = ["virtual", "telehealth", "online"].includes(rawMode);
+    const preferredMode = isVirtual ? "virtual" : "physical";
     const preferredTime: string = body.context?.schedule?.preferred_time ?? "";
     const preferredLang: string = body.context?.schedule?.preferred_lang ?? "en";
 
@@ -240,7 +256,7 @@ async function handleTherapyRequest(body: any) {
     try {
         physios = await convex.query(api.awadoc.getAvailablePhysios, {
             serviceArea: "ALL",
-            preferredMode: preferredMode === "virtual" ? "virtual" : "physical",
+            preferredMode,
         });
     } catch (queryErr) {
         console.error("[AwaDoc] Failed to query available physios:", queryErr);
@@ -280,7 +296,7 @@ async function handleTherapyRequest(body: any) {
             awadocUserId: userId,
             awadocUserName: userName,
             status: "requested",
-            mode: preferredMode === "home_visit" ? "physical" : "virtual",
+            mode: preferredMode,
             specialistType,
             scheduledTime,
             endTime,

@@ -21,7 +21,7 @@ export const sendPartnerApplicationSubmittedAdminEmail = action({
   },
   handler: async (ctx, args) => {
     try {
-      const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabify.com";
+      const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
       const reviewLink = args.reviewLink || `${siteUrl}/dashboard/admin/partnerships`;
 
       const result = await sendEmail({
@@ -65,8 +65,8 @@ export const sendPartnerApplicationApprovedEmail = action({
   },
   handler: async (ctx, args) => {
     try {
-      const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://rehabify.com";
-      const portalLink = args.portalLink || `${siteUrl}/partners/portal`;
+      const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+      const portalLink = args.portalLink || (siteUrl.includes("localhost") ? `${siteUrl}/partners/portal` : "https://partners.physioaroundme.com");
 
       const result = await sendEmail({
         to: args.partnerEmail,

@@ -963,7 +963,7 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
                 </div>
               </div>
               <div style="text-align: center;">
-                <a href="https://rehabify.com/dashboard/admin/partnerships" style="display: inline-block; background-color: #005b57; color: white; font-weight: 600; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-size: 14px;">
+                <a href="https://physioaroundme.com/dashboard/admin/partnerships" style="display: inline-block; background-color: #005b57; color: white; font-weight: 600; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-size: 14px;">
                   Open Admin Partnerships
                 </a>
               </div>
