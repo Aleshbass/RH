@@ -25,13 +25,13 @@ from app.identity.resolver import resolve
 from app.identity.unknown_sender import resolve_unknown_sender
 from app.llm.gemini_client import LLMClient
 from app.llm.prompt_builder import build
-from app.llm.rag.retriever import retrieve
-from app.integrations.rh_client import RHIntegrationError, configured_rh_client
+from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
 from app.models.admin import Admin
 from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
 from app.models.triage_session import TriageSession
+from app.models.rh_identity_mapping import RHIdentityMapping
 from app.models.types import (
     AuditKind,
     ConversationStage,
@@ -117,10 +117,6 @@ def _is_explicit_policy_acceptance(user_text: str) -> bool:
     return bool(re.search(r"\b(?:i\s+)?(?:accept|agree to)\b.{0,80}\b(?:policy|terms|consultation)\b", text))
 
 
-def _history(state: ConversationState) -> list[dict[str, str]]:
-    return [{"role": message.role, "text": message.text} for message in state.recent_messages]
-
-
 def _user_history(state: ConversationState) -> list[dict[str, str]]:
     return [
         {"role": message.role, "text": message.text}
@@ -195,8 +191,19 @@ def _resend_safety_block(
 ) -> TurnResult:
     safety = evaluate(state.extracted)
     reply = patient_message(safety)
-    if _is_specialist_review(session, state) and _YES_RE.search(user_text or ""):
-        reply = _SPECIALIST_YES_ACK
+    if _is_specialist_review(session, state):
+        conversation = session.get(Conversation, state.conversation_id)
+        context = dict(conversation.booking_context or {}) if conversation else {}
+        if _YES_RE.search(user_text or "") and not context.get("amber_review_requested"):
+            context["amber_review_requested"] = True
+            if conversation is not None:
+                conversation.booking_context = context
+            reply = _present_policy(session, state)
+        elif context.get("amber_review_requested") and not _policy_accepted(state) and _is_explicit_policy_acceptance(user_text):
+            _mark_policy_accepted(session, state, actor_phone=identity.phone_e164, person_id=identity.person_id, message_id=wa_message_id)
+            reply = _start_paid_amber_review(session, identity, state)
+        elif context.get("amber_review_id"):
+            reply = "Your ₦6,000 specialist review payment is being verified. RH will assign an eligible reviewer and I’ll update you here."
     _audit_turn(session, identity, state.extracted, safety, phase)
     save_turn(
         session, state, user_text, reply, state.extracted, phase, language, wa_message_id
@@ -279,6 +286,46 @@ def _safety_fire_reply(
         if safety.risk_level == "RED"
         else ConversationStage.MEDICAL_ESCALATION
     )
+
+
+def _start_paid_amber_review(session: Session, identity: Identity, state: ConversationState) -> str:
+    """Create only the fixed-price RH review service; never a routine booking."""
+    patient = session.get(Patient, identity.person_id)
+    conversation = session.get(Conversation, state.conversation_id)
+    triage = session.get(TriageSession, state.triage_session_id) if state.triage_session_id else None
+    if patient is None or conversation is None or triage is None:
+        return "I can’t prepare the specialist review securely right now. Please try again shortly."
+    mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.persona == Persona.PATIENT.value, RHIdentityMapping.joy_person_id == patient.id))
+    try:
+        client = configured_rh_client()
+        if mapping is None:
+            resolved = client.resolve_patient(patient.phone_e164, str(patient.id), RHActor(persona="patient", sender_phone=patient.phone_e164), name=patient.name)
+            if not resolved.patient_id:
+                return "I can’t prepare the specialist review securely right now. Please try again shortly."
+            mapping = RHIdentityMapping(persona=Persona.PATIENT.value, joy_person_id=patient.id, rh_record_id=resolved.patient_id)
+            session.add(mapping)
+            session.flush()
+        policy = (conversation.booking_context or {}).get(_POLICY_CONTEXT_KEY) or {}
+        review = client.create_specialist_review(
+            patient_id=mapping.rh_record_id, assessment_id=str(triage.id), assessment_revision=1,
+            protocol_version=state.extracted.safety_protocol_version or "1.0.0",
+            policy_version=str(policy["version"]), policy_acceptance_reference=str(policy.get("acceptance_message_id") or policy["version"]),
+            conversation_id=str(conversation.id), actor=RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=mapping.rh_record_id),
+            idempotency_key=f"joy-amber-review-{conversation.id}",
+        )
+        review_id = str(review["review_id"])
+        payment = client.initialize_specialist_review_payment(
+            review_id, patient_id=mapping.rh_record_id, email=f"{patient.phone_e164}@patients.rehabify.invalid",
+            actor=RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=mapping.rh_record_id),
+            idempotency_key=f"joy-amber-review-payment-{review_id}",
+        )
+    except (RHIntegrationError, KeyError):
+        return "I can’t create the secure ₦6,000 review payment right now. Please try again shortly."
+    context = dict(conversation.booking_context or {})
+    context.update({"amber_review_id": review_id, "amber_review_payment_url": payment.authorization_url})
+    conversation.booking_context = context
+    append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id, payload={"decision": "amber_review_payment_created", "review_id": review_id, "amount_kobo": 600_000})
+    return f"Your five-minute specialist review is ₦6,000. Pay securely here: {payment.authorization_url}\n\nAfter payment is verified, RH will assign an eligible reviewer and I’ll update you here."
     save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id, stage=escalation_stage)
     return TurnResult(
         reply_text=reply,
@@ -866,15 +913,29 @@ def handle_turn(
     # A bare affirmative/negative is mapped only to the first outstanding,
     # backend-scheduled question. Complex or multilingual answers remain
     # UNCLEAR for the constrained classifier path; they are never silently NO.
-    pending_questions = schedule_questions(extracted, limit=1)
+    # A single WhatsApp safety message can contain the entire approved grouped
+    # screen. Map numbered replies deterministically so a patient is not forced
+    # into one message per red-flag question.
+    pending_questions = schedule_questions(extracted, limit=4)
     if phase == PatientPhase.MID_TRIAGE and pending_questions:
-        normalized = normalize_answer(user_text)
-        if normalized in {YES, NO}:
-            answers = dict(extracted.safety_answers)
-            answers[pending_questions[0].id] = normalized
+        answers = dict(extracted.safety_answers)
+        numbered = {
+            int(index): normalize_answer(answer)
+            for index, answer in re.findall(r"(?:^|[\s,;])([1-4])\s*[).:-]?\s*(yes|no)\b", user_text, re.I)
+        }
+        if numbered:
+            for index, normalized in numbered.items():
+                if 1 <= index <= len(pending_questions) and normalized in {YES, NO}:
+                    answers[pending_questions[index - 1].id] = normalized
+        else:
+            normalized = normalize_answer(user_text)
+            if normalized in {YES, NO}:
+                answers[pending_questions[0].id] = normalized
+        if answers != dict(extracted.safety_answers):
             order = list(extracted.safety_question_order)
-            if pending_questions[0].id not in order:
-                order.append(pending_questions[0].id)
+            for question in pending_questions:
+                if question.id in answers and question.id not in order:
+                    order.append(question.id)
             extracted = extracted.model_copy(update={
                 "safety_answers": answers,
                 "safety_question_order": order,
@@ -927,16 +988,13 @@ def handle_turn(
                 phase=state.phase,
             )
 
-    candidate_reply = response.reply_text
-    if extracted.condition_area is not None:
-        rag_snippet = retrieve(extracted.condition_area)
-        if rag_snippet:
-            reply_prompt = build(
-                identity, state.stage, extracted, language, _history(state), rag_snippet, extra_context
-            )
-            reply_response = llm.complete(reply_prompt, user_text)
-            candidate_reply = reply_response.reply_text
-            language = reply_response.language or language
+    # One Gemini request per text turn. The former second request merely rewrote
+    # the first answer with RAG context, doubling latency and turning a single
+    # timeout into a silent WhatsApp turn. RAG remains available for approved
+    # patient education at explicit education/service moments, never for safety.
+    candidate_reply = response.reply_text or (
+        "Thanks — I received that. I’ll use the details you shared and ask only what is still needed."
+    )
 
     reply, outgoing = _reply_after_extract(
         session,

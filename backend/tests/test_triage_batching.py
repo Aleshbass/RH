@@ -198,6 +198,22 @@ def test_enrich_severity_from_out_of_ten():
     assert enriched.severity == 9
 
 
+def test_enrich_keeps_plain_lower_back_facts_when_llm_omits_them():
+    """Regression: clear patient facts must not be lost to a sparse LLM extraction."""
+    from app.triage.extraction import enrich_from_user_text
+
+    enriched = enrich_from_user_text(
+        ExtractedTriage(),
+        "My lower back has had a sharp pain for 3 days. It is worse when I walk and better when I rest.",
+    )
+    assert enriched.body_location == "lower back"
+    assert enriched.onset == "3 days"
+    assert enriched.symptoms == ["sharp pain"]
+    assert enriched.aggravating == ["i walk"]
+    assert enriched.relieving == ["i rest"]
+    assert infer_condition_area(enriched) == ConditionArea.MSK
+
+
 def test_grouped_followup_none_when_complete():
     extracted = ExtractedTriage(
         onset="2 weeks",

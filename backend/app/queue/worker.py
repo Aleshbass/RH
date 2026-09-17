@@ -161,7 +161,7 @@ def process_inbound(
             media=media,
             location=location,
         )
-    except GeminiTimeoutError:
+    except (GeminiTimeoutError, httpx.HTTPError, OSError):
         return TurnResult(
             reply_text=GEMINI_TIMEOUT_APOLOGY,
             language="en",

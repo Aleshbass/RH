@@ -22,6 +22,10 @@ _JSON_INSTRUCTION = (
 )
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+_FALLBACK_REPLY = (
+    "Thanks — I received what you shared. I’m keeping the important details and will ask only "
+    "for anything still needed to continue safely."
+)
 
 
 @dataclass
@@ -80,7 +84,8 @@ def _with_timeout_retry(call: Callable[[], LLMResponse]) -> LLMResponse:
 def _response_from_payload(payload: dict[str, Any]) -> LLMResponse:
     extraction = payload.get("extraction")
     return LLMResponse(
-        reply_text=str(payload.get("reply_text") or ""),
+        # Never allow malformed model JSON to turn into a silent WhatsApp turn.
+        reply_text=str(payload.get("reply_text") or _FALLBACK_REPLY),
         extraction_json=extraction if isinstance(extraction, dict) else {},
         language=str(payload.get("language") or ""),
     )

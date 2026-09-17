@@ -21,6 +21,26 @@ _DURATION_NEAR = re.compile(
     re.IGNORECASE,
 )
 
+# These deliberately conservative patterns are a reliability backstop for facts
+# patients state plainly. They do not make a diagnosis and do not set safety
+# answers; Gemini can still extract richer clinical detail around them.
+_BODY_LOCATION_RE = re.compile(
+    r"\b(?:(?:lower|upper|mid(?:dle)?|left|right)\s+){0,2}"
+    r"(?:back|neck|shoulder|knee|hip|ankle|wrist|elbow|foot|hand)\b",
+    re.IGNORECASE,
+)
+_DURATION_RE = re.compile(
+    r"\b(?:for|past|about|around|over)\s+(\d+\s+(?:hours?|days?|weeks?|months?|years?))\b"
+    r"|\b(?:started|begin|began)\s+(\d+\s+(?:hours?|days?|weeks?|months?|years?))\s+ago\b",
+    re.IGNORECASE,
+)
+_PAIN_QUALITY_RE = re.compile(
+    r"\b(sharp|dull|aching|burning|stabbing|throbbing|shooting)\s+pain\b",
+    re.IGNORECASE,
+)
+_WORSE_RE = re.compile(r"\b(?:worse|aggravated)\s+(?:when|with|by)\s+(.{2,100}?)(?=\s+(?:and\s+)?better\b|[.;,!\n]|$)", re.IGNORECASE)
+_BETTER_RE = re.compile(r"\b(?:better|relieved)\s+(?:when|with|by)\s+([^.;,!\n]{2,100})", re.IGNORECASE)
+
 
 def merge_extraction(existing: ExtractedTriage, incoming: dict) -> ExtractedTriage:
     payload = {key: value for key, value in incoming.items() if key in ExtractedTriage.model_fields}
@@ -72,12 +92,33 @@ def parse_severity_from_text(user_text: str) -> int | None:
 
 
 def enrich_from_user_text(extracted: ExtractedTriage, user_text: str) -> ExtractedTriage:
-    """Fill gaps the LLM often drops (e.g. leading '8 / …' severity)."""
+    """Fill unambiguous gaps the LLM can drop, without overriding known facts."""
     updates: dict = {}
+    text = (user_text or "").strip()
     if extracted.severity is None:
-        severity = parse_severity_from_text(user_text)
+        severity = parse_severity_from_text(text)
         if severity is not None:
             updates["severity"] = severity
+    if not extracted.body_location:
+        location = _BODY_LOCATION_RE.search(text)
+        if location:
+            updates["body_location"] = location.group(0).casefold()
+    if not extracted.onset:
+        duration = _DURATION_RE.search(text)
+        if duration:
+            updates["onset"] = next(value for value in duration.groups() if value).casefold()
+    if not extracted.symptoms:
+        quality = _PAIN_QUALITY_RE.search(text)
+        if quality:
+            updates["symptoms"] = [quality.group(0).casefold()]
+    if not extracted.aggravating:
+        worse = _WORSE_RE.search(text)
+        if worse:
+            updates["aggravating"] = [worse.group(1).strip().casefold()]
+    if not extracted.relieving:
+        better = _BETTER_RE.search(text)
+        if better:
+            updates["relieving"] = [better.group(1).strip().casefold()]
     if not updates:
         return extracted
     return extracted.model_copy(update=updates)

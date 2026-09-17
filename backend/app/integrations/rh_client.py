@@ -233,6 +233,16 @@ class RHClient:
     def reassign_booking(self, booking_id: str, *, patient_id: str, physiotherapist_id: str, slot_start: int, actor: RHActor, idempotency_key: str) -> dict[str, Any]:
         return self._request("POST", f"/api/v1/joy/bookings/{booking_id}/reassign", payload={"patient_id": patient_id, "physiotherapist_id": physiotherapist_id, "slot_start": slot_start, "actor": actor.as_payload()}, idempotency_key=idempotency_key)
 
+    def create_specialist_review(self, *, patient_id: str, assessment_id: str, assessment_revision: int, protocol_version: str, policy_version: str, policy_acceptance_reference: str, conversation_id: str, actor: RHActor, idempotency_key: str) -> dict[str, Any]:
+        payload = {"patient_id": patient_id, "assessment_id": assessment_id, "assessment_revision": assessment_revision, "protocol_version": protocol_version, "policy_version": policy_version, "policy_acceptance_reference": policy_acceptance_reference, "joy_conversation_id": conversation_id, "actor": actor.as_payload()}
+        return self._request("POST", "/api/v1/joy/specialist-reviews", payload=payload, idempotency_key=idempotency_key)
+
+    def initialize_specialist_review_payment(self, review_id: str, *, patient_id: str, email: str, actor: RHActor, idempotency_key: str) -> RHPaymentInitialization:
+        data = self._request("POST", f"/api/v1/joy/specialist-reviews/{review_id}/payment", payload={"patient_id": patient_id, "email": email, "actor": actor.as_payload()}, idempotency_key=idempotency_key)
+        if not isinstance(data.get("authorization_url"), str) or not isinstance(data.get("reference"), str):
+            raise RHIntegrationError("INVALID_RESPONSE", "RH returned incomplete review payment initialization", retryable=True)
+        return RHPaymentInitialization(booking_id=review_id, reference=data["reference"], authorization_url=data["authorization_url"], payment_status=data.get("payment_status", "pending"))
+
 
 def configured_rh_client() -> RHClient:
     """Create the integration client only when all service credentials exist."""

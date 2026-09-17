@@ -61,7 +61,7 @@ async def safety_eligibility(
     except ValueError as error:
         raise HTTPException(status_code=400, detail="invalid eligibility request") from error
 
-    if payload.service_type != "standard_consultation":
+    if payload.service_type not in {"standard_consultation", "specialist_review"}:
         return {"allowed": False, "reason": "SERVICE_NOT_AVAILABLE"}
     # Assessment revisions are not yet persisted as a separate table. Only the
     # current revision-one protocol state is eligible until that migration ships.
@@ -80,7 +80,11 @@ async def safety_eligibility(
     if datetime.now(timezone.utc) > created_at + _CLEARANCE_VALIDITY:
         return {"allowed": False, "reason": "ASSESSMENT_EXPIRED"}
     result = evaluate(ExtractedTriage.model_validate(triage.extracted))
-    if result.risk_level != "GREEN":
+    permitted = (
+        (payload.service_type == "standard_consultation" and result.risk_level == "GREEN")
+        or (payload.service_type == "specialist_review" and result.risk_level == "AMBER")
+    )
+    if not permitted:
         return {"allowed": False, "reason": "SERVICE_NOT_PERMITTED"}
     conversation = session.scalar(select(Conversation).where(
         Conversation.person_id == mapping.joy_person_id,
