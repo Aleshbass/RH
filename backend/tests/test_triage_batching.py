@@ -63,8 +63,8 @@ def test_missing_fields_skips_present_and_needs_rest():
     missing = missing_fields(extracted)
     assert "onset" not in missing
     assert "body_location" not in missing
-    assert "severity" in missing
-    assert "goals" in missing
+    assert "severity" not in missing
+    assert "goals" not in missing
     assert "condition_area" in missing
 
 
@@ -81,7 +81,7 @@ def test_vague_goals_do_not_count_as_condition_narrative():
     assert "goals" not in missing
 
 
-def test_msk_back_leg_missing_safety_is_one_grouped_sentence():
+def test_msk_back_leg_safety_is_scheduled_by_protocol_not_story_fields():
     extracted = ExtractedTriage(
         onset="1 week",
         severity=8,
@@ -90,17 +90,13 @@ def test_msk_back_leg_missing_safety_is_one_grouped_sentence():
         condition_area=ConditionArea.MSK,
         flags={"saddle_anesthesia": None, "bladder_bowel_change": None},
     )
-    missing = missing_fields(extracted)
-    assert "safety_flags" in missing
-    followup = grouped_followup(missing)
-    assert followup is not None
-    assert followup.count("?") <= 2
-    assert "\n1." not in followup
-    lower = followup.lower()
-    assert "saddle" in lower or "bladder" in lower or "leg" in lower
+    from app.safety.protocol_runtime import schedule_questions
+
+    assert "safety_flags" not in missing_fields(extracted)
+    assert schedule_questions(extracted)
 
 
-def test_safety_followup_only_asks_unanswered_flags():
+def test_safety_protocol_keeps_question_state_out_of_story_followup():
     extracted = ExtractedTriage(
         onset="1 week",
         severity=8,
@@ -113,17 +109,7 @@ def test_safety_followup_only_asks_unanswered_flags():
             "bilateral_leg_weakness": None,
         },
     )
-    missing = missing_fields(extracted)
-    assert "safety_flags" in missing
-    followup = grouped_followup(missing)
-    assert followup is not None
-    assert followup.count("?") == 1
-    assert "\n1." not in followup
-    lower = followup.lower()
-    assert "leg" in lower or "weakness" in lower
-    assert "saddle" not in lower
-    assert "bladder" not in lower
-    assert "bowel" not in lower
+    assert "safety_flags" not in missing_fields(extracted)
 
 
 def test_shoulder_msk_does_not_require_cauda_flags():
@@ -134,7 +120,6 @@ def test_shoulder_msk_does_not_require_cauda_flags():
         goals="lift my bag",
         condition_area=ConditionArea.MSK,
     )
-    assert "safety_flags" not in missing_fields(extracted)
     assert missing_fields(extracted) == []
 
 
@@ -148,11 +133,10 @@ def test_knee_get_back_to_goals_do_not_require_cauda():
         condition_area=ConditionArea.MSK,
         aggravating=["stairs", "long distances"],
     )
-    assert "safety_flags" not in missing_fields(extracted)
     assert missing_fields(extracted) == []
 
 
-def test_lower_back_pain_still_requires_cauda():
+def test_lower_back_pain_uses_protocol_scheduler_not_story_missing_fields():
     extracted = ExtractedTriage(
         onset="1 week",
         severity=7,
@@ -160,7 +144,27 @@ def test_lower_back_pain_still_requires_cauda():
         goals="get back to work",
         condition_area=ConditionArea.MSK,
     )
-    assert "safety_flags" in missing_fields(extracted)
+    from app.safety.protocol_runtime import schedule_questions
+
+    assert "safety_flags" not in missing_fields(extracted)
+    assert schedule_questions(extracted)
+
+
+def test_lower_back_safety_prompt_is_grouped_and_backend_owned():
+    from app.conversation.turn_handler import _safety_prompt
+
+    prompt = _safety_prompt(ExtractedTriage(body_location="lower back", condition_area=ConditionArea.MSK))
+    assert "Please reply Yes, No, or Unsure" in prompt
+    assert "1." in prompt
+    assert "LB-" not in prompt  # patient copy contains approved wording, not internal IDs
+    assert prompt.count("\n") >= 4
+
+
+def test_enrichment_refines_generic_back_to_lower_back():
+    from app.triage.extraction import enrich_from_user_text
+
+    enriched = enrich_from_user_text(ExtractedTriage(body_location="back"), "It is in my lower back.")
+    assert enriched.body_location == "lower back"
 
 
 def test_enrich_severity_from_slash_reply_when_llm_omits_it():

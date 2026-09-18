@@ -99,10 +99,16 @@ def enrich_from_user_text(extracted: ExtractedTriage, user_text: str) -> Extract
         severity = parse_severity_from_text(text)
         if severity is not None:
             updates["severity"] = severity
-    if not extracted.body_location:
-        location = _BODY_LOCATION_RE.search(text)
-        if location:
-            updates["body_location"] = location.group(0).casefold()
+    location = _BODY_LOCATION_RE.search(text)
+    if location:
+        observed_location = location.group(0).casefold()
+        # A later explicit "lower back" must refine an earlier generic "back"
+        # rather than leaving the protocol stuck without a region.
+        if not extracted.body_location or (
+            extracted.body_location.casefold().strip() == "back"
+            and observed_location != "back"
+        ):
+            updates["body_location"] = observed_location
     if not extracted.onset:
         duration = _DURATION_RE.search(text)
         if duration:

@@ -1,6 +1,6 @@
 from app.models.types import ExtractedTriage
 
-from app.triage.msk import is_msk_narrative, needs_cauda_screen, unanswered_cauda_flag_keys
+from app.triage.msk import is_msk_narrative
 from app.triage.non_msk import infer_non_msk_area
 
 _FIELD_PHRASES = {
@@ -33,18 +33,14 @@ def missing_fields(extracted: ExtractedTriage) -> list[str]:
     missing: list[str] = []
     if not extracted.onset:
         missing.append("onset")
-    if extracted.severity is None:
-        missing.append("severity")
     if not _has_condition_narrative(extracted):
         missing.append("body_location")
     if extracted.condition_area is None:
         missing.append("condition_area")
-    if not extracted.goals:
-        missing.append("goals")
-    unanswered = unanswered_cauda_flag_keys(extracted) if needs_cauda_screen(extracted) else []
-    if unanswered:
-        missing.append("safety_flags")
-        missing.extend(unanswered)
+    # Severity and goals enrich a consultation but are not prerequisites for
+    # entering the deterministic safety screen. Safety questions are scheduled
+    # exclusively by the protocol runtime, never folded into a vague story
+    # follow-up where they could be skipped or answered ambiguously.
     return missing
 
 

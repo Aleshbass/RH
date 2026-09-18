@@ -84,6 +84,7 @@ _LATER_PATH = (
     "This WhatsApp path is for later — I will be able to help you here in a later slice."
 )
 _MID_ACK = "Thanks, I've got that."
+_SAFETY_BATCH_LIMIT = 8
 _POLICY_CONTEXT_KEY = "policy_accepted"
 _POLICY_PRESENTED_KEY = "policy_presented"
 _DASHBOARD_RE = re.compile(
@@ -286,6 +287,15 @@ def _safety_fire_reply(
         if safety.risk_level == "RED"
         else ConversationStage.MEDICAL_ESCALATION
     )
+    save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id, stage=escalation_stage)
+    return TurnResult(
+        reply_text=reply,
+        language=language,
+        phase=phase,
+        extracted=extracted,
+        safety=safety,
+        blocked_by_safety=True,
+    )
 
 
 def _start_paid_amber_review(session: Session, identity: Identity, state: ConversationState) -> str:
@@ -326,15 +336,6 @@ def _start_paid_amber_review(session: Session, identity: Identity, state: Conver
     conversation.booking_context = context
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id, payload={"decision": "amber_review_payment_created", "review_id": review_id, "amount_kobo": 600_000})
     return f"Your five-minute specialist review is ₦6,000. Pay securely here: {payment.authorization_url}\n\nAfter payment is verified, RH will assign an eligible reviewer and I’ll update you here."
-    save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id, stage=escalation_stage)
-    return TurnResult(
-        reply_text=reply,
-        language=language,
-        phase=phase,
-        extracted=extracted,
-        safety=safety,
-        blocked_by_safety=True,
-    )
 
 
 def _maybe_route_off_platform(
@@ -543,6 +544,21 @@ def _thin_first_contact(extracted: ExtractedTriage) -> bool:
     return not extracted.onset and extracted.severity is None
 
 
+def _safety_prompt(extracted: ExtractedTriage) -> str:
+    questions = schedule_questions(extracted, limit=_SAFETY_BATCH_LIMIT)
+    rendered = "\n".join(f"{index + 1}. {question.text}" for index, question in enumerate(questions))
+    return (
+        "Before I can help with booking, I need to complete a short safety check. "
+        "Please reply Yes, No, or Unsure for each number:\n"
+        f"{rendered}"
+    )
+
+
+def _triage_summary_prompt(extracted: ExtractedTriage) -> str:
+    summary = plain_summary(extracted)
+    return f"{summary}\n\nDoes that summary look right? Reply Yes to continue to the Consultation & Booking Policy, or tell me what to correct."
+
+
 def _reply_after_extract(
     session: Session,
     state: ConversationState,
@@ -557,6 +573,9 @@ def _reply_after_extract(
     if not has_narrative(extracted):
         return candidate_reply, PatientPhase.FIRST_CONTACT
 
+    # Story details never bypass safety. Gather only the minimum information
+    # needed to choose a protocol, then let the deterministic scheduler own
+    # every red-flag question.
     leftover = missing_fields(extracted)
     booking_sub = decide_booking_substate(state)
     if (
@@ -578,12 +597,7 @@ def _reply_after_extract(
 
     scheduled = schedule_questions(extracted)
     if scheduled and not booking_sub:
-        questions = "\n".join(f"{index + 1}. {question.text}" for index, question in enumerate(scheduled))
-        return (
-            "Before I summarise, I need to complete a short safety check. Please answer Yes, No, "
-            f"or say if you are unsure for each question:\n{questions}",
-            PatientPhase.MID_TRIAGE,
-        )
+        return _safety_prompt(extracted), PatientPhase.MID_TRIAGE
 
     patient = session.get(Patient, identity.person_id)
     if patient is not None:
@@ -613,7 +627,7 @@ def _reply_after_extract(
     if booking_sub == AWAITING_PAYMENT:
         return candidate_reply, PatientPhase.POST_TRIAGE
 
-    summary = plain_summary(extracted)
+    summary = _triage_summary_prompt(extracted)
     _store_summary(session, state, summary)
     _set_triage_status(session, state, "summarised")
     return summary, PatientPhase.POST_TRIAGE
@@ -916,12 +930,12 @@ def handle_turn(
     # A single WhatsApp safety message can contain the entire approved grouped
     # screen. Map numbered replies deterministically so a patient is not forced
     # into one message per red-flag question.
-    pending_questions = schedule_questions(extracted, limit=4)
+    pending_questions = schedule_questions(extracted, limit=_SAFETY_BATCH_LIMIT)
     if phase == PatientPhase.MID_TRIAGE and pending_questions:
         answers = dict(extracted.safety_answers)
         numbered = {
             int(index): normalize_answer(answer)
-            for index, answer in re.findall(r"(?:^|[\s,;])([1-4])\s*[).:-]?\s*(yes|no)\b", user_text, re.I)
+            for index, answer in re.findall(r"(?:^|[\s,;])(\d{1,2})\s*[).:-]?\s*(yes|no)\b", user_text, re.I)
         }
         if numbered:
             for index, normalized in numbered.items():
