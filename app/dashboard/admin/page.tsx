@@ -106,6 +106,9 @@ function StatCardSkeleton() {
 }
 
 export default function AdminDashboard() {
+  // Get current user to verify admin status
+  const currentUser = useQuery(api.users.getMyUser)
+
   // Get real-time admin data - use direct Convex hooks instead of custom wrapper
   const adminStats = useQuery(api.admin.getAdminDashboardStats)
   const systemHealth = useQuery(api.admin.getSystemHealth)
@@ -115,9 +118,6 @@ export default function AdminDashboard() {
     api.adminPartnerships.getPartnerApplications,
     currentUser?.role === 'admin' ? { status: 'pending' } : 'skip'
   )
-  
-  // Get current user to verify admin status
-  const currentUser = useQuery(api.users.getMyUser)
 
   // Debug logging
   console.log('Admin Dashboard Debug:', {
