@@ -186,11 +186,13 @@ export async function POST(req: NextRequest) {
         environment: partner.environment,
         referral_id: result.referralId,
         tracking_code: result.trackingCode,
+        external_ref: result.partnerExternalId || null,
         partner_reference: result.partnerExternalId || null,
         tracking_url: trackingUrl,
         whatsapp_intake_url: whatsappIntakeUrl,
         whatsapp_phone: "+2348061525811",
         intake_status: "pending_whatsapp_response",
+        next_action: "start_joy",
         patient: {
           name: `${patientFirstName} ${patientLastName}`,
           phone: patientPhone,

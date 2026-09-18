@@ -7,7 +7,7 @@ var source_config_default = defineConfig({
   mdxOptions: {
     rehypeCodeOptions: {
       themes: {
-        light: "github-light",
+        light: "tokyo-night",
         dark: "tokyo-night"
       }
     }

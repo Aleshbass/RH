@@ -711,6 +711,122 @@ export const listPartnerReferrals = query({
 });
 
 /**
+ * Lists clinical appointments and sessions for partner referrals.
+ */
+export const listPartnerSessions = query({
+  args: {
+    partnerCode: v.string(),
+    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
+    referralId: v.optional(v.string()),
+    patientPhone: v.optional(v.string()),
+    status: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const env = args.environment || (args.partnerCode === "sandbox_partner" ? "sandbox" : "live");
+    let referrals = [];
+
+    if (args.partnerCode === "sandbox_partner") {
+      referrals = await ctx.db.query("inboundReferrals").order("desc").take(50);
+    } else {
+      referrals = await ctx.db
+        .query("inboundReferrals")
+        .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerCode))
+        .order("desc")
+        .take(50);
+    }
+
+    if (args.referralId) {
+      const refId = args.referralId.trim();
+      referrals = referrals.filter(
+        (r) =>
+          r._id === refId ||
+          r.trackingCode === refId ||
+          r.partnerExternalId === refId
+      );
+    }
+
+    if (args.patientPhone) {
+      const cleanPhone = args.patientPhone.replace(/\s+/g, "");
+      referrals = referrals.filter(
+        (r) => r.patientPhone && r.patientPhone.replace(/\s+/g, "").includes(cleanPhone)
+      );
+    }
+
+    const sessionsList: any[] = [];
+
+    for (const referral of referrals) {
+      if (referral.patientId) {
+        const apts = await ctx.db
+          .query("appointments")
+          .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", referral.patientId!))
+          .collect();
+
+        for (let i = 0; i < apts.length; i++) {
+          const a = apts[i];
+          if (args.status && a.status !== args.status) continue;
+
+          sessionsList.push({
+            sessionId: a._id,
+            sessionNumber: i + 1,
+            referralId: referral._id,
+            trackingCode: referral.trackingCode,
+            partnerExternalId: referral.partnerExternalId || null,
+            patientName: `${referral.patientFirstName} ${referral.patientLastName}`.trim(),
+            sessionType: (a as any).serviceType || referral.condition || "Comprehensive Physiotherapy",
+            scheduledAt: new Date(a.startTime).toISOString(),
+            completedAt: a.status === "completed" && a.endTime ? new Date(a.endTime).toISOString() : null,
+            status: a.status,
+            providerName: (a as any).physiotherapistName || "MRTBN Verified Physiotherapist",
+            modality: referral.preferredCareMode || "patient_choice",
+            notesSummary: (a as any).notes || null,
+          });
+        }
+      }
+    }
+
+    // If sandbox mode with no completed appointments yet, return clean test records
+    if (sessionsList.length === 0 && (env === "sandbox" || args.partnerCode === "sandbox_partner")) {
+      const sampleRef = referrals[0];
+      return [
+        {
+          sessionId: "ses_sandbox_001",
+          sessionNumber: 1,
+          referralId: sampleRef?._id || "ref_sandbox_sample_1",
+          trackingCode: sampleRef?.trackingCode || "RHB-72941",
+          partnerExternalId: sampleRef?.partnerExternalId || "HMO-REF-2026-0091",
+          patientName: sampleRef ? `${sampleRef.patientFirstName} ${sampleRef.patientLastName}` : "Adeola Balogun",
+          sessionType: "Initial Comprehensive Assessment",
+          scheduledAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+          completedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 50 * 60 * 1000).toISOString(),
+          status: "completed",
+          providerName: "Dr. Babatunde Adeyemi (PT)",
+          modality: "home_visit",
+          notesSummary: "Baseline ROM and strength evaluation. Prescribed therapeutic exercise.",
+        },
+        {
+          sessionId: "ses_sandbox_002",
+          sessionNumber: 2,
+          referralId: sampleRef?._id || "ref_sandbox_sample_1",
+          trackingCode: sampleRef?.trackingCode || "RHB-72941",
+          partnerExternalId: sampleRef?.partnerExternalId || "HMO-REF-2026-0091",
+          patientName: sampleRef ? `${sampleRef.patientFirstName} ${sampleRef.patientLastName}` : "Adeola Balogun",
+          sessionType: "Therapeutic Exercise & Manual Mobilization",
+          scheduledAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+          completedAt: null,
+          status: "scheduled",
+          providerName: "Dr. Babatunde Adeyemi (PT)",
+          modality: "home_visit",
+          notesSummary: null,
+        },
+      ];
+    }
+
+    return sessionsList.slice(0, args.limit || 50);
+  },
+});
+
+/**
  * Searches MRTBN-verified therapists for partner directory lookups.
  */
 export const searchVerifiedProviders = query({

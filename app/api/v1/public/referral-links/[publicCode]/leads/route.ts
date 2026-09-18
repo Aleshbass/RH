@@ -79,7 +79,7 @@ export async function POST(req: NextRequest, props: RouteParams) {
       privacyNoticeVersion,
     });
 
-    const host = req.headers.get("host") || "rehabify.com";
+    const host = req.headers.get("host") || "physioaroundme.com";
     const protocol = host.includes("localhost") ? "http" : "https";
 
     return NextResponse.json(

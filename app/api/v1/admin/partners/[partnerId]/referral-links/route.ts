@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, props: RouteParams) {
       expiresAt: body.expires_at ? new Date(body.expires_at).getTime() : undefined,
     });
 
-    const host = req.headers.get("host") || "rehabify.com";
+    const host = req.headers.get("host") || "physioaroundme.com";
     const protocol = host.includes("localhost") ? "http" : "https";
 
     return NextResponse.json(
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest, props: RouteParams) {
     });
     const links = (rawLinks || []) as ReferralLinkItem[];
 
-    const host = req.headers.get("host") || "rehabify.com";
+    const host = req.headers.get("host") || "physioaroundme.com";
     const protocol = host.includes("localhost") ? "http" : "https";
 
     return NextResponse.json({

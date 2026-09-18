@@ -35,7 +35,7 @@ Creates a referral record and immediately dispatches a smart WhatsApp intake ses
 
 ### Example Request
 
-```bash tab="cURL"
+```bash
 curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
   -H "Authorization: Bearer sk_live_99281..." \
   -H "Content-Type: application/json" \
@@ -92,7 +92,7 @@ Retrieves real-time care progression, matched therapist profile, and session cou
 
 ### Example Request
 
-```bash tab="cURL"
+```bash
 # Track using your own internal case ID!
 curl -X GET https://api.physioaroundme.com/api/v1/partners/referrals/HMO-REF-2026-0091 \
   -H "Authorization: Bearer sk_live_99281..."

@@ -12,30 +12,48 @@ To protect your system against replay attacks and spoofing, Rehabify signs every
 ## Verification Algorithm
 
 1. Retrieve the raw HTTP request body string.
-2. Read the `X-Rehabify-Signature` header value.
-3. Compute the HMAC SHA-256 hash of the raw body using your organization's Webhook Secret (`whsec_...`).
-4. Compare your computed signature with the header signature using a timing-safe equality check.
+2. Read the `X-Rehabify-Signature` header (formatted as `t=<timestamp>,v1=<signature>`) and `X-Rehabify-Timestamp`.
+3. Extract the timestamp and signature hash components.
+4. Compute the HMAC SHA-256 hash over `<timestamp>.<raw_request_body>` using your organization's Webhook Secret (`whsec_...`).
+5. Compare your computed signature with `v1` using a timing-safe equality check.
+6. Reject timestamps older than 5 minutes (300 seconds) to prevent replay attacks.
 
 ---
 
 ## Code Examples
 
-```typescript tab="TypeScript / Node.js"
+```typescript
 import crypto from 'crypto';
 import type { NextRequest } from 'next/server';
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
-  const signature = req.headers.get('x-rehabify-signature');
+  const signatureHeader = req.headers.get('x-rehabify-signature') || '';
   const secret = process.env.REHABIFY_WEBHOOK_SECRET!;
 
+  // Parse t=<timestamp>,v1=<hash>
+  const parts = signatureHeader.split(',');
+  const timestamp = parts.find((p) => p.startsWith('t='))?.slice(2);
+  const signature = parts.find((p) => p.startsWith('v1='))?.slice(3);
+
+  if (!timestamp || !signature) {
+    return new Response('Missing signature parameters', { status: 401 });
+  }
+
+  // Prevent replay attacks (5 minute threshold)
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - Number(timestamp)) > 300) {
+    return new Response('Webhook timestamp expired', { status: 401 });
+  }
+
+  // Compute expected HMAC SHA-256
   const expectedSignature = crypto
     .createHmac('sha256', secret)
-    .update(rawBody, 'utf8')
+    .update(`${timestamp}.${rawBody}`)
     .digest('hex');
 
   const isValid = crypto.timingSafeEqual(
-    Buffer.from(signature || '', 'hex'),
+    Buffer.from(signature, 'hex'),
     Buffer.from(expectedSignature, 'hex')
   );
 
@@ -50,10 +68,11 @@ export async function POST(req: NextRequest) {
 }
 ```
 
-```python tab="Python (FastAPI / Flask)"
+```python
 import hmac
 import hashlib
 import os
+import time
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -61,12 +80,26 @@ WEBHOOK_SECRET = os.environ.get("REHABIFY_WEBHOOK_SECRET", "")
 
 @app.route("/webhooks/rehabify", methods=["POST"])
 def handle_webhook():
-    signature = request.headers.get("X-Rehabify-Signature", "")
-    raw_payload = request.get_data()
+    sig_header = request.headers.get("X-Rehabify-Signature", "")
+    raw_payload = request.get_data().decode("utf-8")
 
+    # Parse t=<timestamp>,v1=<hash>
+    parts = dict(item.split("=") for item in sig_header.split(",") if "=" in item)
+    timestamp = parts.get("t")
+    signature = parts.get("v1")
+
+    if not timestamp or not signature:
+        return jsonify({"error": "Missing signature components"}), 401
+
+    # Replay protection: 5 minutes
+    if abs(time.time() - int(timestamp)) > 300:
+        return jsonify({"error": "Timestamp outside tolerance"}), 401
+
+    # Compute expected HMAC
+    signed_payload = f"{timestamp}.{raw_payload}"
     expected_signature = hmac.new(
         WEBHOOK_SECRET.encode("utf-8"),
-        raw_payload,
+        signed_payload.encode("utf-8"),
         hashlib.sha256
     ).hexdigest()
 
@@ -78,21 +111,46 @@ def handle_webhook():
     return jsonify({"received": True}), 200
 ```
 
-```go tab="Go"
+```go
 package main
 
 import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 )
 
 func webhookHandler(w http.ResponseWriter, r *http.Request) {
 	secret := []byte(os.Getenv("REHABIFY_WEBHOOK_SECRET"))
-	signature := r.Header.Get("X-Rehabify-Signature")
+	sigHeader := r.Header.Get("X-Rehabify-Signature")
+
+	var timestampStr, signature string
+	for _, part := range strings.Split(sigHeader, ",") {
+		if strings.HasPrefix(part, "t=") {
+			timestampStr = strings.TrimPrefix(part, "t=")
+		} else if strings.HasPrefix(part, "v1=") {
+			signature = strings.TrimPrefix(part, "v1=")
+		}
+	}
+
+	if timestampStr == "" || signature == "" {
+		http.Error(w, "Missing signature components", http.StatusUnauthorized)
+		return
+	}
+
+	ts, err := strconv.ParseInt(timestampStr, 10, 64)
+	if err != nil || math.Abs(float64(time.Now().Unix()-ts)) > 300 {
+		http.Error(w, "Timestamp expired", http.StatusUnauthorized)
+		return
+	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -100,8 +158,9 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	payload := fmt.Sprintf("%s.%s", timestampStr, string(body))
 	mac := hmac.New(sha256.New, secret)
-	mac.Write(body)
+	mac.Write([]byte(payload))
 	expectedSig := hex.EncodeToString(mac.Sum(nil))
 
 	if !hmac.Equal([]byte(signature), []byte(expectedSig)) {

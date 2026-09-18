@@ -5,23 +5,56 @@
 /* @import "fumadocs-ui/css/neutral.css"; */
 /* @import "fumadocs-ui/css/preset.css"; */
 
-/* Shiki code syntax highlighting (VS Code themes) */
+/* Shiki code syntax highlighting (VS Code Tokyo Night / Modern Dark) */
 pre.shiki,
 .shiki,
-.shiki code {
-  color: var(--shiki-dark, #e1e4e8);
+pre[class*="shiki"],
+figure[data-rehype-pretty-code-figure] pre,
+div[data-rehype-pretty-code-fragment] pre {
+  background-color: #12141a !important;
+  color: #c0caf5 !important;
 }
 
-.shiki span {
+pre code,
+pre.shiki code,
+.shiki code,
+pre[class*="shiki"] code,
+figure[data-rehype-pretty-code-figure] code,
+div[data-rehype-pretty-code-fragment] code {
+  color: #c0caf5;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+
+/* Force dark theme token colors inside dark code blocks regardless of parent light mode */
+pre.shiki span,
+.shiki span,
+pre[class*="shiki"] span,
+figure[data-rehype-pretty-code-figure] span,
+div[data-rehype-pretty-code-fragment] span {
   color: var(--shiki-dark, inherit);
+  font-style: var(--shiki-dark-font-style, inherit);
 }
 
-html.dark .shiki span {
-  color: var(--shiki-dark, inherit);
+/* Ensure tokens with inline styles or --shiki-dark CSS properties render their exact colors */
+span[style*="--shiki-dark"] {
+  color: var(--shiki-dark) !important;
 }
 
-.shiki .line.highlighted {
-  background-color: rgba(255, 255, 255, 0.08);
+/* Ensure code block lines stay transparent */
+pre.shiki .line,
+.shiki .line,
+figure[data-rehype-pretty-code-figure] .line {
+  background: transparent !important;
+}
+
+/* Line highlighting */
+.shiki .line.highlighted,
+pre.shiki .line.highlighted {
+  background-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 @source "../node_modules/fumadocs-ui/dist/**/*.js";

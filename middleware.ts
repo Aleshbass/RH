@@ -18,6 +18,22 @@ export default clerkMiddleware(async (auth, req) => {
     if (url.pathname.startsWith("/api")) {
       return NextResponse.next({ request: { headers: requestHeaders } });
     }
+    // Symmetrical redirect for partner portal
+    if (url.pathname === "/partners" || url.pathname.startsWith("/partners/")) {
+      const partnersHost = currentHost.replace("docs.", "partners.");
+      const protocol = req.headers.get("x-forwarded-proto") || (currentHost.includes("localhost") ? "http" : "https");
+      return NextResponse.redirect(new URL(url.pathname, `${protocol}://${partnersHost}`));
+    }
+    // Allow auth, sso, referral landing, and tracking
+    if (
+      url.pathname.startsWith("/sign-in") ||
+      url.pathname.startsWith("/sign-up") ||
+      url.pathname.startsWith("/sso-callback") ||
+      url.pathname.startsWith("/r/") ||
+      url.pathname.startsWith("/track")
+    ) {
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    }
     const pathname =
       url.pathname === "/"
         ? "/docs"
@@ -36,8 +52,15 @@ export default clerkMiddleware(async (auth, req) => {
     if (url.pathname.startsWith("/api")) {
       return NextResponse.next({ request: { headers: requestHeaders } });
     }
-    // Allow care tracker links (/track and /track/[id]) to resolve directly
-    if (url.pathname.startsWith("/track")) {
+    // Allow care tracker, auth, sso-callback, referral links, and onboarding to resolve directly
+    if (
+      url.pathname.startsWith("/track") ||
+      url.pathname.startsWith("/sign-in") ||
+      url.pathname.startsWith("/sign-up") ||
+      url.pathname.startsWith("/sso-callback") ||
+      url.pathname.startsWith("/r/") ||
+      url.pathname.startsWith("/onboarding")
+    ) {
       return NextResponse.next({ request: { headers: requestHeaders } });
     }
     // Redirect docs requests to the docs subdomain
@@ -61,13 +84,31 @@ export default clerkMiddleware(async (auth, req) => {
   if (currentHost.startsWith("api.")) {
     requestHeaders.set("x-is-b2b-subdomain", "true");
     requestHeaders.set("x-subdomain-type", "api");
+
+    // Standard CORS preflight for B2B API integrations
+    if (req.method === "OPTIONS") {
+      return new NextResponse(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key, X-Request-Id, X-Trace-Id",
+          "Access-Control-Max-Age": "86400",
+        },
+      });
+    }
+
     let pathname = url.pathname;
     if (!pathname.startsWith("/api")) {
       pathname = pathname === "/" ? "/api" : `/api${pathname}`;
     }
-    return NextResponse.rewrite(new URL(pathname, req.url), {
+    const response = NextResponse.rewrite(new URL(pathname, req.url), {
       request: { headers: requestHeaders },
     });
+    response.headers.set("Access-Control-Allow-Origin", "*");
+    response.headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+    response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, X-Request-Id, X-Trace-Id");
+    return response;
   }
 
   // Backwards-compatibility: /dashboard/partner redirects to /partners/portal

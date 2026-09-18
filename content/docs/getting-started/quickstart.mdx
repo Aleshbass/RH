@@ -23,7 +23,7 @@ export REHABIFY_SECRET_KEY="sk_test_rehab_demo_key_99182"
 
 Send a `POST` request to `/api/v1/partners/referrals`:
 
-```bash tab="cURL"
+```bash
 curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
   -H "Authorization: Bearer $REHABIFY_SECRET_KEY" \
   -H "Content-Type: application/json" \
@@ -47,7 +47,7 @@ curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
   }'
 ```
 
-```typescript tab="TypeScript"
+```typescript
 import axios from 'axios';
 
 const response = await axios.post(
@@ -81,7 +81,7 @@ const response = await axios.post(
 console.log('Referral Created:', response.data);
 ```
 
-```python tab="Python"
+```python
 import requests
 import os
 

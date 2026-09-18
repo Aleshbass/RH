@@ -32,7 +32,7 @@ sequenceDiagram
 
 Before creating a referral, check the member's remaining annual session allowance:
 
-```bash tab="cURL"
+```bash
 curl -X POST https://api.physioaroundme.com/api/v1/partners/eligibility \
   -H "Authorization: Bearer sk_live_your_hmo_key" \
   -H "Content-Type: application/json" \
@@ -49,7 +49,7 @@ curl -X POST https://api.physioaroundme.com/api/v1/partners/eligibility \
 
 Send the referral with `billing_mode: "hmo_direct_billing"`. Rehabify will bill the HMO directly at the agreed bulk rate:
 
-```bash tab="cURL"
+```bash
 curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
   -H "Authorization: Bearer sk_live_your_hmo_key" \
   -H "Content-Type: application/json" \

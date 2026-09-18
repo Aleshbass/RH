@@ -76,7 +76,7 @@ X-Request-ID: <optional_trace_id>
 
 ### Create Referral Example
 
-```bash tab="cURL"
+```bash
 curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
   -H "Authorization: Bearer sk_test_rehabify_sandbox" \
   -H "Content-Type: application/json" \
@@ -107,18 +107,29 @@ curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
 
 ```json
 {
-  "referral_id": "ref_01K4R7G9T4",
+  "status": "success",
+  "environment": "sandbox",
+  "referral_id": "yh79bn15g5amsqd60tn52tdt5d8ekz8r",
+  "tracking_code": "RHB-17297",
   "external_ref": "WELLS-10482",
-  "status": "received",
-  "care_mode": "either",
+  "partner_reference": "WELLS-10482",
+  "tracking_url": "https://physioaroundme.com/track/RHB-17297",
+  "whatsapp_intake_url": "https://wa.me/2348061525811?text=REHAB_REF_RHB-17297",
+  "whatsapp_phone": "+2348061525811",
+  "intake_status": "pending_whatsapp_response",
   "next_action": "start_joy",
-  "joy_session_url": "https://physioaroundme.com/joy/session-token",
-  "created_at": "2026-09-10T14:20:02Z"
+  "patient": {
+    "name": "Tolu Adebayo",
+    "phone": "+2348012345678"
+  },
+  "created_at": 1789050002000,
+  "request_id": "req_01K4R7G9T4",
+  "trace_id": "trc_88bf2a"
 }
 ```
 
 > [!IMPORTANT]
-> The `joy_session_url` is short-lived and intended for the patient. Do not log it or use it as the permanent referral identifier. Store `referral_id` and `external_ref` instead.
+> Store `referral_id`, `tracking_code`, and `external_ref` in your internal records. The `whatsapp_intake_url` and `tracking_url` can be shared directly with the patient for self-tracking or launching the automated Joy triage flow.
 
 ---
 
@@ -175,7 +186,7 @@ Rehabify sends signed POST requests to the partner webhook URL. Return any `2xx`
 ```http
 X-Rehabify-Event-ID: evt_01K4R9
 X-Rehabify-Timestamp: 1789050120
-X-Rehabify-Signature: v1=<hex_hmac_sha256>
+X-Rehabify-Signature: t=1789050120,v1=<hex_hmac_sha256>
 ```
 
 Calculate HMAC SHA-256 over `timestamp + '.' + exact_raw_request_body` using the webhook secret. Reject invalid signatures and timestamps older than five minutes. Compare signatures using a constant-time function.

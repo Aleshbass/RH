@@ -99,10 +99,11 @@ export default async function Page(props: PageProps) {
     ),
     hr: (p: any) => <hr className="border-t border-[#002e2c]/10 my-8" {...p} />,
     code: (p: any) => {
-      if (!p.className) {
+      // Only style inline code spans, never code blocks or tokens
+      if (!p.className && !p["data-language"] && !p["data-line"] && !p.style) {
         return (
           <code
-            className="font-mono text-xs bg-white/90 border border-[#002e2c]/15 text-[#002e2c] px-1.5 py-0.5 rounded-md font-semibold"
+            className="font-mono text-[0.82em] bg-[#FAF6E7]/80 border border-[#002e2c]/15 text-[#005b57] px-1.5 py-0.5 rounded-md font-semibold"
             {...p}
           />
         );

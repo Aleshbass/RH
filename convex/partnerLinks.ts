@@ -162,6 +162,33 @@ export const recordLinkClick = mutation({
       updatedAt: Date.now(),
     });
 
+    // Record activity in partnerActivityLogs for developer console & dashboard analytics
+    const isSandbox =
+      link.partnerId === "sandbox_partner" ||
+      link.partnerId.includes("sandbox") ||
+      link.partnerId.includes("test");
+    const environment = isSandbox ? ("sandbox" as const) : ("live" as const);
+
+    await ctx.db.insert("partnerActivityLogs", {
+      partnerId: link.partnerId,
+      environment,
+      eventId: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      eventType: "link.clicked",
+      direction: "inbound",
+      url: `/r/${args.publicCode}`,
+      method: "GET",
+      statusCode: 200,
+      latencyMs: 18,
+      status: "success",
+      requestId: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      requestPayload: {
+        publicCode: args.publicCode,
+        campaignName: link.campaignName,
+      },
+      responsePayload: { recorded: true },
+      occurredAt: Date.now(),
+    });
+
     return { recorded: true };
   },
 });
@@ -304,6 +331,43 @@ export const submitLead = mutation({
         metadata: { source: "partner_landing_page" },
       });
     }
+
+    // 5b. Record in partnerActivityLogs for Developer Console & Activity Inspector
+    const isLeadSandbox =
+      link.partnerId === "sandbox_partner" ||
+      link.partnerId.includes("sandbox") ||
+      link.partnerId.includes("test");
+    const leadEnvironment = isLeadSandbox ? ("sandbox" as const) : ("live" as const);
+    const patientFullName = `${args.firstName.trim()} ${(args.lastName || "").trim()}`.trim();
+
+    await ctx.db.insert("partnerActivityLogs", {
+      partnerId: link.partnerId,
+      environment: leadEnvironment,
+      eventId: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      eventType: "referral.received",
+      direction: "inbound",
+      url: `/r/${args.publicCode}`,
+      method: "POST",
+      statusCode: 201,
+      latencyMs: 42,
+      status: "success",
+      patientName: patientFullName,
+      trackingCode,
+      requestId: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      requestPayload: {
+        publicCode: args.publicCode,
+        campaignName: link.campaignName,
+        preferredCareMode: args.preferredCareMode || link.defaultCareMode || "patient_choice",
+        preferredContactChannel: args.preferredContactChannel || "whatsapp",
+        city: args.city || "Lagos",
+      },
+      responsePayload: {
+        referralId,
+        trackingCode,
+        status: args.consentGranted ? "received" : "consent_pending",
+      },
+      occurredAt: now,
+    });
 
     // 6. Create an outreach task for Rehabify Care Team
     const contactChannel = (args.preferredContactChannel || "whatsapp") as "whatsapp" | "email" | "sms" | "phone";
