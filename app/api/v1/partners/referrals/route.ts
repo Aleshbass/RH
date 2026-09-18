@@ -97,6 +97,9 @@ export async function POST(req: NextRequest) {
             "X-Rehabify-Environment": partner.environment,
           },
         }
+      );
+    }
+
     const normalizedPhone = String(patientPhone).replace(/\s+/g, "");
 
     // Sandbox Test Scenario 4: Policy Ineligible Simulation
