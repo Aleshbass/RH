@@ -18,19 +18,8 @@ interface SchedulingWizardProps {
     physiotherapistId?: string; // Optional now
 }
 
-export type WizardData = {
-    patientId?: string;
-    patientName?: string;
-    patientEmail?: string;
-    physiotherapistId?: string; // Added
-    physiotherapistName?: string; // Added
-    date?: Date;
-    time?: string; // HH:mm
-    serviceType?: string;
-    notes?: string;
-    duration?: number;
-    manualMeetingLink?: string;
-};
+import { WizardData } from './types';
+export type { WizardData } from './types';
 
 export function SchedulingWizard({ isOpen, onClose, onComplete, physiotherapistId }: SchedulingWizardProps) {
     // If physiotherapistId is provided, start at step 1 (Patient), else step 0 (Physio)

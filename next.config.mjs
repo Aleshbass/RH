@@ -45,50 +45,8 @@ const nextConfig = {
       )
     );
 
-    // Bundle analyzer in development
-    if (!dev && !isServer) {
-      config.optimization.splitChunks = {
-        chunks: 'all',
-        cacheGroups: {
-          default: {
-            minChunks: 1,
-            priority: -20,
-            reuseExistingChunk: true,
-          },
-          vendor: {
-            test: /[\\/]node_modules[\\/]/,
-            name: 'vendors',
-            priority: -10,
-            chunks: 'all',
-          },
-          // Separate chunks for large libraries
-          react: {
-            test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
-            name: 'react',
-            priority: 10,
-            chunks: 'all',
-          },
-          ui: {
-            test: /[\\/]node_modules[\\/](@radix-ui|@headlessui)[\\/]/,
-            name: 'ui-libs',
-            priority: 5,
-            chunks: 'all',
-          },
-          charts: {
-            test: /[\\/]node_modules[\\/](recharts|d3)[\\/]/,
-            name: 'charts',
-            priority: 5,
-            chunks: 'all',
-          },
-          monitoring: {
-            test: /[\\/]node_modules[\\/](@sentry|pino|web-vitals)[\\/]/,
-            name: 'monitoring',
-            priority: 5,
-            chunks: 'all',
-          },
-        },
-      };
-    }
+    // Let Next.js handle splitChunks and tree shaking automatically in App Router
+    // Custom splitChunks overrides break module evaluation order and cause TDZ ReferenceErrors in production
 
     // Let Next.js handle tree shaking optimization automatically
     // Removed manual usedExports and sideEffects to avoid conflicts with Next.js 15

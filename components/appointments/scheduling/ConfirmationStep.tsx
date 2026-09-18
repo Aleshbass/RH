@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { WizardData } from './SchedulingWizard';
+import type { WizardData } from './types';
 import { format } from 'date-fns';
 import { Calendar, Clock, User, FileText, CheckCircle2, Video } from 'lucide-react';
 import { Label } from '@/components/ui/label';

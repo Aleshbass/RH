@@ -69,23 +69,4 @@ export function useConvexQuery<TData>(
     ...options,
   })
 }
-
-// Re-export specialized hooks from useDashboardData
-export { 
-  useDashboardStats, 
-  useMyPatients, 
-  useMyAppointments,
-  useMyUser,
-  useMyApprovalStatus,
-  useMyClinic,
-  useClinicStaff,
-  useClinicInvitations,
-  useMyNotifications,
-  useUnreadNotificationCount,
-  useMySessionLogs,
-  usePatientDetails,
-  usePlatformAnalytics,
-  useSystemMetrics,
-  useAllUsers,
-  usePendingApprovals
-} from './useDashboardData' 
+ 
