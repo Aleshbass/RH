@@ -21,3 +21,7 @@ export { sendAppointmentCanceledPatientEmail } from "./sendAppointmentCanceledPa
 export { sendAppointmentRescheduledPatientEmail } from "./sendAppointmentRescheduledPatientEmail";
 export { sendAppointmentReminderEmail } from "./sendAppointmentReminderEmail";
 export { sendPaymentReceiptEmail } from "./sendPaymentReceiptEmail";
+export { 
+  sendPartnerReferralCreatedEmail, 
+  sendAdminReferralCreatedEmail 
+} from "./sendReferralCreatedEmails";

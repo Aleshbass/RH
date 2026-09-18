@@ -2793,6 +2793,7 @@ export default defineSchema({
     logoStorageId: v.optional(v.id("_storage")), // Uploaded logo file in Convex storage
     internalCode: v.optional(v.string()),     // Internal reference code
     // Contacts
+    contactName: v.optional(v.string()),
     contactEmail: v.string(),                 // Primary contact
     contactPhone: v.optional(v.string()),
     financeContactEmail: v.optional(v.string()),

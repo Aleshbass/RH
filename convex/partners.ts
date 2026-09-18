@@ -258,7 +258,7 @@ export const createPartnerReferral = mutation({
       url: "/api/v1/partners/referrals",
       method: "POST",
       statusCode: 201,
-      latencyMs: 35,
+      latencyMs: 0, // Internal audit record. Real HTTP round-trip latency is logged at the API route layer.
       status: "success",
       trackingCode,
       patientName: `${args.patientFirstName} ${args.patientLastName}`,
@@ -311,35 +311,113 @@ export const createPartnerReferral = mutation({
       .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
       .first();
 
+    // Schedule professional email notifications to partner and admin in live mode
+    if (env === "live") {
+      const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+      const trackingUrl = `${siteUrl}/track/${trackingCode}`;
+      const whatsappPhone = "+2348061525811";
+      const whatsappIntakeUrl = `https://wa.me/2348061525811?text=REHAB_REF_${encodeURIComponent(trackingCode)}`;
+      const patientFullName = `${args.patientFirstName} ${args.patientLastName}`;
+
+      // 1. Partner confirmation email (if partner contactEmail is configured)
+      if (partner?.contactEmail) {
+        await ctx.scheduler.runAfter(
+          0,
+          api["actions/emails/index"].sendPartnerReferralCreatedEmail,
+          {
+            partnerEmail: partner.contactEmail,
+            partnerName: partner.name || args.partnerCode,
+            contactName: (partner as any)?.contactName || partner.name || args.partnerCode,
+            patientName: patientFullName,
+            trackingCode,
+            trackingUrl,
+            whatsappIntakeUrl,
+            whatsappPhone,
+            condition: args.condition,
+            priority: args.priority || "standard",
+            createdAt: now,
+          }
+        );
+      }
+
+      // 2. Admin notification emails with direct WhatsApp + call links for proactive outreach
+      const adminEmails = process.env.ADMIN_EMAIL 
+        ? [process.env.ADMIN_EMAIL] 
+        : ["info@physioaroundme.com", "admin@physioaroundme.com"];
+
+      for (const adminEmail of adminEmails) {
+        await ctx.scheduler.runAfter(
+          0,
+          api["actions/emails/index"].sendAdminReferralCreatedEmail,
+          {
+            adminEmail,
+            partnerName: partner?.name || args.partnerCode,
+            patientName: patientFullName,
+            patientPhone: args.patientPhone,
+            patientEmail: args.patientEmail,
+            trackingCode,
+            trackingUrl,
+            whatsappIntakeUrl,
+            whatsappPhone,
+            condition: args.condition,
+            priority: args.priority || "standard",
+            city: args.city,
+            recommendedSessions: args.recommendedSessions,
+            createdAt: now,
+          }
+        );
+      }
+    }
+
     const targetUrl = args.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
-    const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret || "whsec_default";
+    const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
 
     if (targetUrl) {
-      await ctx.scheduler.runAfter(100, api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
-        partnerId: args.partnerCode,
-        environment: env,
-        eventType: "referral.received",
-        targetUrl,
-        secret,
-        trackingCode,
-        patientName: `${args.patientFirstName} ${args.patientLastName}`,
-        payload: {
-          event: "referral.received",
+      if (secret && secret !== "whsec_default") {
+        await ctx.scheduler.runAfter(100, api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
+          partnerId: args.partnerCode,
           environment: env,
-          created_at: Math.floor(now / 1000),
-          data: {
-            referral_id: referralId,
-            tracking_code: trackingCode,
-            partner_external_id: args.partnerExternalId || null,
-            patient: {
-              first_name: args.patientFirstName,
-              last_name: args.patientLastName,
-              phone: args.patientPhone,
+          eventType: "referral.received",
+          targetUrl,
+          secret,
+          trackingCode,
+          patientName: `${args.patientFirstName} ${args.patientLastName}`,
+          payload: {
+            event: "referral.received",
+            environment: env,
+            created_at: Math.floor(now / 1000),
+            data: {
+              referral_id: referralId,
+              tracking_code: trackingCode,
+              partner_external_id: args.partnerExternalId || null,
+              patient: {
+                first_name: args.patientFirstName,
+                last_name: args.patientLastName,
+                phone: args.patientPhone,
+              },
+              status: "received",
             },
-            status: "received",
           },
-        },
-      });
+        });
+      } else {
+        // Record skipped delivery in audit log due to unconfigured secret
+        await ctx.db.insert("partnerActivityLogs", {
+          partnerId: args.partnerCode,
+          environment: env,
+          eventId: `evt_${now}_skipped_no_secret`,
+          eventType: "referral.received",
+          direction: "outbound",
+          url: targetUrl,
+          method: "POST",
+          statusCode: 400,
+          latencyMs: 0,
+          status: "error",
+          trackingCode,
+          patientName: `${args.patientFirstName} ${args.patientLastName}`,
+          errorMessage: "Webhook delivery skipped: No signing secret configured for partner webhook endpoint.",
+          occurredAt: now,
+        });
+      }
     }
 
     // Sandbox Automated Progression Triggers (Functional Documentation Scenarios)
@@ -452,13 +530,13 @@ export const progressSandboxReferral = mutation({
       },
     });
 
-    if (args.targetUrl) {
+    if (args.targetUrl && args.secret && args.secret !== "whsec_default") {
       await ctx.scheduler.runAfter(0, api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
         partnerId: args.partnerCode,
         environment: "sandbox",
         eventType: args.eventType,
         targetUrl: args.targetUrl,
-        secret: args.secret || "whsec_default",
+        secret: args.secret,
         trackingCode: referral.trackingCode,
         patientName: `${referral.patientFirstName} ${referral.patientLastName}`,
         payload: {

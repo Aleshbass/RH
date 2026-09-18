@@ -28,7 +28,9 @@ export type EmailTemplate =
   | 'PAYMENT_RECEIPT'
   | 'PARTNER_APPLICATION_SUBMITTED'
   | 'PARTNER_APPLICATION_APPROVED'
-  | 'PARTNER_APPLICATION_DECLINED';
+  | 'PARTNER_APPLICATION_DECLINED'
+  | 'PARTNER_REFERRAL_CREATED'
+  | 'ADMIN_REFERRAL_CREATED';
 
 // Data interfaces for each email template
 export interface InvitationCreatedData {
@@ -247,6 +249,36 @@ export interface PartnerApplicationDeclinedData {
   supportLink: string;
 }
 
+export interface PartnerReferralCreatedData {
+  partnerName: string;
+  contactName?: string;
+  patientName: string;
+  trackingCode: string;
+  trackingUrl: string;
+  whatsappIntakeUrl: string;
+  whatsappPhone: string;
+  condition: string;
+  priority: string;
+  createdAt: string | number | Date;
+}
+
+export interface AdminReferralCreatedData {
+  partnerName: string;
+  patientName: string;
+  patientPhone: string;
+  patientEmail?: string;
+  trackingCode: string;
+  trackingUrl: string;
+  whatsappIntakeUrl: string;
+  whatsappPhone: string;
+  condition: string;
+  priority: string;
+  city?: string;
+  recommendedSessions?: number;
+  adminDashboardLink: string;
+  createdAt: string | number | Date;
+}
+
 // Discriminated union for EmailOptions
 export type EmailOptions =
   | { to: string; subject?: string; template: 'INVITATION_CREATED'; data: InvitationCreatedData }
@@ -274,7 +306,9 @@ export type EmailOptions =
   | { to: string; subject?: string; template: 'PAYMENT_RECEIPT'; data: PaymentReceiptData }
   | { to: string; subject?: string; template: 'PARTNER_APPLICATION_SUBMITTED'; data: PartnerApplicationSubmittedData }
   | { to: string; subject?: string; template: 'PARTNER_APPLICATION_APPROVED'; data: PartnerApplicationApprovedData }
-  | { to: string; subject?: string; template: 'PARTNER_APPLICATION_DECLINED'; data: PartnerApplicationDeclinedData };
+  | { to: string; subject?: string; template: 'PARTNER_APPLICATION_DECLINED'; data: PartnerApplicationDeclinedData }
+  | { to: string; subject?: string; template: 'PARTNER_REFERRAL_CREATED'; data: PartnerReferralCreatedData }
+  | { to: string; subject?: string; template: 'ADMIN_REFERRAL_CREATED'; data: AdminReferralCreatedData };
 
 /**
  * Send an email using the specified template and data
@@ -1258,6 +1292,118 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
                     </td>
                   </tr>
 
+                </table>
+              </td>
+            </tr>
+          </table>
+        `
+      };
+
+    case 'PARTNER_REFERRAL_CREATED':
+      return {
+        subject: options.subject || `New Patient Referral Received — ${options.data.trackingCode}`,
+        body: `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; background-color: #f5f5f7; margin: 0; padding: 24px 8px; table-layout: fixed; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+            <tr>
+              <td align="center" style="padding: 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 580px; width: 100%; background-color: #ffffff; border-radius: 18px; border: 1px solid #e5e5ea; box-shadow: 0 8px 30px rgba(0,0,0,0.05); overflow: hidden; table-layout: fixed;">
+                  <tr>
+                    <td align="center" style="padding: 36px 24px 24px 24px; border-bottom: 1px solid #f2f2f7;">
+                      <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 40px; width: auto; display: block; margin: 0 auto 18px auto;" />
+                      <div style="display: inline-block; background-color: #dbeafe; color: #1e40af; border-radius: 9999px; padding: 5px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px;">New Patient Referral</div>
+                      <h1 style="color: #1d1d1f; font-size: 23px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px 0;">Referral Confirmed</h1>
+                      <p style="color: #86868b; font-size: 14px; margin: 0;">Your patient referral has been received by Rehabify Health</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 28px 24px;">
+                      <p style="color: #1d1d1f; font-size: 15px; line-height: 1.5; margin: 0 0 20px 0;">
+                        Hello <strong>${options.data.contactName || options.data.partnerName}</strong>,
+                      </p>
+                      <p style="color: #48484a; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+                        We've received your patient referral and our care coordination team is now processing it. Below are the details and next steps for connecting your patient with physiotherapy care.
+                      </p>
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; background-color: #fbfbfd; border: 1px solid #e5e5ea; border-radius: 14px; margin-bottom: 24px;">
+                        <tr><td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Tracking Code</div><div style="font-family: SFMono-Regular, Consolas, monospace; color: #005b57; font-size: 18px; font-weight: 700;">${options.data.trackingCode}</div></td></tr>
+                        <tr><td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Patient</div><div style="color: #1d1d1f; font-size: 14px; font-weight: 500;">${options.data.patientName}</div></td></tr>
+                        <tr><td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Condition</div><div style="color: #1d1d1f; font-size: 14px;">${options.data.condition}</div></td></tr>
+                        <tr><td style="padding: 14px 18px;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Priority</div><div><span style="display: inline-block; background-color: ${options.data.priority === 'urgent' ? '#fee2e2' : '#e6f4f1'}; color: ${options.data.priority === 'urgent' ? '#991b1b' : '#005b57'}; font-weight: 600; font-size: 11px; padding: 4px 10px; border-radius: 6px; text-transform: uppercase;">${options.data.priority}</span></div></td></tr>
+                      </table>
+                      <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                        <h3 style="color: #166534; font-size: 14px; font-weight: 600; margin: 0 0 8px 0;">📱 Patient WhatsApp Intake</h3>
+                        <p style="color: #14532d; font-size: 13px; margin: 0 0 12px 0;">Share this link with your patient so they can connect directly with our care coordinator Joy via WhatsApp:</p>
+                        <div style="text-align: center;">
+                          <a href="${options.data.whatsappIntakeUrl}" style="display: inline-block; background-color: #25D366; color: #ffffff; font-size: 14px; font-weight: 600; padding: 12px 28px; border-radius: 9999px; text-decoration: none;">Chat with Joy on WhatsApp →</a>
+                        </div>
+                        <p style="color: #6b7280; font-size: 12px; margin: 12px 0 0 0; text-align: center;">Or call: <a href="tel:${options.data.whatsappPhone}" style="color: #005b57; font-weight: 500;">${options.data.whatsappPhone}</a></p>
+                      </div>
+                      <div style="text-align: center; margin: 28px 0 12px 0;">
+                        <a href="${options.data.trackingUrl}" style="display: inline-block; background-color: #004D4A; color: #ffffff; font-size: 15px; font-weight: 600; padding: 14px 34px; border-radius: 9999px; text-decoration: none; box-shadow: 0 4px 14px rgba(0,77,74,0.22);">Track Referral Status →</a>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="background-color: #fafafc; padding: 24px; border-top: 1px solid #f2f2f7;">
+                      <p style="color: #86868b; font-size: 12px; margin: 0 0 6px 0;">Rehabify Health · Licensed MRTBN Digital Health Network</p>
+                      <p style="color: #c7c7cc; font-size: 11px; margin: 0;">&copy; ${new Date().getFullYear()} Rehabify Health Inc. All rights reserved.</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        `
+      };
+
+    case 'ADMIN_REFERRAL_CREATED':
+      return {
+        subject: options.subject || `🩺 New Partner Referral: ${options.data.patientName} (${options.data.trackingCode})`,
+        body: `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; background-color: #f5f5f7; margin: 0; padding: 24px 8px; table-layout: fixed; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+            <tr>
+              <td align="center" style="padding: 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 580px; width: 100%; background-color: #ffffff; border-radius: 18px; border: 1px solid #e5e5ea; box-shadow: 0 8px 30px rgba(0,0,0,0.05); overflow: hidden; table-layout: fixed;">
+                  <tr>
+                    <td align="center" style="padding: 36px 24px 24px 24px; border-bottom: 1px solid #f2f2f7;">
+                      <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 40px; width: auto; display: block; margin: 0 auto 18px auto;" />
+                      <div style="display: inline-block; background-color: #fef3c7; color: #92400e; border-radius: 9999px; padding: 5px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px;">Action Required</div>
+                      <h1 style="color: #1d1d1f; font-size: 23px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px 0;">New Partner Referral</h1>
+                      <p style="color: #86868b; font-size: 14px; margin: 0;">A patient has been referred via the Partner API and needs follow-up</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 28px 24px;">
+                      <p style="color: #1d1d1f; font-size: 15px; line-height: 1.5; margin: 0 0 20px 0;">Hello Admin,</p>
+                      <p style="color: #48484a; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
+                        <strong>${options.data.partnerName}</strong> has referred a new patient. Please reach out to the patient to begin their care coordination.
+                      </p>
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; background-color: #fbfbfd; border: 1px solid #e5e5ea; border-radius: 14px; margin-bottom: 24px;">
+                        <tr><td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Tracking Code</div><div style="font-family: SFMono-Regular, Consolas, monospace; color: #005b57; font-size: 18px; font-weight: 700;">${options.data.trackingCode}</div></td></tr>
+                        <tr><td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Patient Name</div><div style="color: #1d1d1f; font-size: 14px; font-weight: 500;">${options.data.patientName}</div></td></tr>
+                        <tr><td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Phone Number</div><div style="color: #1d1d1f; font-size: 14px;"><a href="tel:${options.data.patientPhone}" style="color: #005b57; text-decoration: none; font-weight: 500;">${options.data.patientPhone}</a></div></td></tr>
+                        ${options.data.patientEmail ? `<tr><td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Email</div><div style="color: #1d1d1f; font-size: 14px;"><a href="mailto:${options.data.patientEmail}" style="color: #0066cc; text-decoration: none;">${options.data.patientEmail}</a></div></td></tr>` : ''}
+                        <tr><td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Condition</div><div style="color: #1d1d1f; font-size: 14px;">${options.data.condition}</div></td></tr>
+                        <tr><td style="padding: 14px 18px; border-bottom: 1px solid #f0f0f4;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Referred By</div><div style="color: #1d1d1f; font-size: 14px; font-weight: 500;">${options.data.partnerName}</div></td></tr>
+                        <tr><td style="padding: 14px 18px;"><div style="color: #86868b; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Priority</div><div><span style="display: inline-block; background-color: ${options.data.priority === 'urgent' ? '#fee2e2' : '#e6f4f1'}; color: ${options.data.priority === 'urgent' ? '#991b1b' : '#005b57'}; font-weight: 600; font-size: 11px; padding: 4px 10px; border-radius: 6px; text-transform: uppercase;">${options.data.priority}</span> ${options.data.city ? `<span style="margin-left: 8px; color: #6b7280; font-size: 12px;">📍 ${options.data.city}</span>` : ''} ${options.data.recommendedSessions ? `<span style="margin-left: 8px; color: #6b7280; font-size: 12px;">📋 ${options.data.recommendedSessions} sessions</span>` : ''}</div></td></tr>
+                      </table>
+                      <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                        <h3 style="color: #1e40af; font-size: 14px; font-weight: 600; margin: 0 0 12px 0;">📞 Reach Out to the Patient</h3>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                          <div style="margin-bottom: 8px;"><a href="${options.data.whatsappIntakeUrl}" style="display: inline-block; background-color: #25D366; color: #ffffff; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 9999px; text-decoration: none;">💬 WhatsApp Patient</a></div>
+                          <div style="margin-bottom: 8px;"><a href="tel:${options.data.patientPhone}" style="display: inline-block; background-color: #005b57; color: #ffffff; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 9999px; text-decoration: none;">📞 Call Patient</a></div>
+                        </div>
+                      </div>
+                      <div style="text-align: center; margin: 28px 0 12px 0;">
+                        <a href="${options.data.adminDashboardLink}" style="display: inline-block; background-color: #004D4A; color: #ffffff; font-size: 15px; font-weight: 600; padding: 14px 34px; border-radius: 9999px; text-decoration: none; box-shadow: 0 4px 14px rgba(0,77,74,0.22);">Open Admin Referrals Dashboard →</a>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="background-color: #fafafc; padding: 24px; border-top: 1px solid #f2f2f7;">
+                      <p style="color: #86868b; font-size: 12px; margin: 0 0 6px 0;">Rehabify Health Clinical Operations</p>
+                      <p style="color: #c7c7cc; font-size: 11px; margin: 0;">&copy; ${new Date().getFullYear()} Rehabify Health Inc. All rights reserved.</p>
+                    </td>
+                  </tr>
                 </table>
               </td>
             </tr>

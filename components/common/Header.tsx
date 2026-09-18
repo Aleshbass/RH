@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { UserButton, useAuth } from "@clerk/nextjs";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
 import { useQueryClient } from "@tanstack/react-query";

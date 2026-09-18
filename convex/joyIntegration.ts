@@ -647,7 +647,7 @@ export const createJoyAdminFollowUp = internalMutation({
     const existing = await ctx.db.query("joyAdminFollowUps").withIndex("by_booking", q => q.eq("bookingId", args.bookingId)).first();
     if (existing) return { follow_up_id: existing._id, duplicate: true };
     const now = Date.now();
-    const id = await ctx.db.insert("joyAdminFollowUps", { bookingId: args.bookingId, recipientEmail: "abassademolakuwam@gmail.com", reason: args.reason, status: "open", createdAt: now, updatedAt: now });
+    const id = await ctx.db.insert("joyAdminFollowUps", { bookingId: args.bookingId, recipientEmail: "admin@physioaroundme.com", reason: args.reason, status: "open", createdAt: now, updatedAt: now });
     await ctx.db.patch(args.bookingId, { replacementStatus: "admin_follow_up", updatedAt: now });
     return { follow_up_id: id, duplicate: false };
   },
@@ -660,7 +660,7 @@ export const createJoyOnlineMeetingFollowUp = internalMutation({
     const existing = await ctx.db.query("joyAdminFollowUps").withIndex("by_booking", q => q.eq("bookingId", args.bookingId)).first();
     if (existing) return { follow_up_id: existing._id, duplicate: true };
     const now = Date.now();
-    const id = await ctx.db.insert("joyAdminFollowUps", { bookingId: args.bookingId, recipientEmail: "abassademolakuwam@gmail.com", reason: args.reason, status: "open", createdAt: now, updatedAt: now });
+    const id = await ctx.db.insert("joyAdminFollowUps", { bookingId: args.bookingId, recipientEmail: "admin@physioaroundme.com", reason: args.reason, status: "open", createdAt: now, updatedAt: now });
     return { follow_up_id: id, duplicate: false };
   },
 });
