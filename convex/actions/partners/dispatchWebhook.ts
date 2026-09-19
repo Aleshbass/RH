@@ -25,12 +25,15 @@ export const dispatchWebhookEvent = action({
     trackingCode: v.optional(v.string()),
     patientName: v.optional(v.string()),
     requestId: v.optional(v.string()),
+    traceId: v.optional(v.string()),
     attempt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const currentAttempt = args.attempt || 1;
     const eventId = `evt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const timestamp = Math.floor(Date.now() / 1000);
+    const requestId = args.requestId || `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const traceId = args.traceId || `trc_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 
     // Fix #3: Reject unconfigured or weak default secrets
     if (!args.secret || args.secret === "whsec_default" || args.secret.trim() === "") {
@@ -51,7 +54,8 @@ export const dispatchWebhookEvent = action({
           status: "error",
           trackingCode: args.trackingCode,
           patientName: args.patientName,
-          requestId: args.requestId,
+          requestId,
+          traceId,
           requestHeaders: {},
           requestPayload: args.payload,
           responsePayload: { error: errorMsg },
@@ -67,6 +71,8 @@ export const dispatchWebhookEvent = action({
         statusCode: 400,
         latencyMs: 0,
         eventId,
+        requestId,
+        traceId,
         deliveredTo: args.targetUrl,
         timestamp,
         attempt: currentAttempt,
@@ -94,11 +100,9 @@ export const dispatchWebhookEvent = action({
       "X-Rehabify-Signature": signatureHeader,
       "X-Rehabify-Environment": args.environment,
       "X-Rehabify-Delivery-Attempt": String(currentAttempt),
+      "X-Rehabify-Request-Id": requestId,
+      "X-Rehabify-Trace-Id": traceId,
     };
-
-    if (args.requestId) {
-      headers["X-Rehabify-Request-Id"] = args.requestId;
-    }
 
     const startTime = Date.now();
     let statusCode = 0;
@@ -163,7 +167,8 @@ export const dispatchWebhookEvent = action({
             payload: args.payload,
             trackingCode: args.trackingCode,
             patientName: args.patientName,
-            requestId: args.requestId,
+            requestId,
+            traceId,
             attempt: nextAttempt,
           }
         );
@@ -189,14 +194,9 @@ export const dispatchWebhookEvent = action({
         status: isSuccess ? "success" : "error",
         trackingCode: args.trackingCode,
         patientName: args.patientName,
-        requestId: args.requestId,
-        requestHeaders: {
-          "Content-Type": "application/json",
-          "X-Rehabify-Event-Id": eventId,
-          "X-Rehabify-Signature": `t=${timestamp},v1=...`,
-          "X-Rehabify-Environment": args.environment,
-          "X-Rehabify-Delivery-Attempt": String(currentAttempt),
-        },
+        requestId,
+        traceId,
+        requestHeaders: headers,
         requestPayload: args.payload,
         responsePayload,
         errorMessage,
@@ -211,6 +211,8 @@ export const dispatchWebhookEvent = action({
       statusCode,
       latencyMs,
       eventId,
+      requestId,
+      traceId,
       deliveredTo: args.targetUrl,
       timestamp,
       attempt: currentAttempt,

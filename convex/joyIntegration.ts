@@ -69,25 +69,64 @@ export const resolveOrCreatePatientByPhone = internalMutation({
     const matches = await ctx.db.query("users").filter((q) => q.eq(q.field("phoneNumber"), phone)).collect();
     const patients = matches.filter((user) => user.role === "patient");
     if (patients.length > 1) return { resolution: "AMBIGUOUS" as const };
+
+    let resolvedPatientId: Id<"users">;
+    let resultResolution: "EXISTING" | "CREATED";
+    let resultDisplayName: string | undefined;
+
     if (patients.length === 1) {
       const user = patients[0];
-      return { resolution: "EXISTING" as const, patient_id: user._id, display_name: displayName(user) };
+      resolvedPatientId = user._id;
+      resultResolution = "EXISTING";
+      resultDisplayName = displayName(user);
+    } else {
+      const [firstName, ...remainingNames] = (args.name ?? "").trim().split(/\s+/).filter(Boolean);
+      resolvedPatientId = await ctx.db.insert("users", {
+        // This is intentionally not a Clerk ID. It identifies a service-created
+        // WhatsApp patient until the person later links a Clerk account.
+        clerkId: `joy-whatsapp:${args.joyPersonId}`,
+        email: args.email,
+        firstName: firstName || "Patient",
+        lastName: remainingNames.join(" "),
+        phoneNumber: phone,
+        role: "patient",
+        onboarded: false,
+      });
+      await ctx.db.insert("patientProfiles", { userId: resolvedPatientId });
+      resultResolution = "CREATED";
+      resultDisplayName = [firstName, ...remainingNames].filter(Boolean).join(" ") || undefined;
     }
 
-    const [firstName, ...remainingNames] = (args.name ?? "").trim().split(/\s+/).filter(Boolean);
-    const patientId = await ctx.db.insert("users", {
-      // This is intentionally not a Clerk ID. It identifies a service-created
-      // WhatsApp patient until the person later links a Clerk account.
-      clerkId: `joy-whatsapp:${args.joyPersonId}`,
-      email: args.email,
-      firstName: firstName || "Patient",
-      lastName: remainingNames.join(" "),
-      phoneNumber: phone,
-      role: "patient",
-      onboarded: false,
-    });
-    await ctx.db.insert("patientProfiles", { userId: patientId });
-    return { resolution: "CREATED" as const, patient_id: patientId, display_name: [firstName, ...remainingNames].filter(Boolean).join(" ") || undefined };
+    // Automatically link any pending partner referral for this patient phone
+    const cleanDigits = phone.replace(/\D/g, "");
+    if (cleanDigits.length >= 7) {
+      const recentReferrals = await ctx.db.query("inboundReferrals").order("desc").take(50);
+      const matched = recentReferrals.find((r) => {
+        const rDigits = (r.patientPhone || "").replace(/\D/g, "");
+        return rDigits && (rDigits.endsWith(cleanDigits.slice(-10)) || cleanDigits.endsWith(rDigits.slice(-10)));
+      });
+
+      if (matched && !matched.patientId) {
+        await ctx.db.patch(matched._id, {
+          patientId: resolvedPatientId,
+          status: (matched.status === "received" || matched.status === "pending") ? "intake_started" : matched.status,
+          updatedAt: Date.now(),
+        });
+        await ctx.db.insert("referralEvents", {
+          referralId: matched._id,
+          eventName: "patient.whatsapp_intake_started",
+          occurredAt: Date.now(),
+          actorType: "system",
+          actorId: "joy_ai",
+          metadata: {
+            joyPersonId: args.joyPersonId,
+            channel: "whatsapp",
+          },
+        });
+      }
+    }
+
+    return { resolution: resultResolution, patient_id: resolvedPatientId, display_name: resultDisplayName };
   },
 });
 

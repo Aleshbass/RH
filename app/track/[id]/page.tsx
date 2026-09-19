@@ -100,10 +100,31 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
   // 4. In Treatment
   // 5. Completed / Discharged
   let currentStep = 1;
-  if (referral.status === "contacted") currentStep = 2;
-  else if (referral.status === "booked") currentStep = 3;
-  else if (referral.status === "in_treatment") currentStep = 4;
-  else if (referral.status === "completed") currentStep = 5;
+  if (
+    referral.status === "contacted" ||
+    referral.status === "intake_started" ||
+    referral.status === "intake_completed" ||
+    referral.status === "consent_pending"
+  ) {
+    currentStep = 2;
+  } else if (
+    referral.status === "booked" ||
+    referral.status === "qualified"
+  ) {
+    currentStep = 3;
+  } else if (
+    referral.status === "in_treatment" ||
+    referral.status === "treatment_active" ||
+    referral.status === "attended"
+  ) {
+    currentStep = 4;
+  } else if (
+    referral.status === "completed" ||
+    referral.status === "closed" ||
+    referral.status === "paid_out"
+  ) {
+    currentStep = 5;
+  }
 
   const progressPercent = Math.min(
     100,

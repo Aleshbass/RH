@@ -390,11 +390,13 @@ export default function PartnerPortalDashboard() {
 
   // Populate inputs when overview loads
   const hasInitializedEnv = useRef(false);
+  const prevEnvRef = useRef(environment);
   useEffect(() => {
-    if (overview?.partnerInfo?.webhookUrl && !webhookUrlInput) {
-      setWebhookUrlInput(overview.partnerInfo.webhookUrl);
-    }
     if (overview?.partnerInfo) {
+      if (prevEnvRef.current !== environment || !webhookUrlInput) {
+        setWebhookUrlInput(overview.partnerInfo.webhookUrl || "");
+        prevEnvRef.current = environment;
+      }
       setBrandingForm((prev) => ({
         name: prev.name || overview.partnerInfo.name || "",
         logoUrl: prev.logoUrl || overview.partnerInfo.logoUrl || "",
@@ -408,7 +410,7 @@ export default function PartnerPortalDashboard() {
         hasInitializedEnv.current = true;
       }
     }
-  }, [overview?.partnerInfo]);
+  }, [overview?.partnerInfo, environment]);
 
   const copyToClipboard = (text: string, label: string) => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -598,8 +600,9 @@ export default function PartnerPortalDashboard() {
       await updateWebhookMutation({
         partnerCode,
         webhookUrl: webhookUrlInput.trim(),
+        environment,
       });
-      toast.success("Webhook endpoint updated successfully");
+      toast.success(`${environment.toUpperCase()} webhook endpoint updated successfully`);
     } catch (err: any) {
       toast.error(err.message || "Failed to update webhook URL");
     } finally {
@@ -902,6 +905,42 @@ console.log('Live Care Status:', tracking.status);`;
 res = requests.get(
     "${baseUrl}/api/v1/partners/referrals/RHB-72941",
     headers={"Authorization": "Bearer ${activeApiKey}"}
+)
+print(res.json())`;
+    }
+
+    // eligibility endpoint
+    if (codeLang === "javascript") {
+      return `import axios from 'axios';
+
+const response = await axios.post('${baseUrl}/api/v1/partners/eligibility', {
+  member_policy_number: 'POL-99201-AXA',
+  service_code: 'physiotherapy_in_home',
+  requested_sessions: 6
+}, {
+  headers: {
+    'Authorization': 'Bearer ${activeApiKey}',
+    'Content-Type': 'application/json'
+  }
+});
+
+console.log('Eligibility Status:', response.data.status);`;
+    }
+
+    if (codeLang === "python") {
+      return `import requests
+
+res = requests.post(
+    "${baseUrl}/api/v1/partners/eligibility",
+    json={
+        "member_policy_number": "POL-99201-AXA",
+        "service_code": "physiotherapy_in_home",
+        "requested_sessions": 6
+    },
+    headers={
+        "Authorization": "Bearer ${activeApiKey}",
+        "Content-Type": "application/json"
+    }
 )
 print(res.json())`;
     }
@@ -1894,65 +1933,59 @@ print(res.json())`;
   const currentPartnerInfo = overview?.partnerInfo;
 
   return (
-    <div className="min-h-screen bg-[#FAF6E7] text-[#002e2c] font-sans pb-28 antialiased selection:bg-[#005b57] selection:text-white">
+    <div className="min-h-screen bg-[#FAF6E7] text-[#002e2c] font-sans pb-28 antialiased selection:bg-[#005b57] selection:text-white overflow-x-clip w-full max-w-full">
       {/* Apple-style Translucent Navigation Bar */}
-      <header className="sticky top-0 z-40 border-b border-[#002e2c]/10 bg-[#FAF6E7]/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-40 border-b border-[#002e2c]/10 bg-[#FAF6E7]/80 backdrop-blur-xl w-full">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4 min-w-0">
           {/* Dynamic Brand & Company Identity */}
-          <div className="flex items-center gap-4 sm:gap-6">
-            <div className="flex items-center gap-3">
-              <Link href="/" className="shrink-0 transition-opacity hover:opacity-85">
-                <NextImage
-                  src="/logos/MainRehabify.svg"
-                  alt="Rehabify Health"
-                  width={110}
-                  height={30}
-                  className="h-7 w-auto object-contain"
-                />
-              </Link>
-              <div className="h-6 w-px bg-[#002e2c]/15" />
-              <div className="flex items-center gap-2.5">
-                {currentPartnerInfo?.logoUrl ? (
-                  <div className="h-7 max-w-[120px] flex items-center">
-                    <img
-                      src={currentPartnerInfo.logoUrl}
-                      alt={currentPartnerInfo.name}
-                      className="max-h-7 max-w-[120px] object-contain rounded-md"
-                    />
-                  </div>
-                ) : null}
-                <div className="flex flex-col">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold tracking-tight text-[#002e2c] text-sm">
-                      {currentPartnerInfo?.name || "Partner Portal"}
-                    </span>
-                    <span className="text-[10px] uppercase font-mono tracking-wider px-2 py-0.5 rounded-full bg-[#002e2c]/5 text-[#005b57] border border-[#002e2c]/10">
-                      Partner Portal
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-[#52706e]">Rehabify Care & API Infrastructure</span>
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1 sm:flex-initial">
+            <Link href="/" className="shrink-0 transition-opacity hover:opacity-85">
+              <NextImage
+                src="/logos/MainRehabify.svg"
+                alt="Rehabify Health"
+                width={100}
+                height={26}
+                className="h-6 sm:h-7 w-auto object-contain"
+              />
+            </Link>
+            <div className="h-5 sm:h-6 w-px bg-[#002e2c]/15 shrink-0" />
+            <div className="flex items-center gap-2 min-w-0">
+              {currentPartnerInfo?.logoUrl ? (
+                <div className="h-6 sm:h-7 max-w-[70px] sm:max-w-[120px] flex items-center shrink-0">
+                  <img
+                    src={currentPartnerInfo.logoUrl}
+                    alt={currentPartnerInfo.name}
+                    className="max-h-6 sm:max-h-7 max-w-full object-contain rounded-md"
+                  />
                 </div>
+              ) : null}
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-semibold tracking-tight text-[#002e2c] text-xs sm:text-sm truncate max-w-[90px] xs:max-w-[140px] sm:max-w-[200px] md:max-w-none">
+                    {currentPartnerInfo?.name || "Partner Portal"}
+                  </span>
+                  <span className="hidden sm:inline-flex text-[9px] sm:text-[10px] uppercase font-mono tracking-wider px-1.5 py-0.5 rounded-full bg-[#002e2c]/5 text-[#005b57] border border-[#002e2c]/10 shrink-0">
+                    Partner Portal
+                  </span>
+                </div>
+                <span className="hidden md:block text-[11px] text-[#52706e] truncate">
+                  Rehabify Care & API Infrastructure
+                </span>
               </div>
-            </div>
-
-            {/* Host badge */}
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 border border-[#002e2c]/10 text-[11px] text-[#52706e] shadow-xs">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span className="font-mono text-[#002e2c]">partners.physioaroundme.com</span>
             </div>
           </div>
 
           {/* Controls: Admin Partner Selector, Environment, Clerk Auth & Actions */}
-          <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             {/* Admin Partner Switcher Dropdown (Only visible to Rehabify Admins) */}
             {userPartnerData?.isAdmin && (
-              <div className="relative">
+              <div className="relative max-w-[95px] xs:max-w-[130px] sm:max-w-[180px]">
                 <select
                   value={partnerCode}
                   onChange={(e) => setPartnerCode(e.target.value)}
-                  className="appearance-none bg-white text-xs font-semibold text-[#002e2c] pl-3 pr-8 py-1.5 rounded-xl border border-[#002e2c]/15 hover:border-[#002e2c]/30 focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20 cursor-pointer shadow-xs"
+                  className="w-full appearance-none bg-white text-[11px] sm:text-xs font-semibold text-[#002e2c] pl-2.5 pr-6 py-1.5 rounded-xl border border-[#002e2c]/15 hover:border-[#002e2c]/30 focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20 cursor-pointer shadow-xs truncate"
                 >
-                  <option value="sandbox_partner">Sandbox Partner (Test)</option>
+                  <option value="sandbox_partner">Sandbox</option>
                   {(partnersList as any[])
                     ?.filter((p: any) => p.code !== "sandbox_partner")
                     .map((p: any) => (
@@ -1961,29 +1994,31 @@ print(res.json())`;
                       </option>
                     ))}
                 </select>
-                <ChevronDown className="w-3.5 h-3.5 text-[#52706e] absolute right-2.5 top-2.5 pointer-events-none" />
+                <ChevronDown className="w-3 h-3 text-[#52706e] absolute right-2 top-2.5 pointer-events-none" />
               </div>
             )}
 
-            {/* Apple-style Segmented Environment Toggle */}
-            <div className="hidden sm:inline-flex p-0.5 bg-[#002e2c]/5 border border-[#002e2c]/10 rounded-xl">
+            {/* Segmented Environment Toggle */}
+            <div className="inline-flex p-0.5 bg-[#002e2c]/5 border border-[#002e2c]/10 rounded-xl shrink-0">
               <button
                 onClick={() => setEnvironment("sandbox")}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                className={`px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
                   environment === "sandbox"
                     ? "bg-white text-[#002e2c] shadow-xs font-semibold"
                     : "text-[#52706e] hover:text-[#002e2c]"
                 }`}
+                title="Sandbox Mode"
               >
                 Sandbox
               </button>
               <button
                 onClick={() => setEnvironment("live")}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                className={`px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
                   environment === "live"
                     ? "bg-white text-[#002e2c] shadow-xs font-semibold"
                     : "text-[#52706e] hover:text-[#002e2c]"
                 }`}
+                title="Live Production Mode"
               >
                 Live
               </button>
@@ -1999,7 +2034,7 @@ print(res.json())`;
             </Link>
 
             {/* Clerk User Button */}
-            <div className="flex items-center gap-2 pl-2 border-l border-[#002e2c]/10">
+            <div className="flex items-center pl-1 sm:pl-2 border-l border-[#002e2c]/10 shrink-0">
               <UserButton afterSignOutUrl="/partners/portal" />
             </div>
 
@@ -2009,17 +2044,19 @@ print(res.json())`;
                 setReferralSuccessData(null);
                 setIsReferralModalOpen(true);
               }}
-              className="flex items-center gap-1.5 bg-[#002e2c] hover:bg-[#004744] text-[#FAF6E7] font-semibold text-xs px-3.5 sm:px-4 py-1.5 rounded-xl transition shadow-xs active:scale-95"
+              title="Create New Referral"
+              className="flex items-center gap-1 sm:gap-1.5 bg-[#002e2c] hover:bg-[#004744] text-[#FAF6E7] font-semibold text-xs px-2.5 sm:px-4 py-1.5 rounded-xl transition shadow-xs active:scale-95 shrink-0"
             >
               <Plus className="w-3.5 h-3.5 text-[#FAF6E7]" />
-              <span>New Referral</span>
+              <span className="hidden sm:inline">New Referral</span>
+              <span className="sm:hidden text-[11px]">Refer</span>
             </button>
           </div>
         </div>
       </header>
 
       {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-6 sm:pt-8 space-y-6 sm:space-y-8 min-w-0 w-full overflow-x-clip">
         {/* Sandbox vs Live Notice Banner */}
         {environment === "sandbox" && (
           <div className="rounded-2xl border border-amber-300/80 bg-amber-50/90 p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-950">
@@ -2116,7 +2153,7 @@ print(res.json())`;
 
         {/* Apple-style Segmented Navigation Control */}
         <div className="border-b border-[#002e2c]/10 pb-px">
-          <nav className="flex space-x-1 sm:space-x-2 overflow-x-auto no-scrollbar p-1 bg-[#002e2c]/5 rounded-2xl max-w-fit">
+          <nav className="flex space-x-1 sm:space-x-2 overflow-x-auto no-scrollbar p-1 bg-[#002e2c]/5 rounded-2xl max-w-full">
             {[
               { id: "overview", label: "Overview", icon: Activity },
               { id: "links", label: "Referral Links", icon: Link2, badge: referralLinks?.length || 0 },
@@ -2624,20 +2661,20 @@ print(res.json())`;
                 </p>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
                 <input
                   type="text"
                   placeholder="Search links or campaigns..."
                   value={linkSearchQuery}
                   onChange={(e) => setLinkSearchQuery(e.target.value)}
-                  className="px-3.5 py-2 rounded-xl bg-white border border-[#002e2c]/15 text-xs text-[#002e2c] focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20 w-64"
+                  className="px-3.5 py-2 rounded-xl bg-white border border-[#002e2c]/15 text-xs text-[#002e2c] focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20 w-full sm:w-64"
                 />
                 <button
                   onClick={() => {
                     setCreatedLinkResult(null);
                     setIsLinkModalOpen(true);
                   }}
-                  className="px-4 py-2 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] transition flex items-center gap-1.5 shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] transition flex items-center justify-center gap-1.5 shadow-xs shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Create Link</span>
@@ -2742,18 +2779,18 @@ print(res.json())`;
                 </p>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
                 <input
                   type="text"
                   placeholder="Search patient, tracking code..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="px-3.5 py-2 rounded-xl bg-white border border-[#002e2c]/15 text-xs text-[#002e2c] focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20 w-64"
+                  className="px-3.5 py-2 rounded-xl bg-white border border-[#002e2c]/15 text-xs text-[#002e2c] focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20 w-full sm:w-64"
                 />
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3.5 py-2 rounded-xl bg-white border border-[#002e2c]/15 text-xs text-[#002e2c] focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20"
+                  className="px-3.5 py-2 rounded-xl bg-white border border-[#002e2c]/15 text-xs text-[#002e2c] focus:outline-none focus:ring-2 focus:ring-[#002e2c]/20 flex-1 sm:flex-initial"
                 >
                   <option value="all">All Statuses</option>
                   <option value="received">Received</option>
@@ -2764,7 +2801,7 @@ print(res.json())`;
                 </select>
                 <button
                   onClick={() => setIsReferralModalOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] transition flex items-center gap-1.5 shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-[#002e2c] text-[#FAF6E7] text-xs font-semibold hover:bg-[#004744] transition flex items-center justify-center gap-1.5 shadow-xs shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>New Referral</span>
@@ -2973,10 +3010,10 @@ print(res.json())`;
 
             {/* Segmented Sub-Navigation for Developers */}
             <div className="border-b border-[#002e2c]/10 pb-px">
-              <div className="flex space-x-1 overflow-x-auto no-scrollbar p-1 bg-[#002e2c]/5 rounded-2xl max-w-fit">
+              <div className="flex space-x-1 overflow-x-auto no-scrollbar p-1 bg-[#002e2c]/5 rounded-2xl max-w-full">
                 {[
-                  { id: "overview", label: "Overview & Credentials", icon: Key },
-                  { id: "keys", label: "API Key Management", icon: ShieldCheck, badge: apiKeys?.length || 0 },
+                  { id: "overview", label: "Platform Overview", icon: Layers },
+                  { id: "keys", label: "API Key Management", icon: Key, badge: apiKeys?.length || 0 },
                   { id: "logs", label: "Activity & Webhook Logs", icon: Activity, badge: activityLogs?.length || 0 },
                   { id: "health", label: "Integration Health", icon: HeartPulse },
                   { id: "webhooks", label: "Webhook Config", icon: Webhook },
@@ -3007,8 +3044,151 @@ print(res.json())`;
               </div>
             </div>
 
-            {/* Sub-Section 1: OVERVIEW & CREDENTIALS */}
-            {(activeDevSection === "overview" || activeDevSection === "keys") && (
+            {/* Sub-Section 0: PLATFORM OVERVIEW DASHBOARD */}
+            {activeDevSection === "overview" && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#002e2c]/10 pb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-semibold text-[#002e2c]">Integration Overview & Environment Hub</h3>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${environment === "live" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                          {environment} mode
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#52706e]">
+                        Central summary of credentials, webhook listeners, endpoint health, and real-time audit logs for {partnerCode}.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setActiveDevSection("snippets")}
+                        className="px-3.5 py-1.5 rounded-xl bg-[#002e2c] hover:bg-[#004744] text-[#FAF6E7] text-xs font-semibold transition flex items-center gap-1.5 shadow-xs"
+                      >
+                        <Code2 className="w-3.5 h-3.5" />
+                        <span>Interactive Playground</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 4 Feature Pillar Quick Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Key Status */}
+                    <div
+                      onClick={() => setActiveDevSection("keys")}
+                      className="p-4 rounded-2xl bg-[#FAF6E7]/50 border border-[#002e2c]/10 hover:border-[#002e2c]/30 hover:bg-[#FAF6E7] cursor-pointer transition space-y-2 group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase text-[#52706e] tracking-wider">API Authentication</span>
+                        <Key className="w-4 h-4 text-[#005b57]" />
+                      </div>
+                      <div className="font-mono text-xs font-bold text-[#002e2c] truncate">
+                        {currentPartnerInfo?.keyPrefix || "sk_test_..."}
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-[#52706e]">
+                        <span>{apiKeys?.length || 1} provisioned key(s)</span>
+                        <span className="text-[#005b57] font-semibold group-hover:underline flex items-center gap-0.5">
+                          Manage <ChevronRight className="w-3 h-3" />
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Webhook Listener Status */}
+                    <div
+                      onClick={() => setActiveDevSection("webhooks")}
+                      className="p-4 rounded-2xl bg-[#FAF6E7]/50 border border-[#002e2c]/10 hover:border-[#002e2c]/30 hover:bg-[#FAF6E7] cursor-pointer transition space-y-2 group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase text-[#52706e] tracking-wider">Webhook Listener</span>
+                        <Webhook className="w-4 h-4 text-[#005b57]" />
+                      </div>
+                      <div className="text-xs font-semibold text-[#002e2c] truncate">
+                        {webhookUrlInput ? (
+                          webhookUrlInput.includes("api.partner.com") ? (
+                            <span className="text-amber-700 font-normal">Placeholder URL</span>
+                          ) : (
+                            <span className="text-emerald-700 font-normal truncate block">{webhookUrlInput}</span>
+                          )
+                        ) : (
+                          <span className="text-red-700 font-normal">Not Configured</span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-[#52706e]">
+                        <span>HMAC-SHA256</span>
+                        <span className="text-[#005b57] font-semibold group-hover:underline flex items-center gap-0.5">
+                          Configure <ChevronRight className="w-3 h-3" />
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Integration Telemetry */}
+                    <div
+                      onClick={() => setActiveDevSection("health")}
+                      className="p-4 rounded-2xl bg-[#FAF6E7]/50 border border-[#002e2c]/10 hover:border-[#002e2c]/30 hover:bg-[#FAF6E7] cursor-pointer transition space-y-2 group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase text-[#52706e] tracking-wider">API Health (24h)</span>
+                        <HeartPulse className="w-4 h-4 text-[#005b57]" />
+                      </div>
+                      <div className="text-xs font-bold text-[#002e2c]">
+                        {integrationHealth?.successRate || 99.8}% success
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-[#52706e]">
+                        <span>Avg {integrationHealth?.avgLatencyMs || 84}ms</span>
+                        <span className="text-[#005b57] font-semibold group-hover:underline flex items-center gap-0.5">
+                          Endpoints <ChevronRight className="w-3 h-3" />
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Audit Logs */}
+                    <div
+                      onClick={() => setActiveDevSection("logs")}
+                      className="p-4 rounded-2xl bg-[#FAF6E7]/50 border border-[#002e2c]/10 hover:border-[#002e2c]/30 hover:bg-[#FAF6E7] cursor-pointer transition space-y-2 group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase text-[#52706e] tracking-wider">Audit Stream</span>
+                        <Activity className="w-4 h-4 text-[#005b57]" />
+                      </div>
+                      <div className="text-xs font-bold text-[#002e2c]">
+                        {activityLogs?.length || 0} calls recorded
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-[#52706e]">
+                        <span>Trace & Request IDs</span>
+                        <span className="text-[#005b57] font-semibold group-hover:underline flex items-center gap-0.5">
+                          Inspect <ChevronRight className="w-3 h-3" />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* API Quickstart Card */}
+                  <div className="p-5 rounded-2xl bg-[#FAF6E7]/70 border border-[#002e2c]/15 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-[#002e2c]">Enterprise Base API URL</span>
+                      <span className="font-mono text-xs text-[#005b57] font-semibold">HTTPS REST & JSON</span>
+                    </div>
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <input
+                        type="text"
+                        readOnly
+                        value="https://physioaroundme.com/api/v1"
+                        className="w-full min-w-0 flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-[#002e2c]/15 font-mono text-xs text-[#002e2c] select-all truncate"
+                      />
+                      <button
+                        onClick={() => copyToClipboard("https://physioaroundme.com/api/v1", "Base API URL")}
+                        className="px-3.5 py-2.5 rounded-xl bg-[#002e2c] text-[#FAF6E7] hover:bg-[#004744] transition text-xs font-semibold shrink-0"
+                      >
+                        Copy URL
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-Section 1: API KEY MANAGEMENT */}
+            {activeDevSection === "keys" && (
               <div className="space-y-6">
                 {/* Primary Key Display */}
                 <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
@@ -3035,16 +3215,16 @@ print(res.json())`;
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3">
                     <input
                       type={showApiKey ? "text" : "password"}
                       readOnly
                       value={currentPartnerInfo?.apiKey || "sk_test_rehabify_sandbox"}
-                      className="w-full px-4 py-3 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/15 text-[#002e2c] font-mono text-xs focus:outline-none select-all"
+                      className="w-full min-w-0 flex-1 px-3 sm:px-4 py-3 rounded-xl bg-[#FAF6E7] border border-[#002e2c]/15 text-[#002e2c] font-mono text-xs focus:outline-none select-all"
                     />
                     <button
                       onClick={() => setShowApiKey(!showApiKey)}
-                      className="p-3 rounded-xl border border-[#002e2c]/15 bg-white text-[#52706e] hover:text-[#002e2c] transition shadow-xs"
+                      className="p-3 rounded-xl border border-[#002e2c]/15 bg-white text-[#52706e] hover:text-[#002e2c] transition shadow-xs shrink-0"
                       title={showApiKey ? "Hide Key" : "Show Key"}
                     >
                       {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -3053,7 +3233,7 @@ print(res.json())`;
                       onClick={() =>
                         copyToClipboard(currentPartnerInfo?.apiKey || "sk_test_rehabify_sandbox", "API Key")
                       }
-                      className="p-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] hover:bg-[#004744] transition shadow-xs"
+                      className="p-3 rounded-xl bg-[#002e2c] text-[#FAF6E7] hover:bg-[#004744] transition shadow-xs shrink-0"
                       title="Copy API Key"
                     >
                       <Copy className="w-4 h-4" />
@@ -3166,7 +3346,7 @@ print(res.json())`;
             )}
 
             {/* Sub-Section 2: ACTIVITY LOGS & AUDIT TRAIL */}
-            {(activeDevSection === "overview" || activeDevSection === "logs") && (
+            {activeDevSection === "logs" && (
               <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#002e2c]/10 pb-4">
                   <div>
@@ -3293,7 +3473,7 @@ print(res.json())`;
             )}
 
             {/* Sub-Section 3: INTEGRATION HEALTH & ACTIVE ENDPOINTS */}
-            {(activeDevSection === "overview" || activeDevSection === "health") && (
+            {activeDevSection === "health" && (
               <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
                 <div className="border-b border-[#002e2c]/10 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
@@ -3344,7 +3524,7 @@ print(res.json())`;
             )}
 
             {/* Sub-Section 4: WEBHOOK CONFIGURATION & REAL DELIVERY */}
-            {(activeDevSection === "overview" || activeDevSection === "webhooks") && (
+            {activeDevSection === "webhooks" && (
               <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-6">
                 <div className="border-b border-[#002e2c]/10 pb-4">
                   <h3 className="text-sm font-semibold text-[#002e2c] flex items-center gap-2">
@@ -3392,37 +3572,49 @@ print(res.json())`;
                 </div>
 
                 {testWebhookResult && (
-                  <div className="p-5 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-mono text-xs overflow-x-auto shadow-inner space-y-2">
-                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                      <span className="font-semibold text-emerald-400">
-                        Delivery Result: HTTP {testWebhookResult.statusCode} ({testWebhookResult.latencyMs}ms)
+                  <div className="rounded-2xl bg-[#002e2c] text-[#FAF6E7] shadow-inner overflow-hidden border border-[#002e2c]/20 max-w-full">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-4 py-2.5 border-b border-white/10 bg-black/20">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="w-2.5 h-2.5 rounded-full bg-red-400/80" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-400/80" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/80" />
+                        </div>
+                        <span className="font-mono text-xs font-semibold text-emerald-400 truncate">
+                          Delivery Result: HTTP {testWebhookResult.statusCode} ({testWebhookResult.latencyMs}ms)
+                        </span>
+                      </div>
+                      <span className="font-mono text-[10px] text-zinc-400 truncate">
+                        Event ID: {testWebhookResult.eventId}
                       </span>
-                      <span className="text-[10px] text-zinc-400">Event ID: {testWebhookResult.eventId}</span>
                     </div>
-                    <pre className="text-[11px] text-emerald-100/90 leading-relaxed">
-                      {JSON.stringify(testWebhookResult, null, 2)}
-                    </pre>
+                    <div className="p-4 overflow-x-auto max-w-full">
+                      <pre className="font-mono text-[11px] text-emerald-100/90 leading-relaxed whitespace-pre selection:bg-[#005b57] selection:text-white">
+                        {JSON.stringify(testWebhookResult, null, 2)}
+                      </pre>
+                    </div>
                   </div>
                 )}
               </div>
             )}
 
             {/* Sub-Section 5: CODE PLAYGROUND */}
-            {(activeDevSection === "overview" || activeDevSection === "snippets") && (
-              <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-6 sm:p-8 shadow-xs space-y-4">
+            {activeDevSection === "snippets" && (
+              <div className="bg-white rounded-3xl border border-[#002e2c]/10 p-4 sm:p-6 lg:p-8 shadow-xs space-y-4 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <h3 className="text-sm font-semibold text-[#002e2c]">Integration Code Playground</h3>
                     <p className="text-xs text-[#52706e]">Production-ready code snippets with your real API credentials.</p>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <div className="p-1 rounded-xl bg-[#002e2c]/5 border border-[#002e2c]/10 flex gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Language Selector */}
+                    <div className="p-1 rounded-xl bg-[#002e2c]/5 border border-[#002e2c]/10 flex flex-wrap gap-1 max-w-full">
                       {(["curl", "javascript", "python"] as const).map((lang) => (
                         <button
                           key={lang}
                           onClick={() => setCodeLang(lang)}
-                          className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition ${
+                          className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition shrink-0 ${
                             codeLang === lang
                               ? "bg-white text-[#002e2c] shadow-xs"
                               : "text-[#52706e] hover:text-[#002e2c]"
@@ -3433,12 +3625,13 @@ print(res.json())`;
                       ))}
                     </div>
 
-                    <div className="p-1 rounded-xl bg-[#002e2c]/5 border border-[#002e2c]/10 flex gap-1">
+                    {/* Endpoint Selector: referrals, track, eligibility */}
+                    <div className="p-1 rounded-xl bg-[#002e2c]/5 border border-[#002e2c]/10 flex flex-wrap gap-1 max-w-full">
                       {(["referrals", "track", "eligibility"] as const).map((ep) => (
                         <button
                           key={ep}
                           onClick={() => setCodeEndpoint(ep)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition ${
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition shrink-0 ${
                             codeEndpoint === ep
                               ? "bg-white text-[#002e2c] shadow-xs"
                               : "text-[#52706e] hover:text-[#002e2c]"
@@ -3451,15 +3644,32 @@ print(res.json())`;
                   </div>
                 </div>
 
-                <div className="relative rounded-2xl bg-[#002e2c] text-[#FAF6E7] p-5 font-mono text-xs overflow-x-auto shadow-inner">
-                  <button
-                    onClick={() => copyToClipboard(getCodeSnippet(), "Code snippet")}
-                    className="absolute top-4 right-4 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition"
-                  >
-                    <Copy className="w-3 h-3" />
-                    <span>Copy</span>
-                  </button>
-                  <pre>{getCodeSnippet()}</pre>
+                {/* macOS Terminal Window Code Container */}
+                <div className="rounded-2xl bg-[#002e2c] text-[#FAF6E7] shadow-inner overflow-hidden border border-[#002e2c]/20 max-w-full">
+                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10 bg-black/20">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-400/80" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-400/80" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/80" />
+                      </div>
+                      <span className="text-[11px] font-mono text-zinc-300 ml-2 capitalize truncate max-w-[140px] xs:max-w-[200px] sm:max-w-none">
+                        {codeLang} · /api/v1/partners/{codeEndpoint}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => copyToClipboard(getCodeSnippet(), "Code snippet")}
+                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition active:scale-95 shrink-0"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                  <div className="p-4 sm:p-5 overflow-x-auto max-w-full">
+                    <pre className="font-mono text-xs leading-relaxed text-emerald-100/90 whitespace-pre selection:bg-[#005b57] selection:text-white">
+                      {getCodeSnippet()}
+                    </pre>
+                  </div>
                 </div>
               </div>
             )}
@@ -3715,9 +3925,10 @@ print(res.json())`;
               </div>
               <button
                 onClick={() => setIsLinkModalOpen(false)}
-                className="text-[#52706e] hover:text-[#002e2c] text-xs font-semibold"
+                className="p-1.5 rounded-xl text-[#52706e] hover:text-[#002e2c] hover:bg-[#FAF6E7] transition shrink-0"
+                title="Close modal"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -3859,9 +4070,10 @@ print(res.json())`;
               </div>
               <button
                 onClick={() => setIsReferralModalOpen(false)}
-                className="text-[#52706e] hover:text-[#002e2c] text-xs font-semibold"
+                className="p-1.5 rounded-xl text-[#52706e] hover:text-[#002e2c] hover:bg-[#FAF6E7] transition shrink-0"
+                title="Close modal"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -4063,41 +4275,41 @@ print(res.json())`;
           />
           <div className="fixed inset-y-0 right-0 max-w-xl w-full bg-white shadow-2xl flex flex-col z-10 border-l border-[#002e2c]/15">
             {/* Drawer Header */}
-            <div className="p-6 border-b border-[#002e2c]/10 flex items-center justify-between bg-[#FAF6E7]/50">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${selectedLog.status === "success" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+            <div className="p-4 sm:p-6 border-b border-[#002e2c]/10 flex items-start sm:items-center justify-between gap-3 bg-[#FAF6E7]/50">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${selectedLog.status === "success" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
                     HTTP {selectedLog.statusCode}
                   </span>
-                  <span className="font-mono text-xs text-[#002e2c] font-bold">{selectedLog.eventId}</span>
+                  <span className="font-mono text-xs text-[#002e2c] font-bold truncate">{selectedLog.eventId}</span>
                 </div>
-                <p className="text-xs text-[#52706e] font-mono">{selectedLog.method} {selectedLog.url}</p>
+                <p className="text-xs text-[#52706e] font-mono break-all">{selectedLog.method} {selectedLog.url}</p>
               </div>
               <button
                 onClick={() => setIsLogDrawerOpen(false)}
-                className="p-2 rounded-xl text-[#52706e] hover:text-[#002e2c] hover:bg-white transition"
+                className="p-2 rounded-xl text-[#52706e] hover:text-[#002e2c] hover:bg-white transition shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Drawer Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 text-xs">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 text-xs">
               {/* Telemetry Summary */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-[#FAF6E7]/60 border border-[#002e2c]/10">
-                <div>
+                <div className="min-w-0">
                   <span className="text-[10px] uppercase font-bold text-[#52706e] block">Latency</span>
                   <span className="font-mono font-bold text-[#002e2c]">{selectedLog.latencyMs}ms</span>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <span className="text-[10px] uppercase font-bold text-[#52706e] block">Direction</span>
                   <span className="font-semibold text-[#005b57] capitalize">{selectedLog.direction}</span>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <span className="text-[10px] uppercase font-bold text-[#52706e] block">Trace ID</span>
                   <span className="font-mono text-[10px] text-[#52706e] truncate block">{selectedLog.traceId || "—"}</span>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <span className="text-[10px] uppercase font-bold text-[#52706e] block">Request ID</span>
                   <span className="font-mono text-[10px] text-[#52706e] truncate block">{selectedLog.requestId || "—"}</span>
                 </div>
@@ -4115,8 +4327,8 @@ print(res.json())`;
                     <span>Copy</span>
                   </button>
                 </div>
-                <div className="p-4 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-mono text-[11px] overflow-x-auto max-h-60 shadow-inner">
-                  <pre>{JSON.stringify(selectedLog.requestPayload || {}, null, 2)}</pre>
+                <div className="p-4 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-mono text-[11px] overflow-x-auto max-h-60 shadow-inner max-w-full">
+                  <pre className="whitespace-pre overflow-x-auto max-w-full text-emerald-100/90 leading-relaxed">{JSON.stringify(selectedLog.requestPayload || {}, null, 2)}</pre>
                 </div>
               </div>
 
@@ -4132,8 +4344,8 @@ print(res.json())`;
                     <span>Copy</span>
                   </button>
                 </div>
-                <div className="p-4 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-mono text-[11px] overflow-x-auto max-h-60 shadow-inner">
-                  <pre>{JSON.stringify(selectedLog.responsePayload || {}, null, 2)}</pre>
+                <div className="p-4 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-mono text-[11px] overflow-x-auto max-h-60 shadow-inner max-w-full">
+                  <pre className="whitespace-pre overflow-x-auto max-w-full text-emerald-100/90 leading-relaxed">{JSON.stringify(selectedLog.responsePayload || {}, null, 2)}</pre>
                 </div>
               </div>
 

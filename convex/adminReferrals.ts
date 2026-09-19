@@ -2,6 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { ensureUserRole } from "./auth";
 import { Id } from "./_generated/dataModel";
+import { api } from "./_generated/api";
 
 /**
  * Get all inbound referrals for admin processing
@@ -112,6 +113,7 @@ export const updateReferralStatus = mutation({
         notes: v.optional(v.string()),
         paymentAmount: v.optional(v.number()),
         commissionEarned: v.optional(v.number()),
+        assignedPhysiotherapistId: v.optional(v.id("users")),
     },
     handler: async (ctx, args) => {
         let adminId = "system_operator";
@@ -146,6 +148,10 @@ export const updateReferralStatus = mutation({
             updates.commissionEarned = args.commissionEarned;
         }
 
+        if (args.assignedPhysiotherapistId !== undefined) {
+            updates.assignedPhysiotherapistId = args.assignedPhysiotherapistId;
+        }
+
         await ctx.db.patch(args.referralId, updates);
 
         // Immutable audit event
@@ -160,6 +166,7 @@ export const updateReferralStatus = mutation({
                 newStatus: args.status,
                 notes: effectiveNotes,
                 commissionEarned: args.commissionEarned,
+                assignedPhysiotherapistId: args.assignedPhysiotherapistId,
             },
         });
 
@@ -240,9 +247,216 @@ export const updateReferralStatus = mutation({
                     });
                 }
             }
+
+            // Dispatch real-time outbound webhook to partner endpoint if configured
+            const partner = await ctx.db
+                .query("partners")
+                .withIndex("by_code", (q) => q.eq("code", referral.partnerId!))
+                .first();
+
+            const env = referral.environment || "live";
+            const targetUrl = referral.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
+            const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
+
+            if (targetUrl && secret && secret !== "whsec_default") {
+                const physioId = args.assignedPhysiotherapistId || referral.assignedPhysiotherapistId;
+                let assignedPhysio = null;
+                if (physioId) {
+                    const physioUser = await ctx.db.get(physioId);
+                    const physioProfile = await ctx.db
+                        .query("physiotherapistProfiles")
+                        .withIndex("by_user_id", (q) => q.eq("userId", physioId))
+                        .first();
+                    if (physioUser) {
+                        assignedPhysio = {
+                            name: `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim(),
+                            license_number: physioProfile?.licenseNumber || "MRTBN/PT/VERIFIED",
+                            specialization: physioProfile?.specializations?.[0] || "General Physiotherapy",
+                        };
+                    }
+                }
+
+                const eventType = args.status === "booked"
+                    ? "referral.booked"
+                    : args.status === "completed" || args.status === "attended"
+                    ? "referral.completed"
+                    : args.status === "contacted" || args.status === "intake_started" || args.status === "intake_completed"
+                    ? "referral.contacted"
+                    : args.status === "in_treatment" || args.status === "treatment_active"
+                    ? "referral.treatment_active"
+                    : "referral.status_updated";
+
+                const requestId = `req_${now}_${Math.random().toString(36).substring(2, 8)}`;
+                const traceId = `trc_${now}_${Math.random().toString(36).substring(2, 10)}`;
+
+                await ctx.scheduler.runAfter(0, api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
+                    partnerId: referral.partnerId,
+                    environment: env,
+                    eventType,
+                    targetUrl,
+                    secret,
+                    trackingCode,
+                    patientName,
+                    requestId,
+                    traceId,
+                    payload: {
+                        event: eventType,
+                        environment: env,
+                        created_at: Math.floor(now / 1000),
+                        data: {
+                            referral_id: args.referralId,
+                            tracking_code: trackingCode,
+                            partner_external_id: referral.partnerExternalId || null,
+                            status: args.status,
+                            patient: {
+                                first_name: referral.patientFirstName,
+                                last_name: referral.patientLastName,
+                                phone: referral.patientPhone,
+                            },
+                            assigned_physiotherapist: assignedPhysio,
+                            sessions: {
+                                completed: args.status === "completed" ? (referral.recommendedSessions || 4) : 1,
+                                total: referral.recommendedSessions || 4,
+                            },
+                        },
+                    },
+                });
+            }
         }
 
         return args.referralId;
+    },
+});
+
+/**
+ * Directly assign an MRTBN-verified physiotherapist to an inbound referral.
+ * Automatically transitions status to 'booked' and dispatches provider.matched webhook.
+ */
+export const assignPhysiotherapistToReferral = mutation({
+    args: {
+        referralId: v.id("inboundReferrals"),
+        physiotherapistUserId: v.id("users"),
+        clinicalNotes: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        let adminId = "system_operator";
+        try {
+            const adminUser = await ensureUserRole(ctx, ["admin"]);
+            adminId = String(adminUser._id);
+        } catch {
+            adminId = "system_operator";
+        }
+
+        const referral = await ctx.db.get(args.referralId);
+        if (!referral) {
+            throw new Error("Referral not found");
+        }
+
+        const physioUser = await ctx.db.get(args.physiotherapistUserId);
+        if (!physioUser || physioUser.role !== "physiotherapist") {
+            throw new Error("Assigned user must be a registered physiotherapist");
+        }
+
+        const physioProfile = await ctx.db
+            .query("physiotherapistProfiles")
+            .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistUserId))
+            .first();
+
+        const approval = await ctx.db
+            .query("accountApprovalStatus")
+            .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistUserId))
+            .first();
+
+        if (approval?.status !== "approved") {
+            throw new Error("Assigned physiotherapist must have approved clinical credentials");
+        }
+
+        const now = Date.now();
+        const updates: any = {
+            assignedPhysiotherapistId: args.physiotherapistUserId,
+            status: "booked",
+            updatedAt: now,
+        };
+
+        if (args.clinicalNotes) {
+            updates.clinicalNotes = args.clinicalNotes;
+        }
+
+        await ctx.db.patch(args.referralId, updates);
+
+        await ctx.db.insert("referralEvents", {
+            referralId: args.referralId,
+            eventName: "provider.matched",
+            occurredAt: now,
+            actorType: "admin",
+            actorId: adminId,
+            metadata: {
+                assignedPhysiotherapistId: args.physiotherapistUserId,
+                physiotherapistName: `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim(),
+                licenseNumber: physioProfile?.licenseNumber || "MRTBN/PT/VERIFIED",
+                specialization: physioProfile?.specializations?.[0] || "General Physiotherapy",
+            },
+        });
+
+        // Dispatch outbound webhook to partner
+        if (referral.partnerId) {
+            const partner = await ctx.db
+                .query("partners")
+                .withIndex("by_code", (q) => q.eq("code", referral.partnerId!))
+                .first();
+
+            const env = referral.environment || "live";
+            const targetUrl = referral.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
+            const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
+
+            if (targetUrl && secret && secret !== "whsec_default") {
+                const trackingCode = referral.trackingCode || `RHB-${referral._id.slice(-5).toUpperCase()}`;
+                const patientName = `${referral.patientFirstName} ${referral.patientLastName}`.trim();
+                const requestId = `req_${now}_${Math.random().toString(36).substring(2, 8)}`;
+                const traceId = `trc_${now}_${Math.random().toString(36).substring(2, 10)}`;
+
+                await ctx.scheduler.runAfter(0, api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
+                    partnerId: referral.partnerId,
+                    environment: env,
+                    eventType: "provider.matched",
+                    targetUrl,
+                    secret,
+                    trackingCode,
+                    patientName,
+                    requestId,
+                    traceId,
+                    payload: {
+                        event: "provider.matched",
+                        environment: env,
+                        created_at: Math.floor(now / 1000),
+                        data: {
+                            referral_id: args.referralId,
+                            tracking_code: trackingCode,
+                            partner_external_id: referral.partnerExternalId || null,
+                            status: "booked",
+                            patient: {
+                                first_name: referral.patientFirstName,
+                                last_name: referral.patientLastName,
+                                phone: referral.patientPhone,
+                            },
+                            assigned_physiotherapist: {
+                                id: physioUser._id,
+                                name: `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim(),
+                                license_number: physioProfile?.licenseNumber || "MRTBN/PT/VERIFIED",
+                                specialization: physioProfile?.specializations?.[0] || "General Physiotherapy",
+                            },
+                        },
+                    },
+                });
+            }
+        }
+
+        return {
+            success: true,
+            referralId: args.referralId,
+            assignedPhysiotherapistId: args.physiotherapistUserId,
+            status: "booked",
+        };
     },
 });
 

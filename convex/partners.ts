@@ -1783,9 +1783,12 @@ export const getIntegrationHealth = query({
       .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
       .first();
 
-    const webhookUrl = env === "sandbox"
-      ? (partner?.testWebhookUrl || partner?.webhookUrl)
-      : (partner?.liveWebhookUrl || partner?.webhookUrl);
+    const isSandboxPartner = args.partnerCode === "sandbox_partner";
+    const webhookUrl = isSandboxPartner
+      ? (env === "sandbox" ? "https://api.partner.com/webhook" : "")
+      : (env === "sandbox"
+        ? (partner?.testWebhookUrl || partner?.webhookUrl)
+        : (partner?.liveWebhookUrl || partner?.webhookUrl));
 
     return {
       successRate,
@@ -1824,7 +1827,11 @@ export const getIntegrationHealth = query({
           avgLatencyMs: avgWebhookLatency || (webhookUrl ? 52 : 0),
           uptime: webhookUrl ? "99.8%" : "N/A",
           targetUrl: webhookUrl || null,
-          description: webhookUrl ? `Connected: ${webhookUrl}` : "Save endpoint URL to activate",
+          description: webhookUrl
+            ? (webhookUrl.includes("api.partner.com")
+              ? "Placeholder endpoint (Save your server URL to activate)"
+              : `Connected: ${webhookUrl}`)
+            : "Save live endpoint URL to activate",
         },
         {
           name: "WhatsApp Joy Engine",
@@ -1873,6 +1880,8 @@ export const triggerRealTestWebhook = action({
     }
 
     const secret = overview?.partnerInfo?.webhookSecret || "whsec_test_secret";
+    const requestId = `req_${now}_${Math.random().toString(36).substring(2, 8)}`;
+    const traceId = `trc_${now}_${Math.random().toString(36).substring(2, 10)}`;
 
     const payload = {
       id: `evt_test_${Math.random().toString(36).substring(2, 10)}`,
@@ -1905,6 +1914,8 @@ export const triggerRealTestWebhook = action({
       payload,
       trackingCode: "RHB-72941",
       patientName: "Adeola Balogun",
+      requestId,
+      traceId,
     });
   },
 });
