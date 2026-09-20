@@ -91,6 +91,25 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_nonce", ["nonce"]),
 
+  // Immutable operational trace for commands received through Joy WhatsApp.
+  // Payloads intentionally contain only the minimum operational fields; Joy
+  // clinical narratives and raw notes do not belong in this table.
+  joyOperationalAudit: defineTable({
+    operation: v.string(),
+    actorUserId: v.optional(v.id("users")),
+    patientUserId: v.optional(v.id("users")),
+    physiotherapistUserId: v.optional(v.id("users")),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    appointmentId: v.optional(v.id("appointments")),
+    requestId: v.string(),
+    payload: v.any(),
+    createdAt: v.number(),
+  })
+    .index("by_booking", ["bookingId"])
+    .index("by_patient", ["patientUserId"])
+    .index("by_physio", ["physiotherapistUserId"])
+    .index("by_request", ["requestId"]),
+
   // Clinics table: Information about physiotherapy clinics
   clinics: defineTable({
     name: v.string(),

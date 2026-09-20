@@ -166,7 +166,7 @@ export const resolvePhysiotherapistByPhone = internalQuery({
     const profile = await ctx.db.query("physiotherapistProfiles").withIndex("by_user_id", (q) => q.eq("userId", user._id)).first();
     const approval = await ctx.db.query("accountApprovalStatus").withIndex("by_user_id", (q) => q.eq("userId", user._id)).first();
     if (!profile || approval?.status !== "approved") return { resolution: "INELIGIBLE" };
-    return { resolution: "MATCH", physiotherapist_id: profile._id, display_name: displayName(user), capabilities: { specialties: profile.specializations ?? [], service_modes: [ ...(profile.offersOnlineSessions ? ["online"] : []), ...(profile.offersInPersonSessions ? ["in_person"] : []) ] } };
+    return { resolution: "MATCH", physiotherapist_id: profile._id, rh_user_id: user._id, display_name: displayName(user), capabilities: { specialties: profile.specializations ?? [], service_modes: [ ...(profile.offersOnlineSessions ? ["online"] : []), ...(profile.offersInPersonSessions ? ["in_person"] : []) ] } };
   },
 });
 
