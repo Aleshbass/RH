@@ -53,6 +53,7 @@ class PatientResolution:
 class PhysiotherapistResolution:
     resolution: Literal["MATCH", "NO_MATCH", "INELIGIBLE", "AMBIGUOUS"]
     physiotherapist_id: str | None = None
+    rh_user_id: str | None = None
     display_name: str | None = None
     capabilities: dict[str, Any] | None = None
 
@@ -156,7 +157,7 @@ class RHClient:
 
     def resolve_physiotherapist(self, phone: str, actor: RHActor) -> PhysiotherapistResolution:
         data = self._request("POST", "/api/v1/joy/physiotherapists/resolve", payload={"phone": phone, "actor": actor.as_payload()})
-        return PhysiotherapistResolution(resolution=data["resolution"], physiotherapist_id=data.get("physiotherapist_id"), display_name=data.get("display_name"), capabilities=data.get("capabilities"))
+        return PhysiotherapistResolution(resolution=data["resolution"], physiotherapist_id=data.get("physiotherapist_id"), rh_user_id=data.get("rh_user_id"), display_name=data.get("display_name"), capabilities=data.get("capabilities"))
 
     def current_policy(self, *, service_type: str | None = None, language: str | None = None) -> PolicyDocument:
         query = "&".join(
@@ -252,6 +253,24 @@ class RHClient:
         if not isinstance(data.get("authorization_url"), str) or not isinstance(data.get("reference"), str):
             raise RHIntegrationError("INVALID_RESPONSE", "RH returned incomplete review payment initialization", retryable=True)
         return RHPaymentInitialization(booking_id=review_id, reference=data["reference"], authorization_url=data["authorization_url"], payment_status=data.get("payment_status", "pending"))
+
+    # Phase 4/5 deliberately uses RH as the operational authority.  The
+    # endpoint is a fixed RH allowlist; this small client helper keeps callers
+    # from constructing raw Convex requests or trusting browser credentials.
+    def operational_query(self, operation: str, *, actor: RHActor, data: dict[str, Any]) -> dict[str, Any]:
+        payload = {"operation": operation, "mutation": False, "actor": actor.as_payload(), "data": data}
+        return self._request("POST", "/api/v1/joy/operations", payload=payload)
+
+    def operational_mutation(
+        self,
+        operation: str,
+        *,
+        actor: RHActor,
+        data: dict[str, Any],
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        payload = {"operation": operation, "mutation": True, "actor": actor.as_payload(), "data": data}
+        return self._request("POST", "/api/v1/joy/operations", payload=payload, idempotency_key=idempotency_key)
 
 
 def configured_rh_client() -> RHClient:

@@ -1,6 +1,8 @@
 import json
 import re
+from uuid import NAMESPACE_URL, uuid5
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.admin.escalation_router import (
@@ -51,6 +53,7 @@ from app.physio.home_visit_checkin import apply_checkin_turn
 from app.physio.onboarding import apply_onboarding_turn
 from app.physio.payouts import apply_payout_turn
 from app.physio.session_notes import apply_note_turn
+from app.physio.rh_operations import apply as apply_rh_physio_operation, help_text as rh_physio_help
 from app.triage.extraction import enrich_from_user_text, infer_condition_area, merge_extraction
 from app.triage.question_batching import grouped_followup, missing_fields
 from app.triage.summary import plain_summary
@@ -645,6 +648,29 @@ def _physio_turn(
 ) -> TurnResult:
     physio = session.get(Physiotherapist, identity.person_id)
     language = mirror_language(user_text, None)
+    rh_mapping = session.scalar(
+        select(RHIdentityMapping).where(
+            RHIdentityMapping.persona == Persona.PHYSIO.value,
+            RHIdentityMapping.joy_person_id == identity.person_id,
+        )
+    )
+    # A Phase 4 RH-mapped physio is a conversation identity only. Provider,
+    # booking and appointment state stays in RH; do not fall back to Joy's
+    # legacy local physio tables for their operational commands.
+    if rh_mapping is not None and rh_mapping.rh_user_id:
+        state = load(session, identity)
+        try:
+            reply = apply_rh_physio_operation(
+                configured_rh_client(), profile_id=rh_mapping.rh_record_id,
+                actor=RHActor(persona="physiotherapist", sender_phone=identity.phone_e164, rh_user_id=rh_mapping.rh_user_id),
+                text=user_text,
+            )
+        except RHIntegrationError:
+            reply = "I can’t reach Rehabify’s live operations service right now. Please try again shortly."
+        if reply is None:
+            reply = rh_physio_help()
+        save_turn(session, state, user_text, reply, ExtractedTriage(), PatientPhase.FIRST_CONTACT, language, wa_message_id)
+        return TurnResult(reply_text=reply, language=language, phase=PatientPhase.FIRST_CONTACT)
     if physio is None:
         return TurnResult(
             reply_text=_LATER_PATH,
@@ -734,6 +760,37 @@ def _family_turn(
     language = mirror_language(user_text, None)
     patient = _linked_patient(session, identity)
     if patient is None:
+        # Phase 5 family identities are granted and resolved by RH.  No local
+        # family record, triage session, or raw clinician note is required to
+        # disclose a progress update.
+        mapping = session.scalar(select(RHIdentityMapping).where(
+            RHIdentityMapping.persona == Persona.FAMILY.value,
+            RHIdentityMapping.joy_person_id == identity.person_id,
+        ))
+        if mapping is not None and mapping.rh_user_id:
+            try:
+                data = configured_rh_client().operational_query(
+                    "family_care_summary",
+                    actor=RHActor(persona="family", sender_phone=identity.phone_e164, rh_user_id=mapping.rh_user_id),
+                    data={"grant_id": mapping.rh_record_id},
+                )
+            except RHIntegrationError:
+                data = None
+            if data is not None:
+                appointments = data.get("appointments") or []
+                if not appointments:
+                    reply = "There are no shareable care updates available yet."
+                else:
+                    latest = appointments[0]
+                    reply = (
+                        f"Latest care update: {latest.get('service_type', 'Physiotherapy session')} is "
+                        f"{latest.get('status', 'recorded')}."
+                    )
+                    if latest.get("notes_for_patient"):
+                        reply += f"\n\n{latest['notes_for_patient']}"
+                state = load(session, identity)
+                save_turn(session, state, user_text, reply, ExtractedTriage(), PatientPhase.FIRST_CONTACT, language, wa_message_id)
+                return TurnResult(reply_text=reply, language=language, phase=PatientPhase.FIRST_CONTACT)
         return TurnResult(
             reply_text=_LATER_PATH,
             language=language,
@@ -817,6 +874,42 @@ def handle_turn(
     location: tuple[float, float] | None = None,
 ) -> TurnResult:
     identity = resolve(session, phone)
+    # `PT` is discovery, never local physiotherapist provisioning. RH's exact
+    # verified phone lookup is the only way an unknown sender enters this flow.
+    if identity is None and user_text.strip().upper() == "PT":
+        try:
+            resolved = configured_rh_client().resolve_physiotherapist(
+                phone, RHActor(persona="physiotherapist", sender_phone=phone)
+            )
+        except RHIntegrationError:
+            return TurnResult(reply_text="I can’t verify physiotherapist access right now. Please try again shortly.", language="en", phase=PatientPhase.FIRST_CONTACT)
+        if resolved.resolution != "MATCH" or not resolved.physiotherapist_id or not resolved.rh_user_id:
+            return TurnResult(reply_text="This WhatsApp number is not linked to an active, verified Rehabify physiotherapist account.", language="en", phase=PatientPhase.FIRST_CONTACT)
+        person_id = uuid5(NAMESPACE_URL, f"rehabify:physio:{resolved.physiotherapist_id}")
+        mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.persona == Persona.PHYSIO.value, RHIdentityMapping.joy_person_id == person_id))
+        if mapping is None:
+            session.add(RHIdentityMapping(persona=Persona.PHYSIO.value, joy_person_id=person_id, rh_record_id=resolved.physiotherapist_id, rh_user_id=resolved.rh_user_id))
+            session.flush()
+        identity = Identity(persona=Persona.PHYSIO, person_id=person_id, phone_e164=phone)
+    if identity is None:
+        try:
+            resolved = configured_rh_client().operational_query(
+                "family_resolve", actor=RHActor(persona="family", sender_phone=phone), data={"family_phone": phone}
+            )
+        except RHIntegrationError:
+            resolved = {"resolution": "UNAVAILABLE"}
+        if resolved.get("resolution") == "MATCH":
+            grants = resolved.get("grants") or []
+            grant = grants[0] if grants else None
+            if isinstance(grant, dict) and grant.get("grant_id") and grant.get("patient_id"):
+                person_id = uuid5(NAMESPACE_URL, f"rehabify:family:{grant['grant_id']}")
+                mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.persona == Persona.FAMILY.value, RHIdentityMapping.joy_person_id == person_id))
+                if mapping is None:
+                    session.add(RHIdentityMapping(persona=Persona.FAMILY.value, joy_person_id=person_id, rh_record_id=str(grant["grant_id"]), rh_user_id=str(resolved["family_user_id"])))
+                    session.flush()
+                identity = Identity(persona=Persona.FAMILY, person_id=person_id, phone_e164=phone)
+        elif resolved.get("resolution") == "MULTIPLE":
+            return TurnResult(reply_text="You have access to more than one patient. Please tell me which patient you want an update about.", language="en", phase=PatientPhase.FIRST_CONTACT)
     if identity is None:
         identity = maybe_provision_from_referral(session, phone, user_text)
     if identity is None:
