@@ -496,8 +496,33 @@ export const markJoyEventDelivery = internalMutation({
   handler: async (ctx, args) => {
     const event = await ctx.db.query("joyEventOutbox").withIndex("by_event_id", (q) => q.eq("eventId", args.eventId)).first();
     if (!event) throw new Error("Joy event not found");
-    await ctx.db.patch(event._id, { status: args.delivered ? "delivered" : "failed", attempts: event.attempts + 1, lastError: args.error, deliveredAt: args.delivered ? Date.now() : undefined, updatedAt: Date.now() });
-    return { status: args.delivered ? "delivered" : "failed" };
+    const attempts = event.attempts + 1;
+    const now = Date.now();
+    const exhausted = !args.delivered && attempts >= 8;
+    // 30s, 60s, 2m ... capped at 30 minutes. This protects Joy while keeping
+    // RH's outbox authoritative and recoverable.
+    const delayMs = Math.min(30 * 60_000, 30_000 * 2 ** Math.max(0, attempts - 1));
+    const status = args.delivered ? "delivered" : exhausted ? "dead_letter" : "failed";
+    await ctx.db.patch(event._id, {
+      status, attempts, lastError: args.error,
+      deliveredAt: args.delivered ? now : undefined,
+      nextAttemptAt: args.delivered || exhausted ? undefined : now + delayMs,
+      updatedAt: now,
+    });
+    return { status, attempts };
+  },
+});
+
+export const retryableJoyEvents = internalQuery({
+  args: { now: v.number(), limit: v.number() },
+  handler: async (ctx, args) => {
+    const pending = await ctx.db.query("joyEventOutbox").withIndex("by_status", q => q.eq("status", "pending")).collect();
+    const failed = await ctx.db.query("joyEventOutbox").withIndex("by_status", q => q.eq("status", "failed")).collect();
+    return [...pending, ...failed]
+      .filter(event => !event.nextAttemptAt || event.nextAttemptAt <= args.now)
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .slice(0, args.limit)
+      .map(event => ({ eventId: event.eventId, payload: event.payload }));
   },
 });
 
@@ -566,6 +591,37 @@ export const deliverJoyEvent = internalAction({
   },
 });
 
+/** Replays durable outbox events without reconstructing business payloads. */
+export const retryJoyEvent = internalAction({
+  args: { eventId: v.string(), payload: v.any() },
+  handler: async (ctx, args) => {
+    const url = process.env.JOY_EVENT_URL;
+    const secret = process.env.JOY_EVENT_HMAC_SECRET;
+    if (!url || !secret) return { delivered: false, reason: "event_receiver_not_configured" };
+    const body = JSON.stringify(args.payload);
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    try {
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-RH-Event-Timestamp": timestamp, "X-RH-Event-Signature": await signEvent(timestamp, args.eventId, body, secret) }, body });
+      if (!response.ok) throw new Error(`Joy event receiver returned ${response.status}`);
+      await ctx.runMutation(internal.joyIntegration.markJoyEventDelivery, { eventId: args.eventId, delivered: true });
+      return { delivered: true };
+    } catch (error) {
+      await ctx.runMutation(internal.joyIntegration.markJoyEventDelivery, { eventId: args.eventId, delivered: false, error: error instanceof Error ? error.message : "delivery failed" });
+      return { delivered: false };
+    }
+  },
+});
+
+/** Bounded outbox worker. Dead-lettered events are deliberately not retried. */
+export const retryJoyEvents = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ attempted: number }> => {
+    const events = await ctx.runQuery(internal.joyIntegration.retryableJoyEvents, { now: Date.now(), limit: 25 });
+    for (const event of events) await ctx.runAction(internal.joyIntegration.retryJoyEvent, event);
+    return { attempted: events.length };
+  },
+});
+
 /** Creates the configured online room after a paid Joy booking is accepted. */
 export const createJoyOnlineMeeting = internalAction({
   args: {
@@ -615,7 +671,13 @@ export const expireJoyProviderResponses = internalMutation({
       await ctx.db.insert("joyEventOutbox", {
         eventId: `booking-provider-timeout-${booking._id}`,
         eventType: "booking.provider_rejected",
-        payload: { booking_id: booking._id, patient_id: booking.patientId, reason: "provider_response_timeout" },
+        payload: {
+          event_id: `booking-provider-timeout-${booking._id}`,
+          event_type: "booking.provider_rejected",
+          api_version: "1",
+          occurred_at: new Date(now).toISOString(),
+          data: { booking_id: booking._id, patient_id: booking.patientId, reason: "provider_response_timeout" },
+        },
         status: "pending", attempts: 0, createdAt: now, updatedAt: now,
       });
     }

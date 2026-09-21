@@ -29,6 +29,20 @@ async function joyBookingForPhysio(ctx: any, bookingId: string, physioUserId: an
   return booking;
 }
 
+async function patientForActor(ctx: any, patientId: string, actor?: { rh_user_id?: string }) {
+  if (!actor?.rh_user_id || actor.rh_user_id !== patientId) throw new Error("Patient actor is not authorized");
+  const patient: any = await ctx.db.get(patientId as any);
+  if (!patient || patient.role !== "patient") throw new Error("Patient not found");
+  return patient;
+}
+
+async function adminForActor(ctx: any, actor?: { rh_user_id?: string }) {
+  if (!actor?.rh_user_id) throw new Error("Admin actor is not authorized");
+  const admin: any = await ctx.db.get(actor.rh_user_id as any);
+  if (!admin || admin.role !== "admin") throw new Error("Admin actor is not authorized");
+  return admin;
+}
+
 async function audit(ctx: any, args: any, operation: Operation, extra: Record<string, unknown> = {}) {
   await ctx.db.insert("joyOperationalAudit", {
     operation, requestId: String(args.request_id ?? "unknown"), createdAt: Date.now(), payload: extra,
@@ -70,7 +84,7 @@ export const executeMutation = internalMutation({
       const latitude = Number(data.latitude), longitude = Number(data.longitude), accuracy = Number(data.accuracy);
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(accuracy) || accuracy < 0) throw new Error("Location and accuracy are required");
       const existing = await ctx.db.query("physiotherapistLocations").withIndex("by_physiotherapist", (q: any) => q.eq("physiotherapistId", profile.userId)).first();
-      const status = event === "ARRIVED" ? "at_patient" : event === "IN_TRANSIT" ? "in_transit" : "idle";
+      const status: "at_patient" | "in_transit" | "idle" = event === "ARRIVED" ? "at_patient" : event === "IN_TRANSIT" ? "in_transit" : "idle";
       const location = { physiotherapistId: profile.userId, latitude, longitude, accuracy, status, lastUpdated: Number(data.event_time ?? Date.now()) };
       if (existing) await ctx.db.patch(existing._id, location); else await ctx.db.insert("physiotherapistLocations", location);
       await audit(ctx, data, op, { actorUserId: profile.userId, physiotherapistUserId: profile.userId, patientUserId: booking.patientId, bookingId: booking._id, appointmentId: booking.appointmentId, event, consent: Boolean(data.patient_tracking_consent), expires_at: data.expires_at });
@@ -81,13 +95,15 @@ export const executeMutation = internalMutation({
       const booking = await joyBookingForPhysio(ctx, String(data.booking_id), profile.userId);
       const body = String(data.message ?? "").trim();
       if (!body || body.length > 2000) throw new Error("Invalid patient message");
-      await audit(ctx, data, op, { actorUserId: profile.userId, physiotherapistUserId: profile.userId, patientUserId: booking.patientId, bookingId: booking._id, appointmentId: booking.appointmentId, body });
+      // The body is delivered through the signed event channel, not copied to
+      // a broadly queryable operational audit record.
+      await audit(ctx, data, op, { actorUserId: profile.userId, physiotherapistUserId: profile.userId, patientUserId: booking.patientId, bookingId: booking._id, appointmentId: booking.appointmentId, message_length: body.length });
       return { accepted: true, delivery_content: body, patient_id: booking.patientId };
     }
     if (op === "physio_feedback_request") {
       const profile = await profileFor(ctx, String(data.physiotherapist_id), data.actor);
       const booking = await joyBookingForPhysio(ctx, String(data.booking_id), profile.userId);
-      const appointment = await ctx.db.get(booking.appointmentId);
+      const appointment: any = await ctx.db.get(booking.appointmentId);
       if (appointment?.status !== "completed") throw new Error("Feedback can only be requested after a completed appointment");
       const previous = await ctx.db.query("joyOperationalAudit").withIndex("by_booking", (q: any) => q.eq("bookingId", booking._id)).collect();
       if (previous.some((row: any) => row.operation === "physio_feedback_request")) return { requested: false, duplicate: true };
@@ -95,13 +111,12 @@ export const executeMutation = internalMutation({
       return { requested: true, patient_id: booking.patientId };
     }
     if (op === "family_grant" || op === "family_update_grant" || op === "family_revoke_grant") {
-      const patientId = String(data.patient_id); const patient = await ctx.db.get(patientId as any);
-      if (!patient || patient.role !== "patient") throw new Error("Patient not found");
+      const patientId = String(data.patient_id); const patient = await patientForActor(ctx, patientId, data.actor);
       let grant: any;
       if (op === "family_grant") {
         const phone = String(data.family_phone ?? "").trim(); if (!phone) throw new Error("Family phone is required");
         const found = await ctx.db.query("users").filter((q: any) => q.eq(q.field("phoneNumber"), phone)).collect();
-        let family = found[0];
+        let family: any = found[0];
         if (!family) { const id = await ctx.db.insert("users", { clerkId: `joy-family:${phone}`, phoneNumber: phone, role: "family_member", onboarded: false }); family = await ctx.db.get(id); }
         grant = await ctx.db.query("familyAccessGrants").withIndex("by_patient_and_family_member", (q: any) => q.eq("patientUserId", patient._id).eq("familyMemberUserId", family._id)).first();
         const permissions = data.permission_tier === "full_access" ? ["view_progress", "book", "pay"] : ["view_progress"];
@@ -116,11 +131,19 @@ export const executeMutation = internalMutation({
       await audit(ctx, data, op, { patientUserId: patient._id, payload: { grant_id: grant._id } });
       return { grant_id: grant._id, status: op === "family_revoke_grant" ? "revoked" : "active" };
     }
-    if (op === "change_physio_request" || op === "admin_escalation" || op === "admin_verify_physio" || op === "admin_reassign") {
+    if (op === "change_physio_request") {
+      const patient = await patientForActor(ctx, String(data.patient_id), data.actor);
+      const booking: any = await ctx.db.get(String(data.booking_id) as any);
+      if (!booking || booking.sourceSystem !== "joy_ai" || String(booking.patientId) !== String(patient._id)) throw new Error("Booking not found");
+      await audit(ctx, data, op, { patientUserId: patient._id, bookingId: booking._id, actorUserId: patient._id, reason: String(data.reason ?? "") });
+      return { accepted: true, status: "pending_admin_review" };
+    }
+    if (op === "admin_escalation" || op === "admin_verify_physio" || op === "admin_reassign") {
       // These operations are intentionally records/workflow requests. They do not
       // bypass RH's existing appointment, payment, or provider-response gates.
-      await audit(ctx, data, op, { patientUserId: data.patient_id, physiotherapistUserId: data.physiotherapist_id, bookingId: data.booking_id, actorUserId: data.admin_id, reason: String(data.reason ?? "") });
-      return { accepted: true, status: op === "change_physio_request" ? "pending_admin_review" : "recorded" };
+      const admin = await adminForActor(ctx, data.actor);
+      await audit(ctx, data, op, { patientUserId: data.patient_id, physiotherapistUserId: data.physiotherapist_id, bookingId: data.booking_id, actorUserId: admin._id, reason: String(data.reason ?? "") });
+      return { accepted: true, status: "recorded" };
     }
     throw new Error("Unsupported Joy operational mutation");
   },
@@ -137,19 +160,22 @@ export const executeQuery = internalQuery({
       return { physiotherapist_id: profile._id, assigned_bookings: relevant.slice(0, 10).map((b: any) => ({ booking_id: b._id, patient_id: b.patientId, start_time: b.sessionDate, provider_response: b.providerResponse, response_due_at: b.providerResponseDueAt })) };
     }
     if (op === "family_resolve") {
-      const phone = String(data.family_phone ?? ""); const users = await ctx.db.query("users").filter((q: any) => q.eq(q.field("phoneNumber"), phone)).collect();
+      const phone = String(data.family_phone ?? ""); const users: any[] = await ctx.db.query("users").filter((q: any) => q.eq(q.field("phoneNumber"), phone)).collect();
       if (users.length !== 1) return { resolution: "NO_GRANT" };
       const grants = await ctx.db.query("familyAccessGrants").withIndex("by_family_member_user_id", (q: any) => q.eq("familyMemberUserId", users[0]._id)).collect();
       const active = grants.filter((g: any) => g.status === "active" && (!g.expiresAt || g.expiresAt > Date.now()));
-      return { resolution: active.length === 1 ? "MATCH" : active.length ? "MULTIPLE" : "NO_GRANT", family_user_id: users[0]._id, grants: await Promise.all(active.map(async (g: any) => ({ grant_id: g._id, patient_id: g.patientUserId, permission_tier: g.permissions.includes("book") ? "full_access" : "view_only", patient_display_name: nameOf(await ctx.db.get(g.patientUserId)) }))) };
+      return { resolution: active.length === 1 ? "MATCH" : active.length ? "MULTIPLE" : "NO_GRANT", family_user_id: users[0]._id, grants: await Promise.all(active.map(async (g: any) => ({ grant_id: g._id, patient_id: g.patientUserId, permission_tier: g.permissions.includes("book") ? "full_access" : "view_only", patient_display_name: nameOf(await ctx.db.get(g.patientUserId) as any) }))) };
     }
     if (op === "family_care_summary") {
-      const grant = await ctx.db.get(String(data.grant_id) as any);
+      const grant: any = await ctx.db.get(String(data.grant_id) as any);
       if (!grant || grant.status !== "active" || !data.actor?.rh_user_id || String(grant.familyMemberUserId) !== data.actor.rh_user_id) throw new Error("Family access is not active");
       const appointments = await ctx.db.query("appointments").withIndex("by_patient_id_and_time", (q: any) => q.eq("patientId", grant.patientUserId)).order("desc").take(3);
       return { patient_id: grant.patientUserId, source_ids: appointments.map((a: any) => a._id), appointments: appointments.map((a: any) => ({ status: a.status, start_time: a.startTime, service_type: a.serviceType, notes_for_patient: a.notesForPatient })) };
     }
-    if (op === "admin_patient" || op === "admin_physio" || op === "admin_finance_summary") return { status: "available_via_existing_admin_surface" };
+    if (op === "admin_patient" || op === "admin_physio" || op === "admin_finance_summary") {
+      await adminForActor(ctx, data.actor);
+      return { status: "available_via_existing_admin_surface" };
+    }
     throw new Error("Unsupported Joy operational query");
   },
 });

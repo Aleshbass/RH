@@ -105,7 +105,7 @@ export default function AdminPartnershipsPage() {
   };
 
   // Count pending applications
-  const pendingCount = (partnerApplications || []).filter((p) => p.approvalStatus === "pending").length;
+  const pendingCount = (partnerApplications || []).filter((p: any) => p.approvalStatus === "pending").length;
 
   const handleStatusChange = async (id: string, newStatus: "new" | "contacted" | "closed") => {
     setIsUpdating(id);
@@ -279,7 +279,7 @@ export default function AdminPartnershipsPage() {
               </p>
             </div>
           ) : (
-            filteredApplications.map((partner) => (
+            filteredApplications.map((partner: any) => (
               <div
                 key={partner._id}
                 className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden flex flex-col md:flex-row transition hover:border-gray-300"
@@ -478,7 +478,7 @@ export default function AdminPartnershipsPage() {
               </p>
             </div>
           ) : (
-            filteredInquiries.map((inquiry) => (
+            filteredInquiries.map((inquiry: any) => (
               <div
                 key={inquiry._id}
                 className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden flex flex-col md:flex-row"

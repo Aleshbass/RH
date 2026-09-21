@@ -2502,11 +2502,14 @@ export default defineSchema({
     eventId: v.string(),
     eventType: v.string(),
     payload: v.any(),
-    status: v.union(v.literal("pending"), v.literal("delivered"), v.literal("failed")),
+    // A failed delivery remains retryable until the bounded retry budget is
+    // exhausted.  Dead-lettered records stay queryable for operational repair.
+    status: v.union(v.literal("pending"), v.literal("delivered"), v.literal("failed"), v.literal("dead_letter")),
     attempts: v.number(),
     lastError: v.optional(v.string()),
     createdAt: v.number(),
     deliveredAt: v.optional(v.number()),
+    nextAttemptAt: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_event_id", ["eventId"]).index("by_status", ["status"]),
 
