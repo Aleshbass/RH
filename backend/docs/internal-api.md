@@ -20,3 +20,10 @@ Other internal hooks (different headers):
 |--------|------|------|
 | POST | `/api/internal/simulate_turn` | `X-Internal-Secret` |
 | POST | `/api/internal/jobs/stats_digest` | `X-Internal-Job-Token` |
+| POST | `/api/internal/jobs/rh_booking_reconciliation` | `X-Internal-Job-Token` |
+
+`rh_booking_reconciliation` should be scheduled every 10 minutes by the
+production job runner. It reads RH booking status only, records the last
+observed status locally, and repairs a missed confirmation notification; it
+never mutates an RH booking. Set `RH_RECONCILIATION_ENABLED=false` to stop it
+immediately during an RH incident.

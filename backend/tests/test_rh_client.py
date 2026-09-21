@@ -75,3 +75,24 @@ def test_current_policy_signs_query_string_and_requires_complete_metadata() -> N
     policy = client.current_policy(language="en")
     assert policy.is_approved is True
     assert policy.version == "2026-09"
+
+
+def test_rh_client_opens_circuit_after_repeated_retryable_failures() -> None:
+    RHClient._circuit_open_until.clear()
+    RHClient._consecutive_failures.clear()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": {"code": "UNAVAILABLE", "message": "down", "retryable": True}})
+
+    client = RHClient("https://rh-circuit.test", "joy-test", "test-secret", client=httpx.Client(transport=httpx.MockTransport(handler)))
+    from app.integrations.rh_client import RHIntegrationError
+    for _ in range(3):
+        try:
+            client.health()
+        except RHIntegrationError as error:
+            assert error.retryable is True
+    try:
+        client.health()
+        assert False, "expected the circuit breaker to reject the fourth request"
+    except RHIntegrationError as error:
+        assert error.code == "DEPENDENCY_UNAVAILABLE"

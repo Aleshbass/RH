@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     rh_api_hmac_secret: str = ""
     rh_safety_hmac_secret: str = ""
     rh_event_hmac_secret: str = ""
+    # Release controls for RH-owned operational paths. They permit an
+    # immediate safe disable without rolling back the deployed service.
+    rh_physio_operations_enabled: bool = True
+    rh_family_operations_enabled: bool = True
+    rh_reconciliation_enabled: bool = True
 
 
 def get_settings() -> Settings:

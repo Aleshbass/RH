@@ -9,12 +9,16 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import uuid4
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class RHIntegrationError(RuntimeError):
@@ -102,6 +106,10 @@ class RHPaymentInitialization:
 
 
 class RHClient:
+    _circuit_open_until: dict[str, float] = {}
+    _consecutive_failures: dict[str, int] = {}
+    _failure_threshold = 3
+    _cooldown_seconds = 30.0
     def __init__(self, base_url: str, key_id: str, hmac_secret: str, *, client: httpx.Client | None = None) -> None:
         if not base_url or not key_id or not hmac_secret:
             raise RHIntegrationError("INTEGRATION_NOT_CONFIGURED", "RH integration credentials are not configured")
@@ -116,6 +124,12 @@ class RHClient:
         return "\n".join([method.upper(), path, timestamp, request_id, idempotency_key, actor_context, body_hash]).encode("utf-8")
 
     def _request(self, method: str, path: str, *, payload: dict[str, Any] | None = None, idempotency_key: str = "") -> dict[str, Any]:
+        started = time.monotonic()
+        endpoint = re.sub(r"/[A-Za-z0-9_-]{12,}", "/:id", path.split("?", 1)[0])
+        outcome = "success"
+        if self._circuit_open_until.get(self.base_url, 0.0) > time.monotonic():
+            logger.info("joy_rh_request", extra={"endpoint": endpoint, "method": method, "outcome": "circuit_open", "latency_ms": 0})
+            raise RHIntegrationError("DEPENDENCY_UNAVAILABLE", "RH integration is temporarily unavailable", retryable=True)
         raw_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8") if payload is not None else b""
         timestamp = str(int(time.time()))
         request_id = str(uuid4())
@@ -133,17 +147,40 @@ class RHClient:
         try:
             response = self.client.request(method, f"{self.base_url}{path}", content=raw_body, headers=headers)
         except httpx.HTTPError as error:
+            self._record_failure()
+            logger.info("joy_rh_request", extra={"endpoint": endpoint, "method": method, "outcome": "unavailable", "latency_ms": int((time.monotonic() - started) * 1000)})
             raise RHIntegrationError("DEPENDENCY_UNAVAILABLE", "RH integration is unavailable", retryable=True) from error
         try:
             envelope = response.json()
         except ValueError as error:
+            logger.info("joy_rh_request", extra={"endpoint": endpoint, "method": method, "outcome": "invalid_response", "latency_ms": int((time.monotonic() - started) * 1000)})
             raise RHIntegrationError("INVALID_RESPONSE", "RH returned an invalid integration response", retryable=True) from error
         if not response.is_success:
             error = envelope.get("error", {}) if isinstance(envelope, dict) else {}
-            raise RHIntegrationError(error.get("code", "RH_REQUEST_FAILED"), error.get("message", "RH rejected the request"), retryable=bool(error.get("retryable")))
+            retryable = bool(error.get("retryable")) or response.status_code >= 500
+            if retryable:
+                self._record_failure()
+            else:
+                self._record_success()
+            logger.info("joy_rh_request", extra={"endpoint": endpoint, "method": method, "outcome": "retryable_error" if retryable else "rejected", "latency_ms": int((time.monotonic() - started) * 1000)})
+            raise RHIntegrationError(error.get("code", "RH_REQUEST_FAILED"), error.get("message", "RH rejected the request"), retryable=retryable)
         if not isinstance(envelope, dict) or not isinstance(envelope.get("data"), dict):
+            self._record_failure()
+            logger.info("joy_rh_request", extra={"endpoint": endpoint, "method": method, "outcome": "invalid_envelope", "latency_ms": int((time.monotonic() - started) * 1000)})
             raise RHIntegrationError("INVALID_RESPONSE", "RH returned an invalid integration envelope", retryable=True)
+        self._record_success()
+        logger.info("joy_rh_request", extra={"endpoint": endpoint, "method": method, "outcome": outcome, "latency_ms": int((time.monotonic() - started) * 1000)})
         return envelope["data"]
+
+    def _record_success(self) -> None:
+        self._consecutive_failures.pop(self.base_url, None)
+        self._circuit_open_until.pop(self.base_url, None)
+
+    def _record_failure(self) -> None:
+        failures = self._consecutive_failures.get(self.base_url, 0) + 1
+        self._consecutive_failures[self.base_url] = failures
+        if failures >= self._failure_threshold:
+            self._circuit_open_until[self.base_url] = time.monotonic() + self._cooldown_seconds
 
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/api/v1/joy/health")

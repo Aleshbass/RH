@@ -657,7 +657,8 @@ def _physio_turn(
     # A Phase 4 RH-mapped physio is a conversation identity only. Provider,
     # booking and appointment state stays in RH; do not fall back to Joy's
     # legacy local physio tables for their operational commands.
-    if rh_mapping is not None and rh_mapping.rh_user_id:
+    from app.config import get_settings
+    if rh_mapping is not None and rh_mapping.rh_user_id and get_settings().rh_physio_operations_enabled:
         state = load(session, identity)
         try:
             reply = apply_rh_physio_operation(
@@ -767,7 +768,8 @@ def _family_turn(
             RHIdentityMapping.persona == Persona.FAMILY.value,
             RHIdentityMapping.joy_person_id == identity.person_id,
         ))
-        if mapping is not None and mapping.rh_user_id:
+        from app.config import get_settings
+        if mapping is not None and mapping.rh_user_id and get_settings().rh_family_operations_enabled:
             try:
                 data = configured_rh_client().operational_query(
                     "family_care_summary",

@@ -78,6 +78,18 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             )
     elif event_type == "booking.provider_rejected":
         _prepare_replacement(session, payload.get("data") or {})
+    elif event_type == "physio.patient_message":
+        data = payload.get("data") or {}
+        rh_patient_id = str(data.get("patient_id") or "")
+        message = str(data.get("message") or "").strip()
+        mapping = session.scalar(select(RHIdentityMapping).where(
+            RHIdentityMapping.persona == "patient", RHIdentityMapping.rh_record_id == rh_patient_id,
+        ))
+        patient = session.get(Patient, mapping.joy_person_id) if mapping else None
+        if patient and message and len(message) <= 2000:
+            enqueue_booking_confirmed(patient.phone_e164, str(data.get("booking_id") or ""), f"Message from your physiotherapist: {message}")
+            append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+                   payload={"event": "physio_patient_message_disclosed", "booking_id": str(data.get("booking_id") or "")})
     elif event_type == "specialist_review.payment_confirmed":
         data = payload.get("data") or {}
         rh_patient_id = str(data.get("patient_id") or "")
