@@ -312,6 +312,43 @@ def test_mid_triage_sends_one_grouped_followup(db_session, patient_identity, fak
     assert "1 to 10" in lower or "hoping" in lower or "goal" in lower
 
 
+def test_grouped_safety_no_answers_clear_all_duplicate_protocol_questions(
+    db_session, patient_identity, fake_llm
+):
+    """One four-item screen must not cause a second duplicate safety checklist."""
+    from app.conversation.turn_handler import handle_turn
+    from app.safety.protocol_runtime import NO, schedule_questions
+
+    complete = ExtractedTriage(
+        onset="3 days",
+        severity=5,
+        body_location="lower back",
+        goals="sit and stand comfortably",
+        condition_area="msk",
+    )
+    state = load(db_session, patient_identity)
+    save_turn(
+        db_session, state, "back pain", "safety screen", complete,
+        PatientPhase.MID_TRIAGE, "en",
+    )
+    fake_llm.reply = "unused"
+    fake_llm.extraction = {}
+
+    result = handle_turn(
+        db_session,
+        patient_identity.phone_e164,
+        "1. No\n2. No\n3. No\n4. No",
+        fake_llm,
+    )
+
+    assert result.phase == PatientPhase.POST_TRIAGE
+    assert result.extracted is not None
+    assert result.extracted.safety_answers
+    assert all(answer == NO for answer in result.extracted.safety_answers.values())
+    assert not schedule_questions(result.extracted, limit=1)
+    assert "short safety check" not in result.reply_text.lower()
+
+
 def test_safety_followup_stays_blocked_without_new_triage(db_session, patient_phone):
     from app.conversation.turn_handler import handle_turn
 

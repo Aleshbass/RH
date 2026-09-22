@@ -1,11 +1,13 @@
 from collections.abc import Generator
+import os
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
-from app.db import engine, get_session
+from app.config import Settings, get_settings
+from app.db import get_session
 from app.llm.gemini_client import get_llm_client
 from app.main import app
 from app.models.patient import Patient
@@ -15,7 +17,29 @@ from tests.fakes import FakeLLM
 
 @pytest.fixture
 def db_session() -> Generator[Session, None, None]:
-    connection = engine.connect()
+    """Use only an explicitly configured, isolated test database.
+
+    Tests must never silently fall back to the application's localhost default
+    or reuse the live Railway production database. The selected test database
+    must already contain the current schema.
+    """
+    supplied_url = os.getenv("TEST_DATABASE_URL", "").strip()
+    production_url = os.getenv("DATABASE_URL", "").strip()
+    if not supplied_url:
+        pytest.fail(
+            "Database-backed tests require TEST_DATABASE_URL for an isolated test database. "
+            "Refusing to fall back to localhost or DATABASE_URL.",
+            pytrace=False,
+        )
+    if supplied_url == production_url:
+        pytest.fail(
+            "TEST_DATABASE_URL must not be the same as DATABASE_URL. "
+            "Use a separate Railway test database, not production.",
+            pytrace=False,
+        )
+
+    test_engine = create_engine(Settings(database_url=supplied_url).database_url)
+    connection = test_engine.connect()
     transaction = connection.begin()
     session = Session(bind=connection, expire_on_commit=False)
     try:
@@ -24,6 +48,7 @@ def db_session() -> Generator[Session, None, None]:
         session.close()
         transaction.rollback()
         connection.close()
+        test_engine.dispose()
 
 
 @pytest.fixture

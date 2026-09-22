@@ -151,13 +151,32 @@ def test_lower_back_pain_uses_protocol_scheduler_not_story_missing_fields():
 
 
 def test_lower_back_safety_prompt_is_grouped_and_backend_owned():
-    from app.conversation.turn_handler import _safety_prompt
+    from app.conversation.turn_handler import _safety_prompt, _safety_screen
+    from app.safety.protocol_runtime import schedule_questions
 
-    prompt = _safety_prompt(ExtractedTriage(body_location="lower back", condition_area=ConditionArea.MSK))
-    assert "Please reply Yes, No, or Unsure" in prompt
+    extracted = ExtractedTriage(body_location="lower back", condition_area=ConditionArea.MSK)
+    prompt = _safety_prompt(extracted)
+    screen = _safety_screen(extracted)
+    assert "Reply Yes, No, or Unsure" in prompt
     assert "1." in prompt
     assert "LB-" not in prompt  # patient copy contains approved wording, not internal IDs
-    assert prompt.count("\n") >= 4
+    assert len(screen) == 4
+    covered = [question.id for _, questions in screen for question in questions]
+    assert set(covered) == {question.id for question in schedule_questions(extracted, limit=100)}
+    assert len(covered) == len(set(covered))
+
+
+def test_plain_summary_hides_internal_specialty_and_system_copy():
+    from app.triage.summary import plain_summary
+
+    summary = plain_summary(ExtractedTriage(
+        body_location="lower back", onset="3 days", severity=5,
+        goals="sit and stand comfortably", condition_area=ConditionArea.MSK,
+    )).lower()
+
+    assert "msk" not in summary
+    assert "guidance only" not in summary
+    assert "not a doctor" not in summary
 
 
 def test_enrichment_refines_generic_back_to_lower_back():

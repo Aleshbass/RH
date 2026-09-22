@@ -11,12 +11,9 @@ def plain_summary(extracted: ExtractedTriage) -> str:
         bits.append(f"severity {extracted.severity} out of 10")
     if extracted.goals:
         bits.append(f"hoping to {extracted.goals}")
-    if extracted.condition_area is not None:
-        bits.append(f"({extracted.condition_area.value} physio)")
     understood = ", ".join(bits) if bits else "what you described"
     return (
         f"Here's what I understood: {understood}. "
-        "Joy is guidance only — not a doctor; emergencies need hospital or doctor care. "
-        "Please confirm this summary is right, or tell me what to correct? "
+        "Does this summary look right, or is there anything you would like to correct? "
         "I will then show you the Consultation & Booking Policy separately."
     )

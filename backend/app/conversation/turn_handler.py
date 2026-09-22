@@ -46,7 +46,7 @@ from app.models.types import (
     SafetyResult,
     TurnResult,
 )
-from app.safety.protocol_runtime import NO, YES, normalize_answer, schedule_questions
+from app.safety.protocol_runtime import UNCLEAR, NO, YES, ScheduledQuestion, normalize_answer, schedule_questions
 from app.safety.escalation import notify_family_on_safety, patient_message
 from app.safety.evaluator import evaluate
 from app.physio.availability import apply_availability_turn
@@ -89,7 +89,6 @@ _LATER_PATH = (
     "This WhatsApp path is for later — I will be able to help you here in a later slice."
 )
 _MID_ACK = "Thanks, I've got that."
-_SAFETY_BATCH_LIMIT = 8
 _POLICY_CONTEXT_KEY = "policy_accepted"
 _POLICY_PRESENTED_KEY = "policy_presented"
 _DASHBOARD_RE = re.compile(
@@ -578,12 +577,53 @@ def _thin_first_contact(extracted: ExtractedTriage) -> bool:
     return not extracted.onset and extracted.severity is None
 
 
+def _safety_group(question: ScheduledQuestion) -> str:
+    """Map approved protocol questions into concise patient-facing themes.
+
+    The underlying protocol remains the source of truth. Grouping only avoids
+    asking the same safety concept twice (for example, an injury question in
+    both a general and a lower-back rule) and lets a clear "No" answer be
+    recorded against every covered protocol question.
+    """
+    text = question.text.casefold()
+    if any(term in text for term in ("bladder", "bowel", "genitals", "anus", "buttocks", "bicycle seat")):
+        return "bladder_bowel_or_saddle"
+    if any(term in text for term in ("weakness", "numbness", "tingling", "both legs", "limb")):
+        return "new_nerve_symptoms"
+    if any(term in text for term in ("accident", "major fall", "significant injury")):
+        return "major_injury"
+    return "general_warning_signs"
+
+
+_SAFETY_GROUP_COPY = {
+    "bladder_bowel_or_saddle": "Any new bladder or bowel-control problem, or numbness around your groin or bottom?",
+    "new_nerve_symptoms": "Any new or rapidly worsening weakness, numbness, or tingling in your limbs?",
+    "major_injury": "Did this start after a serious accident, major fall, or significant injury?",
+    "general_warning_signs": "Any fever or feeling very unwell, unexplained weight loss, previous cancer, pain that is rapidly worsening, or pain that is unusual at rest or at night?",
+}
+
+
+def _safety_screen(extracted: ExtractedTriage) -> list[tuple[str, tuple[ScheduledQuestion, ...]]]:
+    """Return at most four themed groups for the next deterministic screen."""
+    groups: dict[str, list[ScheduledQuestion]] = {}
+    # Use the complete outstanding protocol set here. A response to a grouped
+    # item is intentionally applied to every equivalent underlying question,
+    # which prevents duplicate screens from general and body-region rules.
+    for question in schedule_questions(extracted, limit=100):
+        groups.setdefault(_safety_group(question), []).append(question)
+    order = ("bladder_bowel_or_saddle", "new_nerve_symptoms", "major_injury", "general_warning_signs")
+    return [(name, tuple(groups[name])) for name in order if groups.get(name)]
+
+
 def _safety_prompt(extracted: ExtractedTriage) -> str:
-    questions = schedule_questions(extracted, limit=_SAFETY_BATCH_LIMIT)
-    rendered = "\n".join(f"{index + 1}. {question.text}" for index, question in enumerate(questions))
+    screen = _safety_screen(extracted)
+    rendered = "\n".join(
+        f"{index + 1}. {_SAFETY_GROUP_COPY[group]}"
+        for index, (group, _) in enumerate(screen)
+    )
     return (
-        "Before I can help with booking, I need to complete a short safety check. "
-        "Please reply Yes, No, or Unsure for each number:\n"
+        "Before we continue, please answer this short safety check. "
+        "Reply Yes, No, or Unsure for each number (for example: 1 No, 2 No):\n"
         f"{rendered}"
     )
 
@@ -1056,26 +1096,32 @@ def handle_turn(
     # A single WhatsApp safety message can contain the entire approved grouped
     # screen. Map numbered replies deterministically so a patient is not forced
     # into one message per red-flag question.
-    pending_questions = schedule_questions(extracted, limit=_SAFETY_BATCH_LIMIT)
-    if phase == PatientPhase.MID_TRIAGE and pending_questions:
+    safety_screen = _safety_screen(extracted)
+    if phase == PatientPhase.MID_TRIAGE and safety_screen:
         answers = dict(extracted.safety_answers)
         numbered = {
             int(index): normalize_answer(answer)
-            for index, answer in re.findall(r"(?:^|[\s,;])(\d{1,2})\s*[).:-]?\s*(yes|no)\b", user_text, re.I)
+            for index, answer in re.findall(r"(?:^|[\s,;])(\d{1,2})\s*[).:-]?\s*(yes|no|unsure)\b", user_text, re.I)
         }
         if numbered:
             for index, normalized in numbered.items():
-                if 1 <= index <= len(pending_questions) and normalized in {YES, NO}:
-                    answers[pending_questions[index - 1].id] = normalized
+                if 1 <= index <= len(safety_screen) and normalized in {YES, NO, UNCLEAR}:
+                    for question in safety_screen[index - 1][1]:
+                        answers[question.id] = normalized
         else:
             normalized = normalize_answer(user_text)
             if normalized in {YES, NO}:
-                answers[pending_questions[0].id] = normalized
+                # A bare answer is ambiguous after a grouped screen, so apply
+                # it only to the first group rather than silently clearing all
+                # safety checks.
+                for question in safety_screen[0][1]:
+                    answers[question.id] = normalized
         if answers != dict(extracted.safety_answers):
             order = list(extracted.safety_question_order)
-            for question in pending_questions:
-                if question.id in answers and question.id not in order:
-                    order.append(question.id)
+            for _, questions in safety_screen:
+                for question in questions:
+                    if question.id in answers and question.id not in order:
+                        order.append(question.id)
             extracted = extracted.model_copy(update={
                 "safety_answers": answers,
                 "safety_question_order": order,
