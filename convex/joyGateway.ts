@@ -183,6 +183,24 @@ export const recordPaymentWebhook = httpAction(async (ctx, request) => {
   return Response.json(await ctx.runMutation((internal as any).joyIntegration.recordJoyPaymentWebhook, { reference: data.reference, amountKobo: data.amount_kobo, currency: data.currency, paystackEventId: data.paystack_event_id }));
 });
 
+// Phase 4/5 operational gateway. This accepts a fixed operation allowlist in
+// joyOperations; it is not a generic Convex dispatcher.
+export const operationalQuery = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/operational_query");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  if (typeof parsed.data.operation !== "string") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runQuery((internal as any).joyOperations.executeQuery, { operation: parsed.data.operation, data: parsed.data.data ?? {} }));
+});
+
+export const operationalMutation = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/operational_mutation");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  if (typeof parsed.data.operation !== "string" || typeof parsed.data.request_id !== "string") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyOperations.executeMutation, { operation: parsed.data.operation, data: parsed.data.data ?? {}, requestId: parsed.data.request_id }));
+});
+
 export const updatePatientLocation = httpAction(async (ctx, request) => {
   const parsed = await readJson(request, "/joy-integration/update_patient_location");
   if (parsed instanceof Response) return parsed;

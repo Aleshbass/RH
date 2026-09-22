@@ -85,5 +85,6 @@ crons.interval(
 );
 
 crons.interval("expire-joy-provider-responses", { minutes: 5 }, internal.joyIntegration.dispatchExpiredJoyProviderResponses, {});
+crons.interval("retry-joy-event-outbox", { minutes: 1 }, internal.joyIntegration.retryJoyEvents, {});
 
 export default crons;

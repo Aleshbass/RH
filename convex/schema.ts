@@ -91,6 +91,25 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_nonce", ["nonce"]),
 
+  // Immutable operational trace for commands received through Joy WhatsApp.
+  // Payloads intentionally contain only the minimum operational fields; Joy
+  // clinical narratives and raw notes do not belong in this table.
+  joyOperationalAudit: defineTable({
+    operation: v.string(),
+    actorUserId: v.optional(v.id("users")),
+    patientUserId: v.optional(v.id("users")),
+    physiotherapistUserId: v.optional(v.id("users")),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    appointmentId: v.optional(v.id("appointments")),
+    requestId: v.string(),
+    payload: v.any(),
+    createdAt: v.number(),
+  })
+    .index("by_booking", ["bookingId"])
+    .index("by_patient", ["patientUserId"])
+    .index("by_physio", ["physiotherapistUserId"])
+    .index("by_request", ["requestId"]),
+
   // Clinics table: Information about physiotherapy clinics
   clinics: defineTable({
     name: v.string(),
@@ -2497,11 +2516,14 @@ export default defineSchema({
     eventId: v.string(),
     eventType: v.string(),
     payload: v.any(),
-    status: v.union(v.literal("pending"), v.literal("delivered"), v.literal("failed")),
+    // A failed delivery remains retryable until the bounded retry budget is
+    // exhausted.  Dead-lettered records stay queryable for operational repair.
+    status: v.union(v.literal("pending"), v.literal("delivered"), v.literal("failed"), v.literal("dead_letter")),
     attempts: v.number(),
     lastError: v.optional(v.string()),
     createdAt: v.number(),
     deliveredAt: v.optional(v.number()),
+    nextAttemptAt: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_event_id", ["eventId"]).index("by_status", ["status"]),
 
