@@ -19,6 +19,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import {
+  checkRateLimit,
+  getClientIp,
+  createRateLimitResponse,
+} from "@/lib/rate-limiter";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
@@ -29,6 +34,20 @@ const APP_URL     = process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.c
 
 export async function POST(request: NextRequest) {
     try {
+        const clientIp = getClientIp(request);
+        const rateLimitResult = await checkRateLimit(
+            `loan-request:${clientIp}`,
+            "public_form"
+        );
+
+        if (!rateLimitResult.success) {
+            return createRateLimitResponse({
+                rateLimitResult,
+                customMessage:
+                    "Too many MediLoan requests submitted from your network. Please wait a few minutes before trying again.",
+            });
+        }
+
         const body = await request.json();
         const {
             firstName,

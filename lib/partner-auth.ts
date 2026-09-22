@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "@/convex/_generated/api";
+import {
+  checkRateLimit,
+  getRateLimitHeaders,
+  createRateLimitResponse,
+  RateLimitTier,
+  RateLimitResult,
+} from "@/lib/rate-limiter";
 
 export interface AuthenticatedPartner {
   name: string;
@@ -17,6 +24,8 @@ export interface PartnerAuthResult {
   partner: AuthenticatedPartner | null;
   requestId: string;
   traceId: string;
+  rateLimitHeaders?: Record<string, string>;
+  rateLimitResult?: RateLimitResult;
   response?: NextResponse;
 }
 
@@ -110,6 +119,54 @@ export async function authenticatePartner(
     const env: "sandbox" | "live" =
       partnerData.environment || (partnerData.isSandbox ? "sandbox" : "live");
 
+    // Tier-aware rate limit evaluation
+    const tier: RateLimitTier =
+      env === "sandbox" || partnerData.tier === "sandbox"
+        ? "sandbox"
+        : partnerData.tier === "enterprise"
+        ? "enterprise"
+        : partnerData.tier === "professional"
+        ? "professional"
+        : "standard";
+
+    const rateLimitKey = `partner:${partnerData.code}:${env}`;
+    const rateLimitResult = await checkRateLimit(rateLimitKey, tier);
+
+    if (!rateLimitResult.success) {
+      // Asynchronously log rate limit violation to Convex partnerActivityLogs
+      convex
+        .mutation(api.partners.logPartnerActivity, {
+          partnerId: partnerData.code,
+          environment: env,
+          eventId: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+          eventType: "rate_limit.exceeded",
+          direction: "inbound",
+          url: req.nextUrl.pathname,
+          method: req.method,
+          statusCode: 429,
+          latencyMs: 1,
+          status: "error",
+          requestId,
+          traceId,
+          errorMessage: `Rate limit of ${rateLimitResult.limit} req/sec exceeded for tier '${tier}'.`,
+          occurredAt: Date.now(),
+        })
+        .catch(() => {});
+
+      return {
+        partner: null,
+        requestId,
+        traceId,
+        rateLimitHeaders: getRateLimitHeaders(rateLimitResult),
+        rateLimitResult,
+        response: createRateLimitResponse({
+          requestId,
+          traceId,
+          rateLimitResult,
+        }),
+      };
+    }
+
     // Asynchronously record last used timestamp
     if (partnerData.keyId) {
       convex
@@ -133,6 +190,8 @@ export async function authenticatePartner(
       },
       requestId,
       traceId,
+      rateLimitHeaders: getRateLimitHeaders(rateLimitResult),
+      rateLimitResult,
     };
   } catch (error) {
     console.error("Partner authentication error:", error);

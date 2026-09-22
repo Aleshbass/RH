@@ -215,9 +215,9 @@ export function MediloanSection() {
   return (
     <section className="relative py-20 sm:py-28 overflow-hidden" id="mediloan">
       {/* Background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-[#0a0f0d] via-[#0d1a14] to-[#0a0f0d]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(16,185,129,0.08)_0%,transparent_60%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_80%,rgba(20,184,166,0.06)_0%,transparent_50%)]" />
+      <div className="absolute inset-0 bg-gradient-to-b from-[#002e2c] via-[#003d38] to-[#002e2c]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(0,91,87,0.15)_0%,transparent_60%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_80%,rgba(0,91,87,0.10)_0%,transparent_50%)]" />
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}

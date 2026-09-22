@@ -34,6 +34,25 @@ export const submitLoanRequest = mutation({
             if (user) patientUserId = user._id;
         }
 
+        const cleanPhone = args.patientPhone.trim();
+        const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+
+        // Rate limit / deduplication safeguard: if a pending request was submitted within 10 mins, return existing ID
+        const existingRecent = await ctx.db
+            .query("loanRequests")
+            .filter((q) =>
+                q.and(
+                    q.eq(q.field("patientPhone"), cleanPhone),
+                    q.eq(q.field("status"), "pending"),
+                    q.gt(q.field("createdAt"), tenMinutesAgo)
+                )
+            )
+            .first();
+
+        if (existingRecent) {
+            return existingRecent._id;
+        }
+
         const requestId = await ctx.db.insert("loanRequests", {
             patientFirstName: args.patientFirstName,
             patientLastName: args.patientLastName,

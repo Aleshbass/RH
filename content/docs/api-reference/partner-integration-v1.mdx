@@ -244,6 +244,29 @@ Calculate HMAC SHA-256 over `timestamp + '.' + exact_raw_request_body` using the
 
 ---
 
+## Rate Limiting
+
+The Rehabify Partner API enforces tier-based rate limiting to maintain service stability and prevent abuse. All API responses return standard rate limit headers:
+
+| Header | Description |
+| :--- | :--- |
+| `X-RateLimit-Limit` | Maximum allowable requests per sliding window |
+| `X-RateLimit-Remaining` | Remaining requests permitted in the current window |
+| `X-RateLimit-Reset` | Unix timestamp (in seconds) when the rate limit window resets |
+| `Retry-After` | Provided on `429 Too Many Requests`, specifying seconds to wait before retrying |
+
+### Quota Tiers
+
+| Tier | Window | Steady State | Burst Capacity |
+| :--- | :--- | :--- | :--- |
+| **Sandbox (`sk_test_*`)** | 1 second | 5 requests/sec | 10 requests |
+| **Standard / Professional** | 1 second | 10 requests/sec | 20 requests |
+| **Enterprise** | 1 second | 50 requests/sec | 100 requests |
+
+When testing in sandbox, we recommend verifying that your integration gracefully handles `429 Too Many Requests` responses and respects the `Retry-After` header.
+
+---
+
 ## Sandbox Acceptance Checklist
 
 Before production credentials are issued, partners should verify each item:
@@ -256,3 +279,5 @@ Before production credentials are issued, partners should verify each item:
 6. [x] **Receive and verify webhooks**: Valid HMAC SHA-256 signature and idempotent processing
 7. [x] **Complete paid referral**: Payment and commission match the commercial agreement
 8. [x] **Review logs**: No API keys, patient health notes, or session URLs in logs
+9. [x] **Rate limit resilience**: Back off gracefully when receiving HTTP 429 and respect the `Retry-After` header
+

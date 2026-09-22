@@ -1,9 +1,28 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import {
+  checkRateLimit,
+  getClientIp,
+  createRateLimitResponse,
+} from "@/lib/rate-limiter";
 
 export async function POST(request: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   try {
+    const clientIp = getClientIp(request);
+    const rateLimitResult = await checkRateLimit(
+      `book-demo:${clientIp}`,
+      "public_form"
+    );
+
+    if (!rateLimitResult.success) {
+      return createRateLimitResponse({
+        rateLimitResult,
+        customMessage:
+          "Too many demo requests submitted from this IP. Please wait before submitting again.",
+      });
+    }
+
     const body = await request.json();
     const { name, email, phone, clinicName, message } = body;
 

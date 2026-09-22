@@ -208,6 +208,21 @@ export const createPartnerReferral = mutation({
       }
     }
 
+    // Backend burst safeguard: prevent high-velocity flood attacks (>50 referrals in 10s per partner)
+    if (args.partnerCode !== "sandbox_partner") {
+      const tenSecondsAgo = now - 10000;
+      const recentReferrals = await ctx.db
+        .query("inboundReferrals")
+        .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerCode))
+        .order("desc")
+        .take(55);
+
+      const burstCount = recentReferrals.filter((r) => r.createdAt > tenSecondsAgo).length;
+      if (burstCount >= 50) {
+        throw new Error("Rate limit exceeded: too many referrals submitted in a short interval. Please throttle your client.");
+      }
+    }
+
     const trackingCode = generateTrackingCode();
 
     const referralId = await ctx.db.insert("inboundReferrals", {

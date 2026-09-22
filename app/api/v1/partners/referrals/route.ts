@@ -5,7 +5,7 @@ import { api } from "@/convex/_generated/api";
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
-  const { partner, response, requestId, traceId } = await authenticatePartner(req);
+  const { partner, response, requestId, traceId, rateLimitHeaders } = await authenticatePartner(req);
   if (!partner) return response!;
 
   try {
@@ -210,6 +210,7 @@ export async function POST(req: NextRequest) {
           "X-Rehabify-Request-Id": requestId,
           "X-Rehabify-Trace-Id": traceId,
           "X-Rehabify-Environment": partner.environment,
+          ...(rateLimitHeaders || {}),
         },
       }
     );
@@ -259,7 +260,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const { partner, response, requestId, traceId } = await authenticatePartner(req);
+  const { partner, response, requestId, traceId, rateLimitHeaders } = await authenticatePartner(req);
   if (!partner) return response!;
 
   try {
@@ -290,6 +291,7 @@ export async function GET(req: NextRequest) {
           "X-Rehabify-Request-Id": requestId,
           "X-Rehabify-Trace-Id": traceId,
           "X-Rehabify-Environment": partner.environment,
+          ...(rateLimitHeaders || {}),
         },
       }
     );

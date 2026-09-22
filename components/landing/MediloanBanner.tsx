@@ -6,9 +6,9 @@ import Link from "next/link";
 
 export function MediloanBanner() {
   return (
-    <section className="py-16 sm:py-20 bg-gradient-to-b from-[#0a0f0d] to-[#0d1a14] relative overflow-hidden">
+    <section className="py-16 sm:py-20 bg-gradient-to-b from-[#002e2c] via-[#003d38] to-[#002e2c] relative overflow-hidden">
       {/* Ambient glow */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_50%,rgba(16,185,129,0.08)_0%,transparent_60%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_50%,rgba(0,91,87,0.15)_0%,transparent_60%)]" />
 
       <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
         <motion.div

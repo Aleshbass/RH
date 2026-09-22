@@ -117,6 +117,12 @@ export function LandingHero() {
     isLoaded && isSignedIn && currentUser ? {} : "skip"
   );
 
+  // Check if the user has a partner association
+  const partnerData = useQuery(
+    api.partners.getCurrentUserPartner,
+    isLoaded && isSignedIn ? {} : "skip"
+  );
+
   const canAccessDashboard = isSignedIn && currentUser && (
     currentUser.role === "patient" ||
     currentUser.role === "family_member" ||
@@ -140,7 +146,20 @@ export function LandingHero() {
     }
 
     if (currentUser && !currentUser.onboarded) {
-      return { href: "/role-selection", text: "Complete Setup" };
+      // If user has a partner association (signed up via partner portal),
+      // direct them to the partner portal instead of role-selection
+      if (partnerData?.isAuthenticated && (partnerData.status === "no_partner" || partnerData.partner)) {
+        return { href: "/partners/portal", text: "Go to Partner Portal" };
+      }
+
+      // Only show "Complete Setup" if the user has a role (meaning they
+      // started the onboarding flow but didn't finish)
+      if (currentUser.role) {
+        return { href: "/role-selection", text: "Complete Setup" };
+      }
+
+      // User has no role and no partner intent — show "Get Started" to pick a path
+      return { href: "/role-selection", text: "Get Started" };
     }
 
     if (approvalStatus?.status === "pending_review") {

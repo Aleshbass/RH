@@ -1,6 +1,6 @@
 ---
 title: Errors & Status Codes
-description: Understand error formats, HTTP status codes, and troubleshooting steps.
+description: Understand error formats, HTTP status codes, rate limits, and troubleshooting steps.
 ---
 
 # Errors & Troubleshooting
@@ -35,8 +35,92 @@ Rehabify returns standard HTTP status codes along with a structured JSON error o
 | `401` | **Unauthorized** | Missing, invalid, or expired API key. |
 | `403` | **Forbidden** | Your API key does not have the required permission scope. |
 | `404` | **Not Found** | The requested resource (e.g. `referral_id`) does not exist. |
-| `429` | **Too Many Requests** | You have exceeded your rate limit tier. |
+| `429` | **Too Many Requests** | Rate limit exceeded for your tier. |
 | `500` | **Internal Server Error** | Something went wrong on Rehabify servers. Contact support. |
+
+---
+
+## Rate Limiting & 429 Too Many Requests
+
+All partner API endpoints are protected by tier-aware rate limits. When a client exceeds the allowable rate or burst capacity, the API responds with `HTTP 429 Too Many Requests`.
+
+### Rate Limit Response Headers
+
+Every partner API response includes standard HTTP rate limit headers:
+
+| Header | Description |
+| :--- | :--- |
+| `X-RateLimit-Limit` | Maximum allowable requests within the current quota window |
+| `X-RateLimit-Remaining` | Number of requests remaining in the current window |
+| `X-RateLimit-Reset` | Unix timestamp (in seconds) when the quota window resets |
+| `Retry-After` | (Only on 429) Number of seconds to wait before retrying |
+
+### Example 429 Response
+
+```http
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/json
+X-RateLimit-Limit: 10
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1789050125
+Retry-After: 1
+X-Rehabify-Request-Id: req_01K4R7G9T4
+
+{
+  "status": "error",
+  "error": {
+    "code": "rate_limit_exceeded",
+    "message": "Rate limit exceeded for tier 'sandbox'. Limit: 10 requests per window. Please retry after 1s.",
+    "retry_after_seconds": 1,
+    "request_id": "req_01K4R7G9T4",
+    "doc_url": "https://physioaroundme.com/docs/getting-started/errors#rate_limit_exceeded"
+  }
+}
+```
+
+### Exponential Backoff with Jitter
+
+When handling `429 Too Many Requests` or transient `5xx` errors, your client should implement exponential backoff with full jitter:
+
+```typescript
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 3
+): Promise<Response> {
+  let attempt = 0;
+
+  while (attempt <= maxRetries) {
+    const res = await fetch(url, options);
+
+    if (res.status !== 429 && res.status < 500) {
+      return res;
+    }
+
+    attempt++;
+    if (attempt > maxRetries) {
+      return res;
+    }
+
+    // Honor the Retry-After header if provided
+    const retryAfter = res.headers.get("Retry-After");
+    let backoffMs: number;
+
+    if (retryAfter) {
+      backoffMs = parseInt(retryAfter, 10) * 1000;
+    } else {
+      // Exponential backoff with random jitter: 2^attempt * 250ms + random jitter
+      const baseDelay = Math.pow(2, attempt) * 250;
+      backoffMs = baseDelay + Math.random() * 200;
+    }
+
+    console.warn(`[Rehabify API] 429/5xx encountered. Retrying in ${backoffMs}ms (Attempt ${attempt}/${maxRetries})...`);
+    await new Promise((resolve) => setTimeout(resolve, backoffMs));
+  }
+
+  throw new Error("Max retries exceeded");
+}
+```
 
 ---
 
@@ -55,5 +139,5 @@ Rehabify returns standard HTTP status codes along with a structured JSON error o
 * **Fix**: Request a new pre-authorization token from the HMO sponsor or generate a fresh referral.
 
 ### `rate_limit_exceeded`
-* **Cause**: Your account exceeded the API calls allowed for your tier (e.g., 500 calls/mo on Growth Tier).
-* **Fix**: Upgrade your tier on the [Pricing Page](/partnerships#pricing) or implement exponential client-side backoff.
+* **Cause**: Your account exceeded the API calls allowed for your tier (e.g. 10 req/sec on Standard, 50 req/sec on Enterprise).
+* **Fix**: Upgrade your tier on the [Pricing Page](/partnerships#pricing), respect `Retry-After`, and implement exponential client-side backoff.
