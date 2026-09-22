@@ -129,6 +129,11 @@ const Footer = () => {
                 </Link>
               </li>
               <li>
+                <Link href="/consultation-booking-policy" className="text-gray-300 hover:text-white transition-colors">
+                  Consultation &amp; Booking Policy
+                </Link>
+              </li>
+              <li>
                 <Link href="/payout-policy" className="text-gray-300 hover:text-white transition-colors">
                   Payout Policy
                 </Link>
