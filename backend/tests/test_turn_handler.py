@@ -10,8 +10,18 @@ from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
 from app.models.triage_session import TriageSession
-from app.models.types import AuditKind, ExtractedTriage, PatientPhase
+from app.models.types import AuditKind, ConversationStage, ExtractedTriage, PatientPhase
+from app.safety.protocol_runtime import NO, schedule_questions
 from tests.fakes import FakeLLM
+
+
+def _safety_cleared(extracted: ExtractedTriage) -> ExtractedTriage:
+    """Return test triage state after a patient answered every scheduled safety item No."""
+    questions = schedule_questions(extracted, limit=100)
+    return extracted.model_copy(update={
+        "safety_answers": {question.id: NO for question in questions},
+        "safety_question_order": [question.id for question in questions],
+    })
 
 def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     from app.conversation.turn_handler import handle_turn
@@ -191,13 +201,13 @@ def test_decide_phase_rules(db_session, patient_identity):
     mid = load(db_session, patient_identity)
     assert decide_phase(mid) == PatientPhase.MID_TRIAGE
 
-    complete = ExtractedTriage(
+    complete = _safety_cleared(ExtractedTriage(
         onset="3 days",
         severity=6,
         body_location="knee",
         goals="walk again",
         condition_area="msk",
-    )
+    ))
     save_turn(db_session, mid, "more", "summary?", complete, PatientPhase.MID_TRIAGE, "en")
     awaiting = load(db_session, patient_identity)
     row = db_session.get(Conversation, awaiting.conversation_id)
@@ -226,15 +236,18 @@ def test_confirm_booking_does_not_exist():
 def test_post_triage_confirm_does_not_claim_booked(db_session, patient_identity, fake_llm):
     from app.conversation.turn_handler import handle_turn
 
-    complete = ExtractedTriage(
+    complete = _safety_cleared(ExtractedTriage(
         onset="3 days",
         severity=6,
         body_location="knee",
         goals="walk again",
         condition_area="msk",
-    )
+    ))
     state = load(db_session, patient_identity)
-    save_turn(db_session, state, "knee", "summary", complete, PatientPhase.POST_TRIAGE, "en")
+    save_turn(
+        db_session, state, "knee", "summary", complete, PatientPhase.POST_TRIAGE, "en",
+        stage=ConversationStage.TRIAGE_SUMMARY,
+    )
     row = db_session.get(Conversation, state.conversation_id)
     row.summary_text = "Here's what I understood: knee."
     db_session.flush()
@@ -264,15 +277,18 @@ def test_post_triage_accepts_common_confirm_phrases(
 ):
     from app.conversation.turn_handler import handle_turn
 
-    complete = ExtractedTriage(
+    complete = _safety_cleared(ExtractedTriage(
         onset="4 days",
         severity=9,
         body_location="left knee",
         goals="get back to running",
         condition_area="msk",
-    )
+    ))
     state = load(db_session, patient_identity)
-    save_turn(db_session, state, "knee", "summary", complete, PatientPhase.POST_TRIAGE, "en")
+    save_turn(
+        db_session, state, "knee", "summary", complete, PatientPhase.POST_TRIAGE, "en",
+        stage=ConversationStage.TRIAGE_SUMMARY,
+    )
     row = db_session.get(Conversation, state.conversation_id)
     row.summary_text = (
         "Here's what I understood: left knee, for 4 days, severity 9 out of 10, "
@@ -298,9 +314,10 @@ def test_mid_triage_sends_one_grouped_followup(db_session, patient_identity, fak
         state,
         "knee hurt 3 days",
         "tell me more",
-        ExtractedTriage(onset="3 days", body_location="knee"),
+        _safety_cleared(ExtractedTriage(onset="3 days", body_location="knee")),
         PatientPhase.MID_TRIAGE,
         "en",
+        stage=ConversationStage.SAFETY_SCREEN,
     )
     fake_llm.reply = "Thanks — I hear you."
     fake_llm.extraction = {}
@@ -329,7 +346,7 @@ def test_grouped_safety_no_answers_clear_all_duplicate_protocol_questions(
     state = load(db_session, patient_identity)
     save_turn(
         db_session, state, "back pain", "safety screen", complete,
-        PatientPhase.MID_TRIAGE, "en",
+        PatientPhase.MID_TRIAGE, "en", stage=ConversationStage.SAFETY_SCREEN,
     )
     fake_llm.reply = "unused"
     fake_llm.extraction = {}
@@ -446,9 +463,10 @@ def test_mid_triage_does_not_forward_model_checklist(db_session, patient_identit
         state,
         "knee hurt 3 days",
         "tell me more",
-        ExtractedTriage(onset="3 days", body_location="knee"),
+        _safety_cleared(ExtractedTriage(onset="3 days", body_location="knee")),
         PatientPhase.MID_TRIAGE,
         "en",
+        stage=ConversationStage.SAFETY_SCREEN,
     )
     fake_llm.reply = (
         "When did it start? How bad is it 1-10? Any numbness? "
@@ -474,14 +492,15 @@ def test_mid_triage_followup_is_not_only_a_severity_ask(db_session, patient_iden
         state,
         "knee hurt 3 days, want to walk",
         "tell me more",
-        ExtractedTriage(
+        _safety_cleared(ExtractedTriage(
             onset="3 days",
             body_location="knee",
             goals="walk again",
             condition_area="msk",
-        ),
+        )),
         PatientPhase.MID_TRIAGE,
         "en",
+        stage=ConversationStage.SAFETY_SCREEN,
     )
     fake_llm.reply = "Thanks — I hear you."
     fake_llm.extraction = {}
@@ -502,13 +521,14 @@ def test_mid_triage_keeps_severity_when_llm_omits_number(db_session, patient_ide
         state,
         "knee hurt 4 days",
         "how bad and goals?",
-        ExtractedTriage(
+        _safety_cleared(ExtractedTriage(
             onset="4 days",
             body_location="knee",
             condition_area="msk",
-        ),
+        )),
         PatientPhase.MID_TRIAGE,
         "en",
+        stage=ConversationStage.SAFETY_SCREEN,
     )
     fake_llm.reply = "Thanks — noted."
     # LLM mines goals but drops the leading severity digit — common live failure mode.
@@ -551,22 +571,25 @@ def test_first_contact_with_story_batches_leftovers_not_second_open_ask(
     assert result.phase == "mid_triage"
     lower = result.reply_text.lower()
     assert "tell me a bit more" not in lower
-    assert "1 to 10" in lower or "hoping" in lower
+    assert "short safety check" in lower
     assert result.reply_text.count("?") <= 2
 
 
 def test_thats_not_correct_does_not_confirm_summary(db_session, patient_identity, fake_llm):
     from app.conversation.turn_handler import handle_turn
 
-    complete = ExtractedTriage(
+    complete = _safety_cleared(ExtractedTriage(
         onset="3 days",
         severity=6,
         body_location="knee",
         goals="walk again",
         condition_area="msk",
-    )
+    ))
     state = load(db_session, patient_identity)
-    save_turn(db_session, state, "knee", "summary", complete, PatientPhase.POST_TRIAGE, "en")
+    save_turn(
+        db_session, state, "knee", "summary", complete, PatientPhase.POST_TRIAGE, "en",
+        stage=ConversationStage.TRIAGE_SUMMARY,
+    )
     row = db_session.get(Conversation, state.conversation_id)
     row.summary_text = "Here's what I understood: knee."
     db_session.flush()
@@ -582,15 +605,18 @@ def test_thats_not_correct_does_not_confirm_summary(db_session, patient_identity
 def test_sending_summary_sets_summarised_status(db_session, patient_identity, fake_llm):
     from app.conversation.turn_handler import handle_turn
 
-    complete = ExtractedTriage(
+    complete = _safety_cleared(ExtractedTriage(
         onset="3 days",
         severity=6,
         body_location="knee",
         goals="walk again",
         condition_area="msk",
-    )
+    ))
     state = load(db_session, patient_identity)
-    save_turn(db_session, state, "knee", "got it", complete, PatientPhase.MID_TRIAGE, "en")
+    save_turn(
+        db_session, state, "knee", "got it", complete, PatientPhase.MID_TRIAGE, "en",
+        stage=ConversationStage.SAFETY_SCREEN,
+    )
     fake_llm.reply = "unused"
     fake_llm.extraction = {}
     result = handle_turn(db_session, patient_identity.phone_e164, "that's everything", fake_llm)
