@@ -161,7 +161,8 @@ export function PhysioMapView({
                         }}
                     >
                         <PhysioPriceMarker
-                            price={physio.initialConsultRate || physio.hourlyRate}
+                            name={physio.fullName.split(" ")[0]}
+                            rating={physio.averageRating}
                             isSelected={selectedPhysio?.id === physio.id}
                             isHovered={hoveredPhysioId === physio.id}
                             onClick={() => handleMarkerClick(physio)}
@@ -267,7 +268,7 @@ export function PhysioMapView({
                                     {/* Footer: price + session types */}
                                     <div className="flex items-end justify-between pt-2 border-t border-gray-100">
                                         <div>
-                                            <div className="flex items-center gap-1.5 mb-1">
+                                            <div className="flex items-center gap-1.5">
                                                 {selectedPhysio.offersOnlineSessions && (
                                                     <div className="flex items-center gap-0.5 text-[10px] text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
                                                         <Video className="h-2.5 w-2.5 text-[#005b57]" />
@@ -281,21 +282,11 @@ export function PhysioMapView({
                                                     </div>
                                                 )}
                                             </div>
-                                            <p className="text-[10px] text-gray-400 uppercase tracking-wide">
-                                                From
-                                            </p>
-                                            <p className="text-base font-bold text-gray-900 leading-none">
-                                                ₦
-                                                {(
-                                                    selectedPhysio.initialConsultRate ||
-                                                    selectedPhysio.hourlyRate
-                                                ).toLocaleString()}
-                                            </p>
                                         </div>
 
                                         <Button
                                             size="sm"
-                                            className="bg-[#005b57] hover:bg-[#00443e] text-white rounded-lg h-8 text-xs font-medium"
+                                            className="bg-[#005b57] hover:bg-[#00443e] text-white rounded-lg h-8 text-xs font-medium shrink-0"
                                         >
                                             View Profile
                                         </Button>

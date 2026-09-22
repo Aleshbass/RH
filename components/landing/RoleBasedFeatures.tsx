@@ -78,11 +78,11 @@ export default function RoleBasedFeatures() {
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 <span>3-Tier Clinical Verification</span>
               </div>
-              <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2 font-cal">
+              <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1 font-cal">
                 100% MRTBN-Licensed Specialists
               </h3>
-              <p className="text-gray-600 text-sm leading-relaxed mb-6 max-w-md">
-                Every therapist passes rigorous document verification, clinical interviews, and continuous patient reviews.
+              <p className="text-[#005b57] text-sm font-semibold mb-6">
+                Matched in Under 24 Hours
               </p>
             </div>
 
@@ -120,11 +120,11 @@ export default function RoleBasedFeatures() {
                 <BadgePercent className="w-4 h-4 text-[#005b57]" />
                 <span>Fair Healthcare Pricing</span>
               </div>
-              <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2 font-cal">
+              <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1 font-cal">
                 40–60% Lower Than Private Hospitals
               </h3>
-              <p className="text-gray-600 text-sm leading-relaxed mb-6">
-                Zero hidden clinic facility charges. Pay only for the care you receive with clear upfront pricing.
+              <p className="text-[#005b57] text-sm font-semibold mb-6">
+                Active Recovery & Joy WhatsApp Tracking
               </p>
             </div>
 
@@ -161,9 +161,6 @@ export default function RoleBasedFeatures() {
               <h3 className="text-2xl font-bold text-gray-900 mb-2 font-cal">
                 Matched in Under 24 Hours
               </h3>
-              <p className="text-gray-600 text-sm leading-relaxed mb-6">
-                Skip 6-week hospital waiting lists. Get paired today and schedule your first home or clinic session immediately.
-              </p>
             </div>
 
             {/* Quick Timeline pill */}
@@ -192,9 +189,6 @@ export default function RoleBasedFeatures() {
               <h3 className="text-2xl font-bold text-gray-900 mb-2 font-cal">
                 Active Recovery & Joy WhatsApp Tracking
               </h3>
-              <p className="text-gray-600 text-sm leading-relaxed mb-6 max-w-lg">
-                Your recovery doesn’t pause between sessions. Joy sends daily routines, checks your exercise posture, and keeps your physiotherapist updated.
-              </p>
             </div>
 
             {/* Feature Check List */}

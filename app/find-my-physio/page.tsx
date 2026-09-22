@@ -152,23 +152,19 @@ function PhysioMatchCard({
                             </div>
                         </div>
 
-                        {/* Price */}
+                        {/* Session Types */}
                         <div className="text-right flex-shrink-0">
-                            <p className="text-[10px] text-gray-400 uppercase tracking-wide">
-                                From
-                            </p>
-                            <p className="text-lg font-bold text-gray-900">
-                                ₦{(physio.initialConsultRate || physio.hourlyRate).toLocaleString()}
-                            </p>
-                            <div className="flex items-center gap-1 mt-1 justify-end">
+                            <div className="flex items-center gap-1 justify-end">
                                 {physio.offersOnlineSessions && (
-                                    <div className="flex items-center gap-0.5 text-[10px] text-[#005b57] bg-teal-50 px-1.5 py-0.5 rounded">
-                                        <Video className="h-2.5 w-2.5" />
+                                    <div className="flex items-center gap-1 text-xs text-[#005b57] bg-teal-50 px-2 py-1 rounded-md font-medium">
+                                        <Video className="h-3 w-3" />
+                                        <span>Online</span>
                                     </div>
                                 )}
                                 {physio.offersInPersonSessions && (
-                                    <div className="flex items-center gap-0.5 text-[10px] text-[#005b57] bg-teal-50 px-1.5 py-0.5 rounded">
-                                        <Users className="h-2.5 w-2.5" />
+                                    <div className="flex items-center gap-1 text-xs text-[#005b57] bg-teal-50 px-2 py-1 rounded-md font-medium">
+                                        <Users className="h-3 w-3" />
+                                        <span>In-Person</span>
                                     </div>
                                 )}
                             </div>

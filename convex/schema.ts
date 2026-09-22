@@ -142,6 +142,8 @@ export default defineSchema({
     isAvailableOnMarketplace: v.optional(v.boolean()), // Toggle marketplace visibility
     hourlyRate: v.optional(v.number()), // Base rate per session in kobo
     initialConsultRate: v.optional(v.number()), // First session rate in kobo
+    virtualConsultationRate: v.optional(v.number()), // Virtual call rate in kobo (default ₦6,000 = 600,000)
+    inPersonConsultationRate: v.optional(v.number()), // In-person / home visit rate in kobo (default ₦10,000 = 1,000,000)
     packageRates: v.optional(v.array(v.object({
       sessions: v.number(),
       price: v.number(), // Total package price in kobo
@@ -2382,10 +2384,14 @@ export default defineSchema({
 
     // Pricing
     serviceAmount: v.number(), // Amount for service (kobo)
-    platformFee: v.number(), // 20% platform fee (kobo)
-    paystackFee: v.number(), // 1.5% + 100 (kobo)
+    platformFee: v.number(), // Platform fee (kobo)
+    paystackFee: v.number(), // Payment gateway fee (kobo)
     totalAmount: v.number(), // Total charged to patient (kobo)
-    physiotherapistEarnings: v.number(), // Amount physio receives (kobo)
+    physiotherapistEarnings: v.number(), // Amount physio receives (80% default, kobo)
+    rehabifyEarnings: v.optional(v.number()), // Amount Rehabify retains (10% default, kobo)
+    partnerEarnings: v.optional(v.number()), // Amount referring partner earns (10% default, kobo)
+    partnerId: v.optional(v.string()), // Referring partner code if referred
+    careMode: v.optional(v.union(v.literal("virtual"), v.literal("in_person"))),
 
     // Payment
     paymentStatus: v.union(
@@ -2394,8 +2400,16 @@ export default defineSchema({
       v.literal("failed"),
       v.literal("refunded")
     ),
+    paymentMethod: v.optional(v.union(v.literal("paystack"), v.literal("bank_transfer"))),
     paymentReference: v.optional(v.string()),
     paidAt: v.optional(v.number()),
+    bankTransferDetails: v.optional(v.object({
+      senderName: v.optional(v.string()),
+      bankName: v.optional(v.string()),
+      confirmedBy: v.optional(v.string()),
+      confirmedAt: v.optional(v.number()),
+      receiptUrl: v.optional(v.string()),
+    })),
 
     // Booking status
     bookingStatus: v.union(
@@ -3028,10 +3042,45 @@ export default defineSchema({
       v.literal("treatment_completed"),
       v.literal("activation_bonus")
     ),
-    grossTransactionAmount: v.number(),      // Amount patient paid or treatment cost in kobo
-    commissionRate: v.number(),              // Percentage (e.g. 15) or fixed fee in kobo
-    commissionAmount: v.number(),            // Commission earned in kobo
+    grossTransactionAmount: v.number(),      // Amount patient paid or treatment cost in kobo (e.g. ₦10,000 = 1,000,000)
+    commissionRate: v.number(),              // Partner percentage (e.g. 10) or fixed fee in kobo
+    commissionAmount: v.number(),            // Commission earned by partner in kobo (10%)
     netPayable: v.number(),                  // After WHT deduction in kobo
+
+    // Transparency: Itemized 3-way split (80% Physio / 10% Rehabify / 10% Partner)
+    physiotherapistId: v.optional(v.id("users")),
+    physiotherapistName: v.optional(v.string()),
+    careMode: v.optional(v.union(v.literal("virtual"), v.literal("in_person"))),
+    physiotherapistAmount: v.optional(v.number()), // 80% share in kobo
+    rehabifyAmount: v.optional(v.number()),        // 10% share in kobo
+    partnerAmount: v.optional(v.number()),         // 10% share in kobo
+    physioPercent: v.optional(v.number()),         // 80
+    rehabifyPercent: v.optional(v.number()),       // 10
+    partnerPercent: v.optional(v.number()),        // 10
+
+    // Payment Tracking: Paystack vs Bank Transfer
+    paymentMethod: v.optional(v.union(v.literal("paystack"), v.literal("bank_transfer"))),
+    paymentReference: v.optional(v.string()),
+
+    // Paystack Fee Tracking (separated per accounting best practices)
+    paystackInboundFeeKobo: v.optional(v.number()),    // Collection fee: 1.5% + ₦100 (capped ₦2,000)
+    paystackOutboundFeeKobo: v.optional(v.number()),   // Transfer fee: ₦10/₦25/₦50 tiered
+    stampDutyKobo: v.optional(v.number()),              // Government stamp duty: ₦50 for transfers ≥ ₦10,000
+    feeBearer: v.optional(v.string()),                  // Who absorbed the fee: "physiotherapist", "patient", "rehabify", "split_proportional"
+    netPhysiotherapistAmount: v.optional(v.number()),   // Physio amount after fee deduction
+    netPartnerAmount: v.optional(v.number()),           // Partner amount after fee deduction
+    netRehabifyAmount: v.optional(v.number()),          // Rehabify amount after fee deduction
+
+    // Monthly Bulk Payout Reconciliation
+    billingPeriod: v.optional(v.string()),         // "YYYY-MM" e.g. "2026-09"
+    bulkPayoutStatus: v.optional(v.union(
+      v.literal("accrued"),
+      v.literal("pending_bulk_payout"),
+      v.literal("paid")
+    )),
+    bulkPayoutBatchId: v.optional(v.string()),
+    paidAt: v.optional(v.number()),
+
     status: v.union(
       v.literal("pending_approval"),
       v.literal("approved"),
@@ -3047,7 +3096,9 @@ export default defineSchema({
     .index("by_referral_id", ["referralId"])
     .index("by_status", ["status"])
     .index("by_settlement_id", ["settlementId"])
-    .index("by_earned_at", ["earnedAt"]),
+    .index("by_earned_at", ["earnedAt"])
+    .index("by_billing_period", ["billingPeriod"])
+    .index("by_bulk_payout_status", ["bulkPayoutStatus"]),
 
   // ─── Partner API Keys (Multi-Key Management & Lifecycle) ─────
   partnerApiKeys: defineTable({
@@ -3096,5 +3147,47 @@ export default defineSchema({
     .index("by_event_id", ["eventId"])
     .index("by_event_type", ["eventType"])
     .index("by_status", ["status"]),
+
+  // ─── Platform Revenue Split & Baseline Pricing Settings ──────
+  platformRevenueSettings: defineTable({
+    rehabifyPercent: v.number(),          // default 10 (%)
+    physiotherapistPercent: v.number(),   // default 80 (%)
+    partnerPercent: v.number(),           // default 10 (%)
+    defaultVirtualRateKobo: v.number(),   // default 600,000 (₦6,000)
+    defaultInPersonRateKobo: v.number(),  // default 1,000,000 (₦10,000)
+    payoutSchedule: v.string(),           // "end_of_month"
+    // Paystack Fee Bearer Configuration (admin-configurable)
+    paystackFeeBearerInbound: v.optional(v.union(
+      v.literal("physiotherapist"),   // Default: deducted from physio's 80%
+      v.literal("patient"),           // Added to patient checkout total
+      v.literal("rehabify"),          // Deducted from Rehabify's 10%
+      v.literal("split_proportional") // Each party absorbs proportionally
+    )),
+    paystackFeeBearerOutbound: v.optional(v.union(
+      v.literal("physiotherapist"),   // Default: deducted from physio's share
+      v.literal("partner"),           // Deducted from partner's 10% payout
+      v.literal("rehabify"),          // Deducted from Rehabify's 10%
+      v.literal("split_proportional") // Each party absorbs proportionally
+    )),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.string()),
+  }),
+
+  // ─── Partner Bank Accounts (Paystack-verified for monthly payouts) ──────
+  partnerBankAccounts: defineTable({
+    partnerCode: v.string(),                          // Links to partners.code
+    bankCode: v.string(),                             // Paystack bank code e.g. "058"
+    bankName: v.string(),                             // "GTBank", "Access Bank", etc.
+    accountNumber: v.string(),                        // 10-digit NUBAN
+    accountName: v.string(),                          // Auto-resolved via Paystack /bank/resolve API
+    isVerified: v.boolean(),                          // Passed Paystack account resolution
+    isDefault: v.boolean(),                           // Primary payout account
+    paystackRecipientCode: v.optional(v.string()),    // Paystack transfer recipient code for automation
+    addedBy: v.optional(v.string()),                  // Who added it (partner email or admin)
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_partner_code", ["partnerCode"])
+    .index("by_partner_code_default", ["partnerCode", "isDefault"]),
 
 });

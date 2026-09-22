@@ -398,6 +398,60 @@ export function getRecommendedDiscount(sessionRate: number): number {
     return 5;                              // Consultants
 }
 
+// ── Paystack Inbound Fee Calculation (client-side mirror of convex/platformSettings.ts) ──
+// Paystack local card charge: 1.5% + ₦100 flat (when amount ≥ ₦2,500), capped at ₦2,000.
+
+/**
+ * Calculate the Paystack inbound fee for a given gross amount in kobo.
+ */
+export function calculatePaystackInboundFee(grossAmountKobo: number): number {
+    if (grossAmountKobo <= 0) return 0;
+
+    const percentageFee = Math.round(grossAmountKobo * 0.015);
+    const flatFee = grossAmountKobo >= 250000 ? 10000 : 0; // ₦100 flat for amounts ≥ ₦2,500
+    const totalFee = percentageFee + flatFee;
+    const cappedFee = Math.min(totalFee, 200000); // ₦2,000 cap
+
+    return cappedFee;
+}
+
+/**
+ * Reverse-calculate the gross amount (in kobo) needed so that after Paystack deducts
+ * their inbound fee, we receive exactly `desiredNetKobo`.
+ *
+ * Paystack fee structure (local cards):
+ * - 1.5% of transaction amount
+ * - + ₦100 flat fee when transaction ≥ ₦2,500
+ * - Capped at ₦2,000 total fee
+ */
+export function calculatePaystackInboundGrossAmount(desiredNetKobo: number): {
+    grossKobo: number;
+    feeKobo: number;
+} {
+    if (desiredNetKobo <= 0) return { grossKobo: 0, feeKobo: 0 };
+
+    const capKobo = 200000; // ₦2,000
+    const flatKobo = 10000; // ₦100
+
+    // Case 1: Below ₦2,500 threshold — flat fee waived
+    const grossBelowThreshold = Math.round(desiredNetKobo / 0.985);
+    if (grossBelowThreshold < 250000) {
+        const fee = calculatePaystackInboundFee(grossBelowThreshold);
+        return { grossKobo: grossBelowThreshold, feeKobo: fee };
+    }
+
+    // Case 2: Above threshold — ₦100 flat fee applies
+    const grossWithFlat = Math.round((desiredNetKobo + flatKobo) / 0.985);
+    const fee = calculatePaystackInboundFee(grossWithFlat);
+
+    if (fee >= capKobo) {
+        // Case 3: Hit the ₦2,000 cap
+        return { grossKobo: desiredNetKobo + capKobo, feeKobo: capKobo };
+    }
+
+    return { grossKobo: grossWithFlat, feeKobo: fee };
+}
+
 // ── Formatting helpers ────────────────────────────
 export function formatNaira(amount: number): string {
     return `₦${amount.toLocaleString("en-NG")}`;

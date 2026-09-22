@@ -46,16 +46,16 @@ const Footer = () => {
               <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Exercise Library</a></li>
               <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Telehealth</a></li>
               <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Analytics</a></li>
-              <li><Link href="/integrations" className="text-gray-300 hover:text-white transition-colors">Integrations</Link></li>
+              <li><a href="https://docs.physioaroundme.com" className="text-gray-300 hover:text-white transition-colors">Integrations</a></li>
             </ul>
           </div>
           <div>
             <h3 className="font-bold mb-4 text-white">Partners</h3>
             <ul className="space-y-2 text-sm">
               <li>
-                <Link href="/partnerships" className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors">
+                <a href="https://partners.physioaroundme.com" className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors">
                   Partner Program →
-                </Link>
+                </a>
               </li>
               <li>
                 <a href="https://partners.physioaroundme.com" className="text-gray-300 hover:text-white transition-colors">
@@ -103,6 +103,8 @@ const Footer = () => {
             <h3 className="font-bold mb-4 text-white">Company</h3>
             <ul className="space-y-2 text-sm">
               <li><a href="/about" className="text-gray-300 hover:text-white transition-colors">About Us</a></li>
+              <li><a href="/meet-joy" className="text-gray-300 hover:text-white transition-colors">Meet Joy</a></li>
+              <li><a href="/payment" className="text-gray-300 hover:text-white transition-colors">Payment & Financing</a></li>
               <li><a href="/learn" className="text-gray-300 hover:text-white transition-colors">Rehabify Learn</a></li>
               <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Careers</a></li>
               <li><a href="#" className="text-gray-300 hover:text-white transition-colors">Contact</a></li>

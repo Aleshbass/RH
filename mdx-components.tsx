@@ -5,7 +5,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 import { Card, Cards } from 'fumadocs-ui/components/card';
 import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
 import { TypeTable } from 'fumadocs-ui/components/type-table';
-import type { MDXComponents } from 'mdx/types';
+type MDXComponents = Record<string, any>;
 
 export function useMDXComponents(components?: MDXComponents): MDXComponents {
   return {

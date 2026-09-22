@@ -27,7 +27,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import CalendarBookingWidget from "@/components/marketplace/CalendarBookingWidget";
 import PackageSelector, { type SimplePackageBreakdown } from "@/components/marketplace/PackageSelector";
 import { toast } from "sonner";
-import { formatNaira } from "@/lib/pricing";
+import { formatNaira, calculatePaystackInboundGrossAmount } from "@/lib/pricing";
 
 type BookingStep = "select-time" | "select-package" | "details" | "confirm";
 
@@ -117,6 +117,9 @@ export default function BookingPage() {
         physiotherapistId ? { physiotherapistId } : "skip"
     );
 
+    // Platform revenue settings (for fee bearer logic)
+    const revenueSettings = useQuery(api.platformSettings.getPlatformRevenueSettings);
+
     // Create booking mutation
     const createBooking = useMutation(
         api.marketplace.booking.createMarketplaceBooking
@@ -154,6 +157,21 @@ export default function BookingPage() {
         if (!profile) return 0;
         return profile.hourlyRate || 0;
     }, [treatmentPrefs, profile]);
+
+    // Patient-facing fee surcharge calculation
+    const patientBearsFee = revenueSettings?.paystackFeeBearerInbound === "patient";
+    const feeSurcharge = useMemo(() => {
+        if (!patientBearsFee) return { grossNaira: 0, feeNaira: 0, applies: false };
+        const baseNaira = packageBreakdown?.total || sessionRate;
+        if (baseNaira <= 0) return { grossNaira: 0, feeNaira: 0, applies: false };
+        const baseKobo = Math.round(baseNaira * 100);
+        const { grossKobo, feeKobo } = calculatePaystackInboundGrossAmount(baseKobo);
+        return {
+            grossNaira: Math.round(grossKobo / 100),
+            feeNaira: Math.round(feeKobo / 100),
+            applies: feeKobo > 0,
+        };
+    }, [patientBearsFee, packageBreakdown, sessionRate]);
 
     // ── Load treatment prefs from localStorage (from /start-treatment) ──
     useEffect(() => {
@@ -301,7 +319,8 @@ export default function BookingPage() {
         amountNaira: number,
         email: string,
         phone?: string,
-        name?: string
+        name?: string,
+        feeBreakdown?: { baseAmount: number; processingFee: number; feeBearer: string }
     ) => {
         const response = await fetch("/api/payments/marketplace", {
             method: "POST",
@@ -312,6 +331,7 @@ export default function BookingPage() {
                 email,
                 phone: phone || null,
                 name: name || null,
+                ...(feeBreakdown || {}),
             }),
         });
 
@@ -349,7 +369,8 @@ export default function BookingPage() {
             return;
         }
 
-        const totalAmount = packageBreakdown?.total || profile.initialConsultRate || profile.hourlyRate || 0;
+        const baseAmount = packageBreakdown?.total || profile.initialConsultRate || profile.hourlyRate || 0;
+        const totalAmount = feeSurcharge.applies ? feeSurcharge.grossNaira : baseAmount;
 
         setIsProcessing(true);
 
@@ -394,7 +415,10 @@ export default function BookingPage() {
             }
 
             // Initialize Paystack payment
-            await initializePaystackPayment(result.bookingId, totalAmount, email, phone, name);
+            const feeBreakdown = feeSurcharge.applies
+                ? { baseAmount: baseAmount, processingFee: feeSurcharge.feeNaira, feeBearer: "patient" }
+                : undefined;
+            await initializePaystackPayment(result.bookingId, totalAmount, email, phone, name, feeBreakdown);
         } catch (error: any) {
             console.error("Booking error:", error);
             toast.error("Booking failed", {
@@ -661,7 +685,7 @@ export default function BookingPage() {
                                             {selectedPackage} session{selectedPackage > 1 ? "s" : ""}
                                         </span>
                                     </div>
-                                    <span className="text-xl font-bold text-white">
+                                    <span className={`font-bold text-white ${feeSurcharge.applies ? "text-base" : "text-xl"}`}>
                                         {packageBreakdown
                                             ? formatNaira(packageBreakdown.total)
                                             : sessionRate > 0
@@ -682,6 +706,24 @@ export default function BookingPage() {
                                     <p className="text-[11px] text-gray-500">
                                         {formatNaira(Math.round(packageBreakdown.total / selectedPackage))}/session average
                                     </p>
+                                )}
+
+                                {/* Paystack Processing Fee (patient-facing surcharge) */}
+                                {feeSurcharge.applies && (
+                                    <>
+                                        <div className="flex justify-between items-center text-xs pt-2 border-t border-gray-700">
+                                            <span className="text-gray-400">Payment Processing Fee <span className="text-gray-600">(Paystack)</span></span>
+                                            <span className="text-gray-300 font-medium">
+                                                {formatNaira(feeSurcharge.feeNaira)}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center pt-2 border-t border-gray-700">
+                                            <span className="text-white text-sm font-semibold">Total to Pay</span>
+                                            <span className="text-xl font-bold text-white">
+                                                {formatNaira(feeSurcharge.grossNaira)}
+                                            </span>
+                                        </div>
+                                    </>
                                 )}
 
                                 {/* Change plan link */}

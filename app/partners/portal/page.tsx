@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
+import { format } from "date-fns";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -76,6 +77,9 @@ import {
   Webhook,
   X,
   Zap,
+  Landmark,
+  Receipt,
+  Printer,
 } from "lucide-react";
 
 export default function PartnerPortalDashboard() {
@@ -387,6 +391,207 @@ export default function PartnerPortalDashboard() {
   const triggerTestWebhookMutation = useMutation(api.partners.triggerTestWebhook);
   const createLinkMutation = useMutation(api.partnerLinks.createReferralLink);
   const updateLinkStatusMutation = useMutation(api.partnerLinks.updateLinkStatus);
+
+  // Partner Bank Account queries & mutations
+  const partnerBankAccounts = useQuery(
+    api.partnerBankAccounts.getPartnerBankAccounts,
+    partnerCode ? { partnerCode } : "skip"
+  );
+  const saveBankAccountMutation = useMutation(api.partnerBankAccounts.savePartnerBankAccount);
+  const deleteBankAccountMutation = useMutation(api.partnerBankAccounts.deletePartnerBankAccount);
+  const verifyBankAccountAction = useAction(api.partnerBankAccounts.verifyPartnerBankAccount);
+  const getBankListAction = useAction(api.partnerBankAccounts.getPartnerBankList);
+  const createRecipientAction = useAction(api.partnerBankAccounts.createPartnerTransferRecipient);
+
+  // Bank account management state
+  const [isBankModalOpen, setIsBankModalOpen] = useState(false);
+  const [availableBanks, setAvailableBanks] = useState<{ name: string; code: string }[]>([]);
+  const [selectedBankCode, setSelectedBankCode] = useState("");
+  const [accountNumberInput, setAccountNumberInput] = useState("");
+  const [resolvedAccountName, setResolvedAccountName] = useState("");
+  const [isResolvingAccount, setIsResolvingAccount] = useState(false);
+  const [resolveError, setResolveError] = useState("");
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
+
+  // Partner Invoice Modal state
+  const currentMonthStr = format(new Date(), "yyyy-MM");
+  const [selectedInvoicePeriod, setSelectedInvoicePeriod] = useState<string>(currentMonthStr);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const partnerInvoiceData = useQuery(
+    api.monthlySettlements.generatePartnerInvoice,
+    partnerCode && isInvoiceModalOpen
+      ? { partnerCode, billingPeriod: selectedInvoicePeriod }
+      : "skip"
+  );
+
+  const openBankModal = async () => {
+    setIsBankModalOpen(true);
+    setSelectedBankCode("");
+    setAccountNumberInput("");
+    setResolvedAccountName("");
+    setResolveError("");
+    if (availableBanks.length === 0) {
+      try {
+        const list = await getBankListAction({});
+        setAvailableBanks(list);
+      } catch (err) {
+        console.error("Failed to fetch bank list:", err);
+      }
+    }
+  };
+
+  const handleBankSelect = async (code: string) => {
+    setSelectedBankCode(code);
+    setResolvedAccountName("");
+    setResolveError("");
+    if (accountNumberInput.length === 10 && code) {
+      setIsResolvingAccount(true);
+      try {
+        const res = await verifyBankAccountAction({
+          bankCode: code,
+          accountNumber: accountNumberInput,
+        });
+        if (res.success && res.accountName) {
+          setResolvedAccountName(res.accountName);
+          toast.success(`Account Verified: ${res.accountName}`);
+        } else {
+          setResolveError(res.message || "Could not resolve account name");
+        }
+      } catch (err: any) {
+        setResolveError(err.message || "Failed to verify account");
+      } finally {
+        setIsResolvingAccount(false);
+      }
+    }
+  };
+
+  const handleAccountNumberChange = async (num: string) => {
+    const cleanNum = num.replace(/\D/g, "").slice(0, 10);
+    setAccountNumberInput(cleanNum);
+    setResolvedAccountName("");
+    setResolveError("");
+
+    if (cleanNum.length === 10 && selectedBankCode) {
+      setIsResolvingAccount(true);
+      try {
+        const res = await verifyBankAccountAction({
+          bankCode: selectedBankCode,
+          accountNumber: cleanNum,
+        });
+        if (res.success && res.accountName) {
+          setResolvedAccountName(res.accountName);
+          toast.success(`Account Verified: ${res.accountName}`);
+        } else {
+          setResolveError(res.message || "Could not resolve account name. Please verify bank and number.");
+        }
+      } catch (err: any) {
+        setResolveError(err.message || "Failed to verify account");
+      } finally {
+        setIsResolvingAccount(false);
+      }
+    }
+  };
+
+  const handleSaveBankAccount = async () => {
+    if (!selectedBankCode || accountNumberInput.length !== 10 || !resolvedAccountName) {
+      toast.error("Please provide a verified 10-digit account number");
+      return;
+    }
+    const bankObj = availableBanks.find((b) => b.code === selectedBankCode);
+    const bankName = bankObj ? bankObj.name : "Bank";
+
+    setIsSavingAccount(true);
+    try {
+      let recipientCode: string | undefined = undefined;
+      try {
+        const recRes = await createRecipientAction({
+          partnerCode,
+          accountName: resolvedAccountName,
+          bankCode: selectedBankCode,
+          accountNumber: accountNumberInput,
+        });
+        if (recRes.success) {
+          recipientCode = recRes.recipientCode;
+        }
+      } catch (err) {
+        console.warn("Could not create Paystack transfer recipient:", err);
+      }
+
+      await saveBankAccountMutation({
+        partnerCode,
+        bankCode: selectedBankCode,
+        bankName,
+        accountNumber: accountNumberInput,
+        accountName: resolvedAccountName,
+        paystackRecipientCode: recipientCode,
+      });
+
+      toast.success("Bank account saved successfully for monthly bulk disbursements!");
+      setIsBankModalOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save bank account");
+    } finally {
+      setIsSavingAccount(false);
+    }
+  };
+
+  const handleDeleteBankAccount = async (accountId: Id<"partnerBankAccounts">) => {
+    try {
+      await deleteBankAccountMutation({ accountId, partnerCode });
+      toast.success("Bank account removed");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to remove bank account");
+    }
+  };
+
+  const handleExportPartnerInvoiceCSV = (invoice: any) => {
+    if (!invoice || !invoice.lineItems) return;
+    const headers = [
+      "S/N",
+      "Date",
+      "Tracking Code",
+      "Patient",
+      "Physiotherapist",
+      "Care Mode",
+      "Gross Amount (NGN)",
+      "Physio Share (NGN)",
+      "Rehabify Share (NGN)",
+      "Partner Share (NGN)",
+      "Paystack Outbound Fee (NGN)",
+      "Stamp Duty (NGN)",
+      "Net Partner Payable (NGN)",
+      "Payment Channel",
+      "Reference",
+    ];
+    const rows = invoice.lineItems.map((l: any) => [
+      l.sn,
+      l.date,
+      l.trackingCode,
+      `"${l.patientName}"`,
+      `"${l.physiotherapistName}"`,
+      l.careMode,
+      (l.grossAmountKobo / 100).toFixed(2),
+      (l.physioShareKobo / 100).toFixed(2),
+      (l.rehabifyShareKobo / 100).toFixed(2),
+      (l.partnerShareKobo / 100).toFixed(2),
+      (l.paystackOutboundFeeKobo / 100).toFixed(2),
+      (l.stampDutyKobo / 100).toFixed(2),
+      (l.netPartnerAmountKobo / 100).toFixed(2),
+      l.paymentMethod,
+      l.paymentReference,
+    ]);
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((e: any) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `${invoice.invoiceNumber}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Invoice exported to CSV");
+  };
 
   // Populate inputs when overview loads
   const hasInitializedEnv = useRef(false);
@@ -2879,7 +3084,7 @@ print(res.json())`;
               <div>
                 <h2 className="text-xl font-semibold text-[#002e2c]">Commercial Commissions & Revenue Sharing</h2>
                 <p className="text-xs text-[#52706e]">
-                  Reconciliation ledger for patient treatments and partner commission earnings.
+                  Transparent reconciliation ledger: 80% Physiotherapist · 10% Rehabify · 10% Partner Referral Commission. Paid in bulk at the end of each month.
                 </p>
               </div>
 
@@ -2899,15 +3104,15 @@ print(res.json())`;
                 <div className="text-2xl font-bold text-[#002e2c]">
                   {formatKobo(commercialSummary?.totalEarnedKobo || 0)}
                 </div>
-                <div className="text-xs text-[#52706e]">All settled and pending commissions</div>
+                <div className="text-xs text-[#52706e]">10% partner commission on all treated patients</div>
               </div>
 
               <div className="p-6 rounded-2xl bg-white border border-[#002e2c]/10 shadow-xs space-y-1">
-                <span className="text-xs font-semibold uppercase tracking-wider text-[#52706e]">Pending Settlement</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#52706e]">Current Month Accrual</span>
                 <div className="text-2xl font-bold text-amber-600">
                   {formatKobo(commercialSummary?.pendingReviewKobo || 0)}
                 </div>
-                <div className="text-xs text-[#52706e]">Under end-of-month clinical review</div>
+                <div className="text-xs text-[#52706e]">Scheduled for end-of-month bulk payout</div>
               </div>
 
               <div className="p-6 rounded-2xl bg-white border border-[#002e2c]/10 shadow-xs space-y-1">
@@ -2915,7 +3120,122 @@ print(res.json())`;
                 <div className="text-2xl font-bold text-emerald-800">
                   {formatKobo(commercialSummary?.availablePayoutKobo || 0)}
                 </div>
-                <div className="text-xs text-[#52706e]">Approved for wire transfer disbursement</div>
+                <div className="text-xs text-[#52706e]">Consolidated bulk wire transfer to your bank</div>
+              </div>
+            </div>
+
+            {/* Bank Account Management & Settlement Overview Cards */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Disbursement Bank Account Card */}
+              <div className="lg:col-span-7 bg-white p-6 rounded-3xl border border-[#002e2c]/10 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-[#002e2c]/5 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Landmark className="w-5 h-5 text-[#005b57]" />
+                    <h3 className="text-base font-semibold text-[#002e2c]">Disbursement Bank Account</h3>
+                  </div>
+                  <button
+                    onClick={openBankModal}
+                    className="px-3 py-1.5 rounded-xl bg-[#005b57] hover:bg-[#004744] text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{partnerBankAccounts && partnerBankAccounts.length > 0 ? "Change Account" : "Add Bank Account"}</span>
+                  </button>
+                </div>
+
+                {partnerBankAccounts === undefined ? (
+                  <div className="py-6 flex items-center justify-center">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#005b57] border-t-transparent" />
+                  </div>
+                ) : partnerBankAccounts.length === 0 ? (
+                  <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-amber-900 text-xs flex items-start gap-3">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-semibold">No bank account linked for monthly bulk payouts</p>
+                      <p className="text-amber-800 text-[11px] leading-relaxed">
+                        Add your institution's Nigerian corporate or verified personal bank account to receive automated consolidated commission transfers at the end of each billing cycle.
+                      </p>
+                      <button
+                        onClick={openBankModal}
+                        className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-[#005b57] hover:underline"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Set up bank account now
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {partnerBankAccounts.map((account: any) => (
+                      <div
+                        key={account._id}
+                        className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/30 flex items-center justify-between gap-4"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-900 text-sm">{account.bankName}</span>
+                            {account.isDefault && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                Primary Payout Account
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-600 font-mono tracking-wider">
+                            {account.accountNumber}
+                          </div>
+                          <div className="text-xs font-semibold text-[#002e2c] flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>{account.accountName}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleDeleteBankAccount(account._id)}
+                            className="p-2 text-gray-400 hover:text-red-600 transition rounded-lg hover:bg-red-50"
+                            title="Remove account"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Settlement Governance & Statutory Stamp Duty Card */}
+              <div className="lg:col-span-5 bg-white p-6 rounded-3xl border border-[#002e2c]/10 shadow-xs space-y-4">
+                <div className="flex items-center gap-2 border-b border-[#002e2c]/5 pb-3">
+                  <ShieldCheck className="w-5 h-5 text-teal-700" />
+                  <h3 className="text-base font-semibold text-[#002e2c]">Payout Policy & Levies</h3>
+                </div>
+
+                <div className="space-y-3 text-xs text-gray-600">
+                  <div className="flex items-start gap-2">
+                    <Clock className="w-4 h-4 text-[#005b57] shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-gray-900 block">End-of-Month Consolidated Wire</strong>
+                      <span>All treated patient referral commissions accrue throughout the month and are disbursed in bulk.</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2">
+                    <Receipt className="w-4 h-4 text-purple-700 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-gray-900 block">Statutory Stamp Duty (EMTL)</strong>
+                      <span>In compliance with the Nigerian Finance Act, transfers of ₦10,000 and above attract a statutory ₦50 Electronic Money Transfer Levy.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[#002e2c]/5">
+                  <button
+                    onClick={() => setIsInvoiceModalOpen(true)}
+                    className="w-full py-2.5 px-4 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-900 text-xs font-bold transition flex items-center justify-center gap-2 border border-teal-200 shadow-2xs"
+                  >
+                    <Receipt className="w-4 h-4 text-teal-700" />
+                    <span>View & Download Monthly Settlement Invoice</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2932,27 +3252,55 @@ print(res.json())`;
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="bg-[#FAF6E7]/60 border-b border-[#002e2c]/10 text-[#52706e]">
-                        <th className="py-3 px-4 font-semibold">Date</th>
-                        <th className="py-3 px-4 font-semibold">Tracking Code</th>
-                        <th className="py-3 px-4 font-semibold">Patient</th>
-                        <th className="py-3 px-4 font-semibold">Gross Treatment</th>
-                        <th className="py-3 px-4 font-semibold">Commission Rate</th>
-                        <th className="py-3 px-4 font-semibold">Net Payout</th>
-                        <th className="py-3 px-4 font-semibold">Status</th>
+                        <th className="py-3 px-3 font-semibold">Date</th>
+                        <th className="py-3 px-3 font-semibold">Tracking Code</th>
+                        <th className="py-3 px-3 font-semibold">Patient</th>
+                        <th className="py-3 px-3 font-semibold">Care Mode</th>
+                        <th className="py-3 px-3 font-semibold">Physio Charged</th>
+                        <th className="py-3 px-3 font-semibold text-emerald-800">Physio (80%)</th>
+                        <th className="py-3 px-3 font-semibold text-[#005b57]">Rehabify (10%)</th>
+                        <th className="py-3 px-3 font-semibold text-emerald-700">Your Share (10%)</th>
+                        <th className="py-3 px-3 font-semibold">Payment Channel</th>
+                        <th className="py-3 px-3 font-semibold">Settlement</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#002e2c]/5">
                       {commissionsLedger.map((c: any) => (
                         <tr key={c._id} className="hover:bg-[#FAF6E7]/30 transition">
-                          <td className="py-3 px-4 text-[#52706e]">{c.earnedAtIso?.slice(0, 10)}</td>
-                          <td className="py-3 px-4 font-mono font-semibold text-[#002e2c]">{c.trackingCode}</td>
-                          <td className="py-3 px-4 text-[#002e2c]">{c.patientName}</td>
-                          <td className="py-3 px-4 text-[#52706e]">{formatKobo(c.grossTransactionAmount)}</td>
-                          <td className="py-3 px-4 font-semibold text-[#005b57]">{c.commissionRate}</td>
-                          <td className="py-3 px-4 font-bold text-emerald-800">{formatKobo(c.netPayable)}</td>
-                          <td className="py-3 px-4 capitalize">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              {c.status}
+                          <td className="py-3 px-3 text-[#52706e]">{c.earnedAtIso?.slice(0, 10)}</td>
+                          <td className="py-3 px-3 font-mono font-semibold text-[#002e2c]">{c.trackingCode}</td>
+                          <td className="py-3 px-3 font-medium text-[#002e2c]">{c.patientName}</td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              c.careMode === "virtual"
+                                ? "bg-teal-50 text-teal-700 border border-teal-200"
+                                : "bg-amber-50 text-amber-800 border border-amber-200"
+                            }`}>
+                              {c.careMode === "virtual" ? "Virtual (₦6k)" : "In-Person (₦10k+)"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-semibold text-gray-900">{formatKobo(c.grossTransactionAmount)}</td>
+                          <td className="py-3 px-3 font-medium text-emerald-800">
+                            {formatKobo(c.physiotherapistAmount || Math.round(c.grossTransactionAmount * 0.80))}
+                          </td>
+                          <td className="py-3 px-3 font-medium text-gray-600">
+                            {formatKobo(c.rehabifyAmount || Math.round(c.grossTransactionAmount * 0.10))}
+                          </td>
+                          <td className="py-3 px-3 font-bold text-emerald-700">
+                            {formatKobo(c.partnerAmount || c.commissionAmount)}
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              c.paymentMethod === "bank_transfer"
+                                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            }`}>
+                              {c.paymentMethod === "bank_transfer" ? "Bank Transfer" : "Paystack Online"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-700">
+                              {c.bulkPayoutStatus === "paid" ? "Paid in Bulk" : "End-of-Month"}
                             </span>
                           </td>
                         </tr>
@@ -4496,6 +4844,391 @@ print(res.json())`;
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Partner Add/Change Bank Account Modal */}
+      {isBankModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#002e2c]/10 space-y-5">
+            <div className="flex items-center justify-between border-b border-[#002e2c]/10 pb-3">
+              <div className="flex items-center gap-2">
+                <Landmark className="w-5 h-5 text-[#005b57]" />
+                <h3 className="text-base font-bold text-[#002e2c]">Disbursement Bank Account</h3>
+              </div>
+              <button
+                onClick={() => setIsBankModalOpen(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#52706e] leading-relaxed">
+              Connect your institution's Nigerian NUBAN bank account. Account details are verified in real-time via Paystack.
+            </p>
+
+            <div className="space-y-4 text-xs">
+              {/* Bank Selector */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-[#002e2c] block">Select Nigerian Bank</label>
+                <select
+                  value={selectedBankCode}
+                  onChange={(e) => handleBankSelect(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-[#002e2c]/15 bg-white text-xs font-medium text-[#002e2c] focus:outline-none focus:ring-2 focus:ring-[#005b57]"
+                >
+                  <option value="">-- Choose your bank --</option>
+                  {availableBanks.map((b) => (
+                    <option key={b.code} value={b.code}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Account Number Input */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-[#002e2c] block">10-Digit Account Number (NUBAN)</label>
+                <input
+                  type="text"
+                  maxLength={10}
+                  placeholder="e.g. 0123456789"
+                  value={accountNumberInput}
+                  onChange={(e) => handleAccountNumberChange(e.target.value)}
+                  disabled={!selectedBankCode}
+                  className="w-full px-3 py-2.5 rounded-xl border border-[#002e2c]/15 text-xs font-mono tracking-wider text-[#002e2c] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#005b57] disabled:bg-gray-50 disabled:cursor-not-allowed"
+                />
+                {!selectedBankCode && (
+                  <p className="text-[10px] text-gray-500">Please choose a bank first</p>
+                )}
+              </div>
+
+              {/* Real-Time Resolution Status */}
+              {isResolvingAccount && (
+                <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 flex items-center gap-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent shrink-0" />
+                  <span className="text-[11px] font-medium">Resolving account name via Paystack...</span>
+                </div>
+              )}
+
+              {resolvedAccountName && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-xs">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Account Verified</span>
+                  </div>
+                  <p className="text-sm font-bold text-[#002e2c] uppercase tracking-wide">
+                    {resolvedAccountName}
+                  </p>
+                  <p className="text-[10px] text-emerald-700">
+                    Matches official NUBAN records. Ready for monthly bulk wire transfers.
+                  </p>
+                </div>
+              )}
+
+              {resolveError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-[11px] flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span>{resolveError}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-[#002e2c]/10 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setIsBankModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-[#002e2c]/15 text-xs font-semibold text-[#002e2c] hover:bg-[#FAF6E7] transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveBankAccount}
+                disabled={!resolvedAccountName || isSavingAccount}
+                className="flex-1 py-2.5 rounded-xl bg-[#005b57] hover:bg-[#004744] text-white text-xs font-bold transition disabled:opacity-50 shadow-xs"
+              >
+                {isSavingAccount ? "Saving Account..." : "Save Bank Account"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Partner Monthly Settlement Invoice Modal */}
+      {isInvoiceModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6">
+          <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 shadow-2xl border border-[#002e2c]/10 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-[#FAF6E7] text-[#005b57]">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#002e2c]">Monthly Settlement Invoice</h3>
+                  <p className="text-xs text-[#52706e]">Official reconciliation statement & itemized commission breakdown</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Billing Period Selector */}
+                <select
+                  value={selectedInvoicePeriod}
+                  onChange={(e) => setSelectedInvoicePeriod(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-xs font-medium text-[#002e2c] focus:outline-none focus:ring-2 focus:ring-[#005b57]"
+                >
+                  <option value={currentMonthStr}>{format(new Date(), "MMMM yyyy")} (Current)</option>
+                  {[1, 2, 3, 4, 5].map((m) => {
+                    const d = new Date();
+                    d.setMonth(d.getMonth() - m);
+                    const val = format(d, "yyyy-MM");
+                    return (
+                      <option key={val} value={val}>
+                        {format(d, "MMMM yyyy")}
+                      </option>
+                    );
+                  })}
+                </select>
+
+                {partnerInvoiceData && (
+                  <button
+                    onClick={() => handleExportPartnerInvoiceCSV(partnerInvoiceData)}
+                    className="px-3 py-1.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>CSV</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => window.print()}
+                  disabled={!partnerInvoiceData}
+                  className="px-3.5 py-1.5 rounded-xl bg-[#005b57] hover:bg-[#004744] text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print / PDF</span>
+                </button>
+
+                <button
+                  onClick={() => setIsInvoiceModalOpen(false)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition ml-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {!partnerInvoiceData ? (
+              <div className="py-16 flex flex-col items-center justify-center space-y-3">
+                <div className="h-8 w-8 animate-spin rounded-full border-3 border-[#005b57] border-t-transparent" />
+                <p className="text-xs text-gray-500">Generating itemized settlement invoice...</p>
+              </div>
+            ) : (
+              <div id="printable-partner-invoice" className="space-y-6 text-gray-900 bg-white">
+                {/* Invoice Header */}
+                <div className="p-6 bg-[#FAF6E7]/40 rounded-2xl border border-amber-200/60 flex flex-col sm:flex-row justify-between gap-6">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-[#005b57] text-white flex items-center justify-center font-bold text-sm">
+                        RH
+                      </div>
+                      <div>
+                        <h2 className="text-base font-bold text-[#002e2c]">
+                          {partnerInvoiceData.issuer.name}
+                        </h2>
+                        <p className="text-xs text-gray-500">{partnerInvoiceData.issuer.address}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs text-gray-600 space-y-0.5">
+                      <p>Email: <span className="font-medium text-gray-900">{partnerInvoiceData.issuer.email}</span></p>
+                      <p>Web: <span className="font-medium text-gray-900">{partnerInvoiceData.issuer.website}</span></p>
+                    </div>
+                  </div>
+
+                  <div className="sm:text-right text-xs space-y-1">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full bg-teal-100 text-teal-900 font-bold text-[10px] uppercase tracking-wider">
+                      Commercial Statement
+                    </span>
+                    <p className="text-sm font-bold font-mono text-[#002e2c] pt-1">
+                      {partnerInvoiceData.invoiceNumber}
+                    </p>
+                    <p className="text-gray-600">
+                      Date: <strong>{partnerInvoiceData.invoiceDate}</strong>
+                    </p>
+                    <p className="text-gray-600">
+                      Billing Cycle: <strong>{partnerInvoiceData.billingPeriodLabel}</strong>
+                    </p>
+                    <div className="pt-1">
+                      {partnerInvoiceData.payoutStatus === "paid" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Settled / Paid
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">
+                          <Clock className="w-3.5 h-3.5 text-amber-600" /> Pending Month-End Payout
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recipient & Remittance Details */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-2xl border border-gray-200 bg-white space-y-2 text-xs">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Partner Organization</span>
+                    <h4 className="text-sm font-bold text-gray-900">{partnerInvoiceData.recipient.name}</h4>
+                    <p className="text-gray-600">Partner Code: <span className="font-mono font-semibold text-teal-800">{partnerInvoiceData.recipient.code}</span></p>
+                    <p className="text-gray-600">Type: <span className="capitalize">{partnerInvoiceData.recipient.type}</span></p>
+                    {partnerInvoiceData.recipient.contactEmail && <p className="text-gray-600">Email: {partnerInvoiceData.recipient.contactEmail}</p>}
+                  </div>
+
+                  <div className="p-4 rounded-2xl border border-gray-200 bg-white space-y-2 text-xs">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Designated Bank Account</span>
+                    {partnerInvoiceData.bankDetails ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 text-emerald-700 font-semibold">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Verified Disbursement Account</span>
+                        </div>
+                        <p className="text-gray-700">Bank: <strong className="text-gray-900">{partnerInvoiceData.bankDetails.bankName}</strong></p>
+                        <p className="text-gray-700">Account No: <strong className="font-mono text-gray-900">{partnerInvoiceData.bankDetails.accountNumber}</strong></p>
+                        <p className="text-gray-700">Account Name: <strong className="text-gray-900">{partnerInvoiceData.bankDetails.accountName}</strong></p>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>No bank account connected yet.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Line Items Table */}
+                <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-2xs">
+                  <div className="p-3 bg-gray-50 border-b border-gray-200 font-bold text-xs text-gray-800 flex justify-between">
+                    <span>Referred Patient Sessions ({partnerInvoiceData.lineItems.length})</span>
+                    <span className="text-gray-500 font-normal">80% Clinician · 10% Rehabify · 10% Partner</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200">
+                        <tr>
+                          <th className="py-2.5 px-3">#</th>
+                          <th className="py-2.5 px-3">Date</th>
+                          <th className="py-2.5 px-3">Patient</th>
+                          <th className="py-2.5 px-3">Care Mode</th>
+                          <th className="py-2.5 px-3 text-right">Physio Charged</th>
+                          <th className="py-2.5 px-3 text-right text-emerald-700">Physio (80%)</th>
+                          <th className="py-2.5 px-3 text-right text-teal-900 font-bold">Your 10%</th>
+                          <th className="py-2.5 px-3 text-center">Channel</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {partnerInvoiceData.lineItems.map((item: any) => (
+                          <tr key={item.sn} className="hover:bg-gray-50/50">
+                            <td className="py-2 px-3 text-gray-400 font-mono text-[11px]">{item.sn}</td>
+                            <td className="py-2 px-3 text-gray-600 whitespace-nowrap text-[11px]">{item.date}</td>
+                            <td className="py-2 px-3 font-medium text-gray-900">{item.patientName}</td>
+                            <td className="py-2 px-3">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                item.careMode === "Virtual"
+                                  ? "bg-teal-50 text-teal-800 border border-teal-100"
+                                  : "bg-purple-50 text-purple-800 border border-purple-100"
+                              }`}>
+                                {item.careMode}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-right font-medium text-gray-900">
+                              {formatKobo(item.grossAmountKobo)}
+                            </td>
+                            <td className="py-2 px-3 text-right text-emerald-700 font-medium">
+                              {formatKobo(item.physioShareKobo)}
+                            </td>
+                            <td className="py-2 px-3 text-right text-teal-900 font-bold">
+                              {formatKobo(item.partnerShareKobo)}
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              <span className="text-[10px] text-gray-500">{item.paymentMethod}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Accounting Breakdown & Statutory Stamp Duty Line Item */}
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-6 pt-2">
+                  <div className="w-full sm:max-w-md space-y-3">
+                    <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200 text-xs space-y-1.5">
+                      <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-amber-700" />
+                        Statutory Stamp Duty (EMTL) Notice
+                      </span>
+                      <p className="text-amber-900 text-[11px] leading-relaxed">
+                        Under the <strong>Nigerian Finance Act and Electronic Money Transfer Levy (EMTL)</strong>, electronic bank transfers of <strong>₦10,000 and above</strong> attract a statutory <strong>₦50 stamp duty</strong>. This is itemized separately below as a standard corporate disbursement deduction.
+                      </p>
+                    </div>
+
+                    <p className="text-[11px] text-gray-500">
+                      Reconciled and certified by Rehabify Health Technologies Ltd Treasury.
+                    </p>
+                  </div>
+
+                  <div className="w-full sm:w-80 bg-gray-50 rounded-2xl p-4 border border-gray-200 space-y-2.5 text-xs">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Total Sessions:</span>
+                      <span className="font-semibold text-gray-900">{partnerInvoiceData.summary.totalSessions}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Total Care Value:</span>
+                      <span className="font-semibold text-gray-900">{formatKobo(partnerInvoiceData.summary.totalGrossKobo)}</span>
+                    </div>
+                    <div className="flex justify-between text-teal-900 font-bold border-t border-gray-200 pt-2 text-sm">
+                      <span>Gross Partner Share (10%):</span>
+                      <span>{formatKobo(partnerInvoiceData.summary.totalPartnerShareKobo)}</span>
+                    </div>
+
+                    <div className="border-t border-gray-200 pt-2 space-y-1.5 text-gray-600">
+                      <div className="flex justify-between text-red-700 text-[11px]">
+                        <span>Less: Paystack Wire Transfer Fee:</span>
+                        <span>- {formatKobo(partnerInvoiceData.summary.totalPaystackTransferFeesKobo)}</span>
+                      </div>
+                      <div className="flex justify-between text-purple-800 font-semibold text-[11px] bg-purple-50 px-2 py-1 rounded border border-purple-100">
+                        <span>Less: Statutory Stamp Duty (EMTL):</span>
+                        <span>- {formatKobo(partnerInvoiceData.summary.totalStampDutyKobo)}</span>
+                      </div>
+                    </div>
+
+                    <div className="border-t-2 border-[#005b57] pt-2 flex justify-between items-center text-sm font-bold text-[#005b57]">
+                      <span>Net Disbursement:</span>
+                      <span className="text-base">{formatKobo(partnerInvoiceData.summary.totalNetPayableKobo)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setIsInvoiceModalOpen(false)}
+                className="py-2 px-4 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition"
+              >
+                Close
+              </button>
+              {partnerInvoiceData && (
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="py-2 px-4 rounded-xl bg-[#005b57] hover:bg-[#004744] text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-xs"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Invoice / Save PDF</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -16,6 +16,8 @@ export const updateMarketplaceSettings = mutation({
     isAvailableOnMarketplace: v.optional(v.boolean()),
     hourlyRate: v.optional(v.number()), // in kobo
     initialConsultRate: v.optional(v.number()), // in kobo
+    virtualConsultationRate: v.optional(v.number()), // in kobo (default ₦6,000)
+    inPersonConsultationRate: v.optional(v.number()), // in kobo (default ₦10,000)
     packageDiscountPercent: v.optional(v.number()), // 5-15%
     packageRates: v.optional(
       v.array(
@@ -82,6 +84,12 @@ export const updateMarketplaceSettings = mutation({
     }
     if (args.initialConsultRate !== undefined) {
       updates.initialConsultRate = args.initialConsultRate;
+    }
+    if (args.virtualConsultationRate !== undefined) {
+      updates.virtualConsultationRate = args.virtualConsultationRate;
+    }
+    if (args.inPersonConsultationRate !== undefined) {
+      updates.inPersonConsultationRate = args.inPersonConsultationRate;
     }
     if (args.packageDiscountPercent !== undefined) {
       // Clamp to 5-15% range
@@ -171,6 +179,12 @@ export const getMyMarketplaceSettings = query({
       initialConsultRate: profile.initialConsultRate
         ? profile.initialConsultRate / 100
         : 0,
+      virtualConsultationRate: profile.virtualConsultationRate
+        ? profile.virtualConsultationRate / 100
+        : 6000,
+      inPersonConsultationRate: profile.inPersonConsultationRate
+        ? profile.inPersonConsultationRate / 100
+        : 10000,
       packageDiscountPercent: (profile as any).packageDiscountPercent || 0,
       packageRates: (profile.packageRates || []).map((pkg) => ({
         ...pkg,

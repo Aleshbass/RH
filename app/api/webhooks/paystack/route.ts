@@ -67,6 +67,11 @@ export async function POST(request: NextRequest) {
                 await handleTransferCompleted(data, rawBody, signature as string)
                 break
 
+            case 'transfer.failed':
+            case 'transfer.reversed':
+                await handleTransferFailedOrReversed(data, event)
+                break
+
             default:
                 log.info('Unhandled Paystack webhook event', {
                     action: 'paystack_webhook_unhandled',
@@ -332,7 +337,30 @@ async function handleTransferCompleted(data: any, rawBody: string, signature: st
         const reference = String(data.reference || '');
         const reason = String(data.reason || '');
         const metadata = data.metadata as Record<string, unknown> | undefined;
-        
+
+        // Check if this is a partner monthly commission disbursement (starts with TRF_RH_ or TRF_BULK_)
+        if (reference.startsWith('TRF_RH_') || reference.startsWith('TRF_BULK_')) {
+            const { ConvexHttpClient } = await import('convex/browser');
+            const { api } = await import('@/convex/_generated/api') as any;
+            const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+            const parts = reference.split('_');
+            const partnerCode = parts.length >= 3 ? parts[2] : undefined;
+            const billingPeriodRaw = parts.length >= 4 ? parts[3] : '';
+            const billingPeriod = billingPeriodRaw.length === 6
+                ? `${billingPeriodRaw.slice(0, 4)}-${billingPeriodRaw.slice(4, 6)}`
+                : undefined;
+
+            await convex.mutation(api.monthlySettlements.processMonthlyBulkPayout, {
+                partnerCode,
+                billingPeriod: billingPeriod || new Date().toISOString().slice(0, 7),
+                payoutBatchReference: reference,
+                note: `Paystack webhook transfer.success (${data.transfer_code || reference})`,
+            });
+            log.info(`Updated partner commission settlement from Paystack transfer.success: ${reference}`);
+            return;
+        }
+
         let referralId: string | null = null;
         
             // 1. Check if admin explicitly attached a referralId in metadata
@@ -376,6 +404,52 @@ async function handleTransferCompleted(data: any, rawBody: string, signature: st
             action: 'paystack_transfer_handler_error',
             extra: { reference: data.reference }
         })
+    }
+}
+
+/**
+ * Handle transfer failed or reversed — roll back commission settlements
+ */
+async function handleTransferFailedOrReversed(data: any, event: string) {
+    const reference = String(data.reference || '');
+    const reason = String(data.reason || data.message || event);
+
+    log.warn(`Paystack transfer ${event}: ${reference}`, {
+        action: 'paystack_transfer_failed_or_reversed',
+        metadata: { reference, reason, amount: data.amount }
+    })
+
+    // Only roll back partner commission settlements (TRF_RH_ or TRF_BULK_)
+    if (reference.startsWith('TRF_RH_') || reference.startsWith('TRF_BULK_')) {
+        try {
+            const { ConvexHttpClient } = await import('convex/browser');
+            const { api } = await import('@/convex/_generated/api') as any;
+            const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+            // Parse partner code and billing period from reference
+            // Format: TRF_RH_{partnerCode}_{YYYYMM}_{timestamp} or TRF_BULK_{partnerCode}_{YYYYMM}_{timestamp}_{index}
+            const parts = reference.split('_');
+            const partnerCode = parts.length >= 3 ? parts[2] : undefined;
+            const billingPeriodRaw = parts.length >= 4 ? parts[3] : '';
+            const billingPeriod = billingPeriodRaw.length === 6
+                ? `${billingPeriodRaw.slice(0, 4)}-${billingPeriodRaw.slice(4, 6)}`
+                : undefined;
+
+            await convex.mutation(api.monthlySettlements.rollbackPayoutSettlement, {
+                partnerCode,
+                billingPeriod: billingPeriod || new Date().toISOString().slice(0, 7),
+                batchReference: reference,
+                failureReason: reason,
+            });
+
+            log.info(`Rolled back partner commission settlement after ${event}: ${reference}`);
+        } catch (error) {
+            log.error(`Failed to roll back commission settlement for ${reference}`, { error: error as Error });
+            ErrorTracker.captureException(error as Error, {
+                action: 'paystack_transfer_rollback_error',
+                extra: { reference, event }
+            });
+        }
     }
 }
 

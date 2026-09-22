@@ -7,7 +7,7 @@ import { Id } from '@/convex/_generated/dataModel';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { bookingId, amount, email, phone, name } = body;
+    const { bookingId, amount, email, phone, name, baseAmount, processingFee, feeBearer } = body;
 
     if (!bookingId) {
       return NextResponse.json({ error: 'Booking ID is required' }, { status: 400 });
@@ -42,6 +42,10 @@ export async function POST(request: NextRequest) {
         customerPhone: phone || null,
         customerName: name || null,
         isMarketplaceBooking: true,
+        // Fee breakdown (when patient bears processing fee)
+        ...(baseAmount != null && { baseAmountNaira: baseAmount }),
+        ...(processingFee != null && { processingFeeNaira: processingFee }),
+        ...(feeBearer && { feeBearer }),
         custom_fields: [
           {
             display_name: 'Booking ID',

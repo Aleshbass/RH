@@ -93,10 +93,6 @@ export function DoctorsClinicsSection() {
                         className="lg:col-span-7 bg-white rounded-3xl p-7 sm:p-9 border border-gray-200/90 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgba(0,91,87,0.08)] transition-all duration-300 flex flex-col justify-between"
                     >
                         <div>
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold mb-4">
-                                <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>30-Second Hand-Off</span>
-                            </div>
                             <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2 font-cal">
                                 1-Click Patient Referral
                             </h3>
@@ -166,10 +162,6 @@ export function DoctorsClinicsSection() {
                         className="lg:col-span-5 bg-white rounded-3xl p-7 sm:p-9 border border-gray-200/90 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_rgba(0,91,87,0.08)] transition-all duration-300 flex flex-col justify-between relative overflow-hidden group"
                     >
                         <div>
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-[#005b57] border border-teal-200 text-xs font-bold mb-4">
-                                <FileText className="w-3.5 h-3.5 text-[#005b57]" />
-                                <span>100% Closed-Loop</span>
-                            </div>
                             <h3 className="text-2xl font-bold text-gray-900 mb-2 font-cal">
                                 Full Clinical Visibility
                             </h3>
@@ -200,58 +192,7 @@ export function DoctorsClinicsSection() {
 
                 </div>
 
-                {/* 3 Value Pillars (Stats & Highlights) */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto mb-14">
-                    
-                    <motion.div
-                        initial={{ opacity: 0, y: 16 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.4, delay: 0.1 }}
-                        className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-sm flex items-start gap-4"
-                    >
-                        <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-xl flex items-center justify-center shrink-0">
-                            30s
-                        </div>
-                        <div>
-                            <h4 className="font-bold text-gray-900 text-base mb-1">Instant Hand-off</h4>
-                            <p className="text-xs text-gray-500 leading-relaxed">No phone calls or manual tracking. One form on WhatsApp or web portal.</p>
-                        </div>
-                    </motion.div>
 
-                    <motion.div
-                        initial={{ opacity: 0, y: 16 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.4, delay: 0.2 }}
-                        className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-sm flex items-start gap-4"
-                    >
-                        <div className="w-12 h-12 rounded-xl bg-teal-50 text-[#005b57] font-bold text-xl flex items-center justify-center shrink-0">
-                            100%
-                        </div>
-                        <div>
-                            <h4 className="font-bold text-gray-900 text-base mb-1">Closed-Loop Reports</h4>
-                            <p className="text-xs text-gray-500 leading-relaxed">View session attendance, recovery milestones, and discharge notes.</p>
-                        </div>
-                    </motion.div>
-
-                    <motion.div
-                        initial={{ opacity: 0, y: 16 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.4, delay: 0.3 }}
-                        className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-sm flex items-start gap-4"
-                    >
-                        <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-700 font-bold text-lg flex items-center justify-center shrink-0">
-                            <TrendingUp className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <h4 className="font-bold text-gray-900 text-base mb-1">Partner Incentives</h4>
-                            <p className="text-xs text-gray-500 leading-relaxed">Earn structured referral bonuses on every successfully treated patient.</p>
-                        </div>
-                    </motion.div>
-
-                </div>
 
                 {/* Bottom Referral CTAs */}
                 <motion.div

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { actorSchema, authenticatedJson, errorResponse, success } from "@/lib/joy-integration/http";
 import { JoyAuthError } from "@/lib/joy-integration/auth";
 import { callJoyConvexGateway } from "@/lib/joy-integration/convex-gateway";
+import { calculatePaystackInboundGrossAmount } from "@/lib/pricing";
 
 export const runtime = "nodejs";
 
@@ -20,13 +21,30 @@ export async function POST(request: Request, context: { params: Promise<{ bookin
     if (input.actor.persona !== "patient" || (input.actor.rh_user_id && input.actor.rh_user_id !== input.patient_id)) throw new JoyAuthError(403, "FORBIDDEN", "Actor may only pay for their own booking");
 
     const reference = `JOY_${bookingId.slice(-8)}_${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 18)}`;
-    const prepared = await callJoyConvexGateway("prepare_payment_attempt", { booking_id: bookingId, patient_id: input.patient_id, request_id: requestId, idempotency_key: idempotencyKey, reference }) as { attempt_id: string; amount_kobo: number; authorization_url?: string };
+    const prepared = await callJoyConvexGateway("prepare_payment_attempt", { booking_id: bookingId, patient_id: input.patient_id, request_id: requestId, idempotency_key: idempotencyKey, reference }) as { attempt_id: string; amount_kobo: number; authorization_url?: string; reference?: string };
     if (prepared.authorization_url) return success(requestId, { booking_id: bookingId, reference: prepared.reference ?? reference, authorization_url: prepared.authorization_url, payment_status: "pending" });
+
+    // Check if patient bears Paystack inbound fee — gross up amount if so
+    let chargeAmountKobo = prepared.amount_kobo;
+    let feeMetadata: Record<string, unknown> = {};
+    try {
+      const { ConvexHttpClient } = await import("convex/browser");
+      const { api } = await import("@/convex/_generated/api") as any;
+      const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+      const settings = await convex.query(api.platformSettings.getPlatformRevenueSettings);
+      if (settings?.paystackFeeBearerInbound === "patient" && prepared.amount_kobo > 0) {
+        const { grossKobo, feeKobo } = calculatePaystackInboundGrossAmount(prepared.amount_kobo);
+        chargeAmountKobo = grossKobo;
+        feeMetadata = { baseAmountKobo: prepared.amount_kobo, processingFeeKobo: feeKobo, feeBearer: "patient" };
+      }
+    } catch {
+      // If settings fetch fails, proceed without surcharge
+    }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
     const response = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST", headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY ?? ""}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: input.email, amount: prepared.amount_kobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { rh_booking_id: bookingId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId } }),
+      body: JSON.stringify({ email: input.email, amount: chargeAmountKobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { rh_booking_id: bookingId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId, ...feeMetadata } }),
     });
     const result = await response.json() as { status?: boolean; message?: string; data?: { authorization_url?: string; access_code?: string } };
     if (!response.ok || !result.status || !result.data?.authorization_url) {

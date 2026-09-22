@@ -575,9 +575,9 @@ export default function AboutPage() {
                     {/* Contact grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-12">
                         {[
-                            { icon: Phone, label: "Patient Support", value: "+234-810-1157557" },
-                            { icon: Mail, label: "Provider Inquiries", value: "partners@rehabify.ng" },
-                            { icon: Mail, label: "General Questions", value: "hello@rehabify.ng" },
+                            { icon: Phone, label: "Patient Support", value: "+234 806 152 5811" },
+                            { icon: Mail, label: "Provider Inquiries", value: "partners@physioaroundme.com" },
+                            { icon: Mail, label: "General Questions", value: "support@physioaroundme.com" },
                             { icon: Clock, label: "Office Hours", value: "Mon-Fri 8AM-6PM WAT" },
                         ].map((item) => {
                             const Icon = item.icon;

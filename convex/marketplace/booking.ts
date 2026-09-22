@@ -10,25 +10,23 @@ import { api, internal } from "../_generated/api";
 
 /**
  * Calculate fees for marketplace booking
- * Platform: 20% + Paystack: 1.5% + ₦100
+ * Platform Revenue Split: 80% Physiotherapist, 10% Rehabify, 10% Partner Referral
+ * Payment Processing: Paystack 1.5% + ₦100
  */
 function calculateMarketplaceFees(serviceAmount: number) {
-    // serviceAmount is in kobo
-    const platformFee = 1000 * 100; // Fixed ₦1,000 in kobo
+    // serviceAmount is in kobo (e.g. 600,000 for ₦6,000 virtual or 1,000,000 for ₦10,000 in-person)
     const paystackPercentage = 0.015; // 1.5%
     const paystackFlat = 100 * 100; // ₦100 in kobo
 
-    // Paystack fee on (service + platform fee)
-    const chargeableAmount = serviceAmount + platformFee;
-    const paystackFee = Math.round(
-        chargeableAmount * paystackPercentage + paystackFlat
-    );
+    const paystackFee = Math.round(serviceAmount * paystackPercentage + paystackFlat);
+    const totalAmount = serviceAmount + paystackFee;
 
-    // Total amount to charge patient
-    const totalAmount = chargeableAmount + paystackFee;
-
-    // Physiotherapist earnings (service amount)
-    const physiotherapistEarnings = serviceAmount;
+    // 80% to Physiotherapist
+    const physiotherapistEarnings = Math.round(serviceAmount * 0.80);
+    // 10% to Rehabify
+    const platformFee = Math.round(serviceAmount * 0.10);
+    // 10% to Referring Partner
+    const partnerEarnings = serviceAmount - physiotherapistEarnings - platformFee;
 
     return {
         serviceAmount,
@@ -36,6 +34,7 @@ function calculateMarketplaceFees(serviceAmount: number) {
         paystackFee,
         totalAmount,
         physiotherapistEarnings,
+        partnerEarnings,
     };
 }
 
@@ -88,8 +87,19 @@ export const createMarketplaceBooking = mutation({
             throw new Error("Physiotherapist not available for booking");
         }
 
-        // Calculate fees
-        const fees = calculateMarketplaceFees(args.serviceAmount);
+        // Determine rate base on booking type: virtual (₦6k default) vs in-person (physiotherapist rate on dashboard / ₦10k default)
+        let effectiveServiceAmount = args.serviceAmount;
+        if (!effectiveServiceAmount || effectiveServiceAmount <= 0) {
+            if (args.isOnline) {
+                effectiveServiceAmount = physioProfile.virtualConsultationRate || 600000; // ₦6,000 default virtual rate
+            } else {
+                effectiveServiceAmount = physioProfile.inPersonConsultationRate || 1000000; // ₦10,000 or custom in-person rate
+            }
+        }
+
+        // Calculate fees & 80/10/10 split
+        const fees = calculateMarketplaceFees(effectiveServiceAmount);
+        const careMode: "virtual" | "in_person" = args.isOnline ? "virtual" : "in_person";
 
         // Determine effective session type
         const effectiveSessionType =
@@ -103,12 +113,16 @@ export const createMarketplaceBooking = mutation({
             sessionDate: args.sessionDate,
             sessionDuration: args.sessionDuration,
             isOnline: args.isOnline,
+            careMode,
             patientAddress: args.patientAddress,
             serviceAmount: fees.serviceAmount,
             platformFee: fees.platformFee,
             paystackFee: fees.paystackFee,
             totalAmount: fees.totalAmount,
             physiotherapistEarnings: fees.physiotherapistEarnings,
+            rehabifyEarnings: fees.platformFee,
+            partnerEarnings: fees.partnerEarnings,
+            partnerId: patient.referredByPartnerCode,
             paymentStatus: "pending",
             bookingStatus: "pending_payment",
             patientNotes: args.patientNotes,
@@ -260,8 +274,10 @@ export const completeMarketplaceBooking = mutation({
         // Update booking
         await ctx.db.patch(args.bookingId, {
             paymentStatus: "completed",
+            paymentMethod: "paystack",
             bookingStatus: "confirmed",
             paymentReference: args.paymentReference,
+            careMode: booking.isOnline ? "virtual" : "in_person",
             paidAt: Date.now(),
             updatedAt: Date.now(),
         });
@@ -382,6 +398,54 @@ export const completeMarketplaceBooking = mutation({
             updatedAt: Date.now(),
             completedAt: Date.now(),
         });
+
+        // ── Record Transparent Partner Commission (80/10/10 Split) ───────
+        const patientUserRecord = await ctx.db.get(booking.patientId);
+        const referringPartnerCode = booking.partnerId || patientUserRecord?.referredByPartnerCode;
+        if (referringPartnerCode) {
+            const now = Date.now();
+            const billingPeriod = `${new Date(now).getUTCFullYear()}-${String(new Date(now).getUTCMonth() + 1).padStart(2, "0")}`;
+            const physioUserRecord = await ctx.db.get(booking.physiotherapistId);
+            const physioName = physioUserRecord ? `${physioUserRecord.firstName || ""} ${physioUserRecord.lastName || ""}`.trim() : "Physiotherapist";
+            const patientName = booking.guestName || (patientUserRecord ? `${patientUserRecord.firstName || ""} ${patientUserRecord.lastName || ""}`.trim() : "Patient");
+            const careMode: "virtual" | "in_person" = booking.isOnline ? "virtual" : "in_person";
+
+            const referral = await ctx.db
+                .query("inboundReferrals")
+                .withIndex("by_partner_id", (q) => q.eq("partnerId", referringPartnerCode))
+                .filter((q) => q.eq(q.field("trackingCode"), patientUserRecord?.referralPublicCode || ""))
+                .first();
+
+            const trackingCode = referral?.trackingCode || patientUserRecord?.referralPublicCode || `RHB-${Math.floor(10000 + Math.random() * 90000)}`;
+
+            await ctx.db.insert("partnerCommissions", {
+                partnerId: referringPartnerCode,
+                referralId: referral?._id || (booking._id as any),
+                trackingCode,
+                patientName,
+                eventType: "booking_confirmed",
+                grossTransactionAmount: booking.serviceAmount,
+                commissionRate: 10,
+                commissionAmount: booking.partnerEarnings || Math.round(booking.serviceAmount * 0.10),
+                netPayable: booking.partnerEarnings || Math.round(booking.serviceAmount * 0.10),
+                physiotherapistId: booking.physiotherapistId,
+                physiotherapistName: physioName,
+                careMode,
+                physiotherapistAmount: booking.physiotherapistEarnings,
+                rehabifyAmount: booking.platformFee,
+                partnerAmount: booking.partnerEarnings || Math.round(booking.serviceAmount * 0.10),
+                physioPercent: 80,
+                rehabifyPercent: 10,
+                partnerPercent: 10,
+                paymentMethod: "paystack",
+                paymentReference: args.paymentReference,
+                billingPeriod,
+                bulkPayoutStatus: "accrued",
+                status: "approved",
+                notes: `Paid via Paystack online gateway. 80/10/10 platform split applied.`,
+                earnedAt: now,
+            });
+        }
 
         // Auto-onboard patient if necessary (ensure dashboard access)
         if (!booking.isGuestBooking) {

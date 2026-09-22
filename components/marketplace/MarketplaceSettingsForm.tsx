@@ -73,6 +73,8 @@ export default function MarketplaceSettingsForm({
     isAvailableOnMarketplace: settings.isAvailableOnMarketplace,
     hourlyRate: settings.hourlyRate,
     initialConsultRate: settings.initialConsultRate,
+    virtualConsultationRate: settings.virtualConsultationRate || 6000,
+    inPersonConsultationRate: settings.inPersonConsultationRate || 10000,
     packageDiscountPercent: settings.packageDiscountPercent || 0,
     location: settings.location || "",
     offersOnlineSessions: settings.offersOnlineSessions,
@@ -143,6 +145,8 @@ export default function MarketplaceSettingsForm({
         isAvailableOnMarketplace: checked,
         hourlyRate: Math.round(formData.hourlyRate * 100),
         initialConsultRate: Math.round(formData.initialConsultRate * 100),
+        virtualConsultationRate: Math.round((formData.virtualConsultationRate || 6000) * 100),
+        inPersonConsultationRate: Math.round((formData.inPersonConsultationRate || 10000) * 100),
         packageDiscountPercent: formData.packageDiscountPercent,
         location: formData.location,
         offersOnlineSessions: formData.offersOnlineSessions,
@@ -180,6 +184,8 @@ export default function MarketplaceSettingsForm({
         isAvailableOnMarketplace: formData.isAvailableOnMarketplace,
         hourlyRate: Math.round(formData.hourlyRate * 100),
         initialConsultRate: Math.round(formData.initialConsultRate * 100),
+        virtualConsultationRate: Math.round((formData.virtualConsultationRate || 6000) * 100),
+        inPersonConsultationRate: Math.round((formData.inPersonConsultationRate || 10000) * 100),
         packageDiscountPercent: formData.packageDiscountPercent,
         location: formData.location,
         offersOnlineSessions: formData.offersOnlineSessions,
@@ -288,100 +294,120 @@ export default function MarketplaceSettingsForm({
       {/* ── PRICING SECTION ── */}
       <div className="space-y-6">
         <div>
-          <Label className="text-base font-semibold mb-1 block">Session Pricing</Label>
+          <Label className="text-base font-semibold mb-1 block">Session Pricing & Revenue Share</Label>
           <p className="text-sm text-gray-600 mb-4">
-            Set your session rates in Nigerian Naira (₦). Platform fees are separate and transparent.
+            Set your consultation rates. You earn <strong className="text-emerald-700 font-bold">80%</strong> of what you charge. Rehabify platform and referring healthcare partners share the remaining 20% (10% platform, 10% partner).
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="initialConsultRate" className="text-sm font-medium">
-              Initial Consultation Rate
-            </Label>
-            <p className="text-xs text-gray-600 mb-2">First session price</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Virtual Consultation Rate */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="virtualConsultationRate" className="text-sm font-bold text-gray-900">
+                  Virtual Call / Video Consultation
+                </Label>
+                <p className="text-xs text-gray-500 mt-0.5">Online remote tele-physio</p>
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-[#005b57] border border-teal-200">
+                Baseline ₦6,000
+              </span>
+            </div>
+
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">₦</span>
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-semibold text-base">₦</span>
               <Input
-                id="initialConsultRate"
+                id="virtualConsultationRate"
                 type="number"
-                value={formData.initialConsultRate}
+                value={formData.virtualConsultationRate}
                 onChange={(e) =>
                   setFormData((prev) => ({
                     ...prev,
-                    initialConsultRate: parseFloat(e.target.value) || 0,
+                    virtualConsultationRate: parseFloat(e.target.value) || 0,
+                  }))
+                }
+                placeholder="6,000"
+                min={1000}
+                step={500}
+                className="text-lg font-bold pl-8 border-gray-300"
+              />
+            </div>
+
+            <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
+              <span className="text-gray-500">You Receive (80%):</span>
+              <span className="font-bold text-emerald-700 text-sm">
+                ₦{Math.round((formData.virtualConsultationRate || 6000) * 0.8).toLocaleString()}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-gray-400">
+              <span>Platform & Partner (20%):</span>
+              <span>₦{Math.round((formData.virtualConsultationRate || 6000) * 0.2).toLocaleString()}</span>
+            </div>
+          </div>
+
+          {/* In-Person / Face-to-Face Rate */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="inPersonConsultationRate" className="text-sm font-bold text-gray-900">
+                  Face-to-Face / In-Person Session
+                </Label>
+                <p className="text-xs text-gray-500 mt-0.5">Clinic or home visit care</p>
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                Custom Rate (Min ₦10k)
+              </span>
+            </div>
+
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-semibold text-base">₦</span>
+              <Input
+                id="inPersonConsultationRate"
+                type="number"
+                value={formData.inPersonConsultationRate}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    inPersonConsultationRate: parseFloat(e.target.value) || 0,
                   }))
                 }
                 placeholder="10,000"
-                min={0}
+                min={2000}
                 step={500}
-                className="text-lg font-semibold pl-8"
+                className="text-lg font-bold pl-8 border-gray-300"
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">Suggested: ₦8,000 - ₦25,000</p>
-          </div>
 
-          <div>
-            <Label htmlFor="hourlyRate" className="text-sm font-medium">
-              Follow-up Rate
-            </Label>
-            <p className="text-xs text-gray-600 mb-2">Subsequent sessions</p>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">₦</span>
-              <Input
-                id="hourlyRate"
-                type="number"
-                value={formData.hourlyRate}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    hourlyRate: parseFloat(e.target.value) || 0,
-                  }))
-                }
-                placeholder="8,000"
-                min={0}
-                step={500}
-                className="text-lg font-semibold pl-8"
-              />
+            <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
+              <span className="text-gray-500">You Receive (80%):</span>
+              <span className="font-bold text-emerald-700 text-sm">
+                ₦{Math.round((formData.inPersonConsultationRate || 10000) * 0.8).toLocaleString()}
+              </span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Suggested: ₦5,000 - ₦20,000</p>
+            <div className="flex items-center justify-between text-[11px] text-gray-400">
+              <span>Platform & Partner (20%):</span>
+              <span>₦{Math.round((formData.inPersonConsultationRate || 10000) * 0.2).toLocaleString()}</span>
+            </div>
           </div>
         </div>
 
-        {/* Fee Breakdown */}
-        {feePreview && (
-          <Card className="border border-gray-200 shadow-sm bg-gray-50/50">
-            <CardContent className="pt-5">
-              <div className="flex items-start gap-2 mb-3">
-                <div className="p-1.5 bg-white rounded-md border border-gray-200 shadow-sm">
-                  <Info className="h-4 w-4 text-gray-700" />
-                </div>
-                <div>
-                  <h4 className="font-semibold text-gray-900 text-sm">Platform Fee Structure</h4>
-                  <p className="text-xs text-gray-500">Per follow-up session</p>
-                </div>
+        {/* Informational Transparency Card */}
+        <Card className="border border-teal-100 bg-[#f0f8f7] shadow-xs">
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-white rounded-xl border border-teal-200 shadow-2xs text-[#005b57] shrink-0">
+                <Info className="h-5 w-5" />
               </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Your session rate</span>
-                  <span className="font-medium text-gray-900">{formatNaira(feePreview.youReceive)}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Platform fee {formData.hourlyRate > 25000 ? `(₦1k + 5% on excess)` : `(flat)`}</span>
-                  <span className="text-gray-500">+{formatNaira(feePreview.platformFee)}</span>
-                </div>
-                <div className="flex justify-between pt-2 border-t border-gray-200">
-                  <span className="font-semibold text-gray-900">Patient pays</span>
-                  <span className="font-bold text-gray-900">{formatNaira(feePreview.patientPays)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-green-700">You receive</span>
-                  <span className="font-bold text-green-600">{formatNaira(feePreview.youReceive)}</span>
-                </div>
+              <div className="space-y-1 text-xs sm:text-sm text-gray-700">
+                <h4 className="font-bold text-gray-900 text-sm">End-of-Month Bulk Settlement Guarantee</h4>
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  All treatments conducted via online bookings or referred through our network are consolidated into our end-of-month bulk payout ledger. You receive 80% direct to your registered bank account with complete transparency.
+                </p>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* ── PACKAGE DISCOUNT SECTION ── */}

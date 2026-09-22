@@ -198,9 +198,9 @@ export function PreCode({
 }
 
 // Clean Apple-styled Table wrapper
-export function TableWrapper({ children }: { children: React.ReactNode }) {
+export function TableWrapper({ children, ...props }: { children?: React.ReactNode; [key: string]: any }) {
   return (
-    <div className="my-6 rounded-2xl border border-[#002e2c]/15 overflow-hidden bg-white/70 shadow-xs">
+    <div className="my-6 rounded-2xl border border-[#002e2c]/15 overflow-hidden bg-white/70 shadow-xs" {...props}>
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse text-xs text-[#1b3a38]">
           {children}

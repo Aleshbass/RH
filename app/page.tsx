@@ -8,18 +8,13 @@ import { FoundersCarousel } from "@/components/landing/FoundersCarousel";
 import { HowItWorks } from "@/components/landing/HowItWorks";
 import { TrustSafety } from "@/components/landing/TrustSafety";
 import { HomePageSEO } from "@/components/seo/HomePageSEO";
-import { ProblemSection } from "@/components/landing/ProblemSection";
 import { DoctorsClinicsSection } from "@/components/landing/DoctorsClinicsSection";
 import { SpeakToAPhysio } from "@/components/landing/SpeakToAPhysio";
-import { MeetJoySection } from "@/components/landing/MeetJoySection";
 import { ForInstitutionsSection } from "@/components/landing/ForInstitutionsSection";
-import { MediloanSection } from "@/components/landing/MediloanSection";
+import { MediloanBanner } from "@/components/landing/MediloanBanner";
 
 const RoleBasedFeatures = dynamicImport(() => import("@/components/landing/RoleBasedFeatures"));
 const ConnectedCareSection = dynamicImport(() => import("@/components/landing/ConnectedCareSection"));
-const RehabifyLearnSection = dynamicImport(
-  () => import("@/components/landing/RehabifyLearnSection").then(m => m.RehabifyLearnSection)
-);
 const FAQ = dynamicImport(() => import('@/components/landing/FAQ'));
 
 export const dynamic = 'force-static';
@@ -27,17 +22,14 @@ export const dynamic = 'force-static';
 const PageContent = () => (
   <div className="-mt-12 sm:-mt-16 w-full">
     <LandingHero />
-    <ProblemSection />
+    <SpeakToAPhysio />
+    <MediloanBanner />
     <HowItWorks />
     <RoleBasedFeatures />
     <ConnectedCareSection />
-    <MeetJoySection />
     <DoctorsClinicsSection />
     <ForInstitutionsSection />
     <FoundersCarousel />
-    <SpeakToAPhysio />
-    <MediloanSection />
-    {/* <RehabifyLearnSection /> */}
     <TrustSafety />
     <FAQ />
   </div>

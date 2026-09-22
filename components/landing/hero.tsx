@@ -244,7 +244,7 @@ export function LandingHero() {
                     J
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-white font-bold text-[15px] leading-tight truncate">Joy — Rehabify</h3>
+                    <h3 className="text-white font-bold text-[15px] leading-tight truncate">Joy · Rehabify</h3>
                     <p className="text-white/80 text-[11px] font-medium">Online · AI-powered · speaks your language</p>
                   </div>
                 </div>
@@ -255,7 +255,7 @@ export function LandingHero() {
                   {/* Joy message */}
                   <div className="bg-white rounded-2xl rounded-tl-sm p-3 max-w-[88%] shadow-sm">
                     <p className="text-[#111b21] text-[14px] leading-snug">
-                      Hello. I&apos;m Joy. Tell me what&apos;s been bothering you — in English, Yoruba, Igbo, or Hausa.
+                      Hello. I&apos;m Joy. Tell me what&apos;s been bothering you in English, Yoruba, Igbo, or Hausa.
                     </p>
                     <p className="text-[10px] text-[#999] text-right mt-1">9:01 AM</p>
                   </div>

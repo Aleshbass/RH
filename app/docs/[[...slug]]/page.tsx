@@ -111,7 +111,7 @@ export default async function Page(props: PageProps) {
       return <code {...p} />;
     },
     pre: PreCode,
-    table: TableWrapper,
+    table: (p: any) => <TableWrapper {...p} />,
     th: (p: any) => (
       <th
         className="py-2.5 px-4 text-xs font-bold uppercase tracking-wider text-[#002e2c] bg-[#FAF6E7]/80 border-b border-[#002e2c]/15 text-left"

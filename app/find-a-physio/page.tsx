@@ -242,8 +242,6 @@ export default function FindAPhysioPage() {
                 <SelectContent>
                   <SelectItem value="verified">Verified First</SelectItem>
                   <SelectItem value="rating">Highest Rated</SelectItem>
-                  <SelectItem value="price_low">Price: Low to High</SelectItem>
-                  <SelectItem value="price_high">Price: High to Low</SelectItem>
                   <SelectItem value="experience">Most Experienced</SelectItem>
                 </SelectContent>
               </Select>

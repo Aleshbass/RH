@@ -12,6 +12,7 @@ import {
   Pencil, Loader2, Check, Stethoscope, ArrowRight, ChevronDown, ChevronUp,
   MessageSquare, UserCheck,
 } from 'lucide-react';
+import { IconBrandWhatsapp } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -168,14 +169,17 @@ export default function PhysioProfilePage() {
           <div className="max-w-4xl mx-auto px-4 py-2.5 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 text-sm text-center">
             <div className="flex items-center justify-center gap-2">
               <Stethoscope className="w-4 h-4 text-amber-600 shrink-0" />
-              <span className="text-amber-800">Are you a Patient looking for a Physiotherapist?</span>
+              <span className="text-amber-800 font-medium">Are you a Patient looking for a Physiotherapist?</span>
             </div>
-            <Link
-              href="/start-treatment"
-              className="inline-flex items-center gap-1 font-bold text-[#005b57] hover:underline"
+            <a
+              href={`https://wa.me/2348061525811?text=${encodeURIComponent("Hi Joy! 👋🏾 I'm looking for a verified physiotherapist to help with my recovery.")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 font-bold text-[#005b57] hover:underline transition-colors"
             >
-              Click here to book a session <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+              <IconBrandWhatsapp className="w-4 h-4 text-[#25D366]" />
+              Chat with Joy on WhatsApp to book a session <ArrowRight className="w-3.5 h-3.5" />
+            </a>
           </div>
         </div>
 

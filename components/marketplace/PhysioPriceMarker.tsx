@@ -1,40 +1,34 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { Star, Stethoscope } from "lucide-react";
 
 interface PhysioPriceMarkerProps {
-    price: number;
+    price?: number;
+    name?: string;
+    rating?: number;
     isSelected?: boolean;
     isHovered?: boolean;
     onClick?: () => void;
 }
 
 /**
- * Airbnb-style price marker for the map.
- * Shows the physiotherapist's rate as a pill on the map.
+ * Map marker for physiotherapist on the map.
+ * Displays professional rating and name (no prices displayed to users).
  */
 export default function PhysioPriceMarker({
-    price,
+    name,
+    rating,
     isSelected,
     isHovered,
     onClick,
 }: PhysioPriceMarkerProps) {
-    const formatPrice = (price: number) => {
-        if (price >= 1000000) {
-            return `₦${(price / 1000000).toFixed(1)}M`;
-        }
-        if (price >= 1000) {
-            return `₦${(price / 1000).toFixed(0)}K`;
-        }
-        return `₦${price.toLocaleString()}`;
-    };
-
     return (
         <button
             type="button"
             onClick={onClick}
             className={cn(
-                "relative px-3 py-1.5 rounded-full text-xs font-bold shadow-lg transition-all duration-200 cursor-pointer border-2 whitespace-nowrap",
+                "relative px-2.5 py-1 rounded-full text-xs font-bold shadow-lg transition-all duration-200 cursor-pointer border-2 whitespace-nowrap flex items-center gap-1.5",
                 "hover:scale-110 hover:z-50",
                 isSelected || isHovered
                     ? "bg-[#002e2c] text-white border-[#002e2c] scale-110 z-50 shadow-xl shadow-teal-900/30"
@@ -45,7 +39,17 @@ export default function PhysioPriceMarker({
                 transform: isSelected || isHovered ? "scale(1.1)" : "scale(1)",
             }}
         >
-            {formatPrice(price)}
+            {rating && rating > 0 ? (
+                <>
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+                    <span>{rating.toFixed(1)}</span>
+                </>
+            ) : (
+                <Stethoscope className={cn("w-3 h-3 shrink-0", isSelected || isHovered ? "text-teal-300" : "text-[#005b57]")} />
+            )}
+            {name && (
+                <span className="font-semibold text-[11px] truncate max-w-[70px]">{name}</span>
+            )}
             {/* Arrow/pointer at bottom */}
             <span
                 className={cn(

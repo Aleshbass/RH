@@ -45,8 +45,6 @@ export default function PhysioCard({ physiotherapist }: PhysioCardProps) {
     specializations,
     yearsOfExperience,
     location,
-    hourlyRate,
-    initialConsultRate,
     averageRating,
     reviewCount,
     isVerified,
@@ -143,34 +141,25 @@ export default function PhysioCard({ physiotherapist }: PhysioCardProps) {
         </div>
 
         {/* Footer: Session Types & CTA */}
-        <div className="pt-3 mt-auto border-t border-gray-50 flex items-end justify-between gap-2">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              {offersOnlineSessions && (
-                <div className="flex items-center gap-1 text-[10px] text-gray-500 font-medium bg-gray-50 px-1.5 py-0.5 rounded">
-                  <Video className="h-3 w-3 text-brand" />
-                  <span>Online</span>
-                </div>
-              )}
-              {offersInPersonSessions && (
-                <div className="flex items-center gap-1 text-[10px] text-gray-500 font-medium bg-gray-50 px-1.5 py-0.5 rounded">
-                  <Users className="h-3 w-3 text-brand" />
-                  <span>In-Person</span>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Starts from</p>
-              <p className="text-lg font-bold text-gray-900 leading-none">
-                ₦{(initialConsultRate || hourlyRate).toLocaleString()}
-              </p>
-            </div>
+        <div className="pt-3 mt-auto border-t border-gray-50 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {offersOnlineSessions && (
+              <div className="flex items-center gap-1 text-[10px] text-gray-500 font-medium bg-gray-50 px-1.5 py-0.5 rounded">
+                <Video className="h-3 w-3 text-brand" />
+                <span>Online</span>
+              </div>
+            )}
+            {offersInPersonSessions && (
+              <div className="flex items-center gap-1 text-[10px] text-gray-500 font-medium bg-gray-50 px-1.5 py-0.5 rounded">
+                <Users className="h-3 w-3 text-brand" />
+                <span>In-Person</span>
+              </div>
+            )}
           </div>
 
           <Link
             href={`/find-a-physio/${id}`}
-            className="w-full max-w-[100px]"
+            className="w-full max-w-[100px] shrink-0"
             onClick={handleProfileClick}
           >
             <Button

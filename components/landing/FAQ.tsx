@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Minus, Send } from 'lucide-react';
+import { Plus, Minus, Send, Mail } from 'lucide-react';
+import { IconBrandWhatsapp } from '@tabler/icons-react';
 
 const faqData = [
   {
@@ -75,15 +76,25 @@ const FAQ = () => {
     setActiveIndex(activeIndex === index ? null : index);
   };
 
-  const handleQuestionSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!question.trim()) return;
-    const subject = encodeURIComponent('FAQ Question from Rehabify Website');
-    const body = encodeURIComponent(question.trim());
-    window.open(`mailto:hello@rehabify.ng?subject=${subject}&body=${body}`, '_blank');
+  const handleWhatsAppSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const query = question.trim() || "I have a question about Rehabify physiotherapy";
+    const waUrl = `https://wa.me/2348061525811?text=${encodeURIComponent(`Hi Joy! 👋🏾 ${query}`)}`;
+    window.open(waUrl, '_blank', 'noopener,noreferrer');
     setSubmitted(true);
     setQuestion('');
-    setTimeout(() => setSubmitted(false), 4000);
+    setTimeout(() => setSubmitted(false), 5000);
+  };
+
+  const handleEmailSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const query = question.trim() || "I have a question about Rehabify physiotherapy";
+    const subject = encodeURIComponent('FAQ Question — PhysioAroundMe / Rehabify');
+    const body = encodeURIComponent(query);
+    window.location.href = `mailto:support@physioaroundme.com?subject=${subject}&body=${body}`;
+    setSubmitted(true);
+    setQuestion('');
+    setTimeout(() => setSubmitted(false), 5000);
   };
 
   return (
@@ -111,36 +122,50 @@ const FAQ = () => {
         {/* Inline question submission */}
         <div className="mt-14 bg-white rounded-2xl border border-[#005b57]/10 p-6 sm:p-8 shadow-sm">
           <div className="text-center mb-6">
-            <h3 className="text-lg font-bold text-[#002e2c]">Still have a question?</h3>
-            <p className="text-sm text-gray-500 mt-1">Type it below and we&apos;ll get back to you.</p>
+            <h3 className="text-lg font-bold text-[#002e2c]">Still have questions?</h3>
+            <p className="text-sm text-gray-500 mt-1">Ask Joy directly on WhatsApp or send an email to our clinical care team.</p>
           </div>
           {submitted ? (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="text-center py-4"
+              className="text-center py-4 bg-emerald-50 rounded-xl border border-emerald-200"
             >
-              <p className="text-[#005b57] font-semibold text-sm">✓ Opening your email — we&apos;ll reply soon!</p>
+              <p className="text-[#005b57] font-semibold text-sm">✓ Opening your inquiry — our team will reply shortly!</p>
             </motion.div>
           ) : (
-            <form onSubmit={handleQuestionSubmit} className="flex flex-col sm:flex-row gap-3">
-              <input
-                id="faq-question-input"
-                type="text"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder="e.g. Do you serve Enugu State?"
-                className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] text-sm text-[#002e2c] bg-gray-50"
-                required
-              />
-              <button
-                id="faq-question-submit"
-                type="submit"
-                className="inline-flex items-center justify-center gap-2 bg-[#005b57] hover:bg-[#00443e] text-white font-semibold px-6 py-3 rounded-xl text-sm transition-colors cursor-pointer"
-              >
-                <Send className="w-4 h-4" />
-                Ask Us
-              </button>
+            <form onSubmit={handleWhatsAppSubmit} className="space-y-3">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  id="faq-question-input"
+                  type="text"
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  placeholder="e.g. Do you serve home visits in Ikeja or Abuja?"
+                  className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#005b57]/20 focus:border-[#005b57] text-sm text-[#002e2c] bg-gray-50"
+                  required
+                />
+                <button
+                  id="faq-question-submit"
+                  type="submit"
+                  className="inline-flex items-center justify-center gap-2 bg-[#008069] hover:bg-[#006653] text-white font-semibold px-6 py-3 rounded-xl text-sm transition-colors cursor-pointer shadow-sm"
+                >
+                  <IconBrandWhatsapp className="w-4 h-4" />
+                  Ask on WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEmailSubmit}
+                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-gray-700 font-semibold px-5 py-3 rounded-xl text-sm border border-gray-300 transition-colors cursor-pointer"
+                >
+                  <Mail className="w-4 h-4 text-gray-500" />
+                  Email Support
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between text-xs text-gray-400 px-1 pt-1">
+                <span>Instant response via Joy WhatsApp AI</span>
+                <span>or email <a href="mailto:support@physioaroundme.com" className="text-[#005b57] hover:underline font-medium">support@physioaroundme.com</a></span>
+              </div>
             </form>
           )}
         </div>

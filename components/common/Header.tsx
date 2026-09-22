@@ -32,6 +32,7 @@ import {
   ArrowRight,
   Stethoscope,
   ExternalLink,
+  Sparkles,
 } from "lucide-react";
 
 // Logo component for Rehabify Health
@@ -345,6 +346,19 @@ const navLinks: NavItem[] = [
     icon: FolderOpen,
     items: [
       {
+        name: "Meet Joy",
+        href: "/meet-joy",
+        subtitle: "Your AI WhatsApp recovery companion",
+        icon: Sparkles,
+        badge: "AI",
+      },
+      {
+        name: "Payment & Financing",
+        href: "/payment",
+        subtitle: "MediLoan — Get treated now, pay later",
+        icon: Tag,
+      },
+      {
         name: "Blog",
         href: "/blog",
         subtitle: "Latest rehabilitation insights",
@@ -372,14 +386,14 @@ const navLinks: NavItem[] = [
     items: [
       {
         name: "Partnerships",
-        href: "/partnerships",
+        href: "https://partners.physioaroundme.com",
         subtitle: "Partner with Rehabify — APIs, SDKs & more",
         icon: Users,
       },
       {
         name: "Integrations",
-        href: "/integrations",
-        subtitle: "Integrate into your hospital or clinic",
+        href: "https://docs.physioaroundme.com",
+        subtitle: "Developer guides, APIs & clinic integrations",
         icon: Stethoscope,
       },
     ],

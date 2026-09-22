@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Brain, Smartphone, Building2, ClipboardPlus, Mail, ArrowDown, CheckCircle2, Loader2 } from 'lucide-react';
+import { Mail, CheckCircle2, Loader2 } from 'lucide-react';
 import { useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import {
@@ -51,25 +51,41 @@ export function ForInstitutionsSection() {
 
   const cards = [
     {
-      icon: <Brain className="w-6 h-6 text-[#008069]" strokeWidth={2.5} />,
       title: "Rehabify Predict",
-      description: "Joy-powered AI triage via WhatsApp. Local dialects. Voice note reading."
+      description: "Joy-powered AI triage via WhatsApp. Local dialects. Voice note reading.",
+      gradient: "from-[#005b57] to-[#003d3a]",
+      textColor: "text-white",
+      descColor: "text-emerald-100/80",
+      span: "md:col-span-2 lg:col-span-2 lg:row-span-2",
+      size: "large",
     },
     {
-      icon: <Smartphone className="w-6 h-6 text-[#008069]" strokeWidth={2.5} />,
       title: "Rehabify Companion",
-      description: "Computer vision form correction, exercise prescription, VR rehab."
+      description: "Computer vision form correction, exercise prescription, VR rehab.",
+      gradient: "from-[#FFCFDC] to-[#FFB8CC]",
+      textColor: "text-gray-900",
+      descColor: "text-gray-700",
+      span: "md:col-span-1 lg:col-span-1",
+      size: "small",
     },
     {
-      icon: <Building2 className="w-6 h-6 text-[#008069]" strokeWidth={2.5} />,
       title: "Hospital Referral Network",
-      description: "No physio department? We are your physio department. Same-day matching."
+      description: "No physio department? We are your physio department. Same-day matching.",
+      gradient: "from-[#FAF6E7] to-[#F0E8D0]",
+      textColor: "text-gray-900",
+      descColor: "text-gray-600",
+      span: "md:col-span-1 lg:col-span-1",
+      size: "small",
     },
     {
-      icon: <ClipboardPlus className="w-6 h-6 text-[#008069]" strokeWidth={2.5} />,
       title: "HMO Integration",
-      description: "HMO-compatible documentation, pre-auth workflows, and outcomes data."
-    }
+      description: "HMO-compatible documentation, pre-auth workflows, and outcomes data.",
+      gradient: "from-white to-gray-50",
+      textColor: "text-gray-900",
+      descColor: "text-gray-500",
+      span: "md:col-span-2 lg:col-span-2",
+      size: "wide",
+    },
   ];
 
   return (
@@ -86,31 +102,39 @@ export function ForInstitutionsSection() {
           </h2>
         </div>
 
-        {/* Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+        {/* Apple-Inspired Bento Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-16">
           {cards.map((card, index) => (
             <div 
               key={index} 
-              className={`bg-white rounded-2xl p-8 border border-gray-100 shadow-sm hover:shadow-md transition-shadow duration-300 ${
-                index === 3 ? "lg:col-start-1 lg:row-start-2" : ""
+              className={`${card.span} bg-gradient-to-br ${card.gradient} rounded-3xl border border-black/[0.04] shadow-sm hover:shadow-lg transition-all duration-500 group overflow-hidden relative ${
+                card.size === "large" ? "p-8 sm:p-10 min-h-[280px] lg:min-h-[340px]" : 
+                card.size === "wide" ? "p-8 sm:p-10" : 
+                "p-7 sm:p-8"
               }`}
             >
-              <div className="w-12 h-12 bg-[#E8F5E9] rounded-xl flex items-center justify-center mb-6">
-                {card.icon}
+              {/* Subtle ambient glow on hover */}
+              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none">
+                <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-white/10 rounded-full blur-3xl -translate-y-1/4 translate-x-1/4" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">{card.title}</h3>
-              <p className="text-gray-500 leading-relaxed text-[15px]">
-                {card.description}
-              </p>
+
+              <div className="relative z-10 flex flex-col justify-end h-full">
+                <h3 className={`text-xl sm:text-2xl ${card.size === "large" ? "lg:text-3xl" : ""} font-bold ${card.textColor} mb-2 font-cal tracking-tight group-hover:translate-y-[-2px] transition-transform duration-300`}>
+                  {card.title}
+                </h3>
+                <p className={`${card.descColor} text-[15px] leading-relaxed ${card.size === "large" ? "max-w-sm" : ""}`}>
+                  {card.description}
+                </p>
+              </div>
             </div>
           ))}
         </div>
 
         {/* CTA Button */}
-        <div className="flex flex-col items-center justify-center relative pb-8">
+        <div className="flex flex-col items-center justify-center">
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
-              <button className="flex items-center gap-2 px-8 py-4 bg-white border border-[#008069] rounded-full text-[#008069] font-semibold text-[15px] hover:bg-[#F2FBF7] transition-colors shadow-sm relative z-10 group">
+              <button className="flex items-center gap-2 px-8 py-4 bg-white border border-[#008069] rounded-full text-[#008069] font-semibold text-[15px] hover:bg-[#F2FBF7] transition-colors shadow-sm group">
                 <Mail className="w-5 h-5 text-[#008069]" />
                 Talk to our partnerships team
               </button>
@@ -128,7 +152,7 @@ export function ForInstitutionsSection() {
                 <div className="flex flex-col items-center justify-center py-8 text-center">
                   <CheckCircle2 className="w-16 h-16 text-green-500 mb-4" />
                   <h3 className="text-xl font-bold text-gray-900 mb-2">Message Sent!</h3>
-                  <p className="text-gray-500">We've received your inquiry and will be in touch shortly.</p>
+                  <p className="text-gray-500">We&apos;ve received your inquiry and will be in touch shortly.</p>
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4 pt-4">
@@ -188,11 +212,6 @@ export function ForInstitutionsSection() {
               )}
             </DialogContent>
           </Dialog>
-
-          {/* Floating Down Arrow Badge */}
-          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 bg-white rounded-full shadow-md flex items-center justify-center border border-gray-100 z-0">
-            <ArrowDown className="w-4 h-4 text-[#008069]" />
-          </div>
         </div>
 
       </div>

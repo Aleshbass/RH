@@ -65,7 +65,7 @@ export default function PhysiotherapistProfilePage() {
   const params = useParams();
   const router = useRouter();
   const physiotherapistId = params.physiotherapistId as Id<"users">;
-  const [activeSection, setActiveSection] = useState<"about" | "reviews" | "pricing">("about");
+  const [activeSection, setActiveSection] = useState<"about" | "reviews">("about");
 
   // Fetch profile data
   const profile = useQuery(
@@ -135,11 +135,6 @@ export default function PhysiotherapistProfilePage() {
     );
   }
 
-  const displayRate = profile.initialConsultRate > 0
-    ? profile.initialConsultRate
-    : profile.hourlyRate > 0
-      ? profile.hourlyRate
-      : null;
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -295,7 +290,6 @@ export default function PhysiotherapistProfilePage() {
               {[
                 { key: "about", label: "About" },
                 { key: "reviews", label: `Reviews (${profile.reviewCount})` },
-                { key: "pricing", label: "Pricing" },
               ].map((tab) => (
                 <button
                   key={tab.key}
@@ -431,107 +425,7 @@ export default function PhysiotherapistProfilePage() {
               </motion.div>
             )}
 
-            {/* Pricing Section */}
-            {activeSection === "pricing" && (
-              <motion.div
-                key="pricing"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className="space-y-5"
-              >
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
-                  <h3 className="text-lg font-bold text-gray-900 mb-1">Session Rates</h3>
-                  <p className="text-sm text-gray-500 mb-5">
-                    Transparent pricing in Nigerian Naira (₦)
-                  </p>
 
-                  <div className="space-y-3">
-                    {profile.initialConsultRate > 0 && (
-                      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50/50 to-white rounded-xl border border-blue-100/50">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                            <Activity className="w-5 h-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <p className="font-semibold text-gray-900 text-sm">Initial Consultation</p>
-                            <p className="text-xs text-gray-500">Assessment & treatment plan</p>
-                          </div>
-                        </div>
-                        <p className="text-xl font-bold text-[#005b57]">
-                          ₦{profile.initialConsultRate.toLocaleString()}
-                        </p>
-                      </div>
-                    )}
-
-                    {profile.hourlyRate > 0 && (
-                      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50/50 to-white rounded-xl border border-green-100/50">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
-                            <Clock className="w-5 h-5 text-green-600" />
-                          </div>
-                          <div>
-                            <p className="font-semibold text-gray-900 text-sm">Follow-up Session</p>
-                            <p className="text-xs text-gray-500">Standard therapy session</p>
-                          </div>
-                        </div>
-                        <p className="text-xl font-bold text-[#005b57]">
-                          ₦{profile.hourlyRate.toLocaleString()}
-                        </p>
-                      </div>
-                    )}
-
-                    {!profile.initialConsultRate && !profile.hourlyRate && (
-                      <div className="text-center py-8 bg-gray-50 rounded-xl">
-                        <CreditCard className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm text-gray-500 font-medium">Pricing on request</p>
-                        <p className="text-xs text-gray-400 mt-0.5">Contact this physio for rates</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Package Deals */}
-                  {profile.packageRates && profile.packageRates.length > 0 && (
-                    <div className="mt-6 pt-5 border-t border-gray-100">
-                      <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-amber-500" />
-                        Package Deals
-                      </h4>
-                      <div className="space-y-2.5">
-                        {profile.packageRates.map((pkg: any, idx: number) => {
-                          const savings = (profile.hourlyRate * pkg.sessions) - pkg.price;
-                          return (
-                            <div
-                              key={idx}
-                              className="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:border-[#005b57]/30 hover:shadow-sm transition-all bg-white"
-                            >
-                              <div>
-                                <div className="flex items-center gap-2 mb-0.5">
-                                  <Badge variant="outline" className="border-[#005b57] text-[#005b57] text-xs">
-                                    {pkg.sessions} Sessions
-                                  </Badge>
-                                  {savings > 0 && (
-                                    <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                                      Save ₦{savings.toLocaleString()}
-                                    </span>
-                                  )}
-                                </div>
-                                {pkg.description && (
-                                  <p className="text-xs text-gray-500 mt-1">{pkg.description}</p>
-                                )}
-                              </div>
-                              <p className="text-lg font-bold text-[#005b57]">
-                                ₦{pkg.price.toLocaleString()}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
           </div>
 
           {/* Right Column - Booking Widget + Trust Badges */}
@@ -542,18 +436,6 @@ export default function PhysiotherapistProfilePage() {
                 <BookingWidget profile={profile} />
               </div>
 
-              {/* Quick price display (for profiles with rates) */}
-              {displayRate && (
-                <div className="mt-4 bg-gradient-to-br from-[#f0faf9] to-white rounded-2xl border border-[#005b57]/10 p-5 text-center">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                    Starting from
-                  </p>
-                  <p className="text-3xl font-bold text-[#005b57]">
-                    ₦{displayRate.toLocaleString()}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">per session</p>
-                </div>
-              )}
 
               {/* Trust badges */}
               <div className="mt-4 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
