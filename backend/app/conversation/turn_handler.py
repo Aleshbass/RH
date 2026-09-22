@@ -28,6 +28,8 @@ from app.identity.unknown_sender import resolve_unknown_sender
 from app.llm.gemini_client import LLMClient
 from app.llm.prompt_builder import build
 from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
+from app.integrations.typesafe_client import TypeSafeClient, TypeSafeError
+from app.config import get_settings
 from app.models.admin import Admin
 from app.models.conversation import Conversation
 from app.models.patient import Patient
@@ -98,6 +100,35 @@ _DASHBOARD_RE = re.compile(
 _DASHBOARD_REPLY = (
     "That lives on the web dashboard, not WhatsApp. I can't edit bio, photo, pricing, or credentials here."
 )
+
+
+def _shadow_jev_decision(session: Session, identity: Identity, user_text: str, stage: str) -> None:
+    """Record a non-authoritative Jev decision without retaining message text."""
+    settings = get_settings()
+    if not settings.typesafe_enabled or not settings.typesafe_shadow_mode or not settings.typesafe_api_key:
+        return
+    client: TypeSafeClient | None = None
+    try:
+        client = TypeSafeClient(settings.typesafe_api_key, settings.typesafe_model)
+        decision = client.evaluate_patient_message(user_text, stage=stage)
+        append(session, kind=AuditKind.TRIAGE, actor_phone=identity.phone_e164, person_id=identity.person_id, payload={
+            "event": "typesafe_shadow_decision", "intent": decision.intent,
+            "intent_confidence": decision.intent_confidence,
+            "needs_clarification_probability": decision.needs_clarification_probability,
+            "model": decision.model,
+        })
+    except TypeSafeError as exc:
+        append(session, kind=AuditKind.TRIAGE, actor_phone=identity.phone_e164, person_id=identity.person_id, payload={
+            "event": "typesafe_shadow_error", "error": str(exc),
+        })
+    except Exception:
+        # Shadow telemetry must never interrupt a patient conversation.
+        append(session, kind=AuditKind.TRIAGE, actor_phone=identity.phone_e164, person_id=identity.person_id, payload={
+            "event": "typesafe_shadow_error", "error": "unexpected_client_error",
+        })
+    finally:
+        if client is not None:
+            client.close()
 
 
 def _is_summary_confirm(user_text: str) -> bool:
@@ -1077,6 +1108,11 @@ def handle_turn(
             language,
             wa_message_id,
         )
+
+    # Jev is deliberately after deterministic safety and before downstream
+    # conversational work. Shadow mode is audit-only: Gemini and backend state
+    # machines still own the live route and every patient-facing response.
+    _shadow_jev_decision(session, identity, user_text, state.stage)
 
     if identity.persona == Persona.PATIENT:
         family_reply = apply_family_turn(session, identity.person_id, user_text)

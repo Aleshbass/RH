@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     rh_physio_operations_enabled: bool = True
     rh_family_operations_enabled: bool = True
     rh_reconciliation_enabled: bool = True
+    typesafe_api_key: str = ""
+    typesafe_model: str = "jev-latest"
+    typesafe_enabled: bool = False
+    typesafe_shadow_mode: bool = True
 
 
 def get_settings() -> Settings:
