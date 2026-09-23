@@ -23,6 +23,15 @@ def _safety_cleared(extracted: ExtractedTriage) -> ExtractedTriage:
         "safety_question_order": [question.id for question in questions],
     })
 
+
+def test_rh_provider_selection_advances_to_slot_selection_stage():
+    """Selecting a verified specialist must not fall back to triage summary."""
+    from app.booking.booking_flow import AWAITING_RH_SLOT
+    from app.conversation.turn_handler import _stage_for_booking_substate
+
+    assert _stage_for_booking_substate(AWAITING_RH_SLOT) == ConversationStage.SLOT_SELECTION
+
+
 def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     from app.conversation.turn_handler import handle_turn
     fake_llm.reply = "Sorry about the knee — tell me the whole story when you can."

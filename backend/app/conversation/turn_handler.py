@@ -14,7 +14,18 @@ from app.admin.escalation_router import (
 )
 from app.admin.verification_queue import apply_admin_turn
 from app.audit.logger import append
-from app.booking.booking_flow import AWAITING_PAYMENT, handle_booking_turn, offer_matches
+from app.booking.booking_flow import (
+    AWAITING_PAYMENT,
+    AWAITING_RH_LOCATION,
+    AWAITING_RH_PAYMENT,
+    AWAITING_RH_PROVIDER,
+    AWAITING_RH_SERVICE_MODE,
+    AWAITING_RH_SLOT,
+    AWAITING_SLOT_MODE,
+    OFFERING_MATCHES,
+    handle_booking_turn,
+    offer_matches,
+)
 from app.conversation.language import mirror_language
 from app.conversation.orchestrator import decide_booking_substate, decide_phase, has_narrative
 from app.conversation.stage_machine import assert_transition
@@ -633,6 +644,22 @@ def _triage_summary_prompt(extracted: ExtractedTriage) -> str:
     return f"{summary}\n\nDoes that summary look right? Reply Yes to continue to the Consultation & Booking Policy, or tell me what to correct."
 
 
+def _stage_for_booking_substate(substate: str | None) -> ConversationStage | None:
+    """Keep the stage machine aligned with the deterministic booking state."""
+    if substate in {AWAITING_RH_SLOT, AWAITING_SLOT_MODE}:
+        return ConversationStage.SLOT_SELECTION
+    if substate in {AWAITING_RH_PAYMENT, AWAITING_PAYMENT}:
+        return ConversationStage.AWAITING_PAYMENT
+    if substate in {
+        AWAITING_RH_SERVICE_MODE,
+        AWAITING_RH_LOCATION,
+        AWAITING_RH_PROVIDER,
+        OFFERING_MATCHES,
+    }:
+        return ConversationStage.SPECIALIST_MATCHING
+    return None
+
+
 def _reply_after_extract(
     session: Session,
     state: ConversationState,
@@ -1199,7 +1226,11 @@ def handle_turn(
         wa_message_id=wa_message_id,
     )
     _audit_turn(session, identity, extracted, safety, outgoing)
-    target_stage = (
+    conversation = session.get(Conversation, state.conversation_id)
+    booking_stage = _stage_for_booking_substate(
+        conversation.booking_substate if conversation is not None else None
+    )
+    target_stage = booking_stage or (
         ConversationStage.STORY_CAPTURE if outgoing == PatientPhase.FIRST_CONTACT else
         ConversationStage.SAFETY_SCREEN if outgoing == PatientPhase.MID_TRIAGE else
         ConversationStage.POLICY_REVIEW if _POLICY_PRESENTED_KEY in (state.booking_context or {}) and not _policy_accepted(state) else
