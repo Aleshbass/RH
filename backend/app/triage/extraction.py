@@ -43,7 +43,39 @@ _BETTER_RE = re.compile(r"\b(?:better|relieved)\s+(?:when|with|by)\s+([^.;,!\n]{
 
 
 def merge_extraction(existing: ExtractedTriage, incoming: dict) -> ExtractedTriage:
-    payload = {key: value for key, value in incoming.items() if key in ExtractedTriage.model_fields}
+    """Merge an untrusted model extraction without allowing it to break a turn.
+
+    Structured-output providers occasionally return a human-friendly category
+    (``musculoskeletal``) or put a descriptive word in a typed field such as
+    ``severity``.  Those are incomplete facts, not a reason to abandon the
+    patient's inbound WhatsApp message.  Validate fields independently and
+    retain only the usable ones.
+    """
+    payload: dict = {}
+    area_aliases = {
+        "musculoskeletal": ConditionArea.MSK.value,
+        "neurological": ConditionArea.NEURO.value,
+        "pediatric": ConditionArea.PAEDIATRIC.value,
+        "paediatrics": ConditionArea.PAEDIATRIC.value,
+        "cardio-respiratory": ConditionArea.CARDIORESPIRATORY.value,
+        "women's health": ConditionArea.WOMENS_HEALTH.value,
+        "womens health": ConditionArea.WOMENS_HEALTH.value,
+        "post-surgical": ConditionArea.POST_SURGICAL.value,
+        "postsurgical": ConditionArea.POST_SURGICAL.value,
+    }
+    for key, value in incoming.items():
+        if key not in ExtractedTriage.model_fields:
+            continue
+        if key == "condition_area" and isinstance(value, str):
+            value = area_aliases.get(value.casefold().strip(), value)
+        # Validate each field in isolation.  A bad optional field must not
+        # discard valid facts from the same model response or crash the worker.
+        try:
+            ExtractedTriage.model_validate({key: value})
+        except (TypeError, ValueError):
+            continue
+        payload[key] = value
+
     parsed = ExtractedTriage.model_validate(payload)
     merged = existing.model_dump()
     for key in parsed.model_fields_set:

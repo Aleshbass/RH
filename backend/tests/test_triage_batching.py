@@ -28,6 +28,23 @@ def test_merge_none_does_not_wipe_known_values():
     assert merged.body_location == "knee"
 
 
+def test_merge_normalizes_common_model_area_alias_and_ignores_bad_optional_fields():
+    """A malformed Gemini extraction must not prevent the WhatsApp reply."""
+    merged = merge_extraction(
+        ExtractedTriage(),
+        {
+            "body_location": "lower back",
+            "condition_area": "musculoskeletal",
+            "severity": "sharp",
+            "extraction_confidence": {"body_location": "high"},
+        },
+    )
+    assert merged.body_location == "lower back"
+    assert merged.condition_area == ConditionArea.MSK
+    assert merged.severity is None
+    assert merged.extraction_confidence == {}
+
+
 def test_merge_explicit_empty_list_can_wipe():
     existing = ExtractedTriage(aggravating=["stairs"])
     merged = merge_extraction(existing, {"aggravating": []})
