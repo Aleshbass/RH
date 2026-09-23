@@ -18,6 +18,24 @@ LAGOS_LAT = 6.5244
 LAGOS_LNG = 3.3792
 
 
+def test_slot_choices_starts_availability_window_in_the_future() -> None:
+    from app.booking.booking_flow import _slot_choices
+
+    class Client:
+        received: dict[str, object]
+
+        def availability(self, physiotherapist_id, **kwargs):
+            self.received = {"physiotherapist_id": physiotherapist_id, **kwargs}
+            return {"slots": []}
+
+    client = Client()
+    before = int(datetime.now(timezone.utc).timestamp() * 1000)
+    assert _slot_choices(client, "physio_1", "online") == []
+
+    assert client.received["start_ms"] >= before + 59_000
+    assert client.received["end_ms"] - client.received["start_ms"] == 7 * 24 * 60 * 60 * 1000
+
+
 def test_home_visit_city_area_parser_accepts_area_then_city() -> None:
     from app.booking.booking_flow import _parse_city_area
 

@@ -305,7 +305,18 @@ def _current_assessment(session: Session, patient: Patient) -> UUID:
 
 def _slot_choices(client, provider_id: str, mode: str) -> list[dict]:
     now = datetime.now(timezone.utc)
-    result = client.availability(provider_id, start_ms=int(now.timestamp() * 1000), end_ms=int((now + timedelta(days=7)).timestamp() * 1000), duration_minutes=60, service_mode=mode)
+    # RH rejects a window whose start is already in the past.  Sending the
+    # exact current millisecond is inherently racy: by the time this signed
+    # request reaches RH, that timestamp has elapsed.  Start just ahead of
+    # the request instead, while retaining a seven-day search horizon.
+    window_start = now + timedelta(minutes=1)
+    result = client.availability(
+        provider_id,
+        start_ms=int(window_start.timestamp() * 1000),
+        end_ms=int((window_start + timedelta(days=7)).timestamp() * 1000),
+        duration_minutes=60,
+        service_mode=mode,
+    )
     slots = result.get("slots") or []
     return [slot for slot in slots if isinstance(slot, dict) and isinstance(slot.get("start"), (int, float))][:8]
 
