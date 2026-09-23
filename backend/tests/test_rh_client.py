@@ -77,6 +77,28 @@ def test_current_policy_signs_query_string_and_requires_complete_metadata() -> N
     assert policy.version == "2026-09"
 
 
+def test_availability_signs_the_exact_encoded_query_target() -> None:
+    secret = "test-secret"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "time_zone" not in request.url.params
+        canonical = "\n".join([
+            request.method,
+            f"{request.url.path}?{request.url.query.decode()}",
+            request.headers["X-Timestamp"], request.headers["X-Request-Id"], "", "",
+            hashlib.sha256(request.content).hexdigest(),
+        ]).encode()
+        assert request.headers["X-Signature"] == hmac.new(secret.encode(), canonical, hashlib.sha256).hexdigest()
+        return httpx.Response(200, json={"data": {"slots": []}})
+
+    client = RHClient("https://rh.test", "joy-test", secret, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    result = client.availability(
+        "physio_1", start_ms=1_790_200_000_000, end_ms=1_790_804_800_000,
+        duration_minutes=60, service_mode="online",
+    )
+    assert result == {"slots": []}
+
+
 def test_rh_client_opens_circuit_after_repeated_retryable_failures() -> None:
     RHClient._circuit_open_until.clear()
     RHClient._consecutive_failures.clear()

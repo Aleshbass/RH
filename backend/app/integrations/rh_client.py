@@ -130,10 +130,16 @@ class RHClient:
         if self._circuit_open_until.get(self.base_url, 0.0) > time.monotonic():
             logger.info("joy_rh_request", extra={"endpoint": endpoint, "method": method, "outcome": "circuit_open", "latency_ms": 0})
             raise RHIntegrationError("DEPENDENCY_UNAVAILABLE", "RH integration is temporarily unavailable", retryable=True)
+        # HMAC must use the exact URL target sent over HTTP.  In particular,
+        # query values such as ``Africa/Lagos`` may be percent-encoded by the
+        # HTTP client, and signing the pre-encoded source string would make RH
+        # correctly reject an otherwise valid request.
+        url = httpx.URL(f"{self.base_url}{path}")
+        canonical_path = url.raw_path.decode("ascii")
         raw_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8") if payload is not None else b""
         timestamp = str(int(time.time()))
         request_id = str(uuid4())
-        signature = hmac.new(self.hmac_secret, self._canonical(method, path, timestamp, request_id, idempotency_key, "", raw_body), hashlib.sha256).hexdigest()
+        signature = hmac.new(self.hmac_secret, self._canonical(method, canonical_path, timestamp, request_id, idempotency_key, "", raw_body), hashlib.sha256).hexdigest()
         headers = {
             "Content-Type": "application/json",
             "X-Joy-Api-Version": "1",
@@ -145,7 +151,7 @@ class RHClient:
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
         try:
-            response = self.client.request(method, f"{self.base_url}{path}", content=raw_body, headers=headers)
+            response = self.client.request(method, url, content=raw_body, headers=headers)
         except httpx.HTTPError as error:
             self._record_failure()
             logger.info("joy_rh_request", extra={"endpoint": endpoint, "method": method, "outcome": "unavailable", "latency_ms": int((time.monotonic() - started) * 1000)})
@@ -243,8 +249,11 @@ class RHClient:
     def availability(self, physiotherapist_id: str, *, start_ms: int, end_ms: int, duration_minutes: int, service_mode: str) -> dict[str, Any]:
         path = (
             f"/api/v1/joy/physiotherapists/{physiotherapist_id}/availability?from={start_ms}&to={end_ms}"
-            f"&duration_minutes={duration_minutes}&service_mode={service_mode}&time_zone=Africa/Lagos"
+            f"&duration_minutes={duration_minutes}&service_mode={service_mode}"
         )
+        # RH defaults this server-to-server flow to Africa/Lagos.  Keeping the
+        # zone out of the signed query avoids an encoded slash changing the
+        # canonical target at a proxy boundary.
         return self._request("GET", path)
 
     def create_pending_booking(self, *, patient_id: str, physiotherapist_id: str, slot_start: int, duration_minutes: int, service_mode: str, session_type: str, triage_summary_reference: str, assessment_id: str, assessment_revision: int, protocol_version: str, policy_version: str, policy_acceptance_reference: str, conversation_id: str, actor: RHActor, idempotency_key: str, required_specialties: list[str], patient_address: str | None = None) -> RHBooking:
