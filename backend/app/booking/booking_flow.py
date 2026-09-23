@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
@@ -21,6 +22,8 @@ from app.models.triage_session import TriageSession
 from app.models.types import AuditKind, BookingStatus, ExtractedTriage
 from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
 from app.queue.tasks import _redis
+
+logger = logging.getLogger(__name__)
 
 OFFERING_MATCHES = "offering_matches"
 AWAITING_SLOT_MODE = "awaiting_slot_mode"
@@ -165,7 +168,10 @@ def _rh_patient_id(session: Session, patient: Patient) -> str | None:
         resolved = configured_rh_client().resolve_patient(
             patient.phone_e164, str(patient.id), _rh_actor(patient), name=patient.name,
         )
-    except RHIntegrationError:
+    except RHIntegrationError as error:
+        # Do not log personal identifiers or request bodies. The stable code is
+        # enough to diagnose a failed identity resolution in production.
+        logger.warning("joy_rh_patient_resolution_failed code=%s", error.code)
         return None
     if not resolved.patient_id:
         return None

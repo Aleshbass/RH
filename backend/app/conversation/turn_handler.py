@@ -535,7 +535,7 @@ def _present_policy(session: Session, state: ConversationState) -> str:
     session.flush()
     return (
         "Your triage summary is confirmed. Before I look for a specialist, please review "
-        f"our Consultation & Booking Policy (version {policy['version']}): {policy['url']}\n\n"
+        f"our Consultation & Booking Policy: {policy['url']}\n\n"
         f"Reply with ‘{policy['acceptance_text']}’ when you are ready to continue."
     )
 
