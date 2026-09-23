@@ -22,7 +22,9 @@ export async function POST(request: Request) {
     if (actor.persona !== "patient" || actor.sender_phone !== phone) {
       return errorResponse(requestId, new JoyAuthError(403, "FORBIDDEN", "Actor may only resolve their own patient identity"));
     }
-    const result = await callJoyConvexGateway("resolve_or_create_patient", {
+    // The HTTP gateway route is named `resolve_patient`; its backing Convex
+    // mutation resolves an existing patient or creates one by phone.
+    const result = await callJoyConvexGateway("resolve_patient", {
       phone,
       joy_person_id: authenticated.data.joy_person_id,
       name: authenticated.data.name,
