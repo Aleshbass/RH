@@ -36,6 +36,37 @@ def test_slot_choices_starts_availability_window_in_the_future() -> None:
     assert client.received["end_ms"] - client.received["start_ms"] == 7 * 24 * 60 * 60 * 1000
 
 
+def test_rh_match_context_preserves_accepted_policy(monkeypatch) -> None:
+    from app.booking import booking_flow
+    from app.integrations.rh_client import RHMatch
+
+    class Client:
+        def match_physios(self, **kwargs):
+            return [RHMatch(
+                physiotherapist_id="rh_physio_1", display_name="Test Physio",
+                specialties=["msk"], service_modes=["online"], amount_kobo=2_500_000,
+                match_reasons=[],
+            )]
+
+    conversation = Conversation(booking_context={
+        "policy_accepted": {"version": "2026-09", "acceptance_message_id": "wamid.1"},
+    })
+    patient = Patient(phone_e164="+2348000000000")
+    extracted = ExtractedTriage(condition_area="msk")
+    monkeypatch.setattr(booking_flow, "configured_rh_client", lambda: Client())
+    monkeypatch.setattr(booking_flow, "_current_assessment", lambda session, patient: "assessment_1")
+    monkeypatch.setattr(booking_flow, "append", lambda *args, **kwargs: None)
+
+    booking_flow._find_rh_matches(
+        None, conversation, patient, extracted,
+        mode="online", rh_patient_id="rh_patient_1", tags=["msk"],
+    )
+
+    assert conversation.booking_substate == booking_flow.AWAITING_RH_PROVIDER
+    assert conversation.booking_context["policy_accepted"]["version"] == "2026-09"
+    assert conversation.booking_context["providers"][0]["physiotherapist_id"] == "rh_physio_1"
+
+
 def test_home_visit_city_area_parser_accepts_area_then_city() -> None:
     from app.booking.booking_flow import _parse_city_area
 

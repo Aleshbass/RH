@@ -226,10 +226,15 @@ def _location_prompt() -> str:
 
 
 def _find_rh_matches(session: Session, conversation: Conversation, patient: Patient, extracted: ExtractedTriage, *, mode: str, rh_patient_id: str, tags: list[str]) -> str:
+    # Keep consent/policy evidence while replacing only the operational match
+    # details.  The selected-slot transition requires the accepted policy, and
+    # dropping it here made a valid patient selection look incomplete.
+    context = dict(conversation.booking_context or {})
     if mode == "home_visit" and (not patient.city or not patient.area):
-        _set_substate(conversation, AWAITING_RH_LOCATION, {
+        context.update({
             "rh_patient_id": rh_patient_id, "service_mode": mode, "required_specialties": tags,
         })
+        _set_substate(conversation, AWAITING_RH_LOCATION, context)
         return _location_prompt()
     try:
         matches = configured_rh_client().match_physios(
@@ -249,10 +254,11 @@ def _find_rh_matches(session: Session, conversation: Conversation, patient: Pati
     for index, match in enumerate(matches, 1):
         lines.append(f"{index}. {match.display_name or 'Physiotherapist'} — ₦{match.amount_kobo // 100:,}")
     lines.append("Reply with the number of the specialist you prefer.")
-    _set_substate(conversation, AWAITING_RH_PROVIDER, {
+    context.update({
         "rh_patient_id": rh_patient_id, "service_mode": mode, "required_specialties": tags,
         "providers": providers,
     })
+    _set_substate(conversation, AWAITING_RH_PROVIDER, context)
     append(session, kind=AuditKind.MATCH, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_matches_presented", "service_mode": mode, "provider_ids": [m.physiotherapist_id for m in matches]})
     return "\n".join(lines)
