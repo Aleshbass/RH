@@ -69,12 +69,14 @@ export default defineSchema({
     // Partner Referral Attribution
     referredByPartnerCode: v.optional(v.string()),
     referralPublicCode: v.optional(v.string()),
+    linkedReferralTrackingCode: v.optional(v.string()),
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"])
     .index("by_role", ["role"]) // To query users by role (especially after onboarding)
     .index("by_clinic_id", ["clinicId"])
-    .index("by_referred_partner", ["referredByPartnerCode"]),
+    .index("by_referred_partner", ["referredByPartnerCode"])
+    .index("by_phone_number", ["phoneNumber"]),
 
   // Short-lived replay reservations for authenticated Joy service requests.
   // This deliberately stores no phone number or clinical request payload.
@@ -1109,6 +1111,11 @@ export default defineSchema({
       v.literal("paid_out")              // Maps to "closed"
     ),
 
+    // WhatsApp Joy Bridge — links the referral to the patient's WhatsApp number
+    whatsappPhone: v.optional(v.string()),        // Verified WhatsApp phone that interacted with Joy
+    whatsappJoyPersonId: v.optional(v.string()),   // Joy's internal person identifier
+    lastWhatsAppInteractionAt: v.optional(v.number()), // Timestamp of latest WhatsApp interaction
+
     // Financial Tracking
     commissionEarned: v.optional(v.number()), // Amount earned by referrer in kobo
 
@@ -1126,7 +1133,8 @@ export default defineSchema({
     .index("by_tracking_code", ["trackingCode"])
     .index("by_partner_id", ["partnerId"])
     .index("by_partner_and_environment", ["partnerId", "environment"])
-    .index("by_link_id", ["linkId"]),
+    .index("by_link_id", ["linkId"])
+    .index("by_whatsapp_phone", ["whatsappPhone"]),
 
   // MyItura MediLoan applications — formally initiated with the MyItura SDK
   loanApplications: defineTable({

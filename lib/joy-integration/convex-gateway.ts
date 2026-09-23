@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "crypto";
 
-type GatewayOperation = "record_external_request" | "resolve_patient" | "update_patient_location" | "resolve_physiotherapist" | "find_matches" | "resolve_availability_profile" | "create_pending_booking" | "get_booking" | "cancel_booking" | "prepare_payment_attempt" | "record_payment_initialization" | "record_payment_webhook" | "create_specialist_review" | "prepare_specialist_review_payment" | "record_specialist_review_payment_initialization" | "record_specialist_review_payment_webhook" | "enqueue_event" | "mark_event_delivery" | "respond_to_booking" | "replacement_candidates" | "reassign_booking" | "operational_query" | "operational_mutation";
+type GatewayOperation = "record_external_request" | "resolve_patient" | "resolve_or_create_patient" | "link_referral" | "update_patient_location" | "resolve_physiotherapist" | "find_matches" | "resolve_availability_profile" | "create_pending_booking" | "get_booking" | "cancel_booking" | "prepare_payment_attempt" | "record_payment_initialization" | "record_payment_webhook" | "create_specialist_review" | "prepare_specialist_review_payment" | "record_specialist_review_payment_initialization" | "record_specialist_review_payment_webhook" | "enqueue_event" | "mark_event_delivery" | "respond_to_booking" | "replacement_candidates" | "reassign_booking" | "operational_query" | "operational_mutation";
 
 export class GatewayError extends Error {}
 

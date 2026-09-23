@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { internalAction, internalMutation, internalQuery } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -54,6 +54,248 @@ export const resolvePatientByPhone = internalQuery({
 });
 
 /**
+ * Extract referral tracking code from incoming text message.
+ * Handles:
+ *  - START RHB-95942
+ *  - START RHB-95942 - Hello Joy...
+ *  - REHAB_REF_RHB-95942
+ *  - Any RHB-XXXXX pattern
+ */
+export function extractTrackingCode(text?: string): string | null {
+  if (!text) return null;
+  const startMatch = text.match(/START\s+([A-Za-z0-9_-]+)/i);
+  if (startMatch) return startMatch[1].trim().toUpperCase();
+
+  const refMatch = text.match(/REHAB_REF_([A-Za-z0-9_-]+)/i);
+  if (refMatch) return refMatch[1].trim().toUpperCase();
+
+  const rhbMatch = text.match(/\b(RHB-[A-Za-z0-9_-]+)\b/i);
+  if (rhbMatch) return rhbMatch[1].trim().toUpperCase();
+
+  return null;
+}
+
+/**
+ * Multi-strategy referral resolver by tracking code, external partner ID,
+ * Convex ID, or code suffix.
+ */
+async function findReferralByCode(ctx: any, code: string) {
+  const cleanCode = code.trim();
+  const upperCode = cleanCode.toUpperCase();
+
+  // 1. Try exact tracking code
+  let referral = await ctx.db
+    .query("inboundReferrals")
+    .withIndex("by_tracking_code", (q: any) => q.eq("trackingCode", cleanCode))
+    .first();
+
+  // 1b. Try uppercase tracking code
+  if (!referral && cleanCode !== upperCode) {
+    referral = await ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_tracking_code", (q: any) => q.eq("trackingCode", upperCode))
+      .first();
+  }
+
+  // 2. Try partnerExternalId
+  if (!referral) {
+    referral = await ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_partner_external_id", (q: any) => q.eq("partnerExternalId", cleanCode))
+      .first();
+  }
+
+  // 3. Try document ID
+  if (!referral) {
+    try {
+      const doc = await ctx.db.get(cleanCode);
+      if (doc && "patientFirstName" in doc) {
+        referral = doc;
+      }
+    } catch {
+      // Ignore invalid Convex document ID format
+    }
+  }
+
+  // 4. Try suffix match on ID
+  if (!referral) {
+    const suffix = upperCode.replace(/^RHB-?/i, "").toLowerCase();
+    if (suffix.length >= 4) {
+      const recent = await ctx.db.query("inboundReferrals").order("desc").take(100);
+      referral = recent.find((r: any) => {
+        const docIdLower = (r._id as string).toLowerCase();
+        const rCodeUpper = (r.trackingCode || "").toUpperCase();
+        return docIdLower.endsWith(suffix) || rCodeUpper === upperCode;
+      }) ?? null;
+    }
+  }
+
+  return referral;
+}
+
+/**
+ * Dispatch real-time outbound webhook to partner endpoint if configured.
+ */
+async function dispatchIntakeStartedWebhook(ctx: any, referral: any) {
+  try {
+    if (!referral.partnerId) return;
+    const partner = await ctx.db
+      .query("partners")
+      .withIndex("by_code", (q: any) => q.eq("code", referral.partnerId))
+      .first();
+    const env = referral.environment || "live";
+    const targetUrl = referral.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
+    const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
+
+    if (targetUrl && secret && secret !== "whsec_default") {
+      await ctx.scheduler.runAfter(100, (api as any)["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
+        partnerId: referral.partnerId,
+        environment: env,
+        eventType: "referral.contacted",
+        targetUrl,
+        secret,
+        trackingCode: referral.trackingCode,
+        patientName: `${referral.patientFirstName} ${referral.patientLastName}`,
+        payload: {
+          event: "referral.contacted",
+          environment: env,
+          created_at: Math.floor(Date.now() / 1000),
+          data: {
+            referral_id: referral._id,
+            tracking_code: referral.trackingCode,
+            partner_external_id: referral.partnerExternalId || null,
+            patient: {
+              first_name: referral.patientFirstName,
+              last_name: referral.patientLastName,
+              phone: referral.patientPhone,
+            },
+            status: "intake_started",
+          },
+        },
+      });
+    }
+  } catch (err) {
+    console.error("Failed to schedule partner webhook for intake started:", err);
+  }
+}
+
+async function linkTrackingCodeToWhatsAppInternalHandler(
+  ctx: any,
+  args: {
+    trackingCode: string;
+    phone: string;
+    joyPersonId?: string;
+    name?: string;
+    email?: string;
+    message?: string;
+  }
+) {
+  const phone = args.phone.trim();
+  const trackingCode = args.trackingCode.trim();
+  const matched = await findReferralByCode(ctx, trackingCode);
+
+  if (!matched) {
+    return { success: false, reason: "REFERRAL_NOT_FOUND", trackingCode };
+  }
+
+  // Resolve or provision patient user
+  const matches = await ctx.db.query("users").filter((q: any) => q.eq(q.field("phoneNumber"), phone)).collect();
+  const patients = matches.filter((user: any) => user.role === "patient");
+
+  let resolvedPatientId: Id<"users">;
+  if (patients.length > 0) {
+    resolvedPatientId = patients[0]._id;
+    await ctx.db.patch(resolvedPatientId, {
+      linkedReferralTrackingCode: matched.trackingCode,
+    });
+  } else {
+    const [firstName, ...remainingNames] = (args.name || `${matched.patientFirstName || ""} ${matched.patientLastName || ""}`).trim().split(/\s+/).filter(Boolean);
+    resolvedPatientId = await ctx.db.insert("users", {
+      clerkId: `joy-whatsapp:${args.joyPersonId || phone.replace(/\D/g, "")}`,
+      email: args.email || matched.patientEmail,
+      firstName: firstName || matched.patientFirstName || "Patient",
+      lastName: remainingNames.join(" ") || matched.patientLastName || "",
+      phoneNumber: phone,
+      role: "patient",
+      onboarded: false,
+      linkedReferralTrackingCode: matched.trackingCode,
+    });
+    await ctx.db.insert("patientProfiles", { userId: resolvedPatientId });
+  }
+
+  const previousStatus = matched.status;
+  const shouldAdvance = previousStatus === "received" || previousStatus === "pending";
+  const nextStatus = shouldAdvance ? "intake_started" : previousStatus;
+
+  await ctx.db.patch(matched._id, {
+    patientId: resolvedPatientId,
+    whatsappPhone: phone,
+    whatsappJoyPersonId: args.joyPersonId || matched.whatsappJoyPersonId,
+    lastWhatsAppInteractionAt: Date.now(),
+    status: nextStatus,
+    updatedAt: Date.now(),
+  });
+
+  await ctx.db.insert("referralEvents", {
+    referralId: matched._id,
+    eventName: "patient.whatsapp_intake_started",
+    occurredAt: Date.now(),
+    actorType: "system",
+    actorId: "joy_ai",
+    metadata: {
+      trackingCode: matched.trackingCode,
+      phone,
+      joyPersonId: args.joyPersonId,
+      previousStatus,
+      newStatus: nextStatus,
+      channel: "whatsapp",
+      message: args.message,
+    },
+  });
+
+  if (shouldAdvance) {
+    await dispatchIntakeStartedWebhook(ctx, matched);
+  }
+
+  return {
+    success: true,
+    referralId: matched._id,
+    trackingCode: matched.trackingCode,
+    status: nextStatus,
+    patientId: resolvedPatientId,
+    patientName: `${matched.patientFirstName} ${matched.patientLastName}`,
+  };
+}
+
+export const linkTrackingCodeToWhatsAppInternal = internalMutation({
+  args: {
+    trackingCode: v.string(),
+    phone: v.string(),
+    joyPersonId: v.optional(v.string()),
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    message: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return linkTrackingCodeToWhatsAppInternalHandler(ctx, args);
+  },
+});
+
+export const linkTrackingCodeToWhatsApp = mutation({
+  args: {
+    trackingCode: v.string(),
+    phone: v.string(),
+    joyPersonId: v.optional(v.string()),
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    message: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return linkTrackingCodeToWhatsAppInternalHandler(ctx, args);
+  },
+});
+
+/**
  * Joy may provision a minimal patient record, but never a Clerk account. The
  * normalized WhatsApp number is the idempotency key for this integration path.
  */
@@ -63,6 +305,8 @@ export const resolveOrCreatePatientByPhone = internalMutation({
     joyPersonId: v.string(),
     name: v.optional(v.string()),
     email: v.optional(v.string()),
+    trackingCode: v.optional(v.string()),
+    initialMessage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const phone = args.phone.trim();
@@ -97,21 +341,33 @@ export const resolveOrCreatePatientByPhone = internalMutation({
       resultDisplayName = [firstName, ...remainingNames].filter(Boolean).join(" ") || undefined;
     }
 
-    // Automatically link any pending partner referral for this patient phone
-    const cleanDigits = phone.replace(/\D/g, "");
-    if (cleanDigits.length >= 7) {
-      const recentReferrals = await ctx.db.query("inboundReferrals").order("desc").take(50);
-      const matched = recentReferrals.find((r) => {
-        const rDigits = (r.patientPhone || "").replace(/\D/g, "");
-        return rDigits && (rDigits.endsWith(cleanDigits.slice(-10)) || cleanDigits.endsWith(rDigits.slice(-10)));
-      });
+    // 1. Primary Strategy: Check tracking code if provided explicitly or in message
+    const explicitCode = (args.trackingCode || "").trim();
+    const extractedCode = extractTrackingCode(args.initialMessage);
+    const trackingCode = explicitCode || extractedCode;
 
-      if (matched && !matched.patientId) {
+    let linkedReferral: any = null;
+    if (trackingCode) {
+      const matched = await findReferralByCode(ctx, trackingCode);
+      if (matched) {
+        linkedReferral = matched;
+        const previousStatus = matched.status;
+        const shouldAdvance = previousStatus === "received" || previousStatus === "pending";
+        const nextStatus = shouldAdvance ? "intake_started" : previousStatus;
+
         await ctx.db.patch(matched._id, {
           patientId: resolvedPatientId,
-          status: (matched.status === "received" || matched.status === "pending") ? "intake_started" : matched.status,
+          whatsappPhone: phone,
+          whatsappJoyPersonId: args.joyPersonId,
+          lastWhatsAppInteractionAt: Date.now(),
+          status: nextStatus,
           updatedAt: Date.now(),
         });
+
+        await ctx.db.patch(resolvedPatientId, {
+          linkedReferralTrackingCode: matched.trackingCode,
+        });
+
         await ctx.db.insert("referralEvents", {
           referralId: matched._id,
           eventName: "patient.whatsapp_intake_started",
@@ -119,14 +375,102 @@ export const resolveOrCreatePatientByPhone = internalMutation({
           actorType: "system",
           actorId: "joy_ai",
           metadata: {
+            trackingCode: matched.trackingCode,
+            phone,
             joyPersonId: args.joyPersonId,
+            previousStatus,
+            newStatus: nextStatus,
             channel: "whatsapp",
+            initialMessage: args.initialMessage,
           },
+        });
+
+        if (shouldAdvance) {
+          await dispatchIntakeStartedWebhook(ctx, matched);
+        }
+      }
+    }
+
+    // 2. Secondary Strategy: Check if this phone was previously linked to an active referral
+    if (!linkedReferral) {
+      const existingLinked = await ctx.db
+        .query("inboundReferrals")
+        .withIndex("by_whatsapp_phone", (q) => q.eq("whatsappPhone", phone))
+        .order("desc")
+        .first();
+
+      if (existingLinked) {
+        linkedReferral = existingLinked;
+        await ctx.db.patch(existingLinked._id, {
+          lastWhatsAppInteractionAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        await ctx.db.patch(resolvedPatientId, {
+          linkedReferralTrackingCode: existingLinked.trackingCode,
         });
       }
     }
 
-    return { resolution: resultResolution, patient_id: resolvedPatientId, display_name: resultDisplayName };
+    // 3. Fallback Strategy: Match pending referrals by patientPhone clean digits
+    if (!linkedReferral) {
+      const cleanDigits = phone.replace(/\D/g, "");
+      if (cleanDigits.length >= 7) {
+        const recentReferrals = await ctx.db.query("inboundReferrals").order("desc").take(50);
+        const matched = recentReferrals.find((r) => {
+          const rDigits = (r.patientPhone || "").replace(/\D/g, "");
+          return rDigits && (rDigits.endsWith(cleanDigits.slice(-10)) || cleanDigits.endsWith(rDigits.slice(-10)));
+        });
+
+        if (matched) {
+          linkedReferral = matched;
+          const previousStatus = matched.status;
+          const shouldAdvance = previousStatus === "received" || previousStatus === "pending";
+          const nextStatus = shouldAdvance ? "intake_started" : previousStatus;
+
+          await ctx.db.patch(matched._id, {
+            patientId: resolvedPatientId,
+            whatsappPhone: phone,
+            whatsappJoyPersonId: args.joyPersonId,
+            lastWhatsAppInteractionAt: Date.now(),
+            status: nextStatus,
+            updatedAt: Date.now(),
+          });
+
+          await ctx.db.patch(resolvedPatientId, {
+            linkedReferralTrackingCode: matched.trackingCode,
+          });
+
+          await ctx.db.insert("referralEvents", {
+            referralId: matched._id,
+            eventName: "patient.whatsapp_intake_started",
+            occurredAt: Date.now(),
+            actorType: "system",
+            actorId: "joy_ai",
+            metadata: {
+              trackingCode: matched.trackingCode,
+              phone,
+              joyPersonId: args.joyPersonId,
+              previousStatus,
+              newStatus: nextStatus,
+              channel: "whatsapp",
+            },
+          });
+
+          if (shouldAdvance) {
+            await dispatchIntakeStartedWebhook(ctx, matched);
+          }
+        }
+      }
+    }
+
+    return {
+      resolution: resultResolution,
+      patient_id: resolvedPatientId,
+      display_name: resultDisplayName,
+      referral_id: linkedReferral?._id,
+      tracking_code: linkedReferral?.trackingCode,
+      referral_status: linkedReferral?.status,
+    };
   },
 });
 

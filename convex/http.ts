@@ -1,7 +1,7 @@
 import { httpRouter } from "convex/server";
 import { calendarWebhook, webhookHealth } from "./calendar/webhook";
 import {
-  recordExternalRequest, resolvePatient, updatePatientLocation, resolvePhysiotherapist, findMatches,
+  recordExternalRequest, resolvePatient, linkReferral, updatePatientLocation, resolvePhysiotherapist, findMatches,
   resolveAvailabilityProfile, createPendingBooking, getBooking,
   preparePaymentAttempt, recordPaymentInitialization, recordPaymentWebhook, createSpecialistReview, prepareSpecialistReviewPayment, recordSpecialistReviewPaymentInitialization, recordSpecialistReviewPaymentWebhook, cancelBooking, enqueueEvent, markEventDelivery, respondToBooking, replacementCandidates, reassignBooking,
 } from "./joyGateway";
@@ -22,6 +22,8 @@ http.route({
 
 http.route({ path: "/joy-integration/record_external_request", method: "POST", handler: recordExternalRequest });
 http.route({ path: "/joy-integration/resolve_patient", method: "POST", handler: resolvePatient });
+http.route({ path: "/joy-integration/resolve_or_create_patient", method: "POST", handler: resolvePatient });
+http.route({ path: "/joy-integration/link_referral", method: "POST", handler: linkReferral });
 http.route({ path: "/joy-integration/update_patient_location", method: "POST", handler: updatePatientLocation });
 http.route({ path: "/joy-integration/resolve_physiotherapist", method: "POST", handler: resolvePhysiotherapist });
 http.route({ path: "/joy-integration/find_matches", method: "POST", handler: findMatches });

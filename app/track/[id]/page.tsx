@@ -19,6 +19,9 @@ import {
   FileCheck,
   Building2,
   UserCheck,
+  Copy,
+  Check,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +40,15 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
     api.partners.getReferralDetails,
     identifier ? { identifier } : "skip"
   );
+
+  const [copied, setCopied] = React.useState(false);
+
+  const copyTrackingCode = () => {
+    if (!referral?.trackingCode) return;
+    navigator.clipboard.writeText(`START ${referral.trackingCode}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
 
   if (referral === undefined) {
     return (
@@ -267,6 +279,110 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
           </CardContent>
         </Card>
 
+        {/* Real-time WhatsApp Intake Action Card */}
+        {currentStep === 1 && (
+          <Card className="border-emerald-200 dark:border-emerald-800/60 bg-gradient-to-br from-emerald-50 via-teal-50/50 to-white dark:from-emerald-950/30 dark:via-teal-950/20 dark:to-slate-900 shadow-sm overflow-hidden relative">
+            <div className="absolute top-0 right-0 transform translate-x-4 -translate-y-4 w-32 h-32 bg-emerald-400/10 rounded-full blur-2xl pointer-events-none" />
+            <CardContent className="p-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="space-y-2 max-w-xl">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Action Required • Step 2 of 5
+                  </div>
+                  <h3 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white">
+                    Start Your Clinical Triage on WhatsApp with Joy
+                  </h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Message Joy, our AI Care Coordinator, to confirm your symptoms and home address. Once you send the pre-filled code, this care tracker will instantly update to <strong>Step 2 (Intake & Triage)</strong> in real time.
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 pt-1">
+                    <span>Your Tracking Reference:</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                      {referral.trackingCode}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row md:flex-col gap-2.5 shrink-0">
+                  <Button
+                    asChild
+                    size="lg"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm h-11 px-5"
+                  >
+                    <a
+                      href={`https://wa.me/2348061525811?text=${encodeURIComponent(
+                        `START ${referral.trackingCode} - Hello Joy, I'm ready to start my physiotherapy intake.`
+                      )}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <MessageSquare className="w-4 h-4 mr-2" />
+                      Chat with Joy on WhatsApp
+                    </a>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={copyTrackingCode}
+                    className="h-9 border-emerald-200 dark:border-emerald-800 text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                        Copied to Clipboard
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 mr-1.5" />
+                        Copy START Code
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {currentStep === 2 && (
+          <Card className="border-teal-200 dark:border-teal-800/60 bg-gradient-to-br from-teal-50/70 via-sky-50/30 to-white dark:from-teal-950/30 dark:via-sky-950/20 dark:to-slate-900 shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-teal-100 dark:bg-teal-900/60 text-teal-800 dark:text-teal-200 border border-teal-200 dark:border-teal-700">
+                    <Clock className="w-3.5 h-3.5 text-teal-600" />
+                    Intake in Progress
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Clinical Triage Underway with Joy
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    Joy and our clinical dispatch desk are assessing your case details to assign the nearest certified physiotherapist.
+                  </p>
+                </div>
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="border-teal-300 text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950/50 shrink-0"
+                >
+                  <a
+                    href={`https://wa.me/2348061525811?text=${encodeURIComponent(
+                      `START ${referral.trackingCode} - Continuing my physiotherapy intake.`
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+                    Resume WhatsApp Chat
+                  </a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Details Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Matched Physio Card */}
@@ -374,8 +490,8 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
                   className="text-xs h-8 text-teal-600 border-teal-200 hover:bg-teal-50"
                 >
                   <a
-                    href={`https://wa.me/2348061525811?text=Inquiry%20on%20Referral%20${encodeURIComponent(
-                      referral.trackingCode
+                    href={`https://wa.me/2348061525811?text=${encodeURIComponent(
+                      `START ${referral.trackingCode} - Inquiry on Referral ${referral.trackingCode}`
                     )}`}
                     target="_blank"
                     rel="noreferrer"

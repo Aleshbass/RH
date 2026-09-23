@@ -48,7 +48,8 @@ export const recordExternalRequest = httpAction(async (ctx, request) => {
 });
 
 export const resolvePatient = httpAction(async (ctx, request) => {
-  const parsed = await readJson(request, "/joy-integration/resolve_patient");
+  const url = new URL(request.url);
+  const parsed = await readJson(request, url.pathname);
   if (parsed instanceof Response) return parsed;
   if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
   if (typeof parsed.data.phone !== "string" || typeof parsed.data.joy_person_id !== "string") return new Response("Invalid payload", { status: 400 });
@@ -57,6 +58,26 @@ export const resolvePatient = httpAction(async (ctx, request) => {
     joyPersonId: parsed.data.joy_person_id,
     name: typeof parsed.data.name === "string" ? parsed.data.name : undefined,
     email: typeof parsed.data.email === "string" ? parsed.data.email : undefined,
+    trackingCode: typeof parsed.data.tracking_code === "string" ? parsed.data.tracking_code : (typeof parsed.data.trackingCode === "string" ? parsed.data.trackingCode : undefined),
+    initialMessage: typeof parsed.data.initial_message === "string" ? parsed.data.initial_message : (typeof parsed.data.initialMessage === "string" ? parsed.data.initialMessage : undefined),
+  }));
+});
+
+export const linkReferral = httpAction(async (ctx, request) => {
+  const url = new URL(request.url);
+  const parsed = await readJson(request, url.pathname);
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const trackingCode = typeof parsed.data.tracking_code === "string" ? parsed.data.tracking_code : (typeof parsed.data.trackingCode === "string" ? parsed.data.trackingCode : undefined);
+  const phone = typeof parsed.data.phone === "string" ? parsed.data.phone : undefined;
+  if (!trackingCode || !phone) return new Response("Invalid payload: tracking_code and phone required", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyIntegration.linkTrackingCodeToWhatsAppInternal, {
+    trackingCode,
+    phone,
+    joyPersonId: typeof parsed.data.joy_person_id === "string" ? parsed.data.joy_person_id : undefined,
+    name: typeof parsed.data.name === "string" ? parsed.data.name : undefined,
+    email: typeof parsed.data.email === "string" ? parsed.data.email : undefined,
+    message: typeof parsed.data.message === "string" ? parsed.data.message : undefined,
   }));
 });
 

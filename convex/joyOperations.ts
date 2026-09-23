@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 type Operation =
   | "physio_work_summary" | "physio_update_availability" | "physio_session_note"
@@ -7,7 +8,7 @@ type Operation =
   | "family_resolve" | "family_grant" | "family_update_grant" | "family_revoke_grant"
   | "family_care_summary" | "change_physio_request" | "admin_patient"
   | "admin_physio" | "admin_finance_summary" | "admin_escalation"
-  | "admin_verify_physio" | "admin_reassign";
+  | "admin_verify_physio" | "admin_reassign" | "patient_link_referral";
 
 const activeBooking = (status: unknown) => status === "pending" || status === "confirmed" || status === "scheduled";
 const nameOf = (user: { firstName?: string; lastName?: string } | null) =>
@@ -144,6 +145,19 @@ export const executeMutation = internalMutation({
       const admin = await adminForActor(ctx, data.actor);
       await audit(ctx, data, op, { patientUserId: data.patient_id, physiotherapistUserId: data.physiotherapist_id, bookingId: data.booking_id, actorUserId: admin._id, reason: String(data.reason ?? "") });
       return { accepted: true, status: "recorded" };
+    }
+    if (op === "patient_link_referral") {
+      const trackingCode = String(data.tracking_code ?? data.trackingCode ?? "").trim();
+      const phone = String(data.phone ?? "").trim();
+      if (!trackingCode || !phone) throw new Error("Tracking code and phone are required");
+      return await ctx.runMutation((internal as any).joyIntegration.linkTrackingCodeToWhatsAppInternal, {
+        trackingCode,
+        phone,
+        joyPersonId: data.joy_person_id ? String(data.joy_person_id) : undefined,
+        name: data.name ? String(data.name) : undefined,
+        email: data.email ? String(data.email) : undefined,
+        message: data.message ? String(data.message) : undefined,
+      });
     }
     throw new Error("Unsupported Joy operational mutation");
   },

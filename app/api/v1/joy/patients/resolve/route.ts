@@ -10,6 +10,8 @@ const requestSchema = z.object({
   joy_person_id: z.string().min(1).max(128),
   name: z.string().min(1).max(200).optional(),
   email: z.string().email().optional(),
+  tracking_code: z.string().max(100).optional(),
+  initial_message: z.string().max(2000).optional(),
   actor: actorSchema,
 }).strict();
 
@@ -29,8 +31,17 @@ export async function POST(request: Request) {
       joy_person_id: authenticated.data.joy_person_id,
       name: authenticated.data.name,
       email: authenticated.data.email,
+      tracking_code: authenticated.data.tracking_code,
+      initial_message: authenticated.data.initial_message,
     });
-    const data = result as { resolution: "EXISTING" | "CREATED" | "AMBIGUOUS"; patient_id?: string; display_name?: string };
+    const data = result as {
+      resolution: "EXISTING" | "CREATED" | "AMBIGUOUS";
+      patient_id?: string;
+      display_name?: string;
+      referral_id?: string;
+      tracking_code?: string;
+      referral_status?: string;
+    };
     return success(requestId, data);
   } catch (error) {
     return errorResponse(requestId, error);
