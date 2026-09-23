@@ -237,10 +237,85 @@ export async function sendCallbackEvent(
 // ── Specialist type mapping ─────────────────────────────
 
 /**
- * The specialist_type slug registered with AwaDoc.
- * Confirmed with the AwaDoc integrations team — we are listed as "therapy".
+ * Allowed specialist types for AwaDoc marketplace integration.
+ * AwaDoc accepts: physiotherapist, occupational-therapist, speech-therapist.
  */
-export const AWADOC_SPECIALIST_TYPE = "therapy";
+export const AWADOC_SPECIALIST_TYPES = [
+    "physiotherapist",
+    "occupational-therapist",
+    "speech-therapist",
+] as const;
+
+export type AwadocSpecialistType = (typeof AWADOC_SPECIALIST_TYPES)[number];
+
+export const DEFAULT_AWADOC_SPECIALIST_TYPE: AwadocSpecialistType = "physiotherapist";
+
+/**
+ * Default specialist_type slug registered with AwaDoc.
+ * Defaults to "physiotherapist" (one of the 3 supported types).
+ */
+export const AWADOC_SPECIALIST_TYPE: AwadocSpecialistType = "physiotherapist";
+
+/**
+ * Validates and normalizes an incoming specialist type string to one of the 3 supported AwaDoc types:
+ * - "physiotherapist"
+ * - "occupational-therapist"
+ * - "speech-therapist"
+ * Returns null if the type cannot be mapped.
+ */
+export function normalizeAwadocSpecialistType(raw?: string | null): AwadocSpecialistType | null {
+    if (!raw || typeof raw !== "string") return null;
+    const clean = raw.toLowerCase().trim().replace(/[_\s]+/g, "-");
+
+    if (
+        clean === "physiotherapist" ||
+        clean === "physiotherapy" ||
+        clean === "physical-therapist" ||
+        clean === "physical-therapy" ||
+        clean === "pt"
+    ) {
+        return "physiotherapist";
+    }
+    if (
+        clean === "occupational-therapist" ||
+        clean === "occupational-therapy" ||
+        clean === "occupational" ||
+        clean === "ot"
+    ) {
+        return "occupational-therapist";
+    }
+    if (
+        clean === "speech-therapist" ||
+        clean === "speech-therapy" ||
+        clean === "speech-and-language-therapist" ||
+        clean === "speech-language-pathologist" ||
+        clean === "speech" ||
+        clean === "slt" ||
+        clean === "slp"
+    ) {
+        return "speech-therapist";
+    }
+    return null;
+}
+
+/**
+ * Maps a therapist's profile specializations to one of the 3 supported AwaDoc types.
+ * Strictly guarantees returning: "physiotherapist" | "occupational-therapist" | "speech-therapist".
+ */
+export function mapToAwadocSpecialistType(specializations?: string[] | null): AwadocSpecialistType {
+    if (!specializations || !Array.isArray(specializations) || specializations.length === 0) {
+        return "physiotherapist";
+    }
+
+    const joined = specializations.join(" ").toLowerCase();
+    if (joined.includes("speech") || joined.includes("language path")) {
+        return "speech-therapist";
+    }
+    if (joined.includes("occupational")) {
+        return "occupational-therapist";
+    }
+    return "physiotherapist";
+}
 
 /**
  * Map Rehabify session modes to AwaDoc availability_mode values.

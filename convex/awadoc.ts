@@ -106,6 +106,7 @@ export const getAvailablePhysios = query({
     args: {
         serviceArea: v.optional(v.string()),
         preferredMode: v.optional(v.string()),
+        specialistType: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
         // Query all marketplace-available physios
@@ -122,6 +123,34 @@ export const getAvailablePhysios = query({
             physios = physios.filter((p) => p.offersOnlineSessions ?? true);
         } else if (mode === "physical" || mode === "in_person") {
             physios = physios.filter((p) => p.offersInPersonSessions ?? true);
+        }
+
+        // Filter by specialistType if specified (physiotherapist, occupational-therapist, speech-therapist)
+        if (args.specialistType) {
+            const reqType = args.specialistType.toLowerCase().trim().replace(/[_\s]+/g, "-");
+            if (reqType === "speech-therapist" || reqType === "speech") {
+                const speechMatched = physios.filter((p) =>
+                    (p.specializations ?? []).some((s) => s.toLowerCase().includes("speech"))
+                );
+                if (speechMatched.length > 0) {
+                    physios = speechMatched;
+                }
+            } else if (reqType === "occupational-therapist" || reqType === "occupational") {
+                const occMatched = physios.filter((p) =>
+                    (p.specializations ?? []).some((s) => s.toLowerCase().includes("occupational"))
+                );
+                if (occMatched.length > 0) {
+                    physios = occMatched;
+                }
+            } else if (reqType === "physiotherapist" || reqType === "physiotherapy") {
+                const physioMatched = physios.filter((p) => {
+                    const specs = (p.specializations ?? []).map((s) => s.toLowerCase());
+                    return !specs.some((s) => s.includes("speech") || s.includes("occupational"));
+                });
+                if (physioMatched.length > 0) {
+                    physios = physioMatched;
+                }
+            }
         }
 
         // Filter by service area (location) if specified

@@ -39,7 +39,7 @@ async function runTests() {
 
   const testCases = [
     {
-      name: "1. therapy.availability.query (standard Lagos virtual)",
+      name: "1. therapy.availability.query (default specialist type)",
       payload: {
         event_type: "therapy.availability.query",
         meta: { query_id: `qry-${Date.now()}` },
@@ -50,35 +50,68 @@ async function runTests() {
       },
     },
     {
-      name: "2. consultation.availability.query (alias Lagos virtual)",
+      name: "2. therapy.availability.query (explicit physiotherapist)",
       payload: {
-        event_type: "consultation.availability.query",
-        meta: { query_id: `qry-alias-${Date.now()}` },
+        event_type: "therapy.availability.query",
+        meta: { query_id: `qry-pt-${Date.now()}` },
         context: {
+          specialist_type: "physiotherapist",
           service_area: "Lagos",
-          schedule: { preferred_mode: "telehealth" }, // test alias
+          schedule: { preferred_mode: "virtual" },
         },
       },
     },
     {
-      name: "3. consultation.availability.query (alias physical / home_visit)",
+      name: "3. therapy.availability.query (explicit occupational-therapist)",
       payload: {
-        event_type: "consultation.availability.query",
-        meta: { query_id: `qry-phys-${Date.now()}` },
+        event_type: "therapy.availability.query",
+        meta: { query_id: `qry-ot-${Date.now()}` },
         context: {
+          specialist_type: "occupational-therapist",
           service_area: "Lagos",
-          schedule: { preferred_mode: "home_visit" },
+          schedule: { preferred_mode: "virtual" },
         },
       },
     },
     {
-      name: "4. consultation.request (alias request booking)",
+      name: "4. therapy.availability.query (explicit speech-therapist)",
+      payload: {
+        event_type: "therapy.availability.query",
+        meta: { query_id: `qry-st-${Date.now()}` },
+        context: {
+          specialist_type: "speech-therapist",
+          service_area: "ALL",
+          schedule: { preferred_mode: "virtual" },
+        },
+      },
+    },
+    {
+      name: "5. consultation.request (with physiotherapist)",
       payload: {
         event_id: `req-evt-${Date.now()}`,
         event_type: "consultation.request",
         meta: { request_id: `req-test-${Date.now()}` },
         user: { id: "awadoc-usr-123", name: "Test Patient" },
         context: {
+          specialist_type: "physiotherapist",
+          service_area: "Lagos",
+          schedule: {
+            preferred_mode: "virtual",
+            preferred_time: new Date(Date.now() + 86400000).toISOString(),
+            preferred_lang: "en",
+          },
+        },
+      },
+    },
+    {
+      name: "6. therapy.request (with occupational-therapist)",
+      payload: {
+        event_id: `req-ot-${Date.now()}`,
+        event_type: "therapy.request",
+        meta: { request_id: `req-ot-${Date.now()}` },
+        user: { id: "awadoc-usr-ot", name: "Test OT Patient" },
+        context: {
+          specialist_type: "occupational-therapist",
           service_area: "Lagos",
           schedule: {
             preferred_mode: "virtual",
@@ -89,6 +122,8 @@ async function runTests() {
       },
     },
   ];
+
+  const ALLOWED_TYPES = new Set(["physiotherapist", "occupational-therapist", "speech-therapist"]);
 
   for (const tc of testCases) {
     console.log(`\n------------------------------------------------------------`);
@@ -106,11 +141,21 @@ async function runTests() {
       if (data.specialists) {
         console.log(`Specialists returned: ${data.specialists.length}`);
         if (data.specialists.length > 0) {
+          const sample = data.specialists[0];
           console.log(`Sample specialist:`, {
-            name: data.specialists[0].name,
-            availability_mode: data.specialists[0].availability_mode,
-            pricing: data.specialists[0].pricing,
+            name: sample.name,
+            type: sample.type,
+            availability_mode: sample.availability_mode,
+            pricing: sample.pricing,
           });
+
+          // Validate that all returned specialists use one of the 3 allowed types
+          const invalidTypes = data.specialists.filter(s => !ALLOWED_TYPES.has(s.type));
+          if (invalidTypes.length > 0) {
+            console.error(`❌ INVALID SPECIALIST TYPES FOUND:`, invalidTypes.map(s => s.type));
+          } else {
+            console.log(`✅ All ${data.specialists.length} specialists have valid types:`, [...new Set(data.specialists.map(s => s.type))]);
+          }
         }
       }
 

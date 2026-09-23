@@ -19,6 +19,11 @@ import {
     verifyInboundSignature,
     sendCallbackEvent,
     AWADOC_SPECIALIST_TYPE,
+    AWADOC_SPECIALIST_TYPES,
+    AwadocSpecialistType,
+    DEFAULT_AWADOC_SPECIALIST_TYPE,
+    normalizeAwadocSpecialistType,
+    mapToAwadocSpecialistType,
     toAwadocAvailabilityMode,
     toDayString,
 } from "@/lib/awadoc/awadoc";
@@ -172,7 +177,23 @@ async function handleAvailabilityQuery(body: any) {
         }
     }
 
-    console.log("[AwaDoc] Availability query params:", { queryId, serviceArea, rawServiceArea, preferredMode, rawPreferredMode });
+    // Extract and normalize requested specialist type if provided in query context
+    const rawSpecialistType = body.context?.specialist_type
+        ?? body.context?.specialistType
+        ?? body.context?.type
+        ?? body.specialist_type
+        ?? null;
+    const requestedSpecialistType = normalizeAwadocSpecialistType(rawSpecialistType);
+
+    console.log("[AwaDoc] Availability query params:", {
+        queryId,
+        serviceArea,
+        rawServiceArea,
+        preferredMode,
+        rawPreferredMode,
+        rawSpecialistType,
+        requestedSpecialistType,
+    });
 
     // Fetch available physios from Convex
     let physios: any[] = [];
@@ -191,7 +212,15 @@ async function handleAvailabilityQuery(body: any) {
         };
     }
 
-    console.log(`[AwaDoc] Found ${physios.length} available physios`);
+    // Filter by requested specialist type if specified
+    if (requestedSpecialistType) {
+        physios = physios.filter((p: any) => {
+            const therapistType = mapToAwadocSpecialistType(p.specializations);
+            return therapistType === requestedSpecialistType;
+        });
+    }
+
+    console.log(`[AwaDoc] Found ${physios.length} available physios for type: ${requestedSpecialistType ?? "all"}`);
 
     // Map to AwaDoc specialist format
     const specialists = physios.map((p: any) => {
@@ -203,8 +232,11 @@ async function handleAvailabilityQuery(body: any) {
         // Build doctor_time from availability schedule if available
         const doctorTime = buildDoctorTime(p.availabilitySchedule);
 
+        // Determine specialist type: strictly one of "physiotherapist" | "occupational-therapist" | "speech-therapist"
+        const specialistType = requestedSpecialistType ?? mapToAwadocSpecialistType(p.specializations);
+
         return {
-            type: AWADOC_SPECIALIST_TYPE,
+            type: specialistType,
             name: `${p.firstName} ${p.lastName}`.trim() || "Therapist",
             availability_mode: availabilityMode,
             scheduling_mode: "patient_choice" as const,
@@ -237,7 +269,11 @@ async function handleTherapyRequest(body: any) {
     const requestId: string = body.meta?.request_id ?? "";
     const userId: string = body.user?.id ?? "";
     const userName: string = body.user?.name ?? "";
-    const specialistType: string = body.context?.specialist_type ?? AWADOC_SPECIALIST_TYPE;
+    const rawSpecialistType = body.context?.specialist_type
+        ?? body.context?.specialistType
+        ?? body.context?.type
+        ?? null;
+    const specialistType: AwadocSpecialistType = normalizeAwadocSpecialistType(rawSpecialistType) ?? DEFAULT_AWADOC_SPECIALIST_TYPE;
     const rawMode = (body.context?.schedule?.preferred_mode ?? "home_visit").toLowerCase().trim();
     const isVirtual = ["virtual", "telehealth", "online"].includes(rawMode);
     const preferredMode = isVirtual ? "virtual" : "physical";
@@ -266,6 +302,14 @@ async function handleTherapyRequest(body: any) {
             error: "Unable to query available therapists at this time",
             error_code: "BACKEND_UNAVAILABLE",
         };
+    }
+
+    // Filter by specialistType if specified, falling back to all if none match
+    if (specialistType) {
+        const matching = physios.filter((p: any) => mapToAwadocSpecialistType(p.specializations) === specialistType);
+        if (matching.length > 0) {
+            physios = matching;
+        }
     }
 
     const selectedPhysio = selectBestPhysio(physios);
@@ -599,7 +643,10 @@ async function sendDoctorAssignedCallback(therapyId: string, session: any) {
                     currency: session.currency ?? "NGN",
                 },
             },
-            doctor,
+            doctor: {
+                ...doctor,
+                specialist_type: normalizeAwadocSpecialistType(session.specialistType) ?? DEFAULT_AWADOC_SPECIALIST_TYPE,
+            },
         },
     });
 

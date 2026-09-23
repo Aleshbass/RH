@@ -1172,6 +1172,39 @@ print(res.json())`;
   }'`;
   };
 
+  // Mapbox-powered state search (must be declared before any conditional returns per Rules of Hooks)
+  const searchStates = useCallback(async (q: string) => {
+    if (q.length < 2 || !MAPBOX_TOKEN) {
+      setStateSearchResults([]);
+      return;
+    }
+    if (stateSearchControllerRef.current) {
+      stateSearchControllerRef.current.abort();
+    }
+    stateSearchControllerRef.current = new AbortController();
+    setIsSearchingStates(true);
+    try {
+      const res = await fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${MAPBOX_TOKEN}&country=NG&limit=6&types=region,place`,
+        { signal: stateSearchControllerRef.current.signal }
+      );
+      if (!res.ok) throw new Error(`Mapbox error: ${res.status}`);
+      const data = await res.json();
+      if (data.features) {
+        // Filter out already-selected states
+        const filtered = data.features.filter(
+          (f: any) => !onboardingForm.coverageStates.includes(f.text)
+        );
+        setStateSearchResults(filtered);
+        setShowStateResults(true);
+      }
+    } catch (err: any) {
+      if (err.name !== "AbortError") console.error("State search failed:", err);
+    } finally {
+      setIsSearchingStates(false);
+    }
+  }, [MAPBOX_TOKEN, onboardingForm.coverageStates]);
+
   // --------------------------------------------------------------------------
   // STATE 0: Authentication Loading State
   // --------------------------------------------------------------------------
@@ -1315,38 +1348,7 @@ print(res.json())`;
       { id: "remote", label: "Tele-Rehabilitation", desc: "Remote video consultations and exercise monitoring" },
     ];
 
-    // Mapbox-powered state search
-    const searchStates = useCallback(async (q: string) => {
-      if (q.length < 2 || !MAPBOX_TOKEN) {
-        setStateSearchResults([]);
-        return;
-      }
-      if (stateSearchControllerRef.current) {
-        stateSearchControllerRef.current.abort();
-      }
-      stateSearchControllerRef.current = new AbortController();
-      setIsSearchingStates(true);
-      try {
-        const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${MAPBOX_TOKEN}&country=NG&limit=6&types=region,place`,
-          { signal: stateSearchControllerRef.current.signal }
-        );
-        if (!res.ok) throw new Error(`Mapbox error: ${res.status}`);
-        const data = await res.json();
-        if (data.features) {
-          // Filter out already-selected states
-          const filtered = data.features.filter(
-            (f: any) => !onboardingForm.coverageStates.includes(f.text)
-          );
-          setStateSearchResults(filtered);
-          setShowStateResults(true);
-        }
-      } catch (err: any) {
-        if (err.name !== "AbortError") console.error("State search failed:", err);
-      } finally {
-        setIsSearchingStates(false);
-      }
-    }, [MAPBOX_TOKEN, onboardingForm.coverageStates]);
+    // searchStates useCallback is declared at the top level of the component (before conditional returns)
 
     const handleStateSearchChange = (val: string) => {
       setStateSearchQuery(val);
