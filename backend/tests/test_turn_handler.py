@@ -259,7 +259,8 @@ def test_post_triage_confirm_does_not_claim_booked(db_session, patient_identity,
     assert "confirmed" not in lower
     assert result.blocked_by_safety is False
     assert "next slice" not in lower
-    assert "no specialist yet" in lower or "physio" in lower
+    assert "consultation & booking policy" in lower
+    assert "can’t continue" in lower or "cannot continue" in lower
 
 
 @pytest.mark.parametrize(
@@ -302,10 +303,13 @@ def test_post_triage_accepts_common_confirm_phrases(
     lower = result.reply_text.lower()
     assert "here's what i understood" not in lower
     assert "please confirm this summary" not in lower
-    assert "no specialist yet" in lower or "teleconsult" in lower or "home_visit" in lower or "physio" in lower
+    assert "consultation & booking policy" in lower
+    assert "can’t continue" in lower or "cannot continue" in lower
 
 
-def test_mid_triage_sends_one_grouped_followup(db_session, patient_identity, fake_llm):
+def test_mid_triage_moves_to_summary_after_safety_and_required_facts(
+    db_session, patient_identity, fake_llm
+):
     from app.conversation.turn_handler import handle_turn
 
     state = load(db_session, patient_identity)
@@ -322,11 +326,9 @@ def test_mid_triage_sends_one_grouped_followup(db_session, patient_identity, fak
     fake_llm.reply = "Thanks — I hear you."
     fake_llm.extraction = {}
     result = handle_turn(db_session, patient_identity.phone_e164, "still the knee", fake_llm)
-    assert result.phase == "mid_triage"
-    assert result.reply_text.count("?") <= 2
-    assert "\n1." not in result.reply_text
+    assert result.phase == "post_triage"
     lower = result.reply_text.lower()
-    assert "1 to 10" in lower or "hoping" in lower or "goal" in lower
+    assert "does this summary look right" in lower
 
 
 def test_grouped_safety_no_answers_clear_all_duplicate_protocol_questions(
@@ -474,16 +476,18 @@ def test_mid_triage_does_not_forward_model_checklist(db_session, patient_identit
     )
     fake_llm.extraction = {}
     result = handle_turn(db_session, patient_identity.phone_e164, "still the knee", fake_llm)
-    assert result.phase == "mid_triage"
+    assert result.phase == "post_triage"
     assert "When did it start?" not in result.reply_text
     assert "Any numbness?" not in result.reply_text
     assert "What makes it worse?" not in result.reply_text
     assert "What are your goals?" not in result.reply_text
     assert "How bad is it 1-10?" not in result.reply_text
-    assert "I've got that" in result.reply_text
+    assert "does this summary look right" in result.reply_text.lower()
 
 
-def test_mid_triage_followup_is_not_only_a_severity_ask(db_session, patient_identity, fake_llm):
+def test_mid_triage_does_not_block_summary_on_optional_severity(
+    db_session, patient_identity, fake_llm
+):
     from app.conversation.turn_handler import handle_turn
 
     state = load(db_session, patient_identity)
@@ -506,10 +510,9 @@ def test_mid_triage_followup_is_not_only_a_severity_ask(db_session, patient_iden
     fake_llm.extraction = {}
     result = handle_turn(db_session, patient_identity.phone_e164, "still the knee", fake_llm)
     lower = result.reply_text.lower()
-    assert "1 to 10" in lower or "1-10" in lower
-    assert result.reply_text.strip() != "Could you tell me how bad it feels from 1 to 10?"
-    assert any(word in lower for word in ("thanks", "hear", "got", "sorry"))
-    assert result.reply_text.count("?") <= 2
+    assert result.phase == "post_triage"
+    assert "does this summary look right" in lower
+    assert "1 to 10" not in lower
 
 
 def test_mid_triage_keeps_severity_when_llm_omits_number(db_session, patient_identity, fake_llm):
