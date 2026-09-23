@@ -265,7 +265,11 @@ def _continue_rh_service_mode(session: Session, conversation: Conversation, pati
     rh_patient_id = _rh_patient_id(session, patient)
     tags = _required_specialties(extracted)
     if not rh_patient_id or not tags:
-        return "I can’t securely prepare specialist options right now. Please try again shortly."
+        return (
+            "I can’t access Rehabify’s live booking service right now, so I can’t show current "
+            "specialist options. Your triage details are saved and no booking has been made. "
+            "Please try again shortly."
+        )
     return _find_rh_matches(session, conversation, patient, extracted, mode=mode, rh_patient_id=rh_patient_id, tags=tags)
 
 
