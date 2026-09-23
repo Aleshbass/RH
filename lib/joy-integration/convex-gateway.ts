@@ -20,6 +20,14 @@ export async function callJoyConvexGateway(operation: GatewayOperation, payload:
     body,
     cache: "no-store",
   });
-  if (!response.ok) throw new GatewayError(`Joy Convex gateway returned ${response.status}`);
+  if (!response.ok) {
+    // Keep the patient-facing integration envelope generic, but retain enough
+    // production diagnostics to distinguish an invalid request, signature
+    // problem, replay rejection, or a Convex execution failure. Responses from
+    // this fixed internal gateway never need to include credentials.
+    const detail = (await response.text()).slice(0, 500);
+    console.error("joy_convex_gateway_failed", { operation, status: response.status, detail });
+    throw new GatewayError(`Joy Convex gateway returned ${response.status}`);
+  }
   return response.json();
 }
