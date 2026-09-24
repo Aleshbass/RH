@@ -158,7 +158,12 @@ def _is_summary_confirm(user_text: str) -> bool:
 
 def _is_explicit_policy_acceptance(user_text: str) -> bool:
     """A summary 'yes' is intentionally insufficient consent."""
-    text = (user_text or "").casefold()
+    text = " ".join((user_text or "").casefold().split())
+    # The policy is presented immediately before this step, so a short,
+    # unambiguous affirmative is easier to use on WhatsApp than requiring the
+    # patient to repeat the policy title verbatim.
+    if text in {"i accept", "i agree"}:
+        return True
     return bool(re.search(r"\b(?:i\s+)?(?:accept|agree to)\b.{0,80}\b(?:policy|terms|consultation)\b", text))
 
 
@@ -244,7 +249,12 @@ def _resend_safety_block(
             if conversation is not None:
                 conversation.booking_context = context
             reply = _present_policy(session, state)
-        elif context.get("amber_review_requested") and not _policy_accepted(state) and _is_explicit_policy_acceptance(user_text):
+        elif (
+            context.get("amber_review_requested")
+            and context.get(_POLICY_PRESENTED_KEY)
+            and not _policy_accepted(state)
+            and _is_explicit_policy_acceptance(user_text)
+        ):
             _mark_policy_accepted(session, state, actor_phone=identity.phone_e164, person_id=identity.person_id, message_id=wa_message_id)
             reply = _start_paid_amber_review(session, identity, state)
         elif context.get("amber_review_id"):
@@ -547,7 +557,7 @@ def _present_policy(session: Session, state: ConversationState) -> str:
     return (
         "Your triage summary is confirmed. Before I look for a specialist, please review "
         f"our Consultation & Booking Policy: {policy['url']}\n\n"
-        f"Reply with ‘{policy['acceptance_text']}’ when you are ready to continue."
+        "Reply with ‘I accept’ when you are ready to continue."
     )
 
 
@@ -707,7 +717,11 @@ def _reply_after_extract(
         )
         if summary_confirmed and not _policy_accepted(state):
             return _present_policy(session, state), PatientPhase.POST_TRIAGE
-        if not _policy_accepted(state) and _is_explicit_policy_acceptance(user_text):
+        if (
+            (state.booking_context or {}).get(_POLICY_PRESENTED_KEY)
+            and not _policy_accepted(state)
+            and _is_explicit_policy_acceptance(user_text)
+        ):
             _mark_policy_accepted(
                 session, state, actor_phone=identity.phone_e164,
                 person_id=identity.person_id, message_id=wa_message_id,

@@ -32,6 +32,14 @@ def test_rh_provider_selection_advances_to_slot_selection_stage():
     assert _stage_for_booking_substate(AWAITING_RH_SLOT) == ConversationStage.SLOT_SELECTION
 
 
+def test_policy_acceptance_allows_short_unambiguous_reply():
+    from app.conversation.turn_handler import _is_explicit_policy_acceptance
+
+    assert _is_explicit_policy_acceptance("I accept") is True
+    assert _is_explicit_policy_acceptance("  I   agree  ") is True
+    assert _is_explicit_policy_acceptance("yes") is False
+
+
 def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     from app.conversation.turn_handler import handle_turn
     fake_llm.reply = "Sorry about the knee — tell me the whole story when you can."
