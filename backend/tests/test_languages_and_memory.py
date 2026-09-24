@@ -43,7 +43,9 @@ def test_each_language_two_turns_then_memory(db_session, fake_llm):
         assert "how bad is it 1-10" not in lower_first
         assert not any(picker in lower_first for picker in _LANGUAGE_PICKER)
         assert first.phase == "mid_triage"
-        assert first.reply_text.count("?") <= 2
+        # The deterministic safety screen deliberately groups up to four
+        # clinically-required checks into one WhatsApp message.
+        assert first.reply_text.count("?") <= 4
         # Second turn must use persisted last_known_language, not a leftover FakeLLM echo.
         fake_llm.language = None
         fake_llm.extraction = {"severity": 6}

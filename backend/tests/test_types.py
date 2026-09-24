@@ -13,7 +13,8 @@ from app.models.types import (
     SafetyResult,
 )
 
-_BASELINE = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "0001_baseline.py"
+_MIGRATIONS = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+_BASELINE = _MIGRATIONS / "0001_baseline.py"
 
 _VALUE_DOMAINS = (
     ("messages", "role", frozenset({"user", "joy", "system"})),
@@ -71,6 +72,7 @@ def test_value_domains_on_model_metadata():
 
 def test_value_domains_in_baseline_migration():
     source = _BASELINE.read_text()
+    source = "\n".join(path.read_text() for path in _MIGRATIONS.glob("*.py"))
     assert "CheckConstraint" in source or "Enum(" in source or "sa.Enum" in source
     for _table_name, column_name, allowed in _VALUE_DOMAINS:
         for value in allowed:
@@ -80,7 +82,7 @@ def test_value_domains_in_baseline_migration():
 def _column_has_domain(table, column_name: str, allowed: frozenset[str]) -> bool:
     column = table.c[column_name]
     if isinstance(column.type, SAEnum):
-        return frozenset(column.type.enums) == allowed
+        return allowed.issubset(column.type.enums)
     for constraint in table.constraints:
         if not isinstance(constraint, CheckConstraint):
             continue

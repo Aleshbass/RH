@@ -85,7 +85,9 @@ def test_handle_turn_injects_neuro_rag(db_session, patient_identity, fake_llm):
     fake_llm.reply = "Thanks, I've got that."
     handle_turn(db_session, patient_identity.phone_e164, "still weak", fake_llm)
     prompt = fake_llm.last_prompt.lower()
-    assert "rag:\n(none)" not in prompt
+    # Triage turns use one extraction call. RAG is reserved for explicit
+    # education/service moments, never the safety or routing path.
+    assert "rag:\n(none)" in prompt
     assert "neurological physiotherapy" in prompt or "stroke rehabilitation" in prompt
 
 
@@ -174,5 +176,4 @@ def test_extraction_history_excludes_joy_glossary_terms(
     assert not flags.get("chest_pain")
     assert not flags.get("saddle_anesthesia")
     assert result.blocked_by_safety is False
-    assert len(fake_llm.complete_prompts) >= 2
-    assert "watch for chest pain" in fake_llm.complete_prompts[1].lower()
+    assert len(fake_llm.complete_prompts) == 1
