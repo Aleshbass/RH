@@ -1,5 +1,5 @@
 from app.models.types import ConditionArea, ExtractedTriage
-from app.triage.extraction import infer_condition_area, merge_extraction
+from app.triage.extraction import constrain_model_extraction, infer_condition_area, merge_extraction
 from app.triage.non_msk import infer_non_msk_area
 from app.triage.question_batching import grouped_followup, missing_fields
 from app.triage.summary import plain_summary
@@ -26,6 +26,11 @@ def test_merge_none_does_not_wipe_known_values():
     assert merged.onset == "2 weeks"
     assert merged.severity == 7
     assert merged.body_location == "knee"
+
+
+def test_model_severity_requires_a_patient_stated_numeric_score():
+    assert constrain_model_extraction({"severity": 1}, "I have a sharp lower-back pain") == {}
+    assert constrain_model_extraction({"severity": 1}, "My pain is 6 out of 10") == {"severity": 6}
 
 
 def test_merge_normalizes_common_model_area_alias_and_ignores_bad_optional_fields():
@@ -183,6 +188,37 @@ def test_lower_back_safety_prompt_is_grouped_and_backend_owned():
     assert len(covered) == len(set(covered))
 
 
+def test_safety_parser_accepts_slash_separated_case_insensitive_answers():
+    from app.conversation.turn_handler import _safety_screen
+    from app.safety.protocol_runtime import NO, YES, normalize_answer
+    import re
+
+    extracted = ExtractedTriage(body_location="lower back", condition_area=ConditionArea.MSK)
+    screen = _safety_screen(extracted)
+    parsed = {
+        int(index): normalize_answer(answer)
+        for index, answer in re.findall(
+            r"(?:^|[\s,;/|])#?(\d{1,2})\s*[).:=-]?\s*(yes|no|unsure)\b",
+            "1.no/2. NO / 3) no, 4 - Yes",
+            re.I,
+        )
+    }
+    assert len(screen) == 4
+    assert parsed == {1: NO, 2: NO, 3: NO, 4: YES}
+
+
+def test_narrative_safety_negatives_are_mined_without_using_the_model():
+    from app.conversation.turn_handler import _narrative_no_answers, _safety_screen
+
+    extracted = ExtractedTriage(body_location="lower back", condition_area=ConditionArea.MSK)
+    answers = _narrative_no_answers(
+        "I have not had an injury, numbness, weakness, or bladder/bowel changes.",
+        _safety_screen(extracted),
+    )
+    assert answers
+    assert set(answers.values()) == {"NO"}
+
+
 def test_plain_summary_hides_internal_specialty_and_system_copy():
     from app.triage.summary import plain_summary
 
@@ -293,7 +329,7 @@ def test_no_msk_default_without_joint_muscle_narrative():
     assert infer_non_msk_area(extracted) is None
 
 
-def test_plain_summary_asks_confirm_or_correct():
+def test_plain_summary_does_not_duplicate_the_confirmation_question():
     extracted = ExtractedTriage(
         onset="2 weeks",
         severity=6,
@@ -305,6 +341,6 @@ def test_plain_summary_asks_confirm_or_correct():
     lower = text.lower()
     assert "shoulder" in lower
     assert "2 weeks" in lower
-    assert "confirm" in lower or "correct" in lower
-    assert "?" in text
+    assert "confirm" in lower
+    assert "?" not in text
     assert "accept" not in lower

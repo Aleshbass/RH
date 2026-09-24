@@ -189,6 +189,10 @@ def _retry_or_dead(raw: str, payload: dict, error: BaseException, session: Sessi
     client.lrem(PROCESSING_QUEUE, 1, raw)
     attempts = int(payload.get("attempts") or 0) + 1
     payload["attempts"] = attempts
+    logger.warning(
+        "joy_inbound_retry",
+        extra={"wa_message_id": payload.get("wa_message_id"), "attempts": attempts, "error_type": type(error).__name__},
+    )
     if attempts >= MAX_ATTEMPTS:
         client.lpush(DEAD_LETTER_QUEUE, json.dumps(payload))
         append(
@@ -261,8 +265,13 @@ def process_queue_once(
             if result is not None
             else _joy_reply_for_wamid(db, payload["wa_message_id"])
         )
-        if reply:
-            send_whatsapp_text(payload["phone"], reply)
+        if not reply:
+            raise RuntimeError("Joy produced no outbound reply")
+        send_whatsapp_text(payload["phone"], reply)
+        logger.info(
+            "joy_outbound_delivered",
+            extra={"wa_message_id": payload["wa_message_id"], "reply_length": len(reply)},
+        )
         _ack(raw)
         return result
     except Exception as exc:

@@ -123,6 +123,23 @@ def parse_severity_from_text(user_text: str) -> int | None:
     return _coerce_severity(match.group(1))
 
 
+def constrain_model_extraction(incoming: dict, user_text: str) -> dict:
+    """Keep model fields typed *and* grounded in this patient message.
+
+    A schema-valid number is not evidence that a patient reported a pain score.
+    Severity is therefore owned by the deterministic numeric parser, never an
+    inference made from pain quality such as ``sharp`` or ``severe``.
+    """
+    constrained = dict(incoming or {})
+    if "severity" in constrained:
+        reported = parse_severity_from_text(user_text)
+        if reported is None:
+            constrained.pop("severity", None)
+        else:
+            constrained["severity"] = reported
+    return constrained
+
+
 def enrich_from_user_text(extracted: ExtractedTriage, user_text: str) -> ExtractedTriage:
     """Fill unambiguous gaps the LLM can drop, without overriding known facts."""
     updates: dict = {}

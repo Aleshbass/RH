@@ -67,7 +67,12 @@ from app.physio.onboarding import apply_onboarding_turn
 from app.physio.payouts import apply_payout_turn
 from app.physio.session_notes import apply_note_turn
 from app.physio.rh_operations import apply as apply_rh_physio_operation, help_text as rh_physio_help
-from app.triage.extraction import enrich_from_user_text, infer_condition_area, merge_extraction
+from app.triage.extraction import (
+    constrain_model_extraction,
+    enrich_from_user_text,
+    infer_condition_area,
+    merge_extraction,
+)
 from app.triage.question_batching import grouped_followup, missing_fields
 from app.triage.summary import plain_summary
 
@@ -636,6 +641,47 @@ def _safety_screen(extracted: ExtractedTriage) -> list[tuple[str, tuple[Schedule
     return [(name, tuple(groups[name])) for name in order if groups.get(name)]
 
 
+_NEGATED_SAFETY_SCOPE_RE = re.compile(
+    r"\b(?:no|without|den(?:y|ies)|haven['’]t(?:\s+had)?|have\s+not\s+had|not\s+had)\b\s+([^.!?]{0,180})",
+    re.I,
+)
+
+
+def _narrative_no_answers(
+    user_text: str, screen: list[tuple[str, tuple[ScheduledQuestion, ...]]]
+) -> dict[str, str]:
+    """Map only explicit, patient-stated negatives to matching safety items.
+
+    This deliberately does not use the model and does not infer a broad "no"
+    from an ambiguous story.  It lets a patient avoid repeating a plainly
+    stated "no injury" or "no bladder change" while retaining any question
+    whose specific warning sign was not actually addressed.
+    """
+    scopes = [match.group(1).casefold().split(" but ", 1)[0] for match in _NEGATED_SAFETY_SCOPE_RE.finditer(user_text or "")]
+    if not scopes:
+        return {}
+
+    def denied(*terms: str) -> bool:
+        return any(any(term in scope for term in terms) for scope in scopes)
+
+    answers: dict[str, str] = {}
+    for _, questions in screen:
+        for question in questions:
+            text = question.text.casefold()
+            if ("accident" in text or "injury" in text or "fall" in text) and denied("accident", "injury", "fall", "collision"):
+                answers[question.id] = NO
+            elif "bladder" in text or "bowel" in text:
+                if denied("bladder", "bowel"):
+                    answers[question.id] = NO
+            elif "numbness" in text and denied("numbness"):
+                answers[question.id] = NO
+            elif "tingling" in text and denied("tingling"):
+                answers[question.id] = NO
+            elif "weakness" in text and denied("weakness"):
+                answers[question.id] = NO
+    return answers
+
+
 def _safety_prompt(extracted: ExtractedTriage) -> str:
     screen = _safety_screen(extracted)
     rendered = "\n".join(
@@ -1128,21 +1174,28 @@ def handle_turn(
     response = llm.complete(extract_prompt, user_text)
     language = response.language or language
 
-    extracted = _apply_inferred_area(merge_extraction(state.extracted, response.extraction_json))
+    extracted = _apply_inferred_area(merge_extraction(
+        state.extracted,
+        constrain_model_extraction(response.extraction_json, user_text),
+    ))
     extracted = enrich_from_user_text(extracted, user_text)
     extracted = _record_fact_sources(extracted, wa_message_id)
     # A bare affirmative/negative is mapped only to the first outstanding,
-    # backend-scheduled question. Complex or multilingual answers remain
-    # UNCLEAR for the constrained classifier path; they are never silently NO.
+    # backend-scheduled question. Complex language is never guessed as NO.
     # A single WhatsApp safety message can contain the entire approved grouped
     # screen. Map numbered replies deterministically so a patient is not forced
     # into one message per red-flag question.
     safety_screen = _safety_screen(extracted)
-    if phase == PatientPhase.MID_TRIAGE and safety_screen:
+    if safety_screen:
         answers = dict(extracted.safety_answers)
+        answers.update(_narrative_no_answers(user_text, safety_screen))
         numbered = {
             int(index): normalize_answer(answer)
-            for index, answer in re.findall(r"(?:^|[\s,;])(\d{1,2})\s*[).:-]?\s*(yes|no|unsure)\b", user_text, re.I)
+            for index, answer in re.findall(
+                r"(?:^|[\s,;/|])#?(\d{1,2})\s*[).:=-]?\s*(yes|no|unsure)\b",
+                user_text,
+                re.I,
+            )
         }
         if numbered:
             for index, normalized in numbered.items():

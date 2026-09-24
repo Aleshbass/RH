@@ -169,7 +169,9 @@ def enqueue_notify_takeover(phone: str, text: str) -> None:
 def send_whatsapp_text(phone: str, text: str) -> None:
     settings = get_settings()
     if not settings.whatsapp_access_token or not settings.whatsapp_phone_number_id:
-        return
+        # A silent no-op is indistinguishable from a delivered reply and leaves
+        # the patient waiting forever.  Let the worker retry and record this.
+        raise RuntimeError("WhatsApp delivery is not configured")
     response = httpx.post(
         f"https://graph.facebook.com/v21.0/{settings.whatsapp_phone_number_id}/messages",
         headers={"Authorization": f"Bearer {settings.whatsapp_access_token}"},

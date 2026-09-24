@@ -14,6 +14,5 @@ def plain_summary(extracted: ExtractedTriage) -> str:
     understood = ", ".join(bits) if bits else "what you described"
     return (
         f"Here's what I understood: {understood}. "
-        "Does this summary look right, or is there anything you would like to correct? "
-        "I will then show you the Consultation & Booking Policy separately."
+        "I will show you the Consultation & Booking Policy after you confirm it."
     )
