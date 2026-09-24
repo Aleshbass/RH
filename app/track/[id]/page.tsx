@@ -4,29 +4,8 @@ import React, { use } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import {
-  CheckCircle2,
-  Clock,
-  Calendar,
-  Phone,
-  ShieldCheck,
-  Stethoscope,
-  Activity,
-  ArrowLeft,
-  MessageSquare,
-  Search,
-  AlertCircle,
-  FileCheck,
-  Building2,
-  UserCheck,
-  Copy,
-  Check,
-  Sparkles,
-} from "lucide-react";
+import { ArrowLeft, Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 
 interface TrackPageProps {
   params: Promise<{ id: string }>;
@@ -47,19 +26,19 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
     if (!referral?.trackingCode) return;
     navigator.clipboard.writeText(`START ${referral.trackingCode}`);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   if (referral === undefined) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-center items-center p-4">
-        <div className="w-full max-w-md p-8 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 text-center">
-          <div className="w-12 h-12 rounded-full border-4 border-teal-500 border-t-transparent animate-spin mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
-            Fetching Care Tracker...
+      <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] flex flex-col justify-center items-center p-6">
+        <div className="w-full max-w-md p-10 bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-100 dark:border-neutral-800 text-center space-y-3">
+          <div className="w-6 h-6 border-2 border-neutral-900 dark:border-neutral-100 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <h2 className="text-sm font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+            Loading Patient Care Record
           </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Looking up live care status for #{identifier}
+          <p className="text-xs text-neutral-500">
+            Retrieving clinical status for #{identifier}
           </p>
         </div>
       </div>
@@ -68,34 +47,41 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
 
   if (referral === null) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-center items-center p-4">
-        <div className="w-full max-w-lg p-8 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 text-center">
-          <div className="w-14 h-14 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-7 h-7" />
+      <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] flex flex-col justify-center items-center p-6">
+        <div className="w-full max-w-lg p-10 bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-100 dark:border-neutral-800 space-y-5">
+          <div className="space-y-1">
+            <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">
+              Lookup Error
+            </p>
+            <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">
+              Referral record not found
+            </h1>
+            <p className="text-sm text-neutral-500 leading-relaxed pt-1">
+              No referral matches the identifier{" "}
+              <span className="font-mono text-neutral-900 dark:text-neutral-100">
+                {identifier}
+              </span>
+              . Please verify the code or contact your care coordinator.
+            </p>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Referral Record Not Found
-          </h1>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
-            No referral was found matching reference or code:{" "}
-            <span className="font-mono font-semibold text-slate-900 dark:text-white">
-              {identifier}
-            </span>
-          </p>
-          <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
-            <Button asChild variant="outline">
-              <Link href="/track">
-                <Search className="w-4 h-4 mr-2" />
-                Search Another ID
-              </Link>
+
+          <div className="pt-2 flex flex-col sm:flex-row gap-3">
+            <Button
+              asChild
+              variant="outline"
+              className="rounded-lg text-sm font-medium border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300"
+            >
+              <Link href="/track">Search Another Reference</Link>
             </Button>
-            <Button asChild className="bg-teal-600 hover:bg-teal-700 text-white">
+            <Button
+              asChild
+              className="rounded-lg text-sm font-medium bg-emerald-800 hover:bg-emerald-900 text-white"
+            >
               <a
-                href="https://wa.me/2348061525811?text=Hello%20Rehabify,%20I%20need%20help%20tracking%20my%20referral"
+                href="https://wa.me/2348061525811?text=Hello%20Rehabify,%20I%20need%20assistance%20tracking%20my%20referral"
                 target="_blank"
                 rel="noreferrer"
               >
-                <MessageSquare className="w-4 h-4 mr-2" />
                 Contact Care Desk
               </a>
             </Button>
@@ -105,12 +91,12 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
     );
   }
 
-  // Determine active milestone step
-  // 1. Referral Received
-  // 2. Joy WhatsApp Intake
-  // 3. Therapist Matched
-  // 4. In Treatment
-  // 5. Completed / Discharged
+  // Determine active milestone step:
+  // 1. Referral Logged
+  // 2. Intake & Triage
+  // 3. Physio Matched
+  // 4. Care Sessions
+  // 5. Discharged
   let currentStep = 1;
   if (
     referral.status === "contacted" ||
@@ -138,343 +124,329 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
     currentStep = 5;
   }
 
-  const progressPercent = Math.min(
-    100,
-    Math.round(
-      ((referral.sessions.completed || 0) / (referral.sessions.total || 4)) * 100
-    )
-  );
+  const completedSessions = referral.sessions.completed || 0;
+  const totalSessions = referral.sessions.total || 4;
+  const progressPercent = Math.min(100, Math.round((completedSessions / totalSessions) * 100));
 
   const steps = [
     {
       step: 1,
       title: "Referral Logged",
       desc: "Received from partner platform",
-      done: currentStep >= 1,
     },
     {
       step: 2,
       title: "Intake & Triage",
-      desc: "Care team triage via WhatsApp / Phone",
-      done: currentStep >= 2,
+      desc: "Clinical evaluation on WhatsApp",
     },
     {
       step: 3,
       title: "Physio Matched",
-      desc: "Licensed MRTBN therapist assigned",
-      done: currentStep >= 3,
+      desc: "MRTBN therapist assigned",
     },
     {
       step: 4,
       title: "Care Sessions",
-      desc: `${referral.sessions.completed} of ${referral.sessions.total} sessions done`,
-      done: currentStep >= 4,
+      desc: `${completedSessions} of ${totalSessions} completed`,
     },
     {
       step: 5,
       title: "Discharged",
       desc: "Outcome report delivered",
-      done: currentStep >= 5,
     },
   ];
 
+  const whatsappIntakeUrl = `https://wa.me/2348061525811?text=${encodeURIComponent(
+    `START ${referral.trackingCode} - Hello Joy, I'm ready to start my physiotherapy intake.`
+  )}`;
+
+  const whatsappResumeUrl = `https://wa.me/2348061525811?text=${encodeURIComponent(
+    `START ${referral.trackingCode} - Continuing my physiotherapy intake.`
+  )}`;
+
+  const whatsappSupportUrl = `https://wa.me/2348061525811?text=${encodeURIComponent(
+    `START ${referral.trackingCode} - Support Inquiry`
+  )}`;
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-50 py-10 px-4 sm:px-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header Bar */}
+    <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] text-neutral-900 dark:text-neutral-50 py-12 px-4 sm:px-6">
+      <div className="max-w-3xl mx-auto space-y-6">
+        {/* Top Navigation */}
         <div className="flex items-center justify-between">
           <Link
             href="/track"
-            className="inline-flex items-center text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+            className="inline-flex items-center text-xs font-medium text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200 transition-colors"
           >
-            <ArrowLeft className="w-4 h-4 mr-1" />
+            <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
             Lookup Different Reference
           </Link>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-teal-600 bg-teal-50 dark:bg-teal-950/60 px-2.5 py-1 rounded-full border border-teal-200 dark:border-teal-800">
-              LIVE TRACKING
-            </span>
+          <span className="text-xs font-medium text-neutral-500 flex items-center">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block mr-1.5" />
+            Live Tracking
+          </span>
+        </div>
+
+        {/* Primary Care Overview Card */}
+        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-100 dark:border-neutral-800 p-8 space-y-8">
+          {/* Header & Patient Details */}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
+              <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">
+                Patient Care Journey
+              </p>
+              <div className="flex items-center gap-3 text-xs text-neutral-500 font-mono">
+                <span>Ref: {referral.trackingCode}</span>
+                {referral.partnerExternalId && (
+                  <span>• Partner ID: {referral.partnerExternalId}</span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">
+                {referral.patient.firstName} {referral.patient.lastName.slice(0, 1)}.
+              </h1>
+              <p className="text-sm text-neutral-500 mt-1">
+                {referral.clinicalNotes.condition || "Physical Rehabilitation"} — {referral.patient.city || "Lagos"}
+              </p>
+            </div>
+          </div>
+
+          {/* Editorial Step Tracker */}
+          <div className="pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 sm:gap-2">
+              {steps.map((s) => {
+                const isCompleted = currentStep > s.step;
+                const isCurrent = currentStep === s.step;
+
+                return (
+                  <div key={s.step} className="flex flex-col space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs">
+                      {isCompleted ? (
+                        <span className="text-emerald-700 dark:text-emerald-400 font-medium inline-flex items-center">
+                          <Check className="w-3.5 h-3.5 mr-0.5" />
+                          Step {s.step}
+                        </span>
+                      ) : isCurrent ? (
+                        <span className="font-semibold text-neutral-900 dark:text-neutral-100">
+                          Step {s.step}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400">
+                          Step {s.step}
+                        </span>
+                      )}
+                    </div>
+
+                    <h2
+                      className={`text-sm ${
+                        isCurrent
+                          ? "font-semibold text-neutral-900 dark:text-neutral-100"
+                          : isCompleted
+                          ? "font-medium text-neutral-700 dark:text-neutral-300"
+                          : "font-normal text-neutral-400"
+                      }`}
+                    >
+                      {s.title}
+                    </h2>
+
+                    <p className="text-xs text-neutral-500 leading-tight">
+                      {s.desc}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Minimal Progress Line */}
+          <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium text-neutral-600 dark:text-neutral-400">
+                Prescribed Therapy Progress
+              </span>
+              <span className="font-mono text-neutral-500">
+                {completedSessions} of {totalSessions} Sessions ({progressPercent}%)
+              </span>
+            </div>
+            <div className="w-full h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-700 dark:bg-emerald-600 transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Hero Card */}
-        <Card className="border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900">
-          <CardHeader className="pb-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <CardDescription className="text-xs uppercase tracking-wider font-semibold text-teal-600">
-                  Patient Care Journey
-                </CardDescription>
-                <CardTitle className="text-2xl font-bold mt-1">
-                  {referral.patient.firstName} {referral.patient.lastName.slice(0, 1)}.
-                </CardTitle>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                  Condition:{" "}
-                  <span className="font-medium text-slate-700 dark:text-slate-300">
-                    {referral.clinicalNotes.condition || "Physical Rehabilitation"}
-                  </span>
-                  {" • "}
-                  Location:{" "}
-                  <span className="font-medium text-slate-700 dark:text-slate-300">
-                    {referral.patient.city || "Lagos"}
-                  </span>
+        {/* Action Panel for Step 1: Start Triage */}
+        {currentStep === 1 && (
+          <div className="bg-[#f4f8f5] dark:bg-[#0d1712] rounded-2xl p-8 space-y-4 border border-emerald-950/5 dark:border-emerald-500/10">
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+                Action Required — Step 2 of 5
+              </p>
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-50">
+                Start your clinical triage on WhatsApp with Joy
+              </h2>
+              <p className="text-sm text-neutral-600 dark:text-neutral-300 leading-relaxed max-w-2xl">
+                Send a message to our AI care coordinator to verify your symptoms and location. Sending this message links your referral and advances this tracker in real time.
+              </p>
+            </div>
+
+            <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <Button
+                asChild
+                className="h-10 px-5 rounded-lg text-sm font-medium bg-emerald-800 hover:bg-emerald-900 text-white transition-colors"
+              >
+                <a href={whatsappIntakeUrl} target="_blank" rel="noreferrer">
+                  Open WhatsApp
+                </a>
+              </Button>
+              <Button
+                variant="outline"
+                onClick={copyTrackingCode}
+                className="h-10 px-4 rounded-lg text-sm font-medium border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 mr-1.5 text-emerald-700" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 mr-1.5 text-neutral-500" />
+                    Copy Code: {referral.trackingCode}
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Action Panel for Step 2: Triage in Progress */}
+        {currentStep === 2 && (
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-100 dark:border-neutral-800 p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">
+                Current Status
+              </p>
+              <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-50">
+                Clinical triage in progress
+              </h2>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                Joy and our dispatch desk are processing your intake details to assign a licensed therapist.
+              </p>
+            </div>
+            <Button
+              asChild
+              variant="outline"
+              className="shrink-0 h-9 px-4 rounded-lg text-xs font-medium border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200"
+            >
+              <a href={whatsappResumeUrl} target="_blank" rel="noreferrer">
+                Resume WhatsApp Chat
+              </a>
+            </Button>
+          </div>
+        )}
+
+        {/* Two-Column Details Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Assigned Physiotherapist */}
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-100 dark:border-neutral-800 p-8 space-y-5">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">
+                Care Team
+              </p>
+              <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-50 mt-1">
+                Assigned Physiotherapist
+              </h2>
+            </div>
+
+            {referral.assignedPhysiotherapist ? (
+              <div className="space-y-2 pt-1">
+                <div>
+                  <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                    {referral.assignedPhysiotherapist.name}
+                  </h3>
+                  <p className="text-xs text-neutral-500">
+                    License: {referral.assignedPhysiotherapist.licenseNumber}
+                  </p>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+                    {referral.assignedPhysiotherapist.specialization}
+                  </p>
+                </div>
+                <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 pt-1">
+                  MRTBN Licensed & Verified
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2 sm:self-start">
-                <Badge variant="outline" className="font-mono text-xs px-3 py-1 bg-slate-50 dark:bg-slate-800">
-                  {referral.trackingCode}
-                </Badge>
-                {referral.partnerExternalId && (
-                  <Badge className="bg-teal-600 hover:bg-teal-700 text-white text-xs px-3 py-1 font-mono">
-                    Partner Ref: {referral.partnerExternalId}
-                  </Badge>
-                )}
+            ) : (
+              <div className="space-y-1.5 pt-1">
+                <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Matching licensed physiotherapist
+                </h3>
+                <p className="text-xs text-neutral-500 leading-relaxed">
+                  Our dispatch desk is currently matching the closest certified therapist in {referral.patient.city || "your area"}. You will be notified directly once confirmed.
+                </p>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-2">
-            {/* Horizontal Timeline */}
-            <div className="relative mt-4 mb-6">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                {steps.map((s) => (
-                  <div
-                    key={s.step}
-                    className={`flex flex-col items-center text-center p-3 rounded-xl transition-all ${
-                      s.done
-                        ? "bg-teal-500/10 border border-teal-500/30 text-teal-700 dark:text-teal-300"
-                        : "bg-slate-100 dark:bg-slate-800/50 text-slate-400 border border-transparent"
-                    }`}
-                  >
-                    <div
-                      className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold mb-1.5 ${
-                        s.done
-                          ? "bg-teal-600 text-white"
-                          : "bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
-                      }`}
-                    >
-                      {s.done ? <CheckCircle2 className="w-4 h-4" /> : s.step}
-                    </div>
-                    <span className="text-xs font-semibold">{s.title}</span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
-                      {s.desc}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            )}
 
-            {/* Session Progress Meter */}
-            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-4 border border-slate-200/80 dark:border-slate-700/60">
-              <div className="flex items-center justify-between text-sm mb-2">
-                <span className="font-semibold flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                  <Activity className="w-4 h-4 text-teal-600" />
-                  Prescribed Therapy Progress
-                </span>
-                <span className="font-mono text-xs font-bold text-teal-600">
-                  {referral.sessions.completed} / {referral.sessions.total} Sessions ({progressPercent}%)
+            <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Care Coordinator</span>
+                <span className="font-medium text-neutral-700 dark:text-neutral-300">
+                  Rehabify Clinical Dispatch
                 </span>
               </div>
-              <Progress value={progressPercent} className="h-2.5 bg-slate-200 dark:bg-slate-700" />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Real-time WhatsApp Intake Action Card */}
-        {currentStep === 1 && (
-          <Card className="border-emerald-200 dark:border-emerald-800/60 bg-gradient-to-br from-emerald-50 via-teal-50/50 to-white dark:from-emerald-950/30 dark:via-teal-950/20 dark:to-slate-900 shadow-sm overflow-hidden relative">
-            <div className="absolute top-0 right-0 transform translate-x-4 -translate-y-4 w-32 h-32 bg-emerald-400/10 rounded-full blur-2xl pointer-events-none" />
-            <CardContent className="p-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="space-y-2 max-w-xl">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    Action Required • Step 2 of 5
-                  </div>
-                  <h3 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white">
-                    Start Your Clinical Triage on WhatsApp with Joy
-                  </h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Message Joy, our AI Care Coordinator, to confirm your symptoms and home address. Once you send the pre-filled code, this care tracker will instantly update to <strong>Step 2 (Intake & Triage)</strong> in real time.
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 pt-1">
-                    <span>Your Tracking Reference:</span>
-                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                      {referral.trackingCode}
-                    </span>
-                  </p>
-                </div>
-
-                <div className="flex flex-col sm:flex-row md:flex-col gap-2.5 shrink-0">
-                  <Button
-                    asChild
-                    size="lg"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm h-11 px-5"
-                  >
-                    <a
-                      href={`https://wa.me/2348061525811?text=${encodeURIComponent(
-                        `START ${referral.trackingCode} - Hello Joy, I'm ready to start my physiotherapy intake.`
-                      )}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <MessageSquare className="w-4 h-4 mr-2" />
-                      Chat with Joy on WhatsApp
-                    </a>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={copyTrackingCode}
-                    className="h-9 border-emerald-200 dark:border-emerald-800 text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
-                        Copied to Clipboard
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5 mr-1.5" />
-                        Copy START Code
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {currentStep === 2 && (
-          <Card className="border-teal-200 dark:border-teal-800/60 bg-gradient-to-br from-teal-50/70 via-sky-50/30 to-white dark:from-teal-950/30 dark:via-sky-950/20 dark:to-slate-900 shadow-sm">
-            <CardContent className="p-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-teal-100 dark:bg-teal-900/60 text-teal-800 dark:text-teal-200 border border-teal-200 dark:border-teal-700">
-                    <Clock className="w-3.5 h-3.5 text-teal-600" />
-                    Intake in Progress
-                  </div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    Clinical Triage Underway with Joy
-                  </h3>
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    Joy and our clinical dispatch desk are assessing your case details to assign the nearest certified physiotherapist.
-                  </p>
-                </div>
-                <Button
-                  asChild
-                  size="sm"
-                  variant="outline"
-                  className="border-teal-300 text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950/50 shrink-0"
-                >
-                  <a
-                    href={`https://wa.me/2348061525811?text=${encodeURIComponent(
-                      `START ${referral.trackingCode} - Continuing my physiotherapy intake.`
-                    )}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
-                    Resume WhatsApp Chat
-                  </a>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Details Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Matched Physio Card */}
-          <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Stethoscope className="w-4 h-4 text-teal-600" />
-                Assigned MRTBN Physiotherapist
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {referral.assignedPhysiotherapist ? (
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-1.5">
-                        {referral.assignedPhysiotherapist.name}
-                        <ShieldCheck className="w-4 h-4 text-teal-500" />
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        License: {referral.assignedPhysiotherapist.licenseNumber}
-                      </p>
-                      <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 font-medium">
-                        {referral.assignedPhysiotherapist.specialization}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">
-                      Verified PT
-                    </Badge>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 text-amber-800 dark:text-amber-300 text-xs leading-relaxed">
-                  <Clock className="w-4 h-4 inline mr-1 text-amber-600" />
-                  <strong>Matching in progress</strong>. Our clinical dispatch team is matching the closest certified therapist in{" "}
-                  {referral.patient.city || "the patient's zone"}.
+              {referral.sessions.nextSessionAt && (
+                <div className="flex justify-between">
+                  <span className="text-neutral-400">Next Scheduled Session</span>
+                  <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                    {new Date(referral.sessions.nextSessionAt).toLocaleDateString("en-GB", {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
                 </div>
               )}
+            </div>
+          </div>
 
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 space-y-1">
-                <div className="flex justify-between">
-                  <span>Care Coordinator:</span>
-                  <span className="font-medium text-slate-700 dark:text-slate-300">Rehabify Clinical Dispatch Team</span>
-                </div>
-                {referral.sessions.nextSessionAt && (
-                  <div className="flex justify-between">
-                    <span>Next Scheduled Session:</span>
-                    <span className="font-medium text-teal-600">
-                      {new Date(referral.sessions.nextSessionAt).toLocaleDateString("en-GB", {
-                        weekday: "short",
-                        day: "numeric",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Partner & Referral Meta */}
-          <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-teal-600" />
+          {/* Referral Metadata */}
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-100 dark:border-neutral-800 p-8 space-y-5">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">
+                Documentation
+              </p>
+              <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-50 mt-1">
                 Referral Details
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-xs">
-              <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">Referring Partner:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
+              </h2>
+            </div>
+
+            <div className="space-y-3 text-xs pt-1">
+              <div className="flex justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
+                <span className="text-neutral-400">Referring Partner</span>
+                <span className="font-medium text-neutral-800 dark:text-neutral-200">
                   {referral.partnerId || referral.clinicalNotes.referringDoctor || "Direct Partner Referral"}
                 </span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">Partner Generated Reference:</span>
-                <span className="font-mono font-semibold text-teal-600">
+              <div className="flex justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
+                <span className="text-neutral-400">Partner Reference</span>
+                <span className="font-mono text-neutral-700 dark:text-neutral-300">
                   {referral.partnerExternalId || "N/A"}
                 </span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">Billing Arrangement:</span>
-                <span className="font-medium uppercase text-slate-700 dark:text-slate-300">
+              <div className="flex justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
+                <span className="text-neutral-400">Billing Mode</span>
+                <span className="font-medium text-neutral-800 dark:text-neutral-200 capitalize">
                   {referral.billingMode.replace(/_/g, " ")}
                 </span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">Date Received:</span>
-                <span className="text-slate-700 dark:text-slate-300">
+              <div className="flex justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
+                <span className="text-neutral-400">Date Received</span>
+                <span className="text-neutral-700 dark:text-neutral-300">
                   {new Date(referral.createdAt).toLocaleDateString("en-GB", {
                     day: "numeric",
                     month: "short",
@@ -482,27 +454,20 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
                   })}
                 </span>
               </div>
-              <div className="pt-2 flex justify-end">
-                <Button
-                  asChild
-                  size="sm"
-                  variant="outline"
-                  className="text-xs h-8 text-teal-600 border-teal-200 hover:bg-teal-50"
-                >
-                  <a
-                    href={`https://wa.me/2348061525811?text=${encodeURIComponent(
-                      `START ${referral.trackingCode} - Inquiry on Referral ${referral.trackingCode}`
-                    )}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 mr-1" />
-                    Support on WhatsApp
-                  </a>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <Button
+                asChild
+                variant="ghost"
+                className="h-8 px-3 text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+              >
+                <a href={whatsappSupportUrl} target="_blank" rel="noreferrer">
+                  Support on WhatsApp
+                </a>
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
