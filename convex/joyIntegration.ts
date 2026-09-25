@@ -31,6 +31,12 @@ function normalized(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function samePhone(left: string, right: string): boolean {
+  const a = left.replace(/\D/g, "");
+  const b = right.replace(/\D/g, "");
+  return a.length >= 7 && b.length >= 7 && a.slice(-10) === b.slice(-10);
+}
+
 function displayName(user: { firstName?: string; lastName?: string }): string | undefined {
   const value = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
   return value || undefined;
@@ -410,7 +416,6 @@ export const resolveOrCreatePatientByPhone = internalMutation({
         });
       }
     }
-
     // 3. Fallback Strategy: Match pending referrals by patientPhone clean digits
     if (!linkedReferral) {
       const cleanDigits = phone.replace(/\D/g, "");
@@ -470,6 +475,67 @@ export const resolveOrCreatePatientByPhone = internalMutation({
       referral_id: linkedReferral?._id,
       tracking_code: linkedReferral?.trackingCode,
       referral_status: linkedReferral?.status,
+    };
+  },
+});
+
+/**
+ * Resolve a partner/HMO referral for the verified WhatsApp sender.  This is a
+ * deliberately small, patient-facing projection; it is not a general Convex
+ * read and never returns clinicalNotes, callback URLs, partner finance, or
+ * unrelated patient records.
+ */
+export const resolveReferralContextForJoy = internalMutation({
+  args: { phone: v.string(), trackingCode: v.string(), joyPersonId: v.string(), patientId: v.id("users") },
+  handler: async (ctx, args) => {
+    const trackingCode = args.trackingCode.trim().toUpperCase();
+    const referral = await ctx.db.query("inboundReferrals")
+      .withIndex("by_tracking_code", (q) => q.eq("trackingCode", trackingCode))
+      .first();
+    // Do not disclose whether a code exists when it does not belong to the
+    // verified sender.
+    if (!referral || !samePhone(referral.patientPhone, args.phone)) return { resolution: "MISMATCH" as const };
+    if (referral.patientId && referral.patientId !== args.patientId) return { resolution: "CONFLICT" as const };
+
+    const now = Date.now();
+    if (!referral.patientId) {
+      const nextStatus = (referral.status === "received" || referral.status === "pending") ? "intake_started" : referral.status;
+      await ctx.db.patch(referral._id, { patientId: args.patientId, status: nextStatus, updatedAt: now });
+      await ctx.db.insert("referralEvents", {
+        referralId: referral._id,
+        eventName: "patient.whatsapp_referral_verified",
+        occurredAt: now,
+        actorType: "system",
+        actorId: "joy_ai",
+        metadata: { joyPersonId: args.joyPersonId, channel: "whatsapp" },
+      });
+    }
+
+    return {
+      resolution: "MATCH" as const,
+      referral: {
+        referral_id: referral._id,
+        tracking_code: referral.trackingCode,
+        patient: { display_name: `${referral.patientFirstName} ${referral.patientLastName}`.trim() || undefined },
+        location: { city: referral.city, state: referral.state, area: referral.area },
+        preferred_language: referral.preferredLanguage,
+        preferred_care_mode: referral.preferredCareMode,
+        preferred_contact_channel: referral.preferredContactChannel,
+        condition: referral.condition,
+        reason: referral.reason,
+        priority: referral.priority,
+        recommended_sessions: referral.recommendedSessions,
+        hospital_clinic: referral.hospitalClinic,
+        billing_mode: referral.billingMode,
+        referral_status: referral.status,
+        next_step: referral.nextStep,
+        consent: {
+          granted: referral.consentGranted,
+          captured_at: referral.consentCapturedAt,
+          method: referral.consentMethod,
+          privacy_notice_version: referral.consentPrivacyNoticeVersion,
+        },
+      },
     };
   },
 });
