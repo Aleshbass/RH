@@ -53,6 +53,35 @@ def test_resolve_patient_signs_the_exact_json_payload() -> None:
     assert result.patient_id == "rh_patient_1"
 
 
+def test_referral_context_is_scoped_to_the_verified_patient() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/joy/referrals/resolve"
+        assert json.loads(request.content) == {
+            "tracking_code": "RHB-95942",
+            "phone": "+2348012345678",
+            "joy_person_id": "joy_patient_1",
+            "actor": {
+                "persona": "patient",
+                "sender_phone": "+2348012345678",
+                "rh_user_id": "rh_patient_1",
+            },
+        }
+        return httpx.Response(200, json={"data": {
+            "resolution": "MATCH",
+            "referral": {"referral_id": "referral_1", "billing_mode": "hmo_direct_billing"},
+        }})
+
+    client = RHClient("https://rh.test", "joy-test", "test-secret", client=httpx.Client(transport=httpx.MockTransport(handler)))
+    result = client.resolve_referral_context(
+        "RHB-95942",
+        phone="+2348012345678",
+        joy_person_id="joy_patient_1",
+        actor=RHActor(persona="patient", sender_phone="+2348012345678", rh_user_id="rh_patient_1"),
+    )
+    assert result.resolution == "MATCH"
+    assert result.referral == {"referral_id": "referral_1", "billing_mode": "hmo_direct_billing"}
+
+
 def test_current_policy_signs_query_string_and_requires_complete_metadata() -> None:
     secret = "test-secret"
 

@@ -1,5 +1,6 @@
 import json
 import re
+import hashlib
 from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import select
@@ -115,6 +116,119 @@ _DASHBOARD_RE = re.compile(
 _DASHBOARD_REPLY = (
     "That lives on the web dashboard, not WhatsApp. I can't edit bio, photo, pricing, or credentials here."
 )
+_REFERRAL_CODE_RE = re.compile(r"\bRHB\s*[-–—]\s*(\d{4,})\b", re.IGNORECASE)
+
+
+def _verified_referral_turn(
+    session: Session,
+    identity: Identity,
+    state: ConversationState,
+    user_text: str,
+    language: str,
+    wa_message_id: str | None,
+) -> TurnResult | None:
+    """Apply a referral only after RH verifies code ownership for this sender."""
+    match = _REFERRAL_CODE_RE.search(user_text or "")
+    if identity.persona != Persona.PATIENT or match is None:
+        return None
+    tracking_code = f"RHB-{match.group(1)}"
+    patient = session.get(Patient, identity.person_id)
+    conversation = session.get(Conversation, state.conversation_id)
+    if patient is None or conversation is None:
+        return None
+    actor = RHActor(persona="patient", sender_phone=patient.phone_e164)
+    try:
+        client = configured_rh_client()
+        resolved_patient = client.resolve_patient(
+            patient.phone_e164, str(patient.id), actor, name=patient.name
+        )
+        if not resolved_patient.patient_id:
+            raise RHIntegrationError("PATIENT_NOT_RESOLVED", "RH patient identity was not resolved")
+        mapping = session.scalar(select(RHIdentityMapping).where(
+            RHIdentityMapping.persona == Persona.PATIENT.value,
+            RHIdentityMapping.joy_person_id == patient.id,
+        ))
+        if mapping is None:
+            session.add(RHIdentityMapping(
+                persona=Persona.PATIENT.value,
+                joy_person_id=patient.id,
+                rh_record_id=resolved_patient.patient_id,
+            ))
+        referral_result = client.resolve_referral_context(
+            tracking_code,
+            phone=patient.phone_e164,
+            joy_person_id=str(patient.id),
+            actor=RHActor(
+                persona="patient", sender_phone=patient.phone_e164,
+                rh_user_id=resolved_patient.patient_id,
+            ),
+        )
+    except RHIntegrationError:
+        # A dependency problem must not be represented as an invalid referral.
+        return TurnResult(
+            reply_text="I can’t verify your Rehabify referral right now. Please try again shortly.",
+            language=language, phase=state.phase, extracted=state.extracted, safety=evaluate(state.extracted),
+        )
+
+    if referral_result.resolution != "MATCH" or not referral_result.referral:
+        return TurnResult(
+            reply_text=(
+                "I couldn’t verify that referral code for this WhatsApp number. "
+                "Please check the code or contact Rehabify support."
+            ),
+            language=language, phase=state.phase, extracted=state.extracted, safety=evaluate(state.extracted),
+        )
+
+    referral = referral_result.referral
+    patient_context = referral.get("patient") if isinstance(referral.get("patient"), dict) else {}
+    location = referral.get("location") if isinstance(referral.get("location"), dict) else {}
+    name = patient_context.get("display_name")
+    if isinstance(name, str) and name.strip() and (not patient.name or patient.name == "Patient"):
+        patient.name = name.strip()
+    for attr, value in (("city", location.get("city")), ("area", location.get("area"))):
+        if isinstance(value, str) and value.strip() and not getattr(patient, attr):
+            setattr(patient, attr, value.strip())
+    if not patient.location and patient.city and patient.area:
+        patient.location = f"{patient.area}, {patient.city}"
+
+    # Persist only the RH-approved, customer-facing projection.  In particular
+    # this must never retain referral clinical notes, payment details, or a raw
+    # Convex document in Joy's conversation database.
+    context = dict(conversation.booking_context or {})
+    context["rh_referral"] = referral
+    conversation.booking_context = context
+    state.booking_context = context
+    state.known_facts.update({key: value for key, value in {
+        "name": patient.name, "city": patient.city, "area": patient.area,
+        "location": patient.location,
+    }.items() if value})
+    append(
+        session,
+        kind=AuditKind.IDENTITY,
+        actor_phone=patient.phone_e164,
+        person_id=patient.id,
+        payload={
+            "event": "rh_referral_verified",
+            "tracking_code_sha256": hashlib.sha256(tracking_code.encode("utf-8")).hexdigest(),
+            "referral_id": referral.get("referral_id"),
+            "billing_mode": referral.get("billing_mode"),
+            "next_step": referral.get("next_step"),
+        },
+    )
+    billing_mode = referral.get("billing_mode")
+    if billing_mode == "hmo_direct_billing":
+        reply = (
+            "I found your HMO referral and have your care details. I’ll collect only the "
+            "remaining clinical information and route the case to care coordination; no payment will be requested here. "
+            "Please describe the problem you need help with, in your own words."
+        )
+    else:
+        reply = (
+            "I found your Rehabify referral and have your saved contact and location details. "
+            "I won’t ask for those again. Please describe the problem you need help with, in your own words."
+        )
+    save_turn(session, state, user_text, reply, state.extracted, state.phase, language, wa_message_id)
+    return TurnResult(reply_text=reply, language=language, phase=state.phase, extracted=state.extracted, safety=evaluate(state.extracted))
 
 
 def _shadow_jev_decision(session: Session, identity: Identity, user_text: str, stage: str) -> None:
@@ -1138,11 +1252,16 @@ def handle_turn(
         )
 
     state = load(session, identity)
+    language = mirror_language(user_text, state.last_known_language)
+    referral_turn = _verified_referral_turn(
+        session, identity, state, user_text, language, wa_message_id
+    )
+    if referral_turn is not None:
+        return referral_turn
     if identity.persona == Persona.PATIENT:
         apply_inbound_code(session, identity.person_id, user_text)
         _maybe_route_off_platform(session, user_text, patient_id=identity.person_id)
     phase = decide_phase(state)
-    language = mirror_language(user_text, state.last_known_language)
     if _is_escalated(session, state) or _is_specialist_review(session, state):
         return _resend_safety_block(
             session, identity, state, user_text, phase, language, wa_message_id

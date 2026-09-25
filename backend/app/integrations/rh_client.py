@@ -54,6 +54,13 @@ class PatientResolution:
 
 
 @dataclass(frozen=True)
+class RHReferralContext:
+    """Verified, patient-facing referral context returned by RH only."""
+
+    resolution: Literal["MATCH", "NOT_FOUND", "MISMATCH", "CONFLICT"]
+    referral: dict[str, Any] | None = None
+
+@dataclass(frozen=True)
 class PhysiotherapistResolution:
     resolution: Literal["MATCH", "NO_MATCH", "INELIGIBLE", "AMBIGUOUS"]
     physiotherapist_id: str | None = None
@@ -197,6 +204,32 @@ class RHClient:
         if email: payload["email"] = email
         data = self._request("POST", "/api/v1/joy/patients/resolve", payload=payload)
         return PatientResolution(resolution=data["resolution"], patient_id=data.get("patient_id"), display_name=data.get("display_name"))
+
+    def resolve_referral_context(
+        self, tracking_code: str, *, phone: str, joy_person_id: str, actor: RHActor
+    ) -> RHReferralContext:
+        """Resolve a referral only for its verified WhatsApp sender.
+
+        RH deliberately returns a small customer-facing projection, not a raw
+        Convex referral document or an arbitrary database query result.
+        """
+        data = self._request(
+            "POST",
+            "/api/v1/joy/referrals/resolve",
+            payload={
+                "tracking_code": tracking_code,
+                "phone": phone,
+                "joy_person_id": joy_person_id,
+                "actor": actor.as_payload(),
+            },
+        )
+        resolution = data.get("resolution")
+        if resolution not in {"MATCH", "NOT_FOUND", "MISMATCH", "CONFLICT"}:
+            raise RHIntegrationError("INVALID_RESPONSE", "RH returned an invalid referral resolution", retryable=True)
+        referral = data.get("referral")
+        if referral is not None and not isinstance(referral, dict):
+            raise RHIntegrationError("INVALID_RESPONSE", "RH returned invalid referral context", retryable=True)
+        return RHReferralContext(resolution=resolution, referral=referral)
 
     def resolve_physiotherapist(self, phone: str, actor: RHActor) -> PhysiotherapistResolution:
         data = self._request("POST", "/api/v1/joy/physiotherapists/resolve", payload={"phone": phone, "actor": actor.as_payload()})
