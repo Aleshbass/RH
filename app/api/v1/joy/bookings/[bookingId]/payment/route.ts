@@ -47,8 +47,33 @@ export async function POST(request: Request, context: { params: Promise<{ bookin
       method: "POST", headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY ?? ""}`, "Content-Type": "application/json" },
       body: JSON.stringify({ email: input.email, amount: chargeAmountKobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { rh_booking_id: bookingId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId, ...feeMetadata } }),
     });
-    const result = await response.json() as { status?: boolean; message?: string; data?: { authorization_url?: string; access_code?: string } };
+    let result: { status?: boolean; message?: string; data?: { authorization_url?: string; access_code?: string } };
+    try {
+      result = await response.json() as typeof result;
+    } catch {
+      // A proxy or provider error page must still leave an actionable but
+      // non-sensitive diagnostic, rather than becoming an opaque 503.
+      console.error("joy_paystack_initialization_invalid_response", {
+        request_id: requestId,
+        booking_id: bookingId,
+        paystack_status: response.status,
+        paystack_key_configured: Boolean(process.env.PAYSTACK_SECRET_KEY),
+      });
+      await callJoyConvexGateway("record_payment_initialization", { attempt_id: prepared.attempt_id, failure_category: "PAYSTACK_INITIALIZATION_FAILED" });
+      throw new JoyAuthError(503, "PAYMENT_INITIALIZATION_FAILED", "Unable to initialize secure payment at this time");
+    }
     if (!response.ok || !result.status || !result.data?.authorization_url) {
+      // Preserve a safe provider diagnostic for operations. Do not log the
+      // email, authorization header, access code, or raw payment payload.
+      console.error("joy_paystack_initialization_failed", {
+        request_id: requestId,
+        booking_id: bookingId,
+        paystack_status: response.status,
+        paystack_message: typeof result.message === "string"
+          ? result.message.replace(/[^\s@]+@[^\s@]+/g, "[redacted]").slice(0, 200)
+          : "missing authorization URL",
+        paystack_key_configured: Boolean(process.env.PAYSTACK_SECRET_KEY),
+      });
       await callJoyConvexGateway("record_payment_initialization", { attempt_id: prepared.attempt_id, failure_category: "PAYSTACK_INITIALIZATION_FAILED" });
       throw new JoyAuthError(503, "PAYMENT_INITIALIZATION_FAILED", "Unable to initialize secure payment at this time");
     }
