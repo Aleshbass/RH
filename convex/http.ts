@@ -5,6 +5,7 @@ import {
   resolveAvailabilityProfile, createPendingBooking, getBooking,
   preparePaymentAttempt, recordPaymentInitialization, recordPaymentWebhook, createSpecialistReview, prepareSpecialistReviewPayment, recordSpecialistReviewPaymentInitialization, recordSpecialistReviewPaymentWebhook, cancelBooking, enqueueEvent, markEventDelivery, respondToBooking, replacementCandidates, reassignBooking,
 } from "./joyGateway";
+import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking } from "./joyGateway";
 
 const http = httpRouter();
 
@@ -43,6 +44,10 @@ http.route({ path: "/joy-integration/mark_event_delivery", method: "POST", handl
 http.route({ path: "/joy-integration/respond_to_booking", method: "POST", handler: respondToBooking });
 http.route({ path: "/joy-integration/replacement_candidates", method: "POST", handler: replacementCandidates });
 http.route({ path: "/joy-integration/reassign_booking", method: "POST", handler: reassignBooking });
+http.route({ path: "/joy-read/resolve_physiotherapist", method: "POST", handler: readResolvePhysiotherapist });
+http.route({ path: "/joy-read/find_matches", method: "POST", handler: readFindMatches });
+http.route({ path: "/joy-read/availability", method: "POST", handler: readAvailability });
+http.route({ path: "/joy-read/get_booking", method: "POST", handler: readBooking });
 
 export default http;
 

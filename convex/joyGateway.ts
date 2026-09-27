@@ -14,8 +14,8 @@ function equal(a: string, b: string): boolean {
   return difference === 0;
 }
 
-async function verify(request: Request, path: string, body: string): Promise<boolean> {
-  const secret = process.env.CONVEX_JOY_GATEWAY_SECRET;
+async function verify(request: Request, path: string, body: string, secretName = "CONVEX_JOY_GATEWAY_SECRET"): Promise<boolean> {
+  const secret = process.env[secretName];
   const timestamp = request.headers.get("X-Joy-Gateway-Timestamp") ?? "";
   const nonce = request.headers.get("X-Joy-Gateway-Nonce") ?? "";
   const signature = request.headers.get("X-Joy-Gateway-Signature") ?? "";
@@ -29,6 +29,16 @@ async function readJson(request: Request, path: string): Promise<{ body: string;
   const body = await request.text();
   if (!(await verify(request, path, body))) return new Response("Unauthorized", { status: 401 });
   try { return { body, nonce: request.headers.get("X-Joy-Gateway-Nonce")!, data: JSON.parse(body) }; } catch { return new Response("Invalid JSON", { status: 400 }); }
+}
+
+// The read gateway is deliberately separate from the operational gateway. Its
+// key can only reach the explicit query projections below; it cannot call a
+// mutation and read requests do not reserve a nonce (a replay is harmless for
+// an idempotent query).
+async function readReadOnlyJson(request: Request, path: string): Promise<{ data: Record<string, unknown> } | Response> {
+  const body = await request.text();
+  if (!(await verify(request, path, body, "CONVEX_JOY_READ_GATEWAY_SECRET"))) return new Response("Unauthorized", { status: 401 });
+  try { return { data: JSON.parse(body) }; } catch { return new Response("Invalid JSON", { status: 400 }); }
 }
 
 async function reserveNonce(ctx: { runMutation: Function }, nonce: string): Promise<boolean> {
@@ -125,6 +135,47 @@ export const resolveAvailabilityProfile = httpAction(async (ctx, request) => {
     physiotherapistId: profile.physiotherapistUserId, startDate: start, endDate: end, sessionDuration: duration_minutes,
   });
   return Response.json({ slots, amount_kobo: profile.amountKobo, currency: "NGN" });
+});
+
+// Read-only projections for Joy's server. These are intentionally not a
+// generic database or Convex-function dispatcher.
+export const readResolvePhysiotherapist = httpAction(async (ctx, request) => {
+  const parsed = await readReadOnlyJson(request, "/joy-read/resolve_physiotherapist");
+  if (parsed instanceof Response) return parsed;
+  if (typeof parsed.data.phone !== "string") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runQuery((internal as any).joyIntegration.resolvePhysiotherapistByPhone, { phone: parsed.data.phone }));
+});
+
+export const readFindMatches = httpAction(async (ctx, request) => {
+  const parsed = await readReadOnlyJson(request, "/joy-read/find_matches");
+  if (parsed instanceof Response) return parsed;
+  const { patient_id, required_specialties, service_mode, city, area, limit } = parsed.data;
+  if (typeof patient_id !== "string" || !Array.isArray(required_specialties) || !required_specialties.every((value) => typeof value === "string") || !["home_visit", "clinic", "online"].includes(String(service_mode))) return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runQuery((internal as any).joyIntegration.findMatches, {
+    patientId: patient_id, requiredSpecialties: required_specialties, serviceMode: service_mode,
+    city: typeof city === "string" ? city : undefined, area: typeof area === "string" ? area : undefined,
+    limit: typeof limit === "number" ? limit : 3,
+  }));
+});
+
+export const readAvailability = httpAction(async (ctx, request) => {
+  const parsed = await readReadOnlyJson(request, "/joy-read/availability");
+  if (parsed instanceof Response) return parsed;
+  const { physiotherapist_id, service_mode, start, end, duration_minutes } = parsed.data;
+  if (typeof physiotherapist_id !== "string" || !["home_visit", "clinic", "online"].includes(String(service_mode)) || typeof start !== "number" || typeof end !== "number" || typeof duration_minutes !== "number") return new Response("Invalid payload", { status: 400 });
+  const profile = await ctx.runQuery((internal as any).joyIntegration.resolveProfileForAvailability, { physiotherapistId: physiotherapist_id, serviceMode: service_mode });
+  if (!profile || !profile.amountKobo) return Response.json({ slots: [] });
+  const slots = await ctx.runQuery((api as any).calendar.availability.getAvailableSlots, {
+    physiotherapistId: profile.physiotherapistUserId, startDate: start, endDate: end, sessionDuration: duration_minutes,
+  });
+  return Response.json({ slots, amount_kobo: profile.amountKobo, currency: "NGN" });
+});
+
+export const readBooking = httpAction(async (ctx, request) => {
+  const parsed = await readReadOnlyJson(request, "/joy-read/get_booking");
+  if (parsed instanceof Response) return parsed;
+  if (typeof parsed.data.booking_id !== "string" || typeof parsed.data.patient_id !== "string") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runQuery((internal as any).joyIntegration.getJoyBooking, { bookingId: parsed.data.booking_id, patientId: parsed.data.patient_id }));
 });
 
 export const createPendingBooking = httpAction(async (ctx, request) => {
