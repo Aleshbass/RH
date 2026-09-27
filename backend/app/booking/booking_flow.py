@@ -329,7 +329,9 @@ def _slot_choices(client, provider_id: str, mode: str) -> list[dict]:
 
 def _render_rh_slots(provider: dict, slots: list[dict], *, refreshed: bool = False) -> str:
     prefix = "I refreshed the specialist’s live availability.\n\n" if refreshed else ""
-    lines = [f"Available times with {provider.get('display_name') or 'this specialist'}:"]
+    # Joy currently books the standard consultation length. State it plainly
+    # so patients do not infer that the numbered choices are arbitrary blocks.
+    lines = [f"Available 60-minute times with {provider.get('display_name') or 'this specialist'}:"]
     for index, slot in enumerate(slots, 1):
         when = datetime.fromtimestamp(slot["start"] / 1000, timezone.utc).astimezone()
         lines.append(f"{index}. {when.strftime('%a %d %b, %I:%M %p')}")

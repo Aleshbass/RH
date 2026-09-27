@@ -279,6 +279,8 @@ def test_safety_normalizer_accepts_compact_negative_replies():
 
     assert normalize_answer("no, none") == NO
     assert normalize_answer("No to all") == NO
+    assert normalize_answer("no, none at all") == NO
+    assert normalize_answer("None of those") == NO
 
 
 def test_enrich_keeps_plain_lower_back_facts_when_llm_omits_them():

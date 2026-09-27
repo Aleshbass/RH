@@ -75,6 +75,16 @@ def normalize_answer(text: str | None) -> str:
     # current grouped safety screen; they are not free-form clinical inference.
     if value in {"no", "n", "nope", "false", "none", "no, none", "no none", "no to all"}:
         return NO
+    # Patients naturally use fuller negative phrases in WhatsApp. Accept only
+    # clearly universal negatives; ambiguous clinical prose must still be
+    # clarified rather than guessed as safe.
+    compact = re.sub(r"[,.!;:\\-_/]+", " ", value)
+    compact = re.sub(r"\\s+", " ", compact).strip()
+    if compact in {
+        "no none at all", "no not at all", "no nothing", "none at all",
+        "none of those", "no to any", "no to all of them", "not at all",
+    }:
+        return NO
     return UNANSWERED if not value else UNCLEAR
 
 
