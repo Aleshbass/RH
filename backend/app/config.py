@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     rh_api_base_url: str = ""
     rh_api_key_id: str = ""
     rh_api_hmac_secret: str = ""
+    rh_convex_read_base_url: str = ""
+    rh_convex_read_hmac_secret: str = ""
     rh_safety_hmac_secret: str = ""
     rh_event_hmac_secret: str = ""
     # Release controls for RH-owned operational paths. They permit an

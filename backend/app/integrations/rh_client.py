@@ -112,18 +112,65 @@ class RHPaymentInitialization:
     payment_status: str
 
 
+class RHConvexReadClient:
+    """A capability-limited, signed read path to RH Convex.
+
+    This is not a Convex admin/client token. The remote HTTP gateway accepts
+    only four fixed query projections and has no mutation routes under this
+    credential.
+    """
+
+    def __init__(self, base_url: str, hmac_secret: str, *, client: httpx.Client | None = None) -> None:
+        if not base_url or not hmac_secret:
+            raise RHIntegrationError("INTEGRATION_NOT_CONFIGURED", "RH Convex read credentials are not configured")
+        self.base_url = base_url.rstrip("/")
+        self.hmac_secret = hmac_secret.encode("utf-8")
+        self.client = client or httpx.Client(timeout=10.0)
+
+    def query(self, operation: Literal["resolve_physiotherapist", "find_matches", "availability", "get_booking"], payload: dict[str, Any]) -> Any:
+        path = f"/joy-read/{operation}"
+        raw_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        timestamp = str(int(time.time()))
+        nonce = str(uuid4())
+        signature = hmac.new(
+            self.hmac_secret,
+            "\n".join(["POST", path, timestamp, nonce, raw_body.decode("utf-8")]).encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        try:
+            response = self.client.post(
+                f"{self.base_url}{path}", content=raw_body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Joy-Gateway-Timestamp": timestamp,
+                    "X-Joy-Gateway-Nonce": nonce,
+                    "X-Joy-Gateway-Signature": signature,
+                },
+            )
+        except httpx.HTTPError as error:
+            raise RHIntegrationError("DEPENDENCY_UNAVAILABLE", "RH Convex read service is unavailable", retryable=True) from error
+        if not response.is_success:
+            raise RHIntegrationError("RH_READ_REQUEST_FAILED", "RH Convex read service rejected the request", retryable=response.status_code >= 500)
+        try:
+            data = response.json()
+        except ValueError as error:
+            raise RHIntegrationError("INVALID_RESPONSE", "RH Convex read service returned invalid JSON", retryable=True) from error
+        return data
+
+
 class RHClient:
     _circuit_open_until: dict[str, float] = {}
     _consecutive_failures: dict[str, int] = {}
     _failure_threshold = 3
     _cooldown_seconds = 30.0
-    def __init__(self, base_url: str, key_id: str, hmac_secret: str, *, client: httpx.Client | None = None) -> None:
+    def __init__(self, base_url: str, key_id: str, hmac_secret: str, *, client: httpx.Client | None = None, read_client: RHConvexReadClient | None = None) -> None:
         if not base_url or not key_id or not hmac_secret:
             raise RHIntegrationError("INTEGRATION_NOT_CONFIGURED", "RH integration credentials are not configured")
         self.base_url = base_url.rstrip("/")
         self.key_id = key_id
         self.hmac_secret = hmac_secret.encode("utf-8")
         self.client = client or httpx.Client(timeout=10.0)
+        self.read_client = read_client
 
     @staticmethod
     def _canonical(method: str, path: str, timestamp: str, request_id: str, idempotency_key: str, actor_context: str, raw_body: bytes) -> bytes:
@@ -232,7 +279,7 @@ class RHClient:
         return RHReferralContext(resolution=resolution, referral=referral)
 
     def resolve_physiotherapist(self, phone: str, actor: RHActor) -> PhysiotherapistResolution:
-        data = self._request("POST", "/api/v1/joy/physiotherapists/resolve", payload={"phone": phone, "actor": actor.as_payload()})
+        data = self.read_client.query("resolve_physiotherapist", {"phone": phone}) if self.read_client else self._request("POST", "/api/v1/joy/physiotherapists/resolve", payload={"phone": phone, "actor": actor.as_payload()})
         return PhysiotherapistResolution(resolution=data["resolution"], physiotherapist_id=data.get("physiotherapist_id"), rh_user_id=data.get("rh_user_id"), display_name=data.get("display_name"), capabilities=data.get("capabilities"))
 
     def current_policy(self, *, service_type: str | None = None, language: str | None = None) -> PolicyDocument:
@@ -269,7 +316,11 @@ class RHClient:
             payload["city"] = city
         if area:
             payload["area"] = area
-        data = self._request("POST", "/api/v1/joy/matches", payload=payload)
+        if self.read_client:
+            direct_providers = self.read_client.query("find_matches", {key: value for key, value in payload.items() if key != "actor"})
+            data = {"providers": direct_providers}
+        else:
+            data = self._request("POST", "/api/v1/joy/matches", payload=payload)
         providers = data.get("providers")
         if not isinstance(providers, list):
             raise RHIntegrationError("INVALID_RESPONSE", "RH returned invalid match results", retryable=True)
@@ -280,6 +331,11 @@ class RHClient:
         ) for item in providers if isinstance(item, dict)]
 
     def availability(self, physiotherapist_id: str, *, start_ms: int, end_ms: int, duration_minutes: int, service_mode: str) -> dict[str, Any]:
+        if self.read_client:
+            return self.read_client.query("availability", {
+                "physiotherapist_id": physiotherapist_id, "start": start_ms, "end": end_ms,
+                "duration_minutes": duration_minutes, "service_mode": service_mode,
+            })
         path = (
             f"/api/v1/joy/physiotherapists/{physiotherapist_id}/availability?from={start_ms}&to={end_ms}"
             f"&duration_minutes={duration_minutes}&service_mode={service_mode}"
@@ -311,6 +367,8 @@ class RHClient:
         return RHPaymentInitialization(booking_id=data["booking_id"], reference=data["reference"], authorization_url=data["authorization_url"], payment_status=data["payment_status"])
 
     def booking_status(self, booking_id: str, *, patient_id: str) -> dict[str, Any]:
+        if self.read_client:
+            return self.read_client.query("get_booking", {"booking_id": booking_id, "patient_id": patient_id})
         return self._request("GET", f"/api/v1/joy/bookings/{booking_id}?persona=patient&patient_id={patient_id}")
 
     def cancel_booking(self, booking_id: str, *, patient_id: str, reason: str, actor: RHActor, idempotency_key: str) -> dict[str, Any]:
@@ -357,8 +415,13 @@ def configured_rh_client() -> RHClient:
     from app.config import get_settings
 
     settings = get_settings()
+    read_client = (
+        RHConvexReadClient(settings.rh_convex_read_base_url, settings.rh_convex_read_hmac_secret)
+        if settings.rh_convex_read_base_url and settings.rh_convex_read_hmac_secret else None
+    )
     return RHClient(
         settings.rh_api_base_url,
         settings.rh_api_key_id,
         settings.rh_api_hmac_secret,
+        read_client=read_client,
     )
