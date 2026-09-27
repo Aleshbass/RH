@@ -347,6 +347,28 @@ export const getAvailableSlots = query({
             eventId: apt._id,
         }));
 
+        // A pending Marketplace/Joy booking is a real, short-lived hold.  It
+        // must be removed from availability as well as checked by the booking
+        // mutation; otherwise the patient can select a time that RH will
+        // immediately reject as already held.
+        const activeHolds = await ctx.db
+            .query("marketplaceBookings")
+            .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", args.physiotherapistId))
+            .collect();
+        const holdBusy: BusyBlock[] = activeHolds
+            .filter((booking) =>
+                booking.bookingStatus === "pending_payment" &&
+                (booking.holdExpiresAt ?? 0) > Date.now() &&
+                (booking.sessionDate ?? 0) < args.endDate &&
+                (booking.sessionDate ?? 0) + booking.sessionDuration * 60_000 > args.startDate
+            )
+            .map((booking) => ({
+                start: booking.sessionDate,
+                end: booking.sessionDate + booking.sessionDuration * 60_000,
+                source: "rehabify" as const,
+                eventId: booking._id,
+            }));
+
         // 3. Generate available slots for each day in range
         const allSlots: Array<{ start: number; end: number }> = [];
         let currentDay = args.startDate;
@@ -393,7 +415,7 @@ export const getAvailableSlots = query({
         }
 
         // 4. Subtract busy blocks
-        const afterBusy = subtractBusyBlocks(allSlots, rehabifyBusy);
+        const afterBusy = subtractBusyBlocks(allSlots, [...rehabifyBusy, ...holdBusy]);
 
         // 5. Apply buffers
         const afterBuffers = applyBuffers(
@@ -606,10 +628,10 @@ export const getAvailableSlotsInternal = internalQuery({
             return [];
         }
 
-        // Parse availability or use defaults
-        const availability: AvailabilitySchedule =
-            (physioProfile.availabilitySchedule as AvailabilitySchedule) ||
-            DEFAULT_AVAILABILITY_SCHEDULE;
+        // Keep this internal path consistent with the public availability
+        // query. Test and legacy providers can still have the onboarding
+        // operating-hours shape, which must be normalized before use.
+        const availability = normalizeAvailabilitySchedule(physioProfile.availabilitySchedule);
 
         const sessionDuration = args.sessionDuration || availability.defaultSessionDuration;
 
@@ -636,6 +658,24 @@ export const getAvailableSlotsInternal = internalQuery({
             source: "rehabify" as const,
             eventId: apt._id,
         }));
+
+        const activeHolds = await ctx.db
+            .query("marketplaceBookings")
+            .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", args.physiotherapistId))
+            .collect();
+        const holdBusy: BusyBlock[] = activeHolds
+            .filter((booking) =>
+                booking.bookingStatus === "pending_payment" &&
+                (booking.holdExpiresAt ?? 0) > Date.now() &&
+                (booking.sessionDate ?? 0) < args.endDate &&
+                (booking.sessionDate ?? 0) + booking.sessionDuration * 60_000 > args.startDate
+            )
+            .map((booking) => ({
+                start: booking.sessionDate,
+                end: booking.sessionDate + booking.sessionDuration * 60_000,
+                source: "rehabify" as const,
+                eventId: booking._id,
+            }));
 
         // 3. Generate available slots for each day in range
         const allSlots: Array<{ start: number; end: number }> = [];
@@ -682,7 +722,7 @@ export const getAvailableSlotsInternal = internalQuery({
         }
 
         // 4. Subtract busy blocks
-        const afterBusy = subtractBusyBlocks(allSlots, rehabifyBusy);
+        const afterBusy = subtractBusyBlocks(allSlots, [...rehabifyBusy, ...holdBusy]);
 
         // 5. Apply buffers
         const afterBuffers = applyBuffers(
