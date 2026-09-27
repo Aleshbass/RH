@@ -32,6 +32,7 @@ AWAITING_RH_SERVICE_MODE = "rh_awaiting_service_mode"
 AWAITING_RH_LOCATION = "rh_awaiting_location"
 AWAITING_RH_PROVIDER = "rh_awaiting_provider"
 AWAITING_RH_SLOT = "rh_awaiting_slot"
+AWAITING_RH_PAYMENT_EMAIL = "rh_awaiting_payment_email"
 AWAITING_RH_PAYMENT = "rh_awaiting_payment"
 AWAITING_RH_REPLACEMENT = "rh_awaiting_replacement"
 
@@ -52,6 +53,7 @@ _SLOT_RE = re.compile(
 )
 _INDEX_RE = re.compile(r"^\s*([1-9])\b")
 _PAY_NUDGE_RE = re.compile(r"\b(pay|payment|processing)\b", re.I)
+_PAYMENT_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 NO_SPECIALIST_YET = (
     "There's no specialist yet for this kind of rehab. "
@@ -117,6 +119,8 @@ def handle_booking_turn(
         return _continue_rh_provider(session, conversation, patient, user_text)
     if sub == AWAITING_RH_SLOT:
         return _continue_rh_slot(session, conversation, patient, user_text)
+    if sub == AWAITING_RH_PAYMENT_EMAIL:
+        return _continue_rh_payment_email(session, conversation, patient, user_text)
     if sub == AWAITING_RH_PAYMENT:
         return _rh_payment_status(conversation, user_text)
     if sub == OFFERING_MATCHES:
@@ -426,24 +430,43 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
                 "Please try again shortly."
             )
         return _refresh_rh_slots_after_hold_failure(conversation, provider, ctx)
+    # Paystack needs a deliverable receipt address. Never synthesize one from
+    # a phone number: the hold is valid, but payment must wait for the patient
+    # to provide an address they control.
+    ctx.update({"rh_booking_id": booking.booking_id})
+    _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, ctx)
+    append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+           payload={"decision": "rh_booking_hold_created", "rh_booking_id": booking.booking_id})
+    return "Your time is held. Please reply with the email address you want to use for your secure payment receipt."
+
+
+def _continue_rh_payment_email(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str:
+    email = user_text.strip().casefold()
+    if not _PAYMENT_EMAIL_RE.fullmatch(email) or email.endswith(".invalid"):
+        return "Please reply with a valid email address for your secure payment receipt."
+    ctx = dict(conversation.booking_context or {})
+    booking_id = ctx.get("rh_booking_id")
+    rh_patient_id = ctx.get("rh_patient_id")
+    if not booking_id or not rh_patient_id:
+        return "I need to refresh your booking details before starting payment. Please try again."
     try:
         payment = configured_rh_client().initialize_booking_payment(
-            booking.booking_id, patient_id=str(rh_patient_id), email=f"{patient.phone_e164}@patients.rehabify.invalid",
-            actor=_rh_actor(patient, str(rh_patient_id)), idempotency_key=f"joy-payment-{booking.booking_id}",
+            str(booking_id), patient_id=str(rh_patient_id), email=email,
+            actor=_rh_actor(patient, str(rh_patient_id)), idempotency_key=f"joy-payment-{booking_id}",
         )
     except RHIntegrationError as error:
-        # The RH booking hold exists. Do not offer the slot to another patient
-        # or claim it was unavailable simply because payment setup failed.
-        ctx.update({"rh_booking_id": booking.booking_id})
-        _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
+        # Keep the held booking state and the supplied address, but do not
+        # expose payment-provider details in the WhatsApp reply.
+        ctx["payment_email"] = email
+        _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, ctx)
         append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
-               payload={"decision": "rh_payment_initialization_failed", "rh_booking_id": booking.booking_id, "error_code": error.code})
+               payload={"decision": "rh_payment_initialization_failed", "rh_booking_id": str(booking_id), "error_code": error.code})
         return "Your time is held, but I can’t start secure payment right now. Please try again shortly."
-    ctx.update({"rh_booking_id": booking.booking_id, "authorization_url": payment.authorization_url})
+    ctx.update({"payment_email": email, "authorization_url": payment.authorization_url})
     _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
-           payload={"decision": "rh_pending_payment_created", "rh_booking_id": booking.booking_id})
-    return f"Your slot is held. Complete payment securely here: {payment.authorization_url}"
+           payload={"decision": "rh_pending_payment_created", "rh_booking_id": str(booking_id)})
+    return f"Your time is held. Complete payment securely here: {payment.authorization_url}"
 
 
 def _rh_payment_status(conversation: Conversation, user_text: str) -> str | None:
