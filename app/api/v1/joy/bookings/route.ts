@@ -27,7 +27,17 @@ export async function POST(request: Request) {
     if (!idempotencyKey) throw new JoyAuthError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required");
     if (input.actor.persona !== "patient" || (input.actor.rh_user_id && input.actor.rh_user_id !== input.patient_id)) throw new JoyAuthError(403, "FORBIDDEN", "Actor may only create their own booking");
     const eligibility = await verifyJoyEligibility({ patientId: input.patient_id, assessmentId: input.assessment_id, assessmentRevision: input.assessment_revision, serviceType: "standard_consultation", policyVersion: input.policy_version });
-    const booking = await callJoyConvexGateway("create_pending_booking", { ...input, eligibility_reference: eligibility.eligibility_reference, request_id: requestId, idempotency_key: idempotencyKey });
+    // The public Joy API names this field explicitly for traceability, while
+    // the fixed Convex gateway accepts its canonical conversation_id name.
+    // Map it here rather than forwarding an incompatible payload.
+    const { joy_conversation_id, ...bookingInput } = input;
+    const booking = await callJoyConvexGateway("create_pending_booking", {
+      ...bookingInput,
+      conversation_id: joy_conversation_id,
+      eligibility_reference: eligibility.eligibility_reference,
+      request_id: requestId,
+      idempotency_key: idempotencyKey,
+    });
     return success(requestId, booking, 201);
   } catch (error) {
     if (error instanceof JoyEligibilityError) return errorResponse(requestId, new JoyAuthError(409, "SAFETY_ELIGIBILITY_REQUIRED", error.message));
