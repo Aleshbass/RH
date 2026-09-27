@@ -8,6 +8,7 @@ questions that the protocol itself permits.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from app.safety.clinical_engine import engine_version, infer_body_region, load_engine
