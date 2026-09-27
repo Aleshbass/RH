@@ -122,6 +122,11 @@ def handle_booking_turn(
     if sub == AWAITING_RH_PAYMENT_EMAIL:
         return _continue_rh_payment_email(session, conversation, patient, user_text)
     if sub == AWAITING_RH_PAYMENT:
+        # Conversations created before receipt-email collection was added may
+        # already hold a slot in this state. Let a supplied address recover
+        # that hold without making the patient start over.
+        if _PAYMENT_EMAIL_RE.fullmatch(user_text.strip().casefold()) and not user_text.strip().casefold().endswith(".invalid"):
+            return _continue_rh_payment_email(session, conversation, patient, user_text)
         return _rh_payment_status(conversation, user_text)
     if sub == OFFERING_MATCHES:
         return _continue_offering(session, conversation, patient, user_text, paystack)
