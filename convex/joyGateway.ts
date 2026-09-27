@@ -15,7 +15,11 @@ function equal(a: string, b: string): boolean {
 }
 
 async function verify(request: Request, path: string, body: string, secretName = "CONVEX_JOY_GATEWAY_SECRET"): Promise<boolean> {
-  const secret = process.env[secretName];
+  // Convex injects environment variables through statically referenced names.
+  // Dynamic bracket access makes the read-only key appear unset in production.
+  const secret = secretName === "CONVEX_JOY_READ_GATEWAY_SECRET"
+    ? process.env.CONVEX_JOY_READ_GATEWAY_SECRET
+    : process.env.CONVEX_JOY_GATEWAY_SECRET;
   const timestamp = request.headers.get("X-Joy-Gateway-Timestamp") ?? "";
   const nonce = request.headers.get("X-Joy-Gateway-Nonce") ?? "";
   const signature = request.headers.get("X-Joy-Gateway-Signature") ?? "";
