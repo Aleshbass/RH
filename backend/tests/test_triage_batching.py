@@ -290,6 +290,16 @@ def test_enrich_keeps_plain_lower_back_facts_when_llm_omits_them():
     assert infer_condition_area(enriched) == ConditionArea.MSK
 
 
+def test_enrich_preserves_explicit_duration_over_model_label():
+    from app.triage.extraction import enrich_from_user_text
+
+    enriched = enrich_from_user_text(
+        ExtractedTriage(onset="acute", body_location="lower back"),
+        "My lower back has hurt for 3 days.",
+    )
+    assert enriched.onset == "3 days"
+
+
 def test_grouped_followup_none_when_complete():
     extracted = ExtractedTriage(
         onset="2 weeks",

@@ -158,10 +158,10 @@ def enrich_from_user_text(extracted: ExtractedTriage, user_text: str) -> Extract
             and observed_location != "back"
         ):
             updates["body_location"] = observed_location
-    if not extracted.onset:
-        duration = _DURATION_RE.search(text)
-        if duration:
-            updates["onset"] = next(value for value in duration.groups() if value).casefold()
+    # An explicit duration is more precise than a model label such as "acute".
+    duration = _DURATION_RE.search(text)
+    if duration:
+        updates["onset"] = next(value for value in duration.groups() if value).casefold()
     if not extracted.symptoms:
         quality = _PAIN_QUALITY_RE.search(text)
         if quality:

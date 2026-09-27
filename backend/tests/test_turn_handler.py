@@ -40,6 +40,13 @@ def test_policy_acceptance_allows_short_unambiguous_reply():
     assert _is_explicit_policy_acceptance("yes") is False
 
 
+def test_mid_followup_helper_is_available_for_missing_severity():
+    from app.conversation.turn_handler import _mid_followup_reply
+
+    reply = _mid_followup_reply("Thanks for explaining.", "Could you rate it from 1 to 10?", PatientPhase.MID_TRIAGE)
+    assert "1 to 10" in reply
+
+
 def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     from app.conversation.turn_handler import handle_turn
     fake_llm.reply = "Sorry about the knee — tell me the whole story when you can."

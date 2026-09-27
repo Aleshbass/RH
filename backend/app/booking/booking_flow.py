@@ -327,6 +327,44 @@ def _slot_choices(client, provider_id: str, mode: str) -> list[dict]:
     return [slot for slot in slots if isinstance(slot, dict) and isinstance(slot.get("start"), (int, float))][:8]
 
 
+def _render_rh_slots(provider: dict, slots: list[dict], *, refreshed: bool = False) -> str:
+    prefix = "I refreshed the specialist’s live availability.\n\n" if refreshed else ""
+    lines = [f"Available times with {provider.get('display_name') or 'this specialist'}:"]
+    for index, slot in enumerate(slots, 1):
+        when = datetime.fromtimestamp(slot["start"] / 1000, timezone.utc).astimezone()
+        lines.append(f"{index}. {when.strftime('%a %d %b, %I:%M %p')}")
+    lines.append("Reply with the time number you prefer.")
+    return prefix + "\n".join(lines)
+
+
+def _refresh_rh_slots_after_hold_failure(conversation: Conversation, provider: dict, ctx: dict) -> str:
+    """Never ask a patient to retry stale availability after a rejected hold."""
+    failures = int(ctx.get("slot_hold_failures", 0)) + 1
+    ctx["slot_hold_failures"] = failures
+    if failures >= 2:
+        ctx.pop("slots", None)
+        _set_substate(conversation, AWAITING_RH_PROVIDER, ctx)
+        return (
+            "I can’t confirm a current live time with that specialist right now, so no booking has been made. "
+            "Please choose another specialist, or try again shortly."
+        )
+    try:
+        slots = _slot_choices(
+            configured_rh_client(),
+            str(provider["physiotherapist_id"]),
+            str(ctx["service_mode"]),
+        )
+    except RHIntegrationError:
+        return "I can’t refresh that specialist’s live availability right now. No booking has been made; please try again shortly."
+    if not slots:
+        ctx.pop("slots", None)
+        _set_substate(conversation, AWAITING_RH_PROVIDER, ctx)
+        return "That specialist has no currently bookable times. No booking has been made; please choose another specialist."
+    ctx["slots"] = slots
+    _set_substate(conversation, AWAITING_RH_SLOT, ctx)
+    return _render_rh_slots(provider, slots, refreshed=True)
+
+
 def _continue_rh_provider(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str:
     ctx = dict(conversation.booking_context or {})
     providers = list(ctx.get("providers") or [])
@@ -342,11 +380,7 @@ def _continue_rh_provider(session: Session, conversation: Conversation, patient:
         return "That specialist has no bookable slots in the next seven days. Please choose another specialist."
     ctx.update({"selected_provider": provider, "slots": slots})
     _set_substate(conversation, AWAITING_RH_SLOT, ctx)
-    lines = [f"Available times with {provider.get('display_name') or 'this specialist'}:"]
-    for index, slot in enumerate(slots, 1):
-        lines.append(f"{index}. {datetime.fromtimestamp(slot['start'] / 1000, timezone.utc).astimezone().strftime('%a %d %b, %I:%M %p')}")
-    lines.append("Reply with the time number you prefer.")
-    return "\n".join(lines)
+    return _render_rh_slots(provider, slots)
 
 
 def _continue_rh_slot(session: Session, conversation: Conversation, patient: Patient, user_text: str) -> str:
@@ -373,12 +407,23 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
             idempotency_key=f"joy-booking-{conversation.id}-{slot['start']}",
             required_specialties=list(ctx.get("required_specialties") or []), patient_address=patient.location,
         )
+    except RHIntegrationError as error:
+        append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+               payload={"decision": "rh_slot_hold_failed", "error_code": error.code})
+        return _refresh_rh_slots_after_hold_failure(conversation, provider, ctx)
+    try:
         payment = configured_rh_client().initialize_booking_payment(
             booking.booking_id, patient_id=str(rh_patient_id), email=f"{patient.phone_e164}@patients.rehabify.invalid",
             actor=_rh_actor(patient, str(rh_patient_id)), idempotency_key=f"joy-payment-{booking.booking_id}",
         )
-    except RHIntegrationError:
-        return "I couldn’t reserve that live slot. It may just have been taken; please choose another time."
+    except RHIntegrationError as error:
+        # The RH booking hold exists. Do not offer the slot to another patient
+        # or claim it was unavailable simply because payment setup failed.
+        ctx.update({"rh_booking_id": booking.booking_id})
+        _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
+        append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
+               payload={"decision": "rh_payment_initialization_failed", "rh_booking_id": booking.booking_id, "error_code": error.code})
+        return "Your time is held, but I can’t start secure payment right now. Please try again shortly."
     ctx.update({"rh_booking_id": booking.booking_id, "authorization_url": payment.authorization_url})
     _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,

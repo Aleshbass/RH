@@ -717,6 +717,14 @@ def _thin_first_contact(extracted: ExtractedTriage) -> bool:
     return not extracted.onset and extracted.severity is None
 
 
+def _mid_followup_reply(candidate_reply: str, followup: str, incoming_phase: PatientPhase) -> str:
+    """Keep a mined story to one concise, grouped follow-up question."""
+    care = (candidate_reply or "").strip()
+    if incoming_phase == PatientPhase.FIRST_CONTACT and care and "?" not in care:
+        return f"{care} {followup}"
+    return f"{_MID_ACK} {followup}"
+
+
 def _safety_group(question: ScheduledQuestion) -> str:
     """Map approved protocol questions into concise patient-facing themes.
 
@@ -793,6 +801,11 @@ def _narrative_no_answers(
                 answers[question.id] = NO
             elif "weakness" in text and denied("weakness"):
                 answers[question.id] = NO
+            elif "fever" in text and denied("fever"):
+                # A grouped general-warning question is cleared only when the
+                # patient also explicitly denies other emergency symptoms.
+                if any("other emergency symptom" in scope for scope in scopes):
+                    answers[question.id] = NO
     return answers
 
 
@@ -869,6 +882,18 @@ def _reply_after_extract(
     scheduled = schedule_questions(extracted)
     if scheduled and not booking_sub:
         return _safety_prompt(extracted), PatientPhase.MID_TRIAGE
+
+    # Severity is required for the summary, but only after the deterministic
+    # safety screen. It must be explicitly reported, never inferred by Gemini.
+    if extracted.severity is None and not booking_sub:
+        return (
+            _mid_followup_reply(
+                candidate_reply,
+                "Could you rate how bad it feels from 1 to 10?",
+                incoming_phase,
+            ),
+            PatientPhase.MID_TRIAGE,
+        )
 
     patient = session.get(Patient, identity.person_id)
     if patient is not None:
