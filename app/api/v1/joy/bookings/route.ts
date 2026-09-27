@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { actorSchema, authenticatedJson, errorResponse, success } from "@/lib/joy-integration/http";
 import { JoyAuthError } from "@/lib/joy-integration/auth";
-import { callJoyConvexGateway } from "@/lib/joy-integration/convex-gateway";
+import { GatewayError, callJoyConvexGateway } from "@/lib/joy-integration/convex-gateway";
 import { JoyEligibilityError, verifyJoyEligibility } from "@/lib/joy-integration/eligibility";
 
 export const runtime = "nodejs";
@@ -31,6 +31,14 @@ export async function POST(request: Request) {
     return success(requestId, booking, 201);
   } catch (error) {
     if (error instanceof JoyEligibilityError) return errorResponse(requestId, new JoyAuthError(409, "SAFETY_ELIGIBILITY_REQUIRED", error.message));
+    if (error instanceof GatewayError) {
+      console.error("joy_booking_gateway_unavailable", {
+        request_id: requestId,
+        gateway_status: error.status,
+        error: error.message,
+      });
+      return errorResponse(requestId, new JoyAuthError(503, "RH_BOOKING_GATEWAY_UNAVAILABLE", "Rehabify booking service is temporarily unavailable"));
+    }
     return errorResponse(requestId, error);
   }
 }

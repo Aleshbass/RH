@@ -24,9 +24,22 @@ export async function verifyJoyEligibility(input: {
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const requestId = randomUUID();
   const signature = createHmac("sha256", secret).update([timestamp, requestId, body].join("\n"), "utf8").digest("hex");
-  const response = await fetch(url, {
-    method: "POST", headers: { "Content-Type": "application/json", "X-RH-Timestamp": timestamp, "X-RH-Request-Id": requestId, "X-RH-Signature": signature }, body, cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json", "X-RH-Timestamp": timestamp, "X-RH-Request-Id": requestId, "X-RH-Signature": signature }, body, cache: "no-store",
+    });
+  } catch (error) {
+    // Network failures otherwise escape the route as a generic 503 with no
+    // indication of which dependency failed. Never log the signed body or
+    // signature; the request id is enough to correlate the two services.
+    console.error("joy_safety_eligibility_unreachable", {
+      request_id: requestId,
+      origin: new URL(url).origin,
+      error: error instanceof Error ? error.message : "fetch failed",
+    });
+    throw new JoyEligibilityError("Joy safety eligibility service is temporarily unreachable");
+  }
   if (!response.ok) throw new JoyEligibilityError(`Joy safety eligibility rejected the request (${response.status})`);
   const data = await response.json() as { allowed?: boolean; eligibility_reference?: string; expires_at?: string };
   if (!data.allowed || !data.eligibility_reference || !data.expires_at) throw new JoyEligibilityError("Joy safety eligibility is not current for this service");
