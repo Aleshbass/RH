@@ -26,7 +26,13 @@ _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
     },
     ConversationStage.POLICY_ACCEPTANCE: {ConversationStage.POLICY_ACCEPTANCE, ConversationStage.SPECIALIST_MATCHING},
     ConversationStage.SPECIALIST_MATCHING: {ConversationStage.SPECIALIST_MATCHING, ConversationStage.SLOT_SELECTION},
-    ConversationStage.SLOT_SELECTION: {ConversationStage.SLOT_SELECTION, ConversationStage.AWAITING_PAYMENT},
+    # A rejected RH hold can safely return to provider selection; this is a
+    # recovery transition, not a booking confirmation or clinical shortcut.
+    ConversationStage.SLOT_SELECTION: {
+        ConversationStage.SLOT_SELECTION,
+        ConversationStage.SPECIALIST_MATCHING,
+        ConversationStage.AWAITING_PAYMENT,
+    },
     ConversationStage.AWAITING_PAYMENT: {ConversationStage.AWAITING_PAYMENT, ConversationStage.BOOKING_CONFIRMED},
     ConversationStage.BOOKING_CONFIRMED: {ConversationStage.BOOKING_CONFIRMED},
     ConversationStage.SPECIALIST_REVIEW: {ConversationStage.AWAITING_SPECIALIST_REVIEW},

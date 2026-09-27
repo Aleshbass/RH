@@ -39,3 +39,12 @@ def test_policy_acceptance_can_atomically_start_matching():
         ConversationStage.POLICY_REVIEW,
         ConversationStage.SPECIALIST_MATCHING,
     ) == ConversationStage.SPECIALIST_MATCHING
+
+
+def test_slot_recovery_can_return_to_specialist_selection():
+    from app.conversation.stage_machine import assert_transition
+
+    assert assert_transition(
+        ConversationStage.SLOT_SELECTION,
+        ConversationStage.SPECIALIST_MATCHING,
+    ) == ConversationStage.SPECIALIST_MATCHING

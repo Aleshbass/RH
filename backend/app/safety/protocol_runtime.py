@@ -71,7 +71,9 @@ def normalize_answer(text: str | None) -> str:
     value = (text or "").strip().casefold().strip(". !?")
     if value in {"yes", "y", "yeah", "yep", "true", "correct", "oui"}:
         return YES
-    if value in {"no", "n", "nope", "false"}:
+    # These compact WhatsApp replies are unambiguous when answering the
+    # current grouped safety screen; they are not free-form clinical inference.
+    if value in {"no", "n", "nope", "false", "none", "no, none", "no none", "no to all"}:
         return NO
     return UNANSWERED if not value else UNCLEAR
 

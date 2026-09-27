@@ -47,6 +47,21 @@ def test_mid_followup_helper_is_available_for_missing_severity():
     assert "1 to 10" in reply
 
 
+def test_explicit_no_other_emergency_symptoms_clears_general_safety_question():
+    from app.conversation.turn_handler import _narrative_no_answers
+    from app.safety.protocol_runtime import NO, ScheduledQuestion
+
+    question = ScheduledQuestion(
+        id="GEN-001", rule_id="GEN", order=0,
+        text="Any fever or feeling very unwell, unexplained weight loss, previous cancer, or unusual night pain?",
+    )
+    answers = _narrative_no_answers(
+        "I have not had an injury, numbness, weakness, fever, bladder/bowel changes, or other emergency symptoms.",
+        [("general_warning_signs", (question,))],
+    )
+    assert answers == {"GEN-001": NO}
+
+
 def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     from app.conversation.turn_handler import handle_turn
     fake_llm.reply = "Sorry about the knee — tell me the whole story when you can."

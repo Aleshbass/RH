@@ -274,6 +274,13 @@ def test_enrich_severity_from_out_of_ten():
     assert enriched.severity == 9
 
 
+def test_safety_normalizer_accepts_compact_negative_replies():
+    from app.safety.protocol_runtime import NO, normalize_answer
+
+    assert normalize_answer("no, none") == NO
+    assert normalize_answer("No to all") == NO
+
+
 def test_enrich_keeps_plain_lower_back_facts_when_llm_omits_them():
     """Regression: clear patient facts must not be lost to a sparse LLM extraction."""
     from app.triage.extraction import enrich_from_user_text
