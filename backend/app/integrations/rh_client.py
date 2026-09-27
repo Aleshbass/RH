@@ -242,6 +242,20 @@ class RHClient:
         if failures >= self._failure_threshold:
             self._circuit_open_until[self.base_url] = time.monotonic() + self._cooldown_seconds
 
+    def _read_or_api(self, operation: Literal["resolve_physiotherapist", "find_matches", "availability", "get_booking"], payload: dict[str, Any], *, method: str, path: str, api_payload: dict[str, Any] | None = None) -> Any:
+        """Prefer the limited direct read gateway, but never let it block care.
+
+        RH's authenticated API exposes the same authorized projections and is
+        the safe compatibility path while the independent Convex gateway is
+        unavailable or being rotated.
+        """
+        if self.read_client:
+            try:
+                return self.read_client.query(operation, payload)
+            except RHIntegrationError as error:
+                logger.warning("joy_convex_read_fallback", extra={"operation": operation, "error_code": error.code})
+        return self._request(method, path, payload=api_payload)
+
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/api/v1/joy/health")
 
@@ -279,7 +293,10 @@ class RHClient:
         return RHReferralContext(resolution=resolution, referral=referral)
 
     def resolve_physiotherapist(self, phone: str, actor: RHActor) -> PhysiotherapistResolution:
-        data = self.read_client.query("resolve_physiotherapist", {"phone": phone}) if self.read_client else self._request("POST", "/api/v1/joy/physiotherapists/resolve", payload={"phone": phone, "actor": actor.as_payload()})
+        data = self._read_or_api(
+            "resolve_physiotherapist", {"phone": phone}, method="POST", path="/api/v1/joy/physiotherapists/resolve",
+            api_payload={"phone": phone, "actor": actor.as_payload()},
+        )
         return PhysiotherapistResolution(resolution=data["resolution"], physiotherapist_id=data.get("physiotherapist_id"), rh_user_id=data.get("rh_user_id"), display_name=data.get("display_name"), capabilities=data.get("capabilities"))
 
     def current_policy(self, *, service_type: str | None = None, language: str | None = None) -> PolicyDocument:
@@ -317,8 +334,13 @@ class RHClient:
         if area:
             payload["area"] = area
         if self.read_client:
-            direct_providers = self.read_client.query("find_matches", {key: value for key, value in payload.items() if key != "actor"})
-            data = {"providers": direct_providers}
+            try:
+                direct_providers = self.read_client.query("find_matches", {key: value for key, value in payload.items() if key != "actor"})
+            except RHIntegrationError as error:
+                logger.warning("joy_convex_read_fallback", extra={"operation": "find_matches", "error_code": error.code})
+                data = self._request("POST", "/api/v1/joy/matches", payload=payload)
+            else:
+                data = {"providers": direct_providers}
         else:
             data = self._request("POST", "/api/v1/joy/matches", payload=payload)
         providers = data.get("providers")
@@ -332,10 +354,15 @@ class RHClient:
 
     def availability(self, physiotherapist_id: str, *, start_ms: int, end_ms: int, duration_minutes: int, service_mode: str) -> dict[str, Any]:
         if self.read_client:
-            return self.read_client.query("availability", {
+            direct_payload = {
                 "physiotherapist_id": physiotherapist_id, "start": start_ms, "end": end_ms,
                 "duration_minutes": duration_minutes, "service_mode": service_mode,
-            })
+            }
+            return self._read_or_api(
+                "availability", direct_payload, method="GET",
+                path=(f"/api/v1/joy/physiotherapists/{physiotherapist_id}/availability?from={start_ms}&to={end_ms}"
+                      f"&duration_minutes={duration_minutes}&service_mode={service_mode}"),
+            )
         path = (
             f"/api/v1/joy/physiotherapists/{physiotherapist_id}/availability?from={start_ms}&to={end_ms}"
             f"&duration_minutes={duration_minutes}&service_mode={service_mode}"
@@ -368,7 +395,10 @@ class RHClient:
 
     def booking_status(self, booking_id: str, *, patient_id: str) -> dict[str, Any]:
         if self.read_client:
-            return self.read_client.query("get_booking", {"booking_id": booking_id, "patient_id": patient_id})
+            return self._read_or_api(
+                "get_booking", {"booking_id": booking_id, "patient_id": patient_id}, method="GET",
+                path=f"/api/v1/joy/bookings/{booking_id}?persona=patient&patient_id={patient_id}",
+            )
         return self._request("GET", f"/api/v1/joy/bookings/{booking_id}?persona=patient&patient_id={patient_id}")
 
     def cancel_booking(self, booking_id: str, *, patient_id: str, reason: str, actor: RHActor, idempotency_key: str) -> dict[str, Any]:
