@@ -412,12 +412,17 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
     except RHIntegrationError as error:
         append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
                payload={"decision": "rh_slot_hold_failed", "error_code": error.code})
-        # Only a rejected hold can make the displayed slot stale.  Eligibility
-        # and dependency failures must not be disguised as a refreshed list of
-        # the same times, which leaves the patient in a retry loop.
-        if error.code in {"SAFETY_ELIGIBILITY_REQUIRED", "DEPENDENCY_UNAVAILABLE", "INTEGRATION_NOT_CONFIGURED"}:
+        # Only a rejected hold can make the displayed slot stale. Do not
+        # disguise a safety decision or an integration outage as a refreshed
+        # list of the same times, which leaves the patient in a retry loop.
+        if error.code == "SAFETY_ELIGIBILITY_REQUIRED":
             return (
                 "I can’t confirm the current booking eligibility for that time right now, so no booking has been made. "
+                "Please try again shortly."
+            )
+        if error.code in {"DEPENDENCY_UNAVAILABLE", "INTEGRATION_NOT_CONFIGURED", "RH_BOOKING_GATEWAY_UNAVAILABLE"}:
+            return (
+                "I can’t reach Rehabify’s live booking service right now, so no booking has been made. "
                 "Please try again shortly."
             )
         return _refresh_rh_slots_after_hold_failure(conversation, provider, ctx)
