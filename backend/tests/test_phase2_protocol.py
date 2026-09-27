@@ -29,3 +29,13 @@ def test_stage_machine_rejects_unsafe_shortcut():
 
     with pytest.raises(ValueError):
         assert_transition(ConversationStage.STORY_CAPTURE, ConversationStage.BOOKING_CONFIRMED)
+
+
+def test_policy_acceptance_can_atomically_start_matching():
+    """A valid acceptance can produce options in the same WhatsApp turn."""
+    from app.conversation.stage_machine import assert_transition
+
+    assert assert_transition(
+        ConversationStage.POLICY_REVIEW,
+        ConversationStage.SPECIALIST_MATCHING,
+    ) == ConversationStage.SPECIALIST_MATCHING

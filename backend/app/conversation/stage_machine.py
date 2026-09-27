@@ -16,7 +16,14 @@ _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
         ConversationStage.EMERGENCY_ESCALATION,
     },
     ConversationStage.TRIAGE_SUMMARY: {ConversationStage.TRIAGE_SUMMARY, ConversationStage.POLICY_REVIEW},
-    ConversationStage.POLICY_REVIEW: {ConversationStage.POLICY_REVIEW, ConversationStage.POLICY_ACCEPTANCE},
+    # Policy acceptance is verified deterministically in the same turn that
+    # may fetch matching options.  Permit that atomic transition instead of
+    # crashing the WhatsApp worker after a valid “I accept”.
+    ConversationStage.POLICY_REVIEW: {
+        ConversationStage.POLICY_REVIEW,
+        ConversationStage.POLICY_ACCEPTANCE,
+        ConversationStage.SPECIALIST_MATCHING,
+    },
     ConversationStage.POLICY_ACCEPTANCE: {ConversationStage.POLICY_ACCEPTANCE, ConversationStage.SPECIALIST_MATCHING},
     ConversationStage.SPECIALIST_MATCHING: {ConversationStage.SPECIALIST_MATCHING, ConversationStage.SLOT_SELECTION},
     ConversationStage.SLOT_SELECTION: {ConversationStage.SLOT_SELECTION, ConversationStage.AWAITING_PAYMENT},
