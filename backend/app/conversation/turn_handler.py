@@ -73,6 +73,7 @@ from app.triage.extraction import (
     enrich_from_user_text,
     infer_condition_area,
     merge_extraction,
+    parse_severity_from_text,
 )
 from app.triage.question_batching import grouped_followup, missing_fields
 from app.triage.summary import plain_summary
@@ -1309,18 +1310,34 @@ def handle_turn(
             wa_message_id,
         )
 
-    extra_context = ""
-    if state.known_facts:
-        extra_context = f"KNOWN_FACTS:\n{json.dumps(state.known_facts, ensure_ascii=False)}"
-    extract_prompt = build(
-        identity, state.stage, state.extracted, language, _user_history(state), "", extra_context
+    # A bare 0–10 answer after the completed deterministic safety screen is
+    # entirely code-owned. Calling Gemini for it adds latency and makes this
+    # critical triage transition depend on provider availability.
+    reported_severity = parse_severity_from_text(user_text)
+    can_skip_model_for_severity = (
+        reported_severity is not None
+        and state.extracted.severity is None
+        and has_narrative(state.extracted)
+        and not schedule_questions(state.extracted)
     )
-    response = llm.complete(extract_prompt, user_text)
-    language = response.language or language
+    if can_skip_model_for_severity:
+        model_extraction = {"severity": reported_severity}
+        candidate_reply = ""
+    else:
+        extra_context = ""
+        if state.known_facts:
+            extra_context = f"KNOWN_FACTS:\n{json.dumps(state.known_facts, ensure_ascii=False)}"
+        extract_prompt = build(
+            identity, state.stage, state.extracted, language, _user_history(state), "", extra_context
+        )
+        response = llm.complete(extract_prompt, user_text)
+        language = response.language or language
+        model_extraction = response.extraction_json
+        candidate_reply = response.reply_text
 
     extracted = _apply_inferred_area(merge_extraction(
         state.extracted,
-        constrain_model_extraction(response.extraction_json, user_text),
+        constrain_model_extraction(model_extraction, user_text),
     ))
     extracted = enrich_from_user_text(extracted, user_text)
     extracted = _record_fact_sources(extracted, wa_message_id)
@@ -1421,7 +1438,7 @@ def handle_turn(
     # the first answer with RAG context, doubling latency and turning a single
     # timeout into a silent WhatsApp turn. RAG remains available for approved
     # patient education at explicit education/service moments, never for safety.
-    candidate_reply = response.reply_text or (
+    candidate_reply = candidate_reply or (
         "Thanks — I received that. I’ll use the details you shared and ask only what is still needed."
     )
 
