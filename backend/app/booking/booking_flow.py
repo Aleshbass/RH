@@ -320,11 +320,9 @@ def _current_assessment(session: Session, patient: Patient) -> UUID:
 
 def _slot_choices(client, provider_id: str, mode: str) -> list[dict]:
     now = datetime.now(timezone.utc)
-    # RH rejects a window whose start is already in the past.  Sending the
-    # exact current millisecond is inherently racy: by the time this signed
-    # request reaches RH, that timestamp has elapsed.  Start just ahead of
-    # the request instead, while retaining a seven-day search horizon.
-    window_start = now + timedelta(minutes=1)
+    # RH requires two hours' notice. Add a short transport margin so a slot
+    # cannot become ineligible between availability and the signed hold.
+    window_start = now + timedelta(hours=2, minutes=5)
     result = client.availability(
         provider_id,
         start_ms=int(window_start.timestamp() * 1000),
@@ -333,7 +331,13 @@ def _slot_choices(client, provider_id: str, mode: str) -> list[dict]:
         service_mode=mode,
     )
     slots = result.get("slots") or []
-    return [slot for slot in slots if isinstance(slot, dict) and isinstance(slot.get("start"), (int, float))][:8]
+    earliest_ms = int(window_start.timestamp() * 1000)
+    return [
+        slot for slot in slots
+        if isinstance(slot, dict)
+        and isinstance(slot.get("start"), (int, float))
+        and int(slot["start"]) >= earliest_ms
+    ][:8]
 
 
 def _render_rh_slots(provider: dict, slots: list[dict], *, refreshed: bool = False) -> str:
@@ -429,6 +433,8 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
                 "I can’t confirm the current booking eligibility for that time right now, so no booking has been made. "
                 "Please try again shortly."
             )
+        if error.code == "SLOT_NOTICE_REQUIRED":
+            return _refresh_rh_slots_after_hold_failure(conversation, provider, ctx)
         if error.code in {"DEPENDENCY_UNAVAILABLE", "INTEGRATION_NOT_CONFIGURED", "RH_BOOKING_GATEWAY_UNAVAILABLE"}:
             return (
                 "I can’t reach Rehabify’s live booking service right now, so no booking has been made. "

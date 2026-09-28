@@ -232,6 +232,7 @@ def process_queue_once(
     raw = _claim(timeout)
     if raw is None:
         return None
+    started = time.monotonic()
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
@@ -269,8 +270,10 @@ def process_queue_once(
             raise RuntimeError("Joy produced no outbound reply")
         send_whatsapp_text(payload["phone"], reply)
         logger.info(
-            "joy_outbound_delivered",
-            extra={"wa_message_id": payload["wa_message_id"], "reply_length": len(reply)},
+            "joy_outbound_delivered wa_message_id=%s reply_length=%d processing_ms=%d",
+            payload["wa_message_id"],
+            len(reply),
+            int((time.monotonic() - started) * 1000),
         )
         _ack(raw)
         return result

@@ -115,7 +115,7 @@ def test_parse_model_json_invalid_returns_empty():
     assert _parse_model_json("[]") == {}
 
 
-def test_gemini_client_retries_timeout_once_then_raises(monkeypatch):
+def test_gemini_client_text_timeout_is_not_retried(monkeypatch):
     from app.config import Settings
     from app.llm.gemini_client import GeminiClient, GeminiTimeoutError
 
@@ -137,10 +137,10 @@ def test_gemini_client_retries_timeout_once_then_raises(monkeypatch):
         raise AssertionError("expected GeminiTimeoutError")
     except GeminiTimeoutError:
         pass
-    assert calls["n"] == 2
+    assert calls["n"] == 1
 
 
-def test_gemini_client_succeeds_on_timeout_retry(monkeypatch):
+def test_gemini_client_voice_succeeds_on_timeout_retry(monkeypatch):
     from app.config import Settings
     from app.llm.gemini_client import GeminiClient
 
@@ -162,6 +162,6 @@ def test_gemini_client_succeeds_on_timeout_retry(monkeypatch):
 
     monkeypatch.setattr("app.llm.gemini_client.genai.Client", _Client)
     client = GeminiClient(Settings(gemini_api_key="not-a-real-key"))
-    response = client.complete("assembled prompt", "hello")
+    response = client.complete_voice(b"fake-audio", "audio/ogg")
     assert response.reply_text == "Hi"
     assert calls["n"] == 2
