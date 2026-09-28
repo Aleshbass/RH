@@ -17,9 +17,10 @@ from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
-# Text triage must leave enough time for persistence and WhatsApp delivery
-# while still responding within the ten-second service target.
-_TEXT_TIMEOUT_MS = 8_000
+# Gemini enforces a 10-second minimum HTTP deadline. Keep one bounded request
+# (never a second application retry) so slow calls cannot become 20–30 second
+# worker stalls.
+_TEXT_TIMEOUT_MS = 10_000
 
 
 class GeminiTimeoutError(TimeoutError):

@@ -167,6 +167,15 @@ def process_inbound(
             language="en",
             phase=PatientPhase.FIRST_CONTACT,
         )
+    except Exception:
+        # A model-provider validation or availability error must not put a
+        # patient message through retry/dead-letter without a WhatsApp reply.
+        logger.exception("text triage provider failure for %s", wa_message_id)
+        return TurnResult(
+            reply_text=GEMINI_TIMEOUT_APOLOGY,
+            language="en",
+            phase=PatientPhase.FIRST_CONTACT,
+        )
 
 
 def _claim(timeout: int) -> str | None:
