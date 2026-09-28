@@ -59,6 +59,7 @@ from app.models.types import (
     TurnResult,
 )
 from app.safety.protocol_runtime import UNCLEAR, NO, YES, ScheduledQuestion, normalize_answer, schedule_questions
+from app.safety.semantic_normalization import validated_semantic_safety_answers
 from app.safety.escalation import notify_family_on_safety, patient_message
 from app.safety.evaluator import evaluate
 from app.physio.availability import apply_availability_turn
@@ -1350,6 +1351,12 @@ def handle_turn(
     if safety_screen:
         answers = dict(extracted.safety_answers)
         answers.update(_narrative_no_answers(user_text, safety_screen))
+        semantic_answers = validated_semantic_safety_answers(
+            model_extraction.get("safety_semantic_answers") if isinstance(model_extraction, dict) else None,
+            user_text,
+            [question for _, questions in safety_screen for question in questions],
+        )
+        answers.update(semantic_answers)
         numbered = {
             int(index): normalize_answer(answer)
             for index, answer in re.findall(

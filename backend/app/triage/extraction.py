@@ -131,6 +131,13 @@ def constrain_model_extraction(incoming: dict, user_text: str) -> dict:
     inference made from pain quality such as ``sharp`` or ``severe``.
     """
     constrained = dict(incoming or {})
+    # The model may propose semantic safety evidence, but it cannot directly
+    # write protocol answers or safety flags. Those are validated later by the
+    # deterministic safety layer against the patient's actual message.
+    constrained.pop("safety_answers", None)
+    constrained.pop("safety_question_order", None)
+    constrained.pop("safety_protocol_version", None)
+    constrained.pop("flags", None)
     if "severity" in constrained:
         reported = parse_severity_from_text(user_text)
         if reported is None:
