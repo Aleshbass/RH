@@ -2,6 +2,7 @@ import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 
 const encoder = new TextEncoder();
+const JOY_MINIMUM_NOTICE_MS = 2 * 60 * 60 * 1000;
 
 function hex(bytes: ArrayBuffer): string {
   return Array.from(new Uint8Array(bytes)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -170,7 +171,10 @@ export const readAvailability = httpAction(async (ctx, request) => {
   const profile = await ctx.runQuery((internal as any).joyIntegration.resolveProfileForAvailability, { physiotherapistId: physiotherapist_id, serviceMode: service_mode });
   if (!profile || !profile.amountKobo) return Response.json({ slots: [] });
   const slots = await ctx.runQuery((api as any).calendar.availability.getAvailableSlots, {
-    physiotherapistId: profile.physiotherapistUserId, startDate: start, endDate: end, sessionDuration: duration_minutes,
+    physiotherapistId: profile.physiotherapistUserId,
+    startDate: Math.max(start, Date.now() + JOY_MINIMUM_NOTICE_MS),
+    endDate: end,
+    sessionDuration: duration_minutes,
   });
   return Response.json({ slots, amount_kobo: profile.amountKobo, currency: "NGN" });
 });
@@ -189,6 +193,9 @@ export const createPendingBooking = httpAction(async (ctx, request) => {
   const data = parsed.data;
   const requiredStrings = ["patient_id", "physiotherapist_id", "service_mode", "session_type", "triage_summary_reference", "assessment_id", "protocol_version", "eligibility_reference", "policy_version", "policy_acceptance_reference", "conversation_id", "request_id", "idempotency_key"];
   if (!requiredStrings.every((key) => typeof data[key] === "string") || typeof data.slot_start !== "number" || typeof data.duration_minutes !== "number" || typeof data.assessment_revision !== "number" || !["home_visit", "clinic", "online"].includes(String(data.service_mode))) return new Response("Invalid payload", { status: 400 });
+  if (data.slot_start < Date.now() + JOY_MINIMUM_NOTICE_MS) {
+    return Response.json({ code: "SLOT_NOTICE_REQUIRED" }, { status: 409 });
+  }
   return Response.json(await ctx.runMutation((internal as any).joyIntegration.createPendingJoyBooking, {
     patientId: data.patient_id, physiotherapistId: data.physiotherapist_id, slotStart: data.slot_start,
     durationMinutes: data.duration_minutes, serviceMode: data.service_mode, sessionType: data.session_type,
