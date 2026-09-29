@@ -1124,9 +1124,6 @@ export const recordJoyPaymentWebhook = internalMutation({
     if (linkedReferral) {
       await ctx.db.patch(linkedReferral._id, {
         status: "in_treatment",
-        paymentStatus: "paid",
-        paymentReference: args.reference,
-        amountPaidKobo: args.amountKobo,
         updatedAt: now,
       });
 

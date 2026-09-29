@@ -1085,6 +1085,7 @@ export default defineSchema({
     // Tracking the patient lifecycle
     patientId: v.optional(v.id("users")), // Linked once they sign up
     appointmentId: v.optional(v.id("appointments")), // Associated first appointment
+    bookingId: v.optional(v.id("marketplaceBookings")), // Linked marketplace booking
     assignedPhysiotherapistId: v.optional(v.id("users")), // Matched physiotherapist
 
     // Controlled referral statuses (spec-compliant 16 statuses + legacy compat)
@@ -2418,6 +2419,7 @@ export default defineSchema({
     rehabifyEarnings: v.optional(v.number()), // Amount Rehabify retains (10% default, kobo)
     partnerEarnings: v.optional(v.number()), // Amount referring partner earns (10% default, kobo)
     partnerId: v.optional(v.string()), // Referring partner code if referred
+    referralId: v.optional(v.id("inboundReferrals")), // Referring inbound referral if referred
     careMode: v.optional(v.union(v.literal("virtual"), v.literal("in_person"))),
 
     // Payment

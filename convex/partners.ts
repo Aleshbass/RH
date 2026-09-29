@@ -662,8 +662,9 @@ export const getReferralDetails = query({
     let physioUserId = referral.assignedPhysiotherapistId;
     let latestBooking: any = null;
 
-    if (referral.bookingId) {
-      latestBooking = await ctx.db.get(referral.bookingId);
+    const referralBookingId = (referral as any).bookingId;
+    if (referralBookingId) {
+      latestBooking = await ctx.db.get(referralBookingId);
       if (latestBooking?.physiotherapistId && !physioUserId) {
         physioUserId = latestBooking.physiotherapistId;
       }
