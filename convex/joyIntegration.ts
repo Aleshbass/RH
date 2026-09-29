@@ -61,22 +61,32 @@ export const resolvePatientByPhone = internalQuery({
 
 /**
  * Extract referral tracking code from incoming text message.
- * Handles:
+ * Robust against punctuation, casing, and sentence embedding:
  *  - START RHB-95942
  *  - START RHB-95942 - Hello Joy...
  *  - REHAB_REF_RHB-95942
+ *  - Hello... My tracking code is RHB-95942. Please connect me...
  *  - Any RHB-XXXXX pattern
  */
 export function extractTrackingCode(text?: string): string | null {
   if (!text) return null;
+  const cleanPunctuation = (val: string) => val.replace(/[.,!?;:()]+$/, "").trim().toUpperCase();
+
+  // 1. Explicit START command
   const startMatch = text.match(/START\s+([A-Za-z0-9_-]+)/i);
-  if (startMatch) return startMatch[1].trim().toUpperCase();
+  if (startMatch) return cleanPunctuation(startMatch[1]);
 
+  // 2. REHAB_REF_ prefix
   const refMatch = text.match(/REHAB_REF_([A-Za-z0-9_-]+)/i);
-  if (refMatch) return refMatch[1].trim().toUpperCase();
+  if (refMatch) return cleanPunctuation(refMatch[1]);
 
+  // 3. Sentence form: "tracking code is RHB-XXXXX" or "code is RHB-XXXXX"
+  const sentenceMatch = text.match(/(?:tracking|referral)\s+code\s+(?:is\s+)?[:#]?\s*([A-Za-z0-9_-]+)/i);
+  if (sentenceMatch) return cleanPunctuation(sentenceMatch[1]);
+
+  // 4. Standard RHB- pattern anywhere in message
   const rhbMatch = text.match(/\b(RHB-[A-Za-z0-9_-]+)\b/i);
-  if (rhbMatch) return rhbMatch[1].trim().toUpperCase();
+  if (rhbMatch) return cleanPunctuation(rhbMatch[1]);
 
   return null;
 }
@@ -208,25 +218,54 @@ async function linkTrackingCodeToWhatsAppInternalHandler(
   const matches = await ctx.db.query("users").filter((q: any) => q.eq(q.field("phoneNumber"), phone)).collect();
   const patients = matches.filter((user: any) => user.role === "patient");
 
+  const [firstName, ...remainingNames] = (args.name || `${matched.patientFirstName || ""} ${matched.patientLastName || ""}`).trim().split(/\s+/).filter(Boolean);
+  const patientFirstName = firstName || matched.patientFirstName || "Patient";
+  const patientLastName = remainingNames.join(" ") || matched.patientLastName || "";
+
   let resolvedPatientId: Id<"users">;
   if (patients.length > 0) {
     resolvedPatientId = patients[0]._id;
     await ctx.db.patch(resolvedPatientId, {
       linkedReferralTrackingCode: matched.trackingCode,
+      firstName: patients[0].firstName && patients[0].firstName !== "Patient" ? patients[0].firstName : patientFirstName,
+      lastName: patients[0].lastName || patientLastName,
     });
   } else {
-    const [firstName, ...remainingNames] = (args.name || `${matched.patientFirstName || ""} ${matched.patientLastName || ""}`).trim().split(/\s+/).filter(Boolean);
     resolvedPatientId = await ctx.db.insert("users", {
       clerkId: `joy-whatsapp:${args.joyPersonId || phone.replace(/\D/g, "")}`,
       email: args.email || matched.patientEmail,
-      firstName: firstName || matched.patientFirstName || "Patient",
-      lastName: remainingNames.join(" ") || matched.patientLastName || "",
+      firstName: patientFirstName,
+      lastName: patientLastName,
       phoneNumber: phone,
       role: "patient",
       onboarded: false,
       linkedReferralTrackingCode: matched.trackingCode,
     });
-    await ctx.db.insert("patientProfiles", { userId: resolvedPatientId });
+  }
+
+  // Ensure patient profile is synchronized with city, area, and address from referral
+  const existingProfile = await ctx.db
+    .query("patientProfiles")
+    .withIndex("by_user_id", (q: any) => q.eq("userId", resolvedPatientId))
+    .first();
+
+  const profileCity = matched.city || existingProfile?.city || "Lagos";
+  const profileArea = matched.area || existingProfile?.area || undefined;
+  const profileAddress = [profileArea, profileCity].filter(Boolean).join(", ");
+
+  if (existingProfile) {
+    await ctx.db.patch(existingProfile._id, {
+      city: profileCity,
+      area: profileArea,
+      address: profileAddress || existingProfile.address,
+    });
+  } else {
+    await ctx.db.insert("patientProfiles", {
+      userId: resolvedPatientId,
+      city: profileCity,
+      area: profileArea,
+      address: profileAddress || undefined,
+    });
   }
 
   const previousStatus = matched.status;
@@ -263,13 +302,63 @@ async function linkTrackingCodeToWhatsAppInternalHandler(
     await dispatchIntakeStartedWebhook(ctx, matched);
   }
 
+  // Lookup partner for personalized context
+  let partnerInfo: any = null;
+  if (matched.partnerId) {
+    partnerInfo = await ctx.db
+      .query("partners")
+      .withIndex("by_code", (q: any) => q.eq("code", matched.partnerId))
+      .first();
+  }
+
+  const partnerName = partnerInfo?.name || "Healthcare Partner";
+  const condition = matched.condition || "Musculoskeletal Rehabilitation";
+  const careMode = matched.preferredCareMode || "patient_choice";
+  const careModeLabel =
+    careMode === "remote"
+      ? "online tele-rehab"
+      : careMode === "face_to_face"
+      ? "an in-person home visit"
+      : "physiotherapy care";
+
+  const suggestedGreeting = `Hello ${patientFirstName}! Welcome to Rehabify Health. We received your referral from ${partnerName} for ${condition}. I see you're located in ${[profileArea, profileCity].filter(Boolean).join(", ")} and prefer ${careModeLabel}. Let's get you matched with a verified physiotherapist right away.`;
+
+  const intakeSummary = `Verified Referral ${matched.trackingCode}: Patient ${patientFirstName} ${patientLastName} referred by ${partnerName} for ${condition} in ${[profileArea, profileCity].filter(Boolean).join(", ")}. Pre-filled info verified; DO NOT ask patient for name, location, or diagnosis again. Proceed directly to confirming their schedule.`;
+
   return {
     success: true,
     referralId: matched._id,
     trackingCode: matched.trackingCode,
     status: nextStatus,
     patientId: resolvedPatientId,
-    patientName: `${matched.patientFirstName} ${matched.patientLastName}`,
+    patientName: `${patientFirstName} ${patientLastName}`.trim(),
+    first_name: patientFirstName,
+    last_name: patientLastName,
+    phone,
+    partner_name: partnerName,
+    partner_code: matched.partnerId,
+    condition,
+    diagnosis: condition,
+    clinical_notes: matched.clinicalNotes || null,
+    city: profileCity,
+    area: profileArea || null,
+    preferred_care_mode: careMode,
+    recommended_sessions: matched.recommendedSessions || 4,
+    referring_doctor: matched.hospitalClinic || partnerName,
+    suggested_greeting: suggestedGreeting,
+    intake_summary: intakeSummary,
+    referral: {
+      id: matched._id,
+      tracking_code: matched.trackingCode,
+      partner_name: partnerName,
+      condition,
+      city: profileCity,
+      area: profileArea || null,
+      preferred_care_mode: careMode,
+      recommended_sessions: matched.recommendedSessions || 4,
+      referring_doctor: matched.hospitalClinic || partnerName,
+      status: nextStatus,
+    },
   };
 }
 
@@ -407,13 +496,40 @@ export const resolveOrCreatePatientByPhone = internalMutation({
 
       if (existingLinked) {
         linkedReferral = existingLinked;
+        const previousStatus = existingLinked.status;
+        const shouldAdvance = previousStatus === "received" || previousStatus === "pending";
+        const nextStatus = shouldAdvance ? "intake_started" : previousStatus;
+
         await ctx.db.patch(existingLinked._id, {
+          patientId: resolvedPatientId,
+          whatsappJoyPersonId: args.joyPersonId,
           lastWhatsAppInteractionAt: Date.now(),
+          status: nextStatus,
           updatedAt: Date.now(),
         });
         await ctx.db.patch(resolvedPatientId, {
           linkedReferralTrackingCode: existingLinked.trackingCode,
         });
+
+        if (shouldAdvance) {
+          await ctx.db.insert("referralEvents", {
+            referralId: existingLinked._id,
+            eventName: "patient.whatsapp_intake_started",
+            occurredAt: Date.now(),
+            actorType: "system",
+            actorId: "joy_ai",
+            metadata: {
+              trackingCode: existingLinked.trackingCode,
+              phone,
+              joyPersonId: args.joyPersonId,
+              previousStatus,
+              newStatus: nextStatus,
+              channel: "whatsapp",
+              strategy: "phone_relink",
+            },
+          });
+          await dispatchIntakeStartedWebhook(ctx, existingLinked);
+        }
       }
     }
     // 3. Fallback Strategy: Match pending referrals by patientPhone clean digits
@@ -468,13 +584,110 @@ export const resolveOrCreatePatientByPhone = internalMutation({
       }
     }
 
+    // Synchronize patient profile & user names with referral details
+    let partnerInfo: any = null;
+    let profileCity = "Lagos";
+    let profileArea: string | null = null;
+    let patientFirstName = resultDisplayName?.split(" ")[0] || "there";
+    let patientLastName = resultDisplayName?.split(" ").slice(1).join(" ") || "";
+
+    if (linkedReferral) {
+      if (linkedReferral.partnerId) {
+        partnerInfo = await ctx.db
+          .query("partners")
+          .withIndex("by_code", (q: any) => q.eq("code", linkedReferral.partnerId))
+          .first();
+      }
+
+      profileCity = linkedReferral.city || "Lagos";
+      profileArea = linkedReferral.area || null;
+      if (linkedReferral.patientFirstName) patientFirstName = linkedReferral.patientFirstName;
+      if (linkedReferral.patientLastName) patientLastName = linkedReferral.patientLastName;
+
+      // Update user names if blank
+      await ctx.db.patch(resolvedPatientId, {
+        firstName: patientFirstName,
+        lastName: patientLastName,
+        linkedReferralTrackingCode: linkedReferral.trackingCode,
+      });
+
+      // Update patient profile location
+      const existingProfile = await ctx.db
+        .query("patientProfiles")
+        .withIndex("by_user_id", (q: any) => q.eq("userId", resolvedPatientId))
+        .first();
+
+      const profileAddress = [profileArea, profileCity].filter(Boolean).join(", ");
+      if (existingProfile) {
+        await ctx.db.patch(existingProfile._id, {
+          city: profileCity,
+          area: profileArea || existingProfile.area,
+          address: profileAddress || existingProfile.address,
+        });
+      } else {
+        await ctx.db.insert("patientProfiles", {
+          userId: resolvedPatientId,
+          city: profileCity,
+          area: profileArea || undefined,
+          address: profileAddress || undefined,
+        });
+      }
+    }
+
+    const partnerName = partnerInfo?.name || "Healthcare Partner";
+    const condition = linkedReferral?.condition || "Musculoskeletal Rehabilitation";
+    const careMode = linkedReferral?.preferredCareMode || "patient_choice";
+    const careModeLabel =
+      careMode === "remote"
+        ? "online tele-rehab"
+        : careMode === "face_to_face"
+        ? "an in-person home visit"
+        : "physiotherapy care";
+
+    const suggestedGreeting = linkedReferral
+      ? `Hello ${patientFirstName}! Welcome to Rehabify Health. We received your referral from ${partnerName} for ${condition}. I see you're located in ${[profileArea, profileCity].filter(Boolean).join(", ")} and prefer ${careModeLabel}. Let's get you matched with a verified physiotherapist right away.`
+      : undefined;
+
+    const intakeSummary = linkedReferral
+      ? `Verified Referral ${linkedReferral.trackingCode}: Patient ${patientFirstName} ${patientLastName} referred by ${partnerName} for ${condition} in ${[profileArea, profileCity].filter(Boolean).join(", ")}. Pre-filled info verified; DO NOT ask patient for name, location, or diagnosis again. Proceed directly to confirming their schedule.`
+      : undefined;
+
     return {
       resolution: resultResolution,
       patient_id: resolvedPatientId,
-      display_name: resultDisplayName,
+      display_name: resultDisplayName || `${patientFirstName} ${patientLastName}`.trim(),
+      first_name: patientFirstName,
+      last_name: patientLastName,
+      phone,
       referral_id: linkedReferral?._id,
       tracking_code: linkedReferral?.trackingCode,
       referral_status: linkedReferral?.status,
+      partner_name: partnerName,
+      partner_code: linkedReferral?.partnerId,
+      condition,
+      diagnosis: condition,
+      clinical_notes: linkedReferral?.clinicalNotes || null,
+      city: profileCity,
+      area: profileArea,
+      preferred_care_mode: careMode,
+      recommended_sessions: linkedReferral?.recommendedSessions || 4,
+      referring_doctor: linkedReferral?.hospitalClinic || partnerName,
+      suggested_greeting: suggestedGreeting,
+      intake_summary: intakeSummary,
+      referral: linkedReferral
+        ? {
+            id: linkedReferral._id,
+            tracking_code: linkedReferral.trackingCode,
+            partner_name: partnerName,
+            condition,
+            city: profileCity,
+            area: profileArea,
+            preferred_care_mode: careMode,
+            recommended_sessions: linkedReferral.recommendedSessions || 4,
+            referring_doctor: linkedReferral.hospitalClinic || partnerName,
+            status: linkedReferral.status,
+          }
+        : null,
     };
   },
 });
@@ -673,6 +886,8 @@ export const createPendingJoyBooking = internalMutation({
     conversationId: v.string(),
     requestId: v.string(),
     idempotencyKey: v.string(),
+    trackingCode: v.optional(v.string()),
+    referralId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     if (args.slotStart < Date.now() + 2 * HOUR_MS) throw new Error("Booking slots require at least two hours' notice");
@@ -704,6 +919,28 @@ export const createPendingJoyBooking = internalMutation({
     const conflictingHold = activeHolds.some((booking) => booking.bookingStatus === "pending_payment" && (booking.holdExpiresAt ?? 0) > Date.now() && (booking.sessionDate ?? 0) < slotEnd && ((booking.sessionDate ?? 0) + booking.sessionDuration * 60_000) > args.slotStart);
     if (conflictingHold) throw new Error("Selected slot is temporarily held");
 
+    // Resolve linked partner referral if available
+    let linkedReferral: any = null;
+    if (args.referralId) {
+      try {
+        linkedReferral = await ctx.db.get(args.referralId as any);
+      } catch {}
+    }
+    if (!linkedReferral) {
+      const code = args.trackingCode || (patient as any).linkedReferralTrackingCode;
+      if (code) {
+        linkedReferral = await findReferralByCode(ctx, code);
+      }
+    }
+    if (!linkedReferral && patient.phoneNumber) {
+      const cleanDigits = patient.phoneNumber.replace(/\D/g, "");
+      const recent = await ctx.db.query("inboundReferrals").order("desc").take(30);
+      linkedReferral = recent.find((r: any) => {
+        const rDigits = (r.patientPhone || "").replace(/\D/g, "");
+        return rDigits && (rDigits.endsWith(cleanDigits.slice(-10)) || cleanDigits.endsWith(rDigits.slice(-10)));
+      }) ?? null;
+    }
+
     const fees = calculateMarketplaceFees(authoritativeRate);
     const now = Date.now();
     const bookingId = await ctx.db.insert("marketplaceBookings", {
@@ -716,8 +953,87 @@ export const createPendingJoyBooking = internalMutation({
       joyEligibilityReference: args.eligibilityReference, joyPolicyVersion: args.policyVersion,
       joyPolicyAcceptanceReference: args.policyAcceptanceReference, originRequestId: args.requestId,
       originIdempotencyKey: args.idempotencyKey, originatedAt: now, holdExpiresAt: now + BOOKING_HOLD_MS,
-      providerResponse: "pending", replacementStatus: "not_needed", createdAt: now, updatedAt: now,
+      providerResponse: "pending", replacementStatus: "not_needed",
+      referralId: linkedReferral?._id,
+      partnerId: linkedReferral?.partnerId,
+      createdAt: now, updatedAt: now,
     });
+
+    // Advance referral milestone to booked (Step 3: Physio Matched)
+    if (linkedReferral) {
+      await ctx.db.patch(linkedReferral._id, {
+        status: "booked",
+        assignedPhysiotherapistId: profile.userId,
+        bookingId,
+        updatedAt: now,
+      });
+
+      const physioUser: any = await ctx.db.get(profile.userId);
+      const physioName = displayName(physioUser);
+
+      await ctx.db.insert("referralEvents", {
+        referralId: linkedReferral._id,
+        eventName: "provider.matched",
+        occurredAt: now,
+        actorType: "joy_ai",
+        actorId: "joy_ai",
+        metadata: {
+          physiotherapistId: profile.userId,
+          physiotherapistName: physioName,
+          licenseNumber: profile.licenseNumber || "MRTBN/PT/VERIFIED",
+          bookingId,
+          slotStart: args.slotStart,
+          serviceMode: args.serviceMode,
+          sessionType: args.sessionType,
+        },
+      });
+
+      // Dispatch real-time outbound webhook to partner
+      if (linkedReferral.partnerId) {
+        try {
+          const partner = await ctx.db
+            .query("partners")
+            .withIndex("by_code", (q: any) => q.eq("code", linkedReferral.partnerId))
+            .first();
+          const env = linkedReferral.environment || "live";
+          const targetUrl = linkedReferral.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
+          const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
+          if (targetUrl && secret && secret !== "whsec_default") {
+            await ctx.scheduler.runAfter(100, (api as any)["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
+              partnerId: linkedReferral.partnerId,
+              environment: env,
+              eventType: "provider.matched",
+              targetUrl,
+              secret,
+              trackingCode: linkedReferral.trackingCode,
+              patientName: `${linkedReferral.patientFirstName} ${linkedReferral.patientLastName}`,
+              payload: {
+                event: "provider.matched",
+                environment: env,
+                created_at: Math.floor(now / 1000),
+                data: {
+                  referral_id: linkedReferral._id,
+                  tracking_code: linkedReferral.trackingCode,
+                  partner_external_id: linkedReferral.partnerExternalId || null,
+                  booking_id: bookingId,
+                  session_start: args.slotStart,
+                  service_mode: args.serviceMode,
+                  physiotherapist: {
+                    id: profile.userId,
+                    name: physioName,
+                    license_number: profile.licenseNumber || "MRTBN/PT/VERIFIED",
+                    specialization: profile.specializations?.[0] || "Orthopedic Rehabilitation",
+                  },
+                },
+              },
+            });
+          }
+        } catch (webhookErr) {
+          console.error("Failed to schedule partner webhook for provider matched:", webhookErr);
+        }
+      }
+    }
+
     return { booking_id: bookingId, booking_status: "pending_payment", payment_status: "pending", amount_kobo: fees.totalAmount, hold_expires_at: now + BOOKING_HOLD_MS };
   },
 });
@@ -787,11 +1103,131 @@ export const recordJoyPaymentWebhook = internalMutation({
     if (attempt.status === "verified") return { handled: true, duplicate: true, booking_id: attempt.bookingId };
     const booking = await ctx.db.get(attempt.bookingId);
     if (!booking) throw new Error("Payment booking not found");
-    await ctx.db.patch(attempt._id, { status: "verified", verifiedAt: Date.now(), updatedAt: Date.now() });
+    const now = Date.now();
+    await ctx.db.patch(attempt._id, { status: "verified", verifiedAt: now, updatedAt: now });
     // Payment evidence is deliberately separate from allocation/provider
     // acceptance. A later authorized workflow may create the appointment.
-    await ctx.db.patch(booking._id, { paymentStatus: "completed", paidAt: Date.now(), paymentReference: args.reference, updatedAt: Date.now(), providerResponse: "pending", providerResponseDueAt: Date.now() + 5 * HOUR_MS });
-    return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: Date.now() + 5 * HOUR_MS, event_id: args.paystackEventId };
+    await ctx.db.patch(booking._id, { paymentStatus: "completed", paidAt: now, paymentReference: args.reference, updatedAt: now, providerResponse: "pending", providerResponseDueAt: now + 5 * HOUR_MS });
+
+    // Advance linked partner referral to in_treatment (Milestone Step 4: Care Sessions)
+    let linkedReferral: any = null;
+    if ((booking as any).referralId) {
+      linkedReferral = await ctx.db.get((booking as any).referralId);
+    }
+    if (!linkedReferral && booking.patientId) {
+      const patient: any = await ctx.db.get(booking.patientId);
+      if (patient?.linkedReferralTrackingCode) {
+        linkedReferral = await findReferralByCode(ctx, patient.linkedReferralTrackingCode);
+      }
+    }
+
+    if (linkedReferral) {
+      await ctx.db.patch(linkedReferral._id, {
+        status: "in_treatment",
+        paymentStatus: "paid",
+        paymentReference: args.reference,
+        amountPaidKobo: args.amountKobo,
+        updatedAt: now,
+      });
+
+      await ctx.db.insert("referralEvents", {
+        referralId: linkedReferral._id,
+        eventName: "payment.verified",
+        occurredAt: now,
+        actorType: "system",
+        actorId: "paystack",
+        metadata: {
+          bookingId: booking._id,
+          reference: args.reference,
+          amountKobo: args.amountKobo,
+          currency: args.currency,
+          paystackEventId: args.paystackEventId,
+        },
+      });
+
+      // Transparent 3-way revenue split (80% Physio / 10% Rehabify / 10% Partner)
+      if (linkedReferral.partnerId) {
+        try {
+          const partnerRate = 10; // 10% partner revenue share
+          const commissionAmount = Math.round(args.amountKobo * 0.10);
+          const physioAmount = Math.round(args.amountKobo * 0.80);
+          const rehabifyAmount = args.amountKobo - commissionAmount - physioAmount;
+          const billingPeriod = new Date(now).toISOString().slice(0, 7); // "YYYY-MM"
+
+          const physioUser: any = await ctx.db.get(booking.physiotherapistId);
+
+          await ctx.db.insert("partnerCommissions", {
+            partnerId: linkedReferral.partnerId,
+            referralId: linkedReferral._id,
+            trackingCode: linkedReferral.trackingCode,
+            patientName: `${linkedReferral.patientFirstName} ${linkedReferral.patientLastName}`.trim(),
+            eventType: "booking_confirmed",
+            grossTransactionAmount: args.amountKobo,
+            commissionRate: partnerRate,
+            commissionAmount,
+            netPayable: commissionAmount,
+            physiotherapistId: booking.physiotherapistId,
+            physiotherapistName: displayName(physioUser),
+            careMode: booking.isOnline ? "virtual" : "in_person",
+            physiotherapistAmount: physioAmount,
+            rehabifyAmount,
+            partnerAmount: commissionAmount,
+            physioPercent: 80,
+            rehabifyPercent: 10,
+            partnerPercent: 10,
+            paymentMethod: "paystack",
+            paymentReference: args.reference,
+            billingPeriod,
+            bulkPayoutStatus: "accrued",
+            status: "approved",
+            earnedAt: now,
+          });
+        } catch (commErr) {
+          console.error("Failed to record partner commission:", commErr);
+        }
+
+        // Dispatch real-time outbound webhook: session.scheduled / payment.verified
+        try {
+          const partner = await ctx.db
+            .query("partners")
+            .withIndex("by_code", (q: any) => q.eq("code", linkedReferral.partnerId))
+            .first();
+          const env = linkedReferral.environment || "live";
+          const targetUrl = linkedReferral.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
+          const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
+          if (targetUrl && secret && secret !== "whsec_default") {
+            await ctx.scheduler.runAfter(100, (api as any)["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
+              partnerId: linkedReferral.partnerId,
+              environment: env,
+              eventType: "session.scheduled",
+              targetUrl,
+              secret,
+              trackingCode: linkedReferral.trackingCode,
+              patientName: `${linkedReferral.patientFirstName} ${linkedReferral.patientLastName}`,
+              payload: {
+                event: "session.scheduled",
+                environment: env,
+                created_at: Math.floor(now / 1000),
+                data: {
+                  referral_id: linkedReferral._id,
+                  tracking_code: linkedReferral.trackingCode,
+                  partner_external_id: linkedReferral.partnerExternalId || null,
+                  booking_id: booking._id,
+                  payment_status: "completed",
+                  payment_reference: args.reference,
+                  amount_kobo: args.amountKobo,
+                  status: "in_treatment",
+                },
+              },
+            });
+          }
+        } catch (webhookErr) {
+          console.error("Failed to schedule partner webhook for session scheduled:", webhookErr);
+        }
+      }
+    }
+
+    return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: now + 5 * HOUR_MS, event_id: args.paystackEventId };
   },
 });
 

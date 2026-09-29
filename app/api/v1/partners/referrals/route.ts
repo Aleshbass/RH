@@ -181,7 +181,8 @@ export async function POST(req: NextRequest) {
     const host = req.headers.get("host") || "physioaroundme.com";
     const protocol = host.includes("localhost") ? "http" : "https";
     const trackingUrl = `${protocol}://${host}/track/${result.trackingCode}`;
-    const whatsappIntakeUrl = `https://wa.me/2348061525811?text=REHAB_REF_${encodeURIComponent(result.trackingCode)}`;
+    const joyPhone = process.env.NEXT_PUBLIC_JOY_WHATSAPP_NUMBER || "2348061525811";
+    const whatsappIntakeUrl = `https://wa.me/${joyPhone}?text=START%20${encodeURIComponent(result.trackingCode)}%20-%20Hello%20Rehabify,%20my%20referral%20code%20is%20${encodeURIComponent(result.trackingCode)}`;
 
     return NextResponse.json(
       {

@@ -206,6 +206,8 @@ export const createPendingBooking = httpAction(async (ctx, request) => {
     eligibilityReference: data.eligibility_reference, policyVersion: data.policy_version,
     policyAcceptanceReference: data.policy_acceptance_reference, conversationId: data.conversation_id,
     requestId: data.request_id, idempotencyKey: data.idempotency_key,
+    trackingCode: typeof data.tracking_code === "string" ? data.tracking_code : undefined,
+    referralId: typeof data.referral_id === "string" ? data.referral_id : undefined,
   }));
 });
 

@@ -75,7 +75,8 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
             </Button>
             <Button
               asChild
-              className="rounded-lg text-sm font-medium bg-emerald-800 hover:bg-emerald-900 text-white"
+              className="rounded-lg text-sm font-medium text-white"
+              style={{ backgroundColor: '#0D6B4F' }}
             >
               <a
                 href="https://wa.me/2348061525811?text=Hello%20Rehabify,%20I%20need%20assistance%20tracking%20my%20referral"
@@ -181,7 +182,7 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
             Lookup Different Reference
           </Link>
           <span className="text-xs font-medium text-neutral-500 flex items-center">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block mr-1.5" />
+            <span className="w-1.5 h-1.5 rounded-full inline-block mr-1.5" style={{ backgroundColor: '#0D6B4F' }} />
             Live Tracking
           </span>
         </div>
@@ -212,8 +213,21 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
             </div>
           </div>
 
-          {/* Editorial Step Tracker */}
+          {/* Editorial Step Tracker with Progress Bar */}
           <div className="pt-2">
+            {/* Progress connector bar */}
+            <div className="hidden sm:block mb-4">
+              <div className="relative w-full h-1 bg-neutral-100 dark:bg-neutral-800 rounded-full">
+                <div
+                  className="absolute left-0 top-0 h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: `${Math.max(0, ((currentStep - 1) / (steps.length - 1)) * 100)}%`,
+                    backgroundColor: '#0D6B4F',
+                  }}
+                />
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 sm:gap-2">
               {steps.map((s) => {
                 const isCompleted = currentStep > s.step;
@@ -221,9 +235,20 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
 
                 return (
                   <div key={s.step} className="flex flex-col space-y-1">
+                    {/* Mobile progress dot */}
+                    <div className="sm:hidden flex items-center gap-2 mb-0.5">
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{
+                          backgroundColor: isCompleted || isCurrent ? '#0D6B4F' : '#d4d4d4',
+                        }}
+                      />
+                      <span className="h-px flex-1" style={{ backgroundColor: isCompleted ? '#0D6B4F' : '#e5e5e5' }} />
+                    </div>
+
                     <div className="flex items-center gap-1.5 text-xs">
                       {isCompleted ? (
-                        <span className="text-emerald-700 dark:text-emerald-400 font-medium inline-flex items-center">
+                        <span className="font-medium inline-flex items-center" style={{ color: '#0D6B4F' }}>
                           <Check className="w-3.5 h-3.5 mr-0.5" />
                           Step {s.step}
                         </span>
@@ -271,8 +296,8 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
             </div>
             <div className="w-full h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-emerald-700 dark:bg-emerald-600 transition-all duration-500"
-                style={{ width: `${progressPercent}%` }}
+                className="h-full transition-all duration-500"
+                style={{ width: `${progressPercent}%`, backgroundColor: '#0D6B4F' }}
               />
             </div>
           </div>
@@ -280,9 +305,9 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
 
         {/* Action Panel for Step 1: Start Triage */}
         {currentStep === 1 && (
-          <div className="bg-[#f4f8f5] dark:bg-[#0d1712] rounded-2xl p-8 space-y-4 border border-emerald-950/5 dark:border-emerald-500/10">
+          <div className="bg-[#f4f8f5] dark:bg-[#0d1712] rounded-2xl p-8 space-y-4 border border-[#0D6B4F]/5 dark:border-[#0D6B4F]/10">
             <div className="space-y-1">
-              <p className="text-xs font-medium uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+              <p className="text-xs font-medium uppercase tracking-wider" style={{ color: '#0D6B4F' }}>
                 Action Required — Step 2 of 5
               </p>
               <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-50">
@@ -296,7 +321,8 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
             <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               <Button
                 asChild
-                className="h-10 px-5 rounded-lg text-sm font-medium bg-emerald-800 hover:bg-emerald-900 text-white transition-colors"
+                className="h-10 px-5 rounded-lg text-sm font-medium text-white transition-colors"
+                style={{ backgroundColor: '#0D6B4F' }}
               >
                 <a href={whatsappIntakeUrl} target="_blank" rel="noreferrer">
                   Open WhatsApp
@@ -309,7 +335,7 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
               >
                 {copied ? (
                   <>
-                    <Check className="w-3.5 h-3.5 mr-1.5 text-emerald-700" />
+                    <Check className="w-3.5 h-3.5 mr-1.5" style={{ color: '#0D6B4F' }} />
                     Copied
                   </>
                 ) : (
@@ -375,7 +401,7 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
                     {referral.assignedPhysiotherapist.specialization}
                   </p>
                 </div>
-                <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 pt-1">
+                <p className="text-xs font-medium pt-1" style={{ color: '#0D6B4F' }}>
                   MRTBN Licensed & Verified
                 </p>
               </div>
@@ -400,7 +426,7 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
               {referral.sessions.nextSessionAt && (
                 <div className="flex justify-between">
                   <span className="text-neutral-400">Next Scheduled Session</span>
-                  <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                  <span className="font-medium" style={{ color: '#0D6B4F' }}>
                     {new Date(referral.sessions.nextSessionAt).toLocaleDateString("en-GB", {
                       weekday: "short",
                       day: "numeric",
@@ -435,7 +461,7 @@ export default function PatientTrackPage({ params }: TrackPageProps) {
               <div className="flex justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">
                 <span className="text-neutral-400">Partner Reference</span>
                 <span className="font-mono text-neutral-700 dark:text-neutral-300">
-                  {referral.partnerExternalId || "N/A"}
+                  {referral.partnerExternalId || referral.trackingCode}
                 </span>
               </div>
               <div className="flex justify-between pb-2 border-b border-neutral-100 dark:border-neutral-800">

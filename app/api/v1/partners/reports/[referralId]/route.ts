@@ -15,12 +15,12 @@ export async function GET(req: NextRequest, props: RouteParams) {
 
   try {
     const convex = getConvexClient();
-    const referral = await convex.query(api.partners.getReferralDetails, {
+    const report = await convex.query(api.partners.getPartnerClinicalReport, {
       identifier: decodeURIComponent(referralId),
       partnerCode: partner.code,
     });
 
-    if (!referral) {
+    if (!report) {
       return NextResponse.json(
         {
           error: {
@@ -37,46 +37,8 @@ export async function GET(req: NextRequest, props: RouteParams) {
 
     return NextResponse.json({
       status: "success",
-      report_id: `REP-${referral.trackingCode.replace("RHB-", "")}`,
-      referral_id: referral._id,
-      tracking_code: referral.trackingCode,
-      partner_reference: referral.partnerExternalId || null,
-      patient: {
-        name: `${referral.patient.firstName} ${referral.patient.lastName}`,
-        phone: referral.patient.phone,
-        city: referral.patient.city,
-      },
-      service_scope: referral.careDetails?.serviceScope || referral.clinicalNotes?.condition || "General Rehabilitation",
-      treating_physiotherapist: referral.assignedPhysiotherapist || {
-        name: "MRTBN Assigned Physiotherapist",
-        license_number: "MRTBN/PT/VERIFIED",
-      },
-      treatment_summary: {
-        prescribed_sessions: referral.sessions.total,
-        completed_sessions: referral.sessions.completed,
-        initial_pain_score: 8,
-        latest_pain_score: Math.max(1, 8 - referral.sessions.completed * 2),
-        functional_improvement: `${Math.min(100, referral.sessions.completed * 25)}%`,
-        status: referral.status === "completed" ? "discharged" : "in_rehabilitation",
-      },
-      clinical_milestones: [
-        {
-          milestone: "Initial Musculoskeletal Assessment",
-          status: "completed",
-          notes: "Baseline ROM and strength evaluation recorded.",
-        },
-        {
-          milestone: "Active Mobilization & Pain Reduction",
-          status: referral.sessions.completed >= 2 ? "completed" : "in_progress",
-          notes: "Therapeutic exercises, joint mobilization, and postural education.",
-        },
-        {
-          milestone: "Functional Independence & Discharge",
-          status: referral.status === "completed" ? "completed" : "pending",
-          notes: "Full range of motion restored. Home exercise program provided.",
-        },
-      ],
-      pdf_download_url: `${protocol}://${host}/api/v1/partners/reports/${referral.trackingCode}/pdf`,
+      ...report,
+      pdf_download_url: `${protocol}://${host}/api/v1/partners/reports/${report.tracking_code}/pdf`,
       generated_at: new Date().toISOString(),
     });
   } catch (error) {

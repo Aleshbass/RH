@@ -189,7 +189,7 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
   // --------------------------------------------------------------------------
   if (step === "success" && successData) {
     const whatsappMessage = encodeURIComponent(
-      `Hello Rehabify Health, I just registered for physiotherapy care through ${partner.name}. My tracking code is ${successData.trackingCode}. Please connect me with my care coordinator.`
+      `START ${successData.trackingCode} - Hello Rehabify Health, I just registered for physiotherapy care through ${partner.name}. My tracking code is ${successData.trackingCode}. Please connect me with my care coordinator.`
     );
     const joyPhone = process.env.NEXT_PUBLIC_JOY_WHATSAPP_NUMBER || "2348061525811";
     const whatsappUrl = `https://wa.me/${joyPhone}?text=${whatsappMessage}`;

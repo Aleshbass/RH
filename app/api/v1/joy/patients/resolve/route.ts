@@ -34,14 +34,7 @@ export async function POST(request: Request) {
       tracking_code: authenticated.data.tracking_code,
       initial_message: authenticated.data.initial_message,
     });
-    const data = result as {
-      resolution: "EXISTING" | "CREATED" | "AMBIGUOUS";
-      patient_id?: string;
-      display_name?: string;
-      referral_id?: string;
-      tracking_code?: string;
-      referral_status?: string;
-    };
+    const data = result as Record<string, unknown>;
     return success(requestId, data);
   } catch (error) {
     return errorResponse(requestId, error);

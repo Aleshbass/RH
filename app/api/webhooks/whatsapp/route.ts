@@ -17,14 +17,19 @@ const convex = convexUrl ? new ConvexHttpClient(convexUrl) : null;
  */
 function extractTrackingCode(text?: string): string | null {
   if (!text) return null;
+  const cleanPunctuation = (val: string) => val.replace(/[.,!?;:()]+$/, "").trim().toUpperCase();
+
   const startMatch = text.match(/START\s+([A-Za-z0-9_-]+)/i);
-  if (startMatch) return startMatch[1].trim().toUpperCase();
+  if (startMatch) return cleanPunctuation(startMatch[1]);
 
   const refMatch = text.match(/REHAB_REF_([A-Za-z0-9_-]+)/i);
-  if (refMatch) return refMatch[1].trim().toUpperCase();
+  if (refMatch) return cleanPunctuation(refMatch[1]);
+
+  const sentenceMatch = text.match(/(?:tracking|referral)\s+code\s+(?:is\s+)?[:#]?\s*([A-Za-z0-9_-]+)/i);
+  if (sentenceMatch) return cleanPunctuation(sentenceMatch[1]);
 
   const rhbMatch = text.match(/\b(RHB-[A-Za-z0-9_-]+)\b/i);
-  if (rhbMatch) return rhbMatch[1].trim().toUpperCase();
+  if (rhbMatch) return cleanPunctuation(rhbMatch[1]);
 
   return null;
 }

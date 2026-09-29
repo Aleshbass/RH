@@ -15,6 +15,7 @@ const schema = z.object({
   required_specialties: z.array(z.string().min(1)).min(1).max(8),
   policy_version: z.string().min(1).max(80), policy_acceptance_reference: z.string().min(1).max(160),
   joy_conversation_id: z.string().min(1).max(160), actor: actorSchema,
+  referral_id: z.string().max(100).optional(), tracking_code: z.string().max(100).optional(),
 }).strict();
 
 export async function POST(request: Request) {

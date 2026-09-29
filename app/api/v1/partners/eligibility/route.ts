@@ -31,16 +31,22 @@ export async function POST(req: NextRequest) {
 
     // Standard pre-authorization verification logic
     const isEligible = !String(memberId).toUpperCase().includes("EXPIRED");
-    const preAuthCode = `AUTH-${partner.code.toUpperCase().slice(0, 4)}-${Math.floor(
-      100000 + Math.random() * 900000
-    )}`;
+    const cryptoModule = await import("crypto");
+    const hashSignature = cryptoModule
+      .createHash("sha256")
+      .update(`${partner.code}:${memberId}:${partner.environment}`)
+      .digest("hex")
+      .slice(0, 8)
+      .toUpperCase();
+    const preAuthCode = `AUTH-${partner.code.toUpperCase().slice(0, 4)}-${hashSignature}`;
 
     if (!isEligible) {
       return NextResponse.json({
         status: "ineligible",
         member_id: memberId,
         eligible: false,
-        reason: "Policy is expired or inactive. Contact member provider service.",
+        environment: partner.environment,
+        reason: "Policy is expired or inactive according to partner insurance verification parameters.",
       });
     }
 
