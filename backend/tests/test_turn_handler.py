@@ -62,6 +62,21 @@ def test_explicit_no_other_emergency_symptoms_clears_general_safety_question():
     assert answers == {"GEN-001": NO}
 
 
+def test_minor_assessed_accident_clears_serious_injury_question():
+    from app.conversation.turn_handler import _narrative_no_answers
+    from app.safety.protocol_runtime import NO, ScheduledQuestion
+
+    question = ScheduledQuestion(
+        id="GEN-001-Q1", rule_id="GEN", order=0,
+        text="Did this start after a serious accident, major fall, or significant injury?",
+    )
+    answers = _narrative_no_answers(
+        "I was in a minor car accident 10 days ago. I was checked at the hospital and they said there was no fracture.",
+        [("major_injury", (question,))],
+    )
+    assert answers == {"GEN-001-Q1": NO}
+
+
 def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     from app.conversation.turn_handler import handle_turn
     fake_llm.reply = "Sorry about the knee — tell me the whole story when you can."

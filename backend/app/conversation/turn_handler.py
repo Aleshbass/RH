@@ -781,9 +781,20 @@ def _narrative_no_answers(
     stated "no injury" or "no bladder change" while retaining any question
     whose specific warning sign was not actually addressed.
     """
+    narrative = (user_text or "").casefold()
     scopes = [match.group(1).casefold().split(" but ", 1)[0] for match in _NEGATED_SAFETY_SCOPE_RE.finditer(user_text or "")]
     if not scopes:
         return {}
+
+    # This is a narrow, clinically corroborated semantic negative—not a
+    # general inference from the word "minor." It covers the common patient
+    # wording: a minor incident, assessed by a clinician, with no fracture.
+    # A bare accident remains unanswered and is always screened.
+    minor_assessed_incident = bool(
+        re.search(r"\bminor\s+(?:car\s+)?(?:accident|collision|fall|injury)\b", narrative)
+        and re.search(r"\b(?:hospital|doctor|clinic|x-?ray)\b", narrative)
+        and any(phrase in narrative for phrase in ("no fracture", "nothing was broken", "nothing broken", "no broken bone"))
+    )
 
     def denied(*terms: str) -> bool:
         return any(any(term in scope for term in terms) for scope in scopes)
@@ -792,7 +803,9 @@ def _narrative_no_answers(
     for _, questions in screen:
         for question in questions:
             text = question.text.casefold()
-            if ("accident" in text or "injury" in text or "fall" in text) and denied("accident", "injury", "fall", "collision"):
+            if ("accident" in text or "injury" in text or "fall" in text) and (
+                denied("accident", "injury", "fall", "collision") or minor_assessed_incident
+            ):
                 answers[question.id] = NO
             elif "bladder" in text or "bowel" in text:
                 if denied("bladder", "bowel"):
