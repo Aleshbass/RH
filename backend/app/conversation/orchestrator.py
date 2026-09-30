@@ -7,7 +7,21 @@ from app.triage.question_batching import missing_fields
 OFFERING_MATCHES = "offering_matches"
 AWAITING_SLOT_MODE = "awaiting_slot_mode"
 AWAITING_PAYMENT = "awaiting_payment"
-BOOKING_SUBSTATES = (OFFERING_MATCHES, AWAITING_SLOT_MODE, AWAITING_PAYMENT)
+# RH-backed booking uses the same conversation record, but its substates were
+# added after this router.  Omitting them lets a receipt email fall back into
+# triage before ``handle_booking_turn`` can initialize payment.
+BOOKING_SUBSTATES = (
+    OFFERING_MATCHES,
+    AWAITING_SLOT_MODE,
+    AWAITING_PAYMENT,
+    "rh_awaiting_service_mode",
+    "rh_awaiting_location",
+    "rh_awaiting_provider",
+    "rh_awaiting_slot",
+    "rh_awaiting_payment_email",
+    "rh_awaiting_payment",
+    "rh_awaiting_replacement",
+)
 
 
 def has_narrative(extracted: ExtractedTriage) -> bool:

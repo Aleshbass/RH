@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,7 +11,7 @@ from app.models.conversation import Conversation
 from app.models.patient import Patient
 from app.models.physiotherapist import Physiotherapist
 from app.models.triage_session import TriageSession
-from app.models.types import AuditKind, ConversationStage, ExtractedTriage, PatientPhase
+from app.models.types import AuditKind, ConditionArea, ConversationStage, ExtractedTriage, PatientPhase
 from app.safety.protocol_runtime import NO, schedule_questions
 from tests.fakes import FakeLLM
 
@@ -30,6 +31,17 @@ def test_rh_provider_selection_advances_to_slot_selection_stage():
     from app.conversation.turn_handler import _stage_for_booking_substate
 
     assert _stage_for_booking_substate(AWAITING_RH_SLOT) == ConversationStage.SLOT_SELECTION
+
+
+def test_rh_payment_email_substate_stays_in_booking_router():
+    """A receipt email must never be sent back through triage extraction."""
+    from app.booking.booking_flow import AWAITING_RH_PAYMENT_EMAIL
+    from app.conversation.orchestrator import decide_booking_substate
+    from app.conversation.turn_handler import _stage_for_booking_substate
+
+    state = SimpleNamespace(booking_substate=AWAITING_RH_PAYMENT_EMAIL)
+    assert decide_booking_substate(state) == AWAITING_RH_PAYMENT_EMAIL
+    assert _stage_for_booking_substate(AWAITING_RH_PAYMENT_EMAIL) == ConversationStage.AWAITING_PAYMENT
 
 
 def test_policy_acceptance_allows_short_unambiguous_reply():
@@ -77,6 +89,29 @@ def test_minor_assessed_accident_clears_serious_injury_question():
     assert answers == {"GEN-001-Q1": NO}
 
 
+def test_sport_twist_does_not_repeat_serious_injury_question():
+    from app.conversation.turn_handler import _narrative_no_answers
+    from app.safety.protocol_runtime import NO, ScheduledQuestion
+
+    question = ScheduledQuestion(
+        id="GEN-001-Q1", rule_id="GEN", order=0,
+        text="Did this start after a serious accident, major fall, or significant injury?",
+    )
+    answers = _narrative_no_answers(
+        "I twisted my ankle playing football four days ago. It still hurts when I walk.",
+        [("major_injury", (question,))],
+    )
+    assert answers == {"GEN-001-Q1": NO}
+
+
+def test_compact_safety_reply_skips_gemini_when_a_screen_is_pending():
+    from app.conversation.turn_handler import _can_skip_model_for_safety_reply
+
+    assert _can_skip_model_for_safety_reply(
+        ExtractedTriage(body_location="ankle"), "no, none at all"
+    ) is True
+
+
 def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     from app.conversation.turn_handler import handle_turn
     fake_llm.reply = "Sorry about the knee — tell me the whole story when you can."
@@ -84,6 +119,28 @@ def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     assert result.phase == "first_contact"
     assert "1-10" not in result.reply_text
     assert "knee" in result.reply_text.lower() or "sorry" in result.reply_text.lower() or "sound" in result.reply_text.lower()
+
+
+def test_clear_shoulder_narrative_does_not_ask_for_condition_category(
+    db_session, patient_phone, fake_llm
+):
+    """A sparse Gemini extraction must not erase an obvious MSK story."""
+    from app.conversation.turn_handler import handle_turn
+
+    fake_llm.extraction = {}
+    fake_llm.reply = "Thanks for explaining."
+    result = handle_turn(
+        db_session,
+        patient_phone,
+        "I developed pain and stiffness in my right shoulder after lifting weights 5 days ago. "
+        "It hurts when I raise my arm overhead and is 5 out of 10.",
+        fake_llm,
+    )
+
+    assert result.extracted is not None
+    assert result.extracted.condition_area == ConditionArea.MSK
+    assert "joint or muscle pain" not in result.reply_text.lower()
+    assert "children's" not in result.reply_text.lower()
 
 
 def test_safety_overrides_model_cheer(db_session, patient_phone, fake_llm):

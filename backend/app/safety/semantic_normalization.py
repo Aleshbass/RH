@@ -38,6 +38,30 @@ def _minor_incident_with_reassuring_assessment(text: str) -> bool:
     return bool(minor_incident and reassuring_assessment)
 
 
+def clearly_non_major_sport_mechanism(text: str) -> bool:
+    """Recognise a plainly described low-energy sport twist as non-major.
+
+    This answers only the narrow serious-injury question. It does not diagnose,
+    clear another warning sign, or convert a collision or major fall to a NO.
+    """
+    compact = _compact(text)
+    if re.search(
+        r"\b(?:serious|major|significant)\s+(?:injury|fall|accident)\b|"
+        r"\b(?:crash|collision|road traffic)\b",
+        compact,
+    ):
+        return False
+    sport = r"(?:football|soccer|basketball|volleyball|tennis|running|jogging)"
+    body_part = r"(?:ankle|knee|wrist|shoulder|foot)"
+    twist = rf"(?:twisted|rolled|sprained)\s+(?:my\s+)?{body_part}"
+    return bool(
+        re.search(
+            rf"\b{twist}\b[^.!?]{{0,80}}\b(?:while\s+)?(?:playing|during)\s+{sport}\b",
+            compact,
+        )
+    )
+
+
 def validated_semantic_safety_answers(
     proposals: Any,
     user_text: str,
@@ -61,7 +85,10 @@ def validated_semantic_safety_answers(
     quoted = _compact(evidence)
     if answer != NO or not quoted or quoted not in text:
         return {}
-    if not _minor_incident_with_reassuring_assessment(text):
+    if not (
+        _minor_incident_with_reassuring_assessment(text)
+        or clearly_non_major_sport_mechanism(text)
+    ):
         return {}
     return {
         str(question.id): NO

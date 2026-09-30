@@ -48,23 +48,21 @@ def _verify(raw_body: bytes, request: Request, secret: str) -> None:
         raise HTTPException(status_code=401, detail="invalid RH service authentication")
 
 
-@router.post("/safety/eligibility")
-async def safety_eligibility(
-    request: Request,
-    settings: Settings = Depends(get_settings),
-    session: Session = Depends(get_session),
+def issue_eligibility_reference(
+    *, session: Session, settings: Settings, payload: EligibilityRequest
 ) -> dict:
-    raw_body = await request.body()
-    _verify(raw_body, request, settings.rh_safety_hmac_secret)
-    try:
-        payload = EligibilityRequest.model_validate_json(raw_body)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail="invalid eligibility request") from error
+    """Evaluate the same scoped booking gate for RH or the direct gateway.
 
+    The reference is generated only after re-reading Joy's persisted triage
+    and policy state.  A direct Convex gateway caller therefore cannot invent
+    a GREEN result or bypass the deterministic evaluator.
+    """
+    if not settings.rh_safety_hmac_secret:
+        # Direct mode must not silently manufacture a reference with an empty
+        # key just because it is not making the RH -> Joy HTTP round trip.
+        return {"allowed": False, "reason": "SAFETY_GATE_NOT_CONFIGURED"}
     if payload.service_type not in {"standard_consultation", "specialist_review"}:
         return {"allowed": False, "reason": "SERVICE_NOT_AVAILABLE"}
-    # Assessment revisions are not yet persisted as a separate table. Only the
-    # current revision-one protocol state is eligible until that migration ships.
     if payload.assessment_revision != 1:
         return {"allowed": False, "reason": "ASSESSMENT_REVISION_UNAVAILABLE"}
     mapping = session.scalar(select(RHIdentityMapping).where(
@@ -97,3 +95,19 @@ async def safety_eligibility(
     material = f"{mapping.joy_person_id}|{triage.id}|1|{payload.service_type}|{payload.policy_version}|{int(expires_at.timestamp())}"
     reference = hmac.new(settings.rh_safety_hmac_secret.encode(), material.encode(), hashlib.sha256).hexdigest()
     return {"allowed": True, "eligibility_reference": reference, "expires_at": expires_at.isoformat()}
+
+
+@router.post("/safety/eligibility")
+async def safety_eligibility(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_session),
+) -> dict:
+    raw_body = await request.body()
+    _verify(raw_body, request, settings.rh_safety_hmac_secret)
+    try:
+        payload = EligibilityRequest.model_validate_json(raw_body)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="invalid eligibility request") from error
+
+    return issue_eligibility_reference(session=session, settings=settings, payload=payload)

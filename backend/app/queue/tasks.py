@@ -1,4 +1,6 @@
 import json
+from hashlib import sha256
+from datetime import datetime, timezone
 
 import httpx
 import redis
@@ -89,9 +91,19 @@ PARTNER_REFERRAL_QUEUE = "joy:notify_partner_referral"
 ADMIN_ESCALATION_QUEUE = "joy:notify_admin_escalation"
 BROADCAST_QUEUE = "joy:notify_broadcast"
 TAKEOVER_QUEUE = "joy:notify_takeover"
+BOOKING_EMAIL_QUEUE = "joy:booking_email"
+BOOKING_EMAIL_PROCESSING_QUEUE = "joy:booking_email:processing"
+BOOKING_EMAIL_DEAD_LETTER_QUEUE = "joy:booking_email:dead"
 
 
-def enqueue_booking_confirmed(phone: str, booking_id: str, text: str) -> None:
+def enqueue_booking_confirmed(
+    phone: str,
+    booking_id: str,
+    text: str,
+    *,
+    email: str | None = None,
+    email_subject: str = "Your Rehabify appointment details",
+) -> None:
     _redis().lpush(
         BOOKING_CONFIRMED_QUEUE,
         json.dumps(
@@ -102,6 +114,54 @@ def enqueue_booking_confirmed(phone: str, booking_id: str, text: str) -> None:
             }
         ),
     )
+    if email:
+        _redis().lpush(
+            BOOKING_EMAIL_QUEUE,
+            json.dumps({"email": email, "booking_id": str(booking_id), "subject": email_subject, "text": text}),
+        )
+
+
+def send_appointment_email(
+    email: str,
+    subject: str,
+    text: str,
+    *,
+    idempotency_key: str | None = None,
+) -> None:
+    """Send a plain-text-safe appointment email through Resend."""
+    settings = get_settings()
+    if not settings.resend_api_key or not settings.from_email:
+        if settings.joy_environment.lower() == "development":
+            # Local tests should not accidentally send mail. The queued item is
+            # still observable in Redis and production refuses this omission.
+            return
+        raise RuntimeError("Appointment email delivery is not configured")
+    # A retry can happen after Resend accepted the message but before the
+    # worker persisted its acknowledgement.  Give Resend a stable key so that
+    # ambiguity does not result in duplicate patient emails.
+    headers = {"Authorization": f"Bearer {settings.resend_api_key}"}
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
+    response = httpx.post(
+        "https://api.resend.com/emails",
+        headers=headers,
+        json={
+            "from": f"{settings.from_name} <{settings.from_email}>",
+            "to": [email],
+            "subject": subject,
+            "text": text,
+        },
+        timeout=15.0,
+    )
+    response.raise_for_status()
+
+
+def appointment_email_idempotency_key(
+    *, booking_id: str, subject: str, text: str, kind: str = "details"
+) -> str:
+    """Return a stable, bounded Resend idempotency key for one notification."""
+    content_hash = sha256(f"{subject}\n{text}".encode("utf-8")).hexdigest()[:24]
+    return f"joy-{kind}-{booking_id}-{content_hash}"[:255]
 
 
 def enqueue_notify_physio_booking(phone: str, booking_id: str, text: str) -> None:
@@ -166,8 +226,58 @@ def enqueue_notify_takeover(phone: str, text: str) -> None:
     )
 
 
+def _mirror_local_delivery(phone: str, text: str) -> None:
+    """Persist a development-only outbound notification for the local console.
+
+    This deliberately runs only behind ``DISABLE_WHATSAPP_DELIVERY`` and is
+    not a replacement for WhatsApp delivery or its delivery receipts.
+    """
+    # Import lazily so normal queue startup remains independent of SQLAlchemy
+    # model initialization.
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models.conversation import Conversation, Message
+    from app.models.patient import Patient
+    from app.models.types import Persona
+
+    with SessionLocal() as session:
+        patient = session.scalar(select(Patient).where(Patient.phone_e164 == phone))
+        if patient is None:
+            return
+        conversation = session.scalar(
+            select(Conversation).where(
+                Conversation.person_id == patient.id,
+                Conversation.persona == Persona.PATIENT,
+            )
+        )
+        if conversation is None:
+            return
+        session.add(
+            Message(
+                conversation_id=conversation.id,
+                role="joy",
+                text=text,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+        session.commit()
+
+
 def send_whatsapp_text(phone: str, text: str) -> None:
     settings = get_settings()
+    if settings.disable_whatsapp_delivery:
+        if settings.joy_environment.lower() != "development":
+            raise RuntimeError(
+                "DISABLE_WHATSAPP_DELIVERY is permitted only in development"
+            )
+        # Keep WhatsApp disabled during local integration tests, but retain a
+        # faithful local record of asynchronous outbound notices. The dev
+        # console polls this same conversation history, so webhook-driven
+        # updates (for example, provider acceptance) are visible without
+        # contacting a real patient.
+        _mirror_local_delivery(phone, text)
+        return
     if not settings.whatsapp_access_token or not settings.whatsapp_phone_number_id:
         # A silent no-op is indistinguishable from a delivered reply and leaves
         # the patient waiting forever.  Let the worker retry and record this.

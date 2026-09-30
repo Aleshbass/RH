@@ -266,12 +266,41 @@ def test_enrich_severity_ignores_duration_numbers():
     assert enriched.severity is None
 
 
+def test_enriches_onset_and_goal_from_natural_sport_injury_story():
+    from app.triage.extraction import enrich_from_user_text
+
+    enriched = enrich_from_user_text(
+        ExtractedTriage(),
+        "I twisted my ankle playing football 4 days ago. I'd like physiotherapy to return to sport safely.",
+    )
+
+    assert enriched.body_location == "ankle"
+    assert enriched.onset == "4 days"
+    assert enriched.goals == "return to sport safely"
+
+
 def test_enrich_severity_from_out_of_ten():
     from app.triage.extraction import enrich_from_user_text
 
     existing = ExtractedTriage(body_location="knee")
     enriched = enrich_from_user_text(existing, "9 that's how bad it feels")
     assert enriched.severity == 9
+
+
+def test_numbered_safety_no_is_not_misread_as_severity_one():
+    from app.triage.extraction import parse_severity_from_text
+
+    assert parse_severity_from_text("1. No") is None
+
+
+def test_patient_can_correct_an_existing_severity_score():
+    from app.triage.extraction import enrich_from_user_text
+
+    enriched = enrich_from_user_text(
+        ExtractedTriage(severity=1, body_location="ankle"),
+        "Severity is not 1, it's 4.",
+    )
+    assert enriched.severity == 4
 
 
 def test_safety_normalizer_accepts_compact_negative_replies():

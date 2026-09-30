@@ -1,6 +1,6 @@
 import hashlib
 import hmac
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -16,6 +16,12 @@ from app.models.patient import Patient
 from app.queue.tasks import enqueue_booking_confirmed
 from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
 from app.models.conversation import Conversation
+from app.models.types import ConversationStage, PatientPhase
+from app.booking.appointment_reminders import (
+    appointment_confirmation_text,
+    appointment_start_from_ms,
+    schedule_appointment_reminder,
+)
 
 router = APIRouter(prefix="/api/integrations/rh", tags=["rh-integration"])
 
@@ -50,7 +56,21 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
         mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.rh_record_id == rh_patient_id))
         patient = session.get(Patient, mapping.joy_person_id) if mapping else None
         if patient:
-            enqueue_booking_confirmed(patient.phone_e164, str(data.get("booking_id") or ""), "Your appointment is confirmed. I’ll send your appointment details here.")
+            booking_id = str(data.get("booking_id") or "")
+            _mark_rh_booking_confirmed(session, patient, booking_id)
+            details = _appointment_details(booking_id, rh_patient_id)
+            email = _appointment_email(session, patient)
+            _schedule_reminder_from_details(session, booking_id, patient, details, email=email)
+            conversation = _patient_conversation(session, patient)
+            # The meeting-link event can arrive first for an online booking.
+            # In that case it has already supplied the complete confirmation.
+            if not _has_notified_meeting_link(conversation, booking_id):
+                text = (
+                    appointment_confirmation_text(**details, booking_code=booking_id)
+                    if details is not None
+                    else "Your appointment is confirmed. I’ll send your appointment details here."
+                )
+                enqueue_booking_confirmed(patient.phone_e164, booking_id, text, email=email)
     elif event_type == "booking.meeting_link_ready":
         data = payload.get("data") or {}
         rh_patient_id = str(data.get("patient_id") or "")
@@ -58,13 +78,29 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
         mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.rh_record_id == rh_patient_id))
         patient = session.get(Patient, mapping.joy_person_id) if mapping else None
         if patient and meeting_url.startswith("https://"):
+            booking_id = str(data.get("booking_id") or "")
+            details = _appointment_details(
+                booking_id,
+                rh_patient_id,
+                fallback_start_ms=data.get("start_time"),
+            )
+            email = _appointment_email(session, patient)
+            _schedule_reminder_from_details(session, booking_id, patient, details, email=email)
             enqueue_booking_confirmed(
                 patient.phone_e164,
-                str(data.get("booking_id") or ""),
-                f"Your online appointment is ready. Join securely here: {meeting_url}",
+                booking_id,
+                (
+                    appointment_confirmation_text(
+                        **details, booking_code=booking_id, meeting_url=meeting_url
+                    )
+                    if details is not None
+                    else f"Your online appointment is ready. Join securely here: {meeting_url}"
+                ),
+                email=email,
             )
+            _mark_meeting_link_notified(session, patient, booking_id)
             append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
-                   payload={"event": "online_meeting_link_disclosed", "booking_id": str(data.get("booking_id") or ""), "platform": data.get("platform")})
+                   payload={"event": "online_meeting_link_disclosed", "booking_id": booking_id, "platform": data.get("platform")})
     elif event_type == "booking.meeting_link_failed":
         data = payload.get("data") or {}
         rh_patient_id = str(data.get("patient_id") or "")
@@ -105,6 +141,94 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
                 "Your ₦6,000 specialist review payment has been verified. RH is assigning an eligible reviewer and I’ll send the review details here.",
             )
     return {"accepted": True, "duplicate": False}
+
+
+def _patient_conversation(session: Session, patient: Patient) -> Conversation | None:
+    return session.scalar(select(Conversation).where(
+        Conversation.person_id == patient.id, Conversation.persona == "patient",
+    ))
+
+
+def _has_notified_meeting_link(conversation: Conversation | None, booking_id: str) -> bool:
+    return bool(conversation and (conversation.booking_context or {}).get("rh_meeting_link_notified") == booking_id)
+
+
+def _mark_meeting_link_notified(session: Session, patient: Patient, booking_id: str) -> None:
+    conversation = _patient_conversation(session, patient)
+    if conversation is None:
+        return
+    context = dict(conversation.booking_context or {})
+    context["rh_meeting_link_notified"] = booking_id
+    conversation.booking_context = context
+
+
+def _mark_rh_booking_confirmed(session: Session, patient: Patient, booking_id: str) -> None:
+    conversation = _patient_conversation(session, patient)
+    if conversation is None:
+        return
+    context = dict(conversation.booking_context or {})
+    if context.get("rh_booking_id") != booking_id:
+        return
+    context["rh_booking_status"] = "confirmed"
+    conversation.booking_context = context
+    conversation.booking_substate = None
+    conversation.phase = PatientPhase.POST_TRIAGE
+    conversation.stage = ConversationStage.BOOKING_CONFIRMED.value
+
+
+def _appointment_email(session: Session, patient: Patient) -> str | None:
+    conversation = _patient_conversation(session, patient)
+    raw = (conversation.booking_context or {}).get("payment_email") if conversation else None
+    if not isinstance(raw, str):
+        return None
+    email = raw.strip().casefold()
+    return email if "@" in email and "." in email.rsplit("@", 1)[-1] else None
+
+
+def _appointment_details(
+    booking_id: str,
+    rh_patient_id: str,
+    *,
+    fallback_start_ms: object | None = None,
+) -> dict | None:
+    if not booking_id or not rh_patient_id:
+        return None
+    try:
+        status = configured_rh_client().booking_status(booking_id, patient_id=rh_patient_id)
+    except RHIntegrationError:
+        status = {}
+    start_ms = status.get("session_start")
+    if not isinstance(start_ms, (int, float)):
+        start_ms = fallback_start_ms
+    if not isinstance(start_ms, (int, float)):
+        return None
+    provider = status.get("provider")
+    provider_name = provider.get("display_name") if isinstance(provider, dict) else None
+    duration = status.get("duration_minutes")
+    return {
+        "provider_name": str(provider_name or "your physiotherapist"),
+        "session_start": appointment_start_from_ms(start_ms),
+        "duration_minutes": int(duration) if isinstance(duration, (int, float)) and duration > 0 else 60,
+        "service_mode": str(status.get("service_mode") or "online"),
+    }
+
+
+def _schedule_reminder_from_details(
+    session: Session,
+    booking_id: str,
+    patient: Patient,
+    details: dict | None,
+    *,
+    email: str | None,
+) -> None:
+    if not booking_id or details is None:
+        return
+    schedule_appointment_reminder(
+        session, rh_booking_id=booking_id, patient=patient, email=email, **details
+    )
+    append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+           payload={"event": "appointment_reminder_scheduled", "booking_id": booking_id,
+                    "reminder_at": (details["session_start"] - timedelta(minutes=30)).isoformat()})
 
 
 def _prepare_replacement(session: Session, data: dict) -> None:

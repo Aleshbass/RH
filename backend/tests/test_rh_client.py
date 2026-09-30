@@ -4,7 +4,7 @@ import json
 
 import httpx
 
-from app.integrations.rh_client import RHActor, RHClient
+from app.integrations.rh_client import RHActor, RHClient, RHConvexGatewayClient
 
 
 def test_patient_location_uses_structured_city_and_area() -> None:
@@ -147,3 +147,44 @@ def test_rh_client_opens_circuit_after_repeated_retryable_failures() -> None:
         assert False, "expected the circuit breaker to reject the fourth request"
     except RHIntegrationError as error:
         assert error.code == "DEPENDENCY_UNAVAILABLE"
+
+
+def test_direct_convex_gateway_signs_and_creates_a_pending_booking() -> None:
+    secret = "gateway-test-secret"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/joy-integration/create_pending_booking"
+        canonical = "\n".join([
+            request.method,
+            request.url.path,
+            request.headers["X-Joy-Gateway-Timestamp"],
+            request.headers["X-Joy-Gateway-Nonce"],
+            request.content.decode("utf-8"),
+        ]).encode("utf-8")
+        assert request.headers["X-Joy-Gateway-Signature"] == hmac.new(secret.encode(), canonical, hashlib.sha256).hexdigest()
+        body = json.loads(request.content)
+        assert body["conversation_id"] == "conversation-1"
+        assert body["eligibility_reference"] == "current-safety-reference"
+        assert body["idempotency_key"] == "booking-key-1"
+        assert "actor" not in body
+        return httpx.Response(200, json={
+            "booking_id": "booking-1", "booking_status": "pending_payment",
+            "payment_status": "pending", "amount_kobo": 2500000,
+        })
+
+    gateway = RHConvexGatewayClient(
+        "https://convex.test", secret, client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    client = RHClient("https://rh.test", "joy-test", "adapter-secret", gateway_client=gateway)
+    booking = client.create_pending_booking(
+        patient_id="patient-1", physiotherapist_id="physio-1", slot_start=1_900_000_000_000,
+        duration_minutes=60, service_mode="online", session_type="physiotherapy",
+        triage_summary_reference="triage-1", assessment_id="triage-1", assessment_revision=1,
+        protocol_version="clinical_engine_v1", policy_version="policy-1", policy_acceptance_reference="accepted-1",
+        conversation_id="conversation-1", actor=RHActor(persona="patient", sender_phone="+2348012345678"),
+        idempotency_key="booking-key-1", required_specialties=["sports"],
+        eligibility_reference="current-safety-reference",
+    )
+    assert booking.booking_id == "booking-1"
+    assert booking.amount_kobo == 2500000

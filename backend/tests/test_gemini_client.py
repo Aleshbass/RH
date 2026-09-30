@@ -140,6 +140,12 @@ def test_gemini_client_text_timeout_is_not_retried(monkeypatch):
     assert calls["n"] == 1
 
 
+def test_provider_deadline_error_is_treated_as_timeout():
+    from app.llm.gemini_client import _is_timeout
+
+    assert _is_timeout(RuntimeError("504 DEADLINE_EXCEEDED: request timed out")) is True
+
+
 def test_gemini_client_voice_succeeds_on_timeout_retry(monkeypatch):
     from app.config import Settings
     from app.llm.gemini_client import GeminiClient

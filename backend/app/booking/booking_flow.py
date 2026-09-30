@@ -21,6 +21,7 @@ from app.models.rh_identity_mapping import RHIdentityMapping
 from app.models.triage_session import TriageSession
 from app.models.types import AuditKind, BookingStatus, ExtractedTriage
 from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
+from app.api.internal.rh_safety_eligibility import EligibilityRequest, issue_eligibility_reference
 from app.queue.tasks import _redis
 
 logger = logging.getLogger(__name__)
@@ -411,7 +412,22 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
         return "I need to refresh your booking details before continuing. Please try again."
     slot = slots[selected - 1]
     try:
-        booking = configured_rh_client().create_pending_booking(
+        rh_client = configured_rh_client()
+        eligibility_reference: str | None = None
+        if rh_client.uses_direct_convex_gateway:
+            eligibility = issue_eligibility_reference(
+                session=session,
+                settings=get_settings(),
+                payload=EligibilityRequest(
+                    rh_patient_id=str(rh_patient_id),
+                    assessment_id=str(_current_assessment(session, patient)),
+                    assessment_revision=1,
+                    service_type="standard_consultation",
+                    policy_version=str(policy["version"]),
+                ),
+            )
+            eligibility_reference = eligibility.get("eligibility_reference") if eligibility.get("allowed") else None
+        booking = rh_client.create_pending_booking(
             patient_id=str(rh_patient_id), physiotherapist_id=str(provider["physiotherapist_id"]),
             slot_start=int(slot["start"]), duration_minutes=60, service_mode=str(ctx["service_mode"]),
             session_type="physiotherapy", triage_summary_reference=str(_current_assessment(session, patient)),
@@ -421,6 +437,7 @@ def _continue_rh_slot(session: Session, conversation: Conversation, patient: Pat
             conversation_id=str(conversation.id), actor=_rh_actor(patient, str(rh_patient_id)),
             idempotency_key=f"joy-booking-{conversation.id}-{slot['start']}",
             required_specialties=list(ctx.get("required_specialties") or []), patient_address=patient.location,
+            eligibility_reference=eligibility_reference,
         )
     except RHIntegrationError as error:
         append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,

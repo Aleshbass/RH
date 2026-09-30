@@ -34,10 +34,12 @@ class FakeLLM:
         self,
         reply: str = "",
         extraction: dict[str, Any] | None = None,
+        triage_decision: dict[str, Any] | None = None,
         language: str | None = "en",
     ) -> None:
         self.reply = reply
         self.extraction = extraction or {}
+        self.triage_decision = triage_decision or {}
         self.language: str | None = language
         self.voice_transcript = ""
         self.last_prompt = ""
@@ -51,6 +53,7 @@ class FakeLLM:
         return LLMResponse(
             reply_text=self.reply,
             extraction_json=self.extraction,
+            triage_decision_json=self.triage_decision,
             language=self.language or "",
         )
 
@@ -58,5 +61,6 @@ class FakeLLM:
         return LLMResponse(
             reply_text=self.voice_transcript or self.reply,
             extraction_json=self.extraction,
+            triage_decision_json=self.triage_decision,
             language=self.language or "",
         )

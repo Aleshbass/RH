@@ -1,4 +1,5 @@
 from app.models.admin import Admin
+from app.models.appointment_reminder import AppointmentReminder
 from app.models.audit_log import AuditEvent
 from app.models.availability_slot import AvailabilitySlot
 from app.models.base import Base
@@ -33,6 +34,7 @@ from app.models.types import (
 
 __all__ = [
     "Admin",
+    "AppointmentReminder",
     "AuditEvent",
     "AvailabilitySlot",
     "AuditKind",

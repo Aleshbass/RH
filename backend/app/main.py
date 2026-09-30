@@ -10,6 +10,7 @@ from app.api.internal.receipts import router as receipts_router
 from app.api.internal.rh_safety_eligibility import router as rh_safety_eligibility_router
 from app.api.internal.rh_events import router as rh_events_router
 from app.api.internal.simulate import router as simulate_router
+from app.api.internal.dev_console import router as dev_console_router
 from app.api.webhooks.paystack import router as paystack_router
 from app.api.webhooks.whatsapp import router as whatsapp_router
 
@@ -24,6 +25,7 @@ app.include_router(health_router)
 app.include_router(whatsapp_router)
 app.include_router(paystack_router)
 app.include_router(simulate_router)
+app.include_router(dev_console_router)
 app.include_router(jobs_router)
 app.include_router(admin_panel_router)
 app.include_router(physio_profile_router)

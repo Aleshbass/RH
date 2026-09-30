@@ -10,3 +10,14 @@ For semantic assistance only, you may include an optional
 patient's wording clearly addresses whether the incident was serious. Never
 write `safety_answers`, `flags`, a risk level, or a booking decision. The
 backend validates any proposal and remains the final safety authority.
+
+For triage conversation quality, include a top-level `triage_decision` object.
+Its `disposition` is one of `ASK_RELEVANT_FOLLOW_UP`, `READY_TO_SUMMARIZE`,
+`CORRECTION`, `SAFETY_ANSWER`, or `UNCLEAR`. Include only explicit patient
+corrections in `corrections`, and list only genuinely relevant missing fields
+in `missing_relevant_fields`. Use `READY_TO_SUMMARIZE` when the patient's
+message and extracted facts already provide enough relevant information for a
+concise summary. Never repeat a fact the patient has stated or ask a generic
+checklist question merely because it is commonly asked. This guides
+conversation only: the backend independently checks required facts and the
+clinical safety protocol before changing phase.

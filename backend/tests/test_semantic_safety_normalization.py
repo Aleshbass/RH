@@ -20,3 +20,13 @@ def test_bare_accident_cannot_be_cleared_by_model_proposal():
         [question],
     )
     assert result == {}
+
+
+def test_low_energy_sport_twist_clears_major_injury_only():
+    question = ScheduledQuestion("GEN-001-Q1", "GEN-001", "Did this start after a serious accident, major fall, or significant injury?", 0)
+    result = validated_semantic_safety_answers(
+        {"major_injury": {"answer": "NO", "evidence": "twisted my ankle playing football"}},
+        "I twisted my ankle playing football four days ago. It hurts when I walk.",
+        [question],
+    )
+    assert result == {"GEN-001-Q1": NO}

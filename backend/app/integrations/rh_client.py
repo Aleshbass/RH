@@ -158,19 +158,85 @@ class RHConvexReadClient:
         return data
 
 
+class RHConvexGatewayClient:
+    """Signed, allowlisted Joy -> RH Convex operational gateway.
+
+    This client intentionally has no facility for choosing a Convex function
+    name. ``operation`` is restricted by RH's HTTP actions and every request
+    has a nonce, so this credential cannot become a database/admin key.
+    """
+
+    def __init__(self, base_url: str, hmac_secret: str, *, client: httpx.Client | None = None) -> None:
+        if not base_url or not hmac_secret:
+            raise RHIntegrationError("INTEGRATION_NOT_CONFIGURED", "RH Convex gateway credentials are not configured")
+        self.base_url = base_url.rstrip("/")
+        self.hmac_secret = hmac_secret.encode("utf-8")
+        self.client = client or httpx.Client(timeout=10.0)
+
+    def call(self, operation: str, payload: dict[str, Any]) -> Any:
+        path = f"/joy-integration/{operation}"
+        raw_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        timestamp = str(int(time.time()))
+        nonce = str(uuid4())
+        signature = hmac.new(
+            self.hmac_secret,
+            "\n".join(["POST", path, timestamp, nonce, raw_body.decode("utf-8")]).encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        try:
+            response = self.client.post(
+                f"{self.base_url}{path}", content=raw_body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Joy-Gateway-Timestamp": timestamp,
+                    "X-Joy-Gateway-Nonce": nonce,
+                    "X-Joy-Gateway-Signature": signature,
+                },
+            )
+        except httpx.HTTPError as error:
+            raise RHIntegrationError("DEPENDENCY_UNAVAILABLE", "RH Convex booking service is unavailable", retryable=True) from error
+        if not response.is_success:
+            code = "RH_CONVEX_GATEWAY_REJECTED"
+            if response.status_code == 401:
+                code = "RH_CONVEX_GATEWAY_UNAUTHORIZED"
+            elif response.status_code == 409:
+                code = "RH_CONVEX_GATEWAY_CONFLICT"
+            logger.warning("joy_convex_gateway_failed", extra={"operation": operation, "status": response.status_code})
+            raise RHIntegrationError(code, "RH Convex booking service rejected the request", retryable=response.status_code >= 500)
+        try:
+            return response.json()
+        except ValueError as error:
+            raise RHIntegrationError("INVALID_RESPONSE", "RH Convex booking service returned invalid JSON", retryable=True) from error
+
+
 class RHClient:
     _circuit_open_until: dict[str, float] = {}
     _consecutive_failures: dict[str, int] = {}
     _failure_threshold = 3
     _cooldown_seconds = 30.0
-    def __init__(self, base_url: str, key_id: str, hmac_secret: str, *, client: httpx.Client | None = None, read_client: RHConvexReadClient | None = None) -> None:
+    def __init__(self, base_url: str, key_id: str, hmac_secret: str, *, client: httpx.Client | None = None, read_client: RHConvexReadClient | None = None, gateway_client: RHConvexGatewayClient | None = None) -> None:
         if not base_url or not key_id or not hmac_secret:
             raise RHIntegrationError("INTEGRATION_NOT_CONFIGURED", "RH integration credentials are not configured")
         self.base_url = base_url.rstrip("/")
         self.key_id = key_id
         self.hmac_secret = hmac_secret.encode("utf-8")
-        self.client = client or httpx.Client(timeout=10.0)
+        # Payment initialization may include a cold local Next.js route and a
+        # Paystack round trip. Ten seconds let RH finish (and log HTTP 200)
+        # while Joy timed out just before receiving it. Keep the operational
+        # dependency bounded, but allow enough headroom for that server-side
+        # work; interactive triage never uses this client.
+        self.client = client or httpx.Client(timeout=20.0)
         self.read_client = read_client
+        self.gateway_client = gateway_client
+
+    @property
+    def uses_direct_convex_gateway(self) -> bool:
+        return self.gateway_client is not None
+
+    def _gateway(self, operation: str, payload: dict[str, Any]) -> Any:
+        if self.gateway_client is None:
+            raise RHIntegrationError("INTEGRATION_NOT_CONFIGURED", "RH Convex gateway is not configured")
+        return self.gateway_client.call(operation, payload)
 
     @staticmethod
     def _canonical(method: str, path: str, timestamp: str, request_id: str, idempotency_key: str, actor_context: str, raw_body: bytes) -> bytes:
@@ -263,7 +329,10 @@ class RHClient:
         payload: dict[str, Any] = {"phone": phone, "joy_person_id": joy_person_id, "actor": actor.as_payload()}
         if name: payload["name"] = name
         if email: payload["email"] = email
-        data = self._request("POST", "/api/v1/joy/patients/resolve", payload=payload)
+        if self.gateway_client:
+            data = self._gateway("resolve_patient", {key: value for key, value in payload.items() if key != "actor"})
+        else:
+            data = self._request("POST", "/api/v1/joy/patients/resolve", payload=payload)
         return PatientResolution(resolution=data["resolution"], patient_id=data.get("patient_id"), display_name=data.get("display_name"))
 
     def resolve_referral_context(
@@ -293,6 +362,9 @@ class RHClient:
         return RHReferralContext(resolution=resolution, referral=referral)
 
     def resolve_physiotherapist(self, phone: str, actor: RHActor) -> PhysiotherapistResolution:
+        if self.gateway_client:
+            data = self._gateway("resolve_physiotherapist", {"phone": phone})
+            return PhysiotherapistResolution(resolution=data["resolution"], physiotherapist_id=data.get("physiotherapist_id"), rh_user_id=data.get("rh_user_id"), display_name=data.get("display_name"), capabilities=data.get("capabilities"))
         data = self._read_or_api(
             "resolve_physiotherapist", {"phone": phone}, method="POST", path="/api/v1/joy/physiotherapists/resolve",
             api_payload={"phone": phone, "actor": actor.as_payload()},
@@ -316,6 +388,9 @@ class RHClient:
         )
 
     def update_patient_location(self, patient_id: str, *, city: str, area: str, actor: RHActor) -> None:
+        if self.gateway_client:
+            self._gateway("update_patient_location", {"patient_id": patient_id, "city": city, "area": area})
+            return
         self._request(
             "PATCH",
             f"/api/v1/joy/patients/{patient_id}/location",
@@ -333,7 +408,10 @@ class RHClient:
             payload["city"] = city
         if area:
             payload["area"] = area
-        if self.read_client:
+        if self.gateway_client:
+            direct_payload = {key: value for key, value in payload.items() if key not in {"actor", "assessment_id", "assessment_revision"}}
+            data = {"providers": self._gateway("find_matches", direct_payload)}
+        elif self.read_client:
             try:
                 direct_providers = self.read_client.query("find_matches", {key: value for key, value in payload.items() if key != "actor"})
             except RHIntegrationError as error:
@@ -353,6 +431,11 @@ class RHClient:
         ) for item in providers if isinstance(item, dict)]
 
     def availability(self, physiotherapist_id: str, *, start_ms: int, end_ms: int, duration_minutes: int, service_mode: str) -> dict[str, Any]:
+        if self.gateway_client:
+            return self._gateway("resolve_availability_profile", {
+                "physiotherapist_id": physiotherapist_id, "start": start_ms, "end": end_ms,
+                "duration_minutes": duration_minutes, "service_mode": service_mode,
+            })
         if self.read_client:
             direct_payload = {
                 "physiotherapist_id": physiotherapist_id, "start": start_ms, "end": end_ms,
@@ -372,7 +455,7 @@ class RHClient:
         # canonical target at a proxy boundary.
         return self._request("GET", path)
 
-    def create_pending_booking(self, *, patient_id: str, physiotherapist_id: str, slot_start: int, duration_minutes: int, service_mode: str, session_type: str, triage_summary_reference: str, assessment_id: str, assessment_revision: int, protocol_version: str, policy_version: str, policy_acceptance_reference: str, conversation_id: str, actor: RHActor, idempotency_key: str, required_specialties: list[str], patient_address: str | None = None) -> RHBooking:
+    def create_pending_booking(self, *, patient_id: str, physiotherapist_id: str, slot_start: int, duration_minutes: int, service_mode: str, session_type: str, triage_summary_reference: str, assessment_id: str, assessment_revision: int, protocol_version: str, policy_version: str, policy_acceptance_reference: str, conversation_id: str, actor: RHActor, idempotency_key: str, required_specialties: list[str], patient_address: str | None = None, eligibility_reference: str | None = None) -> RHBooking:
         payload: dict[str, Any] = {
             "patient_id": patient_id, "physiotherapist_id": physiotherapist_id, "slot_start": slot_start,
             "duration_minutes": duration_minutes, "service_mode": service_mode, "session_type": session_type,
@@ -384,7 +467,19 @@ class RHClient:
         }
         if patient_address:
             payload["patient_address"] = patient_address
-        data = self._request("POST", "/api/v1/joy/bookings", payload=payload, idempotency_key=idempotency_key)
+        if self.gateway_client:
+            if not eligibility_reference:
+                raise RHIntegrationError("SAFETY_ELIGIBILITY_REQUIRED", "A current Joy safety eligibility reference is required")
+            direct_payload = {key: value for key, value in payload.items() if key != "actor"}
+            direct_payload.update({
+                "conversation_id": direct_payload.pop("joy_conversation_id"),
+                "eligibility_reference": eligibility_reference,
+                "request_id": str(uuid4()),
+                "idempotency_key": idempotency_key,
+            })
+            data = self._gateway("create_pending_booking", direct_payload)
+        else:
+            data = self._request("POST", "/api/v1/joy/bookings", payload=payload, idempotency_key=idempotency_key)
         return RHBooking(booking_id=data["booking_id"], booking_status=data["booking_status"], payment_status=data["payment_status"], amount_kobo=int(data["amount_kobo"]), hold_expires_at=data.get("hold_expires_at"))
 
     def initialize_booking_payment(self, booking_id: str, *, patient_id: str, email: str, actor: RHActor, idempotency_key: str) -> RHPaymentInitialization:
@@ -394,6 +489,8 @@ class RHClient:
         return RHPaymentInitialization(booking_id=data["booking_id"], reference=data["reference"], authorization_url=data["authorization_url"], payment_status=data["payment_status"])
 
     def booking_status(self, booking_id: str, *, patient_id: str) -> dict[str, Any]:
+        if self.gateway_client:
+            return self._gateway("get_booking", {"booking_id": booking_id, "patient_id": patient_id})
         if self.read_client:
             return self._read_or_api(
                 "get_booking", {"booking_id": booking_id, "patient_id": patient_id}, method="GET",
@@ -402,6 +499,8 @@ class RHClient:
         return self._request("GET", f"/api/v1/joy/bookings/{booking_id}?persona=patient&patient_id={patient_id}")
 
     def cancel_booking(self, booking_id: str, *, patient_id: str, reason: str, actor: RHActor, idempotency_key: str) -> dict[str, Any]:
+        if self.gateway_client:
+            return self._gateway("cancel_booking", {"booking_id": booking_id, "patient_id": patient_id, "reason": reason, "idempotency_key": idempotency_key})
         return self._request("POST", f"/api/v1/joy/bookings/{booking_id}/cancel", payload={"patient_id": patient_id, "reason": reason, "actor": actor.as_payload()}, idempotency_key=idempotency_key)
 
     def replacement_candidates(self, booking_id: str, *, patient_id: str, actor: RHActor) -> list[RHMatch]:
@@ -425,6 +524,8 @@ class RHClient:
     # endpoint is a fixed RH allowlist; this small client helper keeps callers
     # from constructing raw Convex requests or trusting browser credentials.
     def operational_query(self, operation: str, *, actor: RHActor, data: dict[str, Any]) -> dict[str, Any]:
+        if self.gateway_client:
+            return self._gateway("operational_query", {"operation": operation, "data": data})
         payload = {"operation": operation, "mutation": False, "actor": actor.as_payload(), "data": data}
         return self._request("POST", "/api/v1/joy/operations", payload=payload)
 
@@ -436,6 +537,8 @@ class RHClient:
         data: dict[str, Any],
         idempotency_key: str,
     ) -> dict[str, Any]:
+        if self.gateway_client:
+            return self._gateway("operational_mutation", {"operation": operation, "data": data, "request_id": str(uuid4())})
         payload = {"operation": operation, "mutation": True, "actor": actor.as_payload(), "data": data}
         return self._request("POST", "/api/v1/joy/operations", payload=payload, idempotency_key=idempotency_key)
 
@@ -449,9 +552,14 @@ def configured_rh_client() -> RHClient:
         RHConvexReadClient(settings.rh_convex_read_base_url, settings.rh_convex_read_hmac_secret)
         if settings.rh_convex_read_base_url and settings.rh_convex_read_hmac_secret else None
     )
+    gateway_client = (
+        RHConvexGatewayClient(settings.rh_convex_gateway_base_url, settings.rh_convex_gateway_hmac_secret)
+        if settings.rh_convex_gateway_base_url and settings.rh_convex_gateway_hmac_secret else None
+    )
     return RHClient(
         settings.rh_api_base_url,
         settings.rh_api_key_id,
         settings.rh_api_hmac_secret,
         read_client=read_client,
+        gateway_client=gateway_client,
     )

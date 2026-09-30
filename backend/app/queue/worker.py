@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.logger import append
 from app.conversation.turn_handler import handle_turn
+from app.conversation.turn_handler import provider_unavailable_reply
 from app.conversation.voice import (
     MAX_VOICE_SECONDS,
     VOICE_TOO_LONG_REPLY,
@@ -17,10 +19,16 @@ from app.conversation.voice import (
 from app.db import SessionLocal
 from app.llm.gemini_client import GeminiTimeoutError, LLMClient, get_llm_client
 from app.models.conversation import Message
+from app.models.appointment_reminder import AppointmentReminder
 from app.models.types import AuditKind, PatientPhase, TurnResult
+from app.booking.appointment_reminders import appointment_reminder_text
+from app.observability import elapsed_ms, log_event, timer_start
 from app.queue.tasks import (
     ADMIN_ESCALATION_QUEUE,
     BOOKING_CONFIRMED_QUEUE,
+    BOOKING_EMAIL_QUEUE,
+    BOOKING_EMAIL_PROCESSING_QUEUE,
+    BOOKING_EMAIL_DEAD_LETTER_QUEUE,
     BROADCAST_QUEUE,
     DEAD_LETTER_QUEUE,
     FAMILY_RELAY_QUEUE,
@@ -33,6 +41,8 @@ from app.queue.tasks import (
     PROCESSING_QUEUE,
     TAKEOVER_QUEUE,
     _redis,
+    appointment_email_idempotency_key,
+    send_appointment_email,
     send_whatsapp_text,
 )
 
@@ -87,6 +97,7 @@ def process_inbound(
     location_lat: float | None = None,
     location_lng: float | None = None,
 ) -> TurnResult | None:
+    turn_started = timer_start()
     existing = session.scalar(select(Message.id).where(Message.wa_message_id == wa_message_id))
     if existing is not None:
         return None
@@ -152,7 +163,7 @@ def process_inbound(
         )
 
     try:
-        return handle_turn(
+        result = handle_turn(
             session,
             phone,
             user_text,
@@ -161,21 +172,17 @@ def process_inbound(
             media=media,
             location=location,
         )
+        log_event("inbound.turn_completed", latency_ms=elapsed_ms(turn_started), channel="whatsapp")
+        return result
     except (GeminiTimeoutError, httpx.HTTPError, OSError):
-        return TurnResult(
-            reply_text=GEMINI_TIMEOUT_APOLOGY,
-            language="en",
-            phase=PatientPhase.FIRST_CONTACT,
-        )
+        log_event("inbound.provider_recovery", latency_ms=elapsed_ms(turn_started), error_type="transient")
+        return provider_unavailable_reply(session, phone, user_text, wa_message_id)
     except Exception:
         # A model-provider validation or availability error must not put a
         # patient message through retry/dead-letter without a WhatsApp reply.
         logger.exception("text triage provider failure for %s", wa_message_id)
-        return TurnResult(
-            reply_text=GEMINI_TIMEOUT_APOLOGY,
-            language="en",
-            phase=PatientPhase.FIRST_CONTACT,
-        )
+        log_event("inbound.provider_recovery", latency_ms=elapsed_ms(turn_started), error_type="unexpected")
+        return provider_unavailable_reply(session, phone, user_text, wa_message_id)
 
 
 def _claim(timeout: int) -> str | None:
@@ -311,6 +318,78 @@ def process_booking_confirmed_once(timeout: int = 1) -> bool:
     return _drain_text_queue(BOOKING_CONFIRMED_QUEUE, timeout=timeout)
 
 
+def recover_booking_email_processing() -> int:
+    """Return email jobs stranded by a worker crash to their source queue.
+
+    ``RPOPLPUSH`` protects a job while a worker is alive, but Redis cannot
+    know that a process died after claiming it.  The worker is intentionally
+    single-replica; on startup we put those unacknowledged jobs back for a
+    retry. Resend's idempotency key makes recovery safe if it had already
+    accepted an email before the crash.
+    """
+    client = _redis()
+    recovered = 0
+    while client.rpoplpush(BOOKING_EMAIL_PROCESSING_QUEUE, BOOKING_EMAIL_QUEUE):
+        recovered += 1
+    if recovered:
+        logger.warning("recovered %s unacknowledged booking email job(s)", recovered)
+    return recovered
+
+
+def process_booking_email_once(timeout: int = 1) -> bool:
+    client = _redis()
+    try:
+        payload_str = (
+            client.brpoplpush(
+                BOOKING_EMAIL_QUEUE, BOOKING_EMAIL_PROCESSING_QUEUE, timeout=timeout
+            )
+            if timeout > 0
+            else client.rpoplpush(BOOKING_EMAIL_QUEUE, BOOKING_EMAIL_PROCESSING_QUEUE)
+        )
+    except TimeoutError:
+        return False
+    if not payload_str:
+        return False
+    try:
+        payload = json.loads(payload_str)
+        subject = str(payload["subject"])
+        text = str(payload["text"])
+        booking_id = str(payload["booking_id"])
+        send_appointment_email(
+            str(payload["email"]),
+            subject,
+            text,
+            idempotency_key=appointment_email_idempotency_key(
+                booking_id=booking_id, subject=subject, text=text
+            ),
+        )
+    except Exception as exc:
+        client.lrem(BOOKING_EMAIL_PROCESSING_QUEUE, 1, payload_str)
+        try:
+            retry_payload = json.loads(payload_str)
+        except json.JSONDecodeError:
+            client.lpush(BOOKING_EMAIL_DEAD_LETTER_QUEUE, payload_str)
+            logger.exception("booking email payload was invalid")
+            return False
+        attempts = int(retry_payload.get("attempts") or 0) + 1
+        retry_payload["attempts"] = attempts
+        if attempts >= MAX_ATTEMPTS:
+            client.lpush(BOOKING_EMAIL_DEAD_LETTER_QUEUE, json.dumps(retry_payload))
+            logger.error(
+                "booking email moved to dead letter queue booking_id=%s attempts=%s error_type=%s",
+                retry_payload.get("booking_id"), attempts, type(exc).__name__,
+            )
+        else:
+            client.lpush(BOOKING_EMAIL_QUEUE, json.dumps(retry_payload))
+            logger.warning(
+                "booking email retry queued booking_id=%s attempts=%s error_type=%s",
+                retry_payload.get("booking_id"), attempts, type(exc).__name__,
+            )
+        return False
+    client.lrem(BOOKING_EMAIL_PROCESSING_QUEUE, 1, payload_str)
+    return True
+
+
 def process_physio_booking_alert_once(timeout: int = 1) -> bool:
     return _drain_text_queue(PHYSIO_BOOKING_ALERT_QUEUE, timeout=timeout)
 
@@ -343,6 +422,91 @@ def process_takeover_once(timeout: int = 1) -> bool:
     return _drain_text_queue(TAKEOVER_QUEUE, timeout=timeout)
 
 
+def process_appointment_reminders_once(
+    *, now: datetime | None = None, session: Session | None = None
+) -> int:
+    """Send each due appointment reminder once.
+
+    The schedule is stored in Postgres, so a worker restart cannot silently
+    discard reminders. A row is marked sent only after local/WhatsApp delivery
+    succeeds; a transient delivery failure remains pending for the next pass.
+    """
+    own_session = session is None
+    db = session or SessionLocal()
+    current = now or datetime.now(timezone.utc)
+    sent = 0
+    try:
+        due = db.scalars(
+            select(AppointmentReminder)
+            .where(
+                AppointmentReminder.status == "pending",
+                AppointmentReminder.reminder_at <= current,
+            )
+            .order_by(AppointmentReminder.reminder_at)
+            .with_for_update(skip_locked=True)
+            .limit(50)
+        ).all()
+        for reminder in due:
+            # A late worker must not send a misleading “starts in 30 minutes”
+            # notice after the appointment has already begun.
+            if reminder.session_start <= current:
+                reminder.status = "skipped"
+                append(
+                    db,
+                    kind=AuditKind.BOOKING,
+                    actor_phone="joy-worker",
+                    person_id=reminder.patient_id,
+                    payload={"event": "appointment_reminder_skipped_late", "booking_id": reminder.rh_booking_id},
+                )
+                continue
+            try:
+                text = appointment_reminder_text(reminder)
+                if reminder.whatsapp_sent_at is None:
+                    send_whatsapp_text(reminder.phone_e164, text)
+                    reminder.whatsapp_sent_at = current
+                    # Persist this channel before attempting email. If Resend
+                    # is temporarily unavailable, the next pass sends only
+                    # the missing email rather than repeating WhatsApp.
+                    db.commit()
+                if reminder.email and reminder.email_sent_at is None:
+                    send_appointment_email(
+                        reminder.email,
+                        "Reminder: your Rehabify appointment starts in 30 minutes",
+                        text,
+                        idempotency_key=appointment_email_idempotency_key(
+                            booking_id=reminder.rh_booking_id,
+                            subject="Reminder: your Rehabify appointment starts in 30 minutes",
+                            text=text,
+                            kind="reminder",
+                        ),
+                    )
+                    reminder.email_sent_at = current
+                    db.commit()
+            except Exception:
+                logger.exception("appointment reminder delivery failed for %s", reminder.rh_booking_id)
+                continue
+            reminder.status = "sent"
+            reminder.sent_at = current
+            append(
+                db,
+                kind=AuditKind.BOOKING,
+                actor_phone="joy-worker",
+                person_id=reminder.patient_id,
+                payload={"event": "appointment_reminder_sent", "booking_id": reminder.rh_booking_id},
+            )
+            sent += 1
+        if own_session:
+            db.commit()
+        return sent
+    except Exception:
+        if own_session:
+            db.rollback()
+        raise
+    finally:
+        if own_session:
+            db.close()
+
+
 def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
     client = _redis()
     try:
@@ -361,11 +525,20 @@ def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
 
 
 def run_forever(timeout: int = 5) -> None:
+    recover_booking_email_processing()
     while True:
+        try:
+            process_appointment_reminders_once()
+        except Exception:
+            logger.exception("appointment reminder job failed")
         try:
             process_booking_confirmed_once(timeout=0)
         except Exception:
             logger.exception("booking_confirmed job failed")
+        try:
+            process_booking_email_once(timeout=0)
+        except Exception:
+            logger.exception("booking email job failed")
         try:
             process_physio_booking_alert_once(timeout=0)
         except Exception:

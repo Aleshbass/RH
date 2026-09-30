@@ -1,0 +1,29 @@
+{
+  "version": "joy-triage-v1",
+  "scenarios": [
+    {"id":"sport-ankle-complete-story","category":"mechanism_already_known","messages":["I twisted my ankle playing football 4 days ago. The swelling is improving, but it still hurts when I walk. I have no numbness, weakness, fever, severe pain, or other emergency symptoms. I'd like physiotherapy to return to sport safely."],"expect":{"onset":"4 days","body_location":"ankle","must_not_repeat":"serious accident"}},
+    {"id":"minor-car-knee-assessed","category":"mechanism_already_known","messages":["I was in a minor car accident 10 days ago and hurt my knee. The hospital said there was no fracture. No numbness, weakness, fever, or worsening pain."],"expect":{"body_location":"knee","must_not_repeat":"serious accident"}},
+    {"id":"natural-negative-none-at-all","category":"natural_safety_negative","messages":["none at all"],"expect":{"safety_answer":"NO"}},
+    {"id":"natural-negative-not-really","category":"natural_safety_negative","messages":["not really, none of those symptoms"],"expect":{"safety_answer":"NO"}},
+    {"id":"numbered-safety-answer","category":"numbered_safety","messages":["1 No, 2 No, 3 Unsure"],"expect":{"numbered_answers":true}},
+    {"id":"severity-direct","category":"severity","messages":["It is 6 out of 10."],"expect":{"severity":6}},
+    {"id":"severity-correction","category":"severity_correction","messages":["severity is not 1, it's 4"],"expect":{"severity":4,"correction":true}},
+    {"id":"severity-numbered-answer-not-score","category":"severity","messages":["1. No"],"expect":{"severity":null}},
+    {"id":"onset-natural-ago","category":"onset","messages":["I injured it playing football 4 days ago."],"expect":{"onset":"4 days"}},
+    {"id":"goal-return-sport","category":"goal","messages":["I'd like physiotherapy to return to sport safely."],"expect":{"goal_contains":"return to sport"}},
+    {"id":"lower-back-red-flags-negative","category":"back_safety","messages":["I have lower back pain for 3 days. No fever, numbness, weakness, bladder or bowel changes, or emergency symptoms."],"expect":{"body_location":"lower back"}},
+    {"id":"possible-cauda-equina","category":"red_flag","messages":["My back pain comes with numbness around my groin and I cannot control my bladder."],"expect":{"must_escalate":true}},
+    {"id":"post-operative-care","category":"post_surgical","messages":["I had knee surgery two weeks ago and need help walking comfortably again."],"expect":{"condition_area":"post_surgical"}},
+    {"id":"neuro-stroke","category":"non_msk","messages":["My mother had a stroke and needs help improving movement in her arm."],"expect":{"condition_area":"neuro"}},
+    {"id":"respiratory-rehab","category":"non_msk","messages":["I get breathless after a chest illness and was referred for rehabilitation."],"expect":{"condition_area":"cardiorespiratory"}},
+    {"id":"paediatric-rehab","category":"non_msk","messages":["My child needs physiotherapy to improve walking after a developmental delay."],"expect":{"condition_area":"paediatric"}},
+    {"id":"summary-confirm","category":"confirmation","messages":["yes, that summary is right"],"expect":{"summary_confirm":true}},
+    {"id":"summary-correction","category":"confirmation","messages":["No, it is my right knee, not my left knee."],"expect":{"correction":true}},
+    {"id":"short-contextual-ok","category":"contextual_reply","messages":["okay"],"expect":{"requires_existing_context":true}},
+    {"id":"short-contextual-second","category":"contextual_reply","messages":["the second one"],"expect":{"requires_existing_context":true}},
+    {"id":"online-session","category":"booking_handoff","messages":["online"],"expect":{"requires_post_triage_context":true}},
+    {"id":"slot-selection","category":"booking_handoff","messages":["3"],"expect":{"requires_post_triage_context":true}},
+    {"id":"provider-timeout","category":"resilience","messages":["My shoulder hurts after lifting a box yesterday."],"expect":{"fallback_must_preserve_context":true}},
+    {"id":"malformed-model-json","category":"resilience","messages":["I have ankle pain after running."],"expect":{"fallback_must_preserve_context":true}}
+  ]
+}

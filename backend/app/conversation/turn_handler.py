@@ -1,6 +1,7 @@
 import json
 import re
 import hashlib
+from time import perf_counter
 from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import select
@@ -18,6 +19,7 @@ from app.audit.logger import append
 from app.booking.booking_flow import (
     AWAITING_PAYMENT,
     AWAITING_RH_LOCATION,
+    AWAITING_RH_PAYMENT_EMAIL,
     AWAITING_RH_PAYMENT,
     AWAITING_RH_PROVIDER,
     AWAITING_RH_SERVICE_MODE,
@@ -38,6 +40,7 @@ from app.identity.permissions import authorize
 from app.identity.resolver import resolve
 from app.identity.unknown_sender import resolve_unknown_sender
 from app.llm.gemini_client import LLMClient
+from app.observability import elapsed_ms, log_event
 from app.llm.prompt_builder import build
 from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
 from app.integrations.typesafe_client import TypeSafeClient, TypeSafeError
@@ -59,7 +62,10 @@ from app.models.types import (
     TurnResult,
 )
 from app.safety.protocol_runtime import UNCLEAR, NO, YES, ScheduledQuestion, normalize_answer, schedule_questions
-from app.safety.semantic_normalization import validated_semantic_safety_answers
+from app.safety.semantic_normalization import (
+    clearly_non_major_sport_mechanism,
+    validated_semantic_safety_answers,
+)
 from app.safety.escalation import notify_family_on_safety, patient_message
 from app.safety.evaluator import evaluate
 from app.physio.availability import apply_availability_turn
@@ -78,6 +84,9 @@ from app.triage.extraction import (
 )
 from app.triage.question_batching import grouped_followup, missing_fields
 from app.triage.summary import plain_summary
+from app.triage.turn_decision import TriageTurnDecision
+from app.conversation.triage_state_reducer import reduce_triage_turn
+from app.conversation.response_strategy import grounded_triage_ack
 
 _YES_RE = re.compile(
     r"\b(yes|yeah|yep|yup|yea|yh|ya|ok|okay|sure|alright)\b",
@@ -119,6 +128,29 @@ _DASHBOARD_REPLY = (
     "That lives on the web dashboard, not WhatsApp. I can't edit bio, photo, pricing, or credentials here."
 )
 _REFERRAL_CODE_RE = re.compile(r"\bRHB\s*[-–—]\s*(\d{4,})\b", re.IGNORECASE)
+_GREETING_ONLY_RE = re.compile(
+    r"^\s*(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))"
+    r"(?:\s+(?:joy|there))?[!,.\s]*$",
+    re.IGNORECASE,
+)
+_THANKS_ONLY_RE = re.compile(
+    r"^\s*(?:thanks?|thank\s+you|tnx|thnx|tanks)(?:\s+(?:joy|so\s+much|a\s+lot))?[!,.\s]*$",
+    re.IGNORECASE,
+)
+_FIRST_CONTACT_WELCOME = (
+    "Hi, I’m Joy, Rehabify’s physiotherapy assistant. "
+    "Tell me what is bothering you or what you would like help with."
+)
+
+
+def _is_greeting_only(user_text: str) -> bool:
+    """Keep a greeting out of the clinical-triage and model paths."""
+    return bool(_GREETING_ONLY_RE.fullmatch(user_text or ""))
+
+
+def _is_thanks_only(user_text: str) -> bool:
+    """Acknowledge gratitude without treating it as a clinical update."""
+    return bool(_THANKS_ONLY_RE.fullmatch(user_text or ""))
 
 
 def _verified_referral_turn(
@@ -783,7 +815,7 @@ def _narrative_no_answers(
     """
     narrative = (user_text or "").casefold()
     scopes = [match.group(1).casefold().split(" but ", 1)[0] for match in _NEGATED_SAFETY_SCOPE_RE.finditer(user_text or "")]
-    if not scopes:
+    if not scopes and not clearly_non_major_sport_mechanism(narrative):
         return {}
 
     # This is a narrow, clinically corroborated semantic negative—not a
@@ -795,6 +827,7 @@ def _narrative_no_answers(
         and re.search(r"\b(?:hospital|doctor|clinic|x-?ray)\b", narrative)
         and any(phrase in narrative for phrase in ("no fracture", "nothing was broken", "nothing broken", "no broken bone"))
     )
+    low_energy_sport_mechanism = clearly_non_major_sport_mechanism(narrative)
 
     def denied(*terms: str) -> bool:
         return any(any(term in scope for term in terms) for scope in scopes)
@@ -804,7 +837,9 @@ def _narrative_no_answers(
         for question in questions:
             text = question.text.casefold()
             if ("accident" in text or "injury" in text or "fall" in text) and (
-                denied("accident", "injury", "fall", "collision") or minor_assessed_incident
+                denied("accident", "injury", "fall", "collision")
+                or minor_assessed_incident
+                or low_energy_sport_mechanism
             ):
                 answers[question.id] = NO
             elif "bladder" in text or "bowel" in text:
@@ -837,6 +872,15 @@ def _safety_prompt(extracted: ExtractedTriage) -> str:
     )
 
 
+def _can_skip_model_for_safety_reply(extracted: ExtractedTriage, user_text: str) -> bool:
+    """Recognise a compact reply to the already displayed safety screen."""
+    return bool(_safety_screen(extracted)) and normalize_answer(user_text) in {
+        YES,
+        NO,
+        UNCLEAR,
+    }
+
+
 def _triage_summary_prompt(extracted: ExtractedTriage) -> str:
     summary = plain_summary(extracted)
     return f"{summary}\n\nDoes that summary look right? Reply Yes to continue to the Consultation & Booking Policy, or tell me what to correct."
@@ -846,7 +890,7 @@ def _stage_for_booking_substate(substate: str | None) -> ConversationStage | Non
     """Keep the stage machine aligned with the deterministic booking state."""
     if substate in {AWAITING_RH_SLOT, AWAITING_SLOT_MODE}:
         return ConversationStage.SLOT_SELECTION
-    if substate in {AWAITING_RH_PAYMENT, AWAITING_PAYMENT}:
+    if substate in {AWAITING_RH_PAYMENT_EMAIL, AWAITING_RH_PAYMENT, AWAITING_PAYMENT}:
         return ConversationStage.AWAITING_PAYMENT
     if substate in {
         AWAITING_RH_SERVICE_MODE,
@@ -946,6 +990,58 @@ def _reply_after_extract(
     _store_summary(session, state, summary)
     _set_triage_status(session, state, "summarised")
     return summary, PatientPhase.POST_TRIAGE
+
+
+def provider_unavailable_reply(
+    session: Session, phone: str, user_text: str, wa_message_id: str | None = None
+) -> TurnResult:
+    """Continue a known patient flow safely when text generation is unavailable.
+
+    This deliberately uses only deterministic state and parsers.  It never
+    guesses clinical facts, confirms a booking, or bypasses the safety engine.
+    """
+    identity = resolve(session, phone)
+    if identity is None or identity.persona != Persona.PATIENT:
+        return TurnResult(reply_text="Sorry, I had a brief hiccup. Please send that again in a moment.", language="en", phase=PatientPhase.FIRST_CONTACT)
+    state = load(session, identity)
+    language = mirror_language(user_text, state.last_known_language)
+    extracted = _apply_inferred_area(enrich_from_user_text(state.extracted, user_text))
+    # Preserve the same deterministic immediate red-flag handling used during
+    # human takeover; a provider outage must never downgrade a clear urgent
+    # phrase into an ordinary follow-up question.
+    flags = flags_from_triage_text(user_text)
+    if flags:
+        extracted = merge_extraction(extracted, {"flags": flags})
+    safety = evaluate(extracted)
+    if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
+        return _amber_specialist_reply(
+            session, identity, state, user_text, extracted, safety, state.phase, language, wa_message_id
+        )
+    if safety.fired:
+        return _safety_fire_reply(
+            session, identity, state, user_text, extracted, safety, state.phase, language, wa_message_id
+        )
+    scheduled = schedule_questions(extracted)
+    if scheduled:
+        reply, phase = _safety_prompt(extracted), PatientPhase.MID_TRIAGE
+    elif extracted.severity is None and has_narrative(extracted):
+        reply, phase = "Could you rate how bad it feels from 1 to 10?", PatientPhase.MID_TRIAGE
+    else:
+        missing = missing_fields(extracted)
+        followup = grouped_followup(missing)
+        if followup:
+            reply, phase = f"Thanks for explaining. {followup}", PatientPhase.MID_TRIAGE
+        else:
+            reply, phase = grounded_triage_ack("", extracted), state.phase
+    append(
+        session,
+        kind=AuditKind.TRIAGE,
+        actor_phone=identity.phone_e164,
+        person_id=identity.person_id,
+        payload={"event": "provider_unavailable_stateful_recovery", "phase": phase.value},
+    )
+    save_turn(session, state, user_text, reply, extracted, phase, language, wa_message_id)
+    return TurnResult(reply_text=reply, language=language, phase=phase, extracted=extracted, safety=safety)
 
 
 def _physio_turn(
@@ -1293,6 +1389,53 @@ def handle_turn(
 
     state = load(session, identity)
     language = mirror_language(user_text, state.last_known_language)
+
+    # A greeting contains no clinical narrative. Handle it locally so Gemini
+    # cannot turn “hey Joy” into a misleading acknowledgement that implies the
+    # person has already described a problem.
+    if (
+        identity.persona == Persona.PATIENT
+        and state.phase == PatientPhase.FIRST_CONTACT
+        and not has_narrative(state.extracted)
+        and _is_greeting_only(user_text)
+    ):
+        save_turn(
+            session,
+            state,
+            user_text,
+            _FIRST_CONTACT_WELCOME,
+            state.extracted,
+            PatientPhase.FIRST_CONTACT,
+            language,
+            wa_message_id,
+            stage=ConversationStage.STORY_CAPTURE,
+        )
+        return TurnResult(
+            reply_text=_FIRST_CONTACT_WELCOME,
+            language=language,
+            phase=PatientPhase.FIRST_CONTACT,
+            extracted=state.extracted,
+        )
+
+    if identity.persona == Persona.PATIENT and _is_thanks_only(user_text):
+        conversation = session.get(Conversation, state.conversation_id)
+        context = dict(conversation.booking_context or {}) if conversation else {}
+        booking_id = context.get("rh_booking_id")
+        if context.get("rh_booking_status") == "confirmed" and isinstance(booking_id, str):
+            reply = (
+                "You’re welcome. Your appointment is confirmed. "
+                f"Your booking code is {booking_id}. Let me know if you need anything before the session."
+            )
+        else:
+            reply = "You’re welcome. I’m here if you need anything else."
+        save_turn(
+            session, state, user_text, reply, state.extracted, state.phase,
+            language, wa_message_id, stage=state.stage,
+        )
+        return TurnResult(
+            reply_text=reply, language=language, phase=state.phase, extracted=state.extracted,
+        )
+
     referral_turn = _verified_referral_turn(
         session, identity, state, user_text, language, wa_message_id
     )
@@ -1324,18 +1467,67 @@ def handle_turn(
             wa_message_id,
         )
 
+    # An active booking flow is code-owned. Do this before Gemini extraction:
+    # compact replies such as ``online``, ``3``, and a receipt email are not
+    # new clinical narratives and must never be reinterpreted as triage.
+    # This also keeps payment and slot transitions available if the model is
+    # slow or unavailable.
+    if identity.persona == Persona.PATIENT and decide_booking_substate(state):
+        patient = session.get(Patient, identity.person_id)
+        if patient is not None:
+            booking_reply = handle_booking_turn(
+                session,
+                state,
+                patient,
+                state.extracted,
+                user_text,
+                paystack=paystack,
+            )
+            if booking_reply is not None:
+                current = session.get(Conversation, state.conversation_id)
+                booking_stage = _stage_for_booking_substate(
+                    current.booking_substate if current is not None else None
+                )
+                stage = assert_transition(
+                    state.stage,
+                    booking_stage or ConversationStage.SPECIALIST_MATCHING,
+                )
+                save_turn(
+                    session,
+                    state,
+                    user_text,
+                    booking_reply,
+                    state.extracted,
+                    PatientPhase.POST_TRIAGE,
+                    language,
+                    wa_message_id,
+                    stage=stage,
+                )
+                return TurnResult(
+                    reply_text=booking_reply,
+                    language=language,
+                    phase=PatientPhase.POST_TRIAGE,
+                    extracted=state.extracted,
+                    blocked_by_safety=False,
+                )
+
     # A bare 0–10 answer after the completed deterministic safety screen is
     # entirely code-owned. Calling Gemini for it adds latency and makes this
     # critical triage transition depend on provider availability.
     reported_severity = parse_severity_from_text(user_text)
     can_skip_model_for_severity = (
         reported_severity is not None
-        and state.extracted.severity is None
         and has_narrative(state.extracted)
         and not schedule_questions(state.extracted)
     )
+    can_skip_model_for_safety_reply = _can_skip_model_for_safety_reply(
+        state.extracted, user_text
+    )
     if can_skip_model_for_severity:
         model_extraction = {"severity": reported_severity}
+        candidate_reply = ""
+    elif can_skip_model_for_safety_reply:
+        model_extraction = {}
         candidate_reply = ""
     else:
         extra_context = ""
@@ -1344,16 +1536,60 @@ def handle_turn(
         extract_prompt = build(
             identity, state.stage, state.extracted, language, _user_history(state), "", extra_context
         )
+        model_started = perf_counter()
         response = llm.complete(extract_prompt, user_text)
+        log_event("triage.model_completed", latency_ms=elapsed_ms(model_started))
         language = response.language or language
         model_extraction = response.extraction_json
         candidate_reply = response.reply_text
+        decision_payload = response.triage_decision_json
 
-    extracted = _apply_inferred_area(merge_extraction(
-        state.extracted,
-        constrain_model_extraction(model_extraction, user_text),
-    ))
-    extracted = enrich_from_user_text(extracted, user_text)
+    if can_skip_model_for_severity or can_skip_model_for_safety_reply:
+        decision_payload = {}
+
+    # Gemini may omit a plainly stated region or category. Mine conservative
+    # facts from the current patient message before deciding which clinical
+    # pathway is missing; otherwise an obvious shoulder/ankle/knee narrative
+    # can be needlessly asked to choose between MSK and unrelated specialties.
+    extracted = enrich_from_user_text(
+        merge_extraction(
+            state.extracted,
+            constrain_model_extraction(model_extraction, user_text),
+        ),
+        user_text,
+    )
+    extracted = _apply_inferred_area(extracted)
+    reduction = reduce_triage_turn(
+        extracted,
+        user_text=user_text,
+        decision=TriageTurnDecision.from_untrusted(decision_payload),
+    )
+    extracted = reduction.extracted
+    append(
+        session,
+        kind=AuditKind.TRIAGE,
+        actor_phone=identity.phone_e164,
+        person_id=identity.person_id,
+        payload={
+            "event": "triage_turn_decision",
+            "disposition": reduction.decision.disposition.value,
+            "confidence": reduction.decision.confidence,
+            "suggested_missing_fields": reduction.decision.missing_relevant_fields[:8],
+        },
+    )
+    if reduction.corrections_applied:
+        append(
+            session,
+            kind=AuditKind.TRIAGE,
+            actor_phone=identity.phone_e164,
+            person_id=identity.person_id,
+            payload={
+                "event": "triage_correction_applied",
+                "fields": list(reduction.corrections_applied),
+                "disposition": reduction.decision.disposition.value,
+            },
+        )
+    candidate_reply = grounded_triage_ack(candidate_reply, extracted)
     extracted = _record_fact_sources(extracted, wa_message_id)
     # A bare affirmative/negative is mapped only to the first outstanding,
     # backend-scheduled question. Complex language is never guessed as NO.
