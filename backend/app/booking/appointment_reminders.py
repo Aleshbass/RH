@@ -13,6 +13,8 @@ from app.models.patient import Patient
 
 LAGOS = ZoneInfo("Africa/Lagos")
 REMINDER_LEAD = timedelta(minutes=30)
+THIRTY_MINUTES_BEFORE = "thirty_minutes_before"
+AT_APPOINTMENT_START = "at_appointment_start"
 
 
 def appointment_start_from_ms(value: int | float) -> datetime:
@@ -62,11 +64,30 @@ def appointment_confirmation_text(
 
 def appointment_reminder_text(reminder: AppointmentReminder) -> str:
     mode = "online " if reminder.service_mode == "online" else ""
+    attendance_instruction = "Please join now." if reminder.service_mode == "online" else "Please arrive now."
+    early_instruction = "Please join a few minutes early." if reminder.service_mode == "online" else "Please arrive a few minutes early."
+    if reminder.reminder_kind == AT_APPOINTMENT_START:
+        return (
+            f"Your {mode}appointment with {reminder.provider_name} starts now. "
+            f"Your booking code is {reminder.rh_booking_id}. "
+            f"{attendance_instruction}"
+        )
     return (
         f"Reminder: your {mode}appointment with {reminder.provider_name} starts in 30 minutes "
         f"at {format_lagos_appointment_time(reminder.session_start)}. "
         f"Your booking code is {reminder.rh_booking_id}. "
-        "Please join or arrive a few minutes early."
+        f"{early_instruction}"
+    )
+
+
+def appointment_rescheduled_text(
+    *, provider_name: str, session_start: datetime, duration_minutes: int, service_mode: str, booking_code: str,
+) -> str:
+    mode = "online " if service_mode == "online" else ""
+    return (
+        f"Your {mode}appointment with {provider_name} has been rescheduled to "
+        f"{format_lagos_appointment_time(session_start)} and will last {format_duration(duration_minutes)}. "
+        f"Your booking code is: {booking_code}. Your secure joining link remains the same."
     )
 
 
@@ -80,36 +101,63 @@ def schedule_appointment_reminder(
     service_mode: str,
     session_start: datetime,
     duration_minutes: int,
-) -> AppointmentReminder:
-    """Create/update exactly one reminder for an RH booking.
+) -> list[AppointmentReminder]:
+    """Create/update the 30-minute and appointment-start reminders for an RH booking.
 
     The schedule lives in Postgres, rather than a process timer, so a worker
     restart cannot lose a patient reminder.
     """
-    reminder = session.scalar(
-        select(AppointmentReminder).where(AppointmentReminder.rh_booking_id == rh_booking_id)
-    )
-    if reminder is None:
-        reminder = AppointmentReminder(
-            rh_booking_id=rh_booking_id,
-            patient_id=patient.id,
-            phone_e164=patient.phone_e164,
-            email=email,
-            provider_name=provider_name,
-            service_mode=service_mode,
-            session_start=session_start,
-            reminder_at=session_start - REMINDER_LEAD,
-            duration_minutes=duration_minutes,
-            status="pending",
-        )
-        session.add(reminder)
-        return reminder
-    if reminder.status != "sent":
-        reminder.phone_e164 = patient.phone_e164
-        reminder.email = email
-        reminder.provider_name = provider_name
-        reminder.service_mode = service_mode
-        reminder.session_start = session_start
-        reminder.reminder_at = session_start - REMINDER_LEAD
-        reminder.duration_minutes = duration_minutes
-    return reminder
+    existing = {
+        reminder.reminder_kind: reminder
+        for reminder in session.scalars(
+            select(AppointmentReminder).where(AppointmentReminder.rh_booking_id == rh_booking_id)
+        ).all()
+    }
+    now = datetime.now(timezone.utc)
+    reminders: list[AppointmentReminder] = []
+    for kind, reminder_at in (
+        (THIRTY_MINUTES_BEFORE, session_start - REMINDER_LEAD),
+        (AT_APPOINTMENT_START, session_start),
+    ):
+        reminder = existing.get(kind)
+        if reminder is None:
+            # A booking made less than 30 minutes before its start cannot get a
+            # truthful 30-minute reminder; it still receives the start-time one.
+            reminder = AppointmentReminder(
+                rh_booking_id=rh_booking_id,
+                reminder_kind=kind,
+                patient_id=patient.id,
+                phone_e164=patient.phone_e164,
+                email=email,
+                provider_name=provider_name,
+                service_mode=service_mode,
+                session_start=session_start,
+                reminder_at=reminder_at,
+                duration_minutes=duration_minutes,
+                status="skipped" if kind == THIRTY_MINUTES_BEFORE and reminder_at <= now else "pending",
+            )
+            session.add(reminder)
+        elif reminder.status != "sent":
+            reminder.phone_e164 = patient.phone_e164
+            reminder.email = email
+            reminder.provider_name = provider_name
+            reminder.service_mode = service_mode
+            reminder.session_start = session_start
+            reminder.reminder_at = reminder_at
+            reminder.duration_minutes = duration_minutes
+        elif reminder.session_start != session_start:
+            # A moved appointment needs fresh notifications at its new times;
+            # the previous delivery remains visible in the audit log.
+            reminder.phone_e164 = patient.phone_e164
+            reminder.email = email
+            reminder.provider_name = provider_name
+            reminder.service_mode = service_mode
+            reminder.session_start = session_start
+            reminder.reminder_at = reminder_at
+            reminder.duration_minutes = duration_minutes
+            reminder.status = "skipped" if kind == THIRTY_MINUTES_BEFORE and reminder_at <= now else "pending"
+            reminder.whatsapp_sent_at = None
+            reminder.email_sent_at = None
+            reminder.sent_at = None
+        reminders.append(reminder)
+    return reminders

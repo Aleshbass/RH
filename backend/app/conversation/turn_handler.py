@@ -25,9 +25,15 @@ from app.booking.booking_flow import (
     AWAITING_RH_SERVICE_MODE,
     AWAITING_RH_SLOT,
     AWAITING_SLOT_MODE,
+    AWAITING_POLICY_ACCEPTANCE,
+    AWAITING_TREATMENT_OPTION,
     OFFERING_MATCHES,
+    begin_selected_treatment,
     handle_booking_turn,
     offer_matches,
+    treatment_options_prompt,
+    _treatment_option,
+    _set_substate,
 )
 from app.conversation.language import mirror_language
 from app.conversation.orchestrator import decide_booking_substate, decide_phase, has_narrative
@@ -311,7 +317,7 @@ def _is_summary_confirm(user_text: str) -> bool:
 
 def _is_explicit_policy_acceptance(user_text: str) -> bool:
     """A summary 'yes' is intentionally insufficient consent."""
-    text = " ".join((user_text or "").casefold().split())
+    text = " ".join((user_text or "").casefold().split()).strip(".!,;: ")
     # The policy is presented immediately before this step, so a short,
     # unambiguous affirmative is easier to use on WhatsApp than requiring the
     # patient to repeat the policy title verbatim.
@@ -409,7 +415,17 @@ def _resend_safety_block(
             and _is_explicit_policy_acceptance(user_text)
         ):
             _mark_policy_accepted(session, state, actor_phone=identity.phone_e164, person_id=identity.person_id, message_id=wa_message_id)
-            reply = _start_paid_amber_review(session, identity, state)
+            context = dict(conversation.booking_context or {}) if conversation else {}
+            context["amber_review_awaiting_email"] = True
+            if conversation is not None:
+                conversation.booking_context = context
+            reply = "Your five-minute specialist safety review is ₦6,000. Please reply with the email address you want to use for your secure payment receipt."
+        elif context.get("amber_review_awaiting_email"):
+            email = user_text.strip().casefold()
+            if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or email.endswith(".invalid"):
+                reply = "Please reply with a valid email address for your secure payment receipt."
+            else:
+                reply = _start_paid_amber_review(session, identity, state, email=email)
         elif context.get("amber_review_id"):
             reply = "Your ₦6,000 specialist review payment is being verified. RH will assign an eligible reviewer and I’ll update you here."
     _audit_turn(session, identity, state.extracted, safety, phase)
@@ -505,7 +521,7 @@ def _safety_fire_reply(
     )
 
 
-def _start_paid_amber_review(session: Session, identity: Identity, state: ConversationState) -> str:
+def _start_paid_amber_review(session: Session, identity: Identity, state: ConversationState, *, email: str) -> str:
     """Create only the fixed-price RH review service; never a routine booking."""
     patient = session.get(Patient, identity.person_id)
     conversation = session.get(Conversation, state.conversation_id)
@@ -532,14 +548,15 @@ def _start_paid_amber_review(session: Session, identity: Identity, state: Conver
         )
         review_id = str(review["review_id"])
         payment = client.initialize_specialist_review_payment(
-            review_id, patient_id=mapping.rh_record_id, email=f"{patient.phone_e164}@patients.rehabify.invalid",
+            review_id, patient_id=mapping.rh_record_id, email=email,
             actor=RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=mapping.rh_record_id),
             idempotency_key=f"joy-amber-review-payment-{review_id}",
         )
     except (RHIntegrationError, KeyError):
         return "I can’t create the secure ₦6,000 review payment right now. Please try again shortly."
     context = dict(conversation.booking_context or {})
-    context.update({"amber_review_id": review_id, "amber_review_payment_url": payment.authorization_url})
+    context.update({"amber_review_id": review_id, "amber_review_payment_url": payment.authorization_url, "amber_review_email": email})
+    context.pop("amber_review_awaiting_email", None)
     conversation.booking_context = context
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id, payload={"decision": "amber_review_payment_created", "review_id": review_id, "amount_kobo": 600_000})
     return f"Your five-minute specialist review is ₦6,000. Pay securely here: {payment.authorization_url}\n\nAfter payment is verified, RH will assign an eligible reviewer and I’ll update you here."
@@ -704,12 +721,20 @@ def _present_policy(session: Session, state: ConversationState) -> str:
     }
     policy["presented_at"] = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     ctx[_POLICY_PRESENTED_KEY] = policy
-    conversation.booking_context = ctx
+    _set_substate(conversation, AWAITING_POLICY_ACCEPTANCE, ctx)
     state.booking_context = ctx
+    state.booking_substate = AWAITING_POLICY_ACCEPTANCE
     session.flush()
+    choice = str(ctx.get("treatment_option") or "")
+    next_step = (
+        "Before I create your short specialist safety review"
+        if ctx.get("amber_review_requested")
+        else "Before I create your consultation booking"
+        if choice in {"quick_initial", "full_virtual"}
+        else "Before I look for a home-visit specialist"
+    )
     return (
-        "Your triage summary is confirmed. Before I look for a specialist, please review "
-        f"our Consultation & Booking Policy: {policy['url']}\n\n"
+        f"{next_step}, please review our Consultation & Booking Policy: {policy['url']}\n\n"
         "Reply with ‘I accept’ when you are ready to continue."
     )
 
@@ -859,6 +884,32 @@ def _narrative_no_answers(
     return answers
 
 
+def _narrative_yes_answers(
+    user_text: str, screen: list[tuple[str, tuple[ScheduledQuestion, ...]]]
+) -> dict[str, str]:
+    """Safely recognise an affirmative answer expressed in natural language.
+
+    A patient should not need to format a serious answer as ``1 Yes``.  This
+    only ever records a positive answer for the already-presented warning
+    group; it never clears a question or makes a clinical inference.  A
+    positive therefore routes to the conservative safety outcome.
+    """
+    text = (user_text or "").casefold()
+    affirmative = r"(?:\byes\b|\byep\b|\byeah\b|\bi\s+(?:do|have|feel|am)\b|\bit(?:'s|\s+is)\b)"
+    warning_terms = {
+        "general_warning_signs": r"fever|very\s+unwell|rapidly\s+worsen(?:ing|ed)|unusual\s+at\s+(?:rest|night)|night\s+pain|weight\s+loss|previous\s+cancer",
+        "bladder_bowel_or_saddle": r"bladder|bowel|groin|saddle|bottom",
+        "new_nerve_symptoms": r"weakness|numbness|tingling",
+        "major_injury": r"serious\s+accident|major\s+fall|significant\s+injury",
+    }
+    answers: dict[str, str] = {}
+    for group, questions in screen:
+        terms = warning_terms[group]
+        if re.search(rf"{affirmative}[^.!?]{{0,100}}(?:{terms})", text):
+            answers.update({question.id: YES for question in questions})
+    return answers
+
+
 def _safety_prompt(extracted: ExtractedTriage) -> str:
     screen = _safety_screen(extracted)
     rendered = "\n".join(
@@ -882,14 +933,15 @@ def _can_skip_model_for_safety_reply(extracted: ExtractedTriage, user_text: str)
 
 
 def _triage_summary_prompt(extracted: ExtractedTriage) -> str:
-    summary = plain_summary(extracted)
-    return f"{summary}\n\nDoes that summary look right? Reply Yes to continue to the Consultation & Booking Policy, or tell me what to correct."
+    return treatment_options_prompt(plain_summary(extracted))
 
 
 def _stage_for_booking_substate(substate: str | None) -> ConversationStage | None:
     """Keep the stage machine aligned with the deterministic booking state."""
     if substate in {AWAITING_RH_SLOT, AWAITING_SLOT_MODE}:
         return ConversationStage.SLOT_SELECTION
+    if substate == AWAITING_POLICY_ACCEPTANCE:
+        return ConversationStage.POLICY_REVIEW
     if substate in {AWAITING_RH_PAYMENT_EMAIL, AWAITING_RH_PAYMENT, AWAITING_PAYMENT}:
         return ConversationStage.AWAITING_PAYMENT
     if substate in {
@@ -960,6 +1012,17 @@ def _reply_after_extract(
             incoming_phase == PatientPhase.POST_TRIAGE and _is_summary_confirm(user_text)
         )
         if summary_confirmed and not _policy_accepted(state):
+            # Legacy conversations may still contain the old summary prompt.
+            # When the same natural-language reply includes a treatment choice,
+            # honour it instead of asking the patient to repeat themselves.
+            choice = _treatment_option(user_text)
+            if choice:
+                conversation = session.get(Conversation, state.conversation_id)
+                if conversation is not None:
+                    ctx = dict(conversation.booking_context or {})
+                    ctx["treatment_option"] = choice
+                    conversation.booking_context = ctx
+                    state.booking_context = ctx
             return _present_policy(session, state), PatientPhase.POST_TRIAGE
         if (
             (state.booking_context or {}).get(_POLICY_PRESENTED_KEY)
@@ -970,7 +1033,8 @@ def _reply_after_extract(
                 session, state, actor_phone=identity.phone_e164,
                 person_id=identity.person_id, message_id=wa_message_id,
             )
-            return offer_matches(session, session.get(Conversation, state.conversation_id), patient, extracted), PatientPhase.POST_TRIAGE
+            conversation = session.get(Conversation, state.conversation_id)
+            return begin_selected_treatment(session, conversation, patient, extracted), PatientPhase.POST_TRIAGE
         booking_reply = handle_booking_turn(
             session,
             state,
@@ -988,6 +1052,9 @@ def _reply_after_extract(
 
     summary = _triage_summary_prompt(extracted)
     _store_summary(session, state, summary)
+    conversation = session.get(Conversation, state.conversation_id)
+    if conversation is not None:
+        _set_substate(conversation, AWAITING_TREATMENT_OPTION, dict(conversation.booking_context or {}))
     _set_triage_status(session, state, "summarised")
     return summary, PatientPhase.POST_TRIAGE
 
@@ -1012,6 +1079,19 @@ def provider_unavailable_reply(
     flags = flags_from_triage_text(user_text)
     if flags:
         extracted = merge_extraction(extracted, {"flags": flags})
+    screen = _safety_screen(extracted)
+    if screen:
+        answers = dict(extracted.safety_answers)
+        answers.update(_narrative_yes_answers(user_text, screen))
+        if answers != dict(extracted.safety_answers):
+            extracted = extracted.model_copy(update={
+                "safety_answers": answers,
+                "safety_question_order": [
+                    question.id for _, questions in screen for question in questions
+                    if question.id in answers
+                ],
+                "safety_protocol_version": "1.0.0",
+            })
     safety = evaluate(extracted)
     if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
         return _amber_specialist_reply(
@@ -1475,14 +1555,34 @@ def handle_turn(
     if identity.persona == Persona.PATIENT and decide_booking_substate(state):
         patient = session.get(Patient, identity.person_id)
         if patient is not None:
-            booking_reply = handle_booking_turn(
-                session,
-                state,
-                patient,
-                state.extracted,
-                user_text,
-                paystack=paystack,
-            )
+            active_conversation = session.get(Conversation, state.conversation_id)
+            if (
+                active_conversation is not None
+                and (active_conversation.booking_context or {}).get(_POLICY_PRESENTED_KEY)
+                and not _policy_accepted(state)
+                and _is_explicit_policy_acceptance(user_text)
+            ):
+                _mark_policy_accepted(
+                    session,
+                    state,
+                    actor_phone=identity.phone_e164,
+                    person_id=identity.person_id,
+                    message_id=wa_message_id,
+                )
+                booking_reply = begin_selected_treatment(
+                    session, active_conversation, patient, state.extracted
+                )
+            else:
+                booking_reply = handle_booking_turn(
+                    session,
+                    state,
+                    patient,
+                    state.extracted,
+                    user_text,
+                    paystack=paystack,
+                )
+            if booking_reply == "__JOY_TREATMENT_OPTION_SELECTED__":
+                booking_reply = _present_policy(session, state)
             if booking_reply is not None:
                 current = session.get(Conversation, state.conversation_id)
                 booking_stage = _stage_for_booking_substate(
@@ -1600,6 +1700,7 @@ def handle_turn(
     if safety_screen:
         answers = dict(extracted.safety_answers)
         answers.update(_narrative_no_answers(user_text, safety_screen))
+        answers.update(_narrative_yes_answers(user_text, safety_screen))
         semantic_answers = validated_semantic_safety_answers(
             model_extraction.get("safety_semantic_answers") if isinstance(model_extraction, dict) else None,
             user_text,

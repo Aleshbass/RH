@@ -23,6 +23,20 @@ def test_protocol_evaluates_cauda_equina_from_question_answers():
     assert "LB-001" in result["rule_ids"]
 
 
+def test_natural_language_affirmative_warning_answer_is_not_repeated():
+    """A clear answer to a displayed safety group must route safely, not loop."""
+    from app.conversation.turn_handler import _narrative_yes_answers, _safety_screen
+
+    extracted = ExtractedTriage(body_location="lower back pain")
+    screen = _safety_screen(extracted)
+    answers = _narrative_yes_answers("Yes, the pain is rapidly worsening", screen)
+    assert answers
+    resolved = extracted.model_copy(update={"safety_answers": answers})
+    result = evaluate_protocol(resolved)
+    assert result["risk_level"] in {"AMBER", "ORANGE", "RED"}
+    assert result["action"] != "continue"
+
+
 def test_stage_machine_rejects_unsafe_shortcut():
     from app.conversation.stage_machine import assert_transition
     import pytest

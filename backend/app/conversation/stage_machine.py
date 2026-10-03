@@ -23,6 +23,10 @@ _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
         ConversationStage.POLICY_REVIEW,
         ConversationStage.POLICY_ACCEPTANCE,
         ConversationStage.SPECIALIST_MATCHING,
+        # Quick/full virtual consultations create the fixed-price booking in
+        # the same verified policy-acceptance turn, then immediately collect
+        # the receipt email. This is a valid atomic transition, not a bypass.
+        ConversationStage.AWAITING_PAYMENT,
     },
     ConversationStage.POLICY_ACCEPTANCE: {ConversationStage.POLICY_ACCEPTANCE, ConversationStage.SPECIALIST_MATCHING},
     ConversationStage.SPECIALIST_MATCHING: {ConversationStage.SPECIALIST_MATCHING, ConversationStage.SLOT_SELECTION},

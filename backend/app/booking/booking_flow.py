@@ -36,6 +36,8 @@ AWAITING_RH_SLOT = "rh_awaiting_slot"
 AWAITING_RH_PAYMENT_EMAIL = "rh_awaiting_payment_email"
 AWAITING_RH_PAYMENT = "rh_awaiting_payment"
 AWAITING_RH_REPLACEMENT = "rh_awaiting_replacement"
+AWAITING_TREATMENT_OPTION = "awaiting_treatment_option"
+AWAITING_POLICY_ACCEPTANCE = "awaiting_policy_acceptance"
 
 SESSION_REMINDER_ZSET = "joy:session_reminders"
 _PLACEHOLDER_CALLBACK = "https://localhost/paystack/callback"
@@ -55,6 +57,12 @@ _SLOT_RE = re.compile(
 _INDEX_RE = re.compile(r"^\s*([1-9])\b")
 _PAY_NUDGE_RE = re.compile(r"\b(pay|payment|processing)\b", re.I)
 _PAYMENT_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+TREATMENT_OPTIONS = {
+    "quick_initial": {"label": "Quick Initial Consultation", "amount_kobo": 600_000, "duration_minutes": 20},
+    "full_virtual": {"label": "Full Virtual Consultation", "amount_kobo": 1_500_000, "duration_minutes": 60},
+    "home_visit": {"label": "Face-to-Face Home Session", "amount_kobo": None, "duration_minutes": 60},
+}
 
 NO_SPECIALIST_YET = (
     "There's no specialist yet for this kind of rehab. "
@@ -112,6 +120,16 @@ def handle_booking_turn(
     sub = conversation.booking_substate
     if sub == AWAITING_RH_REPLACEMENT:
         return _continue_rh_replacement(session, conversation, patient, user_text)
+    if sub == AWAITING_TREATMENT_OPTION:
+        option = _treatment_option(user_text)
+        if option is None:
+            return "Reply 1, 2, or 3, or say ‘help me choose’. You can also tell me what needs correcting in the summary."
+        ctx = dict(conversation.booking_context or {})
+        ctx["treatment_option"] = option
+        _set_substate(conversation, None, ctx)
+        return "__JOY_TREATMENT_OPTION_SELECTED__"
+    if sub == AWAITING_POLICY_ACCEPTANCE:
+        return "Please review the Consultation & Booking Policy above, then reply ‘I accept’ when you are ready to continue."
     if sub == AWAITING_RH_SERVICE_MODE:
         return _continue_rh_service_mode(session, conversation, patient, extracted, user_text)
     if sub == AWAITING_RH_LOCATION:
@@ -162,6 +180,103 @@ def offer_matches(
     context["condition_area"] = extracted.condition_area.value
     _set_substate(conversation, AWAITING_RH_SERVICE_MODE, context)
     return "How would you like the session: home visit, clinic, or online?"
+
+
+def treatment_options_prompt(summary: str) -> str:
+    return (
+        f"Here’s a quick summary of what you’ve told me:\n{summary}\n\n"
+        "Based on your answers, I haven’t picked up anything that would stop you from continuing with the Rehabify MSK pathway.\n\n"
+        "Here are your options for what happens next:\n\n"
+        "1. Quick Initial Consultation — ₦6,000\n"
+        "A brief online call with a clinician for initial advice and guidance on the best next step.\n\n"
+        "2. Full Virtual Consultation — ₦15,000\n"
+        "A detailed online assessment with a clinician, including questions and a personalised treatment and rehabilitation plan.\n\n"
+        "3. Face-to-Face Home Session\n"
+        "A clinician comes to you for an in-person assessment and treatment. The price depends on the clinician and your location.\n\n"
+        "Reply 1, 2, or 3. You can also say ‘help me choose’ — I’ll start you with option 1."
+    )
+
+
+def begin_selected_treatment(
+    session: Session,
+    conversation: Conversation,
+    patient: Patient,
+    extracted: ExtractedTriage,
+) -> str:
+    """Begin the post-policy operational path selected in the treatment menu."""
+    ctx = dict(conversation.booking_context or {})
+    option = str(ctx.get("treatment_option") or "")
+    if option == "home_visit":
+        rh_patient_id = _rh_patient_id(session, patient)
+        tags = _required_specialties(extracted)
+        if not rh_patient_id or not tags:
+            return "I can’t access Rehabify’s live home-visit service right now. No booking has been made; please try again shortly."
+        return _find_rh_matches(
+            session, conversation, patient, extracted, mode="home_visit",
+            rh_patient_id=rh_patient_id, tags=tags,
+        )
+    config = TREATMENT_OPTIONS.get(option)
+    if config is None:
+        return "Please choose an option before we continue."
+    rh_patient_id = _rh_patient_id(session, patient)
+    policy = ctx.get("policy_accepted") or {}
+    if not rh_patient_id or not isinstance(policy, dict):
+        return "I need to refresh your booking details before continuing. Please try again."
+    try:
+        booking = configured_rh_client().create_admin_scheduled_virtual_booking(
+            patient_id=rh_patient_id,
+            consultation_type=option,
+            duration_minutes=int(config["duration_minutes"]),
+            amount_kobo=int(config["amount_kobo"]),
+            triage_summary_reference=str(_current_assessment(session, patient)),
+            assessment_id=str(_current_assessment(session, patient)),
+            assessment_revision=1,
+            policy_version=str(policy["version"]),
+            policy_acceptance_reference=str(policy.get("acceptance_message_id") or policy["accepted_at"] or policy["version"]),
+            conversation_id=str(conversation.id),
+            # A patient can complete another consultation later in the same
+            # conversation.  Scope idempotency to this specific policy
+            # acceptance, rather than the lifetime of the conversation, while
+            # still making delivery retries safe.
+            idempotency_key=(
+                f"joy-{option}-{conversation.id}-"
+                f"{policy.get('acceptance_message_id') or policy.get('accepted_at') or policy['version']}"
+            ),
+        )
+    except RHIntegrationError as error:
+        logger.warning("joy_virtual_consultation_create_failed code=%s", error.code)
+        return "I can’t create your virtual consultation right now. No booking has been made; please try again shortly."
+    ctx.update({
+        "rh_booking_id": booking.booking_id,
+        "rh_patient_id": rh_patient_id,
+        "booking_route": "admin_scheduled_virtual",
+        "consultation_type": option,
+    })
+    if booking.payment_status == "completed":
+        ctx["rh_payment_status"] = "succeeded"
+        _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
+        return (
+            "Your payment has already been received. Our care team will assign your clinician, date, and time shortly. "
+            "I’ll send your appointment details and joining link here once that is done."
+        )
+    _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, ctx)
+    return (
+        f"Your {config['label'].casefold()} booking is ready. "
+        "Please reply with the email address you want to use for your secure payment receipt."
+    )
+
+
+def _treatment_option(user_text: str) -> str | None:
+    text = (user_text or "").strip().casefold()
+    if re.search(r"\bhelp\s+me\s+choose\b", text):
+        return "quick_initial"
+    if re.match(r"^\s*1\b", text) or "quick" in text:
+        return "quick_initial"
+    if re.match(r"^\s*2\b", text) or "full virtual" in text:
+        return "full_virtual"
+    if re.match(r"^\s*3\b", text) or "home" in text:
+        return "home_visit"
+    return None
 
 
 def _rh_actor(patient: Patient, rh_patient_id: str | None = None) -> RHActor:
@@ -477,12 +592,24 @@ def _continue_rh_payment_email(session: Session, conversation: Conversation, pat
     rh_patient_id = ctx.get("rh_patient_id")
     if not booking_id or not rh_patient_id:
         return "I need to refresh your booking details before starting payment. Please try again."
+    retry_count = int(ctx.get("payment_retry_count") or 0)
     try:
         payment = configured_rh_client().initialize_booking_payment(
             str(booking_id), patient_id=str(rh_patient_id), email=email,
-            actor=_rh_actor(patient, str(rh_patient_id)), idempotency_key=f"joy-payment-{booking_id}",
+            # A retry after a Paystack-declared failure must use a fresh RH
+            # payment attempt/reference. Retries before a failure retain this
+            # same key and remain idempotent.
+            actor=_rh_actor(patient, str(rh_patient_id)), idempotency_key=f"joy-payment-{booking_id}-{retry_count}",
         )
     except RHIntegrationError as error:
+        if error.code == "PAYMENT_ALREADY_COMPLETED":
+            ctx["payment_email"] = email
+            ctx["rh_payment_status"] = "succeeded"
+            _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
+            return (
+                "Your payment has already been received. Our care team will assign your clinician, date, and time shortly. "
+                "I’ll send your appointment details and joining link here once that is done."
+            )
         # Keep the held booking state and the supplied address, but do not
         # expose payment-provider details in the WhatsApp reply.
         ctx["payment_email"] = email
@@ -494,11 +621,15 @@ def _continue_rh_payment_email(session: Session, conversation: Conversation, pat
     _set_substate(conversation, AWAITING_RH_PAYMENT, ctx)
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id,
            payload={"decision": "rh_pending_payment_created", "rh_booking_id": str(booking_id)})
+    if ctx.get("booking_route") == "admin_scheduled_virtual":
+        return f"Your virtual consultation booking is ready. Complete payment securely here: {payment.authorization_url}"
     return f"Your time is held. Complete payment securely here: {payment.authorization_url}"
 
 
 def _rh_payment_status(conversation: Conversation, user_text: str) -> str | None:
     if _PAY_NUDGE_RE.search(user_text) or _PAID_RE.search(user_text):
+        if (conversation.booking_context or {}).get("booking_route") == "admin_scheduled_virtual":
+            return "Your payment is being verified. Once it is received, our care team will send your appointment details shortly."
         return "Your payment is being verified. I’ll confirm the appointment here after the specialist accepts it."
     return None
 
@@ -665,6 +796,8 @@ def _maybe_paid_status(
         if status.get("booking_status") == "confirmed":
             _set_substate(conversation, None, dict(context))
             return "Your appointment is confirmed. I’ll send the details here."
+        if context.get("booking_route") == "admin_scheduled_virtual":
+            return "Your payment is being verified. Once it is received, our care team will send your appointment details shortly."
         return "Your payment is being verified. I’ll confirm the appointment here after the specialist accepts it."
     booking = _payment_booking(session, conversation, patient)
     if booking is not None and booking.status == BookingStatus.CONFIRMED:

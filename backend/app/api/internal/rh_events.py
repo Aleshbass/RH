@@ -19,6 +19,7 @@ from app.models.conversation import Conversation
 from app.models.types import ConversationStage, PatientPhase
 from app.booking.appointment_reminders import (
     appointment_confirmation_text,
+    appointment_rescheduled_text,
     appointment_start_from_ms,
     schedule_appointment_reminder,
 )
@@ -64,13 +65,63 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             conversation = _patient_conversation(session, patient)
             # The meeting-link event can arrive first for an online booking.
             # In that case it has already supplied the complete confirmation.
-            if not _has_notified_meeting_link(conversation, booking_id):
+            if not data.get("defer_patient_notification") and not _has_notified_meeting_link(conversation, booking_id):
                 text = (
                     appointment_confirmation_text(**details, booking_code=booking_id)
                     if details is not None
                     else "Your appointment is confirmed. I’ll send your appointment details here."
                 )
                 enqueue_booking_confirmed(patient.phone_e164, booking_id, text, email=email)
+    elif event_type == "booking.payment_confirmed":
+        data = payload.get("data") or {}
+        rh_patient_id = str(data.get("patient_id") or "")
+        mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.rh_record_id == rh_patient_id))
+        patient = session.get(Patient, mapping.joy_person_id) if mapping else None
+        if patient:
+            booking_id = str(data.get("booking_id") or "")
+            conversation = _patient_conversation(session, patient)
+            context = dict(conversation.booking_context or {}) if conversation else {}
+            if context.get("rh_booking_id") == booking_id:
+                context["rh_payment_status"] = "succeeded"
+                if conversation is not None:
+                    conversation.booking_context = context
+            if context.get("booking_route") == "admin_scheduled_virtual":
+                text = (
+                    "Your payment has been received. Our care team will assign your clinician, date, and time shortly. "
+                    "I’ll send your appointment details and joining link here once that is done."
+                )
+            else:
+                text = "Your payment has been received. I’ll confirm the appointment here after the specialist accepts it."
+            enqueue_booking_confirmed(patient.phone_e164, booking_id, text, email=_appointment_email(session, patient))
+    elif event_type == "booking.payment_failed":
+        data = payload.get("data") or {}
+        rh_patient_id = str(data.get("patient_id") or "")
+        mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.rh_record_id == rh_patient_id))
+        patient = session.get(Patient, mapping.joy_person_id) if mapping else None
+        if patient:
+            booking_id = str(data.get("booking_id") or "")
+            conversation = _patient_conversation(session, patient)
+            context = dict(conversation.booking_context or {}) if conversation else {}
+            email = _appointment_email(session, patient)
+            if context.get("rh_booking_id") == booking_id and conversation is not None:
+                context.pop("authorization_url", None)
+                context["rh_payment_status"] = "failed"
+                context["payment_retry_count"] = int(context.get("payment_retry_count") or 0) + 1
+                conversation.booking_context = context
+                conversation.booking_substate = "rh_awaiting_payment_email"
+            text = (
+                "We couldn’t complete your payment, so your appointment has not been confirmed. "
+                "Please reply with your email address to receive a new secure payment link."
+            )
+            enqueue_booking_confirmed(
+                patient.phone_e164,
+                booking_id,
+                text,
+                email=email,
+                email_subject="Your Rehabify payment needs attention",
+            )
+            append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+                   payload={"event": "payment_failed_disclosed", "booking_id": booking_id})
     elif event_type == "booking.meeting_link_ready":
         data = payload.get("data") or {}
         rh_patient_id = str(data.get("patient_id") or "")
@@ -101,6 +152,24 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             _mark_meeting_link_notified(session, patient, booking_id)
             append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
                    payload={"event": "online_meeting_link_disclosed", "booking_id": booking_id, "platform": data.get("platform")})
+    elif event_type == "booking.rescheduled":
+        data = payload.get("data") or {}
+        rh_patient_id = str(data.get("patient_id") or "")
+        mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.rh_record_id == rh_patient_id))
+        patient = session.get(Patient, mapping.joy_person_id) if mapping else None
+        if patient:
+            booking_id = str(data.get("booking_id") or "")
+            details = _appointment_details(booking_id, rh_patient_id, fallback_start_ms=data.get("start_time"))
+            email = _appointment_email(session, patient)
+            _schedule_reminder_from_details(session, booking_id, patient, details, email=email)
+            text = (
+                appointment_rescheduled_text(**details, booking_code=booking_id)
+                if details is not None
+                else "Your appointment has been rescheduled. I’ll send the updated details here shortly."
+            )
+            enqueue_booking_confirmed(patient.phone_e164, booking_id, text, email=email)
+            append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
+                   payload={"event": "appointment_rescheduled_disclosed", "booking_id": booking_id})
     elif event_type == "booking.meeting_link_failed":
         data = payload.get("data") or {}
         rh_patient_id = str(data.get("patient_id") or "")
@@ -227,8 +296,9 @@ def _schedule_reminder_from_details(
         session, rh_booking_id=booking_id, patient=patient, email=email, **details
     )
     append(session, kind=AuditKind.BOOKING, actor_phone="rh-service", person_id=patient.id,
-           payload={"event": "appointment_reminder_scheduled", "booking_id": booking_id,
-                    "reminder_at": (details["session_start"] - timedelta(minutes=30)).isoformat()})
+           payload={"event": "appointment_reminders_scheduled", "booking_id": booking_id,
+                    "reminder_at": (details["session_start"] - timedelta(minutes=30)).isoformat(),
+                    "start_reminder_at": details["session_start"].isoformat()})
 
 
 def _prepare_replacement(session: Session, data: dict) -> None:

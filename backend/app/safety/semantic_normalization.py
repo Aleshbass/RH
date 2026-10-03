@@ -69,7 +69,7 @@ def validated_semantic_safety_answers(
 ) -> dict[str, str]:
     """Return only model proposals that pass deterministic evidence checks.
 
-    ``proposals`` is untrusted JSON from Gemini. For now the only semantic NO
+    ``proposals`` is untrusted model JSON. For now the only semantic NO
     that can clear a protocol item is a minor, clinically assessed incident;
     all other safety negatives continue through the explicit text parser or a
     patient follow-up question.

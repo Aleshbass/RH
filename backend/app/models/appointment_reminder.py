@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -9,12 +9,16 @@ from app.models.base import Base
 
 
 class AppointmentReminder(Base):
-    """Durable, once-only patient reminder for an RH-owned appointment."""
+    """Durable, once-only delivery for each reminder point of an RH appointment."""
 
     __tablename__ = "appointment_reminders"
+    __table_args__ = (
+        UniqueConstraint("rh_booking_id", "reminder_kind", name="uq_appointment_reminders_booking_kind"),
+    )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    rh_booking_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    rh_booking_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    reminder_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="thirty_minutes_before")
     patient_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("patients.id"), nullable=False, index=True
     )

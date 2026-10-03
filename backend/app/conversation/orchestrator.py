@@ -21,6 +21,8 @@ BOOKING_SUBSTATES = (
     "rh_awaiting_payment_email",
     "rh_awaiting_payment",
     "rh_awaiting_replacement",
+    "awaiting_treatment_option",
+    "awaiting_policy_acceptance",
 )
 
 

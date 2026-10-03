@@ -482,6 +482,57 @@ class RHClient:
             data = self._request("POST", "/api/v1/joy/bookings", payload=payload, idempotency_key=idempotency_key)
         return RHBooking(booking_id=data["booking_id"], booking_status=data["booking_status"], payment_status=data["payment_status"], amount_kobo=int(data["amount_kobo"]), hold_expires_at=data.get("hold_expires_at"))
 
+    def create_admin_scheduled_virtual_booking(
+        self,
+        *,
+        patient_id: str,
+        consultation_type: str,
+        duration_minutes: int,
+        amount_kobo: int,
+        triage_summary_reference: str,
+        assessment_id: str,
+        assessment_revision: int,
+        policy_version: str,
+        policy_acceptance_reference: str,
+        conversation_id: str,
+        idempotency_key: str,
+    ) -> RHBooking:
+        """Create a fixed-price virtual consultation awaiting admin scheduling.
+
+        This narrow gateway call deliberately has no provider or slot input.
+        RH owns later allocation and is the only authority allowed to emit the
+        appointment-confirmed event once an administrator schedules it.
+        """
+        if not self.gateway_client:
+            raise RHIntegrationError(
+                "RH_BOOKING_GATEWAY_UNAVAILABLE",
+                "The admin-scheduled virtual consultation gateway is unavailable",
+            )
+        data = self._gateway(
+            "create_admin_scheduled_virtual_booking",
+            {
+                "patient_id": patient_id,
+                "consultation_type": consultation_type,
+                "duration_minutes": duration_minutes,
+                "amount_kobo": amount_kobo,
+                "triage_summary_reference": triage_summary_reference,
+                "assessment_id": assessment_id,
+                "assessment_revision": assessment_revision,
+                "policy_version": policy_version,
+                "policy_acceptance_reference": policy_acceptance_reference,
+                "conversation_id": conversation_id,
+                "request_id": str(uuid4()),
+                "idempotency_key": idempotency_key,
+            },
+        )
+        return RHBooking(
+            booking_id=data["booking_id"],
+            booking_status=data["booking_status"],
+            payment_status=data["payment_status"],
+            amount_kobo=int(data["amount_kobo"]),
+            hold_expires_at=data.get("hold_expires_at"),
+        )
+
     def initialize_booking_payment(self, booking_id: str, *, patient_id: str, email: str, actor: RHActor, idempotency_key: str) -> RHPaymentInitialization:
         data = self._request("POST", f"/api/v1/joy/bookings/{booking_id}/payment", payload={"patient_id": patient_id, "email": email, "actor": actor.as_payload()}, idempotency_key=idempotency_key)
         if not isinstance(data.get("authorization_url"), str) or not isinstance(data.get("reference"), str):

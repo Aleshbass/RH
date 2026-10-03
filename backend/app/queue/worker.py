@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy import select
@@ -21,7 +21,7 @@ from app.llm.gemini_client import GeminiTimeoutError, LLMClient, get_llm_client
 from app.models.conversation import Message
 from app.models.appointment_reminder import AppointmentReminder
 from app.models.types import AuditKind, PatientPhase, TurnResult
-from app.booking.appointment_reminders import appointment_reminder_text
+from app.booking.appointment_reminders import AT_APPOINTMENT_START, appointment_reminder_text
 from app.observability import elapsed_ms, log_event, timer_start
 from app.queue.tasks import (
     ADMIN_ESCALATION_QUEUE,
@@ -447,16 +447,18 @@ def process_appointment_reminders_once(
             .limit(50)
         ).all()
         for reminder in due:
-            # A late worker must not send a misleading “starts in 30 minutes”
-            # notice after the appointment has already begun.
-            if reminder.session_start <= current:
+            # A start-time reminder can be delivered within a short grace period
+            # because worker polling is not a real-time timer. The 30-minute
+            # notice is skipped once the appointment begins.
+            deadline = reminder.session_start + timedelta(minutes=5) if reminder.reminder_kind == AT_APPOINTMENT_START else reminder.session_start
+            if deadline <= current:
                 reminder.status = "skipped"
                 append(
                     db,
                     kind=AuditKind.BOOKING,
                     actor_phone="joy-worker",
                     person_id=reminder.patient_id,
-                    payload={"event": "appointment_reminder_skipped_late", "booking_id": reminder.rh_booking_id},
+                    payload={"event": "appointment_reminder_skipped_late", "booking_id": reminder.rh_booking_id, "reminder_kind": reminder.reminder_kind},
                 )
                 continue
             try:
@@ -469,13 +471,18 @@ def process_appointment_reminders_once(
                     # the missing email rather than repeating WhatsApp.
                     db.commit()
                 if reminder.email and reminder.email_sent_at is None:
+                    subject = (
+                        "Your Rehabify appointment starts now"
+                        if reminder.reminder_kind == AT_APPOINTMENT_START
+                        else "Reminder: your Rehabify appointment starts in 30 minutes"
+                    )
                     send_appointment_email(
                         reminder.email,
-                        "Reminder: your Rehabify appointment starts in 30 minutes",
+                        subject,
                         text,
                         idempotency_key=appointment_email_idempotency_key(
                             booking_id=reminder.rh_booking_id,
-                            subject="Reminder: your Rehabify appointment starts in 30 minutes",
+                            subject=subject,
                             text=text,
                             kind="reminder",
                         ),
@@ -492,7 +499,7 @@ def process_appointment_reminders_once(
                 kind=AuditKind.BOOKING,
                 actor_phone="joy-worker",
                 person_id=reminder.patient_id,
-                payload={"event": "appointment_reminder_sent", "booking_id": reminder.rh_booking_id},
+                payload={"event": "appointment_reminder_sent", "booking_id": reminder.rh_booking_id, "reminder_kind": reminder.reminder_kind},
             )
             sent += 1
         if own_session:
