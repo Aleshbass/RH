@@ -509,7 +509,9 @@ export const updateAppointmentStatus = mutation({
     if (args.status === "cancelled_by_therapist" && patient?.email) {
       try {
         // Determine names and timing for email content
-        const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
+        const physiotherapist = appointment.physiotherapistId
+          ? await ctx.db.get(appointment.physiotherapistId)
+          : null;
         const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "your physiotherapist";
         const patientNameForEmail = `${patient.firstName} ${patient.lastName}`;
         const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
@@ -569,7 +571,7 @@ export const updateAppointmentStatus = mutation({
           }
 
           // 2. Create Physiotherapist Earning Payout
-          if (physiotherapistEarning > 0) {
+          if (physiotherapistEarning > 0 && appointment.physiotherapistId) {
             await ctx.db.insert("payouts", {
               invoiceId: invoice._id,
               paymentId: null as any,
@@ -588,18 +590,20 @@ export const updateAppointmentStatus = mutation({
 
       // ── Decrement sessionsRemaining on linked package booking ──────────
       // Find the most recent confirmed package booking for this patient+physio pair
-      const packageBooking = await ctx.db
-        .query("marketplaceBookings")
-        .withIndex("by_patient", (q) => q.eq("patientId", appointment.patientId))
-        .filter((q) =>
-          q.and(
-            q.eq(q.field("physiotherapistId"), appointment.physiotherapistId),
-            q.eq(q.field("sessionType"), "package"),
-            q.eq(q.field("bookingStatus"), "confirmed")
-          )
-        )
-        .order("desc")
-        .first();
+      const packageBooking = appointment.physiotherapistId
+        ? await ctx.db
+            .query("marketplaceBookings")
+            .withIndex("by_patient", (q) => q.eq("patientId", appointment.patientId))
+            .filter((q) =>
+              q.and(
+                q.eq(q.field("physiotherapistId"), appointment.physiotherapistId),
+                q.eq(q.field("sessionType"), "package"),
+                q.eq(q.field("bookingStatus"), "confirmed")
+              )
+            )
+            .order("desc")
+            .first()
+        : null;
 
       if (packageBooking && (packageBooking.sessionsRemaining ?? 0) > 0) {
         await ctx.db.patch(packageBooking._id, {
@@ -698,7 +702,9 @@ export const rescheduleAppointment = mutation({
     });
 
     // Email: notify physiotherapist (provider-facing) about reschedule
-    const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
+    const physiotherapist = appointment.physiotherapistId
+      ? await ctx.db.get(appointment.physiotherapistId)
+      : null;
     const physioEmail = physiotherapist?.email as string | undefined;
     const physiotherapistName = physiotherapist ? `${physiotherapist.firstName} ${physiotherapist.lastName}` : "Physiotherapist";
     const patientNameForEmail = patient ? `${patient.firstName} ${patient.lastName}` : "Patient";

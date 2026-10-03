@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { ensureUserRole } from "./auth";
 
 const HOUR_MS = 60 * 60 * 1000;
 const BOOKING_HOLD_MS = 30 * 60 * 1000;
@@ -45,7 +46,14 @@ function displayName(user: { firstName?: string; lastName?: string }): string | 
 function calculateMarketplaceFees(serviceAmount: number) {
   const platformFee = 1000 * 100;
   const paystackFee = Math.round((serviceAmount + platformFee) * 0.015 + 100 * 100);
-  return { serviceAmount, platformFee, paystackFee, totalAmount: serviceAmount + platformFee + paystackFee, physiotherapistEarnings: serviceAmount };
+  return {
+    serviceAmount,
+    platformFee,
+    paystackFee,
+    totalAmount: serviceAmount + platformFee + paystackFee,
+    physiotherapistEarnings: serviceAmount,
+    rehabifyEarnings: platformFee,
+  };
 }
 
 export const resolvePatientByPhone = internalQuery({
@@ -1038,16 +1046,63 @@ export const createPendingJoyBooking = internalMutation({
   },
 });
 
+/**
+ * Creates the fixed-price virtual consultation requested by Joy. It has no
+ * provider or slot yet: an RH administrator allocates both only after the
+ * verified Paystack webhook records payment.
+ */
+export const createAdminScheduledJoyVirtualBooking = internalMutation({
+  args: {
+    patientId: v.id("users"),
+    consultationType: v.union(v.literal("quick_initial"), v.literal("full_virtual")),
+    durationMinutes: v.number(), amountKobo: v.number(), triageSummaryReference: v.string(),
+    assessmentId: v.string(), assessmentRevision: v.number(), policyVersion: v.string(),
+    policyAcceptanceReference: v.string(), conversationId: v.string(), requestId: v.string(), idempotencyKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const expected = args.consultationType === "quick_initial" ? 600_000 : 1_500_000;
+    const expectedDuration = args.consultationType === "quick_initial" ? 20 : 60;
+    if (args.amountKobo !== expected || args.durationMinutes !== expectedDuration) throw new Error("Invalid virtual consultation price or duration");
+    const existing = await ctx.db.query("marketplaceBookings").withIndex("by_origin_idempotency", q => q.eq("originIdempotencyKey", args.idempotencyKey)).first();
+    if (existing) {
+      if (existing.patientId !== args.patientId || existing.joyBookingRoute !== "admin_scheduled_virtual") throw new Error("Idempotency key already belongs to another request");
+      return { booking_id: existing._id, booking_status: existing.bookingStatus, payment_status: existing.paymentStatus, amount_kobo: existing.totalAmount, hold_expires_at: existing.holdExpiresAt };
+    }
+    const patient = await ctx.db.get(args.patientId);
+    if (!patient || patient.role !== "patient") throw new Error("Patient not found");
+    const now = Date.now();
+    const bookingId = await ctx.db.insert("marketplaceBookings", {
+      patientId: args.patientId, sessionType: args.consultationType, sessionDuration: args.durationMinutes,
+      isOnline: true, joyServiceMode: "online", careMode: "virtual",
+      // Virtual consultations are Rehabify-owned services: the full quoted
+      // amount belongs to Rehabify, while the assigned clinician is scheduled
+      // operationally rather than paid from this marketplace booking.
+      serviceAmount: args.amountKobo, platformFee: 0, paystackFee: 0, totalAmount: args.amountKobo,
+      physiotherapistEarnings: 0, rehabifyEarnings: args.amountKobo, paymentStatus: "pending", bookingStatus: "pending_payment",
+      patientNotes: `Joy triage summary reference: ${args.triageSummaryReference}`,
+      sourceSystem: "joy_ai", sourceChannel: "whatsapp", sourceEntryPoint: "virtual_consultation",
+      joyConversationId: args.conversationId, joyAssessmentId: args.assessmentId, joyAssessmentRevision: args.assessmentRevision,
+      joyPolicyVersion: args.policyVersion, joyPolicyAcceptanceReference: args.policyAcceptanceReference,
+      originRequestId: args.requestId, originIdempotencyKey: args.idempotencyKey, originatedAt: now,
+      holdExpiresAt: now + BOOKING_HOLD_MS, joyBookingRoute: "admin_scheduled_virtual",
+      joyConsultationType: args.consultationType, adminSchedulingStatus: "awaiting_schedule",
+      replacementStatus: "not_needed", createdAt: now, updatedAt: now,
+    });
+    return { booking_id: bookingId, booking_status: "pending_payment", payment_status: "pending", amount_kobo: args.amountKobo, hold_expires_at: now + BOOKING_HOLD_MS };
+  },
+});
+
 export const getJoyBooking = internalQuery({
   args: { bookingId: v.id("marketplaceBookings"), patientId: v.id("users") },
   handler: async (ctx, args) => {
     const booking = await ctx.db.get(args.bookingId);
     if (!booking || booking.patientId !== args.patientId || booking.sourceSystem !== "joy_ai") return null;
-    const provider = await ctx.db.get(booking.physiotherapistId);
+    const provider = booking.physiotherapistId ? await ctx.db.get(booking.physiotherapistId) : null;
     return {
       booking_id: booking._id, booking_status: booking.bookingStatus, payment_status: booking.paymentStatus,
       amount_kobo: booking.totalAmount, currency: "NGN", session_start: booking.sessionDate,
       duration_minutes: booking.sessionDuration, hold_expires_at: booking.holdExpiresAt,
+      service_mode: booking.joyServiceMode ?? (booking.isOnline ? "online" : "clinic"),
       provider: provider ? { display_name: displayName(provider) } : null, updated_at: booking.updatedAt,
     };
   },
@@ -1071,7 +1126,12 @@ export const prepareJoyPaymentAttempt = internalMutation({
   args: { bookingId: v.id("marketplaceBookings"), patientId: v.id("users"), requestId: v.string(), idempotencyKey: v.string(), reference: v.string() },
   handler: async (ctx, args) => {
     const existing = await ctx.db.query("joyPaymentAttempts").withIndex("by_origin_idempotency", (q) => q.eq("originIdempotencyKey", args.idempotencyKey)).first();
-    if (existing) return { attempt_id: existing._id, booking_id: existing.bookingId, reference: existing.reference, amount_kobo: existing.amountKobo, status: existing.status, authorization_url: existing.authorizationUrl };
+    if (existing) {
+      // An idempotency key may only ever identify the booking that created it.
+      // Returning another booking's URL could expose a completed checkout.
+      if (existing.bookingId !== args.bookingId) throw new Error("Payment idempotency key belongs to another booking");
+      return { attempt_id: existing._id, booking_id: existing.bookingId, reference: existing.reference, amount_kobo: existing.amountKobo, status: existing.status, authorization_url: existing.authorizationUrl };
+    }
     const booking = await ctx.db.get(args.bookingId);
     if (!booking || booking.patientId !== args.patientId || booking.sourceSystem !== "joy_ai") throw new Error("Joy booking not found");
     if (booking.bookingStatus !== "pending_payment" || booking.paymentStatus !== "pending" || (booking.holdExpiresAt ?? 0) <= Date.now()) throw new Error("Booking is not available for payment");
@@ -1107,6 +1167,24 @@ export const recordJoyPaymentWebhook = internalMutation({
     await ctx.db.patch(attempt._id, { status: "verified", verifiedAt: now, updatedAt: now });
     // Payment evidence is deliberately separate from allocation/provider
     // acceptance. A later authorized workflow may create the appointment.
+    if (booking.joyBookingRoute === "admin_scheduled_virtual") {
+      await ctx.db.patch(booking._id, {
+        paymentStatus: "completed",
+        paidAt: now,
+        paymentReference: args.reference,
+        bookingStatus: "awaiting_admin_schedule",
+        adminSchedulingStatus: "awaiting_schedule",
+        updatedAt: now,
+      });
+      return {
+        handled: true,
+        duplicate: false,
+        booking_id: booking._id,
+        patient_id: booking.patientId,
+        admin_scheduling_required: true,
+        event_id: args.paystackEventId,
+      };
+    }
     await ctx.db.patch(booking._id, { paymentStatus: "completed", paidAt: now, paymentReference: args.reference, updatedAt: now, providerResponse: "pending", providerResponseDueAt: now + 5 * HOUR_MS });
 
     // Advance linked partner referral to in_treatment (Milestone Step 4: Care Sessions)
@@ -1225,6 +1303,84 @@ export const recordJoyPaymentWebhook = internalMutation({
     }
 
     return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: now + 5 * HOUR_MS, event_id: args.paystackEventId };
+/** Record a terminal Paystack failure without treating it as payment evidence. */
+export const recordJoyPaymentFailedWebhook = internalMutation({
+  args: { reference: v.string(), paystackEventId: v.string(), failureCategory: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.query("joyPaymentAttempts").withIndex("by_reference", (q) => q.eq("reference", args.reference)).first();
+    if (!attempt) return { handled: false };
+    // Paystack can retry or deliver events out of order. Verified payment is
+    // authoritative and must never be downgraded by a later failed event.
+    if (attempt.status === "verified") return { handled: true, duplicate: true, booking_id: attempt.bookingId };
+    const booking = await ctx.db.get(attempt.bookingId);
+    if (!booking) throw new Error("Payment booking not found");
+    if (attempt.status === "failed" && booking.paymentStatus === "failed") {
+      return { handled: true, duplicate: true, booking_id: booking._id, patient_id: booking.patientId };
+    }
+    const now = Date.now();
+    await ctx.db.patch(attempt._id, {
+      status: "failed",
+      failureCategory: args.failureCategory ?? "PAYSTACK_CHARGE_FAILED",
+      updatedAt: now,
+    });
+    await ctx.db.patch(booking._id, { paymentStatus: "failed", updatedAt: now });
+    return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId };
+  },
+});
+
+/** Admin-only allocation for a paid virtual Joy consultation. */
+export const adminScheduleJoyVirtualBooking = mutation({
+  args: { bookingId: v.id("marketplaceBookings"), physiotherapistId: v.id("users"), startTime: v.number() },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const booking = await ctx.db.get(args.bookingId);
+    if (!booking || booking.sourceSystem !== "joy_ai" || booking.joyBookingRoute !== "admin_scheduled_virtual") throw new Error("Virtual consultation booking not found");
+    if (booking.paymentStatus !== "completed" || booking.bookingStatus !== "awaiting_admin_schedule") throw new Error("This consultation is not awaiting scheduling");
+    if (!Number.isFinite(args.startTime) || args.startTime < Date.now() + 5 * 60_000) throw new Error("Choose an appointment time at least five minutes from now");
+    const clinician = await ctx.db.get(args.physiotherapistId);
+    const profile = await ctx.db.query("physiotherapistProfiles").withIndex("by_user_id", q => q.eq("userId", args.physiotherapistId)).first();
+    const approval = await ctx.db.query("accountApprovalStatus").withIndex("by_user_id", q => q.eq("userId", args.physiotherapistId)).first();
+    if (!clinician || clinician.role !== "physiotherapist" || approval?.status !== "approved" || !profile?.offersOnlineSessions) throw new Error("Choose an approved clinician who offers online sessions");
+    const endTime = args.startTime + booking.sessionDuration * 60_000;
+    const appointments = await ctx.db.query("appointments").withIndex("by_physiotherapist_id_and_time", q => q.eq("physiotherapistId", args.physiotherapistId)).collect();
+    if (appointments.some(a => a.status !== "cancelled_by_patient" && a.status !== "cancelled_by_therapist" && a.startTime < endTime && a.endTime > args.startTime)) throw new Error("That clinician already has an appointment at this time");
+    const appointmentId = await ctx.db.insert("appointments", { patientId: booking.patientId, physiotherapistId: args.physiotherapistId, startTime: args.startTime, endTime, serviceType: booking.sessionType, status: "confirmed", appointmentType: "telehealth", isOnline: true });
+    await ctx.db.patch(booking._id, { physiotherapistId: args.physiotherapistId, sessionDate: args.startTime, appointmentId, bookingStatus: "confirmed", adminSchedulingStatus: "scheduled", providerResponse: "accepted", updatedAt: Date.now() });
+    await ctx.scheduler.runAfter(0, internal.joyIntegration.notifyJoyAdminScheduledVirtualBooking, { bookingId: booking._id, appointmentId, patientId: booking.patientId, physiotherapistId: args.physiotherapistId, startTime: args.startTime, endTime });
+    return { booking_id: booking._id, appointment_id: appointmentId };
+  },
+});
+
+/** Admin-only time change for a future, already scheduled Joy virtual consultation. */
+export const adminRescheduleJoyVirtualBooking = mutation({
+  args: { bookingId: v.id("marketplaceBookings"), startTime: v.number() },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const booking = await ctx.db.get(args.bookingId);
+    if (!booking || booking.sourceSystem !== "joy_ai" || booking.joyBookingRoute !== "admin_scheduled_virtual") {
+      throw new Error("Virtual consultation booking not found");
+    }
+    if (booking.paymentStatus !== "completed" || booking.bookingStatus !== "confirmed" || booking.adminSchedulingStatus !== "scheduled" || !booking.appointmentId || !booking.physiotherapistId || !booking.sessionDate) {
+      throw new Error("This consultation is not available for rescheduling");
+    }
+    const now = Date.now();
+    if (booking.sessionDate <= now) throw new Error("This appointment has already started or passed and cannot be rescheduled here");
+    if (!Number.isFinite(args.startTime) || args.startTime < now + 5 * 60_000) throw new Error("Choose an appointment time at least five minutes from now");
+    const appointment = await ctx.db.get(booking.appointmentId);
+    if (!appointment || appointment.startTime <= now) throw new Error("This appointment has already started or passed and cannot be rescheduled here");
+    const endTime = args.startTime + booking.sessionDuration * 60_000;
+    const appointments = await ctx.db.query("appointments").withIndex("by_physiotherapist_id_and_time", q => q.eq("physiotherapistId", booking.physiotherapistId!)).collect();
+    if (appointments.some(a => a._id !== appointment._id && a.status !== "cancelled_by_patient" && a.status !== "cancelled_by_therapist" && a.startTime < endTime && a.endTime > args.startTime)) {
+      throw new Error("That clinician already has an appointment at this time");
+    }
+    await ctx.db.patch(appointment._id, { startTime: args.startTime, endTime });
+    await ctx.db.patch(booking._id, { sessionDate: args.startTime, updatedAt: now });
+    await ctx.scheduler.runAfter(0, internal.joyIntegration.notifyJoyVirtualBookingRescheduled, {
+      bookingId: booking._id, appointmentId: appointment._id, patientId: booking.patientId,
+      physiotherapistId: booking.physiotherapistId, startTime: args.startTime, endTime,
+      revision: now,
+    });
+    return { booking_id: booking._id, appointment_id: appointment._id };
   },
 });
 
@@ -1462,6 +1618,39 @@ export const retryJoyEvents = internalAction({
     const events = await ctx.runQuery(internal.joyIntegration.retryableJoyEvents, { now: Date.now(), limit: 25 });
     for (const event of events) await ctx.runAction(internal.joyIntegration.retryJoyEvent, event);
     return { attempted: events.length };
+  },
+});
+
+/** Notify Joy only after an RH administrator has assigned a real clinician and time. */
+export const notifyJoyAdminScheduledVirtualBooking = internalAction({
+  args: {
+    bookingId: v.id("marketplaceBookings"), appointmentId: v.id("appointments"), patientId: v.id("users"),
+    physiotherapistId: v.id("users"), startTime: v.number(), endTime: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // Mark Joy's state as confirmed but let the meeting-link event carry the
+    // patient-facing appointment details in one complete notification.
+    await ctx.runAction(internal.joyIntegration.deliverJoyEvent, {
+      eventId: `booking-confirmed-${args.bookingId}`,
+      eventType: "booking.confirmed",
+      data: { booking_id: args.bookingId, appointment_id: args.appointmentId, patient_id: args.patientId, defer_patient_notification: true },
+    });
+    await ctx.runAction(internal.joyIntegration.createJoyOnlineMeeting, args);
+  },
+});
+
+/** Send Joy a distinct, signed event after a future virtual appointment is moved. */
+export const notifyJoyVirtualBookingRescheduled = internalAction({
+  args: {
+    bookingId: v.id("marketplaceBookings"), appointmentId: v.id("appointments"), patientId: v.id("users"),
+    physiotherapistId: v.id("users"), startTime: v.number(), endTime: v.number(), revision: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.runAction(internal.joyIntegration.deliverJoyEvent, {
+      eventId: `booking-rescheduled-${args.bookingId}-${args.revision}`,
+      eventType: "booking.rescheduled",
+      data: { booking_id: args.bookingId, appointment_id: args.appointmentId, patient_id: args.patientId, start_time: args.startTime },
+    });
   },
 });
 

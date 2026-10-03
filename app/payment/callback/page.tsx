@@ -16,6 +16,7 @@ function PaymentCallbackContent() {
   const [message, setMessage] = useState('')
   const [invoiceId, setInvoiceId] = useState<string | null>(null)
   const [isMarketplaceBooking, setIsMarketplaceBooking] = useState(false)
+  const [isJoyPayment, setIsJoyPayment] = useState(false)
 
   // Paystack verification
   const verifyPaystackTransaction = useAction(api.payments.verifyPaystackTransaction)
@@ -33,6 +34,18 @@ function PaymentCallbackContent() {
     if (!paymentRef) {
       setStatus('failed')
       setMessage('No payment reference found')
+      return
+    }
+
+    // Joy payments are recorded only by RH's verified Paystack webhook. The
+    // generic invoice verifier below has no Joy payment-attempt projection,
+    // so a completed Joy checkout must not be displayed as a false failure.
+    // A browser redirect remains non-authoritative: it cannot confirm an
+    // appointment or bypass physiotherapist acceptance.
+    if (paymentRef.startsWith('JOY_')) {
+      setIsJoyPayment(true)
+      setStatus('success')
+      setMessage('Your payment was submitted. We are verifying it securely. You will receive a Joy message once RH receives and verifies the Paystack payment event.')
       return
     }
 
@@ -82,6 +95,10 @@ function PaymentCallbackContent() {
   }, [searchParams, verifyPaystackTransaction, completeMarketplaceBooking])
 
   const handleContinue = () => {
+    if (isJoyPayment) {
+      router.push('/')
+      return
+    }
     if (isMarketplaceBooking) {
       router.push('/dashboard/patient/appointments')
     } else if (invoiceId) {
@@ -108,7 +125,7 @@ function PaymentCallbackContent() {
           </div>
           <CardTitle>
             {status === 'loading' && 'Verifying Payment...'}
-            {status === 'success' && 'Payment Successful!'}
+            {status === 'success' && (isJoyPayment ? 'Payment Submitted' : 'Payment Successful!')}
             {status === 'failed' && 'Payment Failed'}
           </CardTitle>
           <CardDescription>{message}</CardDescription>

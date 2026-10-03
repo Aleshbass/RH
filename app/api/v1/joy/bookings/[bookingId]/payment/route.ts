@@ -21,9 +21,14 @@ export async function POST(request: Request, context: { params: Promise<{ bookin
     if (input.actor.persona !== "patient" || (input.actor.rh_user_id && input.actor.rh_user_id !== input.patient_id)) throw new JoyAuthError(403, "FORBIDDEN", "Actor may only pay for their own booking");
 
     const reference = `JOY_${bookingId.slice(-8)}_${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 18)}`;
-    const prepared = await callJoyConvexGateway("prepare_payment_attempt", { booking_id: bookingId, patient_id: input.patient_id, request_id: requestId, idempotency_key: idempotencyKey, reference }) as { attempt_id: string; amount_kobo: number; reference?: string; authorization_url?: string };
+    const prepared = await callJoyConvexGateway("prepare_payment_attempt", { booking_id: bookingId, patient_id: input.patient_id, request_id: requestId, idempotency_key: idempotencyKey, reference }) as { attempt_id: string; amount_kobo: number; reference?: string; status: string; authorization_url?: string };
 
-    if (prepared.authorization_url) return success(requestId, { booking_id: bookingId, reference: prepared.reference ?? reference, authorization_url: prepared.authorization_url, payment_status: "pending" });
+    if (prepared.status === "verified") {
+      throw new JoyAuthError(409, "PAYMENT_ALREADY_COMPLETED", "This booking has already been paid");
+    }
+    if (prepared.status === "initialized" && prepared.authorization_url) {
+      return success(requestId, { booking_id: bookingId, reference: prepared.reference ?? reference, authorization_url: prepared.authorization_url, payment_status: "pending" });
+    }
 
     // Check if patient bears Paystack inbound fee — gross up amount if so
     let chargeAmountKobo = prepared.amount_kobo;

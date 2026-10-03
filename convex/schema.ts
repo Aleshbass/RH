@@ -1084,6 +1084,8 @@ export default defineSchema({
 
     // Tracking the patient lifecycle
     patientId: v.optional(v.id("users")), // Linked once they sign up
+    // Legacy partner referrals may already be linked to a marketplace booking.
+    bookingId: v.optional(v.id("marketplaceBookings")),
     appointmentId: v.optional(v.id("appointments")), // Associated first appointment
     bookingId: v.optional(v.id("marketplaceBookings")), // Linked marketplace booking
     assignedPhysiotherapistId: v.optional(v.id("users")), // Matched physiotherapist
@@ -2389,9 +2391,13 @@ export default defineSchema({
 
   // Marketplace Bookings (separate from regular appointments)
   marketplaceBookings: defineTable({
-    physiotherapistId: v.id("users"),
+    // Admin-scheduled Joy virtual consultations are paid before a clinician
+    // and time are allocated, so they intentionally have no provider yet.
+    physiotherapistId: v.optional(v.id("users")),
     patientId: v.id("users"),
     appointmentId: v.optional(v.id("appointments")), // Created after payment
+    // Legacy partner-attributed bookings retain their source referral.
+    referralId: v.optional(v.id("inboundReferrals")),
 
     // Session details
     sessionType: v.string(), // "initial_consult", "follow_up", "package"
@@ -2443,6 +2449,7 @@ export default defineSchema({
     // Booking status
     bookingStatus: v.union(
       v.literal("pending_payment"),
+      v.literal("awaiting_admin_schedule"),
       v.literal("confirmed"),
       v.literal("completed"),
       v.literal("cancelled"),
@@ -2478,6 +2485,11 @@ export default defineSchema({
     providerResponse: v.optional(v.union(v.literal("pending"), v.literal("accepted"), v.literal("rejected"))),
     providerResponseDueAt: v.optional(v.number()),
     replacementStatus: v.optional(v.union(v.literal("not_needed"), v.literal("awaiting_patient_slot"), v.literal("admin_follow_up"))),
+    // `admin_scheduled_virtual` is the two-step consultation product: Joy
+    // collects payment, then an RH administrator assigns the provider/time.
+    joyBookingRoute: v.optional(v.union(v.literal("provider_selected"), v.literal("admin_scheduled_virtual"))),
+    joyConsultationType: v.optional(v.union(v.literal("quick_initial"), v.literal("full_virtual"))),
+    adminSchedulingStatus: v.optional(v.union(v.literal("not_required"), v.literal("awaiting_schedule"), v.literal("scheduled"))),
 
     // Guest details
     isGuestBooking: v.optional(v.boolean()),

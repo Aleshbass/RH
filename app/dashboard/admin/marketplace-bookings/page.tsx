@@ -58,10 +58,17 @@ import { formatCurrency, cn } from '@/lib/utils';
 
 const PAGE_SIZE = 25;
 
+function localDateTimeValue(timestamp: number): string {
+  const date = new Date(timestamp - new Date(timestamp).getTimezoneOffset() * 60_000);
+  return date.toISOString().slice(0, 16);
+}
+
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All Statuses' },
   { value: 'confirmed', label: 'Confirmed' },
   { value: 'pending_payment', label: 'Pending Payment' },
+  { value: 'payment_failed', label: 'Payment Failed' },
+  { value: 'awaiting_admin_schedule', label: 'Awaiting Scheduling' },
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
@@ -70,6 +77,8 @@ type StatusConfig = { label: string; color: string; icon: LucideIcon };
 const STATUS_CONFIG: Record<string, StatusConfig> = {
   confirmed:       { label: 'Confirmed',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
   pending_payment: { label: 'Pending Payment', color: 'bg-amber-50 text-amber-700 border-amber-200',       icon: Clock },
+  payment_failed: { label: 'Payment Failed', color: 'bg-red-50 text-red-700 border-red-200', icon: XCircle },
+  awaiting_admin_schedule: { label: 'Awaiting Scheduling', color: 'bg-violet-50 text-violet-700 border-violet-200', icon: Calendar },
   completed:       { label: 'Completed',        color: 'bg-blue-50 text-blue-700 border-blue-200',          icon: CheckCircle2 },
   cancelled:       { label: 'Cancelled',        color: 'bg-red-50 text-red-700 border-red-200',             icon: XCircle },
   no_show:         { label: 'No Show',          color: 'bg-gray-100 text-gray-600 border-gray-200',         icon: AlertCircle },
@@ -285,9 +294,69 @@ function ReassignModal({ booking, onClose }: ReassignModalProps) {
   );
 }
 
+function ScheduleVirtualModal({ booking, onClose }: { booking: any; onClose: () => void }) {
+  const physios = useQuery((api as any).admin.marketplaceBookings.adminGetAllPhysiosForSelect);
+  const schedule = useMutation((api as any).joyIntegration.adminScheduleJoyVirtualBooking);
+  const reschedule = useMutation((api as any).joyIntegration.adminRescheduleJoyVirtualBooking);
+  const isReschedule = booking.adminSchedulingStatus === 'scheduled' && booking.bookingStatus === 'confirmed';
+  const [physiotherapistId, setPhysiotherapistId] = useState(() => booking.physiotherapistId || '');
+  // Leave a small buffer above Convex's five-minute safety minimum so an
+  // admin cannot accidentally select the current time and lose the form.
+  const [startLocal, setStartLocal] = useState(() => localDateTimeValue(isReschedule ? booking.sessionDate : Date.now() + 10 * 60_000));
+  const [loading, setLoading] = useState(false);
+  const onlinePhysios = (physios as any[] | undefined)?.filter((p) => p.offersOnline) ?? [];
+  const confirm = async () => {
+    if (!physiotherapistId || !startLocal) { toast.error('Choose a clinician and appointment date/time'); return; }
+    const startTime = new Date(startLocal).getTime();
+    if (!Number.isFinite(startTime)) { toast.error('Enter a valid appointment date/time'); return; }
+    if (startTime < Date.now() + 5 * 60_000) {
+      toast.error('Choose an appointment time at least five minutes from now.');
+      return;
+    }
+    setLoading(true);
+    try {
+      if (isReschedule) {
+        await reschedule({ bookingId: booking._id, startTime });
+        toast.success('Virtual consultation rescheduled. Joy will notify the patient.');
+      } else {
+        await schedule({ bookingId: booking._id, physiotherapistId: physiotherapistId as Id<'users'>, startTime });
+        toast.success('Virtual consultation scheduled. Joy will notify the patient.');
+      }
+      onClose();
+    } catch (error: any) {
+      toast.error(error?.message || 'Could not schedule this consultation');
+    } finally { setLoading(false); }
+  };
+  return <Dialog open onOpenChange={onClose}>
+    <DialogContent className="max-w-lg">
+      <DialogHeader>
+        <DialogTitle>{isReschedule ? 'Reschedule virtual consultation' : 'Schedule virtual consultation'}</DialogTitle>
+        <DialogDescription>{isReschedule ? 'Choose a new future time. The existing clinician and secure meeting link remain unchanged; Joy will send updated details.' : 'Assign an online clinician and time. Saving confirms the paid booking and sends the patient’s appointment details through Joy.'}</DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4 py-2">
+        <div><label className="text-xs font-semibold text-gray-600 mb-1.5 block">Clinician</label>
+          <Select value={physiotherapistId} onValueChange={setPhysiotherapistId}>
+            <SelectTrigger disabled={isReschedule}><SelectValue placeholder="Select an online clinician" /></SelectTrigger>
+            <SelectContent>{onlinePhysios.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div><label className="text-xs font-semibold text-gray-600 mb-1.5 block">Date and time</label>
+          <Input type="datetime-local" value={startLocal} min={localDateTimeValue(Date.now() + 5 * 60_000)} onChange={(e) => setStartLocal(e.target.value)} />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
+        <Button onClick={confirm} disabled={loading || !physiotherapistId || !startLocal} className="bg-teal-600 hover:bg-teal-700 text-white">
+          {loading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : <><Calendar className="h-4 w-4 mr-2" />{isReschedule ? 'Reschedule and notify' : 'Schedule and notify'}</>}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>;
+}
+
 // ─── Booking Card (mobile) ────────────────────────────────────────────────────
 
-function BookingCard({ booking, onReassign }: { booking: any; onReassign: () => void }) {
+function BookingCard({ booking, onReassign, onSchedule }: { booking: any; onReassign: () => void; onSchedule: () => void }) {
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
       {/* Top row: date + status */}
@@ -372,16 +441,18 @@ function BookingCard({ booking, onReassign }: { booking: any; onReassign: () => 
         </div>
         <div className="text-right shrink-0">
           <p className="text-sm font-bold text-gray-900">
-            {formatCurrency(booking.totalAmount / 100, 'NGN')}
+            {formatCurrency(booking.totalAmount, 'NGN')}
           </p>
           <p className="text-[10px] text-gray-400">
-            Fee: {formatCurrency(booking.platformFee / 100, 'NGN')}
+            Fee: {formatCurrency(booking.platformFee, 'NGN')}
           </p>
         </div>
       </div>
 
-      {/* Reassign button */}
-      <Button
+      {booking.adminSchedulingStatus === 'awaiting_schedule' ? <Button
+        size="sm" onClick={onSchedule}
+        className="w-full h-9 text-xs bg-teal-600 hover:bg-teal-700 text-white"
+      ><Calendar className="h-3.5 w-3.5 mr-1.5" />Schedule virtual consultation</Button> : booking.joyBookingRoute === 'admin_scheduled_virtual' ? <Button size="sm" variant="outline" disabled className="w-full h-9 text-xs">{booking.paymentStatus === 'failed' ? 'Payment failed' : booking.bookingStatus === 'confirmed' ? 'Scheduled' : 'Awaiting payment'}</Button> : <Button
         size="sm"
         variant="outline"
         onClick={onReassign}
@@ -389,7 +460,7 @@ function BookingCard({ booking, onReassign }: { booking: any; onReassign: () => 
       >
         <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
         Reassign Physiotherapist
-      </Button>
+      </Button>}
     </div>
   );
 }
@@ -401,6 +472,7 @@ export default function AdminMarketplaceBookingsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(0);
   const [reassignBooking, setReassignBooking] = useState<any | null>(null);
+  const [scheduleBooking, setScheduleBooking] = useState<any | null>(null);
 
   // Paginated + filtered result
   const result = useQuery(
@@ -424,13 +496,13 @@ export default function AdminMarketplaceBookingsPage() {
   const guestCount = allBookings.filter((b) => b.isGuest).length;
   const platformRevenue = allBookings
     .filter((b) => b.paymentStatus === 'completed')
-    .reduce((sum, b) => sum + (b.platformFee || 0), 0);
+    .reduce((sum, b) => sum + (b.rehabifyEarnings || 0), 0);
 
   const stats = [
     { label: 'Total Bookings',   value: allResult ? String(allResult.total) : '—',                            icon: Calendar,       color: 'text-blue-600 bg-blue-50' },
     { label: 'Confirmed',         value: allResult ? String(confirmedCount) : '—',                             icon: CheckCircle2,   color: 'text-emerald-600 bg-emerald-50' },
     { label: 'Guest Bookings',    value: allResult ? String(guestCount) : '—',                                 icon: Globe,          color: 'text-purple-600 bg-purple-50' },
-    { label: 'Platform Revenue',  value: allResult ? formatCurrency(platformRevenue / 100, 'NGN') : '—',       icon: Banknote,       color: 'text-teal-600 bg-teal-50' },
+    { label: 'Rehabify Revenue',  value: allResult ? formatCurrency(platformRevenue, 'NGN') : '—',             icon: Banknote,       color: 'text-teal-600 bg-teal-50' },
   ];
 
   return (
@@ -509,6 +581,7 @@ export default function AdminMarketplaceBookingsPage() {
               key={booking._id}
               booking={booking}
               onReassign={() => setReassignBooking(booking)}
+              onSchedule={() => setScheduleBooking(booking)}
             />
           ))}
         </div>
@@ -610,21 +683,25 @@ export default function AdminMarketplaceBookingsPage() {
                     {/* Amount */}
                     <TableCell className="align-top py-3 whitespace-nowrap">
                       <p className="text-sm font-bold text-gray-900">
-                        {formatCurrency(booking.totalAmount / 100, 'NGN')}
+                        {formatCurrency(booking.totalAmount, 'NGN')}
                       </p>
                       <p className="text-xs text-gray-400">
-                        Fee: {formatCurrency(booking.platformFee / 100, 'NGN')}
+                        Fee: {formatCurrency(booking.platformFee, 'NGN')}
                       </p>
                     </TableCell>
 
                     {/* Status */}
                     <TableCell className="align-top py-3">
-                      <StatusBadge status={booking.bookingStatus} />
+                      <StatusBadge status={booking.paymentStatus === 'failed' ? 'payment_failed' : booking.bookingStatus} />
                     </TableCell>
 
                     {/* Actions */}
                     <TableCell className="align-top py-3 text-right">
-                      <Button
+                      {booking.adminSchedulingStatus === 'awaiting_schedule' ? <Button
+                        size="sm"
+                        onClick={() => setScheduleBooking(booking)}
+                        className="h-8 text-xs bg-teal-600 hover:bg-teal-700 text-white whitespace-nowrap"
+                      ><Calendar className="h-3.5 w-3.5 mr-1" />Schedule</Button> : booking.joyBookingRoute === 'admin_scheduled_virtual' && booking.bookingStatus === 'confirmed' && booking.sessionDate > Date.now() ? <Button size="sm" variant="outline" onClick={() => setScheduleBooking(booking)} className="h-8 text-xs border-gray-200 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50 whitespace-nowrap"><Calendar className="h-3.5 w-3.5 mr-1" />Reschedule</Button> : booking.joyBookingRoute === 'admin_scheduled_virtual' ? <span className={`inline-flex items-center gap-1 text-xs ${booking.paymentStatus === 'failed' ? 'text-red-700' : 'text-emerald-700'}`}>{booking.paymentStatus === 'failed' ? <XCircle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}{booking.paymentStatus === 'failed' ? 'Payment failed' : booking.bookingStatus === 'confirmed' ? 'Scheduled' : 'Awaiting payment'}</span> : <Button
                         size="sm"
                         variant="outline"
                         onClick={() => setReassignBooking(booking)}
@@ -632,7 +709,7 @@ export default function AdminMarketplaceBookingsPage() {
                       >
                         <ArrowRightLeft className="h-3.5 w-3.5 mr-1" />
                         Reassign
-                      </Button>
+                      </Button>}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -703,6 +780,9 @@ export default function AdminMarketplaceBookingsPage() {
       {/* Reassign modal */}
       {reassignBooking && (
         <ReassignModal booking={reassignBooking} onClose={() => setReassignBooking(null)} />
+      )}
+      {scheduleBooking && (
+        <ScheduleVirtualModal booking={scheduleBooking} onClose={() => setScheduleBooking(null)} />
       )}
     </div>
   );

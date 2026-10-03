@@ -54,8 +54,8 @@ export const adminGetAllMarketplaceBookings = query({
         }
 
         // ── Physio Info ──
-        const physio = await ctx.db.get(booking.physiotherapistId);
-        let physioName = "Unknown";
+        const physio = booking.physiotherapistId ? await ctx.db.get(booking.physiotherapistId) : null;
+        let physioName = booking.adminSchedulingStatus === "awaiting_schedule" ? "Awaiting admin assignment" : "Unassigned";
         let physioEmail = "";
         let physioLocation = "";
         let physioOffersOnline = false;
@@ -99,6 +99,12 @@ export const adminGetAllMarketplaceBookings = query({
           totalAmount: booking.totalAmount,
           platformFee: booking.platformFee,
           physiotherapistEarnings: booking.physiotherapistEarnings,
+          // Older Joy virtual bookings were created before their 100%
+          // Rehabify allocation was recorded. Derive it here so reporting is
+          // historically accurate while new bookings persist the value.
+          rehabifyEarnings: booking.rehabifyEarnings ?? (
+            booking.joyBookingRoute === "admin_scheduled_virtual" ? booking.totalAmount : booking.platformFee
+          ),
 
           // Patient
           patientId: booking.patientId,
@@ -117,6 +123,9 @@ export const adminGetAllMarketplaceBookings = query({
 
           // Linked records
           appointmentId: booking.appointmentId,
+          joyBookingRoute: booking.joyBookingRoute,
+          joyConsultationType: booking.joyConsultationType,
+          adminSchedulingStatus: booking.adminSchedulingStatus,
           patientPhysioRelationshipId: booking.patientPhysioRelationshipId,
           treatmentPlanId: booking.treatmentPlanId,
         };
@@ -126,7 +135,11 @@ export const adminGetAllMarketplaceBookings = query({
     // Apply status filter
     let filtered = enriched;
     if (args.status && args.status !== "all") {
-      filtered = filtered.filter((b) => b.bookingStatus === args.status);
+      filtered = filtered.filter((b) => (
+        args.status === "payment_failed"
+          ? b.paymentStatus === "failed"
+          : b.bookingStatus === args.status
+      ));
     }
 
     // Apply search filter (patient name or email)

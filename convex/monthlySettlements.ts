@@ -311,6 +311,12 @@ export const recordBookingPaymentAndSplit = mutation({
     if (!booking) {
       throw new Error("Booking not found");
     }
+    // Joy's admin-scheduled virtual consultations have no provider until the
+    // administrator allocates one. Their Paystack path is handled by the Joy
+    // webhook, not this provider-revenue settlement workflow.
+    if (!booking.physiotherapistId) {
+      throw new Error("Booking has not yet been assigned to a physiotherapist");
+    }
 
     const now = Date.now();
     const billingPeriod = getCurrentBillingPeriod(now);
@@ -455,6 +461,9 @@ export const confirmBankTransferBooking = mutation({
 
     const booking = await ctx.db.get(args.bookingId);
     if (!booking) throw new Error("Booking not found");
+    if (!booking.physiotherapistId) {
+      throw new Error("Booking has not yet been assigned to a physiotherapist");
+    }
 
     const now = Date.now();
     const billingPeriod = getCurrentBillingPeriod(now);

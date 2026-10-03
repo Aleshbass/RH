@@ -21,7 +21,10 @@ import { deliverJoyEvent } from '@/lib/joy-integration/events'
 function verifyWebhookSignature(body: string, signature: string | null): boolean {
     if (!signature) return false
 
-    const secret = process.env.PAYSTACK_SECRET_KEY
+    // Paystack signs webhooks with the account secret key. Keep a dedicated
+    // override for deployments that separate webhook configuration, while
+    // retaining the documented secret-key fallback.
+    const secret = process.env.PAYSTACK_WEBHOOK_SECRET || process.env.PAYSTACK_SECRET_KEY
     if (!secret) return false
 
     const hash = crypto
@@ -131,12 +134,14 @@ async function handlePaymentSuccess(data: {
                 amount_kobo: data.amount,
                 currency: data.currency,
                 paystack_event_id: String(data.id ?? data.reference),
-            }) as { handled?: boolean; duplicate?: boolean; booking_id?: string; patient_id?: string; physiotherapist_id?: string; provider_response_due_at?: number };
+            }) as { handled?: boolean; duplicate?: boolean; booking_id?: string; patient_id?: string; physiotherapist_id?: string; provider_response_due_at?: number; admin_scheduling_required?: boolean };
             if (joyPayment.handled) {
                 if (!joyPayment.duplicate && joyPayment.booking_id) {
                     const eventData = { booking_id: joyPayment.booking_id, patient_id: joyPayment.patient_id, physiotherapist_id: joyPayment.physiotherapist_id, payment_reference: data.reference, provider_response_due_at: joyPayment.provider_response_due_at };
                     await deliverJoyEvent(`pay-${data.reference}`, 'booking.payment_confirmed', eventData);
-                    await deliverJoyEvent(`provider-response-${joyPayment.booking_id}`, 'booking.provider_response_requested', eventData);
+                    if (!joyPayment.admin_scheduling_required) {
+                        await deliverJoyEvent(`provider-response-${joyPayment.booking_id}`, 'booking.provider_response_requested', eventData);
+                    }
                 }
                 log.info('Recorded verified Joy payment evidence', {
                     action: 'joy_payment_webhook_recorded', metadata: { reference: data.reference },
@@ -292,6 +297,31 @@ async function handlePaymentFailed(data: {
     })
 
     try {
+        // Joy payment failures are matched by RH's durable Paystack reference,
+        // not checkout metadata.  The failed attempt stays auditable and the
+        // booking remains unschedulable until a later successful payment.
+        try {
+            const joyPayment = await callJoyConvexGateway('record_payment_failed_webhook', {
+                reference: data.reference,
+                paystack_event_id: String(data.id ?? data.reference),
+                failure_category: 'PAYSTACK_CHARGE_FAILED',
+            }) as { handled?: boolean; duplicate?: boolean; booking_id?: string; patient_id?: string };
+            if (joyPayment.handled) {
+                if (!joyPayment.duplicate && joyPayment.booking_id) {
+                    await deliverJoyEvent(`payment-failed-${data.reference}`, 'booking.payment_failed', {
+                        booking_id: joyPayment.booking_id,
+                        patient_id: joyPayment.patient_id,
+                        payment_reference: data.reference,
+                    });
+                }
+                return;
+            }
+        } catch (joyError) {
+            // Acknowledging a Joy payment failure before it is durably stored
+            // would lose the patient's retry guidance. Ask Paystack to retry.
+            if (String(data.reference || '').startsWith('JOY_')) throw joyError;
+        }
+
         const { ConvexHttpClient } = await import('convex/browser')
         const { api } = await import('@/convex/_generated/api') as any
 
@@ -317,6 +347,7 @@ async function handlePaymentFailed(data: {
             action: 'paystack_failure_handler_error',
             extra: { reference: data.reference }
         })
+        if (String(data.reference || '').startsWith('JOY_')) throw error
     }
 }
 

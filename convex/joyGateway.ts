@@ -216,7 +216,49 @@ export const respondToBooking = httpAction(async (ctx, request) => {
   if (parsed instanceof Response) return parsed;
   if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
   if (typeof parsed.data.booking_id !== "string" || typeof parsed.data.physiotherapist_user_id !== "string" || !["accept", "reject"].includes(String(parsed.data.response))) return new Response("Invalid payload", { status: 400 });
-  return Response.json(await ctx.runMutation((internal as any).joyIntegration.respondToJoyBooking, { bookingId: parsed.data.booking_id, physiotherapistId: parsed.data.physiotherapist_user_id, response: parsed.data.response }));
+  const result = await ctx.runMutation((internal as any).joyIntegration.respondToJoyBooking, {
+    bookingId: parsed.data.booking_id,
+    physiotherapistId: parsed.data.physiotherapist_user_id,
+    response: parsed.data.response,
+  });
+  // The signed Convex gateway is a first-class operational path, so it must
+  // have the same authoritative RH-to-Joy notification behaviour as the
+  // legacy Next adapter.  The durable outbox and stable event ids make this
+  // safe if an adapter also retries the request.
+  if (result.outcome === "confirmed") {
+    await ctx.runAction((internal as any).joyIntegration.deliverJoyEvent, {
+      eventId: `booking-confirmed-${result.booking_id}`,
+      eventType: "booking.confirmed",
+      data: {
+        booking_id: result.booking_id,
+        appointment_id: result.appointment_id,
+        patient_id: result.patient_id,
+      },
+    });
+  } else if (result.outcome === "replacement_required") {
+    await ctx.runAction((internal as any).joyIntegration.deliverJoyEvent, {
+      eventId: `booking-replacement-${result.booking_id}`,
+      eventType: "booking.provider_rejected",
+      data: { booking_id: result.booking_id, patient_id: result.patient_id },
+    });
+  }
+  return Response.json(result);
+});
+
+export const createAdminScheduledVirtualBooking = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/create_admin_scheduled_virtual_booking");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const data = parsed.data;
+  const strings = ["patient_id", "consultation_type", "triage_summary_reference", "assessment_id", "policy_version", "policy_acceptance_reference", "conversation_id", "request_id", "idempotency_key"];
+  if (!strings.every(key => typeof data[key] === "string") || !["quick_initial", "full_virtual"].includes(String(data.consultation_type)) || typeof data.duration_minutes !== "number" || typeof data.amount_kobo !== "number" || typeof data.assessment_revision !== "number") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyIntegration.createAdminScheduledJoyVirtualBooking, {
+    patientId: data.patient_id, consultationType: data.consultation_type, durationMinutes: data.duration_minutes,
+    amountKobo: data.amount_kobo, triageSummaryReference: data.triage_summary_reference,
+    assessmentId: data.assessment_id, assessmentRevision: data.assessment_revision,
+    policyVersion: data.policy_version, policyAcceptanceReference: data.policy_acceptance_reference,
+    conversationId: data.conversation_id, requestId: data.request_id, idempotencyKey: data.idempotency_key,
+  }));
 });
 
 export const replacementCandidates = httpAction(async (ctx, request) => {
@@ -277,6 +319,19 @@ export const recordPaymentWebhook = httpAction(async (ctx, request) => {
   const data = parsed.data;
   if (typeof data.reference !== "string" || typeof data.amount_kobo !== "number" || typeof data.currency !== "string" || typeof data.paystack_event_id !== "string") return new Response("Invalid payload", { status: 400 });
   return Response.json(await ctx.runMutation((internal as any).joyIntegration.recordJoyPaymentWebhook, { reference: data.reference, amountKobo: data.amount_kobo, currency: data.currency, paystackEventId: data.paystack_event_id }));
+});
+
+export const recordPaymentFailedWebhook = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/record_payment_failed_webhook");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const data = parsed.data;
+  if (typeof data.reference !== "string" || typeof data.paystack_event_id !== "string") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyIntegration.recordJoyPaymentFailedWebhook, {
+    reference: data.reference,
+    paystackEventId: data.paystack_event_id,
+    failureCategory: typeof data.failure_category === "string" ? data.failure_category : undefined,
+  }));
 });
 
 // Phase 4/5 operational gateway. This accepts a fixed operation allowlist in

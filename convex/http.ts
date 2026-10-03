@@ -2,8 +2,8 @@ import { httpRouter } from "convex/server";
 import { calendarWebhook, webhookHealth } from "./calendar/webhook";
 import {
   recordExternalRequest, resolvePatient, linkReferral, updatePatientLocation, resolvePhysiotherapist, findMatches,
-  resolveAvailabilityProfile, createPendingBooking, getBooking,
-  preparePaymentAttempt, recordPaymentInitialization, recordPaymentWebhook, createSpecialistReview, prepareSpecialistReviewPayment, recordSpecialistReviewPaymentInitialization, recordSpecialistReviewPaymentWebhook, cancelBooking, enqueueEvent, markEventDelivery, respondToBooking, replacementCandidates, reassignBooking,
+  resolveAvailabilityProfile, createPendingBooking, createAdminScheduledVirtualBooking, getBooking,
+  preparePaymentAttempt, recordPaymentInitialization, recordPaymentWebhook, recordPaymentFailedWebhook, createSpecialistReview, prepareSpecialistReviewPayment, recordSpecialistReviewPaymentInitialization, recordSpecialistReviewPaymentWebhook, cancelBooking, enqueueEvent, markEventDelivery, respondToBooking, replacementCandidates, reassignBooking,
 } from "./joyGateway";
 import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking } from "./joyGateway";
 
@@ -30,11 +30,13 @@ http.route({ path: "/joy-integration/resolve_physiotherapist", method: "POST", h
 http.route({ path: "/joy-integration/find_matches", method: "POST", handler: findMatches });
 http.route({ path: "/joy-integration/resolve_availability_profile", method: "POST", handler: resolveAvailabilityProfile });
 http.route({ path: "/joy-integration/create_pending_booking", method: "POST", handler: createPendingBooking });
+http.route({ path: "/joy-integration/create_admin_scheduled_virtual_booking", method: "POST", handler: createAdminScheduledVirtualBooking });
 http.route({ path: "/joy-integration/get_booking", method: "POST", handler: getBooking });
 http.route({ path: "/joy-integration/cancel_booking", method: "POST", handler: cancelBooking });
 http.route({ path: "/joy-integration/prepare_payment_attempt", method: "POST", handler: preparePaymentAttempt });
 http.route({ path: "/joy-integration/record_payment_initialization", method: "POST", handler: recordPaymentInitialization });
 http.route({ path: "/joy-integration/record_payment_webhook", method: "POST", handler: recordPaymentWebhook });
+http.route({ path: "/joy-integration/record_payment_failed_webhook", method: "POST", handler: recordPaymentFailedWebhook });
 http.route({ path: "/joy-integration/create_specialist_review", method: "POST", handler: createSpecialistReview });
 http.route({ path: "/joy-integration/prepare_specialist_review_payment", method: "POST", handler: prepareSpecialistReviewPayment });
 http.route({ path: "/joy-integration/record_specialist_review_payment_initialization", method: "POST", handler: recordSpecialistReviewPaymentInitialization });
