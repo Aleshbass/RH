@@ -62,17 +62,13 @@ export default function PhysioRegisterDirectoryPage() {
 
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="text-center max-w-3xl mx-auto">
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-4 py-2 mb-6 text-sm">
-              <BookOpen className="w-4 h-4" />
-              <span>Public Registry of Physiotherapists</span>
-            </div>
+
 
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-5 tracking-tight leading-tight">
               The Physio Register
             </h1>
             <p className="text-lg md:text-xl text-teal-100/90 mb-8 font-light max-w-2xl mx-auto">
-              Browse {stats?.totalRegistered || '...'} registered physiotherapists.
-              View MRTB licenses, read peer reviews, and find qualified professionals.
+              Join over 500+ registered rehabilitation experts across the country.
             </p>
 
             {/* Search Bar */}
@@ -92,19 +88,7 @@ export default function PhysioRegisterDirectoryPage() {
               )}
             </div>
 
-            {/* Quick stats */}
-            <div className="flex items-center justify-center gap-6 text-sm text-teal-100/80">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                <span>{stats?.totalRegistered || 0} Registered</span>
-              </div>
-              {(stats?.totalVerifiedByRehabify || 0) > 0 && (
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4" />
-                  <span>{stats.totalVerifiedByRehabify} Rehabify Approved</span>
-                </div>
-              )}
-            </div>
+
           </div>
         </div>
       </div>
