@@ -53,7 +53,7 @@ export default function PhysioRegisterDirectoryPage() {
   return (
     <div className="min-h-screen bg-gray-50/50">
       {/* Hero Section */}
-      <div className="bg-gradient-to-br from-[#002e2c] via-[#005b57] to-teal-600 text-white pt-24 pb-14 md:pt-32 md:pb-20 relative overflow-hidden">
+      <div className="bg-gradient-to-br from-[#002e2c] via-[#005b57] to-teal-600 text-white pt-24 pb-8 md:pt-32 md:pb-12 relative overflow-hidden">
         {/* Background effects */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute right-0 top-0 w-[500px] h-[500px] bg-white rounded-full blur-[120px] -mr-32 -mt-32" />
@@ -72,7 +72,7 @@ export default function PhysioRegisterDirectoryPage() {
             </p>
 
             {/* Search Bar */}
-            <div className="relative max-w-xl mx-auto mb-8">
+            <div className="relative max-w-xl mx-auto mb-4">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
               <Input
                 type="text"
@@ -117,12 +117,7 @@ export default function PhysioRegisterDirectoryPage() {
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         {/* Toolbar */}
-        <div className="flex flex-col sm:flex-row items-center justify-between flex-wrap gap-4 mb-8 text-center sm:text-left">
-          <div>
-            <p className="text-gray-600 text-sm">
-              <span className="font-semibold text-gray-900">{totalCount}</span> physiotherapists on the register
-            </p>
-          </div>
+        <div className="flex flex-col sm:flex-row items-center justify-end flex-wrap gap-4 mb-8 text-center sm:text-left">
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
               <SelectTrigger className="w-full sm:w-48 border-gray-200 bg-white h-10 rounded-xl text-sm">
