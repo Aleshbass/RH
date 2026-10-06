@@ -6,7 +6,9 @@ from app.models.types import ConversationStage, PatientPhase
 _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
     ConversationStage.STORY_CAPTURE: {
         ConversationStage.STORY_CAPTURE, ConversationStage.SAFETY_INTRODUCTION,
-        ConversationStage.SAFETY_SCREEN,
+        # V1 confirms the extracted story before presenting the one grouped
+        # safety screen, while still evaluating deterministic safety every turn.
+        ConversationStage.SAFETY_SCREEN, ConversationStage.TRIAGE_SUMMARY,
         ConversationStage.MEDICAL_ESCALATION, ConversationStage.EMERGENCY_ESCALATION,
     },
     ConversationStage.SAFETY_INTRODUCTION: {ConversationStage.SAFETY_SCREEN, ConversationStage.EMERGENCY_ESCALATION},
@@ -15,7 +17,11 @@ _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
         ConversationStage.SPECIALIST_REVIEW, ConversationStage.MEDICAL_ESCALATION,
         ConversationStage.EMERGENCY_ESCALATION,
     },
-    ConversationStage.TRIAGE_SUMMARY: {ConversationStage.TRIAGE_SUMMARY, ConversationStage.POLICY_REVIEW},
+    ConversationStage.TRIAGE_SUMMARY: {
+        ConversationStage.TRIAGE_SUMMARY,
+        ConversationStage.SAFETY_SCREEN,
+        ConversationStage.POLICY_REVIEW,
+    },
     # Policy acceptance is verified deterministically in the same turn that
     # may fetch matching options.  Permit that atomic transition instead of
     # crashing the WhatsApp worker after a valid “I accept”.

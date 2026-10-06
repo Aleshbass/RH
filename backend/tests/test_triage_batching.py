@@ -179,7 +179,7 @@ def test_lower_back_safety_prompt_is_grouped_and_backend_owned():
     extracted = ExtractedTriage(body_location="lower back", condition_area=ConditionArea.MSK)
     prompt = _safety_prompt(extracted)
     screen = _safety_screen(extracted)
-    assert "Reply Yes, No, or Unsure" in prompt
+    assert "Reply ‘No to all’" in prompt
     assert "1." in prompt
     assert "LB-" not in prompt  # patient copy contains approved wording, not internal IDs
     assert len(screen) == 4

@@ -134,6 +134,7 @@ _DASHBOARD_REPLY = (
     "That lives on the web dashboard, not WhatsApp. I can't edit bio, photo, pricing, or credentials here."
 )
 _REFERRAL_CODE_RE = re.compile(r"\bRHB\s*[-–—]\s*(\d{4,})\b", re.IGNORECASE)
+_PARTNER_LINK_CODE_RE = re.compile(r"\bJOYREF\s*[:=-]\s*([A-Za-z0-9-]{4,64})\b", re.IGNORECASE)
 _GREETING_ONLY_RE = re.compile(
     r"^\s*(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))"
     r"(?:\s+(?:joy|there))?[!,.\s]*$",
@@ -145,8 +146,15 @@ _THANKS_ONLY_RE = re.compile(
 )
 _FIRST_CONTACT_WELCOME = (
     "Hi, I’m Joy, Rehabify’s physiotherapy assistant. "
-    "Tell me what is bothering you or what you would like help with."
+    "Could you tell me what is going on today? You can tell me what is bothering you, "
+    "which part of your body is affected, how long you have had it, anything you have tried, "
+    "and whether you have seen anyone about it. Just tell me in your own words."
 )
+_TRIAGE_FLOW_KEY = "triage_flow_state"
+_AWAITING_SUMMARY_CONFIRMATION = "awaiting_summary_confirmation"
+_AWAITING_ADDITIONAL_DETAILS = "awaiting_additional_details"
+_COLLECTING_ADDITIONAL_DETAILS = "collecting_additional_details"
+_AWAITING_SAFETY_SCREEN = "awaiting_safety_screen"
 
 
 def _is_greeting_only(user_text: str) -> bool:
@@ -271,6 +279,59 @@ def _verified_referral_turn(
     return TurnResult(reply_text=reply, language=language, phase=state.phase, extracted=state.extracted, safety=evaluate(state.extracted))
 
 
+def _capture_partner_attribution(session: Session, identity: Identity, state: ConversationState, user_text: str) -> None:
+    """Persist a referral-link source only after RH verifies the active link."""
+    match = _PARTNER_LINK_CODE_RE.search(user_text or "")
+    if identity.persona != Persona.PATIENT or match is None:
+        return
+    patient = session.get(Patient, identity.person_id)
+    conversation = session.get(Conversation, state.conversation_id)
+    if patient is None or conversation is None:
+        return
+    context = dict(conversation.booking_context or {})
+    if isinstance(context.get("partner_attribution"), dict):
+        return
+    try:
+        client = configured_rh_client()
+        mapping = session.scalar(select(RHIdentityMapping).where(
+            RHIdentityMapping.persona == Persona.PATIENT.value,
+            RHIdentityMapping.joy_person_id == patient.id,
+        ))
+        if mapping is None:
+            resolved = client.resolve_patient(
+                patient.phone_e164, str(patient.id),
+                RHActor(persona="patient", sender_phone=patient.phone_e164), name=patient.name,
+            )
+            if not resolved.patient_id:
+                return
+            mapping = RHIdentityMapping(
+                persona=Persona.PATIENT.value, joy_person_id=patient.id, rh_record_id=resolved.patient_id,
+            )
+            session.add(mapping)
+            session.flush()
+        attribution = client.resolve_partner_attribution(
+            patient_id=mapping.rh_record_id, public_code=match.group(1),
+        )
+    except RHIntegrationError:
+        # Attribution failure must never block care or turn an ordinary intake
+        # into a misleading unverified partner source.
+        return
+    if attribution.resolution != "MATCH" or not attribution.public_code or not attribution.partner_id:
+        return
+    context["partner_attribution"] = {
+        "partner_id": attribution.partner_id,
+        "partner_name": attribution.partner_name,
+        "public_code": attribution.public_code,
+    }
+    conversation.booking_context = context
+    state.booking_context = context
+    append(
+        session, kind=AuditKind.IDENTITY, actor_phone=patient.phone_e164, person_id=patient.id,
+        payload={"event": "partner_attribution_verified", "partner_id": attribution.partner_id, "public_code": attribution.public_code},
+    )
+    session.flush()
+
+
 def _shadow_jev_decision(session: Session, identity: Identity, user_text: str, stage: str) -> None:
     """Record a non-authoritative Jev decision without retaining message text."""
     settings = get_settings()
@@ -324,6 +385,17 @@ def _is_explicit_policy_acceptance(user_text: str) -> bool:
     if text in {"i accept", "i agree"}:
         return True
     return bool(re.search(r"\b(?:i\s+)?(?:accept|agree to)\b.{0,80}\b(?:policy|terms|consultation)\b", text))
+
+
+def _is_simple_no(user_text: str) -> bool:
+    """Recognise a short negative without treating a clinical narrative as one."""
+    text = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
+    return text in {"no", "nope", "nah", "nothing else", "that's all", "that is all"}
+
+
+def _is_simple_yes(user_text: str) -> bool:
+    text = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
+    return text in {"yes", "yeah", "yep", "yup", "sure", "okay", "ok"}
 
 
 def _user_history(state: ConversationState) -> list[dict[str, str]]:
@@ -917,23 +989,47 @@ def _safety_prompt(extracted: ExtractedTriage) -> str:
         for index, (group, _) in enumerate(screen)
     )
     return (
-        "Before we continue, please answer this short safety check. "
-        "Reply Yes, No, or Unsure for each number (for example: 1 No, 2 No):\n"
+        "Before I help you book, I need to check a few important safety questions. "
+        "Reply ‘No to all’ if none apply, or tell me the number(s) that apply:\n"
         f"{rendered}"
     )
 
 
 def _can_skip_model_for_safety_reply(extracted: ExtractedTriage, user_text: str) -> bool:
     """Recognise a compact reply to the already displayed safety screen."""
-    return bool(_safety_screen(extracted)) and normalize_answer(user_text) in {
+    normalised = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
+    return bool(_safety_screen(extracted)) and (
+        normalised in {"no to all", "none", "none apply"}
+        or normalize_answer(user_text) in {
         YES,
         NO,
         UNCLEAR,
-    }
+        }
+    )
 
 
 def _triage_summary_prompt(extracted: ExtractedTriage) -> str:
-    return treatment_options_prompt(plain_summary(extracted))
+    return (
+        "Thanks. Just to make sure I’ve understood you correctly:\n\n"
+        f"{plain_summary(extracted)}\n\n"
+        "Is that correct? Reply Yes, or tell me what you would like me to correct or add."
+    )
+
+
+def _enter_quick_initial_policy(session: Session, state: ConversationState) -> str:
+    """Activate only the approved V1 new-patient route after a GREEN screen."""
+    conversation = session.get(Conversation, state.conversation_id)
+    if conversation is None:
+        return "I need to refresh your consultation details before we continue. Please try again shortly."
+    context = dict(conversation.booking_context or {})
+    # Full virtual and home-visit selections remain implemented for later
+    # clinician-led pathways. New patient V1 intentionally never exposes them.
+    context["treatment_option"] = "quick_initial"
+    context[_TRIAGE_FLOW_KEY] = "safety_cleared"
+    conversation.booking_context = context
+    state.booking_context = context
+    _set_triage_status(session, state, "summarised")
+    return _present_policy(session, state)
 
 
 def _stage_for_booking_substate(substate: str | None) -> ConversationStage | None:
@@ -968,95 +1064,82 @@ def _reply_after_extract(
     if not has_narrative(extracted):
         return candidate_reply, PatientPhase.FIRST_CONTACT
 
-    # Story details never bypass safety. Gather only the minimum information
-    # needed to choose a protocol, then let the deterministic scheduler own
-    # every red-flag question.
-    leftover = missing_fields(extracted)
-    booking_sub = decide_booking_substate(state)
-    if (
-        incoming_phase == PatientPhase.FIRST_CONTACT
-        and leftover
-        and _thin_first_contact(extracted)
-    ):
-        return candidate_reply, PatientPhase.FIRST_CONTACT
-
-    if leftover and not booking_sub:
-        followup = grouped_followup(leftover)
-        if not followup:
-            return _MID_ACK, PatientPhase.MID_TRIAGE
-        # Mined story already in hand: one grouped leftover ask, not another open probe.
-        return (
-            _mid_followup_reply(candidate_reply, followup, incoming_phase),
-            PatientPhase.MID_TRIAGE,
-        )
-
-    scheduled = schedule_questions(extracted)
-    if scheduled and not booking_sub:
-        return _safety_prompt(extracted), PatientPhase.MID_TRIAGE
-
-    # Severity is required for the summary, but only after the deterministic
-    # safety screen. It must be explicitly reported, never inferred by Gemini.
-    if extracted.severity is None and not booking_sub:
-        return (
-            _mid_followup_reply(
-                candidate_reply,
-                "Could you rate how bad it feels from 1 to 10?",
-                incoming_phase,
-            ),
-            PatientPhase.MID_TRIAGE,
-        )
-
     patient = session.get(Patient, identity.person_id)
-    if patient is not None:
-        summary_confirmed = (
-            incoming_phase == PatientPhase.POST_TRIAGE and _is_summary_confirm(user_text)
-        )
-        if summary_confirmed and not _policy_accepted(state):
-            # Legacy conversations may still contain the old summary prompt.
-            # When the same natural-language reply includes a treatment choice,
-            # honour it instead of asking the patient to repeat themselves.
-            choice = _treatment_option(user_text)
-            if choice:
-                conversation = session.get(Conversation, state.conversation_id)
-                if conversation is not None:
-                    ctx = dict(conversation.booking_context or {})
-                    ctx["treatment_option"] = choice
-                    conversation.booking_context = ctx
-                    state.booking_context = ctx
-            return _present_policy(session, state), PatientPhase.POST_TRIAGE
-        if (
-            (state.booking_context or {}).get(_POLICY_PRESENTED_KEY)
-            and not _policy_accepted(state)
-            and _is_explicit_policy_acceptance(user_text)
-        ):
-            _mark_policy_accepted(
-                session, state, actor_phone=identity.phone_e164,
-                person_id=identity.person_id, message_id=wa_message_id,
-            )
-            conversation = session.get(Conversation, state.conversation_id)
-            return begin_selected_treatment(session, conversation, patient, extracted), PatientPhase.POST_TRIAGE
-        booking_reply = handle_booking_turn(
-            session,
-            state,
-            patient,
-            extracted,
-            user_text,
-            paystack=paystack,
-            summary_confirmed=summary_confirmed,
-        )
-        if booking_reply is not None:
-            return booking_reply, PatientPhase.POST_TRIAGE
-
-    if booking_sub == AWAITING_PAYMENT:
-        return candidate_reply, PatientPhase.POST_TRIAGE
-
-    summary = _triage_summary_prompt(extracted)
-    _store_summary(session, state, summary)
     conversation = session.get(Conversation, state.conversation_id)
-    if conversation is not None:
-        _set_substate(conversation, AWAITING_TREATMENT_OPTION, dict(conversation.booking_context or {}))
-    _set_triage_status(session, state, "summarised")
-    return summary, PatientPhase.POST_TRIAGE
+    if patient is None or conversation is None:
+        return "I need to refresh your consultation details before we continue. Please try again shortly.", PatientPhase.MID_TRIAGE
+
+    # New-patient V1 is deliberately a small deterministic state machine:
+    # capture free text -> confirm summary -> optionally add detail -> one
+    # grouped safety screen -> policy -> Quick Initial Consultation.  Gemini
+    # extracts facts, but it never decides which workflow is next.
+    context = dict(conversation.booking_context or {})
+    flow_state = context.get(_TRIAGE_FLOW_KEY)
+    if flow_state is None:
+        summary = _triage_summary_prompt(extracted)
+        _store_summary(session, state, summary)
+        context[_TRIAGE_FLOW_KEY] = _AWAITING_SUMMARY_CONFIRMATION
+        conversation.booking_context = context
+        state.booking_context = context
+        session.flush()
+        return summary, PatientPhase.POST_TRIAGE
+
+    if flow_state == _AWAITING_SUMMARY_CONFIRMATION:
+        if _is_summary_confirm(user_text):
+            context[_TRIAGE_FLOW_KEY] = _AWAITING_ADDITIONAL_DETAILS
+            conversation.booking_context = context
+            state.booking_context = context
+            session.flush()
+            return (
+                "Is there anything else about your problem that you would like me to know before I continue? "
+                "Reply Yes or No.",
+                PatientPhase.POST_TRIAGE,
+            )
+        if _is_simple_no(user_text):
+            return "No problem. What would you like me to correct or add?", PatientPhase.POST_TRIAGE
+        # The correction is already extracted from this same message. Present a
+        # refreshed summary instead of re-running a checklist.
+        summary = _triage_summary_prompt(extracted)
+        _store_summary(session, state, summary)
+        return summary, PatientPhase.POST_TRIAGE
+
+    if flow_state == _AWAITING_ADDITIONAL_DETAILS:
+        if _is_simple_yes(user_text):
+            context[_TRIAGE_FLOW_KEY] = _COLLECTING_ADDITIONAL_DETAILS
+            conversation.booking_context = context
+            state.booking_context = context
+            session.flush()
+            return "Please tell me anything else you think is important.", PatientPhase.POST_TRIAGE
+        context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
+        conversation.booking_context = context
+        state.booking_context = context
+        session.flush()
+        if schedule_questions(extracted):
+            return _safety_prompt(extracted), PatientPhase.MID_TRIAGE
+        return _enter_quick_initial_policy(session, state), PatientPhase.POST_TRIAGE
+
+    if flow_state == _COLLECTING_ADDITIONAL_DETAILS:
+        context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
+        conversation.booking_context = context
+        state.booking_context = context
+        session.flush()
+        if schedule_questions(extracted):
+            return f"Thanks, I’ve added that to your information.\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
+        return _enter_quick_initial_policy(session, state), PatientPhase.POST_TRIAGE
+
+    if flow_state == _AWAITING_SAFETY_SCREEN:
+        if schedule_questions(extracted):
+            return _safety_prompt(extracted), PatientPhase.MID_TRIAGE
+        return _enter_quick_initial_policy(session, state), PatientPhase.POST_TRIAGE
+
+    # Existing in-flight legacy conversations still complete safely. New
+    # conversations never enter this branch because V1 sets the state above.
+    booking_reply = handle_booking_turn(
+        session, state, patient, extracted, user_text, paystack=paystack,
+    )
+    if booking_reply is not None:
+        return booking_reply, PatientPhase.POST_TRIAGE
+    return _enter_quick_initial_policy(session, state), PatientPhase.POST_TRIAGE
 
 
 def provider_unavailable_reply(
@@ -1072,6 +1155,12 @@ def provider_unavailable_reply(
         return TurnResult(reply_text="Sorry, I had a brief hiccup. Please send that again in a moment.", language="en", phase=PatientPhase.FIRST_CONTACT)
     state = load(session, identity)
     language = mirror_language(user_text, state.last_known_language)
+
+    # Referral tokens are transport metadata, not clinical narrative. Capture
+    # verified attribution first, then let the normal welcome/story flow see
+    # only the patient's human-facing message.
+    _capture_partner_attribution(session, identity, state, user_text)
+    user_text = _PARTNER_LINK_CODE_RE.sub("", user_text or "").strip()
     extracted = _apply_inferred_area(enrich_from_user_text(state.extracted, user_text))
     # Preserve the same deterministic immediate red-flag handling used during
     # human takeover; a provider outage must never downgrade a clear urgent
@@ -1721,13 +1810,19 @@ def handle_turn(
                     for question in safety_screen[index - 1][1]:
                         answers[question.id] = normalized
         else:
-            normalized = normalize_answer(user_text)
-            if normalized in {YES, NO}:
-                # A bare answer is ambiguous after a grouped screen, so apply
-                # it only to the first group rather than silently clearing all
-                # safety checks.
-                for question in safety_screen[0][1]:
-                    answers[question.id] = normalized
+            compact = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
+            if compact in {"no to all", "none", "none apply"}:
+                for _, questions in safety_screen:
+                    for question in questions:
+                        answers[question.id] = NO
+            else:
+                normalized = normalize_answer(user_text)
+                if normalized in {YES, NO}:
+                    # A bare answer is ambiguous after a grouped screen, so apply
+                    # it only to the first group rather than silently clearing all
+                    # safety checks.
+                    for question in safety_screen[0][1]:
+                        answers[question.id] = normalized
         if answers != dict(extracted.safety_answers):
             order = list(extracted.safety_question_order)
             for _, questions in safety_screen:

@@ -60,6 +60,14 @@ class RHReferralContext:
     resolution: Literal["MATCH", "NOT_FOUND", "MISMATCH", "CONFLICT"]
     referral: dict[str, Any] | None = None
 
+
+@dataclass(frozen=True)
+class RHPartnerAttribution:
+    resolution: Literal["MATCH", "NOT_FOUND", "CONFLICT"]
+    partner_id: str | None = None
+    partner_name: str | None = None
+    public_code: str | None = None
+
 @dataclass(frozen=True)
 class PhysiotherapistResolution:
     resolution: Literal["MATCH", "NO_MATCH", "INELIGIBLE", "AMBIGUOUS"]
@@ -361,6 +369,21 @@ class RHClient:
             raise RHIntegrationError("INVALID_RESPONSE", "RH returned invalid referral context", retryable=True)
         return RHReferralContext(resolution=resolution, referral=referral)
 
+    def resolve_partner_attribution(self, *, patient_id: str, public_code: str) -> RHPartnerAttribution:
+        """Verify a public partner link and bind it to this RH patient once."""
+        if not self.gateway_client:
+            raise RHIntegrationError("RH_BOOKING_GATEWAY_UNAVAILABLE", "RH partner attribution gateway is unavailable")
+        data = self._gateway("resolve_partner_attribution", {"patient_id": patient_id, "public_code": public_code})
+        resolution = data.get("resolution")
+        if resolution not in {"MATCH", "NOT_FOUND", "CONFLICT"}:
+            raise RHIntegrationError("INVALID_RESPONSE", "RH returned invalid partner attribution", retryable=True)
+        return RHPartnerAttribution(
+            resolution=resolution,
+            partner_id=data.get("partner_id"),
+            partner_name=data.get("partner_name"),
+            public_code=data.get("public_code"),
+        )
+
     def resolve_physiotherapist(self, phone: str, actor: RHActor) -> PhysiotherapistResolution:
         if self.gateway_client:
             data = self._gateway("resolve_physiotherapist", {"phone": phone})
@@ -496,6 +519,7 @@ class RHClient:
         policy_acceptance_reference: str,
         conversation_id: str,
         idempotency_key: str,
+        partner_referral_code: str | None = None,
     ) -> RHBooking:
         """Create a fixed-price virtual consultation awaiting admin scheduling.
 
@@ -523,6 +547,7 @@ class RHClient:
                 "conversation_id": conversation_id,
                 "request_id": str(uuid4()),
                 "idempotency_key": idempotency_key,
+                **({"partner_referral_code": partner_referral_code} if partner_referral_code else {}),
             },
         )
         return RHBooking(

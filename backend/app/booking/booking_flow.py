@@ -242,6 +242,12 @@ def begin_selected_treatment(
                 f"joy-{option}-{conversation.id}-"
                 f"{policy.get('acceptance_message_id') or policy.get('accepted_at') or policy['version']}"
             ),
+            partner_referral_code=(
+                str(ctx["partner_attribution"]["public_code"])
+                if isinstance(ctx.get("partner_attribution"), dict)
+                and isinstance(ctx["partner_attribution"].get("public_code"), str)
+                else None
+            ),
         )
     except RHIntegrationError as error:
         logger.warning("joy_virtual_consultation_create_failed code=%s", error.code)

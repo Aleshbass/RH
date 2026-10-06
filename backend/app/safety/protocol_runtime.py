@@ -80,7 +80,7 @@ def normalize_answer(text: str | None) -> str:
     # clearly universal negatives; ambiguous clinical prose must still be
     # clarified rather than guessed as safe.
     compact = re.sub(r"[,.!;:\\-_/]+", " ", value)
-    compact = re.sub(r"\\s+", " ", compact).strip()
+    compact = re.sub(r"\s+", " ", compact).strip()
     if compact in {
         "no none at all", "no not at all", "no nothing", "none at all",
         "none of those", "no to any", "no to all of them", "not at all",
