@@ -1058,6 +1058,7 @@ export const createAdminScheduledJoyVirtualBooking = internalMutation({
     durationMinutes: v.number(), amountKobo: v.number(), triageSummaryReference: v.string(),
     assessmentId: v.string(), assessmentRevision: v.number(), policyVersion: v.string(),
     policyAcceptanceReference: v.string(), conversationId: v.string(), requestId: v.string(), idempotencyKey: v.string(),
+    partnerReferralCode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const expected = args.consultationType === "quick_initial" ? 600_000 : 1_500_000;
@@ -1070,6 +1071,20 @@ export const createAdminScheduledJoyVirtualBooking = internalMutation({
     }
     const patient = await ctx.db.get(args.patientId);
     if (!patient || patient.role !== "patient") throw new Error("Patient not found");
+    const partnerReferralCode = args.partnerReferralCode;
+    let partnerId: string | undefined;
+    if (partnerReferralCode) {
+      const link = await ctx.db.query("partnerReferralLinks")
+        .withIndex("by_public_code", (q) => q.eq("publicCode", partnerReferralCode))
+        .first();
+      if (!link || link.status !== "active" || (link.expiresAt && link.expiresAt <= Date.now())) {
+        throw new Error("Partner referral link is not active");
+      }
+      if (patient.referralPublicCode !== link.publicCode || patient.referredByPartnerCode !== link.partnerId) {
+        throw new Error("Partner attribution does not belong to this patient");
+      }
+      partnerId = link.partnerId;
+    }
     const now = Date.now();
     const bookingId = await ctx.db.insert("marketplaceBookings", {
       patientId: args.patientId, sessionType: args.consultationType, sessionDuration: args.durationMinutes,
@@ -1081,6 +1096,7 @@ export const createAdminScheduledJoyVirtualBooking = internalMutation({
       physiotherapistEarnings: 0, rehabifyEarnings: args.amountKobo, paymentStatus: "pending", bookingStatus: "pending_payment",
       patientNotes: `Joy triage summary reference: ${args.triageSummaryReference}`,
       sourceSystem: "joy_ai", sourceChannel: "whatsapp", sourceEntryPoint: "virtual_consultation",
+      partnerId, joyPartnerReferralLinkCode: partnerReferralCode,
       joyConversationId: args.conversationId, joyAssessmentId: args.assessmentId, joyAssessmentRevision: args.assessmentRevision,
       joyPolicyVersion: args.policyVersion, joyPolicyAcceptanceReference: args.policyAcceptanceReference,
       originRequestId: args.requestId, originIdempotencyKey: args.idempotencyKey, originatedAt: now,
@@ -1089,6 +1105,39 @@ export const createAdminScheduledJoyVirtualBooking = internalMutation({
       replacementStatus: "not_needed", createdAt: now, updatedAt: now,
     });
     return { booking_id: bookingId, booking_status: "pending_payment", payment_status: "pending", amount_kobo: args.amountKobo, hold_expires_at: now + BOOKING_HOLD_MS };
+  },
+});
+
+/** Verify and persist the original partner link before Joy uses its attribution. */
+export const resolvePartnerAttributionForJoy = internalMutation({
+  args: { patientId: v.id("users"), publicCode: v.string() },
+  handler: async (ctx, args) => {
+    const link = await ctx.db.query("partnerReferralLinks")
+      .withIndex("by_public_code", (q) => q.eq("publicCode", args.publicCode))
+      .first();
+    if (!link || link.status !== "active" || (link.expiresAt && link.expiresAt <= Date.now())) {
+      return { resolution: "NOT_FOUND" as const };
+    }
+    const patient = await ctx.db.get(args.patientId);
+    if (!patient || patient.role !== "patient") return { resolution: "NOT_FOUND" as const };
+    if (patient.referralPublicCode && patient.referralPublicCode !== link.publicCode) {
+      return { resolution: "CONFLICT" as const };
+    }
+    if (!patient.referralPublicCode) {
+      await ctx.db.patch(patient._id, {
+        referredByPartnerCode: link.partnerId,
+        referralPublicCode: link.publicCode,
+      });
+      await ctx.db.patch(link._id, { joyStarts: (link.joyStarts || 0) + 1, updatedAt: Date.now() });
+    }
+    const partner = await ctx.db.query("partners")
+      .withIndex("by_code", (q) => q.eq("code", link.partnerId)).first();
+    return {
+      resolution: "MATCH" as const,
+      partner_id: link.partnerId,
+      partner_name: partner?.name || "Rehabify partner",
+      public_code: link.publicCode,
+    };
   },
 });
 
@@ -1229,7 +1278,11 @@ export const recordJoyPaymentWebhook = internalMutation({
           const rehabifyAmount = args.amountKobo - commissionAmount - physioAmount;
           const billingPeriod = new Date(now).toISOString().slice(0, 7); // "YYYY-MM"
 
-          const physioUser: any = await ctx.db.get(booking.physiotherapistId);
+          const physiotherapistId = booking.physiotherapistId;
+          if (!physiotherapistId) {
+            throw new Error("Provider-selected Joy booking is missing its physiotherapist");
+          }
+          const physioUser: any = await ctx.db.get(physiotherapistId);
 
           await ctx.db.insert("partnerCommissions", {
             partnerId: linkedReferral.partnerId,
@@ -1241,7 +1294,7 @@ export const recordJoyPaymentWebhook = internalMutation({
             commissionRate: partnerRate,
             commissionAmount,
             netPayable: commissionAmount,
-            physiotherapistId: booking.physiotherapistId,
+            physiotherapistId,
             physiotherapistName: displayName(physioUser),
             careMode: booking.isOnline ? "virtual" : "in_person",
             physiotherapistAmount: physioAmount,
@@ -1303,6 +1356,9 @@ export const recordJoyPaymentWebhook = internalMutation({
     }
 
     return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: now + 5 * HOUR_MS, event_id: args.paystackEventId };
+  },
+});
+
 /** Record a terminal Paystack failure without treating it as payment evidence. */
 export const recordJoyPaymentFailedWebhook = internalMutation({
   args: { reference: v.string(), paystackEventId: v.string(), failureCategory: v.optional(v.string()) },

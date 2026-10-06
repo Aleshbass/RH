@@ -1085,7 +1085,6 @@ export default defineSchema({
     // Tracking the patient lifecycle
     patientId: v.optional(v.id("users")), // Linked once they sign up
     // Legacy partner referrals may already be linked to a marketplace booking.
-    bookingId: v.optional(v.id("marketplaceBookings")),
     appointmentId: v.optional(v.id("appointments")), // Associated first appointment
     bookingId: v.optional(v.id("marketplaceBookings")), // Linked marketplace booking
     assignedPhysiotherapistId: v.optional(v.id("users")), // Matched physiotherapist
@@ -2397,8 +2396,6 @@ export default defineSchema({
     patientId: v.id("users"),
     appointmentId: v.optional(v.id("appointments")), // Created after payment
     // Legacy partner-attributed bookings retain their source referral.
-    referralId: v.optional(v.id("inboundReferrals")),
-
     // Session details
     sessionType: v.string(), // "initial_consult", "follow_up", "package"
     sessionDate: v.optional(v.number()), // Scheduled date
@@ -2425,6 +2422,9 @@ export default defineSchema({
     rehabifyEarnings: v.optional(v.number()), // Amount Rehabify retains (10% default, kobo)
     partnerEarnings: v.optional(v.number()), // Amount referring partner earns (10% default, kobo)
     partnerId: v.optional(v.string()), // Referring partner code if referred
+    // Immutable evidence that the WhatsApp conversation began from a verified
+    // partner referral link, separate from any later payment action.
+    joyPartnerReferralLinkCode: v.optional(v.string()),
     referralId: v.optional(v.id("inboundReferrals")), // Referring inbound referral if referred
     careMode: v.optional(v.union(v.literal("virtual"), v.literal("in_person"))),
 

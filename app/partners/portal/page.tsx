@@ -3009,6 +3009,9 @@ print(res.json())`;
                             ? window.location.protocol
                             : "https:";
                         const fullUrl = `${protocol}//${host}/r/${l.publicCode}`;
+                        const joyNumber = (process.env.NEXT_PUBLIC_JOY_WHATSAPP_NUMBER || "2348061525811").replace(/\D/g, "");
+                        const joyMessage = `Hi Joy! 👋🏾 I need help with my recovery. JOYREF:${l.publicCode}`;
+                        const joyWhatsAppUrl = `https://wa.me/${joyNumber}?text=${encodeURIComponent(joyMessage)}`;
 
                         return (
                           <tr key={l._id} className="hover:bg-[#FAF6E7]/30 transition">
@@ -3043,6 +3046,14 @@ print(res.json())`;
                               </span>
                             </td>
                             <td className="py-3 px-4 text-right">
+                              <a
+                                href={joyWhatsAppUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mr-3 text-[#005b57] font-semibold hover:underline"
+                              >
+                                Start in Joy
+                              </a>
                               <Link
                                 href={`/r/${l.publicCode}`}
                                 target="_blank"

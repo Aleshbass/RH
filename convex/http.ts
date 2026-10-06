@@ -2,7 +2,7 @@ import { httpRouter } from "convex/server";
 import { calendarWebhook, webhookHealth } from "./calendar/webhook";
 import {
   recordExternalRequest, resolvePatient, linkReferral, updatePatientLocation, resolvePhysiotherapist, findMatches,
-  resolveAvailabilityProfile, createPendingBooking, createAdminScheduledVirtualBooking, getBooking,
+  resolveAvailabilityProfile, createPendingBooking, createAdminScheduledVirtualBooking, resolvePartnerAttribution, getBooking,
   preparePaymentAttempt, recordPaymentInitialization, recordPaymentWebhook, recordPaymentFailedWebhook, createSpecialistReview, prepareSpecialistReviewPayment, recordSpecialistReviewPaymentInitialization, recordSpecialistReviewPaymentWebhook, cancelBooking, enqueueEvent, markEventDelivery, respondToBooking, replacementCandidates, reassignBooking,
 } from "./joyGateway";
 import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking } from "./joyGateway";
@@ -31,6 +31,7 @@ http.route({ path: "/joy-integration/find_matches", method: "POST", handler: fin
 http.route({ path: "/joy-integration/resolve_availability_profile", method: "POST", handler: resolveAvailabilityProfile });
 http.route({ path: "/joy-integration/create_pending_booking", method: "POST", handler: createPendingBooking });
 http.route({ path: "/joy-integration/create_admin_scheduled_virtual_booking", method: "POST", handler: createAdminScheduledVirtualBooking });
+http.route({ path: "/joy-integration/resolve_partner_attribution", method: "POST", handler: resolvePartnerAttribution });
 http.route({ path: "/joy-integration/get_booking", method: "POST", handler: getBooking });
 http.route({ path: "/joy-integration/cancel_booking", method: "POST", handler: cancelBooking });
 http.route({ path: "/joy-integration/prepare_payment_attempt", method: "POST", handler: preparePaymentAttempt });
