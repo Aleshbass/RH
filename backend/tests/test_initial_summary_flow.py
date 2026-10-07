@@ -8,6 +8,7 @@ from app.conversation.turn_handler import (
     _triage_summary_prompt,
 )
 from app.api.internal.rh_safety_eligibility import _triage_status_allows_service
+from app.safety.escalation import specialist_review_offer
 from app.models.types import ConditionArea, ExtractedTriage
 
 
@@ -54,6 +55,13 @@ def test_specialist_review_eligibility_accepts_the_amber_triage_state():
 
 def test_active_intake_flow_does_not_ask_triage_follow_up_questions():
     assert _TRIAGE_QUESTIONNAIRE_ENABLED is False
+
+
+def test_completed_story_routes_to_the_specialist_triage_review_offer():
+    offer = specialist_review_offer().lower()
+    assert "specialist triage review" in offer
+    assert "₦6,000" in offer
+    assert "reply yes" in offer
 
 
 def test_no_further_details_accepts_whatsapp_smart_apostrophes():

@@ -63,6 +63,20 @@ _PAIN_QUALITY_RE = re.compile(
 )
 _WORSE_RE = re.compile(r"\b(?:worse|aggravated)\s+(?:when|with|by)\s+(.{2,100}?)(?=\s+(?:and\s+)?better\b|[.;,!\n]|$)", re.IGNORECASE)
 _BETTER_RE = re.compile(r"\b(?:better|relieved)\s+(?:when|with|by)\s+([^.;,!\n]{2,100})", re.IGNORECASE)
+_SPORT_INJURY_MECHANISM_RE = re.compile(
+    r"\b((?:twisted|sprained|injured|hurt)\s+(?:my\s+)?"
+    r"(?:[a-z]+\s+){0,2}(?:ankle|knee|shoulder|wrist|elbow|foot|hand|hip)\b"
+    r"(?:\s+(?:while|when|playing)\s+[^.!?,;]{2,80})?)",
+    re.IGNORECASE,
+)
+_IMPROVING_SWELLING_RE = re.compile(
+    r"\b(?:(?:the|my)\s+)?swelling\s+(?:is\s+)?(?:improving|better|going\s+down)\b",
+    re.IGNORECASE,
+)
+_HURTS_WHEN_RE = re.compile(
+    r"\b(?:it\s+)?(?:still\s+)?hurts?\s+(?:when|with)\s+([^.!?,;]{2,80})",
+    re.IGNORECASE,
+)
 
 
 def merge_extraction(existing: ExtractedTriage, incoming: dict) -> ExtractedTriage:
@@ -204,14 +218,35 @@ def enrich_from_user_text(extracted: ExtractedTriage, user_text: str) -> Extract
     duration = _DURATION_RE.search(text) or _DURATION_AGO_RE.search(text)
     if duration:
         updates["onset"] = next(value for value in duration.groups() if value).casefold()
+    if not extracted.mechanism:
+        mechanism = _SPORT_INJURY_MECHANISM_RE.search(text)
+        if mechanism:
+            detail = mechanism.group(1).strip().casefold()
+            # The timing is already represented by onset. Keeping it out of
+            # the mechanism makes the patient recap read naturally.
+            detail = _DURATION_AGO_RE.sub("", detail).strip(" ,")
+            updates["mechanism"] = detail
     if not extracted.symptoms:
+        symptoms: list[str] = []
         quality = _PAIN_QUALITY_RE.search(text)
         if quality:
-            updates["symptoms"] = [quality.group(0).casefold()]
+            symptoms.append(quality.group(0).casefold())
+        swelling = _IMPROVING_SWELLING_RE.search(text)
+        if swelling:
+            symptoms.append("swelling that is improving")
+        hurts = _HURTS_WHEN_RE.search(text)
+        if hurts:
+            symptoms.append(f"pain when {hurts.group(1).strip().casefold()}")
+        if symptoms:
+            updates["symptoms"] = list(dict.fromkeys(symptoms))
     if not extracted.aggravating:
         worse = _WORSE_RE.search(text)
         if worse:
             updates["aggravating"] = [worse.group(1).strip().casefold()]
+        else:
+            hurts = _HURTS_WHEN_RE.search(text)
+            if hurts:
+                updates["aggravating"] = [hurts.group(1).strip().casefold()]
     if not extracted.relieving:
         better = _BETTER_RE.search(text)
         if better:

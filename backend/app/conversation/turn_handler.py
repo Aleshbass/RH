@@ -72,7 +72,7 @@ from app.safety.semantic_normalization import (
     clearly_non_major_sport_mechanism,
     validated_semantic_safety_answers,
 )
-from app.safety.escalation import notify_family_on_safety, patient_message
+from app.safety.escalation import notify_family_on_safety, patient_message, specialist_review_offer
 from app.safety.evaluator import evaluate
 from app.physio.availability import apply_availability_turn
 from app.physio.booking_alerts import apply_physio_reply
@@ -1076,20 +1076,17 @@ def _triage_summary_prompt(extracted: ExtractedTriage) -> str:
     )
 
 
-def _enter_quick_initial_policy(session: Session, state: ConversationState) -> str:
-    """Activate only the approved V1 new-patient route after a GREEN screen."""
+def _offer_specialist_triage_review(session: Session, state: ConversationState) -> str:
+    """Route the completed initial account to the fixed-price clinician review."""
     conversation = session.get(Conversation, state.conversation_id)
     if conversation is None:
         return "I need to refresh your consultation details before we continue. Please try again shortly."
     context = dict(conversation.booking_context or {})
-    # Full virtual and home-visit selections remain implemented for later
-    # clinician-led pathways. New patient V1 intentionally never exposes them.
-    context["treatment_option"] = "quick_initial"
-    context[_TRIAGE_FLOW_KEY] = "safety_cleared"
+    context[_TRIAGE_FLOW_KEY] = "specialist_review_offered"
     conversation.booking_context = context
     state.booking_context = context
-    _set_triage_status(session, state, "summarised")
-    return _present_policy(session, state)
+    _set_triage_status(session, state, "specialist_review")
+    return specialist_review_offer()
 
 
 def _stage_for_booking_substate(substate: str | None) -> ConversationStage | None:
@@ -1156,7 +1153,7 @@ def _reply_after_extract(
                 conversation.booking_context = context
                 state.booking_context = context
                 return f"{acknowledgement}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
-            return f"{acknowledgement}\n\n{_enter_quick_initial_policy(session, state)}", PatientPhase.POST_TRIAGE
+            return f"{acknowledgement}\n\n{_offer_specialist_triage_review(session, state)}", PatientPhase.POST_TRIAGE
         if _is_summary_confirm(user_text):
             context[_TRIAGE_FLOW_KEY] = _AWAITING_ADDITIONAL_DETAILS
             conversation.booking_context = context
@@ -1190,7 +1187,7 @@ def _reply_after_extract(
             conversation.booking_context = context
             state.booking_context = context
             return f"{acknowledgement}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
-        return f"{acknowledgement}\n\n{_enter_quick_initial_policy(session, state)}", PatientPhase.POST_TRIAGE
+        return f"{acknowledgement}\n\n{_offer_specialist_triage_review(session, state)}", PatientPhase.POST_TRIAGE
 
     if flow_state == _COLLECTING_ADDITIONAL_DETAILS:
         context[_TRIAGE_FLOW_KEY] = "summary_complete"
@@ -1204,14 +1201,14 @@ def _reply_after_extract(
             return f"Thanks, I’ve added that to your information.\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
         return (
             "Thanks, I’ve added that to your information.\n\n"
-            f"{_enter_quick_initial_policy(session, state)}",
+            f"{_offer_specialist_triage_review(session, state)}",
             PatientPhase.POST_TRIAGE,
         )
 
     if flow_state == _AWAITING_SAFETY_SCREEN:
         if _TRIAGE_QUESTIONNAIRE_ENABLED and schedule_questions(extracted):
             return _safety_prompt(extracted), PatientPhase.MID_TRIAGE
-        return _enter_quick_initial_policy(session, state), PatientPhase.POST_TRIAGE
+        return _offer_specialist_triage_review(session, state), PatientPhase.POST_TRIAGE
 
     # Existing in-flight legacy conversations still complete safely. New
     # conversations never enter this branch because V1 sets the state above.
@@ -1220,7 +1217,7 @@ def _reply_after_extract(
     )
     if booking_reply is not None:
         return booking_reply, PatientPhase.POST_TRIAGE
-    return _enter_quick_initial_policy(session, state), PatientPhase.POST_TRIAGE
+    return _offer_specialist_triage_review(session, state), PatientPhase.POST_TRIAGE
 
 
 def provider_unavailable_reply(

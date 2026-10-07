@@ -250,7 +250,25 @@ def begin_selected_treatment(
             ),
         )
     except RHIntegrationError as error:
-        logger.warning("joy_virtual_consultation_create_failed code=%s", error.code)
+        # Do not expose RH internals to the patient, but retain a durable,
+        # searchable reason so production support can distinguish a missing
+        # gateway capability from a temporary upstream outage.
+        logger.warning(
+            "joy_virtual_consultation_create_failed code=%s retryable=%s",
+            error.code,
+            error.retryable,
+        )
+        append(
+            session,
+            kind=AuditKind.BOOKING,
+            actor_phone=patient.phone_e164,
+            person_id=patient.id,
+            payload={
+                "decision": "virtual_consultation_create_failed",
+                "rh_error_code": error.code,
+                "retryable": error.retryable,
+            },
+        )
         return "I can’t create your virtual consultation right now. No booking has been made; please try again shortly."
     ctx.update({
         "rh_booking_id": booking.booking_id,

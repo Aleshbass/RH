@@ -279,6 +279,19 @@ def test_enriches_onset_and_goal_from_natural_sport_injury_story():
     assert enriched.goals == "return to sport safely"
 
 
+def test_enriches_story_details_for_a_human_useful_summary():
+    from app.triage.extraction import enrich_from_user_text
+
+    enriched = enrich_from_user_text(
+        ExtractedTriage(),
+        "I twisted my ankle playing football 4 days ago. The swelling is improving, but it still hurts when I walk. I'd like physiotherapy to return to sport safely.",
+    )
+
+    assert enriched.mechanism == "twisted my ankle playing football"
+    assert enriched.symptoms == ["swelling that is improving", "pain when i walk"]
+    assert enriched.aggravating == ["i walk"]
+
+
 def test_enrich_severity_from_out_of_ten():
     from app.triage.extraction import enrich_from_user_text
 

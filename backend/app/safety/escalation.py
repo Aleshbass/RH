@@ -82,10 +82,15 @@ _AMBER_MESSAGE = (
 )
 
 
+def specialist_review_offer() -> str:
+    """Return the approved, patient-facing specialist-review invitation."""
+    return _AMBER_MESSAGE
+
+
 def patient_message(result: SafetyResult) -> str:
     level = (result.risk_level or "").upper()
     if level == "AMBER" or result.action == "specialist_review":
-        return _AMBER_MESSAGE
+        return specialist_review_offer()
     if not result.fired and level not in {"ORANGE", "RED"}:
         return ""
     if len(result.rule_ids) == 1:
