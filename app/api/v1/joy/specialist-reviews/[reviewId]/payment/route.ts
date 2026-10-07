@@ -21,8 +21,30 @@ export async function POST(request: Request, context: { params: Promise<{ review
     if (prepared.authorization_url) return success(requestId, { review_id: reviewId, reference, authorization_url: prepared.authorization_url, payment_status: "pending" });
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
     const response = await fetch("https://api.paystack.co/transaction/initialize", { method: "POST", headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY ?? ""}`, "Content-Type": "application/json" }, body: JSON.stringify({ email: input.email, amount: prepared.amount_kobo, currency: "NGN", reference, callback_url: `${appUrl}/payment/callback`, metadata: { joy_specialist_review_id: reviewId, source_system: "joy_ai", source_channel: "whatsapp", correlation_id: requestId } }) });
-    const result = await response.json() as { status?: boolean; data?: { authorization_url?: string } };
-    if (!response.ok || !result.status || !result.data?.authorization_url) throw new JoyAuthError(503, "PAYMENT_INITIALIZATION_FAILED", "Unable to initialize secure payment at this time");
+    let result: { status?: boolean; message?: string; data?: { authorization_url?: string } };
+    try {
+      result = await response.json() as typeof result;
+    } catch {
+      console.error("joy_specialist_review_paystack_invalid_response", {
+        request_id: requestId,
+        review_id: reviewId,
+        paystack_status: response.status,
+        paystack_key_configured: Boolean(process.env.PAYSTACK_SECRET_KEY),
+      });
+      throw new JoyAuthError(503, "PAYMENT_INITIALIZATION_FAILED", "Unable to initialize secure payment at this time");
+    }
+    if (!response.ok || !result.status || !result.data?.authorization_url) {
+      console.error("joy_specialist_review_paystack_initialization_failed", {
+        request_id: requestId,
+        review_id: reviewId,
+        paystack_status: response.status,
+        paystack_message: typeof result.message === "string"
+          ? result.message.replace(/[^\s@]+@[^\s@]+/g, "[redacted]").slice(0, 200)
+          : "missing authorization URL",
+        paystack_key_configured: Boolean(process.env.PAYSTACK_SECRET_KEY),
+      });
+      throw new JoyAuthError(503, "PAYMENT_INITIALIZATION_FAILED", "Unable to initialize secure payment at this time");
+    }
     await callJoyConvexGateway("record_specialist_review_payment_initialization", { attempt_id: prepared.attempt_id, authorization_url: result.data.authorization_url });
     return success(requestId, { review_id: reviewId, reference, authorization_url: result.data.authorization_url, payment_status: "pending" });
   } catch (error) { return errorResponse(requestId, error); }
