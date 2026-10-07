@@ -48,6 +48,15 @@ def _verify(raw_body: bytes, request: Request, secret: str) -> None:
         raise HTTPException(status_code=401, detail="invalid RH service authentication")
 
 
+def _triage_status_allows_service(triage_status: str, service_type: str) -> bool:
+    """Require the durable state produced by the corresponding safety route."""
+    if service_type == "standard_consultation":
+        return triage_status == "summarised"
+    if service_type == "specialist_review":
+        return triage_status == "specialist_review"
+    return False
+
+
 def issue_eligibility_reference(
     *, session: Session, settings: Settings, payload: EligibilityRequest
 ) -> dict:
@@ -72,7 +81,11 @@ def issue_eligibility_reference(
     if mapping is None:
         return {"allowed": False, "reason": "PATIENT_MAPPING_NOT_FOUND"}
     triage = session.get(TriageSession, payload.assessment_id)
-    if triage is None or triage.patient_id != mapping.joy_person_id or triage.status != "summarised":
+    if (
+        triage is None
+        or triage.patient_id != mapping.joy_person_id
+        or not _triage_status_allows_service(triage.status, payload.service_type)
+    ):
         return {"allowed": False, "reason": "ASSESSMENT_NOT_CURRENT"}
     created_at = triage.created_at if triage.created_at.tzinfo else triage.created_at.replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > created_at + _CLEARANCE_VALIDITY:

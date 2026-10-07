@@ -229,11 +229,13 @@ class RHClient:
         self.key_id = key_id
         self.hmac_secret = hmac_secret.encode("utf-8")
         # Payment initialization may include a cold local Next.js route and a
-        # Paystack round trip. Ten seconds let RH finish (and log HTTP 200)
-        # while Joy timed out just before receiving it. Keep the operational
-        # dependency bounded, but allow enough headroom for that server-side
-        # work; interactive triage never uses this client.
-        self.client = client or httpx.Client(timeout=20.0)
+        # Paystack round trip. The API can complete just after a 20-second
+        # client deadline, leaving RH with a successful payment attempt while
+        # Joy reports a false failure. Keep connection/pool limits bounded,
+        # but allow the payment read to finish.
+        self.client = client or httpx.Client(
+            timeout=httpx.Timeout(connect=10.0, read=60.0, write=20.0, pool=10.0)
+        )
         self.read_client = read_client
         self.gateway_client = gateway_client
 

@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
+from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -531,9 +532,38 @@ def _drain_text_queue(queue: str, timeout: int = 1) -> bool:
     return True
 
 
-def run_forever(timeout: int = 5) -> None:
-    recover_booking_email_processing()
+def _wait_for_redis(*, retry_seconds: int = 5) -> None:
+    """Block until the queue service is available instead of crashing workers."""
     while True:
+        try:
+            _redis().ping()
+            return
+        except RedisConnectionError:
+            logger.warning(
+                "Redis is unavailable; retrying worker connection in %s seconds",
+                retry_seconds,
+            )
+            time.sleep(retry_seconds)
+
+
+def run_forever(timeout: int = 5) -> None:
+    while True:
+        _wait_for_redis()
+        try:
+            recover_booking_email_processing()
+            break
+        except RedisConnectionError:
+            # Redis may disappear between the readiness check and startup
+            # recovery. Re-enter the same controlled retry path rather than
+            # terminating the process.
+            logger.warning("Redis disconnected during worker startup recovery")
+            time.sleep(1)
+    while True:
+        try:
+            _redis().ping()
+        except RedisConnectionError:
+            _wait_for_redis()
+            continue
         try:
             process_appointment_reminders_once()
         except Exception:

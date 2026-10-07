@@ -155,6 +155,11 @@ _AWAITING_SUMMARY_CONFIRMATION = "awaiting_summary_confirmation"
 _AWAITING_ADDITIONAL_DETAILS = "awaiting_additional_details"
 _COLLECTING_ADDITIONAL_DETAILS = "collecting_additional_details"
 _AWAITING_SAFETY_SCREEN = "awaiting_safety_screen"
+# The client-approved intake is deliberately summary-led for now. Keep the
+# legacy deterministic safety-screen implementation below for a future
+# re-enable, but do not ask follow-up triage questions in the active flow.
+# Explicit RED findings are still handled immediately by ``safety.fired``.
+_TRIAGE_QUESTIONNAIRE_ENABLED = False
 
 
 def _is_greeting_only(user_text: str) -> bool:
@@ -390,12 +395,48 @@ def _is_explicit_policy_acceptance(user_text: str) -> bool:
 def _is_simple_no(user_text: str) -> bool:
     """Recognise a short negative without treating a clinical narrative as one."""
     text = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
-    return text in {"no", "nope", "nah", "nothing else", "that's all", "that is all"}
+    return text in {
+        "no", "nope", "nah", "nothing else", "there's nothing else",
+        "there is nothing else", "nothing more", "that's all", "that is all",
+    }
+
+
+def _is_no_further_details(user_text: str) -> bool:
+    """Recognise an unambiguous end to the invitation to add information."""
+    text = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
+    return text in {
+        "nothing else", "there's nothing else", "there is nothing else",
+        "nothing more", "that's all", "that is all", "no, nothing else",
+    }
 
 
 def _is_simple_yes(user_text: str) -> bool:
     text = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
     return text in {"yes", "yeah", "yep", "yup", "sure", "okay", "ok"}
+
+
+def _defer_amber_until_summary_is_complete(
+    booking_context: dict | None,
+    user_text: str,
+) -> bool:
+    """Let a patient confirm their first-story summary before an AMBER offer.
+
+    RED safety escalation is never deferred. AMBER results can be based on
+    incomplete initial information, so the patient gets one chance to confirm
+    the summary and add anything material before Joy presents that route.
+    """
+    flow_state = (booking_context or {}).get(_TRIAGE_FLOW_KEY)
+    if flow_state is None:
+        return True
+    if flow_state == _AWAITING_SUMMARY_CONFIRMATION:
+        # “There's nothing else” both confirms the summary and closes the
+        # invitation to add detail, so it may progress immediately.
+        return not _is_no_further_details(user_text)
+    if flow_state == _AWAITING_ADDITIONAL_DETAILS:
+        # A simple affirmative means the next message will contain the extra
+        # detail; do not route on the incomplete account yet.
+        return _is_simple_yes(user_text)
+    return False
 
 
 def _user_history(state: ConversationState) -> list[dict[str, str]]:
@@ -975,9 +1016,20 @@ def _narrative_yes_answers(
         "major_injury": r"serious\s+accident|major\s+fall|significant\s+injury",
     }
     answers: dict[str, str] = {}
+    negation = r"(?:\bno\b|\bnot\b|\bwithout\b|\bhaven['’]t\b|\bhave\s+not\b|\bden(?:y|ies)\b)"
     for group, questions in screen:
         terms = warning_terms[group]
-        if re.search(rf"{affirmative}[^.!?]{{0,100}}(?:{terms})", text):
+        affirmative_match = re.search(
+            rf"{affirmative}[^.!?]{{0,100}}(?:{terms})", text
+        )
+        # A narrative can begin with an affirmative about ordinary pain and
+        # later explicitly deny warning signs in the same sentence. Never
+        # allow that earlier affirmative to turn a nearby "no/not/without"
+        # warning-sign phrase into a YES safety answer.
+        negated_warning = affirmative_match and re.search(
+            rf"{negation}[^.!?]{{0,100}}(?:{terms})", affirmative_match.group(0)
+        )
+        if affirmative_match and not negated_warning:
             answers.update({question.id: YES for question in questions})
     return answers
 
@@ -1010,9 +1062,10 @@ def _can_skip_model_for_safety_reply(extracted: ExtractedTriage, user_text: str)
 
 def _triage_summary_prompt(extracted: ExtractedTriage) -> str:
     return (
-        "Thanks. Just to make sure I’ve understood you correctly:\n\n"
+        "Thanks. Here’s a quick summary of what you’ve told me:\n\n"
         f"{plain_summary(extracted)}\n\n"
-        "Is that correct? Reply Yes, or tell me what you would like me to correct or add."
+        "Is that right, or is there anything else you would like me to know? "
+        "If there is nothing else, reply ‘there’s nothing else’."
     )
 
 
@@ -1085,18 +1138,28 @@ def _reply_after_extract(
         return summary, PatientPhase.POST_TRIAGE
 
     if flow_state == _AWAITING_SUMMARY_CONFIRMATION:
+        if _is_no_further_details(user_text):
+            context[_TRIAGE_FLOW_KEY] = "summary_complete"
+            conversation.booking_context = context
+            state.booking_context = context
+            session.flush()
+            acknowledgement = "Thanks — I’ve got everything you wanted to share."
+            if _TRIAGE_QUESTIONNAIRE_ENABLED and schedule_questions(extracted):
+                context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
+                conversation.booking_context = context
+                state.booking_context = context
+                return f"{acknowledgement}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
+            return f"{acknowledgement}\n\n{_enter_quick_initial_policy(session, state)}", PatientPhase.POST_TRIAGE
         if _is_summary_confirm(user_text):
             context[_TRIAGE_FLOW_KEY] = _AWAITING_ADDITIONAL_DETAILS
             conversation.booking_context = context
             state.booking_context = context
             session.flush()
             return (
-                "Is there anything else about your problem that you would like me to know before I continue? "
-                "Reply Yes or No.",
+                "Thanks — I’ve got that. Is there anything else about your problem that you would like me to know "
+                "before I continue? If there is nothing else, reply ‘there’s nothing else’.",
                 PatientPhase.POST_TRIAGE,
             )
-        if _is_simple_no(user_text):
-            return "No problem. What would you like me to correct or add?", PatientPhase.POST_TRIAGE
         # The correction is already extracted from this same message. Present a
         # refreshed summary instead of re-running a checklist.
         summary = _triage_summary_prompt(extracted)
@@ -1110,25 +1173,36 @@ def _reply_after_extract(
             state.booking_context = context
             session.flush()
             return "Please tell me anything else you think is important.", PatientPhase.POST_TRIAGE
-        context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
+        acknowledgement = "Thanks — I’ve got everything you wanted to share."
+        context[_TRIAGE_FLOW_KEY] = "summary_complete"
         conversation.booking_context = context
         state.booking_context = context
         session.flush()
-        if schedule_questions(extracted):
-            return _safety_prompt(extracted), PatientPhase.MID_TRIAGE
-        return _enter_quick_initial_policy(session, state), PatientPhase.POST_TRIAGE
+        if _TRIAGE_QUESTIONNAIRE_ENABLED and schedule_questions(extracted):
+            context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
+            conversation.booking_context = context
+            state.booking_context = context
+            return f"{acknowledgement}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
+        return f"{acknowledgement}\n\n{_enter_quick_initial_policy(session, state)}", PatientPhase.POST_TRIAGE
 
     if flow_state == _COLLECTING_ADDITIONAL_DETAILS:
-        context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
+        context[_TRIAGE_FLOW_KEY] = "summary_complete"
         conversation.booking_context = context
         state.booking_context = context
         session.flush()
-        if schedule_questions(extracted):
+        if _TRIAGE_QUESTIONNAIRE_ENABLED and schedule_questions(extracted):
+            context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
+            conversation.booking_context = context
+            state.booking_context = context
             return f"Thanks, I’ve added that to your information.\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
-        return _enter_quick_initial_policy(session, state), PatientPhase.POST_TRIAGE
+        return (
+            "Thanks, I’ve added that to your information.\n\n"
+            f"{_enter_quick_initial_policy(session, state)}",
+            PatientPhase.POST_TRIAGE,
+        )
 
     if flow_state == _AWAITING_SAFETY_SCREEN:
-        if schedule_questions(extracted):
+        if _TRIAGE_QUESTIONNAIRE_ENABLED and schedule_questions(extracted):
             return _safety_prompt(extracted), PatientPhase.MID_TRIAGE
         return _enter_quick_initial_policy(session, state), PatientPhase.POST_TRIAGE
 
@@ -1182,7 +1256,9 @@ def provider_unavailable_reply(
                 "safety_protocol_version": "1.0.0",
             })
     safety = evaluate(extracted)
-    if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
+    if _TRIAGE_QUESTIONNAIRE_ENABLED and (
+        safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER"
+    ):
         return _amber_specialist_reply(
             session, identity, state, user_text, extracted, safety, state.phase, language, wa_message_id
         )
@@ -1836,19 +1912,6 @@ def handle_turn(
             })
     safety = evaluate(extracted)
 
-    if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
-        return _amber_specialist_reply(
-            session,
-            identity,
-            state,
-            user_text,
-            extracted,
-            safety,
-            phase,
-            language,
-            wa_message_id,
-        )
-
     if safety.fired:
         return _safety_fire_reply(
             session,
@@ -1861,6 +1924,24 @@ def handle_turn(
             language,
             wa_message_id,
         )
+
+    if _TRIAGE_QUESTIONNAIRE_ENABLED and (
+        safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER"
+    ):
+        conversation = session.get(Conversation, state.conversation_id)
+        booking_context = conversation.booking_context if conversation is not None else None
+        if not _defer_amber_until_summary_is_complete(booking_context, user_text):
+            return _amber_specialist_reply(
+                session,
+                identity,
+                state,
+                user_text,
+                extracted,
+                safety,
+                phase,
+                language,
+                wa_message_id,
+            )
 
     # Jev is deliberately after deterministic safety and before downstream
     # conversational work. Shadow mode is audit-only: Gemini and backend state

@@ -37,6 +37,21 @@ def test_natural_language_affirmative_warning_answer_is_not_repeated():
     assert result["action"] != "continue"
 
 
+def test_negated_warning_list_is_never_misread_as_an_affirmative_answer():
+    """Ordinary pain wording before an explicit denial must not cause a RED route."""
+    from app.conversation.turn_handler import _narrative_yes_answers, _safety_screen
+
+    extracted = ExtractedTriage(body_location="lower back")
+    answers = _narrative_yes_answers(
+        "I have had a sharp pain in my lower back for 3 days. "
+        "I have not had an injury, numbness, weakness, fever, bladder/bowel changes, "
+        "or other emergency symptoms.",
+        _safety_screen(extracted),
+    )
+
+    assert answers == {}
+
+
 def test_stage_machine_rejects_unsafe_shortcut():
     from app.conversation.stage_machine import assert_transition
     import pytest
