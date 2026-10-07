@@ -539,7 +539,7 @@ def _resend_safety_block(
             context["amber_review_awaiting_email"] = True
             if conversation is not None:
                 conversation.booking_context = context
-            reply = "Your five-minute specialist safety review is ₦6,000. Please reply with the email address you want to use for your secure payment receipt."
+            reply = "Your specialist safety review for a couple of minutes is ₦6,000. Please reply with the email address you want to use for your secure payment receipt."
         elif context.get("amber_review_awaiting_email"):
             email = user_text.strip().casefold()
             if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or email.endswith(".invalid"):
@@ -679,7 +679,7 @@ def _start_paid_amber_review(session: Session, identity: Identity, state: Conver
     context.pop("amber_review_awaiting_email", None)
     conversation.booking_context = context
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id, payload={"decision": "amber_review_payment_created", "review_id": review_id, "amount_kobo": 600_000})
-    return f"Your five-minute specialist review is ₦6,000. Pay securely here: {payment.authorization_url}\n\nAfter payment is verified, RH will assign an eligible reviewer and I’ll update you here."
+    return f"Your specialist review for a couple of minutes is ₦6,000. Pay securely here: {payment.authorization_url}\n\nAfter payment is verified, RH will assign an eligible reviewer and I’ll update you here."
 
 
 def _maybe_route_off_platform(
