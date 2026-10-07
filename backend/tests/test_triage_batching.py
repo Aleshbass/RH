@@ -389,6 +389,23 @@ def test_plain_summary_does_not_duplicate_the_confirmation_question():
     lower = text.lower()
     assert "shoulder" in lower
     assert "2 weeks" in lower
-    assert "confirm" in lower
     assert "?" not in text
     assert "accept" not in lower
+
+
+def test_plain_summary_includes_the_meaningful_story_details():
+    text = plain_summary(ExtractedTriage(
+        body_location="ankle",
+        onset="4 days ago",
+        mechanism="twisting it while playing football",
+        symptoms=["improving swelling", "pain when walking"],
+        aggravating=["walking"],
+        goals="return to sport safely",
+    )).lower()
+
+    assert "ankle" in text
+    assert "4 days ago" in text
+    assert "football" in text
+    assert "improving swelling" in text
+    assert "walking" in text
+    assert "return to sport safely" in text

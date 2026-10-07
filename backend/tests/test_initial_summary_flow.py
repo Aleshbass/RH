@@ -4,6 +4,7 @@ from app.conversation.turn_handler import (
     _TRIAGE_FLOW_KEY,
     _TRIAGE_QUESTIONNAIRE_ENABLED,
     _defer_amber_until_summary_is_complete,
+    _is_no_further_details,
     _triage_summary_prompt,
 )
 from app.api.internal.rh_safety_eligibility import _triage_status_allows_service
@@ -53,3 +54,7 @@ def test_specialist_review_eligibility_accepts_the_amber_triage_state():
 
 def test_active_intake_flow_does_not_ask_triage_follow_up_questions():
     assert _TRIAGE_QUESTIONNAIRE_ENABLED is False
+
+
+def test_no_further_details_accepts_whatsapp_smart_apostrophes():
+    assert _is_no_further_details("There’s nothing else.") is True

@@ -383,7 +383,7 @@ def _is_summary_confirm(user_text: str) -> bool:
 
 def _is_explicit_policy_acceptance(user_text: str) -> bool:
     """A summary 'yes' is intentionally insufficient consent."""
-    text = " ".join((user_text or "").casefold().split()).strip(".!,;: ")
+    text = _normalised_short_reply(user_text)
     # The policy is presented immediately before this step, so a short,
     # unambiguous affirmative is easier to use on WhatsApp than requiring the
     # patient to repeat the policy title verbatim.
@@ -392,9 +392,16 @@ def _is_explicit_policy_acceptance(user_text: str) -> bool:
     return bool(re.search(r"\b(?:i\s+)?(?:accept|agree to)\b.{0,80}\b(?:policy|terms|consultation)\b", text))
 
 
+def _normalised_short_reply(user_text: str) -> str:
+    """Normalise common WhatsApp punctuation before matching a short reply."""
+    return " ".join(
+        (user_text or "").casefold().replace("’", "'").replace("‘", "'").split()
+    ).strip(".!?,;: ")
+
+
 def _is_simple_no(user_text: str) -> bool:
     """Recognise a short negative without treating a clinical narrative as one."""
-    text = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
+    text = _normalised_short_reply(user_text)
     return text in {
         "no", "nope", "nah", "nothing else", "there's nothing else",
         "there is nothing else", "nothing more", "that's all", "that is all",
@@ -403,7 +410,7 @@ def _is_simple_no(user_text: str) -> bool:
 
 def _is_no_further_details(user_text: str) -> bool:
     """Recognise an unambiguous end to the invitation to add information."""
-    text = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
+    text = _normalised_short_reply(user_text)
     return text in {
         "nothing else", "there's nothing else", "there is nothing else",
         "nothing more", "that's all", "that is all", "no, nothing else",
@@ -411,7 +418,7 @@ def _is_no_further_details(user_text: str) -> bool:
 
 
 def _is_simple_yes(user_text: str) -> bool:
-    text = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
+    text = _normalised_short_reply(user_text)
     return text in {"yes", "yeah", "yep", "yup", "sure", "okay", "ok"}
 
 
