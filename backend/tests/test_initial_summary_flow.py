@@ -3,6 +3,7 @@ from app.conversation.turn_handler import (
     _AWAITING_SUMMARY_CONFIRMATION,
     _TRIAGE_FLOW_KEY,
     _TRIAGE_QUESTIONNAIRE_ENABLED,
+    _additional_details_acknowledgement,
     _defer_amber_until_summary_is_complete,
     _is_no_further_details,
     _triage_summary_prompt,
@@ -66,3 +67,11 @@ def test_completed_story_routes_to_the_specialist_triage_review_offer():
 
 def test_no_further_details_accepts_whatsapp_smart_apostrophes():
     assert _is_no_further_details("There’s nothing else.") is True
+
+
+def test_added_detail_is_acknowledged_without_repeating_the_old_summary():
+    reply = _additional_details_acknowledgement().lower()
+
+    assert "i’ve added that" in reply
+    assert "anything else" in reply
+    assert "here’s what i understood" not in reply

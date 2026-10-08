@@ -1076,6 +1076,14 @@ def _triage_summary_prompt(extracted: ExtractedTriage) -> str:
     )
 
 
+def _additional_details_acknowledgement() -> str:
+    """Acknowledge a new detail while keeping the explicit summary exit."""
+    return (
+        "Thanks — I’ve added that to what you told me. Is there anything else about your problem "
+        "you would like me to know before I continue? If there is nothing else, reply ‘there’s nothing else’."
+    )
+
+
 def _offer_specialist_triage_review(session: Session, state: ConversationState) -> str:
     """Route the completed initial account to the fixed-price clinician review."""
     conversation = session.get(Conversation, state.conversation_id)
@@ -1164,11 +1172,20 @@ def _reply_after_extract(
                 "before I continue? If there is nothing else, reply ‘there’s nothing else’.",
                 PatientPhase.POST_TRIAGE,
             )
-        # The correction is already extracted from this same message. Present a
-        # refreshed summary instead of re-running a checklist.
-        summary = _triage_summary_prompt(extracted)
-        _store_summary(session, state, summary)
-        return summary, PatientPhase.POST_TRIAGE
+        # This is additional history or a correction, not a confirmation.  Do
+        # not silently repeat the earlier recap: acknowledge the new detail
+        # and keep the patient in the same explicit "anything else" step.
+        # The normal extraction path above still merges any structured facts
+        # it can safely derive from this message.
+        additions = list(context.get("summary_additions") or [])
+        detail = " ".join((user_text or "").split())
+        if detail and detail not in additions:
+            additions.append(detail)
+        context["summary_additions"] = additions[-5:]
+        conversation.booking_context = context
+        state.booking_context = context
+        session.flush()
+        return _additional_details_acknowledgement(), PatientPhase.POST_TRIAGE
 
     if flow_state == _AWAITING_ADDITIONAL_DETAILS:
         if _is_simple_yes(user_text):
