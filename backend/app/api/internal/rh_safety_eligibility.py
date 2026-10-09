@@ -97,7 +97,11 @@ def issue_eligibility_reference(
     result = evaluate(ExtractedTriage.model_validate(triage.extracted))
     permitted = (
         (payload.service_type == "standard_consultation" and result.risk_level == "GREEN")
-        or (payload.service_type == "specialist_review" and result.risk_level == "AMBER")
+        # The current Joy pathway offers the short clinician review to both a
+        # routine GREEN presentation and an AMBER presentation.  This is a
+        # stricter route for GREEN, not a safety bypass: ORANGE and RED remain
+        # ineligible and are still sent to medical/emergency guidance.
+        or (payload.service_type == "specialist_review" and result.risk_level in {"GREEN", "AMBER"})
     )
     if not permitted:
         return {"allowed": False, "reason": "SERVICE_NOT_PERMITTED"}

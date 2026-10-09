@@ -681,8 +681,8 @@ def _start_paid_amber_review(session: Session, identity: Identity, state: Conver
             )
             if not eligibility.get("allowed") or not isinstance(eligibility.get("eligibility_reference"), str):
                 logger.warning(
-                    "joy_specialist_review_eligibility_rejected",
-                    extra={"reason": str(eligibility.get("reason") or "unknown")},
+                    "joy_specialist_review_eligibility_rejected reason=%s",
+                    str(eligibility.get("reason") or "unknown"),
                 )
                 return "I can’t prepare the specialist review securely right now. Please try again shortly."
             eligibility_reference = eligibility["eligibility_reference"]
