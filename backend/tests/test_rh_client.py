@@ -188,3 +188,58 @@ def test_direct_convex_gateway_signs_and_creates_a_pending_booking() -> None:
     )
     assert booking.booking_id == "booking-1"
     assert booking.amount_kobo == 2500000
+
+
+def test_direct_convex_gateway_prepares_specialist_review_payment_without_calling_rh_api() -> None:
+    secret = "gateway-test-secret"
+    calls: list[tuple[str, dict]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        canonical = "\n".join([
+            request.method,
+            request.url.path,
+            request.headers["X-Joy-Gateway-Timestamp"],
+            request.headers["X-Joy-Gateway-Nonce"],
+            request.content.decode("utf-8"),
+        ]).encode("utf-8")
+        assert request.headers["X-Joy-Gateway-Signature"] == hmac.new(secret.encode(), canonical, hashlib.sha256).hexdigest()
+        body = json.loads(request.content)
+        calls.append((request.url.path, body))
+        if request.url.path == "/joy-integration/create_specialist_review":
+            assert body["eligibility_reference"] == "amber-safety-reference"
+            assert "actor" not in body
+            return httpx.Response(200, json={"review_id": "review-12345678"})
+        if request.url.path == "/joy-integration/prepare_specialist_review_payment":
+            assert body["reference"].startswith("JOYREV_12345678_")
+            return httpx.Response(200, json={
+                "attempt_id": "attempt-1", "review_id": "review-12345678",
+                "reference": body["reference"], "amount_kobo": 600000,
+            })
+        if request.url.path == "/joy-integration/record_specialist_review_payment_initialization":
+            assert body == {"attempt_id": "attempt-1", "authorization_url": "https://checkout.paystack.test/pay"}
+            return httpx.Response(200, json={"status": "initialized"})
+        raise AssertionError(f"Unexpected gateway path: {request.url.path}")
+
+    gateway = RHConvexGatewayClient(
+        "https://convex.test", secret, client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    client = RHClient("https://rh.test", "joy-test", "adapter-secret", gateway_client=gateway)
+    review = client.create_specialist_review(
+        patient_id="patient-1", assessment_id="assessment-1", assessment_revision=1,
+        protocol_version="clinical_engine_v1", policy_version="policy-1",
+        policy_acceptance_reference="accepted-1", conversation_id="conversation-1",
+        actor=RHActor(persona="patient", sender_phone="+2348012345678"),
+        idempotency_key="review-key-1", eligibility_reference="amber-safety-reference",
+    )
+    prepared = client.prepare_specialist_review_payment(
+        review["review_id"], patient_id="patient-1", idempotency_key="payment-key-1"
+    )
+    client.record_specialist_review_payment_initialization(
+        prepared["attempt_id"], authorization_url="https://checkout.paystack.test/pay"
+    )
+
+    assert [path for path, _ in calls] == [
+        "/joy-integration/create_specialist_review",
+        "/joy-integration/prepare_specialist_review_payment",
+        "/joy-integration/record_specialist_review_payment_initialization",
+    ]

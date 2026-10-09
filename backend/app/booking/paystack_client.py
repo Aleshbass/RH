@@ -1,3 +1,5 @@
+from typing import Any
+
 import httpx
 
 from app.config import get_settings
@@ -7,21 +9,31 @@ PAYSTACK_TRANSFER_URL = "https://api.paystack.co/transfer"
 
 
 def initialize_transaction(
-    email: str, amount_kobo: int, reference: str, callback_url: str
+    email: str,
+    amount_kobo: int,
+    reference: str,
+    callback_url: str,
+    *,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     settings = get_settings()
+    if not settings.paystack_secret_key:
+        raise RuntimeError("Paystack is not configured")
+    payload: dict[str, Any] = {
+        "email": email,
+        "amount": amount_kobo,
+        "reference": reference,
+        "callback_url": callback_url,
+    }
+    if metadata:
+        payload["metadata"] = metadata
     response = httpx.post(
         PAYSTACK_INITIALIZE_URL,
         headers={
             "Authorization": f"Bearer {settings.paystack_secret_key}",
             "Content-Type": "application/json",
         },
-        json={
-            "email": email,
-            "amount": amount_kobo,
-            "reference": reference,
-            "callback_url": callback_url,
-        },
+        json=payload,
         timeout=15.0,
     )
     response.raise_for_status()

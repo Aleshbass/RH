@@ -588,11 +588,60 @@ class RHClient:
     def reassign_booking(self, booking_id: str, *, patient_id: str, physiotherapist_id: str, slot_start: int, actor: RHActor, idempotency_key: str) -> dict[str, Any]:
         return self._request("POST", f"/api/v1/joy/bookings/{booking_id}/reassign", payload={"patient_id": patient_id, "physiotherapist_id": physiotherapist_id, "slot_start": slot_start, "actor": actor.as_payload()}, idempotency_key=idempotency_key)
 
-    def create_specialist_review(self, *, patient_id: str, assessment_id: str, assessment_revision: int, protocol_version: str, policy_version: str, policy_acceptance_reference: str, conversation_id: str, actor: RHActor, idempotency_key: str) -> dict[str, Any]:
+    def create_specialist_review(self, *, patient_id: str, assessment_id: str, assessment_revision: int, protocol_version: str, policy_version: str, policy_acceptance_reference: str, conversation_id: str, actor: RHActor, idempotency_key: str, eligibility_reference: str | None = None) -> dict[str, Any]:
+        if self.gateway_client:
+            if not eligibility_reference:
+                raise RHIntegrationError("SAFETY_ELIGIBILITY_REQUIRED", "A current safety eligibility reference is required")
+            return self._gateway("create_specialist_review", {
+                "patient_id": patient_id,
+                "assessment_id": assessment_id,
+                "assessment_revision": assessment_revision,
+                "protocol_version": protocol_version,
+                "eligibility_reference": eligibility_reference,
+                "policy_version": policy_version,
+                "policy_acceptance_reference": policy_acceptance_reference,
+                "conversation_id": conversation_id,
+                "request_id": str(uuid4()),
+                "idempotency_key": idempotency_key,
+            })
         payload = {"patient_id": patient_id, "assessment_id": assessment_id, "assessment_revision": assessment_revision, "protocol_version": protocol_version, "policy_version": policy_version, "policy_acceptance_reference": policy_acceptance_reference, "joy_conversation_id": conversation_id, "actor": actor.as_payload()}
         return self._request("POST", "/api/v1/joy/specialist-reviews", payload=payload, idempotency_key=idempotency_key)
 
+    def prepare_specialist_review_payment(self, review_id: str, *, patient_id: str, idempotency_key: str) -> dict[str, Any]:
+        """Persist an RH-owned payment attempt before Joy asks Paystack for checkout.
+
+        The direct path intentionally stops before the Paystack request.  RH
+        remains the owner of the reference and the only verifier of the
+        resulting webhook; Joy merely initializes checkout with that reference.
+        """
+        if not self.gateway_client:
+            raise RHIntegrationError("DIRECT_GATEWAY_REQUIRED", "Direct RH gateway is required for Joy-managed checkout")
+        reference = f"JOYREV_{review_id[-8:]}_{hashlib.sha256(idempotency_key.encode()).hexdigest()[:18]}"
+        data = self._gateway("prepare_specialist_review_payment", {
+            "review_id": review_id,
+            "patient_id": patient_id,
+            "request_id": str(uuid4()),
+            "idempotency_key": idempotency_key,
+            "reference": reference,
+        })
+        if not isinstance(data, dict) or not isinstance(data.get("attempt_id"), str) or not isinstance(data.get("reference"), str) or not isinstance(data.get("amount_kobo"), int):
+            raise RHIntegrationError("INVALID_RESPONSE", "RH returned an incomplete specialist review payment attempt", retryable=True)
+        return data
+
+    def record_specialist_review_payment_initialization(self, attempt_id: str, *, authorization_url: str | None) -> None:
+        if not self.gateway_client:
+            raise RHIntegrationError("DIRECT_GATEWAY_REQUIRED", "Direct RH gateway is required for Joy-managed checkout")
+        self._gateway("record_specialist_review_payment_initialization", {
+            "attempt_id": attempt_id,
+            "authorization_url": authorization_url,
+        })
+
     def initialize_specialist_review_payment(self, review_id: str, *, patient_id: str, email: str, actor: RHActor, idempotency_key: str) -> RHPaymentInitialization:
+        # The legacy RH API route continues to support installations that have
+        # not configured the direct Convex gateway.  New production traffic
+        # uses prepare_specialist_review_payment above and Paystack from Joy.
+        if self.gateway_client:
+            raise RHIntegrationError("DIRECT_CHECKOUT_REQUIRED", "Use Joy-managed Paystack checkout with the direct RH gateway")
         data = self._request("POST", f"/api/v1/joy/specialist-reviews/{review_id}/payment", payload={"patient_id": patient_id, "email": email, "actor": actor.as_payload()}, idempotency_key=idempotency_key)
         if not isinstance(data.get("authorization_url"), str) or not isinstance(data.get("reference"), str):
             raise RHIntegrationError("INVALID_RESPONSE", "RH returned incomplete review payment initialization", retryable=True)

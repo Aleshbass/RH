@@ -4,6 +4,7 @@ import hashlib
 from time import perf_counter
 from uuid import NAMESPACE_URL, uuid5
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -48,9 +49,11 @@ from app.identity.unknown_sender import resolve_unknown_sender
 from app.llm.gemini_client import LLMClient
 from app.observability import elapsed_ms, log_event
 from app.llm.prompt_builder import build
-from app.integrations.rh_client import RHActor, RHIntegrationError, configured_rh_client
+from app.integrations.rh_client import RHPaymentInitialization, RHActor, RHIntegrationError, configured_rh_client
 from app.integrations.typesafe_client import TypeSafeClient, TypeSafeError
 from app.config import get_settings
+from app.booking.paystack_client import initialize_transaction
+from app.api.internal.rh_safety_eligibility import EligibilityRequest, issue_eligibility_reference
 from app.models.admin import Admin
 from app.models.conversation import Conversation
 from app.models.patient import Patient
@@ -659,20 +662,82 @@ def _start_paid_amber_review(session: Session, identity: Identity, state: Conver
             session.add(mapping)
             session.flush()
         policy = (conversation.booking_context or {}).get(_POLICY_CONTEXT_KEY) or {}
+        eligibility_reference: str | None = None
+        if client.uses_direct_convex_gateway:
+            eligibility = issue_eligibility_reference(
+                session=session,
+                settings=get_settings(),
+                payload=EligibilityRequest(
+                    rh_patient_id=str(mapping.rh_record_id),
+                    assessment_id=str(triage.id),
+                    assessment_revision=1,
+                    service_type="specialist_review",
+                    policy_version=str(policy["version"]),
+                ),
+            )
+            if not eligibility.get("allowed") or not isinstance(eligibility.get("eligibility_reference"), str):
+                return "I can’t prepare the specialist review securely right now. Please try again shortly."
+            eligibility_reference = eligibility["eligibility_reference"]
         review = client.create_specialist_review(
             patient_id=mapping.rh_record_id, assessment_id=str(triage.id), assessment_revision=1,
             protocol_version=state.extracted.safety_protocol_version or "1.0.0",
             policy_version=str(policy["version"]), policy_acceptance_reference=str(policy.get("acceptance_message_id") or policy["version"]),
             conversation_id=str(conversation.id), actor=RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=mapping.rh_record_id),
             idempotency_key=f"joy-amber-review-{conversation.id}",
+            eligibility_reference=eligibility_reference,
         )
         review_id = str(review["review_id"])
-        payment = client.initialize_specialist_review_payment(
-            review_id, patient_id=mapping.rh_record_id, email=email,
-            actor=RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=mapping.rh_record_id),
-            idempotency_key=f"joy-amber-review-payment-{review_id}",
-        )
-    except (RHIntegrationError, KeyError):
+        payment_idempotency_key = f"joy-amber-review-payment-{review_id}"
+        if client.uses_direct_convex_gateway:
+            prepared = client.prepare_specialist_review_payment(
+                review_id,
+                patient_id=mapping.rh_record_id,
+                idempotency_key=payment_idempotency_key,
+            )
+            settings = get_settings()
+            callback_url = (settings.paystack_callback_url or "").strip()
+            if not callback_url and settings.rh_api_base_url:
+                callback_url = f"{settings.rh_api_base_url.rstrip('/')}/payment/callback"
+            if not callback_url:
+                raise RHIntegrationError("PAYSTACK_CALLBACK_NOT_CONFIGURED", "RH payment callback URL is not configured")
+            try:
+                paystack_payment = initialize_transaction(
+                    email,
+                    int(prepared["amount_kobo"]),
+                    str(prepared["reference"]),
+                    callback_url,
+                    metadata={
+                        "joy_specialist_review_id": review_id,
+                        "source_system": "joy_ai",
+                        "source_channel": "whatsapp",
+                        "correlation_id": str(conversation.id),
+                    },
+                )
+                authorization_url = paystack_payment["authorization_url"]
+            except Exception:
+                # Store the failed initialization on the RH payment attempt so
+                # it is visible for safe retry/reconciliation.  This does not
+                # affect payment status and cannot mark a review as paid.
+                client.record_specialist_review_payment_initialization(
+                    str(prepared["attempt_id"]), authorization_url=None
+                )
+                raise
+            client.record_specialist_review_payment_initialization(
+                str(prepared["attempt_id"]), authorization_url=authorization_url
+            )
+            payment = RHPaymentInitialization(
+                booking_id=review_id,
+                reference=str(prepared["reference"]),
+                authorization_url=authorization_url,
+                payment_status="pending",
+            )
+        else:
+            payment = client.initialize_specialist_review_payment(
+                review_id, patient_id=mapping.rh_record_id, email=email,
+                actor=RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=mapping.rh_record_id),
+                idempotency_key=payment_idempotency_key,
+            )
+    except (RHIntegrationError, KeyError, RuntimeError, httpx.HTTPError):
         return "I can’t create the secure ₦6,000 review payment right now. Please try again shortly."
     context = dict(conversation.booking_context or {})
     context.update({"amber_review_id": review_id, "amber_review_payment_url": payment.authorization_url, "amber_review_email": email})
