@@ -58,7 +58,11 @@ def _triage_status_allows_service(triage_status: str, service_type: str) -> bool
 
 
 def issue_eligibility_reference(
-    *, session: Session, settings: Settings, payload: EligibilityRequest
+    *,
+    session: Session,
+    settings: Settings,
+    payload: EligibilityRequest,
+    conversation: Conversation | None = None,
 ) -> dict:
     """Evaluate the same scoped booking gate for RH or the direct gateway.
 
@@ -97,10 +101,17 @@ def issue_eligibility_reference(
     )
     if not permitted:
         return {"allowed": False, "reason": "SERVICE_NOT_PERMITTED"}
-    conversation = session.scalar(select(Conversation).where(
-        Conversation.person_id == mapping.joy_person_id,
-        Conversation.persona == Persona.PATIENT,
-    ))
+    # The direct Joy flow already has the active conversation in hand.  Use it
+    # rather than selecting an arbitrary historical patient conversation,
+    # which could incorrectly make a just-recorded policy acceptance appear
+    # absent.
+    if conversation is None:
+        conversation = session.scalar(select(Conversation).where(
+            Conversation.person_id == mapping.joy_person_id,
+            Conversation.persona == Persona.PATIENT,
+        ))
+    elif conversation.person_id != mapping.joy_person_id or conversation.persona != Persona.PATIENT:
+        return {"allowed": False, "reason": "CONVERSATION_NOT_AUTHORIZED"}
     policy = (conversation.booking_context or {}).get("policy_accepted") if conversation else None
     if not isinstance(policy, dict) or policy.get("version") != payload.policy_version:
         return {"allowed": False, "reason": "POLICY_NOT_ACCEPTED"}

@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import hashlib
 from time import perf_counter
@@ -96,6 +97,8 @@ from app.triage.summary import plain_summary
 from app.triage.turn_decision import TriageTurnDecision
 from app.conversation.triage_state_reducer import reduce_triage_turn
 from app.conversation.response_strategy import grounded_triage_ack
+
+logger = logging.getLogger(__name__)
 
 _YES_RE = re.compile(
     r"\b(yes|yeah|yep|yup|yea|yh|ya|ok|okay|sure|alright)\b",
@@ -674,8 +677,13 @@ def _start_paid_amber_review(session: Session, identity: Identity, state: Conver
                     service_type="specialist_review",
                     policy_version=str(policy["version"]),
                 ),
+                conversation=conversation,
             )
             if not eligibility.get("allowed") or not isinstance(eligibility.get("eligibility_reference"), str):
+                logger.warning(
+                    "joy_specialist_review_eligibility_rejected",
+                    extra={"reason": str(eligibility.get("reason") or "unknown")},
+                )
                 return "I can’t prepare the specialist review securely right now. Please try again shortly."
             eligibility_reference = eligibility["eligibility_reference"]
         review = client.create_specialist_review(
@@ -737,7 +745,14 @@ def _start_paid_amber_review(session: Session, identity: Identity, state: Conver
                 actor=RHActor(persona="patient", sender_phone=patient.phone_e164, rh_user_id=mapping.rh_record_id),
                 idempotency_key=payment_idempotency_key,
             )
-    except (RHIntegrationError, KeyError, RuntimeError, httpx.HTTPError):
+    except (RHIntegrationError, KeyError, RuntimeError, httpx.HTTPError) as error:
+        logger.warning(
+            "joy_specialist_review_checkout_failed",
+            extra={
+                "code": error.code if isinstance(error, RHIntegrationError) else type(error).__name__,
+                "retryable": error.retryable if isinstance(error, RHIntegrationError) else False,
+            },
+        )
         return "I can’t create the secure ₦6,000 review payment right now. Please try again shortly."
     context = dict(conversation.booking_context or {})
     context.update({"amber_review_id": review_id, "amber_review_payment_url": payment.authorization_url, "amber_review_email": email})
