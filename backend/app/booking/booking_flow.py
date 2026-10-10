@@ -38,6 +38,7 @@ AWAITING_RH_PAYMENT = "rh_awaiting_payment"
 AWAITING_RH_REPLACEMENT = "rh_awaiting_replacement"
 AWAITING_TREATMENT_OPTION = "awaiting_treatment_option"
 AWAITING_POLICY_ACCEPTANCE = "awaiting_policy_acceptance"
+AWAITING_INITIAL_CONSULTATION_CONFIRMATION = "awaiting_initial_consultation_confirmation"
 
 SESSION_REMINDER_ZSET = "joy:session_reminders"
 _PLACEHOLDER_CALLBACK = "https://localhost/paystack/callback"
@@ -128,6 +129,18 @@ def handle_booking_turn(
         ctx["treatment_option"] = option
         _set_substate(conversation, None, ctx)
         return "__JOY_TREATMENT_OPTION_SELECTED__"
+    if sub == AWAITING_INITIAL_CONSULTATION_CONFIRMATION:
+        if _initial_consultation_confirmed(user_text):
+            ctx = dict(conversation.booking_context or {})
+            ctx["treatment_option"] = "quick_initial"
+            _set_substate(conversation, None, ctx)
+            return "__JOY_INITIAL_CONSULTATION_CONFIRMED__"
+        if _initial_consultation_declined(user_text):
+            return (
+                "No problem. I won’t create an initial consultation booking. "
+                "If you would like to continue later, reply ‘Book Initial Consultation’."
+            )
+        return "Would you like to continue with the ₦6,000 Initial Consultation? Reply ‘Book Initial Consultation’ or Yes."
     if sub == AWAITING_POLICY_ACCEPTANCE:
         return "Please review the Consultation & Booking Policy above, then reply ‘I accept’ when you are ready to continue."
     if sub == AWAITING_RH_SERVICE_MODE:
@@ -195,6 +208,38 @@ def treatment_options_prompt(summary: str) -> str:
         "A clinician comes to you for an in-person assessment and treatment. The price depends on the clinician and your location.\n\n"
         "Reply 1, 2, or 3. You can also say ‘help me choose’ — I’ll start you with option 1."
     )
+
+
+def initial_consultation_offer() -> str:
+    """Explain the single GREEN-path consultation before creating its booking."""
+    return (
+        "Thanks — you’re all set.\n\n"
+        "Initial Consultation with a Clinician — ₦6,000\n\n"
+        "This is a short remote consultation designed to make sure you’re speaking to the right clinician "
+        "and getting the right next step.\n\n"
+        "During the consultation, the clinician will:\n"
+        "• understand your problem in more detail\n"
+        "• review your symptoms and concerns\n"
+        "• provide initial advice\n"
+        "• decide whether an MSK physiotherapist is appropriate\n"
+        "• recommend the most appropriate next step\n"
+        "• refer you elsewhere if another type of clinician would be more appropriate\n\n"
+        "This is not a full physiotherapy consultation.\n\n"
+        "We offer this first because we don’t want you paying for a full consultation when you may need a "
+        "different type of care.\n\n"
+        "Would you like to continue with the ₦6,000 Initial Consultation?\n\n"
+        "Reply ‘Book Initial Consultation’ or Yes to continue."
+    )
+
+
+def _initial_consultation_confirmed(user_text: str) -> bool:
+    text = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
+    return text in {"yes", "yes please", "book", "book now", "book initial consultation", "continue"}
+
+
+def _initial_consultation_declined(user_text: str) -> bool:
+    text = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
+    return text in {"no", "no thanks", "not now", "later"}
 
 
 def begin_selected_treatment(

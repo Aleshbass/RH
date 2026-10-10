@@ -124,6 +124,21 @@ def test_summary_confirmation_is_not_interpreted_as_a_safety_answer():
     ) is False
 
 
+def test_initial_consultation_offer_explains_the_green_path_before_booking():
+    from app.booking.booking_flow import (
+        _initial_consultation_confirmed,
+        initial_consultation_offer,
+    )
+
+    reply = initial_consultation_offer()
+
+    assert "Initial Consultation with a Clinician — ₦6,000" in reply
+    assert "This is not a full physiotherapy consultation." in reply
+    assert "Book Initial Consultation" in reply
+    assert _initial_consultation_confirmed("Book Initial Consultation") is True
+    assert _initial_consultation_confirmed("Yes") is True
+
+
 def test_eight_item_safety_screen_accepts_number_only_concerning_answers():
     from app.conversation.turn_handler import _apply_numbered_safety_answers, _safety_screen
     from app.safety.protocol_runtime import YES

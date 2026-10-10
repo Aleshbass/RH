@@ -28,13 +28,12 @@ from app.booking.booking_flow import (
     AWAITING_RH_SLOT,
     AWAITING_SLOT_MODE,
     AWAITING_POLICY_ACCEPTANCE,
-    AWAITING_TREATMENT_OPTION,
+    AWAITING_INITIAL_CONSULTATION_CONFIRMATION,
     OFFERING_MATCHES,
     begin_selected_treatment,
     handle_booking_turn,
+    initial_consultation_offer,
     offer_matches,
-    treatment_options_prompt,
-    _treatment_option,
     _set_substate,
 )
 from app.conversation.language import mirror_language
@@ -131,6 +130,7 @@ _LATER_PATH = (
 _MID_ACK = "Thanks, I've got that."
 _POLICY_CONTEXT_KEY = "policy_accepted"
 _POLICY_PRESENTED_KEY = "policy_presented"
+_INITIAL_CONSULTATION_PATH_KEY = "green_initial_consultation_path"
 _DASHBOARD_RE = re.compile(
     r"(?i)(?:\b(?:update|edit|change|set)\b.{0,40}\b"
     r"(?:bio|photo|pricing|price list|rates|credentials)\b"
@@ -928,6 +928,13 @@ def _present_policy(session: Session, state: ConversationState) -> str:
     state.booking_context = ctx
     state.booking_substate = AWAITING_POLICY_ACCEPTANCE
     session.flush()
+    if ctx.get(_INITIAL_CONSULTATION_PATH_KEY):
+        return (
+            "Great. Before we arrange your consultation, please review and accept our booking policy.\n\n"
+            f"[Review & Accept Booking Policy] {policy['url']}\n\n"
+            "Reply with ‘I accept’ when you are ready to continue. Once you’ve accepted it, I’ll show you "
+            "the Initial Consultation details."
+        )
     choice = str(ctx.get("treatment_option") or "")
     next_step = (
         "Before I create your short specialist safety review"
@@ -1237,13 +1244,18 @@ def _offer_initial_consultation(
         return "I need to refresh your consultation details before we continue. Please try again shortly."
     context = dict(conversation.booking_context or {})
     context[_TRIAGE_FLOW_KEY] = "initial_consultation_offered"
-    _set_substate(conversation, AWAITING_TREATMENT_OPTION, context)
+    # GREEN patients must review policy before seeing or committing to a
+    # consultation. The legacy three-option menu remains available to its
+    # existing routes, but is not the approved GREEN-path next step.
+    context[_INITIAL_CONSULTATION_PATH_KEY] = True
+    context["treatment_option"] = "quick_initial"
+    _set_substate(conversation, None, context)
     state.booking_context = context
-    state.booking_substate = AWAITING_TREATMENT_OPTION
+    state.booking_substate = None
     _set_triage_status(session, state, "summarised")
     return (
         "Thanks. Based on what you’ve told me so far, I can help you arrange your initial consultation with a clinician.\n\n"
-        f"{treatment_options_prompt(plain_summary(extracted))}"
+        f"{_present_policy(session, state)}"
     )
 
 
@@ -1266,6 +1278,8 @@ def _stage_for_booking_substate(substate: str | None) -> ConversationStage | Non
         return ConversationStage.SLOT_SELECTION
     if substate == AWAITING_POLICY_ACCEPTANCE:
         return ConversationStage.POLICY_REVIEW
+    if substate == AWAITING_INITIAL_CONSULTATION_CONFIRMATION:
+        return ConversationStage.POLICY_ACCEPTANCE
     if substate in {AWAITING_RH_PAYMENT_EMAIL, AWAITING_RH_PAYMENT, AWAITING_PAYMENT}:
         return ConversationStage.AWAITING_PAYMENT
     if substate in {
@@ -1894,9 +1908,20 @@ def handle_turn(
                     person_id=identity.person_id,
                     message_id=wa_message_id,
                 )
-                booking_reply = begin_selected_treatment(
-                    session, active_conversation, patient, state.extracted
-                )
+                context = dict(active_conversation.booking_context or {})
+                if context.get(_INITIAL_CONSULTATION_PATH_KEY):
+                    _set_substate(
+                        active_conversation,
+                        AWAITING_INITIAL_CONSULTATION_CONFIRMATION,
+                        context,
+                    )
+                    state.booking_context = context
+                    state.booking_substate = AWAITING_INITIAL_CONSULTATION_CONFIRMATION
+                    booking_reply = initial_consultation_offer()
+                else:
+                    booking_reply = begin_selected_treatment(
+                        session, active_conversation, patient, state.extracted
+                    )
             else:
                 booking_reply = handle_booking_turn(
                     session,
@@ -1908,6 +1933,14 @@ def handle_turn(
                 )
             if booking_reply == "__JOY_TREATMENT_OPTION_SELECTED__":
                 booking_reply = _present_policy(session, state)
+            if booking_reply == "__JOY_INITIAL_CONSULTATION_CONFIRMED__":
+                current = session.get(Conversation, state.conversation_id)
+                if current is None:
+                    booking_reply = "I need to refresh your consultation details before we continue. Please try again shortly."
+                else:
+                    booking_reply = begin_selected_treatment(
+                        session, current, patient, state.extracted
+                    )
             if booking_reply is not None:
                 current = session.get(Conversation, state.conversation_id)
                 booking_stage = _stage_for_booking_substate(

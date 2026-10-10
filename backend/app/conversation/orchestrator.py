@@ -23,6 +23,7 @@ BOOKING_SUBSTATES = (
     "rh_awaiting_replacement",
     "awaiting_treatment_option",
     "awaiting_policy_acceptance",
+    "awaiting_initial_consultation_confirmation",
 )
 
 

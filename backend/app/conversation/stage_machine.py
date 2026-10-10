@@ -34,7 +34,11 @@ _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
         # the receipt email. This is a valid atomic transition, not a bypass.
         ConversationStage.AWAITING_PAYMENT,
     },
-    ConversationStage.POLICY_ACCEPTANCE: {ConversationStage.POLICY_ACCEPTANCE, ConversationStage.SPECIALIST_MATCHING},
+    ConversationStage.POLICY_ACCEPTANCE: {
+        ConversationStage.POLICY_ACCEPTANCE,
+        ConversationStage.SPECIALIST_MATCHING,
+        ConversationStage.AWAITING_PAYMENT,
+    },
     ConversationStage.SPECIALIST_MATCHING: {ConversationStage.SPECIALIST_MATCHING, ConversationStage.SLOT_SELECTION},
     # A rejected RH hold can safely return to provider selection; this is a
     # recovery transition, not a booking confirmation or clinical shortcut.
