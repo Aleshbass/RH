@@ -12,8 +12,15 @@ _GENERIC_REPLIES = {
 
 
 _FIRST_CONTACT_WELCOME = (
-    "Hi, I’m Joy, Rehabify’s physiotherapy assistant. "
-    "Tell me what is bothering you or what you would like help with."
+    "Hello 👋 Welcome to Rehabify.\n\n"
+    "Could you tell me what’s going on today?\n\n"
+    "You can tell me:\n\n"
+    "• what’s bothering you\n"
+    "• which part of your body is affected\n"
+    "• how long you’ve had it\n"
+    "• whether you’ve seen anyone about it\n"
+    "• anything you’ve already tried\n\n"
+    "Just tell me in your own words. There’s no need to fill out a form."
 )
 
 

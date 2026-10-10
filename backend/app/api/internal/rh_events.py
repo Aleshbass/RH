@@ -201,13 +201,10 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
         mapping = session.scalar(select(RHIdentityMapping).where(RHIdentityMapping.rh_record_id == rh_patient_id))
         patient = session.get(Patient, mapping.joy_person_id) if mapping else None
         if patient:
-            assigned = str(data.get("assignment_status") or "") == "assigned"
             enqueue_booking_confirmed(
                 patient.phone_e164,
                 str(data.get("review_id") or ""),
-                "Your ₦6,000 specialist review payment has been verified. RH has assigned an eligible reviewer and I’ll send the review details here."
-                if assigned else
-                "Your ₦6,000 specialist review payment has been verified. RH is assigning an eligible reviewer and I’ll send the review details here.",
+                "Your ₦6,000 specialist review payment has been verified. RH will assign an eligible reviewer and I’ll send the review details here.",
             )
     return {"accepted": True, "duplicate": False}
 

@@ -151,10 +151,15 @@ _THANKS_ONLY_RE = re.compile(
     re.IGNORECASE,
 )
 _FIRST_CONTACT_WELCOME = (
-    "Hi, I’m Joy, Rehabify’s physiotherapy assistant. "
-    "Could you tell me what is going on today? You can tell me what is bothering you, "
-    "which part of your body is affected, how long you have had it, anything you have tried, "
-    "and whether you have seen anyone about it. Just tell me in your own words."
+    "Hello 👋 Welcome to Rehabify.\n\n"
+    "Could you tell me what’s going on today?\n\n"
+    "You can tell me:\n\n"
+    "• what’s bothering you\n"
+    "• which part of your body is affected\n"
+    "• how long you’ve had it\n"
+    "• whether you’ve seen anyone about it\n"
+    "• anything you’ve already tried\n\n"
+    "Just tell me in your own words. There’s no need to fill out a form."
 )
 _TRIAGE_FLOW_KEY = "triage_flow_state"
 _AWAITING_SUMMARY_CONFIRMATION = "awaiting_summary_confirmation"
