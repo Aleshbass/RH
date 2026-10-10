@@ -112,6 +112,17 @@ def test_compact_safety_reply_skips_gemini_when_a_screen_is_pending():
     ) is True
 
 
+def test_eight_item_safety_screen_accepts_number_only_concerning_answers():
+    from app.conversation.turn_handler import _apply_numbered_safety_answers, _safety_screen
+    from app.safety.protocol_runtime import YES
+
+    screen = _safety_screen(ExtractedTriage(body_location="lower back", condition_area=ConditionArea.MSK))
+    answers = _apply_numbered_safety_answers({}, screen, "1 and 7", allow_number_only=True)
+
+    assert answers
+    assert set(answers.values()) == {YES}
+
+
 def test_first_contact_does_not_checklist(db_session, patient_phone, fake_llm):
     from app.conversation.turn_handler import handle_turn
     fake_llm.reply = "Sorry about the knee — tell me the whole story when you can."

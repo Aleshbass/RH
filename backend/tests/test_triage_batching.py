@@ -179,8 +179,9 @@ def test_lower_back_safety_prompt_is_grouped_and_backend_owned():
     extracted = ExtractedTriage(body_location="lower back", condition_area=ConditionArea.MSK)
     prompt = _safety_prompt(extracted)
     screen = _safety_screen(extracted)
-    assert "Reply ‘No to all’" in prompt
-    assert "1." in prompt
+    assert "You can reply ‘No to all’" in prompt
+    assert "1. New or worsening weakness" in prompt
+    assert "8. Something else" in prompt
     assert "LB-" not in prompt  # patient copy contains approved wording, not internal IDs
     assert len(screen) == 4
     covered = [question.id for _, questions in screen for question in questions]
@@ -422,3 +423,20 @@ def test_plain_summary_includes_the_meaningful_story_details():
     assert "improving swelling" in text
     assert "walking" in text
     assert "return to sport safely" in text
+
+
+def test_confirmation_summary_uses_the_patient_facing_review_fields():
+    from app.triage.summary import confirmation_summary
+
+    text = confirmation_summary(ExtractedTriage(
+        main_complaint="lower back pain",
+        onset="2 weeks",
+        mechanism="bending down",
+        previous_treatment=["Nurofen", "Voltarol gel"],
+        seen_clinician=False,
+    ))
+
+    assert "You have: lower back pain" in text
+    assert "Started: about 2 weeks after bending down" in text
+    assert "You’ve tried: Nurofen and Voltarol gel" in text
+    assert "You’ve seen a clinician: No" in text

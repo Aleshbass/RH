@@ -21,3 +21,8 @@ concise summary. Never repeat a fact the patient has stated or ask a generic
 checklist question merely because it is commonly asked. This guides
 conversation only: the backend independently checks required facts and the
 clinical safety protocol before changing phase.
+
+When the patient explicitly says whether they have seen a clinician, extract
+`seen_clinician` as true or false. Extract only treatments they explicitly
+name into `previous_treatment` as an array of short factual strings. Do not
+infer either field.

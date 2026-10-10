@@ -92,8 +92,8 @@ from app.triage.extraction import (
     merge_extraction,
     parse_severity_from_text,
 )
-from app.triage.question_batching import grouped_followup, missing_fields
-from app.triage.summary import plain_summary
+from app.triage.question_batching import missing_fields
+from app.triage.summary import confirmation_summary, plain_summary
 from app.triage.turn_decision import TriageTurnDecision
 from app.conversation.triage_state_reducer import reduce_triage_turn
 from app.conversation.response_strategy import grounded_triage_ack
@@ -163,14 +163,13 @@ _FIRST_CONTACT_WELCOME = (
 )
 _TRIAGE_FLOW_KEY = "triage_flow_state"
 _AWAITING_SUMMARY_CONFIRMATION = "awaiting_summary_confirmation"
+_AWAITING_SUMMARY_CORRECTION = "awaiting_summary_correction"
 _AWAITING_ADDITIONAL_DETAILS = "awaiting_additional_details"
 _COLLECTING_ADDITIONAL_DETAILS = "collecting_additional_details"
 _AWAITING_SAFETY_SCREEN = "awaiting_safety_screen"
-# The client-approved intake is deliberately summary-led for now. Keep the
-# legacy deterministic safety-screen implementation below for a future
-# re-enable, but do not ask follow-up triage questions in the active flow.
-# Explicit RED findings are still handled immediately by ``safety.fired``.
-_TRIAGE_QUESTIONNAIRE_ENABLED = False
+# Intake is conversational until the patient confirms their account. Safety is
+# then assessed by the deterministic, grouped protocol below—not by Gemini.
+_TRIAGE_QUESTIONNAIRE_ENABLED = True
 
 
 def _is_greeting_only(user_text: str) -> bool:
@@ -413,10 +412,7 @@ def _normalised_short_reply(user_text: str) -> str:
 def _is_simple_no(user_text: str) -> bool:
     """Recognise a short negative without treating a clinical narrative as one."""
     text = _normalised_short_reply(user_text)
-    return text in {
-        "no", "nope", "nah", "nothing else", "there's nothing else",
-        "there is nothing else", "nothing more", "that's all", "that is all",
-    }
+    return text in {"no", "nope", "nah"}
 
 
 def _is_no_further_details(user_text: str) -> bool:
@@ -446,14 +442,15 @@ def _defer_amber_until_summary_is_complete(
     flow_state = (booking_context or {}).get(_TRIAGE_FLOW_KEY)
     if flow_state is None:
         return True
-    if flow_state == _AWAITING_SUMMARY_CONFIRMATION:
-        # “There's nothing else” both confirms the summary and closes the
-        # invitation to add detail, so it may progress immediately.
-        return not _is_no_further_details(user_text)
-    if flow_state == _AWAITING_ADDITIONAL_DETAILS:
-        # A simple affirmative means the next message will contain the extra
-        # detail; do not route on the incomplete account yet.
-        return _is_simple_yes(user_text)
+    if flow_state in {
+        _AWAITING_SUMMARY_CONFIRMATION,
+        _AWAITING_SUMMARY_CORRECTION,
+        _AWAITING_ADDITIONAL_DETAILS,
+        _COLLECTING_ADDITIONAL_DETAILS,
+    }:
+        # The patient must complete the summary and reach the deterministic
+        # safety screen before a non-emergency review route is selected.
+        return True
     return False
 
 
@@ -481,7 +478,8 @@ def _record_fact_sources(extracted: ExtractedTriage, source_message_id: str | No
     sourceable = (
         "main_complaint", "body_region", "body_location", "onset", "duration", "mechanism",
         "symptoms", "radiation", "aggravating", "relieving", "functional_limitations",
-        "main_concern", "relevant_medical_history", "comorbidities", "goals",
+        "main_concern", "seen_clinician", "previous_treatment", "relevant_medical_history",
+        "comorbidities", "goals",
     )
     sources = dict(extracted.fact_sources)
     for field in sourceable:
@@ -1007,12 +1005,16 @@ def _safety_group(question: ScheduledQuestion) -> str:
     return "general_warning_signs"
 
 
-_SAFETY_GROUP_COPY = {
-    "bladder_bowel_or_saddle": "Any new bladder or bowel-control problem, or numbness around your groin or bottom?",
-    "new_nerve_symptoms": "Any new or rapidly worsening weakness, numbness, or tingling in your limbs?",
-    "major_injury": "Did this start after a serious accident, major fall, or significant injury?",
-    "general_warning_signs": "Any fever or feeling very unwell, unexplained weight loss, previous cancer, pain that is rapidly worsening, or pain that is unusual at rest or at night?",
-}
+_SAFETY_SCREEN_ITEMS = (
+    ("New or worsening weakness in your arms or legs", ("weakness",)),
+    ("New loss of feeling or significant numbness", ("numbness", "tingling", "loss of feeling")),
+    ("New problems controlling your bladder or bowel", ("bladder", "bowel")),
+    ("New numbness around your groin, genitals or anus", ("groin", "genital", "anus", "saddle", "bottom")),
+    ("A serious accident, fall or significant injury related to this problem", ("accident", "fall", "injury", "trauma")),
+    ("Fever, feeling very unwell, or another significant illness alongside the problem", ("fever", "unwell", "chills", "night sweats", "infection")),
+    ("Symptoms getting significantly worse very quickly", ("rapid", "worsen", "deteriorat")),
+    ("Something else about your symptoms that feels unusual or concerning", ("unusual", "severe", "rest", "night", "weight", "cancer", "general health")),
+)
 
 
 def _safety_screen(extracted: ExtractedTriage) -> list[tuple[str, tuple[ScheduledQuestion, ...]]]:
@@ -1127,16 +1129,56 @@ def _narrative_yes_answers(
 
 
 def _safety_prompt(extracted: ExtractedTriage) -> str:
-    screen = _safety_screen(extracted)
     rendered = "\n".join(
-        f"{index + 1}. {_SAFETY_GROUP_COPY[group]}"
-        for index, (group, _) in enumerate(screen)
+        f"{index}. {copy}"
+        for index, (copy, _) in enumerate(_SAFETY_SCREEN_ITEMS, start=1)
     )
     return (
-        "Before I help you book, I need to check a few important safety questions. "
-        "Reply ‘No to all’ if none apply, or tell me the number(s) that apply:\n"
+        "Thanks. Before I help you book, I just need to check a few important safety questions.\n\n"
+        "Do you currently have any of the following?\n\n"
         f"{rendered}"
+        "\n\nYou can reply ‘No to all’ or tell me the number(s) that apply."
     )
+
+
+def _apply_numbered_safety_answers(
+    answers: dict[str, str],
+    screen: list[tuple[str, tuple[ScheduledQuestion, ...]]],
+    user_text: str,
+    *,
+    allow_number_only: bool = False,
+) -> dict[str, str]:
+    """Map the eight patient-facing items back to their protocol groups.
+
+    The patient may simply say ``1 and 7``. That is a positive safety answer,
+    not a request for Joy to infer a diagnosis. Mapping it to the underlying
+    group preserves the versioned protocol's more detailed rules.
+    """
+    questions = [question for _, group in screen for question in group]
+    explicit = {
+        int(index): normalize_answer(answer)
+        for index, answer in re.findall(
+            r"(?:^|[\s,;/|])#?(\d{1,2})\s*[).:=-]?\s*(yes|no|unsure)\b",
+            user_text,
+            re.I,
+        )
+    }
+    if not explicit and allow_number_only:
+        selected = {
+            int(index)
+            for index in re.findall(r"(?<!\d)\b([1-8])\b(?!\d)", user_text)
+        }
+        # Do not mistake a severity statement for a safety item.
+        if re.search(r"\b(?:out\s+of|/)\s*10\b", user_text, re.I):
+            selected.clear()
+        explicit = {index: YES for index in selected}
+    for index, answer in explicit.items():
+        if 1 <= index <= len(_SAFETY_SCREEN_ITEMS) and answer in {YES, NO, UNCLEAR}:
+            keywords = _SAFETY_SCREEN_ITEMS[index - 1][1]
+            for question in questions:
+                if any(keyword in question.text.casefold() for keyword in keywords):
+                    answers[question.id] = answer
+    return answers
 
 
 def _can_skip_model_for_safety_reply(extracted: ExtractedTriage, user_text: str) -> bool:
@@ -1154,18 +1196,42 @@ def _can_skip_model_for_safety_reply(extracted: ExtractedTriage, user_text: str)
 
 def _triage_summary_prompt(extracted: ExtractedTriage) -> str:
     return (
-        "Thanks. Here’s a quick summary of what you’ve told me:\n\n"
-        f"{plain_summary(extracted)}\n\n"
-        "Is that right, or is there anything else you would like me to know? "
-        "If there is nothing else, reply ‘there’s nothing else’."
+        "Thanks. Just to make sure I’ve understood you correctly:\n\n"
+        f"{confirmation_summary(extracted)}\n\n"
+        "Is that correct? Reply Yes or No."
     )
 
 
 def _additional_details_acknowledgement() -> str:
-    """Acknowledge a new detail while keeping the explicit summary exit."""
+    """Acknowledge a new detail before the deterministic safety screen."""
+    return "Thanks, I’ve added that to your information."
+
+
+def _additional_details_prompt() -> str:
     return (
-        "Thanks — I’ve added that to what you told me. Is there anything else about your problem "
-        "you would like me to know before I continue? If there is nothing else, reply ‘there’s nothing else’."
+        "Is there anything else about your problem that you’d like me to know before I continue?\n\n"
+        "Reply Yes or No. If there is nothing else, you can also reply ‘there’s nothing else’."
+    )
+
+
+def _offer_initial_consultation(
+    session: Session,
+    state: ConversationState,
+    extracted: ExtractedTriage,
+) -> str:
+    """Start the existing routine-consultation flow after a GREEN decision."""
+    conversation = session.get(Conversation, state.conversation_id)
+    if conversation is None:
+        return "I need to refresh your consultation details before we continue. Please try again shortly."
+    context = dict(conversation.booking_context or {})
+    context[_TRIAGE_FLOW_KEY] = "initial_consultation_offered"
+    _set_substate(conversation, AWAITING_TREATMENT_OPTION, context)
+    state.booking_context = context
+    state.booking_substate = AWAITING_TREATMENT_OPTION
+    _set_triage_status(session, state, "summarised")
+    return (
+        "Thanks. Based on what you’ve told me so far, I can help you arrange your initial consultation with a clinician.\n\n"
+        f"{treatment_options_prompt(plain_summary(extracted))}"
     )
 
 
@@ -1219,10 +1285,10 @@ def _reply_after_extract(
     if patient is None or conversation is None:
         return "I need to refresh your consultation details before we continue. Please try again shortly.", PatientPhase.MID_TRIAGE
 
-    # New-patient V1 is deliberately a small deterministic state machine:
-    # capture free text -> confirm summary -> optionally add detail -> one
-    # grouped safety screen -> policy -> Quick Initial Consultation.  Gemini
-    # extracts facts, but it never decides which workflow is next.
+    # The patient-facing protocol is deliberately deterministic after the
+    # opening story: confirm summary -> correction if needed -> one open
+    # question -> grouped safety screen -> safety-directed booking route.
+    # Gemini extracts facts; it never chooses the route.
     context = dict(conversation.booking_context or {})
     flow_state = context.get(_TRIAGE_FLOW_KEY)
     if flow_state is None:
@@ -1235,42 +1301,28 @@ def _reply_after_extract(
         return summary, PatientPhase.POST_TRIAGE
 
     if flow_state == _AWAITING_SUMMARY_CONFIRMATION:
-        if _is_no_further_details(user_text):
-            context[_TRIAGE_FLOW_KEY] = "summary_complete"
+        if _is_simple_no(user_text):
+            context[_TRIAGE_FLOW_KEY] = _AWAITING_SUMMARY_CORRECTION
             conversation.booking_context = context
             state.booking_context = context
             session.flush()
-            acknowledgement = "Thanks — I’ve got everything you wanted to share."
-            if _TRIAGE_QUESTIONNAIRE_ENABLED and schedule_questions(extracted):
-                context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
-                conversation.booking_context = context
-                state.booking_context = context
-                return f"{acknowledgement}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
-            return f"{acknowledgement}\n\n{_offer_specialist_triage_review(session, state)}", PatientPhase.POST_TRIAGE
+            return "No problem. What would you like me to correct or add?", PatientPhase.POST_TRIAGE
         if _is_summary_confirm(user_text):
             context[_TRIAGE_FLOW_KEY] = _AWAITING_ADDITIONAL_DETAILS
             conversation.booking_context = context
             state.booking_context = context
             session.flush()
-            return (
-                "Thanks — I’ve got that. Is there anything else about your problem that you would like me to know "
-                "before I continue? If there is nothing else, reply ‘there’s nothing else’.",
-                PatientPhase.POST_TRIAGE,
-            )
-        # This is additional history or a correction, not a confirmation.  Do
-        # not silently repeat the earlier recap: acknowledge the new detail
-        # and keep the patient in the same explicit "anything else" step.
-        # The normal extraction path above still merges any structured facts
-        # it can safely derive from this message.
-        additions = list(context.get("summary_additions") or [])
-        detail = " ".join((user_text or "").split())
-        if detail and detail not in additions:
-            additions.append(detail)
-        context["summary_additions"] = additions[-5:]
+            return _additional_details_prompt(), PatientPhase.POST_TRIAGE
+        return "Please reply Yes if the summary is correct, or No if you’d like to correct or add something.", PatientPhase.POST_TRIAGE
+
+    if flow_state == _AWAITING_SUMMARY_CORRECTION:
+        summary = _triage_summary_prompt(extracted)
+        _store_summary(session, state, summary)
+        context[_TRIAGE_FLOW_KEY] = _AWAITING_SUMMARY_CONFIRMATION
         conversation.booking_context = context
         state.booking_context = context
         session.flush()
-        return _additional_details_acknowledgement(), PatientPhase.POST_TRIAGE
+        return summary, PatientPhase.POST_TRIAGE
 
     if flow_state == _AWAITING_ADDITIONAL_DETAILS:
         if _is_simple_yes(user_text):
@@ -1279,38 +1331,35 @@ def _reply_after_extract(
             state.booking_context = context
             session.flush()
             return "Please tell me anything else you think is important.", PatientPhase.POST_TRIAGE
-        acknowledgement = "Thanks — I’ve got everything you wanted to share."
-        context[_TRIAGE_FLOW_KEY] = "summary_complete"
-        conversation.booking_context = context
-        state.booking_context = context
-        session.flush()
-        if _TRIAGE_QUESTIONNAIRE_ENABLED and schedule_questions(extracted):
+        if not (_is_simple_no(user_text) or _is_no_further_details(user_text)):
             context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
             conversation.booking_context = context
             state.booking_context = context
-            return f"{acknowledgement}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
-        return f"{acknowledgement}\n\n{_offer_specialist_triage_review(session, state)}", PatientPhase.POST_TRIAGE
+            session.flush()
+            return f"{_additional_details_acknowledgement()}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
+        acknowledgement = "Thanks — I’ve got everything you wanted to share."
+        context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
+        conversation.booking_context = context
+        state.booking_context = context
+        session.flush()
+        return f"{acknowledgement}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
 
     if flow_state == _COLLECTING_ADDITIONAL_DETAILS:
-        context[_TRIAGE_FLOW_KEY] = "summary_complete"
+        context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
         conversation.booking_context = context
         state.booking_context = context
         session.flush()
-        if _TRIAGE_QUESTIONNAIRE_ENABLED and schedule_questions(extracted):
-            context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
-            conversation.booking_context = context
-            state.booking_context = context
-            return f"Thanks, I’ve added that to your information.\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
-        return (
-            "Thanks, I’ve added that to your information.\n\n"
-            f"{_offer_specialist_triage_review(session, state)}",
-            PatientPhase.POST_TRIAGE,
-        )
+        return f"{_additional_details_acknowledgement()}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
 
     if flow_state == _AWAITING_SAFETY_SCREEN:
-        if _TRIAGE_QUESTIONNAIRE_ENABLED and schedule_questions(extracted):
+        if schedule_questions(extracted):
             return _safety_prompt(extracted), PatientPhase.MID_TRIAGE
-        return _offer_specialist_triage_review(session, state), PatientPhase.POST_TRIAGE
+        safety = evaluate(extracted)
+        if safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER":
+            return _amber_specialist_reply(
+                session, identity, state, user_text, extracted, safety, incoming_phase, "en", wa_message_id
+            ), PatientPhase.POST_TRIAGE
+        return _offer_initial_consultation(session, state, extracted), PatientPhase.POST_TRIAGE
 
     # Existing in-flight legacy conversations still complete safely. New
     # conversations never enter this branch because V1 sets the state above.
@@ -1362,28 +1411,21 @@ def provider_unavailable_reply(
                 "safety_protocol_version": "1.0.0",
             })
     safety = evaluate(extracted)
-    if _TRIAGE_QUESTIONNAIRE_ENABLED and (
-        safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER"
-    ):
-        return _amber_specialist_reply(
-            session, identity, state, user_text, extracted, safety, state.phase, language, wa_message_id
-        )
     if safety.fired:
         return _safety_fire_reply(
             session, identity, state, user_text, extracted, safety, state.phase, language, wa_message_id
         )
-    scheduled = schedule_questions(extracted)
-    if scheduled:
-        reply, phase = _safety_prompt(extracted), PatientPhase.MID_TRIAGE
-    elif extracted.severity is None and has_narrative(extracted):
-        reply, phase = "Could you rate how bad it feels from 1 to 10?", PatientPhase.MID_TRIAGE
-    else:
-        missing = missing_fields(extracted)
-        followup = grouped_followup(missing)
-        if followup:
-            reply, phase = f"Thanks for explaining. {followup}", PatientPhase.MID_TRIAGE
-        else:
-            reply, phase = grounded_triage_ack("", extracted), state.phase
+    conversation = session.get(Conversation, state.conversation_id)
+    booking_context = conversation.booking_context if conversation is not None else None
+    if _TRIAGE_QUESTIONNAIRE_ENABLED and (
+        safety.action == "specialist_review" or (safety.risk_level or "").upper() == "AMBER"
+    ) and not _defer_amber_until_summary_is_complete(booking_context, user_text):
+        return _amber_specialist_reply(
+            session, identity, state, user_text, extracted, safety, state.phase, language, wa_message_id
+        )
+    reply, phase = _reply_after_extract(
+        session, state, user_text, "", extracted, state.phase, identity, wa_message_id=wa_message_id,
+    )
     append(
         session,
         kind=AuditKind.TRIAGE,
@@ -1978,20 +2020,14 @@ def handle_turn(
             [question for _, questions in safety_screen for question in questions],
         )
         answers.update(semantic_answers)
-        numbered = {
-            int(index): normalize_answer(answer)
-            for index, answer in re.findall(
-                r"(?:^|[\s,;/|])#?(\d{1,2})\s*[).:=-]?\s*(yes|no|unsure)\b",
-                user_text,
-                re.I,
-            )
-        }
-        if numbered:
-            for index, normalized in numbered.items():
-                if 1 <= index <= len(safety_screen) and normalized in {YES, NO, UNCLEAR}:
-                    for question in safety_screen[index - 1][1]:
-                        answers[question.id] = normalized
-        else:
+        before_numbered = dict(answers)
+        answers = _apply_numbered_safety_answers(
+            answers,
+            safety_screen,
+            user_text,
+            allow_number_only=(state.booking_context or {}).get(_TRIAGE_FLOW_KEY) == _AWAITING_SAFETY_SCREEN,
+        )
+        if answers == before_numbered:
             compact = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
             if compact in {"no to all", "none", "none apply"}:
                 for _, questions in safety_screen:

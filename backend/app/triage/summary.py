@@ -81,3 +81,37 @@ def plain_summary(extracted: ExtractedTriage) -> str:
 
     detail = " ".join(sentences) or "I have noted what you described."
     return f"Here's what I understood: {detail}"
+
+
+def confirmation_summary(extracted: ExtractedTriage) -> str:
+    """Render the factual, scan-friendly recap used before safety screening."""
+    lines: list[str] = []
+
+    problem = extracted.main_complaint
+    if not problem and extracted.body_location:
+        symptom = _natural_list(extracted.symptoms)
+        problem = f"{extracted.body_location} {symptom}" if symptom else f"{extracted.body_location} pain"
+    if problem:
+        lines.append(f"You have: {_patient_to_you(problem)}")
+
+    timing_parts: list[str] = []
+    if extracted.onset:
+        onset = extracted.onset.strip()
+        timing_parts.append(onset if onset.casefold().startswith(("for ", "about ", "over ")) else f"about {onset}")
+    if extracted.mechanism:
+        mechanism = _patient_to_you(extracted.mechanism)
+        timing_parts.append(
+            f"after {mechanism}" if not mechanism.casefold().startswith(("after ", "when ")) else mechanism
+        )
+    if timing_parts:
+        lines.append(f"Started: {' '.join(timing_parts)}")
+
+    treatments = _natural_list(extracted.previous_treatment)
+    if treatments:
+        lines.append(f"You’ve tried: {treatments}")
+    if extracted.seen_clinician is not None:
+        lines.append(f"You’ve seen a clinician: {'Yes' if extracted.seen_clinician else 'No'}")
+
+    if not lines:
+        return plain_summary(extracted)
+    return "\n".join(lines)

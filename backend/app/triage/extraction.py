@@ -77,6 +77,16 @@ _HURTS_WHEN_RE = re.compile(
     r"\b(?:it\s+)?(?:still\s+)?hurts?\s+(?:when|with)\s+([^.!?,;]{2,80})",
     re.IGNORECASE,
 )
+_SEEN_CLINICIAN_NO_RE = re.compile(
+    r"\b(?:have\s+not|haven['’]t|never)\s+(?:seen|spoken\s+to)\s+(?:anyone\b|(?:a\s+|any\s+)?"
+    r"(?:doctor|clinician|physio(?:therapist)?|health(?:care)?\s+professional)\b)",
+    re.IGNORECASE,
+)
+_SEEN_CLINICIAN_YES_RE = re.compile(
+    r"\b(?:have\s+seen|i['’]?ve\s+seen|i\s+saw|spoken\s+to)\s+(?:a\s+|my\s+)?"
+    r"(?:doctor|clinician|physio(?:therapist)?|health(?:care)?\s+professional)\b",
+    re.IGNORECASE,
+)
 
 
 def merge_extraction(existing: ExtractedTriage, incoming: dict) -> ExtractedTriage:
@@ -255,6 +265,11 @@ def enrich_from_user_text(extracted: ExtractedTriage, user_text: str) -> Extract
         goal = _GOAL_RE.search(text)
         if goal:
             updates["goals"] = goal.group(1).strip().casefold()
+    if extracted.seen_clinician is None:
+        if _SEEN_CLINICIAN_NO_RE.search(text):
+            updates["seen_clinician"] = False
+        elif _SEEN_CLINICIAN_YES_RE.search(text):
+            updates["seen_clinician"] = True
     if not updates:
         return extracted
     return extracted.model_copy(update=updates)

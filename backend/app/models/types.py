@@ -102,6 +102,8 @@ class ExtractedTriage(BaseModel):
     relieving: list[str] = []
     functional_limitations: list[str] = []
     main_concern: str | None = None
+    seen_clinician: bool | None = None
+    previous_treatment: list[str] = []
     comorbidities: list[str] = []
     relevant_medical_history: list[str] = []
     goals: str | None = None
