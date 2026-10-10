@@ -52,6 +52,15 @@ _DURATION_AGO_RE = re.compile(
     r"\b(\d+\s+(?:hours?|days?|weeks?|months?|years?))\s+ago\b",
     re.IGNORECASE,
 )
+_WORD_DURATION_RE = re.compile(
+    r"\b(?:for|past|about|around|over)\s+((?:a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+    r"(?:hours?|days?|weeks?|months?|years?))\b",
+    re.IGNORECASE,
+)
+_STARTED_AFTER_RE = re.compile(
+    r"\b(?:started|began)\s+after\s+([^.!?,;]{3,100})",
+    re.IGNORECASE,
+)
 _GOAL_RE = re.compile(
     r"\b(?:i(?:'d| would)\s+like|i\s+want|i(?:'m| am)\s+hoping)"
     r"\s+(?:physiotherapy\s+)?(?:to\s+)?([^.!?]{3,120})",
@@ -75,6 +84,11 @@ _IMPROVING_SWELLING_RE = re.compile(
 )
 _HURTS_WHEN_RE = re.compile(
     r"\b(?:it\s+)?(?:still\s+)?hurts?\s+(?:when|with)\s+([^.!?,;]{2,80})",
+    re.IGNORECASE,
+)
+_TREATMENT_RE = re.compile(
+    r"\b(?:i(?:'|’)ve|i\s+have|i)\s+(?:tried|used|taken|applied|been\s+using)\s+"
+    r"([^.!?]{2,160}?)(?=\s+(?:but|however)\b|[.!?]|$)",
     re.IGNORECASE,
 )
 _SEEN_CLINICIAN_NO_RE = re.compile(
@@ -225,7 +239,7 @@ def enrich_from_user_text(extracted: ExtractedTriage, user_text: str) -> Extract
         ):
             updates["body_location"] = observed_location
     # An explicit duration is more precise than a model label such as "acute".
-    duration = _DURATION_RE.search(text) or _DURATION_AGO_RE.search(text)
+    duration = _DURATION_RE.search(text) or _DURATION_AGO_RE.search(text) or _WORD_DURATION_RE.search(text)
     if duration:
         updates["onset"] = next(value for value in duration.groups() if value).casefold()
     if not extracted.mechanism:
@@ -236,6 +250,10 @@ def enrich_from_user_text(extracted: ExtractedTriage, user_text: str) -> Extract
             # the mechanism makes the patient recap read naturally.
             detail = _DURATION_AGO_RE.sub("", detail).strip(" ,")
             updates["mechanism"] = detail
+        else:
+            started_after = _STARTED_AFTER_RE.search(text)
+            if started_after:
+                updates["mechanism"] = started_after.group(1).strip().casefold()
     if not extracted.symptoms:
         symptoms: list[str] = []
         quality = _PAIN_QUALITY_RE.search(text)
@@ -270,6 +288,16 @@ def enrich_from_user_text(extracted: ExtractedTriage, user_text: str) -> Extract
             updates["seen_clinician"] = False
         elif _SEEN_CLINICIAN_YES_RE.search(text):
             updates["seen_clinician"] = True
+    if not extracted.previous_treatment:
+        treatment = _TREATMENT_RE.search(text)
+        if treatment:
+            values = [
+                value.strip(" ,;:")
+                for value in re.split(r"\s*(?:,|\band\b)\s*", treatment.group(1), flags=re.IGNORECASE)
+                if value.strip(" ,;:")
+            ]
+            if values:
+                updates["previous_treatment"] = values
     if not updates:
         return extracted
     return extracted.model_copy(update=updates)

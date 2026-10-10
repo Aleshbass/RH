@@ -440,3 +440,20 @@ def test_confirmation_summary_uses_the_patient_facing_review_fields():
     assert "Started: about 2 weeks after bending down" in text
     assert "You’ve tried: Nurofen and Voltarol gel" in text
     assert "You’ve seen a clinician: No" in text
+
+
+def test_story_enrichment_keeps_named_self_care_for_the_confirmation_summary():
+    from app.triage.extraction import enrich_from_user_text
+    from app.triage.summary import confirmation_summary
+
+    extracted = enrich_from_user_text(
+        ExtractedTriage(),
+        "I’ve had lower back pain for about two weeks. It started after I bent down to pick something up. "
+        "I’ve tried Nurofen and Voltarol gel but it hasn’t really improved. I haven’t seen anyone yet.",
+    )
+
+    summary = confirmation_summary(extracted)
+    assert extracted.onset == "two weeks"
+    assert extracted.mechanism == "i bent down to pick something up"
+    assert extracted.previous_treatment == ["Nurofen", "Voltarol gel"]
+    assert "You’ve tried: Nurofen and Voltarol gel" in summary
