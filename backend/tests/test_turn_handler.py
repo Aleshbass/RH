@@ -108,8 +108,20 @@ def test_compact_safety_reply_skips_gemini_when_a_screen_is_pending():
     from app.conversation.turn_handler import _can_skip_model_for_safety_reply
 
     assert _can_skip_model_for_safety_reply(
-        ExtractedTriage(body_location="ankle"), "no, none at all"
+        ExtractedTriage(body_location="ankle"),
+        "no, none at all",
+        safety_screen_active=True,
     ) is True
+
+
+def test_summary_confirmation_is_not_interpreted_as_a_safety_answer():
+    from app.conversation.turn_handler import _can_skip_model_for_safety_reply
+
+    assert _can_skip_model_for_safety_reply(
+        ExtractedTriage(body_location="lower back"),
+        "Yes",
+        safety_screen_active=False,
+    ) is False
 
 
 def test_eight_item_safety_screen_accepts_number_only_concerning_answers():

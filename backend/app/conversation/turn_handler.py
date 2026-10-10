@@ -1181,8 +1181,20 @@ def _apply_numbered_safety_answers(
     return answers
 
 
-def _can_skip_model_for_safety_reply(extracted: ExtractedTriage, user_text: str) -> bool:
+def _can_skip_model_for_safety_reply(
+    extracted: ExtractedTriage,
+    user_text: str,
+    *,
+    safety_screen_active: bool = False,
+) -> bool:
     """Recognise a compact reply to the already displayed safety screen."""
+    # ``Yes`` and ``No`` are also used to confirm/correct the intake summary.
+    # They are safety answers only after Joy has actually shown the safety
+    # screen. Without this state guard, a summary-confirmation "Yes" could be
+    # interpreted as bladder/bowel/saddle symptoms and incorrectly trigger a
+    # RED route.
+    if not safety_screen_active:
+        return False
     normalised = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
     return bool(_safety_screen(extracted)) and (
         normalised in {"no to all", "none", "none apply"}
@@ -1933,8 +1945,14 @@ def handle_turn(
         and has_narrative(state.extracted)
         and not schedule_questions(state.extracted)
     )
+    safety_screen_active = (
+        (state.booking_context or {}).get(_TRIAGE_FLOW_KEY)
+        == _AWAITING_SAFETY_SCREEN
+    )
     can_skip_model_for_safety_reply = _can_skip_model_for_safety_reply(
-        state.extracted, user_text
+        state.extracted,
+        user_text,
+        safety_screen_active=safety_screen_active,
     )
     if can_skip_model_for_severity:
         model_extraction = {"severity": reported_severity}
@@ -2025,9 +2043,9 @@ def handle_turn(
             answers,
             safety_screen,
             user_text,
-            allow_number_only=(state.booking_context or {}).get(_TRIAGE_FLOW_KEY) == _AWAITING_SAFETY_SCREEN,
+            allow_number_only=safety_screen_active,
         )
-        if answers == before_numbered:
+        if safety_screen_active and answers == before_numbered:
             compact = " ".join((user_text or "").casefold().split()).strip(".!?,;: ")
             if compact in {"no to all", "none", "none apply"}:
                 for _, questions in safety_screen:
