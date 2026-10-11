@@ -906,12 +906,12 @@ def _present_policy(session: Session, state: ConversationState) -> str:
     except RHIntegrationError:
         return (
             "I can’t retrieve the current Consultation & Booking Policy right now, so I can’t continue "
-            "to specialist matching yet. Please try again shortly."
+            "with your initial consultation yet. Please try again shortly."
         )
     if not document.is_approved:
         return (
             "Our Consultation & Booking Policy is not yet available for acceptance, so I can’t continue "
-            "to specialist matching yet."
+            "with your initial consultation yet."
         )
     policy = {
         "policy_id": document.policy_id,
@@ -1135,13 +1135,14 @@ def _narrative_yes_answers(
     return answers
 
 
-def _safety_prompt(extracted: ExtractedTriage) -> str:
+def _safety_prompt(extracted: ExtractedTriage, *, include_thanks: bool = True) -> str:
     rendered = "\n".join(
         f"{index}. {copy}"
         for index, (copy, _) in enumerate(_SAFETY_SCREEN_ITEMS, start=1)
     )
+    prefix = "Thanks. " if include_thanks else ""
     return (
-        "Thanks. Before I help you book, I just need to check a few important safety questions.\n\n"
+        f"{prefix}Before I help you book, I just need to check a few important safety questions.\n\n"
         "Do you currently have any of the following?\n\n"
         f"{rendered}"
         "\n\nYou can reply ‘No to all’ or tell me the number(s) that apply."
@@ -1362,20 +1363,20 @@ def _reply_after_extract(
             conversation.booking_context = context
             state.booking_context = context
             session.flush()
-            return f"{_additional_details_acknowledgement()}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
+            return f"{_additional_details_acknowledgement()}\n\n{_safety_prompt(extracted, include_thanks=False)}", PatientPhase.MID_TRIAGE
         acknowledgement = "Thanks — I’ve got everything you wanted to share."
         context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
         conversation.booking_context = context
         state.booking_context = context
         session.flush()
-        return f"{acknowledgement}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
+        return f"{acknowledgement}\n\n{_safety_prompt(extracted, include_thanks=False)}", PatientPhase.MID_TRIAGE
 
     if flow_state == _COLLECTING_ADDITIONAL_DETAILS:
         context[_TRIAGE_FLOW_KEY] = _AWAITING_SAFETY_SCREEN
         conversation.booking_context = context
         state.booking_context = context
         session.flush()
-        return f"{_additional_details_acknowledgement()}\n\n{_safety_prompt(extracted)}", PatientPhase.MID_TRIAGE
+        return f"{_additional_details_acknowledgement()}\n\n{_safety_prompt(extracted, include_thanks=False)}", PatientPhase.MID_TRIAGE
 
     if flow_state == _AWAITING_SAFETY_SCREEN:
         if schedule_questions(extracted):

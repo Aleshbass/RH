@@ -437,9 +437,28 @@ def test_confirmation_summary_uses_the_patient_facing_review_fields():
     ))
 
     assert "You have: lower back pain" in text
-    assert "Started: about 2 weeks after bending down" in text
+    assert "Started: about 2 weeks ago, after bending down" in text
     assert "You’ve tried: Nurofen and Voltarol gel" in text
     assert "You’ve seen a clinician: No" in text
+
+
+def test_confirmation_summary_makes_sport_injury_details_read_naturally():
+    from app.triage.summary import confirmation_summary
+
+    text = confirmation_summary(ExtractedTriage(
+        body_location="ankle",
+        main_complaint="Twisted ankle",
+        onset="4 days",
+        mechanism="twisted ankle playing football",
+        symptoms=["swelling that is improving", "pain when I walk"],
+        goals="return to sport safely",
+        seen_clinician=False,
+    ))
+
+    assert "problem with your ankle" in text
+    assert "Started: about 4 days ago, when you twisted your ankle playing football" in text
+    assert "You’ve noticed: swelling that is improving and pain when you walk" in text
+    assert "Your goal: return to sport safely" in text
 
 
 def test_story_enrichment_keeps_named_self_care_for_the_confirmation_summary():

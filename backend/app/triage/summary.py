@@ -20,6 +20,26 @@ def _patient_to_you(phrase: str) -> str:
     return re.sub(r"\bi\b", "you", phrase, flags=re.IGNORECASE)
 
 
+def _patient_mechanism(phrase: str) -> str:
+    """Render an injury mechanism naturally without changing its meaning."""
+    value = _patient_to_you(phrase)
+    # Model extraction may reduce "I twisted my ankle" to "twisted ankle".
+    # Restore the possessive so the patient-facing recap remains grammatical.
+    return re.sub(
+        r"^(twisted|sprained|injured|hurt)\s+(ankle|knee|shoulder|wrist|elbow|foot|hand|hip)\b",
+        r"\1 your \2",
+        value,
+        flags=re.IGNORECASE,
+    )
+
+
+def _display_duration(onset: str) -> str:
+    value = onset.strip()
+    if value.casefold().endswith("ago") or value.casefold().startswith(("for ", "over ", "about ")):
+        return value
+    return f"about {value} ago"
+
+
 def _onset_sentence(body_location: str | None, onset: str) -> str:
     """Keep common duration extractions grammatical in a patient recap."""
     if onset.casefold().startswith("for "):
@@ -88,6 +108,13 @@ def confirmation_summary(extracted: ExtractedTriage) -> str:
     lines: list[str] = []
 
     problem = extracted.main_complaint
+    incident_verbs = ("twisted", "sprained", "injured", "hurt")
+    if extracted.body_location and problem and problem.strip().casefold().startswith(incident_verbs):
+        # A mechanism such as "twisted ankle" is not itself the patient's
+        # problem. Describe it as a plain, non-diagnostic body problem.
+        mechanism = _patient_mechanism(problem)
+        mechanism = mechanism[:1].lower() + mechanism[1:]
+        problem = f"a problem with your {extracted.body_location} after you {mechanism}"
     if not problem and extracted.body_location:
         symptom = _natural_list(extracted.symptoms)
         problem = f"{extracted.body_location} {symptom}" if symptom else f"{extracted.body_location} pain"
@@ -96,21 +123,33 @@ def confirmation_summary(extracted: ExtractedTriage) -> str:
 
     timing_parts: list[str] = []
     if extracted.onset:
-        onset = extracted.onset.strip()
-        timing_parts.append(onset if onset.casefold().startswith(("for ", "about ", "over ")) else f"about {onset}")
+        timing_parts.append(_display_duration(extracted.onset))
     if extracted.mechanism:
-        mechanism = _patient_to_you(extracted.mechanism)
-        timing_parts.append(
-            f"after {mechanism}" if not mechanism.casefold().startswith(("after ", "when ")) else mechanism
-        )
+        mechanism = _patient_mechanism(extracted.mechanism)
+        if mechanism.casefold().startswith(("twisted ", "sprained ", "injured ", "hurt ")):
+            timing_parts.append(f"when you {mechanism}")
+        else:
+            timing_parts.append(
+                f"after {mechanism}" if not mechanism.casefold().startswith(("after ", "when ")) else mechanism
+            )
     if timing_parts:
-        lines.append(f"Started: {' '.join(timing_parts)}")
+        lines.append(f"Started: {', '.join(timing_parts)}")
+
+    symptoms = _patient_to_you(_natural_list(extracted.symptoms))
+    if symptoms:
+        lines.append(f"You’ve noticed: {symptoms}")
+
+    aggravating = _patient_to_you(_natural_list(extracted.aggravating))
+    if aggravating and aggravating.casefold() not in symptoms.casefold():
+        lines.append(f"It is worse with: {aggravating}")
 
     treatments = _natural_list(extracted.previous_treatment)
     if treatments:
         lines.append(f"You’ve tried: {treatments}")
     if extracted.seen_clinician is not None:
         lines.append(f"You’ve seen a clinician: {'Yes' if extracted.seen_clinician else 'No'}")
+    if extracted.goals:
+        lines.append(f"Your goal: {_patient_to_you(extracted.goals)}")
 
     if not lines:
         return plain_summary(extracted)
