@@ -258,6 +258,19 @@ export const createAdminScheduledVirtualBooking = httpAction(async (ctx, request
     assessmentId: data.assessment_id, assessmentRevision: data.assessment_revision,
     policyVersion: data.policy_version, policyAcceptanceReference: data.policy_acceptance_reference,
     conversationId: data.conversation_id, requestId: data.request_id, idempotencyKey: data.idempotency_key,
+    partnerReferralCode: typeof data.partner_referral_code === "string" ? data.partner_referral_code : undefined,
+  }));
+});
+
+export const resolvePartnerAttribution = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/resolve_partner_attribution");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const { patient_id, public_code } = parsed.data;
+  if (typeof patient_id !== "string" || typeof public_code !== "string") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyIntegration.resolvePartnerAttributionForJoy, {
+    patientId: patient_id,
+    publicCode: public_code,
   }));
 });
 

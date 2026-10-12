@@ -24,7 +24,19 @@ export async function POST(request: Request) {
     const review = await callJoyConvexGateway("create_specialist_review", { ...input, eligibility_reference: eligibility.eligibility_reference, conversation_id: input.joy_conversation_id, request_id: requestId, idempotency_key: idempotencyKey });
     return success(requestId, review, 201);
   } catch (error) {
-    if (error instanceof JoyEligibilityError) return errorResponse(requestId, new JoyAuthError(409, "SAFETY_ELIGIBILITY_REQUIRED", error.message));
+    if (error instanceof JoyEligibilityError) {
+      // This occurs before a Paystack initialization is attempted. Keep the
+      // operational reason in RH logs so a configuration mismatch cannot be
+      // mistaken for a payment-provider failure, without logging patient data
+      // or signed eligibility material.
+      console.error("joy_specialist_review_eligibility_rejected", {
+        request_id: requestId,
+        reason: error.message,
+        eligibility_url_configured: Boolean(process.env.JOY_SAFETY_ELIGIBILITY_URL),
+        eligibility_secret_configured: Boolean(process.env.JOY_SAFETY_HMAC_SECRET),
+      });
+      return errorResponse(requestId, new JoyAuthError(409, "SAFETY_ELIGIBILITY_REQUIRED", error.message));
+    }
     return errorResponse(requestId, error);
   }
 }
