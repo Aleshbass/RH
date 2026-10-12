@@ -4,6 +4,7 @@ import { mutation, query, action, internalMutation, internalQuery } from "./_gen
 import { api, internal } from "./_generated/api"
 import { type ActionCtx, type MutationCtx, type QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
+import { publicAppUrl } from './helpers/appUrl';
 // Stream video imports will be handled in the action
 
 // Action input type
@@ -75,7 +76,7 @@ export const createVideoCall = action({
 
     // Generate Stream call ID
     const streamCallId = args.roomId || `call-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
+    const appBase = publicAppUrl();
     const meetingLink = `${appBase}/video-call/${streamCallId}`;
 
     try {
@@ -643,7 +644,7 @@ export const scheduleVideoCall = mutation({
     // Set up participants - user (physiotherapist) and patient
     const participants = [user._id, args.patientId]
 
-    const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com'
+    const appBase = publicAppUrl()
     const computedMeetingLink = args.meetingLink || `${appBase}/video-call/${roomId}`
 
     const callId = await ctx.db.insert("videoCalls", {

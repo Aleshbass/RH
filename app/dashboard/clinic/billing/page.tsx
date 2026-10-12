@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useAction, useMutation, useQuery } from 'convex/react'
+import { ConvexError } from 'convex/values'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { Copy, CreditCard, Landmark, Loader2, MoreHorizontal, Plus, Send } from 'lucide-react'
@@ -29,7 +30,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { useClinicAccess } from '@/components/clinic/ClinicPreviewContext'
+import { FeeBreakdown, HowPayoutsWork } from '@/components/clinic/FeeBreakdown'
 import {
   EmptyState,
   PageShell,
@@ -69,6 +71,42 @@ const payoutLabel: Record<string, { label: string; attention?: boolean }> = {
   held_by_rehabify: { label: 'Held by Rehabify — we’ll transfer it', attention: true },
 }
 
+/** Convex only passes ConvexError messages through to the browser in production */
+function errorText(err: unknown, fallback: string) {
+  return err instanceof ConvexError ? String(err.data) : fallback
+}
+
+/**
+ * "Paystack ₦A · Rehabify 20% ₦B · Stamp duty on payout ₦C · You get ₦D" in the order the money
+ * moves, leaving out parts that are zero. Uses the amounts fixed on the invoice when it was created.
+ */
+function feeLine(inv: {
+  paystackFeeNaira?: number
+  stampDutyNaira?: number
+  rehabifyFeeNaira: number
+  rehabifySharePercent?: number | null
+  clinicNetNaira: number
+}) {
+  const rehabifyLabel = typeof inv.rehabifySharePercent === 'number' ? `Rehabify ${inv.rehabifySharePercent}%` : 'Rehabify'
+  return [
+    inv.paystackFeeNaira ? `Paystack ${formatNaira(inv.paystackFeeNaira)}` : null,
+    inv.rehabifyFeeNaira ? `${rehabifyLabel} ${formatNaira(inv.rehabifyFeeNaira)}` : null,
+    inv.stampDutyNaira ? `Stamp duty on payout ${formatNaira(inv.stampDutyNaira)}` : null,
+    `You get ${formatNaira(inv.clinicNetNaira)}`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+/** Hint under "Your share this month": what came off, leaving out parts that are zero */
+function shareHint(rehabifyNaira: number, processingNaira: number) {
+  const parts = [
+    rehabifyNaira > 0 ? `${formatNaira(rehabifyNaira)} Rehabify fees` : null,
+    processingNaira > 0 ? `${formatNaira(processingNaira)} payment processing` : null,
+  ].filter(Boolean)
+  return parts.length ? `After ${parts.join(' and ')}` : 'No fees this month'
+}
+
 /** wa.me needs international digits; Nigerian numbers are often stored as 080… */
 function whatsappNumber(phone: string | null | undefined) {
   if (!phone) return null
@@ -89,7 +127,7 @@ function paymentMessage(patientName: string, service: string, amountNaira: numbe
 }
 
 export default function ClinicBillingPage() {
-  const { requireFullAccess } = useClinicPreview()
+  const { requireFullAccess, isOwner } = useClinicAccess()
   const billing = useQuery(api.clinicTools.getClinicBillingSummary)
   const createPaymentLink = useAction(api.clinicBilling.createPaymentLink)
   const markInvoicePaid = useMutation(api.clinicBilling.markInvoicePaid)
@@ -129,22 +167,25 @@ export default function ClinicBillingPage() {
     return paymentLink
   }
 
+  // Sample invoices (ids starting "prev_") must never reach a mutation
+  const isSample = (id: string) => billing.isPreview || id.startsWith('prev_')
+
   const handleCopyLink = async (inv: (typeof billing.invoices)[number]) => {
-    if (!requireFullAccess('Copy payment link')) return
+    if (!requireFullAccess('Copy payment link') || isSample(inv._id)) return
     setBusyInvoice(inv._id)
     try {
       const link = inv.paymentLink ?? (await getLink(inv._id))
       await navigator.clipboard.writeText(link)
       toast.success('Payment link copied')
-    } catch (err: any) {
-      toast.error(err?.message || 'Could not create a payment link')
+    } catch (err) {
+      toast.error(errorText(err, 'Could not create a payment link'))
     } finally {
       setBusyInvoice(null)
     }
   }
 
   const handleWhatsApp = async (inv: (typeof billing.invoices)[number]) => {
-    if (!requireFullAccess('Send payment link')) return
+    if (!requireFullAccess('Send payment link') || isSample(inv._id)) return
     // Open the window synchronously so mobile browsers don't block it as a popup
     const win = window.open('', '_blank')
     setBusyInvoice(inv._id)
@@ -153,37 +194,37 @@ export default function ClinicBillingPage() {
       const url = whatsappLink(inv.patientPhone, paymentMessage(inv.patientName, inv.serviceName, inv.totalAmountNaira, link))
       if (win) win.location.href = url
       else window.location.href = url
-    } catch (err: any) {
+    } catch (err) {
       win?.close()
-      toast.error(err?.message || 'Could not create a payment link')
+      toast.error(errorText(err, 'Could not create a payment link'))
     } finally {
       setBusyInvoice(null)
     }
   }
 
   const confirmMarkPaid = async () => {
-    if (!markPaidFor) return
+    if (!markPaidFor || isSample(markPaidFor.id)) return
     setBusyInvoice(markPaidFor.id)
     try {
       await markInvoicePaid({ invoiceId: markPaidFor.id as Id<'invoices'>, method: offlineMethod })
       toast.success('Invoice marked as paid')
       setMarkPaidFor(null)
-    } catch (err: any) {
-      toast.error(err?.message || 'Could not update the invoice')
+    } catch (err) {
+      toast.error(errorText(err, 'Could not update the invoice'))
     } finally {
       setBusyInvoice(null)
     }
   }
 
   const confirmCancel = async () => {
-    if (!cancelFor) return
+    if (!cancelFor || isSample(cancelFor.id)) return
     setBusyInvoice(cancelFor.id)
     try {
       await voidInvoice({ invoiceId: cancelFor.id as Id<'invoices'> })
       toast.success('Invoice cancelled')
       setCancelFor(null)
-    } catch (err: any) {
-      toast.error(err?.message || 'Could not cancel the invoice')
+    } catch (err) {
+      toast.error(errorText(err, 'Could not cancel the invoice'))
     } finally {
       setBusyInvoice(null)
     }
@@ -206,14 +247,17 @@ export default function ClinicBillingPage() {
     >
       {!billing.isPreview && !billing.payoutAccount && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900 sm:flex-row sm:items-center">
-          <Landmark className="h-5 w-5 shrink-0 text-neutral-400" />
+          <Landmark className="h-5 w-5 shrink-0 text-neutral-400 dark:text-neutral-500" />
           <p className="min-w-0 flex-1 text-sm text-neutral-600 dark:text-neutral-300">
-            Connect your bank account so Paystack pays your share straight to you. Until then, payments are
-            held by Rehabify and paid out to you manually.
+            {isOwner
+              ? 'Connect your bank account so Paystack pays your share straight to you. Until then, online payments settle to Rehabify and we transfer your share manually.'
+              : 'No bank account is connected yet, so online payments settle to Rehabify and are transferred to the clinic manually. The clinic owner can connect one in Clinic settings.'}
           </p>
-          <Button asChild size="sm" variant="outline">
-            <Link href="/dashboard/clinic/settings#payouts">Connect bank account</Link>
-          </Button>
+          {isOwner && (
+            <Button asChild size="sm" variant="outline">
+              <Link href="/dashboard/clinic/settings#payouts">Connect bank account</Link>
+            </Button>
+          )}
         </div>
       )}
 
@@ -232,7 +276,7 @@ export default function ClinicBillingPage() {
         <StatTile
           label="Your share this month"
           value={formatNaira(billing.netThisMonthNaira)}
-          hint={`After ${formatNaira(billing.feesThisMonthNaira)} Rehabify fee`}
+          hint={shareHint(billing.feesThisMonthNaira, billing.processingFeesThisMonthNaira)}
         />
       </div>
 
@@ -280,17 +324,17 @@ export default function ClinicBillingPage() {
                       <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{inv.patientName}</p>
                       <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
                     </div>
-                    <p className="truncate text-xs text-neutral-500">
+                    <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
                       {inv.serviceName} · {inv.invoiceNumber}
                     </p>
-                    <p className="text-xs text-neutral-400">
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500">
                       {inv.status === 'paid' && inv.paidAt
                         ? `Paid ${format(new Date(inv.paidAt), 'd MMM yyyy')}${inv.paymentMethod ? ` by ${methodLabel[inv.paymentMethod] ?? inv.paymentMethod}` : ''}`
                         : `Issued ${format(new Date(inv.createdAt), 'd MMM yyyy')} · due ${format(new Date(inv.dueDate), 'd MMM')}`}
                     </p>
                     {showFee && (
                       <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-                        Rehabify fee {formatNaira(inv.rehabifyFeeNaira)} · You get {formatNaira(inv.clinicNetNaira)}
+                        {unpaid ? `If paid online: ${feeLine(inv)}` : feeLine(inv)}
                       </p>
                     )}
                     {payout && (
@@ -349,7 +393,7 @@ export default function ClinicBillingPage() {
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
-                            className="text-red-600 focus:text-red-600"
+                            className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
                             onClick={() =>
                               requireFullAccess('Cancel invoice', () =>
                                 setCancelFor({ id: inv._id, label: `${inv.patientName} · ${formatNaira(inv.totalAmountNaira)}` })
@@ -371,12 +415,7 @@ export default function ClinicBillingPage() {
         )}
       </Panel>
 
-      <p className="text-xs text-neutral-500">
-        Rehabify keeps 10% of each Paystack payment and covers Paystack&apos;s processing fee. Cash, POS and transfer
-        payments you mark as paid are not charged a fee.
-        {billing.payoutAccount &&
-          ` Paystack settles your share to ${billing.payoutAccount.bankName} ••${billing.payoutAccount.accountNumberLast4}.`}
-      </p>
+      <HowPayoutsWork account={billing.isPreview ? undefined : billing.payoutAccount} />
 
       <RequestPaymentDialog
         open={requestOpen}
@@ -402,6 +441,9 @@ export default function ClinicBillingPage() {
                 <SelectItem value="bank_transfer">Bank transfer</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              No fees on payments you collect yourself. You keep the full amount.
+            </p>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setMarkPaidFor(null)}>
@@ -499,18 +541,18 @@ function RequestPaymentDialog({
       try {
         const { paymentLink } = await createPaymentLink({ invoiceId })
         setResult({ link: paymentLink, patientName, phone: patient?.phoneNumber ?? null, service: serviceName, amount: amountNaira })
-      } catch (err: any) {
+      } catch (err) {
         setResult({
           link: null,
-          error: err?.message || 'The invoice was saved, but a Paystack link could not be created.',
+          error: errorText(err, 'The invoice was saved, but a Paystack link could not be created.'),
           patientName,
           phone: patient?.phoneNumber ?? null,
           service: serviceName,
           amount: amountNaira,
         })
       }
-    } catch (err: any) {
-      toast.error(err?.message || 'Could not create the payment request')
+    } catch (err) {
+      toast.error(errorText(err, 'Could not create the payment request'))
     } finally {
       setSaving(false)
     }
@@ -632,9 +674,12 @@ function RequestPaymentDialog({
                 onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ''))}
               />
               {amountNaira > 0 && (
-                <p className="text-xs text-neutral-500">
-                  Patient pays {formatNaira(amountNaira)} · you receive {formatNaira(amountNaira * 0.9)} after the 10% Rehabify fee
-                </p>
+                <div className="pt-1">
+                  <FeeBreakdown amountNaira={amountNaira} className="sm:max-w-xs" />
+                  <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                    Paystack fee and stamp duty are estimates. Cash, POS and transfer payments have no fees.
+                  </p>
+                </div>
               )}
             </div>
 

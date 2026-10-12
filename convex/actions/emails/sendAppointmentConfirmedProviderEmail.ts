@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
 import { sendEmail } from "../../../lib/email/emailService";
+import { publicAppUrl } from "../../helpers/appUrl";
 
 /**
  * Send an appointment confirmed email to the physiotherapist (provider-facing).
@@ -19,7 +20,7 @@ export const sendAppointmentConfirmedProviderEmail = action({
   },
   handler: async (_ctx, args) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
+      const baseUrl = publicAppUrl();
       const viewLink = args.viewLink.startsWith('http') ? args.viewLink : `${baseUrl}${args.viewLink}`;
       const result = await sendEmail({
         to: args.to,

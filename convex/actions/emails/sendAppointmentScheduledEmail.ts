@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
 import { sendEmail } from "../../../lib/email/emailService";
+import { publicAppUrl } from "../../helpers/appUrl";
 
 /**
  * Send an appointment scheduled email. This action is intentionally simple and stateless:
@@ -23,7 +24,7 @@ export const sendAppointmentScheduledEmail = action({
   },
   handler: async (_ctx, args) => {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
+      const baseUrl = publicAppUrl();
       const absolutize = (url?: string) => {
         if (!url) return '#';
         if (url.startsWith('http://') || url.startsWith('https://')) return url;

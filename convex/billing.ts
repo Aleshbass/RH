@@ -2,6 +2,7 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { publicAppUrl } from "./helpers/appUrl";
 
 // Billing Flow according to PRD:
 // 1. PT completes session → can create invoice
@@ -245,7 +246,7 @@ export const generateInvoicePDF = mutation({
   }),
   handler: async (ctx, args) => {
     // For now, reuse the public share page as a printable/Downloadable view
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+    const baseUrl = publicAppUrl();
     const pdfUrl = `${baseUrl}/invoices/shared/${args.invoiceId}?download=pdf`;
     return { success: true, pdfUrl, message: "PDF generated successfully" };
   },

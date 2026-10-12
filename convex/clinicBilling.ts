@@ -1,31 +1,43 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
-import { ensureClinicOwnerApproved, getOwnerClinic, getOwnerClinicOrPreview } from "./clinicTools";
+import { ensureClinicApproved, getOwnerClinic, getOwnerClinicOrPreview, requireClinicWrite } from "./clinicTools";
 import { getAuthenticatedUser } from "./auth";
+import { publicAppUrl } from "./helpers/appUrl";
 
 /**
  * Clinic billing: payout account (Paystack subaccount), shareable payment links,
  * and manual "mark as paid" for cash or transfer payments.
  *
  * Money flow for a payment link:
- *   patient pays the invoice total → Paystack splits it: the clinic's subaccount receives
- *   the total minus the Rehabify fee (transaction_charge); Rehabify's main account bears
- *   Paystack's processing fee. Without a payout account the full amount settles to Rehabify
- *   and the clinic's share is paid out manually.
+ *   patient pays the invoice total → Paystack splits it: the clinic's subaccount receives the
+ *   clinic's share; Rehabify's main account keeps the rest (transaction_charge) and bears
+ *   Paystack's processing fee. Stamp duty comes off the clinic's payout to its bank. The
+ *   numbers are admin-set (convex/clinicFees.ts, clinicFeeSettings). Without a payout account
+ *   the full amount settles to Rehabify and the clinic's share is paid out manually.
  */
 
 const PAYSTACK_API = "https://api.paystack.co";
 
-function appUrl() {
-  return (process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com").replace(/\/$/, "");
+/**
+ * Kobo that stays in Rehabify's Paystack account when the invoice is split: the total minus
+ * the provider's share. Works for older 90/10 invoices and the 80/20-after-fees model alike.
+ */
+export function mainAccountChargeKobo(invoice: Doc<"invoices">): number {
+  const total = invoice.feeBreakdown?.total ?? invoice.totalAmount;
+  const providerShare =
+    invoice.feeBreakdown?.physiotherapistEarnings ??
+    invoice.physiotherapistShare ??
+    total - (invoice.feeBreakdown?.platformFee ?? invoice.platformFeeAmount);
+  return Math.max(0, Math.round(total - providerShare));
 }
+
 
 async function paystackRequest(path: string, init: RequestInit = {}) {
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) {
-    throw new Error("Payments are not configured yet. Please contact Rehabify support.");
+    throw new ConvexError("Payments are not configured yet. Please contact Rehabify support.");
   }
   const response = await fetch(`${PAYSTACK_API}${path}`, {
     ...init,
@@ -37,7 +49,7 @@ async function paystackRequest(path: string, init: RequestInit = {}) {
   });
   const data: any = await response.json().catch(() => null);
   if (!response.ok || !data?.status) {
-    throw new Error(data?.message || `Paystack request failed (HTTP ${response.status})`);
+    throw new ConvexError(data?.message || `Paystack request failed (HTTP ${response.status})`);
   }
   return data.data;
 }
@@ -58,6 +70,8 @@ export const getClinicPayoutAccount = query({
     if (!account) return null;
     return {
       bankName: account.bankName,
+      bankCode: account.bankCode,
+      bankSlug: account.bankSlug ?? null,
       accountName: account.accountName,
       accountNumberLast4: account.accountNumber.slice(-4),
       updatedAt: account.updatedAt,
@@ -65,11 +79,49 @@ export const getClinicPayoutAccount = query({
   },
 });
 
+/**
+ * Disconnect the clinic's payout account. Online payments then settle to Rehabify and the
+ * clinic's share is transferred manually until a new account is connected. The Paystack
+ * subaccount itself is deactivated so it can't receive new splits.
+ */
+export const removePayoutAccount = action({
+  args: {},
+  handler: async (ctx): Promise<{ success: boolean }> => {
+    const owner = await ctx.runQuery(internal.clinicBilling.resolveOwnerClinicForAction, {});
+    const removed = await ctx.runMutation(internal.clinicBilling.deletePayoutAccount, { clinicId: owner.clinicId });
+    if (removed?.subaccountCode) {
+      try {
+        await paystackRequest(`/subaccount/${encodeURIComponent(removed.subaccountCode)}`, {
+          method: "PUT",
+          body: JSON.stringify({ active: false }),
+        });
+      } catch (err) {
+        // The account is already disconnected here; a stale subaccount gets no new payment links
+        console.error("Could not deactivate Paystack subaccount", err);
+      }
+    }
+    return { success: true };
+  },
+});
+
+export const deletePayoutAccount = internalMutation({
+  args: { clinicId: v.id("clinics") },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("clinicPayoutAccounts")
+      .withIndex("by_clinic_id", (q) => q.eq("clinicId", args.clinicId))
+      .first();
+    if (!existing) return null;
+    await ctx.db.delete(existing._id);
+    return { subaccountCode: existing.subaccountCode };
+  },
+});
+
 export const resolveOwnerClinicForAction = internalQuery({
   args: {},
   handler: async (ctx) => {
     const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    await ensureClinicApproved(ctx, clinic);
     return { userId: user._id, clinicId: clinic._id, clinicName: clinic.name, email: clinic.contactEmail || user.email || "" };
   },
 });
@@ -80,6 +132,7 @@ export const savePayoutAccount = internalMutation({
     subaccountCode: v.string(),
     bankCode: v.string(),
     bankName: v.string(),
+    bankSlug: v.optional(v.string()),
     accountNumber: v.string(),
     accountName: v.string(),
   },
@@ -103,7 +156,7 @@ export const verifyPayoutAccount = action({
   handler: async (ctx, args): Promise<{ accountName: string }> => {
     await ctx.runQuery(internal.clinicBilling.resolveOwnerClinicForAction, {});
     if (!/^\d{10}$/.test(args.accountNumber)) {
-      throw new Error("Account number must be 10 digits");
+      throw new ConvexError("Account number must be 10 digits");
     }
     const data = await paystackRequest(
       `/bank/resolve?account_number=${encodeURIComponent(args.accountNumber)}&bank_code=${encodeURIComponent(args.bankCode)}`,
@@ -115,11 +168,11 @@ export const verifyPayoutAccount = action({
 
 /** Create (or replace) the clinic's Paystack subaccount so payments settle to the clinic directly. */
 export const connectPayoutAccount = action({
-  args: { bankCode: v.string(), bankName: v.string(), accountNumber: v.string() },
+  args: { bankCode: v.string(), bankName: v.string(), bankSlug: v.optional(v.string()), accountNumber: v.string() },
   handler: async (ctx, args): Promise<{ accountName: string }> => {
     const owner = await ctx.runQuery(internal.clinicBilling.resolveOwnerClinicForAction, {});
     if (!/^\d{10}$/.test(args.accountNumber)) {
-      throw new Error("Account number must be 10 digits");
+      throw new ConvexError("Account number must be 10 digits");
     }
     const resolved = await paystackRequest(
       `/bank/resolve?account_number=${encodeURIComponent(args.accountNumber)}&bank_code=${encodeURIComponent(args.bankCode)}`,
@@ -142,6 +195,7 @@ export const connectPayoutAccount = action({
       subaccountCode: subaccount.subaccount_code,
       bankCode: args.bankCode,
       bankName: args.bankName,
+      bankSlug: args.bankSlug,
       accountNumber: args.accountNumber,
       accountName: resolved.account_name,
     });
@@ -152,12 +206,12 @@ export const connectPayoutAccount = action({
 /** Nigerian banks supported by Paystack, for the payout account picker. */
 export const listBanks = action({
   args: {},
-  handler: async (): Promise<{ name: string; code: string }[]> => {
+  handler: async (): Promise<{ name: string; code: string; slug: string | null }[]> => {
     const banks = await paystackRequest("/bank?country=nigeria&perPage=200", { method: "GET" });
     const seen = new Set<string>();
     return (banks as any[])
       .filter((bank) => bank.active !== false && !seen.has(bank.code) && seen.add(bank.code))
-      .map((bank) => ({ name: bank.name as string, code: bank.code as string }))
+      .map((bank) => ({ name: bank.name as string, code: bank.code as string, slug: (bank.slug as string) || null }))
       .sort((a, b) => a.name.localeCompare(b.name));
   },
 });
@@ -199,6 +253,7 @@ export const getInvoiceSettlement = query({
     return {
       subaccountCode,
       platformFeeKobo: invoice.feeBreakdown?.platformFee ?? invoice.platformFeeAmount,
+      mainAccountChargeKobo: mainAccountChargeKobo(invoice),
     };
   },
 });
@@ -210,11 +265,11 @@ export const getInvoiceSettlement = query({
 export const getInvoiceForPaymentLink = internalQuery({
   args: { invoiceId: v.id("invoices") },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "billing");
+    const { user, clinic } = member;
     const invoice = await ctx.db.get(args.invoiceId);
     if (!invoice || invoice.clinicId !== clinic._id) {
-      throw new Error("Invoice not found");
+      throw new ConvexError("Invoice not found");
     }
     const patient = await ctx.db.get(invoice.patientId);
     const payout = await ctx.db
@@ -226,7 +281,7 @@ export const getInvoiceForPaymentLink = internalQuery({
       invoiceNumber: invoice.invoiceNumber,
       status: invoice.status,
       totalKobo: invoice.feeBreakdown?.total ?? invoice.totalAmount,
-      platformFeeKobo: invoice.feeBreakdown?.platformFee ?? invoice.platformFeeAmount,
+      mainAccountChargeKobo: mainAccountChargeKobo(invoice),
       paymentLink: invoice.paymentLink ?? null,
       patientId: invoice.patientId,
       patientEmail: patient?.email || null,
@@ -277,10 +332,10 @@ export const createPaymentLink = action({
       invoiceId: args.invoiceId,
     });
     if (invoice.status === "paid") {
-      throw new Error("This invoice is already paid");
+      throw new ConvexError("This invoice is already paid");
     }
     if (invoice.status === "void") {
-      throw new Error("This invoice was cancelled");
+      throw new ConvexError("This invoice was cancelled");
     }
     if (invoice.paymentLink) {
       return { paymentLink: invoice.paymentLink };
@@ -288,7 +343,7 @@ export const createPaymentLink = action({
 
     const email = invoice.patientEmail || invoice.fallbackEmail;
     if (!email) {
-      throw new Error("Add an email address for the patient or your clinic before creating a payment link");
+      throw new ConvexError("Add an email address for the patient or your clinic before creating a payment link");
     }
 
     const reference = `CLN_${invoice.invoiceNumber}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -297,7 +352,7 @@ export const createPaymentLink = action({
       amount: invoice.totalKobo,
       email,
       currency: "NGN",
-      callback_url: `${appUrl()}/payment/callback`,
+      callback_url: `${publicAppUrl()}/payment/callback`,
       channels: ["card", "bank", "ussd", "bank_transfer"],
       metadata: {
         invoiceId: invoice.invoiceId,
@@ -312,8 +367,10 @@ export const createPaymentLink = action({
     };
     if (invoice.subaccountCode) {
       payload.subaccount = invoice.subaccountCode;
-      payload.transaction_charge = invoice.platformFeeKobo; // Rehabify fee, in kobo
-      payload.bearer = "account"; // Rehabify covers Paystack's processing fee
+      // The clinic's subaccount receives exactly its share (stamp duty is deducted from it on payout);
+      // Rehabify's account keeps the rest and pays Paystack's fee out of it (see convex/clinicFees.ts)
+      payload.transaction_charge = invoice.mainAccountChargeKobo;
+      payload.bearer = "account";
     }
 
     const data = await paystackRequest("/transaction/initialize", {
@@ -340,11 +397,11 @@ export const markInvoicePaid = mutation({
     method: v.union(v.literal("cash"), v.literal("bank_transfer"), v.literal("pos")),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "billing");
+    const { user, clinic } = member;
     const invoice = await ctx.db.get(args.invoiceId);
     if (!invoice || invoice.clinicId !== clinic._id) {
-      throw new Error("Invoice not found");
+      throw new ConvexError("Invoice not found");
     }
     if (invoice.status === "paid") {
       return { success: true };
@@ -363,14 +420,14 @@ export const markInvoicePaid = mutation({
 export const voidInvoice = mutation({
   args: { invoiceId: v.id("invoices") },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "billing");
+    const { user, clinic } = member;
     const invoice: Doc<"invoices"> | null = await ctx.db.get(args.invoiceId);
     if (!invoice || invoice.clinicId !== clinic._id) {
-      throw new Error("Invoice not found");
+      throw new ConvexError("Invoice not found");
     }
     if (invoice.status === "paid") {
-      throw new Error("Paid invoices cannot be cancelled");
+      throw new ConvexError("Paid invoices cannot be cancelled");
     }
     await ctx.db.patch(args.invoiceId, { status: "void" });
     return { success: true, invoiceId: invoice._id as Id<"invoices"> };

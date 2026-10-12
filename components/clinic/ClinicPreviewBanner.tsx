@@ -8,13 +8,26 @@ import { Clock, Eye, AlertCircle } from 'lucide-react'
  * One calm line explaining why live actions are disabled, with a single next step.
  */
 export default function ClinicPreviewBanner() {
-  const { isPreviewMode, isPendingApproval, isOnboardingIncomplete, isDeclined } = useClinicPreview()
+  const { isPreviewMode, isPendingApproval, isOnboardingIncomplete, isDeclined, isStaff, isSuspended, isLoaded } =
+    useClinicPreview()
 
-  if (!isPreviewMode && !isDeclined) {
+  if (!isLoaded || (!isPreviewMode && !isDeclined)) {
     return null
   }
 
-  const content = isDeclined
+  const content = isSuspended
+    ? {
+        icon: AlertCircle,
+        text: 'The clinic owner has paused your access. You can look around, but changes are turned off.',
+        action: null,
+      }
+    : isStaff && (isDeclined || isOnboardingIncomplete)
+    ? {
+        icon: Clock,
+        text: "The clinic isn't fully set up yet, so changes are turned off. The clinic owner can finish it.",
+        action: null,
+      }
+    : isDeclined
     ? {
         icon: AlertCircle,
         text: 'Your clinic application was not approved. Contact support@rehabify.ng to update your documents.',
@@ -23,7 +36,9 @@ export default function ClinicPreviewBanner() {
     : isPendingApproval
       ? {
           icon: Clock,
-          text: "We're reviewing your clinic. You can look around; booking, billing and patient records unlock once you're approved.",
+          text: isStaff
+            ? 'Rehabify is still verifying this clinic. You can look around; changes unlock once it is approved.'
+            : "We're reviewing your clinic. You can look around; booking, billing and patient records unlock once you're approved.",
           action: null,
         }
       : {

@@ -86,11 +86,16 @@ export async function POST(request: NextRequest) {
 
     // Settle to the clinic's payout account (clinic invoices) or the physiotherapist's subaccount
     let subaccountCode: string | null = null;
+    // Kobo kept by Rehabify's account; the subaccount receives exactly the provider's share
+    let mainAccountCharge = platformFee;
     try {
       const settlement = await getConvexClient().query(api.clinicBilling.getInvoiceSettlement, {
         invoiceId: invoiceId as Id<'invoices'>
       });
       subaccountCode = settlement?.subaccountCode || null;
+      if (typeof settlement?.mainAccountChargeKobo === 'number') {
+        mainAccountCharge = settlement.mainAccountChargeKobo;
+      }
     } catch {
       console.log('No payout subaccount found for invoice');
     }
@@ -125,8 +130,8 @@ export async function POST(request: NextRequest) {
     // Add split payment configuration if subaccount exists
     if (subaccountCode) {
       paymentData.subaccount = subaccountCode;
-      paymentData.bearer = 'account'; // Rehabify pays Paystack fees
-      paymentData.transaction_charge = platformFee; // Platform fee in kobo
+      paymentData.bearer = 'account'; // Rehabify's account pays Paystack fees out of its part
+      paymentData.transaction_charge = mainAccountCharge;
     }
 
     // Initialize payment with Paystack

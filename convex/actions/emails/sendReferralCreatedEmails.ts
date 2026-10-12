@@ -3,6 +3,7 @@
 import { action } from "../../_generated/server";
 import { v } from "convex/values";
 import { sendEmail } from "../../../lib/email/emailService";
+import { publicAppUrl } from "../../helpers/appUrl";
 
 /**
  * Sends a professional referral confirmation email to the partner's contact,
@@ -88,7 +89,7 @@ export const sendAdminReferralCreatedEmail = action({
   }),
   handler: async (_ctx, args) => {
     try {
-      const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+      const siteUrl = publicAppUrl();
       const adminDashboardLink = `${siteUrl}/dashboard/admin/referrals`;
 
       const result = await sendEmail({

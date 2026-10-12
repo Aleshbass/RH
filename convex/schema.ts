@@ -30,8 +30,12 @@ export default defineSchema({
       v.literal("family_member"),
       v.literal("doctor"),
       v.literal("admin"),
-      v.literal("partner")
+      v.literal("partner"),
+      // Non-clinical clinic team member (receptionist, administrator...), works only in the clinic dashboard
+      v.literal("clinic_staff")
     )),
+    // Clinic dashboard role (page permissions). None means full access.
+    clinicRoleId: v.optional(v.id("clinicRoles")),
     onboarded: v.boolean(), // Flag to indicate if user has completed initial profile setup
     onboardingSkipped: v.optional(v.boolean()), // True if user skipped optional onboarding steps (can complete later)
 
@@ -320,6 +324,8 @@ export default defineSchema({
     expiresAt: v.number(),
     message: v.optional(v.string()), // Personal message from clinic owner
     permissions: v.optional(v.array(v.string())), // Specific permissions for this role
+    // Clinic dashboard role given on acceptance (none = full access)
+    clinicRoleId: v.optional(v.id("clinicRoles")),
   })
     .index("by_code", ["code"])
     .index("by_clinic", ["clinicId"])
@@ -1034,6 +1040,10 @@ export default defineSchema({
     // Where an online payment's provider share went: split straight to the
     // clinic/physio bank by Paystack, or held by Rehabify for a manual transfer.
     payoutRoute: v.optional(v.union(v.literal("split_to_provider"), v.literal("held_by_platform"))),
+    // Stamp duty (EMTL) deducted from the clinic's payout, in kobo (see convex/clinicFees.ts)
+    stampDutyAmount: v.optional(v.float64()),
+    // Clinic's share (%) used when this invoice was created; fee settings can change later
+    clinicSharePercent: v.optional(v.float64()),
     notes: v.optional(v.string()),
     relatedAppointmentIds: v.optional(v.array(v.id("appointments"))),
     physiotherapistShare: v.optional(v.float64()), // Amount physiotherapist gets after fees
@@ -2313,11 +2323,37 @@ export default defineSchema({
 
   // Physiotherapist bank accounts for split payments
   // Clinic payout account: a Paystack subaccount that receives the clinic's share of patient payments
+  // Fee numbers for clinic payments, set by Rehabify admins (see convex/clinicFees.ts).
+  // One row; the latest is used. Amounts in kobo.
+  clinicFeeSettings: defineTable({
+    clinicSharePercent: v.number(),
+    paystackPercent: v.number(),
+    paystackFlatKobo: v.number(),
+    paystackFlatWaivedBelowKobo: v.number(),
+    paystackFeeCapKobo: v.number(),
+    stampDutyKobo: v.number(),
+    stampDutyFromKobo: v.number(),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.string()),
+  }),
+
+  // Clinic dashboard roles (e.g. Receptionist) and the pages each can use.
+  // An empty permissions list means full access.
+  clinicRoles: defineTable({
+    clinicId: v.id("clinics"),
+    name: v.string(),
+    permissions: v.array(v.string()), // keys from CLINIC_AREAS in convex/clinicTools.ts
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_clinic", ["clinicId"]),
+
   clinicPayoutAccounts: defineTable({
     clinicId: v.id("clinics"),
     subaccountCode: v.string(),
     bankCode: v.string(),
     bankName: v.string(),
+    // Paystack's bank slug, used to show the bank's logo
+    bankSlug: v.optional(v.string()),
     accountNumber: v.string(),
     accountName: v.string(),
     createdAt: v.number(),
@@ -2540,6 +2576,9 @@ export default defineSchema({
     joyBookingRoute: v.optional(v.union(v.literal("provider_selected"), v.literal("admin_scheduled_virtual"))),
     joyConsultationType: v.optional(v.union(v.literal("quick_initial"), v.literal("full_virtual"))),
     adminSchedulingStatus: v.optional(v.union(v.literal("not_required"), v.literal("awaiting_schedule"), v.literal("scheduled"))),
+    // Short patient-facing code (e.g. "K7P3XQ9M"). It is the booking reference
+    // Joy quotes and the secret in the patient's join link (/v/<code>).
+    bookingCode: v.optional(v.string()),
 
     // Guest details
     isGuestBooking: v.optional(v.boolean()),
@@ -2556,7 +2595,8 @@ export default defineSchema({
     .index("by_booking_status", ["bookingStatus"])
     .index("by_payment_status", ["paymentStatus"])
     .index("by_session_date", ["sessionDate"])
-    .index("by_origin_idempotency", ["originIdempotencyKey"]),
+    .index("by_origin_idempotency", ["originIdempotencyKey"])
+    .index("by_booking_code", ["bookingCode"]),
 
   // A durable record exists before a Paystack initialization request. It is
   // intentionally distinct from the booking so abandoned/failed attempts are

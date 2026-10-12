@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
-import { getOwnerClinicOrPreview } from "./clinicTools";
+import { getClinicMember, getClinicMemberOrPreview, getOwnerClinic, getOwnerClinicOrPreview } from "./clinicTools";
 
 /**
  * Create the owner's clinic during onboarding, or update it if one already exists
@@ -210,44 +210,37 @@ export const invitePhysiotherapist = mutation({
     inviteeEmail: v.string(),
     inviteeName: v.optional(v.string()),
     message: v.optional(v.string()),
+    // "clinician" treats patients; "front_desk" (receptionist, administrator) only uses the dashboard
+    staffType: v.optional(v.union(v.literal("clinician"), v.literal("front_desk"))),
+    // Dashboard role (page permissions) given when they accept. None = full access.
+    clinicRoleId: v.optional(v.id("clinicRoles")),
   },
   handler: async (ctx, args) => {
-    // Get authenticated clinic owner
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
+    // The owner, or a team member whose role includes the Team page
+    const { clinic } = await getClinicMember(ctx, "team");
+
+    const inviteeEmail = args.inviteeEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteeEmail)) {
+      throw new ConvexError("Enter a valid email address.");
     }
-
-    const clinicOwner = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!clinicOwner || clinicOwner.role !== "clinic_owner") {
-      throw new Error("Only clinic owners can invite physiotherapists");
-    }
-
-    // Get clinic owned by this user
-    const clinic = await ctx.db
-      .query("clinics")
-      .withIndex("by_owner_id", (q) => q.eq("ownerId", clinicOwner._id))
-      .unique();
-
-    if (!clinic) {
-      throw new Error("Clinic not found");
+    if (args.clinicRoleId) {
+      const role = await ctx.db.get(args.clinicRoleId);
+      if (!role || role.clinicId !== clinic._id) {
+        throw new ConvexError("That role no longer exists. Pick another one.");
+      }
     }
 
     // Check if there's already a pending invitation for this email
     const existingInvitation = await ctx.db
       .query("clinicStaffInvitations")
+      .withIndex("by_clinic", (q) => q.eq("clinicId", clinic._id))
       .filter((q) =>
         q.and(
-          q.eq(q.field("clinicId"), clinic._id),
-          q.eq(q.field("inviteeEmail"), args.inviteeEmail),
+          q.eq(q.field("inviteeEmail"), inviteeEmail),
           q.eq(q.field("status"), "pending")
         )
       )
-      .unique();
+      .first();
 
     if (existingInvitation) {
       // If there's already a pending invitation, return it instead of throwing error
@@ -267,14 +260,15 @@ export const invitePhysiotherapist = mutation({
     const invitationId = await ctx.db.insert("clinicStaffInvitations", {
       code,
       clinicId: clinic._id,
-      clinicOwnerId: clinicOwner._id,
-      inviteeEmail: args.inviteeEmail,
+      clinicOwnerId: clinic.ownerId,
+      inviteeEmail,
       inviteeName: args.inviteeName,
-      role: "physiotherapist",
+      role: args.staffType === "front_desk" ? "receptionist" : "physiotherapist",
       status: "pending",
       createdAt: Date.now(),
       expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
       message: args.message,
+      clinicRoleId: args.clinicRoleId,
     });
 
     // Note: Email notification is handled by the action wrapper
@@ -300,7 +294,7 @@ export const acceptClinicInvitation = mutation({
     // Get authenticated user
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
-      throw new Error("Not authenticated");
+      throw new ConvexError("Please sign in to accept this invitation.");
     }
 
     const user = await ctx.db
@@ -309,7 +303,8 @@ export const acceptClinicInvitation = mutation({
       .unique();
 
     if (!user) {
-      throw new Error("User not found");
+      // The account record is created a moment after sign-up
+      throw new ConvexError("Your account is still being set up. Wait a few seconds and try again.");
     }
 
     // Find the invitation
@@ -319,63 +314,70 @@ export const acceptClinicInvitation = mutation({
       .unique();
 
     if (!invitation) {
-      throw new Error("Invalid invitation code");
+      throw new ConvexError("This invitation link isn't valid.");
     }
 
     if (invitation.status !== "pending") {
-      throw new Error("This invitation has already been processed");
+      throw new ConvexError("This invitation has already been used.");
     }
 
     if (Date.now() > invitation.expiresAt) {
-      // Mark as expired
-      await ctx.db.patch(invitation._id, { status: "expired" });
-      throw new Error("This invitation has expired");
+      throw new ConvexError("This invitation has expired. Ask the clinic to send a new one.");
     }
 
-    // Verify email matches
-    if (user.email !== invitation.inviteeEmail) {
-      throw new Error("This invitation was sent to a different email address");
+    // Verify email matches (emails are case-insensitive)
+    if ((user.email ?? "").trim().toLowerCase() !== invitation.inviteeEmail.trim().toLowerCase()) {
+      throw new ConvexError(
+        `This invitation was sent to ${invitation.inviteeEmail}. Sign in with that email to accept it.`
+      );
     }
 
-    // Update user role, profile, and assign to clinic
-    // We set onboarded to false so they are forced to go through the onboarding wizard
-    // to fill in their profile details (license, bio, etc.)
+    // An account already set up for something else can't join as clinic staff
+    if (user.role === "clinic_owner") {
+      throw new ConvexError("This account owns a clinic, so it can't join another clinic's team.");
+    }
+    if (user.role && user.role !== "physiotherapist" && user.role !== "clinic_staff") {
+      throw new ConvexError(
+        `This email is registered as a ${user.role.replace(/_/g, " ")} account. Ask the clinic to invite a different email.`
+      );
+    }
+
+    const isClinician = invitation.role === "physiotherapist";
+    const now = Date.now();
+
+    // Join the clinic. Existing accounts keep their onboarding state: clinic work never
+    // requires the physio marketplace onboarding, so nobody is sent back through it.
     await ctx.db.patch(user._id, {
-      role: "physiotherapist",
-      onboarded: false,
-      clinicId: invitation.clinicId, // Assign user to clinic
-      status: "active", // Set as active staff member
-      joinedAt: Date.now(), // Track when they joined
+      // A physiotherapist stays a physiotherapist even when joining as front desk
+      role: isClinician || user.role === "physiotherapist" ? "physiotherapist" : "clinic_staff",
+      // Front-desk staff have nothing else to set up
+      onboarded: user.role ? user.onboarded : !isClinician,
+      clinicId: invitation.clinicId,
+      clinicRoleId: invitation.clinicRoleId,
+      status: "active",
+      joinedAt: now,
     });
 
-    // Create or update physiotherapist profile
-    const physiotherapistProfile = await ctx.db
-      .query("physiotherapistProfiles")
-      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
-      .unique();
+    if (isClinician || user.role === "physiotherapist") {
+      const physiotherapistProfile = await ctx.db
+        .query("physiotherapistProfiles")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .unique();
 
-    if (physiotherapistProfile) {
-      // Update existing profile with clinic
-      await ctx.db.patch(physiotherapistProfile._id, {
-        clinicId: invitation.clinicId,
-      });
-      // Ensure user has the profile ID linked
-      await ctx.db.patch(user._id, {
-        physiotherapistProfileId: physiotherapistProfile._id,
-      });
-    } else {
-      // Create new profile
-      const newProfileId = await ctx.db.insert("physiotherapistProfiles", {
-        userId: user._id,
-        clinicId: invitation.clinicId,
-        isAvailableOnMarketplace: true,
-        offersInPersonSessions: true,
-        offersOnlineSessions: true,
-      });
-      // Link profile to user
-      await ctx.db.patch(user._id, {
-        physiotherapistProfileId: newProfileId,
-      });
+      if (physiotherapistProfile) {
+        await ctx.db.patch(physiotherapistProfile._id, { clinicId: invitation.clinicId });
+        await ctx.db.patch(user._id, { physiotherapistProfileId: physiotherapistProfile._id });
+      } else {
+        // Not listed on the public marketplace until they complete physio onboarding and are vetted
+        const newProfileId = await ctx.db.insert("physiotherapistProfiles", {
+          userId: user._id,
+          clinicId: invitation.clinicId,
+          isAvailableOnMarketplace: false,
+          offersInPersonSessions: true,
+          offersOnlineSessions: true,
+        });
+        await ctx.db.patch(user._id, { physiotherapistProfileId: newProfileId });
+      }
     }
 
     // Mark invitation as accepted
@@ -441,32 +443,13 @@ export const getClinicInvitations = query({
     createdAt: v.number(),
     acceptedBy: v.optional(v.id("users")),
     message: v.optional(v.string()),
+    permissions: v.optional(v.array(v.string())),
+    clinicRoleId: v.optional(v.id("clinicRoles")),
     isExpired: v.boolean(),
   })),
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user || user.role !== "clinic_owner") {
-      throw new Error("Only clinic owners can view invitations");
-    }
-
-    // Get clinic
-    const clinic = await ctx.db
-      .query("clinics")
-      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
-      .unique();
-
-    if (!clinic) {
-      return [];
-    }
+    // The owner, or a team member whose role includes the Team page
+    const { clinic } = await getClinicMember(ctx, "team");
 
     // Get all invitations for this clinic
     const invitations = await ctx.db
@@ -490,29 +473,12 @@ export const getClinicStaff = query({
   // No strict `returns` validator: physiotherapist profiles carry many optional fields
   // (marketplace settings etc.) and a strict object validator would reject them.
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    // Any clinic member (used for clinician pickers); empty for preview visitors
+    const member = await getClinicMemberOrPreview(ctx);
+    if (!member) {
       return [];
     }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!user || user.role !== "clinic_owner") {
-      return [];
-    }
-
-    // Get clinic
-    const clinic = await ctx.db
-      .query("clinics")
-      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
-      .first();
-
-    if (!clinic) {
-      return [];
-    }
+    const { clinic } = member;
 
     // Get all physiotherapist profiles for this clinic
     const physiotherapistProfiles = await ctx.db
@@ -784,7 +750,7 @@ export const getClinicRevenue = query({
   args: {},
   handler: async (ctx) => {
     // Sample numbers only for genuine preview viewers; a real owner gets real data or the error
-    const clinic = (await getOwnerClinicOrPreview(ctx))?.clinic ?? null;
+    const clinic = (await getClinicMemberOrPreview(ctx, "reports"))?.clinic ?? null;
 
     if (!clinic) {
       return {
@@ -1376,7 +1342,7 @@ export const getClinicAppointmentStats = query({
   args: {},
   handler: async (ctx) => {
     // Sample data only for genuine preview viewers; a real owner gets real data or the error
-    const auth = await getOwnerClinicOrPreview(ctx);
+    const auth = await getClinicMemberOrPreview(ctx, "reports");
     const user: any = auth?.user ?? null;
     const clinic: any = auth?.clinic ?? null;
 
@@ -1430,7 +1396,7 @@ export const getStaffMetrics = query({
   args: {},
   handler: async (ctx) => {
     // Sample data only for genuine preview viewers; a real owner gets real data or the error
-    const auth = await getOwnerClinicOrPreview(ctx);
+    const auth = await getClinicMemberOrPreview(ctx, "reports");
     const user: any = auth?.user ?? null;
     const clinic: any = auth?.clinic ?? null;
 
@@ -1608,27 +1574,17 @@ export const updateStaffStatus = mutation({
     newStatus: v.union(v.literal("active"), v.literal("suspended"), v.literal("terminated")),
   },
   handler: async (ctx, args) => {
-    const user = await getAuthenticatedUser(ctx);
+    // Only the clinic owner can suspend or reactivate team members
+    const { user, clinic } = await getOwnerClinic(ctx);
 
-    // Only clinic owners can update staff status
-    if (user.role !== "clinic_owner") {
-      throw new Error("Only clinic owners can update staff status");
-    }
-
-    // Get the clinic owned by this user
-    const clinic = await ctx.db
-      .query("clinics")
-      .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
-      .unique();
-
-    if (!clinic) {
-      throw new Error("Clinic not found");
-    }
-
-    // Verify the staff member belongs to this clinic
+    // Verify the team member belongs to this clinic (patients also carry clinicId, so check the role)
     const staffMember = await ctx.db.get(args.staffId);
-    if (!staffMember || staffMember.clinicId !== clinic._id) {
-      throw new Error("Staff member not found or not in your clinic");
+    if (
+      !staffMember ||
+      staffMember.clinicId !== clinic._id ||
+      (staffMember.role !== "physiotherapist" && staffMember.role !== "clinic_staff")
+    ) {
+      throw new ConvexError("This person isn't on your team");
     }
 
     // Update the staff member's status
@@ -1929,7 +1885,7 @@ export const getOwnerAnalytics = query({
   args: {},
   handler: async (ctx) => {
     // Sample data only for genuine preview viewers; a real owner gets real data or the error
-    const auth = await getOwnerClinicOrPreview(ctx);
+    const auth = await getClinicMemberOrPreview(ctx, "reports");
     const user: any = auth?.user ?? null;
     const clinic: any = auth?.clinic ?? null;
 

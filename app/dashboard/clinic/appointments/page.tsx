@@ -60,6 +60,7 @@ import {
   StatusBadge,
   primaryButtonClass,
 } from '@/components/clinic/ui'
+import { friendlyError, useClinicianOptions } from '@/components/clinic/patients/patient-record-shared'
 
 // ─── Types & helpers ─────────────────────────────────────────────────────────
 
@@ -93,15 +94,6 @@ function personName(p: Person, fallback: string) {
 
 function clinicianIdOf(apt: Appointment) {
   return String(apt.physiotherapistId ?? apt.physiotherapist?._id ?? '')
-}
-
-/** Turns a Convex server error into the plain sentence thrown by the backend. */
-function friendlyError(err: unknown, fallback: string) {
-  const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
-  const match = raw.match(/Uncaught Error:\s*(.+?)(?:\n|\s+at\s|$)/)
-  const message = (match?.[1] ?? raw).trim()
-  if (!message || message.includes('[CONVEX') || message.includes('Request ID')) return fallback
-  return message
 }
 
 function toTimestamp(date: string, time: string) {
@@ -168,8 +160,6 @@ export default function ClinicAppointmentsPage() {
 
   const appointmentsRaw = useQuery(api.clinics.getClinicAppointments, {})
   const patientsRaw = useQuery(api.clinics.getClinicPatients, {})
-  const staffRaw = useQuery(api.clinics.getClinicStaff, {})
-  const me = useQuery(api.users.getMyUser)
   const setup = useQuery(api.clinicTools.getClinicSetupDetails, {})
 
   const updateStatus = useMutation(api.clinicTools.updateAppointmentStatus)
@@ -197,27 +187,17 @@ export default function ClinicAppointmentsPage() {
   const workingHours = setup?.workingHours as Record<string, DayHours> | undefined
   const services = ((setup?.priceList ?? []) as ServiceOption[]).filter((s) => s?.name)
 
-  const clinicians = useMemo<ClinicianOption[]>(() => {
-    const list: ClinicianOption[] = []
-    const seen = new Set<string>()
-    for (const s of (staffRaw ?? []) as any[]) {
-      const id = String(s.userId ?? s.user?._id ?? '')
-      if (!id || seen.has(id)) continue
-      if (s.status && s.status !== 'active') continue
-      seen.add(id)
-      const name = personName(s.user, 'Clinician')
-      list.push({ id, name: me && id === me._id ? `${name} (you)` : name })
-    }
-    if (me && me.role === 'clinic_owner' && !seen.has(me._id)) {
-      list.unshift({ id: me._id, name: 'You (owner)' })
-    }
-    return list
-  }, [staffRaw, me])
+  // The owner and active clinicians (front-desk staff can't see patients themselves)
+  const clinicianOptions = useClinicianOptions()
+  const clinicians = useMemo<ClinicianOption[]>(
+    () => clinicianOptions.options.map((o) => ({ id: o.id, name: o.label })),
+    [clinicianOptions.options]
+  )
 
-  // Staff other than the signed-in owner; the filter is only useful when there are some
+  // Clinicians other than the signed-in person; the filter is only useful when there are some
   const otherClinicians = useMemo(
-    () => clinicians.filter((c) => !me || c.id !== me._id),
-    [clinicians, me]
+    () => clinicians.filter((c) => c.id !== clinicianOptions.meId),
+    [clinicians, clinicianOptions.meId]
   )
 
   const patients = useMemo(
@@ -367,7 +347,7 @@ export default function ClinicAppointmentsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All clinicians</SelectItem>
-                {me && <SelectItem value={me._id}>You</SelectItem>}
+                {clinicianOptions.meId && <SelectItem value={clinicianOptions.meId}>You</SelectItem>}
                 {otherClinicians.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     <span className="block truncate">{c.name}</span>

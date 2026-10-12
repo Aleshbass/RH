@@ -18,6 +18,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useClerk, useUser } from '@clerk/nextjs'
 import { ClinicThemeToggle } from '@/components/clinic/ClinicTheme'
+import { ClinicBrand, PoweredByRehabify } from '@/components/clinic/ClinicBrand'
+import { useClinicAccess, type ClinicArea } from '@/components/clinic/ClinicPreviewContext'
 import {
   Users,
   Calendar,
@@ -46,20 +48,22 @@ type NavItem = {
   href: string
   icon: LucideIcon
   badgeKey?: 'newReferrals'
+  /** Page permission needed; Home has none */
+  area?: ClinicArea
 }
 
 const mainItems: NavItem[] = [
   { title: 'Home', href: '/dashboard/clinic', icon: LayoutDashboard },
-  { title: 'Appointments', href: '/dashboard/clinic/appointments', icon: Calendar },
-  { title: 'Patients', href: '/dashboard/clinic/patients', icon: Users },
-  { title: 'Referrals', href: '/dashboard/clinic/referrals', icon: Inbox, badgeKey: 'newReferrals' },
-  { title: 'Billing', href: '/dashboard/clinic/billing', icon: CreditCard },
-  { title: 'Team', href: '/dashboard/clinic/staff', icon: UserCheck },
-  { title: 'Reports', href: '/dashboard/clinic/analytics', icon: BarChart3 },
+  { title: 'Appointments', href: '/dashboard/clinic/appointments', icon: Calendar, area: 'appointments' },
+  { title: 'Patients', href: '/dashboard/clinic/patients', icon: Users, area: 'patients' },
+  { title: 'Referrals', href: '/dashboard/clinic/referrals', icon: Inbox, badgeKey: 'newReferrals', area: 'referrals' },
+  { title: 'Billing', href: '/dashboard/clinic/billing', icon: CreditCard, area: 'billing' },
+  { title: 'Team', href: '/dashboard/clinic/staff', icon: UserCheck, area: 'team' },
+  { title: 'Reports', href: '/dashboard/clinic/analytics', icon: BarChart3, area: 'reports' },
 ]
 
 const bottomItems: NavItem[] = [
-  { title: 'Clinic settings', href: '/dashboard/clinic/settings', icon: Building2 },
+  { title: 'Clinic settings', href: '/dashboard/clinic/settings', icon: Building2, area: 'settings' },
 ]
 
 function isActivePath(pathname: string, href: string) {
@@ -148,6 +152,9 @@ export default function ClinicSidebar({ className, onNavigate, collapsible = tru
   const [isCollapsed, setIsCollapsed] = useState(false)
   const counts = useQuery(api.clinicTools.getClinicNavCounts, {})
   const collapsed = collapsible && isCollapsed
+  const { canUse } = useClinicAccess()
+  // Team members only see the pages their role includes
+  const allowed = (item: NavItem) => !item.area || canUse(item.area)
 
   const renderItem = (item: NavItem) => {
     const active = isActivePath(pathname, item.href)
@@ -201,11 +208,8 @@ export default function ClinicSidebar({ className, onNavigate, collapsible = tru
     >
       <div className="flex h-14 items-center justify-between border-b border-neutral-200 px-4 dark:border-neutral-800">
         {!collapsed && (
-          <Link href="/dashboard/clinic" onClick={onNavigate} className="flex min-w-0 items-center gap-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#005b57] text-white">
-              <Building2 className="h-3.5 w-3.5" />
-            </div>
-            <span className="truncate text-sm font-semibold text-neutral-900 dark:text-white">Rehabify Clinic</span>
+          <Link href="/dashboard/clinic" onClick={onNavigate} className="min-w-0">
+            <ClinicBrand />
           </Link>
         )}
         {collapsible && (
@@ -222,13 +226,14 @@ export default function ClinicSidebar({ className, onNavigate, collapsible = tru
       </div>
 
       <ScrollArea className="flex-1 py-3">
-        <nav className="space-y-0.5 px-2">{mainItems.map(renderItem)}</nav>
+        <nav className="space-y-0.5 px-2">{mainItems.filter(allowed).map(renderItem)}</nav>
       </ScrollArea>
 
       <div className="border-t border-neutral-200 p-2 dark:border-neutral-800">
-        <nav className="space-y-0.5">{bottomItems.map(renderItem)}</nav>
+        <nav className="space-y-0.5">{bottomItems.filter(allowed).map(renderItem)}</nav>
         <ClinicThemeToggle withLabel={!collapsed} className={cn('mt-0.5', collapsed && 'mx-auto')} />
         <AccountMenu collapsed={collapsed} onNavigate={onNavigate} />
+        {!collapsed && <PoweredByRehabify className="px-3 pb-1 pt-2" />}
       </div>
     </aside>
   )

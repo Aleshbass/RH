@@ -180,7 +180,7 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
 
   const primary = record.primaryClinician
   const clinicianName = primary
-    ? primary._id === clinicians.ownerId
+    ? primary._id === clinicians.meId
       ? 'You'
       : `${primary.firstName ?? ''} ${primary.lastName ?? ''}`.trim() || primary.email || 'Clinician'
     : null

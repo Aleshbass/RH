@@ -27,6 +27,7 @@ import {
   primaryButtonClass,
 } from '@/components/clinic/ui'
 import { cn } from '@/lib/utils'
+import { useClinicAccess } from '@/components/clinic/ClinicPreviewContext'
 
 const appointmentStatus: Record<string, { label: string; tone: 'teal' | 'green' | 'amber' | 'red' | 'neutral' }> = {
   scheduled: { label: 'Booked', tone: 'teal' },
@@ -47,6 +48,8 @@ function greeting() {
 export default function ClinicDashboardClient() {
   const dashboard = useQuery(api.clinicTools.getClinicConsolidatedDashboard)
   const followUps = useQuery(api.clinicTools.getClinicFollowUpQueue, {})
+  // Team members only see shortcuts to the pages their role includes
+  const { isOwner, canUse } = useClinicAccess()
 
   if (dashboard === undefined) {
     return (
@@ -63,17 +66,17 @@ export default function ClinicDashboardClient() {
 
   const checkInsDue = followUps?.length ?? 0
   const attentionItems = [
-    dashboard.newReferralsCount > 0 && {
+    canUse('referrals') && dashboard.newReferralsCount > 0 && {
       href: '/dashboard/clinic/referrals',
       icon: Inbox,
       label: `${dashboard.newReferralsCount} referral${dashboard.newReferralsCount === 1 ? '' : 's'} waiting for your response`,
     },
-    dashboard.unpaidCount > 0 && {
+    canUse('billing') && dashboard.unpaidCount > 0 && {
       href: '/dashboard/clinic/billing',
       icon: CreditCard,
       label: `${dashboard.unpaidCount} unpaid invoice${dashboard.unpaidCount === 1 ? '' : 's'} · ${formatNaira(dashboard.unpaidNaira)}`,
     },
-    checkInsDue > 0 && {
+    canUse('patients') && checkInsDue > 0 && {
       href: '/dashboard/clinic/patients',
       icon: PhoneCall,
       label: `${checkInsDue} patient${checkInsDue === 1 ? '' : 's'} due for a check-in`,
@@ -86,49 +89,61 @@ export default function ClinicDashboardClient() {
       description={`${dashboard.isPreview ? 'Sample clinic' : dashboard.clinicName} · ${format(new Date(), 'EEEE d MMMM')}`}
       actions={
         <>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/dashboard/clinic/patients">
-              <Plus className="mr-1.5 h-4 w-4" />
-              Add patient
-            </Link>
-          </Button>
-          <Button asChild size="sm" className={primaryButtonClass}>
-            <Link href="/dashboard/clinic/appointments">
-              <Calendar className="mr-1.5 h-4 w-4" />
-              Book appointment
-            </Link>
-          </Button>
+          {canUse('patients') && (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/dashboard/clinic/patients">
+                <Plus className="mr-1.5 h-4 w-4" />
+                Add patient
+              </Link>
+            </Button>
+          )}
+          {canUse('appointments') && (
+            <Button asChild size="sm" className={primaryButtonClass}>
+              <Link href="/dashboard/clinic/appointments">
+                <Calendar className="mr-1.5 h-4 w-4" />
+                Book appointment
+              </Link>
+            </Button>
+          )}
         </>
       }
     >
-      {!dashboard.isPreview && <SetupChecklist patientsInCare={dashboard.patientsInCare} />}
+      {!dashboard.isPreview && isOwner && <SetupChecklist />}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile
-          label="Today"
-          value={dashboard.todayCount}
-          hint={`${dashboard.upcomingWeekCount} more this week`}
-          href="/dashboard/clinic/appointments"
-        />
-        <StatTile
-          label="Patients in care"
-          value={dashboard.patientsInCare}
-          hint={`${dashboard.activeProgrammesCount} on a home programme`}
-          href="/dashboard/clinic/patients"
-        />
-        <StatTile
-          label="New referrals"
-          value={dashboard.newReferralsCount}
-          hint={dashboard.newReferralsCount > 0 ? 'Waiting for you' : 'None waiting'}
-          href="/dashboard/clinic/referrals"
-          tone={dashboard.newReferralsCount > 0 ? 'attention' : 'default'}
-        />
-        <StatTile
-          label="Unpaid"
-          value={formatNaira(dashboard.unpaidNaira)}
-          hint={`${dashboard.unpaidCount} invoice${dashboard.unpaidCount === 1 ? '' : 's'}`}
-          href="/dashboard/clinic/billing"
-        />
+        {canUse('appointments') && (
+          <StatTile
+            label="Today"
+            value={dashboard.todayCount}
+            hint={`${dashboard.upcomingWeekCount} more this week`}
+            href="/dashboard/clinic/appointments"
+          />
+        )}
+        {canUse('patients') && (
+          <StatTile
+            label="Patients in care"
+            value={dashboard.patientsInCare}
+            hint={`${dashboard.activeProgrammesCount} on a home programme`}
+            href="/dashboard/clinic/patients"
+          />
+        )}
+        {canUse('referrals') && (
+          <StatTile
+            label="New referrals"
+            value={dashboard.newReferralsCount}
+            hint={dashboard.newReferralsCount > 0 ? 'Waiting for you' : 'None waiting'}
+            href="/dashboard/clinic/referrals"
+            tone={dashboard.newReferralsCount > 0 ? 'attention' : 'default'}
+          />
+        )}
+        {canUse('billing') && (
+          <StatTile
+            label="Unpaid"
+            value={formatNaira(dashboard.unpaidNaira)}
+            hint={`${dashboard.unpaidCount} invoice${dashboard.unpaidCount === 1 ? '' : 's'}`}
+            href="/dashboard/clinic/billing"
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -233,18 +248,17 @@ export default function ClinicDashboardClient() {
 /**
  * Shown until the clinic has done the four things that make the dashboard useful.
  */
-function SetupChecklist({ patientsInCare }: { patientsInCare: number }) {
-  const settings = useQuery(api.clinicTools.getClinicSetupDetails, {})
-  const payout = useQuery(api.clinicBilling.getClinicPayoutAccount, {})
-  const staff = useQuery(api.clinics.getClinicStaff)
+function SetupChecklist() {
+  // One query for every step, so each tick appears as soon as the change is saved
+  const progress = useQuery(api.clinicTools.getClinicSetupProgress, {})
 
-  if (settings === undefined || payout === undefined || staff === undefined) return null
+  if (!progress) return null
 
   const steps = [
-    { done: (settings.priceList?.length ?? 0) > 0, label: 'Add your services and prices', href: '/dashboard/clinic/settings#prices' },
-    { done: payout !== null, label: 'Connect a bank account for payments', href: '/dashboard/clinic/settings#payouts' },
-    { done: patientsInCare > 0, label: 'Add your first patient', href: '/dashboard/clinic/patients' },
-    { done: staff.length > 0, label: 'Invite a clinician (optional)', href: '/dashboard/clinic/staff' },
+    { done: progress.prices, label: 'Add your services and prices', href: '/dashboard/clinic/settings#prices' },
+    { done: progress.payout, label: 'Connect a bank account for payments', href: '/dashboard/clinic/settings#payouts' },
+    { done: progress.patient, label: 'Add your first patient', href: '/dashboard/clinic/patients' },
+    { done: progress.team, label: 'Invite a clinician (optional)', href: '/dashboard/clinic/staff' },
   ]
   const remaining = steps.filter((step) => !step.done).length
   if (remaining === 0) return null

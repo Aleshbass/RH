@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import { action } from "../../_generated/server";
 import { api } from "../../_generated/api";
 import { sendEmail } from "../../../lib/email/emailService";
+import { publicAppUrl } from "../../helpers/appUrl";
 
 /**
  * Accept staff invitation with notification and logging
@@ -19,7 +20,7 @@ export const acceptStaffInvitationWithNotification = action({
   }),
   handler: async (ctx, args) => {
     try {
-      const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com').replace(/\/$/, '');
+      const appUrl = publicAppUrl();
       
       // Accept the invitation using the base mutation
       const result = await ctx.runMutation(api.clinics.acceptClinicInvitation, {
@@ -48,7 +49,8 @@ export const acceptStaffInvitationWithNotification = action({
               userName: invitation.inviteeName || 'Team Member',
               userRole: invitation.role.replace('_', ' '),
               clinicName: invitation.clinic?.name,
-              dashboardLink: `${appUrl}/dashboard/${invitation.role === 'physiotherapist' ? 'physiotherapist' : 'clinic'}`,
+              // Everyone who joins a clinic team starts in that clinic's dashboard
+              dashboardLink: `${appUrl}/dashboard/clinic`,
             },
           });
         } catch (emailError) {
@@ -84,9 +86,11 @@ export const acceptStaffInvitationWithNotification = action({
       };
     } catch (error) {
       console.error('Accept staff invitation error:', error);
+      // Show the readable reason (wrong email, expired, already used...) instead of a generic failure
       return {
         success: false,
-        message: 'Failed to accept invitation. Please try again.',
+        message:
+          typeof error?.data === 'string' ? error.data : 'Could not accept the invitation. Please try again.',
       };
     }
   },
@@ -137,7 +141,7 @@ export const declineStaffInvitationWithNotification = action({
         });
 
         if (clinicOwner?.email) {
-          const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com').replace(/\/$/, '');
+          const appUrl = publicAppUrl();
           const staffLink = `${appUrl}/dashboard/clinic/staff`;
           await ctx.runAction((api as any).actions.emails.sendClinicStaffInviteOwnerDeclinedEmail, {
             to: clinicOwner.email,
@@ -205,7 +209,7 @@ export const createStaffDirectWithWelcome = action({
           data: {
             userName: staffName,
             userRole: args.role.replace('_', ' '),
-            dashboardLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com'}/dashboard/${args.role === 'physiotherapist' ? 'physiotherapist' : 'clinic'}`,
+            dashboardLink: `${publicAppUrl()}/dashboard/${args.role === 'physiotherapist' ? 'physiotherapist' : 'clinic'}`,
           },
         });
       } catch (emailError) {

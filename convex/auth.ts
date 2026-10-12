@@ -2,7 +2,7 @@ import { QueryCtx, MutationCtx, ActionCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values"; // ConvexError is often here
 import { Id } from "./_generated/dataModel";
 
-export type UserRole = "physiotherapist" | "clinic_owner" | "patient" | "family_member" | "doctor" | "admin" | "partner";
+export type UserRole = "physiotherapist" | "clinic_owner" | "patient" | "family_member" | "doctor" | "admin" | "partner" | "clinic_staff";
 
 /**
  * Gets the currently authenticated user or throws an error if not found

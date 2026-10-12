@@ -1,14 +1,24 @@
 import { v } from "convex/values";
-import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query, type QueryCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { ensureUserRole } from "./auth";
+import { publicAppUrl } from "./helpers/appUrl";
 
 const HOUR_MS = 60 * 60 * 1000;
 const BOOKING_HOLD_MS = 30 * 60 * 1000;
 const encoder = new TextEncoder();
 export const AMBER_SPECIALIST_REVIEW_PRICE_KOBO = 600_000;
 export const AMBER_SPECIALIST_REVIEW_DURATION_MINUTES = 5;
+
+// Patient-facing booking codes skip look-alike characters (0/O, 1/I) so they
+// survive being read aloud or retyped from WhatsApp. 32^8 ≈ 1.1 trillion codes.
+const BOOKING_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const BOOKING_CODE_LENGTH = 8;
+// The patient's join link opens shortly before the session and stays usable
+// through a generous overrun.
+const JOIN_OPENS_BEFORE_MS = 30 * 60_000;
+const JOIN_CLOSES_AFTER_MS = 2 * HOUR_MS;
 
 const LEGACY_SPECIALTY_TAGS: Record<string, string> = {
   musculoskeletal: "MSK_GENERAL",
@@ -41,6 +51,23 @@ function samePhone(left: string, right: string): boolean {
 function displayName(user: { firstName?: string; lastName?: string }): string | undefined {
   const value = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
   return value || undefined;
+}
+
+function joyRoomId(appointmentId: Id<"appointments">): string {
+  return `joy-${appointmentId}`;
+}
+
+function newBookingCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(BOOKING_CODE_LENGTH));
+  // 256 is a multiple of the alphabet size, so every character is equally likely.
+  return Array.from(bytes, (byte) => BOOKING_CODE_ALPHABET[byte % BOOKING_CODE_ALPHABET.length]).join("");
+}
+
+async function bookingByCode(ctx: QueryCtx, rawCode: string): Promise<Doc<"marketplaceBookings"> | null> {
+  const code = rawCode.trim().toUpperCase().replace(/[^0-9A-Z]/g, "");
+  if (code.length !== BOOKING_CODE_LENGTH) return null;
+  const booking = await ctx.db.query("marketplaceBookings").withIndex("by_booking_code", (q) => q.eq("bookingCode", code)).first();
+  return booking?.sourceSystem === "joy_ai" ? booking : null;
 }
 
 function calculateMarketplaceFees(serviceAmount: number) {
@@ -1153,6 +1180,8 @@ export const getJoyBooking = internalQuery({
       duration_minutes: booking.sessionDuration, hold_expires_at: booking.holdExpiresAt,
       service_mode: booking.joyServiceMode ?? (booking.isOnline ? "online" : "clinic"),
       provider: provider ? { display_name: displayName(provider) } : null, updated_at: booking.updatedAt,
+      booking_code: booking.bookingCode ?? null,
+      meeting_url: booking.bookingCode ? `${publicAppUrl()}/v/${booking.bookingCode}` : null,
     };
   },
 });
@@ -1617,6 +1646,82 @@ export const storeJoyStreamMeeting = internalMutation({
   },
 });
 
+/** Keeps a booking's first code, so reschedules reuse the link Joy already sent.
+ * Returns null on the rare collision; the caller retries with a fresh candidate. */
+export const assignJoyBookingCode = internalMutation({
+  args: { bookingId: v.id("marketplaceBookings"), candidate: v.string() },
+  handler: async (ctx, args) => {
+    const booking = await ctx.db.get(args.bookingId);
+    if (!booking) throw new Error("Booking not found");
+    if (booking.bookingCode) return booking.bookingCode;
+    const taken = await ctx.db.query("marketplaceBookings").withIndex("by_booking_code", q => q.eq("bookingCode", args.candidate)).first();
+    if (taken) return null;
+    await ctx.db.patch(booking._id, { bookingCode: args.candidate });
+    return args.candidate;
+  },
+});
+
+/** Codes are generated in the action, which has real randomness, then claimed atomically. */
+export const ensureJoyBookingCode = internalAction({
+  args: { bookingId: v.id("marketplaceBookings") },
+  handler: async (ctx, args): Promise<string> => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const code: string | null = await ctx.runMutation(internal.joyIntegration.assignJoyBookingCode, { bookingId: args.bookingId, candidate: newBookingCode() });
+      if (code) return code;
+    }
+    throw new Error("Could not allocate a booking code");
+  },
+});
+
+function joyJoinWindow(appointment: { startTime: number; endTime: number }) {
+  return { opensAt: appointment.startTime - JOIN_OPENS_BEFORE_MS, closesAt: appointment.endTime + JOIN_CLOSES_AFTER_MS };
+}
+
+function isJoyAppointmentCancelled(booking: { bookingStatus: string }, appointment: { status: string }) {
+  return booking.bookingStatus === "cancelled" || appointment.status === "cancelled_by_patient" || appointment.status === "cancelled_by_therapist";
+}
+
+/** What the patient's short link (/v/<code>) shows. Times are returned raw and
+ * compared on the client: a cached query would not notice the window opening. */
+export const getJoyJoinSession = query({
+  args: { code: v.string() },
+  handler: async (ctx, args) => {
+    const booking = await bookingByCode(ctx, args.code);
+    const appointment = booking?.appointmentId ? await ctx.db.get(booking.appointmentId) : null;
+    if (!booking || !appointment) return null;
+    const [clinician, identity] = await Promise.all([ctx.db.get(appointment.physiotherapistId), ctx.auth.getUserIdentity()]);
+    // The clinician uses their normal signed-in call page, never the patient seat.
+    const viewerIsClinician = !!identity && clinician?.clerkId === identity.subject;
+    return {
+      bookingCode: booking.bookingCode!,
+      startTime: appointment.startTime, endTime: appointment.endTime, ...joyJoinWindow(appointment),
+      cancelled: isJoyAppointmentCancelled(booking, appointment),
+      clinicianName: (clinician && displayName(clinician)) || "your physiotherapist",
+      clinicianCallPath: viewerIsClinician ? `/video-call/${joyRoomId(appointment._id)}` : null,
+    };
+  },
+});
+
+/** Server-side gate for the patient's Stream token; the window is re-checked here. */
+export const resolveJoyPatientJoin = internalQuery({
+  args: { code: v.string(), now: v.number() },
+  handler: async (ctx, args) => {
+    const booking = await bookingByCode(ctx, args.code);
+    const appointment = booking?.appointmentId ? await ctx.db.get(booking.appointmentId) : null;
+    if (!booking || !appointment) return { ok: false as const, reason: "not_found" as const };
+    if (isJoyAppointmentCancelled(booking, appointment)) return { ok: false as const, reason: "cancelled" as const };
+    const { opensAt, closesAt } = joyJoinWindow(appointment);
+    if (args.now < opensAt) return { ok: false as const, reason: "too_early" as const };
+    if (args.now > closesAt) return { ok: false as const, reason: "ended" as const };
+    const [patient, clinician] = await Promise.all([ctx.db.get(appointment.patientId), ctx.db.get(appointment.physiotherapistId)]);
+    return {
+      ok: true as const, callId: joyRoomId(appointment._id), patientId: appointment.patientId, closesAt,
+      patientName: (patient && displayName(patient)) || "Patient",
+      clinicianName: (clinician && displayName(clinician)) || "your physiotherapist",
+    };
+  },
+});
+
 async function signEvent(timestamp: string, eventId: string, body: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode([timestamp, eventId, body].join("\n")));
@@ -1702,10 +1807,15 @@ export const notifyJoyVirtualBookingRescheduled = internalAction({
     physiotherapistId: v.id("users"), startTime: v.number(), endTime: v.number(), revision: v.number(),
   },
   handler: async (ctx, args) => {
+    // The code (and so the link) survives a reschedule; Joy can resend it as-is.
+    const bookingCode = await ctx.runAction(internal.joyIntegration.ensureJoyBookingCode, { bookingId: args.bookingId });
     await ctx.runAction(internal.joyIntegration.deliverJoyEvent, {
       eventId: `booking-rescheduled-${args.bookingId}-${args.revision}`,
       eventType: "booking.rescheduled",
-      data: { booking_id: args.bookingId, appointment_id: args.appointmentId, patient_id: args.patientId, start_time: args.startTime },
+      data: {
+        booking_id: args.bookingId, booking_code: bookingCode, appointment_id: args.appointmentId, patient_id: args.patientId,
+        meeting_url: `${publicAppUrl()}/v/${bookingCode}`, start_time: args.startTime,
+      },
     });
   },
 });
@@ -1722,9 +1832,13 @@ export const createJoyOnlineMeeting = internalAction({
       // not silently switch to Google Meet: its OAuth approval is not part of
       // the supported Joy operational path.
       const platform = "stream" as const;
-      const appBase = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
-      const roomId = `joy-${args.appointmentId}`;
-      const meetingUrl = `${appBase.replace(/\/$/, "")}/video-call/${roomId}`;
+      const appBase = publicAppUrl();
+      const roomId = joyRoomId(args.appointmentId);
+      // Clinicians join through the signed-in call page. WhatsApp patients have
+      // no login, so they get a short link whose code is their credential.
+      const meetingUrl = `${appBase}/video-call/${roomId}`;
+      const bookingCode = await ctx.runAction(internal.joyIntegration.ensureJoyBookingCode, { bookingId: args.bookingId });
+      const patientJoinUrl = `${appBase}/v/${bookingCode}`;
       await ctx.runMutation(internal.videoCalls.createVideoCallRecord, {
         roomId, streamCallId: roomId, meetingLink: meetingUrl, platform, appointmentId: args.appointmentId,
         initiatorId: args.physiotherapistId, participants: [args.patientId, args.physiotherapistId], callType: "appointment",
@@ -1735,7 +1849,10 @@ export const createJoyOnlineMeeting = internalAction({
       await ctx.runMutation(internal.joyIntegration.storeJoyStreamMeeting, { appointmentId: args.appointmentId, meetingLink: meetingUrl });
       await ctx.runAction(internal.joyIntegration.deliverJoyEvent, {
         eventId: `booking-meeting-link-${args.bookingId}`, eventType: "booking.meeting_link_ready",
-        data: { booking_id: args.bookingId, appointment_id: args.appointmentId, patient_id: args.patientId, meeting_url: meetingUrl, platform, start_time: args.startTime },
+        data: {
+          booking_id: args.bookingId, booking_code: bookingCode, appointment_id: args.appointmentId, patient_id: args.patientId,
+          meeting_url: patientJoinUrl, platform, start_time: args.startTime,
+        },
       });
     } catch (error) {
       await ctx.runMutation(internal.joyIntegration.createJoyOnlineMeetingFollowUp, {

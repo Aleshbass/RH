@@ -4,10 +4,11 @@
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
 import { api } from "../../_generated/api";
+import { publicAppUrl } from "../../helpers/appUrl";
 
 // Utility to build invitation link from env
 function buildInvitationLink(code: string): string {
-  const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://physioaroundme.com";
+  const envBase = publicAppUrl();
   const baseUrl = envBase.replace(/\/$/, "");
   return `${baseUrl}/patient-invite/${code}`;
 }

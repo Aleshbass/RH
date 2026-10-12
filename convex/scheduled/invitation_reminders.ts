@@ -2,6 +2,7 @@
 import { internalAction, internalQuery, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
+import { publicAppUrl } from "../helpers/appUrl";
 
 /**
  * Send reminder emails for pending patient invitations that are approaching expiry.
@@ -27,7 +28,7 @@ export const sendPendingInvitationReminders = internalAction({
       createdBefore,
     });
 
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://physioaroundme.com').replace(/\/$/, '');
+    const appUrl = publicAppUrl();
 
     let sent = 0;
     for (const inv of pending) {

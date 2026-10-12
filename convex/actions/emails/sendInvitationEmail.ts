@@ -45,12 +45,12 @@ export const sendPatientInvitationEmail = action({
       console.log('[EMAIL ACTION] Using email:', `${fromName} <${fromEmail}>`);
       
       // Normalize invitation link to production domain regardless of input
-      const PRODUCTION_BASE = 'https://www.physioaroundme.com';
+      const PRODUCTION_BASE = 'https://physioaroundme.com';
       let normalizedInvitationLink = args.invitationLink;
       try {
         const u = new URL(args.invitationLink);
         u.protocol = 'https:';
-        u.host = 'www.physioaroundme.com';
+        u.host = 'physioaroundme.com';
         normalizedInvitationLink = u.toString();
       } catch (_e) {
         // Fallback if the provided link isn't a full URL
@@ -145,12 +145,12 @@ export const previewNormalizedPatientInvitationLink = action({
     isProduction: v.boolean(),
   }),
   handler: async (_ctx, args) => {
-    const PRODUCTION_BASE = 'https://www.physioaroundme.com';
+    const PRODUCTION_BASE = 'https://physioaroundme.com';
     let normalizedLink = args.invitationLink;
     try {
       const u = new URL(args.invitationLink);
       u.protocol = 'https:';
-      u.host = 'www.physioaroundme.com';
+      u.host = 'physioaroundme.com';
       normalizedLink = u.toString();
     } catch (_e) {
       normalizedLink = `${PRODUCTION_BASE}/patient-invite/${args.invitationCode}`;
@@ -193,12 +193,12 @@ export const sendInvitationReminderEmail = action({
       const fromName = 'Rehabify Health';
       
       // Normalize invitation link for reminder as well
-      const PRODUCTION_BASE = 'https://www.physioaroundme.com';
+      const PRODUCTION_BASE = 'https://physioaroundme.com';
       let normalizedInvitationLink = args.invitationLink;
       try {
         const u = new URL(args.invitationLink);
         u.protocol = 'https:';
-        u.host = 'www.physioaroundme.com';
+        u.host = 'physioaroundme.com';
         normalizedInvitationLink = u.toString();
       } catch (_e) {
         normalizedInvitationLink = `${PRODUCTION_BASE}/patient-invite/${args.invitationCode}`;

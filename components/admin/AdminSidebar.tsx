@@ -164,6 +164,13 @@ const navigationGroups = [
         description: 'View all marketplace payments and invoices',
       },
       {
+        title: 'Clinic Fees',
+        href: '/dashboard/admin/clinic-fees',
+        icon: WalletCards,
+        roles: ['admin'],
+        description: 'Clinic payment split, Paystack fee and stamp duty',
+      },
+      {
         title: 'User Activity',
         href: '/dashboard/admin/activity',
         icon: Activity,

@@ -1,8 +1,9 @@
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
 import { Id } from "./_generated/dataModel";
+import { getClinicMember, requireClinicWrite } from "./clinicTools";
 
 /**
  * Get authenticated physiotherapist user and validate permissions
@@ -966,29 +967,8 @@ export const reassignPatient = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.auth.getUserIdentity();
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
-    const clinicOwner = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", user.subject))
-      .unique();
-
-    if (!clinicOwner || clinicOwner.role !== "clinic_owner") {
-      throw new Error("Only clinic owners can reassign patients");
-    }
-
-    // Verify clinic ownership
-    const clinic = await ctx.db
-      .query("clinics")
-      .withIndex("by_owner_id", (q) => q.eq("ownerId", clinicOwner._id))
-      .unique();
-
-    if (!clinic) {
-      throw new Error("Clinic not found");
-    }
+    // The clinic owner, or a team member whose role includes Patients, once the clinic is approved
+    const { user: clinicOwner, clinic } = await requireClinicWrite(ctx, "patients");
 
     // Verify both physiotherapists belong to the clinic
     const currentPhysio = await ctx.db.get(args.currentPhysiotherapistId);
@@ -998,13 +978,13 @@ export const reassignPatient = mutation({
     const belongsToClinic = (physio: typeof currentPhysio) =>
       !!physio && (physio.clinicId === clinic._id || physio._id === clinic.ownerId);
     if (!belongsToClinic(currentPhysio)) {
-      throw new Error("Current physiotherapist does not belong to your clinic");
+      throw new ConvexError("Current physiotherapist does not belong to your clinic");
     }
     if (!belongsToClinic(newPhysio)) {
-      throw new Error("New physiotherapist does not belong to your clinic");
+      throw new ConvexError("New physiotherapist does not belong to your clinic");
     }
     if (args.currentPhysiotherapistId === args.newPhysiotherapistId) {
-      throw new Error("The patient is already with this clinician");
+      throw new ConvexError("The patient is already with this clinician");
     }
 
     // Find the active relationship
@@ -1017,7 +997,7 @@ export const reassignPatient = mutation({
       .first();
 
     if (!relationship) {
-      throw new Error("Active relationship not found between patient and current physiotherapist");
+      throw new ConvexError("Active relationship not found between patient and current physiotherapist");
     }
 
     // Deactivate current relationship
@@ -1197,34 +1177,13 @@ export const getPhysiotherapistPatients = query({
     physiotherapistId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.auth.getUserIdentity();
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
+    // The clinic owner, or a team member whose role includes the Team page
+    const { clinic } = await getClinicMember(ctx, "team");
 
-    const clinicOwner = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", user.subject))
-      .unique();
-
-    if (!clinicOwner || clinicOwner.role !== "clinic_owner") {
-      throw new Error("Only clinic owners can view physiotherapist patients");
-    }
-
-    // Verify clinic ownership
-    const clinic = await ctx.db
-      .query("clinics")
-      .withIndex("by_owner_id", (q) => q.eq("ownerId", clinicOwner._id))
-      .unique();
-
-    if (!clinic) {
-      throw new Error("Clinic not found");
-    }
-
-    // Verify physiotherapist belongs to the clinic
+    // Verify physiotherapist belongs to the clinic (the owner sees patients too)
     const physio = await ctx.db.get(args.physiotherapistId);
-    if (!physio || physio.clinicId !== clinic._id) {
-      throw new Error("Physiotherapist does not belong to your clinic");
+    if (!physio || (physio.clinicId !== clinic._id && physio._id !== clinic.ownerId)) {
+      throw new ConvexError("This clinician isn't part of your clinic");
     }
 
     // Get relationships

@@ -49,29 +49,20 @@ export default function StaffInviteAcceptancePage() {
     setIsAccepting(true)
     try {
       const result = await acceptInvitation({ code })
-      
+
       if (result.success) {
-        toast.success('Invitation accepted successfully! Welcome to the team.')
-        
-        // Redirect to appropriate dashboard based on role
-        setTimeout(() => {
-          if (invitation.role === 'physiotherapist') {
-            router.push('/dashboard/physiotherapist')
-          } else if (invitation.role === 'lead_physiotherapist') {
-            router.push('/dashboard/physiotherapist')
-          } else {
-            router.push('/dashboard')
-          }
-        }, 2000)
-      } else {
-        toast.error(result.message || 'Failed to accept invitation')
+        toast.success(`Welcome to ${invitation.clinic?.name || 'the team'}!`)
+        // Everyone who joins a clinic team starts in that clinic's dashboard. A full page load
+        // makes sure the new clinic access is picked up everywhere (no stale role in memory).
+        window.location.assign('/dashboard/clinic')
+        return
       }
+      toast.error(result.message || 'Could not accept the invitation. Please try again.')
     } catch (error) {
       console.error('Accept invitation error:', error)
-      toast.error('Failed to accept invitation. Please try again.')
-    } finally {
-      setIsAccepting(false)
+      toast.error('Could not accept the invitation. Please try again.')
     }
+    setIsAccepting(false)
   }
 
   const handleDeclineInvitation = async () => {
@@ -174,10 +165,10 @@ export default function StaffInviteAcceptancePage() {
           </CardHeader>
           <CardContent>
             <Button 
-              onClick={() => router.push('/dashboard')} 
+              onClick={() => window.location.assign('/dashboard/clinic')} 
               className="w-full"
             >
-              Go to Dashboard
+              Go to clinic dashboard
             </Button>
           </CardContent>
         </Card>
@@ -229,7 +220,7 @@ export default function StaffInviteAcceptancePage() {
               <Shield className="h-4 w-4 text-gray-500" />
               <span>Role: </span>
               <Badge variant="outline" className="capitalize">
-                {invitation.role.replace('_', ' ')}
+                {invitation.role === 'physiotherapist' ? 'Clinician' : 'Front desk'}
               </Badge>
             </div>
             

@@ -2,6 +2,7 @@ import { query, mutation, action } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
+import { publicAppUrl } from "./helpers/appUrl";
 
 // Helper to generate human-readable tracking codes like RHB-73921
 function generateTrackingCode(): string {
@@ -328,7 +329,7 @@ export const createPartnerReferral = mutation({
 
     // Schedule professional email notifications to partner and admin in live mode
     if (env === "live") {
-      const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+      const siteUrl = publicAppUrl();
       const trackingUrl = `${siteUrl}/track/${trackingCode}`;
       const whatsappPhone = "+2348061525811";
       const whatsappIntakeUrl = `https://wa.me/2348061525811?text=REHAB_REF_${encodeURIComponent(trackingCode)}`;

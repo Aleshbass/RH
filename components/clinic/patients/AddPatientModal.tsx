@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useMutation, useQuery } from 'convex/react'
+import { useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import {
   Dialog,
@@ -24,6 +24,7 @@ import {
 import { toast } from 'sonner'
 import { UserPlus, Loader2 } from 'lucide-react'
 import { primaryButtonClass } from '@/components/clinic/ui'
+import { friendlyError, useClinicianOptions } from './patient-record-shared'
 
 interface AddPatientModalProps {
   isOpen: boolean
@@ -48,7 +49,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
   })
 
   const addPatient = useMutation(api.clinicTools.addClinicPatient)
-  const clinicStaff = useQuery(api.clinics.getClinicStaff)
+  const clinicianOptions = useClinicianOptions()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -90,7 +91,8 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
       onClose()
       onSuccess?.()
     } catch (err: any) {
-      toast.error((err?.message?.match(/Uncaught Error:\s*(.+?)(?:\n|\s+at\s|$)/)?.[1]) || 'Could not add the patient. Please try again.')
+      // Show the backend's reason (e.g. the email belongs to a staff account)
+      toast.error(friendlyError(err, 'Could not add the patient. Please try again.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -212,15 +214,12 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
                 <SelectValue placeholder="Choose a clinician (optional)" />
               </SelectTrigger>
               <SelectContent>
-                {clinicStaff?.map((s: any) => {
-                  const name = `${s.user?.firstName || ''} ${s.user?.lastName || ''}`.trim() || s.user?.email || 'Clinician'
-                  const id = s.userId || s._id
-                  return (
-                    <SelectItem key={id} value={id}>
-                      {name}
-                    </SelectItem>
-                  )
-                })}
+                {/* Owner and active clinicians only: suspended clinicians would be rejected */}
+                {clinicianOptions.options.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

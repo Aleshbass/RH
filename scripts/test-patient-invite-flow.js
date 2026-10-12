@@ -60,7 +60,7 @@ async function main() {
     }
 
     const code = invitationResult.invitationCode;
-    const prodLink = `https://www.physioaroundme.com/patient-invite/${code}`;
+    const prodLink = `https://physioaroundme.com/patient-invite/${code}`;
     const localhostLink = `http://localhost:3000/patient-invite/${code}`;
 
     console.log('\nDerived production link:', prodLink);

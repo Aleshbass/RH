@@ -63,6 +63,21 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
       return
     }
 
+    // Clinic team members work in their clinic's dashboard. Front-desk staff never use the other
+    // dashboards; clinicians do once they've finished physio onboarding and been approved.
+    const isClinicTeam =
+      Boolean(currentUser.clinicId) && (currentUser.role === 'clinic_staff' || currentUser.role === 'physiotherapist')
+    if (currentUser.role === 'clinic_staff' || (isClinicTeam && !currentUser.onboarded)) {
+      setIsRedirecting(true)
+      router.replace('/dashboard/clinic')
+      return
+    }
+    if (isClinicTeam && approvalStatus !== undefined && approvalStatus?.status !== 'approved') {
+      setIsRedirecting(true)
+      router.replace('/dashboard/clinic')
+      return
+    }
+
     // If user hasn't completed onboarding AND hasn't skipped, redirect to appropriate onboarding flow
     if (!currentUser.onboarded && !currentUser.onboardingSkipped) {
       setIsRedirecting(true)

@@ -38,6 +38,18 @@ export default function DashboardPage() {
 
     if (user === null) return // Will show error message below
 
+    // Clinic team members work in their clinic's dashboard: front-desk staff always, and
+    // clinicians until they've finished physio onboarding of their own
+    const clinicTeam = user as unknown as { clinicId?: string; role?: string; onboarded?: boolean }
+    if (
+      clinicTeam.clinicId &&
+      (clinicTeam.role === 'clinic_staff' || (clinicTeam.role === 'physiotherapist' && !clinicTeam.onboarded))
+    ) {
+      if (!isRedirecting) setIsRedirecting(true)
+      router.replace('/dashboard/clinic')
+      return
+    }
+
     // Derive an effective role if the stored role is missing
     const effectiveRole: UserRole | undefined = ((): UserRole | undefined => {
       if (user.role) return user.role as UserRole

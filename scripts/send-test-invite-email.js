@@ -6,7 +6,7 @@
  * so it does NOT require an authenticated physiotherapist.
  *
  * It intentionally sends a localhost invitationLink to verify the email action
- * normalizes it to https://www.physioaroundme.com in the delivered email.
+ * normalizes it to https://physioaroundme.com in the delivered email.
  *
  * Usage (Windows PowerShell):
  *   node scripts/send-test-invite-email.js <RECIPIENT_EMAIL> [PATIENT_NAME] [PHYSIOTHERAPIST_NAME]
@@ -79,7 +79,7 @@ async function main() {
     );
     console.log('\nPreview normalization:', preview);
 
-    console.log('\nPASS: Email sent. Check your inbox. The link should use https://www.physioaroundme.com.');
+    console.log('\nPASS: Email sent. Check your inbox. The link should use https://physioaroundme.com.');
   } catch (err) {
     console.error('Error:', err?.message || err);
     process.exit(1);

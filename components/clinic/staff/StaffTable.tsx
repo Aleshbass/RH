@@ -32,6 +32,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AvailabilityScheduler, type OperatingHours } from '@/components/onboarding/common/AvailabilityScheduler'
 import { EmptyState, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { MemberRoleSelect } from './MemberRoleSelect'
+import { teamError, type ClinicRole } from './team-shared'
 
 /** Shape returned by api.clinicTools.getClinicCliniciansWithCaseload */
 export interface TeamMember {
@@ -50,6 +52,8 @@ export interface TeamMember {
     availabilitySchedule?: any
     activeCaseload: number
     monthlyAppointmentsCount: number
+    /** Dashboard role; null means full access */
+    clinicRoleId?: Id<'clinicRoles'> | null
 }
 
 /** The backend falls back to this placeholder when no license is on file. */
@@ -83,11 +87,13 @@ function statusBadge(status: string) {
 
 interface StaffTableProps {
     staff: TeamMember[]
+    /** Dashboard roles for the per-member role picker */
+    roles?: ClinicRole[]
     onInvite?: () => void
 }
 
-export default function StaffTable({ staff, onInvite }: StaffTableProps) {
-    const { requireFullAccess } = useClinicPreview()
+export default function StaffTable({ staff, roles, onInvite }: StaffTableProps) {
+    const { requireFullAccess, isStaff } = useClinicPreview()
     const [searchTerm, setSearchTerm] = useState('')
     const [availabilityFor, setAvailabilityFor] = useState<TeamMember | null>(null)
     const [patientsFor, setPatientsFor] = useState<TeamMember | null>(null)
@@ -125,7 +131,7 @@ export default function StaffTable({ staff, onInvite }: StaffTableProps) {
             toast.success(`Working hours saved for ${fullName(availabilityFor)}`)
             closeAvailability()
         } catch (error) {
-            toast.error(error instanceof Error && error.message ? error.message : 'Could not save working hours')
+            toast.error(teamError(error, 'Could not save working hours'))
         } finally {
             setBusy(false)
         }
@@ -149,8 +155,8 @@ export default function StaffTable({ staff, onInvite }: StaffTableProps) {
             })
             toast.success(suspending ? `${fullName(statusChangeFor)} suspended` : `${fullName(statusChangeFor)} reactivated`)
             setStatusChangeFor(null)
-        } catch {
-            toast.error(suspending ? 'Could not suspend clinician' : 'Could not reactivate clinician')
+        } catch (error) {
+            toast.error(teamError(error, suspending ? 'Could not suspend clinician' : 'Could not reactivate clinician'))
         } finally {
             setBusy(false)
         }
@@ -169,7 +175,7 @@ export default function StaffTable({ staff, onInvite }: StaffTableProps) {
             )
             setRemoveFor(null)
         } catch (error) {
-            toast.error(error instanceof Error && error.message ? error.message : 'Could not remove clinician')
+            toast.error(teamError(error, 'Could not remove clinician'))
         } finally {
             setBusy(false)
         }
@@ -215,6 +221,10 @@ export default function StaffTable({ staff, onInvite }: StaffTableProps) {
                     {filteredStaff.map((member) => {
                         const name = fullName(member) || 'Clinician'
                         const isSuspended = member.status === 'suspended'
+                        // The owner can appear here when they also see patients; they always have full access
+                        const isOwnerRow = member.role === 'clinic_owner'
+                        // Suspend and remove are owner-only
+                        const canManageMember = !isStaff && !isOwnerRow
                         return (
                             <li
                                 key={member.profileId}
@@ -243,68 +253,88 @@ export default function StaffTable({ staff, onInvite }: StaffTableProps) {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center justify-between gap-4 pl-12 sm:justify-end sm:pl-0">
-                                    <div className="flex gap-5 text-xs text-neutral-500 dark:text-neutral-400">
-                                        <div>
-                                            <p className="text-sm font-medium tabular-nums text-neutral-900 dark:text-white">
-                                                {member.activeCaseload}
-                                            </p>
-                                            <p>Active patients</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-medium tabular-nums text-neutral-900 dark:text-white">
-                                                {member.monthlyAppointmentsCount}
-                                            </p>
-                                            <p>Visits this month</p>
-                                        </div>
-                                    </div>
+                                <div className="flex min-w-0 flex-col gap-3 pl-12 sm:flex-row sm:items-center sm:gap-4 sm:pl-0">
+                                    {isOwnerRow ? (
+                                        <p className="text-xs text-neutral-600 dark:text-neutral-400 sm:w-44">
+                                            Owner, full access
+                                        </p>
+                                    ) : (
+                                        <MemberRoleSelect
+                                            memberId={member.userId}
+                                            memberName={name}
+                                            roleId={member.clinicRoleId}
+                                            roles={roles}
+                                        />
+                                    )}
 
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0">
-                                                <MoreHorizontal className="h-4 w-4 text-neutral-500" />
-                                                <span className="sr-only">Actions for {name}</span>
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-52">
-                                            <DropdownMenuItem onClick={() => setAvailabilityFor(member)}>
-                                                <Calendar className="mr-2 h-4 w-4 text-neutral-500" />
-                                                Working hours
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                                onClick={() =>
-                                                    String(member.userId).startsWith('prev_')
-                                                        ? requireFullAccess('View clinician patients')
-                                                        : setPatientsFor(member)
-                                                }
-                                            >
-                                                <Users className="mr-2 h-4 w-4 text-neutral-500" />
-                                                View patients
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                                onClick={() => requireFullAccess('Message clinician', () => setMessageFor(member))}
-                                            >
-                                                <MessageSquare className="mr-2 h-4 w-4 text-neutral-500" />
-                                                Message
-                                            </DropdownMenuItem>
-                                            <DropdownMenuSeparator />
-                                            <DropdownMenuItem
-                                                onClick={() =>
-                                                    requireFullAccess(isSuspended ? 'Reactivate clinician' : 'Suspend clinician', () =>
-                                                        setStatusChangeFor(member)
-                                                    )
-                                                }
-                                            >
-                                                {isSuspended ? 'Reactivate' : 'Suspend'}
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                                className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
-                                                onClick={() => requireFullAccess('Remove clinician', () => setRemoveFor(member))}
-                                            >
-                                                Remove from clinic
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
+                                    <div className="flex items-center justify-between gap-4 sm:justify-end">
+                                        <div className="flex gap-5 text-xs text-neutral-500 dark:text-neutral-400">
+                                            <div>
+                                                <p className="text-sm font-medium tabular-nums text-neutral-900 dark:text-white">
+                                                    {member.activeCaseload}
+                                                </p>
+                                                <p>Active patients</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-medium tabular-nums text-neutral-900 dark:text-white">
+                                                    {member.monthlyAppointmentsCount}
+                                                </p>
+                                                <p>Visits this month</p>
+                                            </div>
+                                        </div>
+
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" size="sm" className="h-8 w-8 shrink-0 p-0">
+                                                    <MoreHorizontal className="h-4 w-4 text-neutral-500" />
+                                                    <span className="sr-only">Actions for {name}</span>
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-52">
+                                                <DropdownMenuItem onClick={() => setAvailabilityFor(member)}>
+                                                    <Calendar className="mr-2 h-4 w-4 text-neutral-500" />
+                                                    Working hours
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onClick={() =>
+                                                        String(member.userId).startsWith('prev_')
+                                                            ? requireFullAccess('View clinician patients')
+                                                            : setPatientsFor(member)
+                                                    }
+                                                >
+                                                    <Users className="mr-2 h-4 w-4 text-neutral-500" />
+                                                    View patients
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onClick={() => requireFullAccess('Message clinician', () => setMessageFor(member))}
+                                                >
+                                                    <MessageSquare className="mr-2 h-4 w-4 text-neutral-500" />
+                                                    Message
+                                                </DropdownMenuItem>
+                                                {canManageMember && (
+                                                    <>
+                                                        <DropdownMenuSeparator />
+                                                        <DropdownMenuItem
+                                                            onClick={() =>
+                                                                requireFullAccess(
+                                                                    isSuspended ? 'Reactivate clinician' : 'Suspend clinician',
+                                                                    () => setStatusChangeFor(member)
+                                                                )
+                                                            }
+                                                        >
+                                                            {isSuspended ? 'Reactivate' : 'Suspend'}
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                                                            onClick={() => requireFullAccess('Remove clinician', () => setRemoveFor(member))}
+                                                        >
+                                                            Remove from clinic
+                                                        </DropdownMenuItem>
+                                                    </>
+                                                )}
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
                                 </div>
                             </li>
                         )

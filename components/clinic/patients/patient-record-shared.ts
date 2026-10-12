@@ -1,14 +1,21 @@
 'use client'
 
 import { useQuery } from 'convex/react'
+import { ConvexError } from 'convex/values'
 import { api } from '@/convex/_generated/api'
 
 /** Turns a Convex server error into the plain sentence thrown by the backend. */
 export function friendlyError(err: unknown, fallback: string) {
+  // ConvexError carries the readable message in `data`, also in production
+  if (err instanceof ConvexError) {
+    return typeof err.data === 'string' && err.data.trim() ? err.data : fallback
+  }
   const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
-  const match = raw.match(/Uncaught Error:\s*(.+?)(?:\n|\s+at\s|$)/)
+  const match = raw.match(/Uncaught (?:Convex)?Error:\s*(.+?)(?:\n|\s+at\s|$)/)
   const message = (match?.[1] ?? raw).trim()
-  if (!message || message.includes('[CONVEX') || message.includes('Request ID')) return fallback
+  if (!message || message.includes('[CONVEX') || message.includes('Request ID') || message === 'Server Error') {
+    return fallback
+  }
   return message
 }
 
@@ -23,24 +30,34 @@ export interface ClinicianOption {
   label: string
 }
 
+/** Row shape returned by api.clinicTools.getClinicClinicianOptions */
+type ClinicianRow = { id: string; name: string; isOwner: boolean; isMe: boolean }
+
 /**
- * Everyone who can take on a patient: the owner ("You") first, then active clinic staff.
- * Built the same way as the Add patient form (getClinicStaff + getMyUser).
+ * Everyone who can take on a patient: the owner and active clinicians, with the
+ * signed-in person shown as "You" first.
+ *
+ * `ownerId` is the clinician the backend uses when none is passed: the signed-in person
+ * if they treat patients, otherwise (front-desk staff) the clinic owner.
  */
 export function useClinicianOptions() {
-  const me = useQuery(api.users.getMyUser)
-  const clinicStaff = useQuery(api.clinics.getClinicStaff)
+  const clinicians = useQuery(api.clinicTools.getClinicClinicianOptions)
 
-  const ownerId = me?._id && !isPreviewId(me._id) ? (me._id as string) : null
-  const options: ClinicianOption[] = []
-  if (ownerId) options.push({ id: ownerId, label: 'You' })
-  for (const s of clinicStaff ?? []) {
-    const id = String(s.userId || s._id)
-    if (isPreviewId(id) || id === ownerId || options.some((o) => o.id === id)) continue
-    if ((s.status ?? 'active') !== 'active') continue
-    const name = `${s.user?.firstName || ''} ${s.user?.lastName || ''}`.trim() || s.user?.email || 'Clinician'
-    options.push({ id, label: name })
+  const list = (clinicians ?? []) as ClinicianRow[]
+  const me = list.find((c) => c.isMe) ?? null
+  const owner = list.find((c) => c.isOwner) ?? null
+  const options: ClinicianOption[] = [
+    ...(me ? [{ id: me.id as string, label: 'You' }] : []),
+    ...list
+      .filter((c) => !c.isMe)
+      .map((c) => ({ id: c.id as string, label: c.isOwner ? `${c.name} (owner)` : c.name })),
+  ].filter((o) => !isPreviewId(o.id))
+
+  const defaultId = me?.id ?? owner?.id ?? null
+  return {
+    ownerId: defaultId && !isPreviewId(defaultId) ? (defaultId as string) : null,
+    meId: me && !isPreviewId(me.id) ? (me.id as string) : null,
+    options,
+    loading: clinicians === undefined,
   }
-
-  return { ownerId, options, loading: me === undefined || clinicStaff === undefined }
 }

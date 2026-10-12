@@ -52,6 +52,7 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
     pathname.startsWith('/docs') ||
     pathname.startsWith('/api') ||
     pathname.startsWith('/r/') ||
+    pathname.startsWith('/v/') ||
     pathname.startsWith('/track') ||
     pathname.includes('physioaroundme.com')
 

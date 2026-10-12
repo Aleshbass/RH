@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MapPin, Search, Loader2, X } from 'lucide-react';
+import { MapPin, Loader2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
@@ -12,11 +12,60 @@ interface GeocoderResult {
     place_name: string;
     center: [number, number]; // [lng, lat]
     text: string;
+    place_type?: string[];
+    address?: string; // house number on address results
+    properties?: { address?: string };
+    context?: { id: string; text: string }[];
+}
+
+/** The parts of a picked result, for filling in address fields. */
+export interface MapboxPlace {
+    placeName: string;
+    /** House number and street (or a named place with its street). Empty for area results. */
+    street: string;
+    /** Neighbourhood or locality, when it is not the city itself. */
+    area: string;
+    city: string;
+    state: string;
+    country: string;
+    latitude: number;
+    longitude: number;
+}
+
+function toMapboxPlace(result: GeocoderResult): MapboxPlace {
+    const types = result.place_type ?? [];
+    // A result's own level comes from its text; the levels above it come from its context
+    const level = (type: string) =>
+        types.includes(type)
+            ? result.text
+            : result.context?.find((c) => c.id.startsWith(`${type}.`))?.text ?? '';
+
+    const city = level('place') || level('locality');
+    const area = [level('neighborhood'), level('locality')].find((t) => t && t !== city) ?? '';
+    let street = '';
+    if (types.includes('address')) {
+        street = [result.address, result.text].filter(Boolean).join(' ');
+    } else if (types.includes('poi')) {
+        street = [result.text, result.properties?.address].filter(Boolean).join(', ');
+    }
+
+    return {
+        placeName: result.place_name,
+        street,
+        area,
+        city,
+        state: level('region'),
+        country: level('country'),
+        latitude: result.center[1],
+        longitude: result.center[0],
+    };
 }
 
 interface MapboxAddressInputProps {
     value?: string;
     onChange: (address: string) => void;
+    /** Called with the parsed parts when a suggestion is picked */
+    onSelectPlace?: (place: MapboxPlace) => void;
     placeholder?: string;
     className?: string;
 }
@@ -27,6 +76,7 @@ interface MapboxAddressInputProps {
 export default function MapboxAddressInput({
     value = '',
     onChange,
+    onSelectPlace,
     placeholder = 'Start typing an address...',
     className,
 }: MapboxAddressInputProps) {
@@ -110,6 +160,7 @@ export default function MapboxAddressInput({
     const handleSelect = (result: GeocoderResult) => {
         setQuery(result.place_name);
         onChange(result.place_name);
+        onSelectPlace?.(toMapboxPlace(result));
         setShowResults(false);
         setResults([]);
     };

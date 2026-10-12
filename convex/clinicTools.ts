@@ -1,35 +1,120 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
-import { getAuthenticatedUser, ensureIsClinicOwner } from "./auth";
+import { getAuthenticatedUser } from "./auth";
+import { clinicPaymentSplit } from "./clinicFees";
+import { loadClinicFeeConfig } from "./clinicFeeSettings";
 
-/**
- * Helper to get the clinic belonging to the authenticated clinic owner
- */
-export async function getOwnerClinic(ctx: QueryCtx): Promise<{ user: Doc<"users">; clinic: Doc<"clinics"> }> {
-  const user = await getAuthenticatedUser(ctx);
-  await ensureIsClinicOwner(ctx, user);
+// ─────────────────────────────────────────────────────────────────────────────
+// Clinic access: the owner, and team members (clinicians and front-desk staff)
+// limited to the pages their clinic role allows. All errors here are ConvexError
+// so the reason reaches the browser in production.
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const clinic = await ctx.db
-    .query("clinics")
-    .withIndex("by_owner_id", (q: any) => q.eq("ownerId", user._id))
-    .first();
+/** Pages a clinic role can be given. Home is always available. */
+export const CLINIC_AREAS = ["appointments", "patients", "referrals", "billing", "team", "reports", "settings"] as const;
+export type ClinicArea = (typeof CLINIC_AREAS)[number];
 
-  if (!clinic) {
-    throw new Error("No clinic found for this account");
+const AREA_LABELS: Record<ClinicArea, string> = {
+  appointments: "Appointments",
+  patients: "Patients",
+  referrals: "Referrals",
+  billing: "Billing",
+  team: "Team",
+  reports: "Reports",
+  settings: "Clinic settings",
+};
+
+export const isClinicArea = (value: string): value is ClinicArea => (CLINIC_AREAS as readonly string[]).includes(value);
+
+export type ClinicMember = {
+  user: Doc<"users">;
+  clinic: Doc<"clinics">;
+  isOwner: boolean;
+  /** "all" when the member has no role, or a role with no pages ticked */
+  permissions: "all" | ClinicArea[];
+  roleName: string | null;
+};
+
+/** Team members who work inside a clinic dashboard (patients also carry clinicId, so role matters). */
+const isClinicTeamRole = (role: Doc<"users">["role"]) => role === "physiotherapist" || role === "clinic_staff";
+
+async function resolveClinicMember(ctx: QueryCtx, user: Doc<"users">): Promise<ClinicMember | null> {
+  if (user.role === "clinic_owner") {
+    const clinic = await ctx.db
+      .query("clinics")
+      .withIndex("by_owner_id", (q: any) => q.eq("ownerId", user._id))
+      .first();
+    return clinic ? { user, clinic, isOwner: true, permissions: "all", roleName: null } : null;
   }
 
-  return { user, clinic };
+  if (user.clinicId && isClinicTeamRole(user.role)) {
+    const clinic = await ctx.db.get(user.clinicId);
+    if (!clinic) return null;
+    let permissions: ClinicMember["permissions"] = "all";
+    let roleName: string | null = null;
+    if (user.clinicRoleId) {
+      const role = await ctx.db.get(user.clinicRoleId);
+      if (role && role.clinicId === clinic._id) {
+        roleName = role.name;
+        const allowed = role.permissions.filter(isClinicArea);
+        if (allowed.length > 0) permissions = allowed;
+      }
+    }
+    return { user, clinic, isOwner: false, permissions, roleName };
+  }
+
+  return null;
+}
+
+export function canUseArea(member: ClinicMember, area: ClinicArea) {
+  return member.permissions === "all" || member.permissions.includes(area);
 }
 
 /**
- * Like getOwnerClinic, but returns null for genuine preview viewers (signed out,
- * not a clinic owner, or onboarding not finished) so sandbox data can be shown.
- * A fully onboarded owner whose lookup fails gets the real error, never fake data.
+ * The signed-in clinic owner or team member. With `area`, the member's role must include that page.
  */
-export async function getOwnerClinicOrPreview(ctx: QueryCtx) {
+export async function getClinicMember(ctx: QueryCtx, area?: ClinicArea): Promise<ClinicMember> {
+  const user = await getAuthenticatedUser(ctx);
+  const member = await resolveClinicMember(ctx, user);
+  if (!member) {
+    throw new ConvexError(
+      user.role === "clinic_owner" ? "No clinic found for this account" : "You're not part of a clinic team."
+    );
+  }
+  if (!member.isOwner && user.status && user.status !== "active") {
+    throw new ConvexError("Your access to this clinic has been suspended. Contact the clinic owner.");
+  }
+  if (area && !canUseArea(member, area)) {
+    throw new ConvexError(`Your role doesn't include ${AREA_LABELS[area]}. Ask the clinic owner for access.`);
+  }
+  return member;
+}
+
+/** For changes: the member needs the page, and the clinic must be approved. */
+export async function requireClinicWrite(ctx: QueryCtx, area?: ClinicArea): Promise<ClinicMember> {
+  const member = await getClinicMember(ctx, area);
+  await ensureClinicApproved(ctx, member.clinic);
+  return member;
+}
+
+/** Owner-only actions: bank account, roles, removing or suspending staff. */
+export async function getOwnerClinic(ctx: QueryCtx): Promise<ClinicMember> {
+  const member = await getClinicMember(ctx);
+  if (!member.isOwner) {
+    throw new ConvexError("Only the clinic owner can do this.");
+  }
+  return member;
+}
+
+/**
+ * Like getClinicMember, but returns null for genuine preview viewers (signed out, or not a
+ * clinic owner/team member yet) so sandbox data can be shown. A real owner or team member
+ * whose access fails gets the real error, never fake data.
+ */
+export async function getClinicMemberOrPreview(ctx: QueryCtx, area?: ClinicArea): Promise<ClinicMember | null> {
   try {
-    return await getOwnerClinic(ctx);
+    return await getClinicMember(ctx, area);
   } catch (err) {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
@@ -37,11 +122,19 @@ export async function getOwnerClinicOrPreview(ctx: QueryCtx) {
       .query("users")
       .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
       .unique();
-    if (user && user.role === "clinic_owner" && user.onboarded) {
+    if (user && ((user.role === "clinic_owner" && user.onboarded) || (user.clinicId && isClinicTeamRole(user.role)))) {
       throw err;
     }
     return null;
   }
+}
+
+/** Existing callers: any clinic member, or preview. */
+export const getOwnerClinicOrPreview = (ctx: QueryCtx) => getClinicMemberOrPreview(ctx);
+
+/** Who a record is attributed to by default: the acting clinician, or the owner for front-desk staff. */
+export function defaultClinicianId(member: ClinicMember): Id<"users"> {
+  return member.user.role === "clinic_staff" ? member.clinic.ownerId : member.user._id;
 }
 
 /**
@@ -58,11 +151,11 @@ export async function getClinicStaffUserIds(ctx: QueryCtx, clinic: Doc<"clinics"
 export async function assertStaffInClinic(ctx: QueryCtx, clinic: Doc<"clinics">, userId: Id<"users">) {
   const staffIds = await getClinicStaffUserIds(ctx, clinic);
   if (!staffIds.has(userId)) {
-    throw new Error("Selected clinician is not a member of your clinic");
+    throw new ConvexError("Selected clinician is not a member of your clinic");
   }
   const member = await ctx.db.get(userId);
   if (member && member._id !== clinic.ownerId && member.status && member.status !== "active") {
-    throw new Error("This clinician is suspended. Reactivate them on the Team page first.");
+    throw new ConvexError("This clinician is suspended. Reactivate them on the Team page first.");
   }
 }
 
@@ -93,7 +186,7 @@ async function isPatientInClinic(ctx: QueryCtx, clinic: Doc<"clinics">, patientI
 
 export async function assertPatientInClinic(ctx: QueryCtx, clinic: Doc<"clinics">, patientId: Id<"users">) {
   if (!(await isPatientInClinic(ctx, clinic, patientId))) {
-    throw new Error("Patient not found in your clinic");
+    throw new ConvexError("Patient not found in your clinic");
   }
 }
 
@@ -104,12 +197,12 @@ async function getClinicAppointmentOrThrow(
 ) {
   const appointment = await ctx.db.get(appointmentId);
   if (!appointment) {
-    throw new Error("Appointment not found");
+    throw new ConvexError("Appointment not found");
   }
   if (appointment.clinicId !== clinic._id) {
     const staffIds = await getClinicStaffUserIds(ctx, clinic);
     if (!staffIds.has(appointment.physiotherapistId)) {
-      throw new Error("Appointment not found");
+      throw new ConvexError("Appointment not found");
     }
   }
   return appointment;
@@ -274,7 +367,7 @@ async function assertClinicianFree(
       minute: "2-digit",
       timeZone: "Africa/Lagos",
     });
-    throw new Error(`This clinician already has an appointment at ${at}. Pick another time or clinician.`);
+    throw new ConvexError(`This clinician already has an appointment at ${at}. Pick another time or clinician.`);
   }
 }
 
@@ -305,21 +398,23 @@ export async function getApprovalStatus(ctx: QueryCtx, userId: Id<"users">) {
 }
 
 /**
- * Helper to ensure a clinic owner has completed onboarding and is approved by admin.
- * If skipped or unapproved, mutations are blocked so preview mode remains strictly read-only.
+ * Changes are only allowed once the clinic's owner has finished registration and Rehabify
+ * has approved the clinic. Applies to team members too, since they act for the clinic.
  */
-export async function ensureClinicOwnerApproved(ctx: any, user: any) {
+export async function ensureClinicApproved(ctx: QueryCtx, clinic: Doc<"clinics">) {
+  const owner = await ctx.db.get(clinic.ownerId);
   // A skip always leaves onboarded=false, so once onboarded is true a stale skip flag is ignored
-  if (!user.onboarded) {
-    throw new Error("Onboarding incomplete. Please complete clinic registration to perform this action.");
+  if (!owner?.onboarded) {
+    throw new ConvexError("Finish your clinic registration first. Until then the dashboard shows sample data.");
   }
   const approval = await ctx.db
     .query("accountApprovalStatus")
-    .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
+    .withIndex("by_user_id", (q: any) => q.eq("userId", clinic.ownerId))
     .unique();
-
   if (!approval || approval.status !== "approved") {
-    throw new Error("Clinic verification is pending admin approval. Live clinical operations are disabled in preview mode.");
+    throw new ConvexError(
+      "Your clinic is waiting for Rehabify's approval. You can look around, but changes unlock once it's approved."
+    );
   }
 }
 
@@ -345,8 +440,8 @@ export const addClinicPatient = mutation({
     initialDiagnosis: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "patients");
+    const { user, clinic } = member;
 
     if (args.assignedClinicianId) {
       await assertStaffInClinic(ctx, clinic, args.assignedClinicianId);
@@ -359,7 +454,7 @@ export const addClinicPatient = mutation({
       .first();
 
     if (patientUser && patientUser.role && patientUser.role !== "patient") {
-      throw new Error("This email belongs to a non-patient account and cannot be enrolled as a patient.");
+      throw new ConvexError("This email belongs to a non-patient account and cannot be enrolled as a patient.");
     }
 
     if (!patientUser) {
@@ -380,7 +475,7 @@ export const addClinicPatient = mutation({
     }
 
     if (!patientUser) {
-      throw new Error("Failed to create or locate patient user account");
+      throw new ConvexError("Failed to create or locate patient user account");
     }
 
     // Upsert Patient Profile
@@ -412,7 +507,7 @@ export const addClinicPatient = mutation({
     }
 
     // Assign to clinician or clinic owner
-    const targetClinicianId = args.assignedClinicianId || user._id;
+    const targetClinicianId = args.assignedClinicianId || defaultClinicianId(member);
     const patientId = patientUser._id;
 
     // Check existing relationship
@@ -468,7 +563,7 @@ export const getClinicPatientFullRecord = query({
     patientId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const { clinic } = await getOwnerClinic(ctx);
+    const { clinic } = await getClinicMember(ctx, "patients");
 
     const patient = await ctx.db.get(args.patientId);
     if (!patient) {
@@ -682,8 +777,8 @@ export const attachPatientDocument = mutation({
     storageId: v.id("_storage"),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "patients");
+    const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
     let profile = await ctx.db
@@ -700,7 +795,7 @@ export const attachPatientDocument = mutation({
     }
 
     if (!profile) {
-      throw new Error("Unable to locate patient profile");
+      throw new ConvexError("Unable to locate patient profile");
     }
 
     const docId = await ctx.db.insert("patientDocuments", {
@@ -738,14 +833,14 @@ export const updateClinicPatientDetails = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "patients");
+    const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
     const firstName = args.firstName.trim();
     const lastName = args.lastName.trim();
     if (!firstName || !lastName) {
-      throw new Error("First and last name are required");
+      throw new ConvexError("First and last name are required");
     }
 
     await ctx.db.patch(args.patientId, {
@@ -793,16 +888,16 @@ export const reopenPatientCare = mutation({
     clinicianId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "patients");
+    const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
-    const clinicianId = args.clinicianId ?? user._id;
+    const clinicianId = args.clinicianId ?? defaultClinicianId(member);
     if (args.clinicianId) {
       await assertStaffInClinic(ctx, clinic, args.clinicianId);
     }
     if ((await getCareStatus(ctx, clinic, args.patientId)) === "active") {
-      throw new Error("This patient is already in active care");
+      throw new ConvexError("This patient is already in active care");
     }
 
     const existing = await ctx.db
@@ -862,13 +957,13 @@ export const bookClinicAppointment = mutation({
     serviceType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "appointments");
+    const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
     await assertStaffInClinic(ctx, clinic, args.physiotherapistId);
 
     if (args.endTime <= args.startTime) {
-      throw new Error("Appointment end time must be after the start time");
+      throw new ConvexError("Appointment end time must be after the start time");
     }
     await assertClinicianFree(ctx, args.physiotherapistId, args.startTime, args.endTime);
 
@@ -902,13 +997,13 @@ export const rescheduleClinicAppointment = mutation({
     physiotherapistId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "appointments");
+    const { user, clinic } = member;
 
     const appointment = await getClinicAppointmentOrThrow(ctx, clinic, args.appointmentId);
 
     if (args.endTime <= args.startTime) {
-      throw new Error("Appointment end time must be after the start time");
+      throw new ConvexError("Appointment end time must be after the start time");
     }
     const clinicianId = args.physiotherapistId ?? appointment.physiotherapistId;
     if (args.physiotherapistId) {
@@ -945,8 +1040,8 @@ export const updateAppointmentStatus = mutation({
     cancellationReason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "appointments");
+    const { user, clinic } = member;
 
     const appointment = await getClinicAppointmentOrThrow(ctx, clinic, args.appointmentId);
 
@@ -991,11 +1086,11 @@ export const saveClinicalNote = mutation({
     diagnosis: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "patients");
+    const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
-    const clinicianId = args.physiotherapistId || user._id;
+    const clinicianId = args.physiotherapistId || defaultClinicianId(member);
     if (args.physiotherapistId) {
       await assertStaffInClinic(ctx, clinic, args.physiotherapistId);
     }
@@ -1005,7 +1100,7 @@ export const saveClinicalNote = mutation({
       args.planForNextSession, args.goalsSummary, args.diagnosis,
     ].some((field) => field && field.trim());
     if (!hasContent) {
-      throw new Error("Write something in at least one field before saving the note");
+      throw new ConvexError("Write something in at least one field before saving the note");
     }
 
     const appointmentId = await anchorAppointmentForRecord(ctx, clinic, args.patientId, clinicianId, args.noteType);
@@ -1060,11 +1155,11 @@ export const assignHomeProgramme = mutation({
     goals: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "patients");
+    const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
-    const clinicianId = args.physiotherapistId || user._id;
+    const clinicianId = args.physiotherapistId || defaultClinicianId(member);
     if (args.physiotherapistId) {
       await assertStaffInClinic(ctx, clinic, args.physiotherapistId);
     }
@@ -1125,7 +1220,7 @@ function toPlanExercises(exercises: { name: string; sets: number; reps: number; 
     .map((ex) => ({ ...ex, name: ex.name.trim(), instructions: ex.instructions.trim() }))
     .filter((ex) => ex.name);
   if (cleaned.length === 0) {
-    throw new Error("Add at least one exercise with a name");
+    throw new ConvexError("Add at least one exercise with a name");
   }
   return cleaned.map((ex, i) => ({
     exerciseId: `custom_ex_${i}`,
@@ -1150,12 +1245,12 @@ export const updateHomeProgramme = mutation({
     status: v.optional(v.union(v.literal("active"), v.literal("on_hold"), v.literal("completed"))),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "patients");
+    const { user, clinic } = member;
 
     const plan = await ctx.db.get(args.planId);
     if (!plan || plan.clinicId !== clinic._id) {
-      throw new Error("Programme not found");
+      throw new ConvexError("Programme not found");
     }
 
     const now = Date.now();
@@ -1282,11 +1377,11 @@ export const logPatientFollowUp = mutation({
     nextCheckInAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "patients");
+    const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
-    const appointmentId = await anchorAppointmentForRecord(ctx, clinic, args.patientId, user._id, "follow_up_outreach");
+    const appointmentId = await anchorAppointmentForRecord(ctx, clinic, args.patientId, defaultClinicianId(member), "follow_up_outreach");
 
     const outcomeLabel: Record<typeof args.outcome, string> = {
       continuing_care: "Continuing care",
@@ -1298,7 +1393,7 @@ export const logPatientFollowUp = mutation({
     await ctx.db.insert("sessionLogs", {
       appointmentId,
       patientId: args.patientId,
-      physiotherapistId: user._id,
+      physiotherapistId: defaultClinicianId(member),
       clinicId: clinic._id,
       sessionDate: Date.now(),
       noteType: "follow_up_outreach",
@@ -1349,18 +1444,24 @@ export const createClinicPaymentRequest = mutation({
     dueDate: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "billing");
+    const { user, clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
 
     if (!(args.amountNaira > 0)) {
-      throw new Error("Amount must be greater than zero");
+      throw new ConvexError("Amount must be greater than zero");
     }
 
     const totalKobo = Math.round(args.amountNaira * 100);
-    // Platform fee: 10% (standard Rehabify transaction fee), taken out of the price the patient pays
-    const platformFeeKobo = Math.round(totalKobo * 0.1);
-    const clinicNetKobo = totalKobo - platformFeeKobo;
+    // Online payment split with the admin's current fee settings: Paystack fee first, then the
+    // clinic/Rehabify split; stamp duty comes off the clinic's payout. The patient pays the quoted
+    // price; nothing is added on top. The amounts are fixed on the invoice now, so later settings
+    // changes don't alter it. See convex/clinicFees.ts.
+    const feeConfig = await loadClinicFeeConfig(ctx);
+    const split = clinicPaymentSplit(totalKobo, feeConfig);
+    const platformFeeKobo = split.rehabifyKobo;
+    // What Paystack settles to the clinic's subaccount (stamp duty is deducted from it on payout)
+    const clinicShareKobo = split.clinicShareKobo;
 
     const now = Date.now();
     let invoiceNumber = "";
@@ -1378,13 +1479,14 @@ export const createClinicPaymentRequest = mutation({
       }
     }
     if (!invoiceNumber) {
-      throw new Error("Could not generate an invoice number, please try again");
+      throw new ConvexError("Could not generate an invoice number, please try again");
     }
     const due = args.dueDate || now + 7 * 24 * 60 * 60 * 1000;
 
     const invoiceId = await ctx.db.insert("invoices", {
       patientId: args.patientId,
-      physiotherapistId: user._id,
+      // The owner gets the "payment received" notification for clinic invoices
+      physiotherapistId: clinic.ownerId,
       clinicId: clinic._id,
       invoiceNumber,
       issueDate: now,
@@ -1399,21 +1501,26 @@ export const createClinicPaymentRequest = mutation({
       ],
       subtotalAmount: totalKobo,
       platformFeeAmount: platformFeeKobo,
+      paystackFeeAmount: split.paystackFeeKobo,
+      stampDutyAmount: split.stampDutyKobo,
+      clinicSharePercent: split.clinicSharePercent,
       totalAmount: totalKobo,
       currency: "NGN",
       status: "sent",
       notes: args.notes,
-      physiotherapistShare: clinicNetKobo,
+      physiotherapistShare: clinicShareKobo,
       platformShare: platformFeeKobo,
-      // feeBreakdown.total is what checkout charges, so the patient pays the quoted price exactly once
+      // feeBreakdown.total is what checkout charges, so the patient pays the quoted price exactly once.
+      // paystackFlat holds the whole estimated Paystack fee in kobo; paystackPercentage is the rate.
+      // physiotherapistEarnings is the clinic's share before stamp duty (what the split sends it).
       feeBreakdown: {
         subtotal: totalKobo,
         discount: 0,
         platformFee: platformFeeKobo,
-        paystackPercentage: 0,
-        paystackFlat: 0,
+        paystackPercentage: feeConfig.paystackPercent,
+        paystackFlat: split.paystackFeeKobo,
         total: totalKobo,
-        physiotherapistEarnings: clinicNetKobo,
+        physiotherapistEarnings: clinicShareKobo,
       },
     });
 
@@ -1427,7 +1534,7 @@ export const createClinicPaymentRequest = mutation({
 export const getClinicBillingSummary = query({
   args: {},
   handler: async (ctx) => {
-    const clinic = (await getOwnerClinicOrPreview(ctx))?.clinic ?? null;
+    const clinic = (await getClinicMemberOrPreview(ctx, "billing"))?.clinic ?? null;
     const DAY = 86400000;
 
     if (!clinic) {
@@ -1436,8 +1543,9 @@ export const getClinicBillingSummary = query({
         unpaidNaira: 35000,
         unpaidCount: 1,
         paidThisMonthNaira: 210000,
-        netThisMonthNaira: 189000,
-        feesThisMonthNaira: 21000,
+        netThisMonthNaira: 166350,
+        feesThisMonthNaira: 41600,
+        processingFeesThisMonthNaira: 2050,
         payoutAccount: null,
         priceList: [
           { name: "Initial assessment", priceNaira: 25000, durationMinutes: 60 },
@@ -1452,8 +1560,11 @@ export const getClinicBillingSummary = query({
             patientPhone: "+234 803 123 4567",
             serviceName: "Package of 6 sessions",
             totalAmountNaira: 150000,
-            rehabifyFeeNaira: 15000,
-            clinicNetNaira: 135000,
+            rehabifyFeeNaira: 29600,
+            paystackFeeNaira: 2000,
+            stampDutyNaira: 50,
+            clinicNetNaira: 118350,
+            rehabifySharePercent: 20,
             status: "paid",
             paymentMethod: "paystack",
             paymentLink: null,
@@ -1469,8 +1580,11 @@ export const getClinicBillingSummary = query({
             patientPhone: "+234 802 987 6543",
             serviceName: "Follow-up session",
             totalAmountNaira: 35000,
-            rehabifyFeeNaira: 3500,
-            clinicNetNaira: 31500,
+            rehabifyFeeNaira: 6875,
+            paystackFeeNaira: 625,
+            stampDutyNaira: 50,
+            clinicNetNaira: 27450,
+            rehabifySharePercent: 20,
             status: "sent",
             paymentMethod: null,
             paymentLink: null,
@@ -1502,13 +1616,19 @@ export const getClinicBillingSummary = query({
     let paidThisMonthKobo = 0;
     let netThisMonthKobo = 0;
     let feesThisMonthKobo = 0;
+    let processingThisMonthKobo = 0;
 
     const enrichedInvoices = await Promise.all(
       invoices.map(async (inv) => {
         const patient = await ctx.db.get(inv.patientId);
         const total = inv.totalAmount || 0;
         const fee = inv.feeBreakdown?.platformFee ?? inv.platformFeeAmount ?? Math.round(total * 0.1);
-        const net = inv.feeBreakdown?.physiotherapistEarnings ?? inv.physiotherapistShare ?? total - fee;
+        // Clinic's share as split by Paystack; stamp duty comes off it when paid into the bank.
+        // Older invoices (before the fee-settings model) have no fee estimates: Rehabify absorbed them.
+        const clinicShare = inv.feeBreakdown?.physiotherapistEarnings ?? inv.physiotherapistShare ?? total - fee;
+        const paystackFee = inv.paystackFeeAmount ?? 0;
+        const stampDuty = inv.stampDutyAmount ?? 0;
+        const net = clinicShare - stampDuty;
         const paidAt = inv.paymentDate ?? null;
         const overdue = isUnpaid(inv.status) && inv.dueDate < Date.now();
 
@@ -1519,6 +1639,7 @@ export const getClinicBillingSummary = query({
           const offline = inv.paymentMethod && inv.paymentMethod !== "paystack";
           netThisMonthKobo += offline ? total : net;
           feesThisMonthKobo += offline ? 0 : fee;
+          processingThisMonthKobo += offline ? 0 : paystackFee + stampDuty;
         }
 
         // Where the clinic's money is. Offline payments were collected in person.
@@ -1543,7 +1664,16 @@ export const getClinicBillingSummary = query({
           patientPhone: patient?.phoneNumber || null,
           totalAmountNaira: Math.round(total / 100),
           rehabifyFeeNaira: Math.round(fee / 100),
+          paystackFeeNaira: Math.round(paystackFee / 100),
+          stampDutyNaira: Math.round(stampDuty / 100),
           clinicNetNaira: Math.round(net / 100),
+          // Split used for this invoice (older invoices: worked out from their amounts)
+          rehabifySharePercent:
+            inv.clinicSharePercent !== undefined
+              ? Math.round((100 - inv.clinicSharePercent) * 100) / 100
+              : total > 0
+                ? Math.round((fee / Math.max(1, total - paystackFee)) * 100)
+                : null,
           status: overdue ? "overdue" : inv.status,
           paymentMethod: inv.paymentMethod ?? null,
           paymentLink: inv.paymentLink ?? null,
@@ -1561,6 +1691,7 @@ export const getClinicBillingSummary = query({
       paidThisMonthNaira: Math.round(paidThisMonthKobo / 100),
       netThisMonthNaira: Math.round(netThisMonthKobo / 100),
       feesThisMonthNaira: Math.round(feesThisMonthKobo / 100),
+      processingFeesThisMonthNaira: Math.round(processingThisMonthKobo / 100),
       payoutAccount: payout
         ? { bankName: payout.bankName, accountName: payout.accountName, accountNumberLast4: payout.accountNumber.slice(-4) }
         : null,
@@ -1582,9 +1713,9 @@ export const removeClinician = mutation({
   args: { clinicianId: v.id("users") },
   handler: async (ctx, args) => {
     const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    await ensureClinicApproved(ctx, clinic);
     if (args.clinicianId === user._id) {
-      throw new Error("You can't remove yourself from your own clinic");
+      throw new ConvexError("You can't remove yourself from your own clinic");
     }
 
     const profile = await ctx.db
@@ -1592,7 +1723,7 @@ export const removeClinician = mutation({
       .withIndex("by_user_id", (q: any) => q.eq("userId", args.clinicianId))
       .first();
     if (!profile || profile.clinicId !== clinic._id) {
-      throw new Error("Clinician not found in your clinic");
+      throw new ConvexError("Clinician not found in your clinic");
     }
 
     const rels = await ctx.db
@@ -1641,7 +1772,7 @@ export const removeClinician = mutation({
 export const getClinicCliniciansWithCaseload = query({
   args: {},
   handler: async (ctx) => {
-    const auth = await getOwnerClinicOrPreview(ctx);
+    const auth = await getClinicMemberOrPreview(ctx, "team");
     if (!auth) {
       // Sample team for preview visitors (actions on them are blocked in the UI)
       const weekdays = Object.fromEntries(
@@ -1666,6 +1797,7 @@ export const getClinicCliniciansWithCaseload = query({
           availabilitySchedule: weekdays,
           activeCaseload: 2,
           monthlyAppointmentsCount: 14,
+          clinicRoleId: null,
         },
         {
           profileId: "prev_prof2",
@@ -1682,6 +1814,7 @@ export const getClinicCliniciansWithCaseload = query({
           availabilitySchedule: weekdays,
           activeCaseload: 1,
           monthlyAppointmentsCount: 9,
+          clinicRoleId: null,
         },
       ];
     }
@@ -1729,6 +1862,7 @@ export const getClinicCliniciansWithCaseload = query({
           availabilitySchedule: prof.availabilitySchedule || null,
           activeCaseload: relationships.length,
           monthlyAppointmentsCount: appointments.length,
+          clinicRoleId: user.clinicRoleId ?? null,
         };
       })
     );
@@ -1749,8 +1883,8 @@ export const updateClinicianAvailability = mutation({
     availabilitySchedule: v.any(),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "team");
+    const { user, clinic } = member;
     await assertStaffInClinic(ctx, clinic, args.clinicianId);
 
     const profile = await ctx.db
@@ -1758,7 +1892,7 @@ export const updateClinicianAvailability = mutation({
       .withIndex("by_user_id", (q: any) => q.eq("userId", args.clinicianId))
       .first();
     if (!profile || profile.clinicId !== clinic._id) {
-      throw new Error("Clinician not found in your clinic");
+      throw new ConvexError("Clinician not found in your clinic");
     }
 
     // Same shape the booking slot engine reads (convex/calendar/availability.ts):
@@ -1813,6 +1947,9 @@ export const getClinicSetupDetails = query({
         description: "Specialized physical rehabilitation clinic offering evidence-based musculoskeletal, post-operative, and neurological physiotherapy.",
         website: "https://viphysio.ng",
         specializations: ["Orthopedics", "Sports Rehabilitation", "Spinal Therapy", "Neurology"],
+        services: ["Musculoskeletal physiotherapy", "Post-surgery rehabilitation", "Sports injury care"],
+        facilities: ["Exercise gym", "Treatment rooms", "Parking"],
+        logoUrl: null,
         workingHours: {
           monday: { open: "08:00", close: "17:00", active: true },
           tuesday: { open: "08:00", close: "17:00", active: true },
@@ -1845,10 +1982,13 @@ export const getClinicSetupDetails = query({
       website: clinic.website || "",
       state: clinic.state || "",
       specializations: clinic.specializations || [],
+      services: clinic.services || [],
+      facilities: clinic.facilities || [],
+      logoUrl: clinic.logoUrl ?? null,
       priceList: clinic.priceList || [],
       workingHours: normalizeWorkingHours(clinic.workingHours),
-      verificationStatus: verificationLabel(await getApprovalStatus(ctx, auth.user._id)),
-      approvalStatus: (await getApprovalStatus(ctx, auth.user._id)) ?? "not_submitted",
+      verificationStatus: verificationLabel(await getApprovalStatus(ctx, clinic.ownerId)),
+      approvalStatus: (await getApprovalStatus(ctx, clinic.ownerId)) ?? "not_submitted",
     };
   },
 });
@@ -1926,22 +2066,25 @@ export const updateClinicSetupDetails = mutation({
       priceNaira: v.number(),
       durationMinutes: v.optional(v.number()),
     }))),
+    // Collected here rather than during onboarding
+    services: v.optional(v.array(v.string())),
+    facilities: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "settings");
+    const { clinic } = member;
 
     if (!args.name.trim()) {
-      throw new Error("Clinic name is required");
+      throw new ConvexError("Clinic name is required");
     }
     if (args.contactEmail?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(args.contactEmail.trim())) {
-      throw new Error("Enter a valid email address");
+      throw new ConvexError("Enter a valid email address");
     }
 
     if (args.workingHours) {
       for (const [day, hours] of Object.entries(args.workingHours)) {
         if (hours.active && hours.open >= hours.close) {
-          throw new Error(`${day.charAt(0).toUpperCase() + day.slice(1)}: closing time must be after opening time`);
+          throw new ConvexError(`${day.charAt(0).toUpperCase() + day.slice(1)}: closing time must be after opening time`);
         }
       }
     }
@@ -1953,7 +2096,7 @@ export const updateClinicSetupDetails = mutation({
         .filter((item) => item.name);
       for (const item of priceList) {
         if (!(item.priceNaira > 0)) {
-          throw new Error(`Enter a price for "${item.name}"`);
+          throw new ConvexError(`Enter a price for "${item.name}"`);
         }
       }
     }
@@ -1970,9 +2113,45 @@ export const updateClinicSetupDetails = mutation({
       ...(args.specializations !== undefined && { specializations: args.specializations }),
       ...(args.workingHours !== undefined && { workingHours: args.workingHours }),
       ...(priceList !== undefined && { priceList }),
+      ...(args.services !== undefined && { services: cleanList(args.services) }),
+      ...(args.facilities !== undefined && { facilities: cleanList(args.facilities) }),
     });
 
     return { success: true, message: "Clinic settings saved" };
+  },
+});
+
+const cleanList = (items: string[]) =>
+  Array.from(new Set(items.map((item) => item.trim()).filter(Boolean))).slice(0, 50);
+
+/**
+ * Set or remove the clinic logo shown at the top of the dashboard.
+ * Upload with files.generateUploadUrl first, then pass the storage id (null removes it).
+ */
+export const updateClinicLogo = mutation({
+  args: { storageId: v.union(v.id("_storage"), v.null()) },
+  handler: async (ctx, args) => {
+    const { clinic } = await requireClinicWrite(ctx, "settings");
+    if (args.storageId === null) {
+      await ctx.db.patch(clinic._id, { logoUrl: undefined });
+      return { logoUrl: null };
+    }
+    const meta = await ctx.db.system.get(args.storageId);
+    if (!meta) {
+      throw new ConvexError("Upload failed. Please try again.");
+    }
+    if (!meta.contentType?.startsWith("image/") || meta.contentType === "image/svg+xml") {
+      throw new ConvexError("The logo must be a PNG, JPG or WebP image.");
+    }
+    if (meta.size > 2 * 1024 * 1024) {
+      throw new ConvexError("The logo must be smaller than 2 MB.");
+    }
+    const logoUrl = await ctx.storage.getUrl(args.storageId);
+    if (!logoUrl) {
+      throw new ConvexError("Upload failed. Please try again.");
+    }
+    await ctx.db.patch(clinic._id, { logoUrl });
+    return { logoUrl };
   },
 });
 
@@ -1986,7 +2165,7 @@ export const updateClinicSetupDetails = mutation({
 export const getClinicRehabifyReferrals = query({
   args: {},
   handler: async (ctx) => {
-    const clinic = (await getOwnerClinicOrPreview(ctx))?.clinic ?? null;
+    const clinic = (await getClinicMemberOrPreview(ctx, "referrals"))?.clinic ?? null;
 
     if (!clinic) {
       return [
@@ -2062,21 +2241,21 @@ export const respondToRehabifyReferral = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { user, clinic } = await getOwnerClinic(ctx);
-    await ensureClinicOwnerApproved(ctx, user);
+    const member = await requireClinicWrite(ctx, "referrals");
+    const { user, clinic } = member;
 
     const referral = await ctx.db.get(args.referralId);
     if (!referral || referral.assignedClinicId !== clinic._id) {
-      throw new Error("Referral not found");
+      throw new ConvexError("Referral not found");
     }
     if (referral.status !== "received" && referral.status !== "pending") {
-      throw new Error("This referral has already been responded to");
+      throw new ConvexError("This referral has already been responded to");
     }
 
     const now = Date.now();
 
     if (args.action === "accept") {
-      const clinicianId = args.assignedClinicianId || user._id;
+      const clinicianId = args.assignedClinicianId || defaultClinicianId(member);
       if (args.assignedClinicianId) {
         await assertStaffInClinic(ctx, clinic, args.assignedClinicianId);
       }
@@ -2100,7 +2279,7 @@ export const respondToRehabifyReferral = mutation({
           .first();
       }
       if (patientUser && patientUser.role && patientUser.role !== "patient") {
-        throw new Error("The referred patient's contact details belong to a non-patient account. Contact Rehabify support.");
+        throw new ConvexError("The referred patient's contact details belong to a non-patient account. Contact Rehabify support.");
       }
 
       let patientUserId: Id<"users">;
@@ -2395,5 +2574,261 @@ export const getClinicNavCounts = query({
     return {
       newReferrals: referrals.filter((ref) => ref.status === "received" || ref.status === "pending").length,
     };
+  },
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. ACCESS, ROLES AND TEAM MEMBERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Who is using the clinic dashboard and what they can see. Drives the sidebar,
+ * page access, the clinic name/logo header and preview mode.
+ */
+export const getMyClinicAccess = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return { mode: "preview" as const, signedIn: false };
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+      .unique();
+    if (!user) return { mode: "preview" as const, signedIn: true };
+    const member = await resolveClinicMember(ctx, user);
+    if (!member) return { mode: "preview" as const, signedIn: true };
+
+    const owner = member.isOwner ? user : await ctx.db.get(member.clinic.ownerId);
+    const approvalStatus = (await getApprovalStatus(ctx, member.clinic.ownerId)) ?? "not_submitted";
+    return {
+      mode: member.isOwner ? ("owner" as const) : ("staff" as const),
+      signedIn: true,
+      clinicName: member.clinic.name,
+      logoUrl: member.clinic.logoUrl ?? null,
+      permissions: member.permissions,
+      roleName: member.roleName,
+      staffKind: member.isOwner
+        ? ("owner" as const)
+        : user.role === "clinic_staff"
+          ? ("front_desk" as const)
+          : ("clinician" as const),
+      ownerOnboarded: Boolean(owner?.onboarded),
+      approvalStatus,
+      suspended: !member.isOwner && Boolean(user.status) && user.status !== "active",
+    };
+  },
+});
+
+/** Dashboard roles for this clinic, with how many team members have each. */
+export const listClinicRoles = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await getClinicMemberOrPreview(ctx);
+    if (!member) {
+      // Sample roles for preview visitors
+      return [
+        { _id: "prev_role1" as Id<"clinicRoles">, name: "Receptionist", permissions: ["appointments", "patients"] as ClinicArea[], memberCount: 1 },
+        { _id: "prev_role2" as Id<"clinicRoles">, name: "Administrator", permissions: ["appointments", "patients", "billing", "reports"] as ClinicArea[], memberCount: 0 },
+      ];
+    }
+    const [roles, members] = await Promise.all([
+      ctx.db.query("clinicRoles").withIndex("by_clinic", (q: any) => q.eq("clinicId", member.clinic._id)).collect(),
+      ctx.db.query("users").withIndex("by_clinic_id", (q: any) => q.eq("clinicId", member.clinic._id)).collect(),
+    ]);
+    return roles
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((role) => ({
+        _id: role._id,
+        name: role.name,
+        permissions: role.permissions.filter(isClinicArea),
+        memberCount: members.filter((m) => m.clinicRoleId === role._id && isClinicTeamRole(m.role)).length,
+      }));
+  },
+});
+
+/** Create or rename a role and choose its pages. No pages ticked means full access. */
+export const saveClinicRole = mutation({
+  args: {
+    roleId: v.optional(v.id("clinicRoles")),
+    name: v.string(),
+    permissions: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { clinic } = await getOwnerClinic(ctx);
+    const name = args.name.trim().replace(/\s+/g, " ");
+    if (!name) throw new ConvexError("Give the role a name, e.g. Receptionist");
+    if (name.length > 40) throw new ConvexError("Keep the role name under 40 characters");
+    const permissions = Array.from(new Set(args.permissions.filter(isClinicArea)));
+
+    const existing = await ctx.db
+      .query("clinicRoles")
+      .withIndex("by_clinic", (q: any) => q.eq("clinicId", clinic._id))
+      .collect();
+    if (existing.some((role) => role._id !== args.roleId && role.name.toLowerCase() === name.toLowerCase())) {
+      throw new ConvexError(`You already have a role called "${name}"`);
+    }
+
+    const now = Date.now();
+    if (args.roleId) {
+      const role = existing.find((r) => r._id === args.roleId);
+      if (!role) throw new ConvexError("Role not found");
+      await ctx.db.patch(role._id, { name, permissions, updatedAt: now });
+      return { roleId: role._id };
+    }
+    if (existing.length >= 20) throw new ConvexError("You can have up to 20 roles");
+    const roleId = await ctx.db.insert("clinicRoles", { clinicId: clinic._id, name, permissions, createdAt: now, updatedAt: now });
+    return { roleId };
+  },
+});
+
+/** Delete a role. Anyone who had it gets full access until given another role. */
+export const deleteClinicRole = mutation({
+  args: { roleId: v.id("clinicRoles") },
+  handler: async (ctx, args) => {
+    const { clinic } = await getOwnerClinic(ctx);
+    const role = await ctx.db.get(args.roleId);
+    if (!role || role.clinicId !== clinic._id) throw new ConvexError("Role not found");
+
+    const members = await ctx.db
+      .query("users")
+      .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinic._id))
+      .collect();
+    for (const m of members) {
+      if (m.clinicRoleId === role._id) await ctx.db.patch(m._id, { clinicRoleId: undefined });
+    }
+    const invitations = await ctx.db
+      .query("clinicStaffInvitations")
+      .withIndex("by_clinic", (q: any) => q.eq("clinicId", clinic._id))
+      .collect();
+    for (const inv of invitations) {
+      if (inv.clinicRoleId === role._id) await ctx.db.patch(inv._id, { clinicRoleId: undefined });
+    }
+    await ctx.db.delete(role._id);
+    return { success: true };
+  },
+});
+
+/** Give a team member a role, or null for full access. */
+export const setMemberClinicRole = mutation({
+  args: { memberId: v.id("users"), roleId: v.union(v.id("clinicRoles"), v.null()) },
+  handler: async (ctx, args) => {
+    const { clinic } = await getOwnerClinic(ctx);
+    const target = await ctx.db.get(args.memberId);
+    if (!target || target.clinicId !== clinic._id || !isClinicTeamRole(target.role)) {
+      throw new ConvexError("This person isn't on your team");
+    }
+    if (args.roleId) {
+      const role = await ctx.db.get(args.roleId);
+      if (!role || role.clinicId !== clinic._id) throw new ConvexError("Role not found");
+    }
+    await ctx.db.patch(target._id, { clinicRoleId: args.roleId ?? undefined });
+    return { success: true };
+  },
+});
+
+/** Front-desk team members (receptionists, administrators): dashboard users who don't treat patients. */
+export const getClinicFrontDeskStaff = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await getClinicMemberOrPreview(ctx, "team");
+    if (!member) {
+      return [
+        {
+          userId: "prev_staff1" as Id<"users">,
+          firstName: "Ngozi",
+          lastName: "Obi",
+          email: "ngozi@example.com",
+          status: "active",
+          clinicRoleId: "prev_role1" as Id<"clinicRoles"> | null,
+          joinedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        },
+      ];
+    }
+    const users = await ctx.db
+      .query("users")
+      .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", member.clinic._id))
+      .collect();
+    return users
+      .filter((u) => u.role === "clinic_staff" && u.status !== "terminated")
+      .map((u) => ({
+        userId: u._id,
+        firstName: u.firstName || "",
+        lastName: u.lastName || "",
+        email: u.email || "",
+        status: u.status ?? "active",
+        clinicRoleId: (u.clinicRoleId ?? null) as Id<"clinicRoles"> | null,
+        joinedAt: u.joinedAt ?? u._creationTime,
+      }));
+  },
+});
+
+/** Remove a front-desk team member from the clinic (their account stays, without clinic access). */
+export const removeFrontDeskStaff = mutation({
+  args: { memberId: v.id("users") },
+  handler: async (ctx, args) => {
+    const { clinic } = await getOwnerClinic(ctx);
+    const target = await ctx.db.get(args.memberId);
+    if (!target || target.clinicId !== clinic._id || target.role !== "clinic_staff") {
+      throw new ConvexError("This person isn't on your front-desk team");
+    }
+    await ctx.db.patch(target._id, { clinicId: undefined, clinicRoleId: undefined, status: "terminated" });
+    return { success: true };
+  },
+});
+
+/** What the "Get your clinic ready" checklist on the home page reads. */
+export const getClinicSetupProgress = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await getClinicMemberOrPreview(ctx);
+    if (!member) return null;
+    const { clinic } = member;
+    const [payout, patientRel, clinician, invitation] = await Promise.all([
+      ctx.db.query("clinicPayoutAccounts").withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinic._id)).first(),
+      ctx.db.query("patientPhysiotherapistRelationships").withIndex("by_clinic", (q: any) => q.eq("clinicId", clinic._id)).first(),
+      ctx.db.query("physiotherapistProfiles").withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinic._id)).first(),
+      ctx.db.query("clinicStaffInvitations").withIndex("by_clinic", (q: any) => q.eq("clinicId", clinic._id)).first(),
+    ]);
+    return {
+      prices: (clinic.priceList?.length ?? 0) > 0,
+      payout: payout !== null,
+      patient: patientRel !== null,
+      // Sending an invite counts: the step is "Invite a clinician"
+      team: clinician !== null || invitation !== null,
+      logo: Boolean(clinic.logoUrl),
+    };
+  },
+});
+
+
+/**
+ * Everyone who can be assigned patients: the owner plus active clinicians.
+ * `isMe` marks the signed-in person; front-desk staff are never clinicians.
+ */
+export const getClinicClinicianOptions = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await getClinicMemberOrPreview(ctx);
+    if (!member) return [];
+    const { clinic, user: me } = member;
+    const fullName = (u: Doc<"users">) => `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || "Clinician";
+
+    const options: { id: Id<"users">; name: string; isOwner: boolean; isMe: boolean }[] = [];
+    const owner = await ctx.db.get(clinic.ownerId);
+    if (owner) options.push({ id: owner._id, name: fullName(owner), isOwner: true, isMe: owner._id === me._id });
+
+    const profiles = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinic._id))
+      .collect();
+    for (const profile of profiles) {
+      const clinician = await ctx.db.get(profile.userId);
+      // Membership follows the profile, same as assertStaffInClinic
+      if (!clinician || clinician._id === clinic.ownerId) continue;
+      if (clinician.status && clinician.status !== "active") continue;
+      options.push({ id: clinician._id, name: fullName(clinician), isOwner: false, isMe: clinician._id === me._id });
+    }
+    return options;
   },
 });

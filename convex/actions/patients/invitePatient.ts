@@ -4,6 +4,7 @@
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
 import { api } from "../../_generated/api";
+import { publicAppUrl } from "../../helpers/appUrl";
 
 // Define the return type for the invitation result
 type InvitationResult = {
@@ -74,7 +75,7 @@ export const createPatientInvitationWithNotification = action({
           physiotherapistName = user.email || 'Your Physiotherapist';
         }
         // Build invitation link using configured app URL; fallback to production domain
-        const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://physioaroundme.com';
+        const envBase = publicAppUrl();
         const baseUrl = envBase.replace(/\/$/, '');
         const invitationLink = `${baseUrl}/patient-invite/${result.invitationCode}`;
         const expiresAt = Date.now() + (args.expirationDays || 7) * 24 * 60 * 60 * 1000;

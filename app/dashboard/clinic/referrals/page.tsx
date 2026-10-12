@@ -35,6 +35,7 @@ import {
   StatusBadge,
   primaryButtonClass,
 } from '@/components/clinic/ui'
+import { friendlyError, useClinicianOptions } from '@/components/clinic/patients/patient-record-shared'
 
 type Referral = {
   _id: string
@@ -100,27 +101,16 @@ export default function ClinicReferralsPage() {
   const { requireFullAccess } = useClinicPreview()
   const referralsRaw = useQuery(api.clinicTools.getClinicRehabifyReferrals, {})
   const staffRaw = useQuery(api.clinics.getClinicStaff, {})
-  const me = useQuery(api.users.getMyUser)
 
   const [acceptTarget, setAcceptTarget] = useState<Referral | null>(null)
   const [declineTarget, setDeclineTarget] = useState<Referral | null>(null)
 
-  const clinicians = useMemo<ClinicianOption[]>(() => {
-    const list: ClinicianOption[] = []
-    const seen = new Set<string>()
-    if (me && me.role === 'clinic_owner') {
-      list.push({ id: me._id, name: 'You' })
-      seen.add(me._id)
-    }
-    for (const s of (staffRaw ?? []) as any[]) {
-      const id = String(s.userId ?? s.user?._id ?? '')
-      if (!id || seen.has(id)) continue
-      if (s.status && s.status !== 'active') continue
-      seen.add(id)
-      list.push({ id, name: personName(s.user, 'Clinician') })
-    }
-    return list
-  }, [staffRaw, me])
+  // The owner and active clinicians (front-desk staff can't take on patients)
+  const clinicianOptions = useClinicianOptions()
+  const clinicians = useMemo<ClinicianOption[]>(
+    () => clinicianOptions.options.map((o) => ({ id: o.id, name: o.label })),
+    [clinicianOptions.options]
+  )
 
   const clinicianNames = useMemo(() => {
     const map = new Map<string, string>()
@@ -379,7 +369,7 @@ function AcceptForm({
       toast.success(`${referral.patientName} accepted and added to your patients`)
       onClose()
     } catch (err: any) {
-      toast.error(err?.message || 'Could not accept the referral. Please try again.')
+      toast.error(friendlyError(err, 'Could not accept the referral. Please try again.'))
     } finally {
       setSaving(false)
     }
@@ -463,7 +453,7 @@ function DeclineForm({ referral, onClose }: { referral: Referral; onClose: () =>
       toast.success('Referral declined and returned to Rehabify')
       onClose()
     } catch (err: any) {
-      toast.error(err?.message || 'Could not decline the referral. Please try again.')
+      toast.error(friendlyError(err, 'Could not decline the referral. Please try again.'))
     } finally {
       setSaving(false)
     }

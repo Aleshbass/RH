@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Loader2, Upload, Twitter, Instagram, Linkedin, Globe, Users, Search as SearchIcon, Sparkles } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Loader2, Twitter, Instagram, Linkedin, Globe, Users, Search as SearchIcon, Sparkles } from 'lucide-react';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
@@ -18,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { FileUpload } from '@/components/ui/file-upload';
 import {
@@ -29,94 +29,51 @@ import {
     DialogDescription,
     DialogFooter,
 } from '@/components/ui/dialog';
-import LocationSearch from '@/components/marketplace/LocationSearch';
-import { useClinicDocuments } from '@/lib/hooks/useClinicDocuments';
+import MapboxAddressInput, { type MapboxPlace } from '@/components/physio-register/MapboxAddressInput';
 import { cn } from '@/lib/utils';
-import { Id } from '@/convex/_generated/dataModel';
-import { useMutationUntyped } from '@/lib/convexUntyped';
-import { UploadDropzone } from '@/components/ui/UploadDropzone';
-import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TagInput } from '@/components/ui/tag-input';
-import { Copy, Plus, X } from 'lucide-react';
-import { AvailabilityScheduler } from '@/components/onboarding/common/AvailabilityScheduler';
+import { AvailabilityScheduler, type OperatingHours } from '@/components/onboarding/common/AvailabilityScheduler';
 import { useFileUpload } from '@/lib/hooks/useFileUpload';
 
-// --- Schemas ---
+// --- Schema ---
 
-const personalInfoBaseSchema = z.object({
+const formSchema = z.object({
+    // About you
     firstName: z.string().min(2, "First name must be at least 2 characters"),
     lastName: z.string().min(2, "Last name must be at least 2 characters"),
-    email: z.string().email("Please enter a valid personal email address"),
-    phoneNumber: z.string().min(10, "Please enter a valid personal phone number"),
-    yearsInBusiness: z.number().min(0, "Years cannot be negative").max(150, "Please enter a valid number of years"),
+    email: z.string().optional(), // shown from the account, not edited here
+    phoneNumber: z.string().min(10, "Please enter a valid phone number"),
     isOwner: z.boolean(),
     positionIfNotOwner: z.string().optional(),
-});
 
-const personalInfoSchema = personalInfoBaseSchema.refine(data => data.isOwner || !!data.positionIfNotOwner, {
-    message: "Position is required if you are not the owner.",
-    path: ["positionIfNotOwner"],
-});
-
-const clinicInfoSchema = z.object({
+    // Your clinic
     clinicName: z.string().min(2, "Clinic name must be at least 2 characters"),
-    registrationNumber: z.string().min(2, "Registration number is required"),
-    clinicType: z.string().min(2, "Please select a clinic type"),
-    yearEstablished: z.number().min(1900, "Please enter a valid year"),
-});
-
-const contactInfoSchema = z.object({
+    registrationNumber: z.string().optional(),
     clinicEmail: z.string().email("Please enter a valid clinic email address"),
     clinicPhone: z.string().min(10, "Please enter a valid clinic phone number"),
     website: z.string().optional(),
-});
 
-const addressSchema = z.object({
-    clinicLocation: z.string().optional(), // For LocationSearch
-    address: z.string().min(5, "Please enter a valid address"),
+    // Location
+    clinicLocation: z.string().optional(), // the result picked in the address search
+    address: z.string().min(5, "Please enter the street address"),
     city: z.string().min(2, "City is required"),
     state: z.string().min(2, "State is required"),
-});
 
-const servicesSchema = z.object({
-    services: z.array(z.string()).min(1, 'Please select at least one service'),
-    specialties: z.array(z.string()).min(1, 'Please select at least one specialty'),
-});
-
-const facilitiesSchema = z.object({
-    facilities: z.array(z.string()).min(1, 'Please select at least one facility'),
-    equipmentAvailable: z.array(z.string()).optional(),
-});
-
-const operationsSchema = z.object({
-    operatingHours: z.any(), // Structured object
+    // Opening hours
+    operatingHours: z.any(),
     additionalNotes: z.string().optional(),
-});
 
-const documentsSchema = z.object({
+    // Review & submit
     referralSource: z.string().min(1, "Please tell us how you heard about us"),
     acceptTerms: z.boolean().refine(val => val === true, {
         message: "You must accept the terms and conditions"
     }),
-});
-
-// Combined Schema
-const fullSchema = z.object({
-    ...personalInfoBaseSchema.shape,
-    ...clinicInfoSchema.shape,
-    ...contactInfoSchema.shape,
-    ...addressSchema.shape,
-    ...servicesSchema.shape,
-    ...facilitiesSchema.shape,
-    ...operationsSchema.shape,
-    ...documentsSchema.shape,
-}).refine(data => data.isOwner || !!data.positionIfNotOwner, {
+}).refine(data => data.isOwner || !!data.positionIfNotOwner?.trim(), {
     message: "Position is required if you are not the owner.",
     path: ["positionIfNotOwner"],
 });
 
-type FormValues = z.infer<typeof fullSchema>;
+type FormValues = z.infer<typeof formSchema>;
 
 /** A readable message from a Convex error (ConvexError data, or the text after Convex's prefix). */
 function errorMessage(error: unknown, fallback: string) {
@@ -133,54 +90,91 @@ function errorMessage(error: unknown, fallback: string) {
 // --- Steps Configuration ---
 
 const steps = [
-    { id: 'personal', title: 'Owner Info' },
-    { id: 'clinic', title: 'Clinic Details' },
-    { id: 'contact', title: 'Contact Info' },
-    { id: 'address', title: 'Location' },
-    { id: 'services', title: 'Services' },
-    { id: 'facilities', title: 'Facilities' },
-    { id: 'operations', title: 'Operations' },
-    { id: 'documents', title: 'Documents' },
-    { id: 'review', title: 'Review & Submit' },
+    { id: 'about', title: 'About you' },
+    { id: 'clinic', title: 'Your clinic' },
+    { id: 'location', title: 'Location' },
+    { id: 'hours', title: 'Opening hours' },
+    { id: 'licence', title: 'Business licence' },
+    { id: 'review', title: 'Review & submit' },
 ];
 
-const DOCUMENTS_STEP = 7;
-const DRAFT_STORAGE_KEY = 'clinicOwnerOnboardingData';
-const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const LOCATION_STEP = 2;
+const HOURS_STEP = 3;
+const DOCUMENTS_STEP = 4;
+const REVIEW_STEP = 5;
 
-// Form fields validated on each step (the documents step is checked separately)
+const DRAFT_STORAGE_KEY = 'clinicOwnerOnboardingData';
+const DRAFT_VERSION = 2;
+const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+// Drafts saved by the old 9-step wizard: the step each old step now belongs to
+const LEGACY_STEP_MAP = [0, 1, 1, 2, 3, 3, 3, 4, 5];
+
+const HAS_MAPBOX = Boolean(process.env.NEXT_PUBLIC_MAPBOX_TOKEN);
+
+// Form fields validated on each step (the licence step is checked separately)
 const stepFields: (keyof FormValues)[][] = [
-    ['firstName', 'lastName', 'email', 'phoneNumber', 'yearsInBusiness', 'isOwner', 'positionIfNotOwner'],
-    ['clinicName', 'registrationNumber', 'clinicType', 'yearEstablished'],
-    ['clinicEmail', 'clinicPhone', 'website'],
+    ['firstName', 'lastName', 'phoneNumber', 'isOwner', 'positionIfNotOwner'],
+    ['clinicName', 'registrationNumber', 'clinicEmail', 'clinicPhone', 'website'],
     ['address', 'city', 'state'],
-    ['services', 'specialties'],
-    ['facilities', 'equipmentAvailable'],
     ['operatingHours', 'additionalNotes'],
     [],
     ['referralSource', 'acceptTerms'],
 ];
 
-// Everything the clinic record stores from the wizard; sent on every save so edits are never lost
+// Form fields brought back from a saved draft
+const restoredFields: (keyof FormValues)[] = [
+    'firstName', 'lastName', 'email', 'phoneNumber', 'isOwner', 'positionIfNotOwner',
+    'clinicName', 'registrationNumber', 'clinicEmail', 'clinicPhone', 'website',
+    'clinicLocation', 'address', 'city', 'state',
+    'operatingHours', 'additionalNotes', 'referralSource', 'acceptTerms',
+];
+
+const clean = (value?: string) => value?.trim() || undefined;
+
+// What the clinic record stores from the wizard; sent on every save so edits are never lost.
+// Services, facilities and photos are added later in Clinic settings.
 function buildClinicDetails(values: FormValues) {
     return {
-        name: values.clinicName,
-        address: values.address || undefined,
-        city: values.city || undefined,
-        state: values.state || undefined,
-        contactEmail: values.clinicEmail || undefined,
-        contactPhone: values.clinicPhone || undefined,
-        website: values.website || undefined,
-        registrationNumber: values.registrationNumber || undefined,
-        clinicType: values.clinicType || undefined,
-        yearEstablished: Number.isFinite(values.yearEstablished) ? values.yearEstablished : undefined,
-        services: values.services?.length ? values.services : undefined,
-        specializations: values.specialties?.length ? values.specialties : undefined,
-        facilities: values.facilities?.length ? values.facilities : undefined,
-        equipment: values.equipmentAvailable?.length ? values.equipmentAvailable : undefined,
+        name: values.clinicName.trim(),
+        address: clean(values.address),
+        city: clean(values.city),
+        state: clean(values.state),
+        contactEmail: clean(values.clinicEmail),
+        contactPhone: clean(values.clinicPhone),
+        website: clean(values.website),
+        registrationNumber: clean(values.registrationNumber),
         workingHours: values.operatingHours ?? undefined,
-        additionalNotes: values.additionalNotes || undefined,
+        additionalNotes: clean(values.additionalNotes),
     };
+}
+
+/** The clinic's one-line location: the picked search result, or the typed address. */
+function locationLabel(values: FormValues) {
+    return clean(values.clinicLocation)
+        ?? clean([values.address, values.city, values.state].map(clean).filter(Boolean).join(', '));
+}
+
+const DAY_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** e.g. "Mon–Fri 09:00–17:00; Sat 10:00–14:00" */
+function summarizeHours(hours: OperatingHours | undefined) {
+    const groups: { from: number; to: number; times: string }[] = [];
+    DAY_KEYS.forEach((day, i) => {
+        const schedule = hours?.[day];
+        if (!schedule?.isOpen || !schedule.slots?.length) return;
+        const times = schedule.slots.map(s => `${s.start}–${s.end}`).join(', ');
+        const last = groups[groups.length - 1];
+        if (last && last.to === i - 1 && last.times === times) {
+            last.to = i;
+        } else {
+            groups.push({ from: i, to: i, times });
+        }
+    });
+    if (!groups.length) return 'Closed every day';
+    return groups
+        .map(g => `${DAY_SHORT[g.from]}${g.to > g.from ? `–${DAY_SHORT[g.to]}` : ''} ${g.times}`)
+        .join('; ');
 }
 
 export default function ClinicOwnerOnboardingWizard() {
@@ -188,11 +182,12 @@ export default function ClinicOwnerOnboardingWizard() {
     const { data, updateClinicOwnerData, setActualClinicId, completeOnboarding } = useOnboardingStore();
     const { clinicOwnerData, actualClinicId } = data;
     const currentUser = useQuery(api.users.getMyUser);
+    const { isSignedIn } = useUser();
 
     const createClinicMutation = useMutation(api.clinics.createClinic);
     const completeUserProfileMutation = useMutation(api.users.completeUserProfile);
-    const generateUploadUrl = useMutationUntyped((api as unknown as { files: { generateUploadUrl: unknown } }).files.generateUploadUrl);
-
+    const saveClinicDocument = useMutation(api.files.saveClinicDocument);
+    const { uploadFile } = useFileUpload();
 
     const [currentStep, setCurrentStep] = useState(0);
     const [direction, setDirection] = useState(0);
@@ -202,98 +197,31 @@ export default function ClinicOwnerOnboardingWizard() {
     const [isSkipping, setIsSkipping] = useState(false);
     const [isSkipModalOpen, setIsSkipModalOpen] = useState(false);
 
-
-    // Document State
+    // Business licence files live only in memory. Files already saved are skipped if submit is retried.
     const [businessLicense, setBusinessLicense] = useState<File[]>([]);
-    const [taxRegistration, setTaxRegistration] = useState<File[]>([]);
-    const [insuranceProof, setInsuranceProof] = useState<File[]>([]);
-    const [ownerIdentification, setOwnerIdentification] = useState<File[]>([]);
-    const [additionalDocuments, setAdditionalDocuments] = useState<File[]>([]);
+    const savedLicenceFiles = useRef(new WeakSet<File>());
 
-    // Clinic Images State
-    const [clinicImageOutside, setClinicImageOutside] = useState<File | null>(null);
-    const [clinicImageInside, setClinicImageInside] = useState<File | null>(null);
-
-    // Guest Profile Photo handling
-    const [guestProfilePhotoId, setGuestProfilePhotoId] = useState<string | null>(null);
-    const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
-
-    useEffect(() => {
-        return () => {
-            if (profilePhotoPreviewUrl) {
-                URL.revokeObjectURL(profilePhotoPreviewUrl);
-            }
-        };
-    }, [profilePhotoPreviewUrl]);
-
-    // Auth
-    const { user, isSignedIn } = useUser();
-
-    // Profile Photo Upload
-    const updateProfileImage = useMutation(api.users.updateProfileImageFromStorage);
-    const { uploadFile: uploadProfilePhoto, isUploading: isProfilePhotoUploading } = useFileUpload();
-
-    const handleProfilePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        try {
-            const { storageId } = await uploadProfilePhoto(file);
-            if (storageId) {
-                if (isSignedIn) {
-                    await updateProfileImage({ storageId });
-                    toast.success("Profile photo updated successfully");
-                } else {
-                    setGuestProfilePhotoId(storageId);
-                    if (profilePhotoPreviewUrl) {
-                        URL.revokeObjectURL(profilePhotoPreviewUrl);
-                    }
-                    setProfilePhotoPreviewUrl(URL.createObjectURL(file));
-                    toast.success("Profile photo uploaded! It will be linked after you sign up.");
-                }
-            }
-        } catch (error: any) {
-            console.error("Failed to upload profile photo:", error);
-            if (error.message?.includes("logged in") || error.message?.includes("authenticated")) {
-                toast.error("Please sign in to upload your profile photo");
-            } else {
-                toast.error("Failed to upload profile photo");
-            }
-        }
-    };
-
-    const { uploadClinicDocument } = useClinicDocuments({ clinicId: actualClinicId as Id<"clinics"> });
-
-    const { control, handleSubmit, trigger, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormValues>({
-        resolver: zodResolver(fullSchema),
+    const { control, register, trigger, watch, setValue, getValues, formState: { errors, isSubmitting } } = useForm<FormValues>({
+        resolver: zodResolver(formSchema),
         mode: 'onChange',
         defaultValues: {
             firstName: clinicOwnerData.firstName || '',
             lastName: clinicOwnerData.lastName || '',
             email: clinicOwnerData.email || '',
             phoneNumber: clinicOwnerData.phoneNumber || '',
-            yearsInBusiness: clinicOwnerData.yearsInBusiness || undefined,
             isOwner: clinicOwnerData.isOwner ?? true,
             positionIfNotOwner: clinicOwnerData.positionIfNotOwner || '',
 
             clinicName: clinicOwnerData.clinicName || '',
             registrationNumber: clinicOwnerData.registrationNumber || '',
-            clinicType: clinicOwnerData.clinicType || '',
-            yearEstablished: clinicOwnerData.yearEstablished || new Date().getFullYear(),
-
             clinicEmail: clinicOwnerData.clinicEmail || '',
             clinicPhone: clinicOwnerData.clinicPhone || '',
             website: clinicOwnerData.website || '',
 
-            address: clinicOwnerData.address || '',
             clinicLocation: clinicOwnerData.clinicLocation || '',
+            address: clinicOwnerData.address || '',
             city: clinicOwnerData.city || '',
             state: clinicOwnerData.state || '',
-
-            services: clinicOwnerData.services || [],
-            specialties: clinicOwnerData.specialties || [],
-            facilities: clinicOwnerData.facilities || [],
-            equipmentAvailable: clinicOwnerData.equipmentAvailable || [],
 
             operatingHours: clinicOwnerData.operatingHours || {
                 monday: { isOpen: true, slots: [{ start: '09:00', end: '17:00' }] },
@@ -321,7 +249,7 @@ export default function ClinicOwnerOnboardingWizard() {
     }, [currentUser, setValue, clinicOwnerData.firstName]);
 
     // Persist progress after each step so a refresh or a skip can resume where the owner left off.
-    // Uploaded documents live only in memory and must be re-attached after a reload.
+    // The licence files live only in memory and must be re-attached after a reload.
     const saveDraft = (step: number, extra: Record<string, unknown> = {}) => {
         try {
             localStorage.setItem(
@@ -329,7 +257,7 @@ export default function ClinicOwnerOnboardingWizard() {
                 JSON.stringify({
                     formData: watch(),
                     currentStep: step,
-                    guestProfilePhotoId,
+                    version: DRAFT_VERSION,
                     actualClinicId,
                     timestamp: Date.now(),
                     ...extra,
@@ -347,37 +275,26 @@ export default function ClinicOwnerOnboardingWizard() {
             if (savedData) {
                 const parsed = JSON.parse(savedData);
                 if (Date.now() - parsed.timestamp < DRAFT_MAX_AGE_MS) {
-                    // Restore form values
-                    const fieldsToRestore = [
-                        'firstName', 'lastName', 'email', 'phoneNumber', 'yearsInBusiness', 
-                        'isOwner', 'positionIfNotOwner', 'clinicName', 'registrationNumber', 
-                        'clinicType', 'yearEstablished', 'clinicEmail', 'clinicPhone', 
-                        'website', 'address', 'clinicLocation', 'city', 'state', 
-                        'services', 'specialties', 'facilities', 'equipmentAvailable', 
-                        'operatingHours', 'additionalNotes', 'referralSource', 'acceptTerms'
-                    ];
-
-                    fieldsToRestore.forEach(field => {
-                        if (parsed.formData[field] !== undefined) {
-                            setValue(field as any, parsed.formData[field]);
+                    restoredFields.forEach(field => {
+                        if (parsed.formData?.[field] !== undefined) {
+                            setValue(field, parsed.formData[field]);
                         }
                     });
 
-                    if (parsed.guestProfilePhotoId) {
-                        setGuestProfilePhotoId(parsed.guestProfilePhotoId);
-                    }
                     if (parsed.actualClinicId) {
                         setActualClinicId(parsed.actualClinicId);
                     }
 
-                    // Resume on the step they reached. Documents are not kept across reloads,
-                    // so anyone who had passed that step goes back to re-attach them.
+                    // Resume on the step they reached (drafts from the older, longer wizard are mapped
+                    // onto the new steps). The licence is not kept across reloads, so anyone who had
+                    // passed that step goes back to re-attach it.
                     const savedStep = typeof parsed.currentStep === 'number' ? parsed.currentStep : 0;
-                    const resumeStep = Math.max(0, Math.min(savedStep, DOCUMENTS_STEP));
+                    const step = parsed.version === DRAFT_VERSION ? savedStep : (LEGACY_STEP_MAP[savedStep] ?? 0);
+                    const resumeStep = Math.max(0, Math.min(step, DOCUMENTS_STEP));
                     setCurrentStep(resumeStep);
                     toast.success(
-                        savedStep > DOCUMENTS_STEP
-                            ? 'Welcome back! Please re-attach your documents to finish.'
+                        step > DOCUMENTS_STEP
+                            ? 'Welcome back! Please re-attach your business licence to finish.'
                             : 'Welcome back! We restored your progress.'
                     );
                 }
@@ -385,9 +302,9 @@ export default function ClinicOwnerOnboardingWizard() {
         } catch { }
     }, [isSignedIn, setValue, setActualClinicId]);
 
-    // Simulate loading for availability step
+    // Simulate loading for the opening hours step
     useEffect(() => {
-        if (currentStep === 6) { // Operations step
+        if (currentStep === HOURS_STEP) {
             setIsAvailabilityLoading(true);
             const timer = setTimeout(() => {
                 setIsAvailabilityLoading(false);
@@ -396,8 +313,20 @@ export default function ClinicOwnerOnboardingWizard() {
         }
     }, [currentStep]);
 
-    const hasRequiredDocuments = () =>
-        businessLicense.length > 0 && taxRegistration.length > 0 && insuranceProof.length > 0 && ownerIdentification.length > 0;
+    const hasRequiredDocuments = () => businessLicense.length > 0;
+
+    // Fill the address fields from a picked search result. They stay editable afterwards.
+    const handlePlacePicked = (place: MapboxPlace) => {
+        const opts = { shouldValidate: true, shouldDirty: true } as const;
+        setValue('clinicLocation', place.placeName, { shouldDirty: true });
+        const line = [place.street, place.area].filter(Boolean).join(', ');
+        // A street result replaces the address line; an area result only fills an empty one
+        if (line && (place.street || !getValues('address')?.trim())) {
+            setValue('address', line, opts);
+        }
+        if (place.city) setValue('city', place.city, opts);
+        if (place.state) setValue('state', place.state, opts);
+    };
 
     const goToStep = (step: number) => {
         setDirection(step > currentStep ? 1 : -1);
@@ -407,7 +336,7 @@ export default function ClinicOwnerOnboardingWizard() {
     const nextStep = async () => {
         if (currentStep === DOCUMENTS_STEP) {
             if (!hasRequiredDocuments()) {
-                toast.error("Please upload all required documents");
+                toast.error("Please upload your business licence");
                 return;
             }
         } else {
@@ -417,7 +346,7 @@ export default function ClinicOwnerOnboardingWizard() {
 
         // Save the clinic record once the location is known. createClinic updates the owner's
         // existing clinic (including the placeholder made by "Skip"), so this never duplicates.
-        if (currentStep === 3 && isSignedIn) {
+        if (currentStep === LOCATION_STEP && isSignedIn) {
             try {
                 const result = await createClinicMutation(buildClinicDetails(watch()));
                 if (result.success && result.clinicId) {
@@ -464,7 +393,7 @@ export default function ClinicOwnerOnboardingWizard() {
         for (let step = 0; step < stepFields.length; step++) {
             if (step === DOCUMENTS_STEP) {
                 if (!hasRequiredDocuments()) {
-                    toast.error("Please upload all required documents");
+                    toast.error("Please upload your business licence");
                     goToStep(DOCUMENTS_STEP);
                     return;
                 }
@@ -480,27 +409,7 @@ export default function ClinicOwnerOnboardingWizard() {
 
         setIsFinishing(true);
         try {
-            // Helper to upload image and get storageId
-            const uploadImage = async (file: File) => {
-                const uploadUrl = await generateUploadUrl({
-                    fileType: file.type || "application/octet-stream",
-                    fileName: file.name,
-                });
-                const res = await fetch(uploadUrl, {
-                    method: "POST",
-                    headers: { "Content-Type": file.type || "application/octet-stream" },
-                    body: file,
-                });
-                if (!res.ok) throw new Error(`Failed to upload ${file.name}`);
-                const { storageId } = await res.json();
-                return storageId;
-            };
-
-            let outsideImageId, insideImageId;
-            if (clinicImageOutside) outsideImageId = await uploadImage(clinicImageOutside);
-            if (clinicImageInside) insideImageId = await uploadImage(clinicImageInside);
-
-            // Save every clinic detail (creates the clinic, or updates the owner's existing one)
+            // 1. Save every clinic detail (creates the clinic, or updates the owner's existing one)
             const clinicResult = await createClinicMutation(buildClinicDetails(formData));
             if (!clinicResult.success || !clinicResult.clinicId) {
                 throw new Error("Failed to save clinic record");
@@ -508,27 +417,12 @@ export default function ClinicOwnerOnboardingWizard() {
             const clinicId = clinicResult.clinicId;
             setActualClinicId(clinicId);
 
-            // 2. Upload Documents
-            if (clinicId) {
-                const uploadPromises = [
-                    ...businessLicense.map(f => uploadClinicDocument(f, "businessLicense", clinicId!)),
-                    ...taxRegistration.map(f => uploadClinicDocument(f, "taxRegistration", clinicId!)),
-                    ...insuranceProof.map(f => uploadClinicDocument(f, "insuranceProof", clinicId!)),
-                    ...ownerIdentification.map(f => uploadClinicDocument(f, "ownerIdentification", clinicId!)),
-                    ...additionalDocuments.map(f => uploadClinicDocument(f, "additionalDocument", clinicId!)),
-                ];
-
-                await Promise.all(uploadPromises);
-            }
-
-            // If they uploaded a profile photo as a guest, link it to their user record NOW
-            if (guestProfilePhotoId && typeof guestProfilePhotoId === 'string') {
-                try {
-                    await updateProfileImage({ storageId: guestProfilePhotoId as Id<"_storage"> });
-                } catch (e: any) {
-                    console.error("Failed to link guest profile photo", e);
-                    toast.error("Could not link your profile photo. Please upload it again later.");
-                }
+            // 2. Upload the business licence. A failed upload stops the submission.
+            for (const file of businessLicense) {
+                if (savedLicenceFiles.current.has(file)) continue;
+                const { storageId } = await uploadFile(file);
+                await saveClinicDocument({ clinicId, storageId, documentType: "businessLicense", fileName: file.name });
+                savedLicenceFiles.current.add(file);
             }
 
             // 3. Submit Profile Data
@@ -536,11 +430,8 @@ export default function ClinicOwnerOnboardingWizard() {
                 role: "clinic_owner",
                 profileData: {
                     referralSource: formData.referralSource,
-                    yearsInBusiness: formData.yearsInBusiness,
                     gender: 'prefer_not_to_say', // Default or add to form if needed
-                    clinicLocation: formData.clinicLocation,
-                    clinicImageOutside: outsideImageId,
-                    clinicImageInside: insideImageId,
+                    clinicLocation: locationLabel(formData),
                 },
                 firstName: formData.firstName,
                 lastName: formData.lastName,
@@ -560,7 +451,7 @@ export default function ClinicOwnerOnboardingWizard() {
             // so go straight to the clinic dashboard rather than showing a modal.
             toast.success("Application submitted! We'll notify you once your clinic is verified.");
             router.replace('/dashboard/clinic');
-        } catch (error: any) {
+        } catch (error) {
             console.error("Submission error:", error);
             toast.error(errorMessage(error, "Could not submit your application. Please try again."));
         } finally {
@@ -589,9 +480,8 @@ export default function ClinicOwnerOnboardingWizard() {
                 role: 'clinic_owner',
                 profileData: {
                     referralSource: currentFormValues.referralSource || 'preview_skipped',
-                    yearsInBusiness: currentFormValues.yearsInBusiness || 0,
                     gender: 'prefer_not_to_say',
-                    clinicLocation: currentFormValues.clinicLocation,
+                    clinicLocation: locationLabel(currentFormValues),
                 },
                 firstName: currentFormValues.firstName || currentUser?.firstName || undefined,
                 lastName: currentFormValues.lastName || currentUser?.lastName || undefined,
@@ -601,7 +491,7 @@ export default function ClinicOwnerOnboardingWizard() {
 
             toast.info("Entering Preview Mode. Welcome to your Clinic OS.");
             router.push('/dashboard/clinic');
-        } catch (error: any) {
+        } catch (error) {
             console.error("Skip error:", error);
             // Even if database provisioning takes a moment, allow entering preview mode smoothly
             toast.info("Entering Preview Mode.");
@@ -619,10 +509,6 @@ export default function ClinicOwnerOnboardingWizard() {
         exit: (direction: number) => ({ zIndex: 0, x: direction < 0 ? 20 : -20, opacity: 0 }),
     };
 
-    const serviceOptions = ['Physical Therapy', 'Occupational Therapy', 'Speech Therapy', 'Massage Therapy', 'Chiropractic Care', 'Sports Medicine'];
-    const specialtyOptions = ['Back & Neck Pain', 'Sports Injuries', 'Post-Surgical', 'Stroke Rehab', 'Balance & Vestibular', 'Orthopedic'];
-    const facilityOptions = ['Private Rooms', 'Open Gym', 'Hydrotherapy Pool', 'Accessible Entrance', 'Parking', 'Waiting Area'];
-
     const socialOptions = [
         { id: 'twitter', label: 'X (Twitter)', icon: Twitter },
         { id: 'instagram', label: 'Instagram', icon: Instagram },
@@ -635,6 +521,47 @@ export default function ClinicOwnerOnboardingWizard() {
     const isPresetReferralSource = socialOptions.slice(0, 5).some(o => o.label === referralSourceValue);
     // "Other" is active once chosen, or when a restored draft holds a custom answer
     const isOtherReferralSource = !isPresetReferralSource && (otherReferralChosen || referralSourceValue !== '');
+
+    const accountEmail = currentUser?.email || watch('email');
+
+    const values = watch();
+    const reviewSections: { step: number; title: string; lines: (string | undefined)[] }[] = [
+        {
+            step: 0,
+            title: 'About you',
+            lines: [
+                `${values.firstName ?? ''} ${values.lastName ?? ''}`.trim(),
+                values.phoneNumber,
+                values.isOwner ? 'Clinic owner' : values.positionIfNotOwner,
+            ],
+        },
+        {
+            step: 1,
+            title: 'Your clinic',
+            lines: [
+                values.clinicName,
+                values.clinicEmail,
+                values.clinicPhone,
+                values.registrationNumber && `Reg. no. ${values.registrationNumber}`,
+                values.website,
+            ],
+        },
+        {
+            step: LOCATION_STEP,
+            title: 'Location',
+            lines: [values.address, [values.city, values.state].filter(Boolean).join(', ')],
+        },
+        {
+            step: HOURS_STEP,
+            title: 'Opening hours',
+            lines: [summarizeHours(values.operatingHours)],
+        },
+        {
+            step: DOCUMENTS_STEP,
+            title: 'Business licence',
+            lines: businessLicense.length ? businessLicense.map(f => f.name) : ['Not uploaded'],
+        },
+    ];
 
     return (
         <div className="w-full max-w-xl mx-auto px-4 py-6">
@@ -679,99 +606,39 @@ export default function ClinicOwnerOnboardingWizard() {
                         transition={{ x: { type: "spring", stiffness: 300, damping: 30 }, opacity: { duration: 0.2 } }}
                         className="w-full"
                     >
-                        {/* Step 1: Owner Info */}
+                        {/* Step 1: About you */}
                         {currentStep === 0 && (
                             <div className="space-y-6">
                                 <div className="text-center mb-6">
-                                    <h2 className="text-2xl font-bold text-[#002e2c]">Owner Information</h2>
-                                    <p className="text-gray-500">Tell us about yourself</p>
-                                </div>
-
-                                {/* Profile Photo Section */}
-                                <div className="flex flex-col items-center space-y-4 p-6 bg-gray-50 rounded-xl border border-gray-100 mb-6">
-                                    <div className="relative group">
-                                        <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-md">
-                                            {profilePhotoPreviewUrl || currentUser?.imageUrl ? (
-                                                <img
-                                                    src={profilePhotoPreviewUrl || currentUser?.imageUrl}
-                                                    alt="Profile"
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                                    <Users className="w-10 h-10" />
-                                                </div>
-                                            )}
-
-                                            {/* Loading Overlay */}
-                                            {isProfilePhotoUploading && (
-                                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                                                    <Loader2 className="w-6 h-6 text-white animate-spin" />
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <label
-                                            htmlFor="profile-photo-upload"
-                                            className="absolute bottom-0 right-0 bg-[#005b57] text-white p-2 rounded-full shadow-lg cursor-pointer hover:bg-[#00443e] transition-colors"
-                                        >
-                                            <Plus className="w-4 h-4" />
-                                            <input
-                                                id="profile-photo-upload"
-                                                type="file"
-                                                accept="image/*"
-                                                className="hidden"
-                                                onChange={handleProfilePhotoUpload}
-                                                disabled={isProfilePhotoUploading}
-                                            />
-                                        </label>
-                                    </div>
-
-                                    <div className="text-center space-y-1">
-                                        <h3 className="font-medium text-gray-900">Profile Photo</h3>
-                                        <p className="text-xs text-gray-500 max-w-[200px]">
-                                            Please use a professional profile photo. This helps build trust with patients.
-                                        </p>
-                                    </div>
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">About you</h2>
+                                    <p className="text-gray-500">The person setting up this clinic</p>
                                 </div>
 
                                 <div className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="space-y-2">
-                                            <Label>First Name</Label>
-                                            <Input {...control.register('firstName')} placeholder="First Name" />
-                                            {errors.firstName && <p className="text-red-500 text-sm">{errors.firstName.message as string}</p>}
+                                            <Label htmlFor="firstName">First name</Label>
+                                            <Input id="firstName" {...register('firstName')} autoComplete="given-name" />
+                                            {errors.firstName && <p className="text-xs text-red-500">{errors.firstName.message as string}</p>}
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>Last Name</Label>
-                                            <Input {...control.register('lastName')} placeholder="Last Name" />
-                                            {errors.lastName && <p className="text-red-500 text-sm">{errors.lastName.message as string}</p>}
+                                            <Label htmlFor="lastName">Last name</Label>
+                                            <Input id="lastName" {...register('lastName')} autoComplete="family-name" />
+                                            {errors.lastName && <p className="text-xs text-red-500">{errors.lastName.message as string}</p>}
                                         </div>
                                     </div>
+                                    {accountEmail && (
+                                        <div className="space-y-2">
+                                            <Label htmlFor="email">Email</Label>
+                                            <Input id="email" value={accountEmail} readOnly className="bg-gray-50 text-gray-600" />
+                                            <p className="text-xs text-gray-500">From your account</p>
+                                        </div>
+                                    )}
                                     <div className="space-y-2">
-                                        <Label>Personal Email</Label>
-                                        <Input {...control.register('email')} placeholder="Email" type="email" />
-                                        {errors.email && <p className="text-red-500 text-sm">{errors.email.message as string}</p>}
+                                        <Label htmlFor="phoneNumber">Phone number</Label>
+                                        <Input id="phoneNumber" type="tel" {...register('phoneNumber')} autoComplete="tel" />
+                                        {errors.phoneNumber && <p className="text-xs text-red-500">{errors.phoneNumber.message as string}</p>}
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label>Personal Phone</Label>
-                                        <Input {...control.register('phoneNumber')} placeholder="Phone Number" />
-                                        {errors.phoneNumber && <p className="text-red-500 text-sm">{errors.phoneNumber.message as string}</p>}
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label htmlFor="yearsInBusiness">Years of Operation</Label>
-                                        <Input
-                                            id="yearsInBusiness"
-                                            type="number"
-                                            placeholder="e.g. 5"
-                                            {...control.register("yearsInBusiness", { valueAsNumber: true })}
-                                            className={cn("h-12 rounded-xl", errors.yearsInBusiness && "border-red-500")}
-                                        />
-                                        {errors.yearsInBusiness && <p className="text-red-500 text-sm">{errors.yearsInBusiness.message as string}</p>}
-                                    </div>
-
-
 
                                     <div className="space-y-3 p-4 bg-gray-50 rounded-xl">
                                         <Label>Are you the clinic owner?</Label>
@@ -794,138 +661,92 @@ export default function ClinicOwnerOnboardingWizard() {
                                     </div>
                                     {!watch('isOwner') && (
                                         <div className="space-y-2">
-                                            <Label>Your Position</Label>
-                                            <Input {...control.register('positionIfNotOwner')} placeholder="e.g. Manager" />
-                                            {errors.positionIfNotOwner && <p className="text-red-500 text-sm">{errors.positionIfNotOwner.message as string}</p>}
+                                            <Label htmlFor="positionIfNotOwner">Your position</Label>
+                                            <Input id="positionIfNotOwner" {...register('positionIfNotOwner')} placeholder="e.g. Manager" />
+                                            {errors.positionIfNotOwner && <p className="text-xs text-red-500">{errors.positionIfNotOwner.message as string}</p>}
                                         </div>
                                     )}
                                 </div>
                             </div>
                         )}
 
-                        {/* Step 2: Clinic Details */}
+                        {/* Step 2: Your clinic */}
                         {currentStep === 1 && (
                             <div className="space-y-6">
                                 <div className="text-center mb-6">
-                                    <h2 className="text-2xl font-bold text-[#002e2c]">Clinic Details</h2>
-                                    <p className="text-gray-500">Basic information about your clinic</p>
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Your clinic</h2>
+                                    <p className="text-gray-500">How patients will find and contact you</p>
                                 </div>
                                 <div className="space-y-4">
                                     <div className="space-y-2">
-                                        <Label>Clinic Name</Label>
-                                        <Input {...control.register('clinicName')} placeholder="Clinic Name" />
+                                        <Label htmlFor="clinicName">Clinic name</Label>
+                                        <Input id="clinicName" {...register('clinicName')} autoComplete="organization" />
                                         {errors.clinicName && <p className="text-xs text-red-500">{errors.clinicName.message as string}</p>}
                                     </div>
                                     <div className="space-y-2">
-                                        <Label>Registration Number</Label>
-                                        <Input {...control.register('registrationNumber')} placeholder="Reg. Number" />
-                                        {errors.registrationNumber && <p className="text-xs text-red-500">{errors.registrationNumber.message as string}</p>}
+                                        <Label htmlFor="registrationNumber">CAC / registration number (optional)</Label>
+                                        <Input id="registrationNumber" {...register('registrationNumber')} placeholder="e.g. RC 1234567" />
+                                        <p className="text-xs text-gray-500">Helps us verify your clinic faster.</p>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="clinicEmail">Clinic email</Label>
+                                            <Input id="clinicEmail" {...register('clinicEmail')} type="email" autoComplete="email" />
+                                            {errors.clinicEmail && <p className="text-xs text-red-500">{errors.clinicEmail.message as string}</p>}
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="clinicPhone">Clinic phone</Label>
+                                            <Input id="clinicPhone" {...register('clinicPhone')} type="tel" />
+                                            {errors.clinicPhone && <p className="text-xs text-red-500">{errors.clinicPhone.message as string}</p>}
+                                        </div>
                                     </div>
                                     <div className="space-y-2">
-                                        <Label>Clinic Type</Label>
-                                        <Select onValueChange={(val) => setValue('clinicType', val, { shouldValidate: true })} value={watch('clinicType') || undefined}>
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select Type" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="Private Clinic">Private Clinic</SelectItem>
-                                                <SelectItem value="Hospital">Hospital</SelectItem>
-                                                <SelectItem value="Rehab Center">Rehab Center</SelectItem>
-                                                <SelectItem value="Other">Other</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        {errors.clinicType && <p className="text-xs text-red-500">{errors.clinicType.message as string}</p>}
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Year Established</Label>
-                                        <Input {...control.register('yearEstablished', { valueAsNumber: true })} type="number" placeholder="Year" />
-                                        {errors.yearEstablished && <p className="text-xs text-red-500">{errors.yearEstablished.message as string}</p>}
-                                    </div>
-
-                                </div>
-
-                                <div className="space-y-2">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <UploadDropzone
-                                            label="Clinic Outside Picture"
-                                            value={clinicImageOutside}
-                                            onFileSelected={setClinicImageOutside}
-                                            maxSizeMb={10}
-                                            variant="image"
-                                            name="clinicImageOutside"
-                                            id="clinicImageOutside"
-                                        />
-                                        <UploadDropzone
-                                            label="Clinic Inside Picture"
-                                            value={clinicImageInside}
-                                            onFileSelected={setClinicImageInside}
-                                            maxSizeMb={10}
-                                            variant="image"
-                                            name="clinicImageInside"
-                                            id="clinicImageInside"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 3: Contact Info */}
-                        {currentStep === 2 && (
-                            <div className="space-y-6">
-                                <div className="text-center mb-6">
-                                    <h2 className="text-2xl font-bold text-[#002e2c]">Contact Info</h2>
-                                    <p className="text-gray-500">How can patients reach the clinic?</p>
-                                </div>
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label>Clinic Email</Label>
-                                        <Input {...control.register('clinicEmail')} type="email" placeholder="Clinic Email" />
-                                        {errors.clinicEmail && <p className="text-xs text-red-500">{errors.clinicEmail.message as string}</p>}
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Clinic Phone</Label>
-                                        <Input {...control.register('clinicPhone')} placeholder="Clinic Phone" />
-                                        {errors.clinicPhone && <p className="text-xs text-red-500">{errors.clinicPhone.message as string}</p>}
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Website (Optional)</Label>
-                                        <Input {...control.register('website')} placeholder="https://..." />
+                                        <Label htmlFor="website">Website (optional)</Label>
+                                        <Input id="website" {...register('website')} placeholder="https://" />
                                         {errors.website && <p className="text-xs text-red-500">{errors.website.message as string}</p>}
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Step 4: Location */}
-                        {currentStep === 3 && (
+                        {/* Step 3: Location */}
+                        {currentStep === LOCATION_STEP && (
                             <div className="space-y-6">
                                 <div className="text-center mb-6">
                                     <h2 className="text-2xl font-bold text-[#002e2c]">Location</h2>
-                                    <p className="text-gray-500">Where is the clinic located?</p>
+                                    <p className="text-gray-500">Where is the clinic?</p>
                                 </div>
                                 <div className="space-y-4">
+                                    {HAS_MAPBOX && (
+                                        <div className="space-y-2">
+                                            <Label>Search for the address</Label>
+                                            <MapboxAddressInput
+                                                value={watch('clinicLocation') || ''}
+                                                onChange={(val) => {
+                                                    // Only a picked result sets the location; clearing the search clears it
+                                                    if (!val) setValue('clinicLocation', '');
+                                                }}
+                                                onSelectPlace={handlePlacePicked}
+                                                placeholder="Start typing the clinic address"
+                                                className="w-full"
+                                            />
+                                            <p className="text-xs text-gray-500">Pick a result to fill in the fields below, or type them in yourself.</p>
+                                        </div>
+                                    )}
                                     <div className="space-y-2">
-                                        <Label>Search Location</Label>
-                                        <LocationSearch
-                                            value={watch('clinicLocation') || ''}
-                                            onChange={(val) => setValue('clinicLocation', val)}
-                                            className="w-full"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Address</Label>
-                                        <Input {...control.register('address')} placeholder="Street Address" />
+                                        <Label htmlFor="address">Street address</Label>
+                                        <Input id="address" {...register('address')} autoComplete="street-address" />
                                         {errors.address && <p className="text-xs text-red-500">{errors.address.message as string}</p>}
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div className="space-y-2">
-                                            <Label>City</Label>
-                                            <Input {...control.register('city')} placeholder="City" />
+                                            <Label htmlFor="city">City</Label>
+                                            <Input id="city" {...register('city')} autoComplete="address-level2" />
                                             {errors.city && <p className="text-xs text-red-500">{errors.city.message as string}</p>}
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>State</Label>
-                                            <Input {...control.register('state')} placeholder="State" />
+                                            <Label htmlFor="state">State</Label>
+                                            <Input id="state" {...register('state')} autoComplete="address-level1" />
                                             {errors.state && <p className="text-xs text-red-500">{errors.state.message as string}</p>}
                                         </div>
                                     </div>
@@ -933,135 +754,12 @@ export default function ClinicOwnerOnboardingWizard() {
                             </div>
                         )}
 
-                        {/* Step 5: Services */}
-                        {currentStep === 4 && (
+                        {/* Step 4: Opening hours */}
+                        {currentStep === HOURS_STEP && (
                             <div className="space-y-6">
                                 <div className="text-center mb-6">
-                                    <h2 className="text-2xl font-bold text-[#002e2c]">Services</h2>
-                                    <p className="text-gray-500">What do you offer?</p>
-                                </div>
-                                <div className="space-y-6">
-                                    <div className="space-y-3">
-                                        <Label>Services Offered</Label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {serviceOptions.map(opt => (
-                                                <div key={opt} className="flex items-center space-x-2">
-                                                    <Checkbox
-                                                        id={`srv-${opt}`}
-                                                        checked={watch('services')?.includes(opt)}
-                                                        onCheckedChange={(checked) => {
-                                                            const current = watch('services') || [];
-                                                            setValue('services', checked ? [...current, opt] : current.filter(s => s !== opt));
-                                                        }}
-                                                    />
-                                                    <label htmlFor={`srv-${opt}`} className="text-sm cursor-pointer">{opt}</label>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="mt-3">
-                                            <Label className="text-xs text-gray-500">Other Services</Label>
-                                            <TagInput
-                                                placeholder="Type and press Enter..."
-                                                tags={watch('services').filter(s => !serviceOptions.includes(s))}
-                                                setTags={(newTags) => {
-                                                    const current = watch('services').filter(s => serviceOptions.includes(s));
-                                                    setValue('services', [...current, ...newTags]);
-                                                }}
-                                            />
-                                        </div>
-                                        {errors.services && <p className="text-xs text-red-500">{errors.services.message as string}</p>}
-                                    </div>
-
-                                    <div className="space-y-3">
-                                        <Label>Specialties</Label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {specialtyOptions.map(opt => (
-                                                <div key={opt} className="flex items-center space-x-2">
-                                                    <Checkbox
-                                                        id={`spec-${opt}`}
-                                                        checked={watch('specialties')?.includes(opt)}
-                                                        onCheckedChange={(checked) => {
-                                                            const current = watch('specialties') || [];
-                                                            setValue('specialties', checked ? [...current, opt] : current.filter(s => s !== opt));
-                                                        }}
-                                                    />
-                                                    <label htmlFor={`spec-${opt}`} className="text-sm cursor-pointer">{opt}</label>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="mt-3">
-                                            <Label className="text-xs text-gray-500">Other Specialties</Label>
-                                            <TagInput
-                                                placeholder="Type and press Enter..."
-                                                tags={watch('specialties').filter(s => !specialtyOptions.includes(s))}
-                                                setTags={(newTags) => {
-                                                    const current = watch('specialties').filter(s => specialtyOptions.includes(s));
-                                                    setValue('specialties', [...current, ...newTags]);
-                                                }}
-                                            />
-                                        </div>
-                                        {errors.specialties && <p className="text-xs text-red-500">{errors.specialties.message as string}</p>}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 6: Facilities */}
-                        {currentStep === 5 && (
-                            <div className="space-y-6">
-                                <div className="text-center mb-6">
-                                    <h2 className="text-2xl font-bold text-[#002e2c]">Facilities</h2>
-                                    <p className="text-gray-500">Your clinic amenities</p>
-                                </div>
-                                <div className="space-y-6">
-                                    <div className="space-y-3">
-                                        <Label>Facilities Available</Label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {facilityOptions.map(opt => (
-                                                <div key={opt} className="flex items-center space-x-2">
-                                                    <Checkbox
-                                                        id={`fac-${opt}`}
-                                                        checked={watch('facilities')?.includes(opt)}
-                                                        onCheckedChange={(checked) => {
-                                                            const current = watch('facilities') || [];
-                                                            setValue('facilities', checked ? [...current, opt] : current.filter(s => s !== opt));
-                                                        }}
-                                                    />
-                                                    <label htmlFor={`fac-${opt}`} className="text-sm cursor-pointer">{opt}</label>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="mt-3">
-                                            <Label className="text-xs text-gray-500">Other Facilities</Label>
-                                            <TagInput
-                                                placeholder="Type and press Enter..."
-                                                tags={watch('facilities').filter(f => !facilityOptions.includes(f))}
-                                                setTags={(newTags) => {
-                                                    const current = watch('facilities').filter(f => facilityOptions.includes(f));
-                                                    setValue('facilities', [...current, ...newTags]);
-                                                }}
-                                            />
-                                        </div>
-                                        {errors.facilities && <p className="text-xs text-red-500">{errors.facilities.message as string}</p>}
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Equipment (Optional)</Label>
-                                        <TagInput
-                                            placeholder="Type and press Enter to add equipment..."
-                                            tags={watch('equipmentAvailable') || []}
-                                            setTags={(tags) => setValue('equipmentAvailable', tags)}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 7: Operations */}
-                        {currentStep === 6 && (
-                            <div className="space-y-6">
-                                <div className="text-center mb-6">
-                                    <h2 className="text-2xl font-bold text-[#002e2c]">Set your availability</h2>
-                                    <p className="text-gray-500">Define ranges of time when you are available.</p>
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Opening hours</h2>
+                                    <p className="text-gray-500">When is the clinic open? You can change this later.</p>
                                 </div>
                                 <div className="space-y-4">
                                     <Controller
@@ -1097,60 +795,75 @@ export default function ClinicOwnerOnboardingWizard() {
                                         )}
                                     />
                                     <div className="space-y-2">
-                                        <Label>Additional Notes (Optional)</Label>
-                                        <Textarea {...control.register('additionalNotes')} placeholder="Any other info..." />
+                                        <Label htmlFor="additionalNotes">Additional notes (optional)</Label>
+                                        <Textarea id="additionalNotes" {...register('additionalNotes')} placeholder="e.g. Closed on public holidays" />
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Step 8: Documents */}
-                        {currentStep === 7 && (
+                        {/* Step 5: Business licence */}
+                        {currentStep === DOCUMENTS_STEP && (
                             <div className="space-y-6">
                                 <div className="text-center mb-6">
-                                    <h2 className="text-2xl font-bold text-[#002e2c]">Documents</h2>
-                                    <p className="text-gray-500">Upload verification documents</p>
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Business licence</h2>
+                                    <p className="text-gray-500">We use this to verify your clinic</p>
                                 </div>
                                 <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label>Business License *</Label>
-                                        <FileUpload id="doc-license" label="Upload" accept="application/pdf,image/*" multiple onChange={(f) => setBusinessLicense((Array.isArray(f) ? f : [f]).filter((file): file is File => file !== null))} value={businessLicense} />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Tax Registration *</Label>
-                                        <FileUpload id="doc-tax" label="Upload" accept="application/pdf,image/*" multiple onChange={(f) => setTaxRegistration((Array.isArray(f) ? f : [f]).filter((file): file is File => file !== null))} value={taxRegistration} />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Insurance Proof *</Label>
-                                        <FileUpload id="doc-insurance" label="Upload" accept="application/pdf,image/*" multiple onChange={(f) => setInsuranceProof((Array.isArray(f) ? f : [f]).filter((file): file is File => file !== null))} value={insuranceProof} />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Owner ID *</Label>
-                                        <FileUpload id="doc-id" label="Upload" accept="application/pdf,image/*" multiple onChange={(f) => setOwnerIdentification((Array.isArray(f) ? f : [f]).filter((file): file is File => file !== null))} value={ownerIdentification} />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>Additional (Optional)</Label>
-                                        <FileUpload id="doc-add" label="Upload" accept="application/pdf,image/*" multiple onChange={(f) => setAdditionalDocuments((Array.isArray(f) ? f : [f]).filter((file): file is File => file !== null))} value={additionalDocuments} />
-                                    </div>
+                                    <FileUpload
+                                        id="doc-license"
+                                        label="Business licence"
+                                        required
+                                        accept="application/pdf,image/jpeg,image/png"
+                                        multiple
+                                        onChange={(f) => setBusinessLicense((Array.isArray(f) ? f : [f]).filter((file): file is File => file !== null))}
+                                        value={businessLicense}
+                                    />
+                                    <p className="text-sm text-gray-500">
+                                        You can add more documents, photos, services and facilities later in Clinic settings.
+                                    </p>
                                 </div>
                             </div>
                         )}
 
-                        {/* Step 9: Review */}
-                        {currentStep === 8 && (
+                        {/* Step 6: Review & submit */}
+                        {currentStep === REVIEW_STEP && (
                             <div className="space-y-6">
                                 <div className="text-center mb-6">
-                                    <h2 className="text-2xl font-bold text-[#002e2c]">Review & Submit</h2>
-                                    <p className="text-gray-500">Finalize your registration</p>
+                                    <h2 className="text-2xl font-bold text-[#002e2c]">Review & submit</h2>
+                                    <p className="text-gray-500">Check your details, then submit for verification</p>
                                 </div>
-                                <div className="space-y-4">
+                                <div className="space-y-6">
+                                    <div className="rounded-xl border border-gray-100 divide-y divide-gray-100">
+                                        {reviewSections.map((section) => (
+                                            <div key={section.title} className="flex items-start justify-between gap-4 p-4">
+                                                <div className="min-w-0 space-y-0.5">
+                                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{section.title}</p>
+                                                    {section.lines
+                                                        .filter((line): line is string => !!line)
+                                                        .map((line, i) => (
+                                                            <p key={i} className="text-sm text-gray-900 break-words">{line}</p>
+                                                        ))}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => goToStep(section.step)}
+                                                    className="shrink-0 text-xs font-medium text-[#005b57] hover:text-[#00443e] hover:underline"
+                                                    aria-label={`Edit ${section.title}`}
+                                                >
+                                                    Edit
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+
                                     <div className="space-y-3">
                                         <Label>How did you hear about us?</Label>
                                         <Controller
                                             control={control}
                                             name="referralSource"
                                             render={({ field }) => (
-                                                <div className="grid grid-cols-3 gap-3">
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                                     {socialOptions.map((option) => {
                                                         const Icon = option.icon;
                                                         const isSelected = option.id === 'other'
@@ -1158,7 +871,8 @@ export default function ClinicOwnerOnboardingWizard() {
                                                             : field.value === option.label;
 
                                                         return (
-                                                            <div
+                                                            <button
+                                                                type="button"
                                                                 key={option.id}
                                                                 onClick={() => {
                                                                     if (option.id !== 'other') {
@@ -1175,7 +889,7 @@ export default function ClinicOwnerOnboardingWizard() {
                                                             >
                                                                 <Icon className="w-6 h-6 mb-2" />
                                                                 <span className="text-xs font-medium text-center">{option.label}</span>
-                                                            </div>
+                                                            </button>
                                                         );
                                                     })}
                                                 </div>
@@ -1201,17 +915,20 @@ export default function ClinicOwnerOnboardingWizard() {
 
                                         {errors.referralSource && <p className="text-xs text-red-500">{errors.referralSource.message as string}</p>}
                                     </div>
-                                    <div className="flex items-start space-x-3 p-4 bg-gray-50 rounded-xl">
+                                    <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-xl">
                                         <Controller
                                             control={control}
                                             name="acceptTerms"
                                             render={({ field }) => (
-                                                <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                                                <Checkbox id="acceptTerms" checked={field.value} onCheckedChange={(checked) => field.onChange(checked === true)} />
                                             )}
                                         />
-                                        <div className="text-sm">
-                                            <Label>I accept the terms and conditions</Label>
-                                        </div>
+                                        <Label htmlFor="acceptTerms" className="text-sm font-normal leading-snug">
+                                            I accept the{' '}
+                                            <Link href="/terms-and-conditions" target="_blank" className="text-[#005b57] underline">
+                                                terms and conditions
+                                            </Link>
+                                        </Label>
                                     </div>
                                     {errors.acceptTerms && <p className="text-xs text-red-500">{errors.acceptTerms.message as string}</p>}
                                 </div>
@@ -1254,7 +971,7 @@ export default function ClinicOwnerOnboardingWizard() {
                         {isSubmitting || isFinishing ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
                         ) : currentStep === steps.length - 1 ? (
-                            'Complete'
+                            'Submit'
                         ) : (
                             <>
                                 Next
@@ -1309,6 +1026,6 @@ export default function ClinicOwnerOnboardingWizard() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div >
+        </div>
     );
 }

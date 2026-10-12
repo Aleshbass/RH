@@ -1,6 +1,7 @@
 "use node";
 // @ts-nocheck
 
+import { publicAppUrl } from "../../helpers/appUrl";
 const { actionGeneric } = require("convex/server");
 
 export const sendVerificationBadgeConfirmation = actionGeneric(async (ctx: any, args: any) => {
@@ -78,7 +79,7 @@ export const sendVerificationBadgeConfirmation = actionGeneric(async (ctx: any, 
             <p>Your verified badge is now live and patients can see it when they view your profile. You'll automatically appear at the top of search results in the marketplace.</p>
             
             <center>
-              <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/physiotherapist/marketplace" class="button">
+              <a href="${publicAppUrl()}/dashboard/physiotherapist/marketplace" class="button">
                 View Your Profile
               </a>
             </center>

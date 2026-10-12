@@ -4,6 +4,7 @@ import { internalMutation, mutation, query, action, QueryCtx, MutationCtx } from
 import { Doc, Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import { getAuthenticatedUser, ensureUserRole } from "./auth";
+import { publicAppUrl } from "./helpers/appUrl";
 
 // ==== QUERIES ====
 
@@ -649,7 +650,7 @@ export const completeUserProfile = mutation({
 
         const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || (user.email || "User");
         const roleLabel = args.role === "physiotherapist" ? "Physiotherapist" : "Clinic Owner";
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+        const appUrl = publicAppUrl();
         const adminActionPath = `/admin/users/${user._id}`;
         const adminDashboardLink = `${appUrl}${adminActionPath}`;
 
@@ -1365,7 +1366,7 @@ export const approveUser = mutation({
                     <p>Great news! Your Rehabify Health account has been approved.</p>
                     <p>You now have full access to the platform and all its features.</p>
                     <div style="text-align: center; margin: 30px 0;">
-                      <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}${dashboardLink}" 
+                      <a href="${publicAppUrl()}${dashboardLink}" 
                          style="background-color: #10b981; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">
                         🚀 Access Your Dashboard
                       </a>
@@ -1386,7 +1387,7 @@ export const approveUser = mutation({
                 
                 You now have full access to the platform and all its features.
                 
-Visit your dashboard: ${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}${dashboardLink}
+Visit your dashboard: ${publicAppUrl()}${dashboardLink}
                 
                 ${args.comments ? `Admin Notes: ${args.comments}` : ''}
                 

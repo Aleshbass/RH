@@ -4,6 +4,7 @@
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
 import { api } from "../../_generated/api";
+import { publicAppUrl } from "../../helpers/appUrl";
 
 /**
  * Create a clinic staff invitation, send email, and create a notification
@@ -16,6 +17,8 @@ export const createClinicStaffInvitationWithNotification = action({
     expirationDays: v.optional(v.number()),
     sendEmail: v.optional(v.boolean()),
     origin: v.optional(v.string()),
+    staffType: v.optional(v.union(v.literal("clinician"), v.literal("front_desk"))),
+    clinicRoleId: v.optional(v.id("clinicRoles")),
   },
   returns: v.object({
     success: v.boolean(),
@@ -31,12 +34,17 @@ export const createClinicStaffInvitationWithNotification = action({
           inviteeEmail: args.inviteeEmail,
           inviteeName: args.inviteeName,
           message: args.message,
+          staffType: args.staffType,
+          clinicRoleId: args.clinicRoleId,
         }) as { success: boolean; invitationId?: string; code?: string; message?: string };
       } catch (mutationError) {
-        // Handle specific mutation errors (like duplicate invitation)
+        // Return the readable reason (ConvexError data) rather than a generic failure
         return {
           success: false,
-          message: mutationError instanceof Error ? mutationError.message : 'Failed to create invitation',
+          message:
+            typeof mutationError?.data === 'string'
+              ? mutationError.data
+              : mutationError instanceof Error ? mutationError.message : 'Failed to create invitation',
         };
       }
 
@@ -78,7 +86,7 @@ export const createClinicStaffInvitationWithNotification = action({
 
       // Send email if requested (default true)
       if (args.sendEmail !== false) {
-        const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://physioaroundme.com';
+        const envBase = publicAppUrl();
         const baseUrl = (args.origin || envBase).replace(/\/$/, '');
         const invitationLink = `${baseUrl}/staff-invite/${result.code}`;
 
@@ -193,7 +201,7 @@ export const resendClinicStaffInvitation = action({
       const clinicName = fullInvitation?.clinic?.name as string | undefined;
 
       // Use env-based domain for staff invitation reminder links
-      const envBase = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://physioaroundme.com';
+      const envBase = publicAppUrl();
       const baseUrl = envBase.replace(/\/$/, '');
       const invitationLink = `${baseUrl}/staff-invite/${invitation.code}`;
 

@@ -28,6 +28,7 @@ export default function robots(): MetadataRoute.Robots {
           '/clinic-invite/*',
           '/patient-invite/*',
           '/video-call/*',
+          '/v/*',
           '/*?*utm_*', // Ignore tracking parameters
         ],
       },

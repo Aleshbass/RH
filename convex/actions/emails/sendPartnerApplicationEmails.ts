@@ -3,6 +3,7 @@
 import { action } from "../../_generated/server";
 import { v } from "convex/values";
 import { sendEmail } from "../../../lib/email/emailService";
+import { publicAppUrl } from "../../helpers/appUrl";
 
 /**
  * Sends an email notification to Rehabify administrators when a new healthcare
@@ -26,7 +27,7 @@ export const sendPartnerApplicationSubmittedAdminEmail = action({
   }),
   handler: async (ctx, args) => {
     try {
-      const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+      const siteUrl = publicAppUrl();
       const reviewLink = args.reviewLink || `${siteUrl}/dashboard/admin/partnerships`;
 
       const result = await sendEmail({
@@ -75,7 +76,7 @@ export const sendPartnerApplicationApprovedEmail = action({
   }),
   handler: async (ctx, args) => {
     try {
-      const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+      const siteUrl = publicAppUrl();
       const portalLink = args.portalLink || (siteUrl.includes("localhost") ? `${siteUrl}/partners/portal` : "https://partners.physioaroundme.com");
 
       const result = await sendEmail({

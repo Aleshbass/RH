@@ -289,6 +289,51 @@ export const ensureChatMembership = action({
   }
 })
 
+// Joy (WhatsApp) patients have no Clerk login, so the booking code in their
+// short link is the credential. Failures are returned rather than thrown because
+// Convex hides thrown messages from clients in production.
+type JoyPatientCallToken =
+  | { ok: false; reason: 'not_found' | 'cancelled' | 'too_early' | 'ended' }
+  | { ok: true; apiKey: string; token: string; userId: string; userName: string; callId: string; clinicianName: string }
+
+export const getJoyPatientCallToken = action({
+  args: { code: v.string() },
+  handler: async (ctx, args): Promise<JoyPatientCallToken> => {
+    const join = await ctx.runQuery(internal.joyIntegration.resolveJoyPatientJoin, { code: args.code, now: Date.now() })
+    if (!join.ok) return { ok: false as const, reason: join.reason }
+
+    const apiKey = process.env.STREAM_API_KEY
+    const apiSecret = process.env.STREAM_SECRET
+    if (!apiKey || !apiSecret) {
+      throw new Error("Stream credentials not configured")
+    }
+
+    const client = new StreamClient(apiKey, apiSecret)
+    // Namespaced so a patient seat can never collide with a Clerk user ID.
+    const userId = `joy-patient-${join.patientId}`
+    await client.upsertUsers([{ id: userId, name: join.patientName, role: 'user' }])
+    // The patient often arrives first; make sure the room exists for them.
+    await client.video.call('default', join.callId).getOrCreate({ data: { created_by_id: userId } })
+
+    // Scoped to this one call and expiring with the join window.
+    const token = client.generateCallToken({
+      user_id: userId,
+      call_cids: [`default:${join.callId}`],
+      exp: Math.floor(join.closesAt / 1000),
+    })
+
+    return {
+      ok: true as const,
+      apiKey,
+      token,
+      userId,
+      userName: join.patientName,
+      callId: join.callId,
+      clinicianName: join.clinicianName,
+    }
+  },
+})
+
 // Generate a Stream token for an AwaDoc guest patient (no auth required)
 export const getGuestStreamToken = action({
   args: {

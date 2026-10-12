@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation } from "../_generated/server";
 import { internal } from "../_generated/api";
+import { publicAppUrl } from "../helpers/appUrl";
 
 /**
  * Send appointment reminders for all appointments happening tomorrow (UTC day window).
@@ -31,7 +32,7 @@ export const sendDailyAppointmentReminders = internalMutation({
       )
       .collect();
 
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com").replace(/\/$/, "");
+    const appUrl = publicAppUrl();
 
     for (const appt of appointments) {
       try {

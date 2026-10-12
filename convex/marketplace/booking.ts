@@ -7,6 +7,7 @@
 import { v } from "convex/values";
 import { mutation, action, internalMutation, query } from "../_generated/server";
 import { api, internal } from "../_generated/api";
+import { publicAppUrl } from "../helpers/appUrl";
 
 /**
  * Calculate fees for marketplace booking
@@ -510,7 +511,7 @@ export const completeMarketplaceBooking = mutation({
                 if (preferredPlatform === 'stream') {
                     // Create Stream video call
                     const streamCallId = `call-${appointmentId}-${Date.now()}`;
-                    const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
+                    const appBase = publicAppUrl();
                     meetingLink = `${appBase}/video-call/${streamCallId}`;
 
                     const callId = await ctx.runMutation(internal.videoCalls.createVideoCallRecord, {
