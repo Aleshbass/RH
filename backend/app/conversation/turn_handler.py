@@ -31,6 +31,7 @@ from app.booking.booking_flow import (
     AWAITING_INITIAL_CONSULTATION_CONFIRMATION,
     OFFERING_MATCHES,
     begin_selected_treatment,
+    booking_policy_acceptance_prompt,
     handle_booking_turn,
     initial_consultation_offer,
     offer_matches,
@@ -929,12 +930,7 @@ def _present_policy(session: Session, state: ConversationState) -> str:
     state.booking_substate = AWAITING_POLICY_ACCEPTANCE
     session.flush()
     if ctx.get(_INITIAL_CONSULTATION_PATH_KEY):
-        return (
-            "Great. Before we arrange your consultation, please review and accept our booking policy.\n\n"
-            f"[Review & Accept Booking Policy] {policy['url']}\n\n"
-            "Reply with ‘I accept’ when you are ready to continue. Once you’ve accepted it, I’ll show you "
-            "the Initial Consultation details."
-        )
+        return booking_policy_acceptance_prompt(ctx)
     choice = str(ctx.get("treatment_option") or "")
     next_step = (
         "Before I create your short specialist safety review"
@@ -1250,6 +1246,10 @@ def _offer_initial_consultation(
     # existing routes, but is not the approved GREEN-path next step.
     context[_INITIAL_CONSULTATION_PATH_KEY] = True
     context["treatment_option"] = "quick_initial"
+    # A new GREEN route requires a fresh, explicit policy acceptance. Never
+    # reuse consent captured by an abandoned or earlier booking attempt.
+    context.pop(_POLICY_CONTEXT_KEY, None)
+    context.pop(_POLICY_PRESENTED_KEY, None)
     _set_substate(conversation, None, context)
     state.booking_context = context
     state.booking_substate = None

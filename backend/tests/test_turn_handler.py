@@ -139,6 +139,19 @@ def test_initial_consultation_offer_explains_the_green_path_before_booking():
     assert _initial_consultation_confirmed("Yes") is True
 
 
+def test_green_policy_reminder_includes_the_policy_link_and_next_step():
+    from app.booking.booking_flow import booking_policy_acceptance_prompt
+
+    reply = booking_policy_acceptance_prompt({
+        "green_initial_consultation_path": True,
+        "policy_presented": {"url": "https://example.test/policy"},
+    })
+
+    assert "Great. Before we arrange your consultation" in reply
+    assert "https://example.test/policy" in reply
+    assert "available consultation options" in reply
+
+
 def test_eight_item_safety_screen_accepts_number_only_concerning_answers():
     from app.conversation.turn_handler import _apply_numbered_safety_answers, _safety_screen
     from app.safety.protocol_runtime import YES

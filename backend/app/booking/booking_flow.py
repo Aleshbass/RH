@@ -140,9 +140,12 @@ def handle_booking_turn(
                 "No problem. I won’t create an initial consultation booking. "
                 "If you would like to continue later, reply ‘Book Initial Consultation’."
             )
-        return "Would you like to continue with the ₦6,000 Initial Consultation? Reply ‘Book Initial Consultation’ or Yes."
+        # A resumed worker must repeat the complete offer, not an unexplained
+        # one-line prompt. This also makes a stale "I accept" harmless if it
+        # arrives after policy was already recorded.
+        return initial_consultation_offer()
     if sub == AWAITING_POLICY_ACCEPTANCE:
-        return "Please review the Consultation & Booking Policy above, then reply ‘I accept’ when you are ready to continue."
+        return booking_policy_acceptance_prompt(dict(conversation.booking_context or {}))
     if sub == AWAITING_RH_SERVICE_MODE:
         return _continue_rh_service_mode(session, conversation, patient, extracted, user_text)
     if sub == AWAITING_RH_LOCATION:
@@ -229,6 +232,24 @@ def initial_consultation_offer() -> str:
         "different type of care.\n\n"
         "Would you like to continue with the ₦6,000 Initial Consultation?\n\n"
         "Reply ‘Book Initial Consultation’ or Yes to continue."
+    )
+
+
+def booking_policy_acceptance_prompt(context: dict) -> str:
+    """Repeat the exact policy step without relying on a previous chat bubble."""
+    policy = context.get("policy_presented")
+    url = policy.get("url") if isinstance(policy, dict) else None
+    link = f"\n\n[Review & Accept Booking Policy] {url}" if isinstance(url, str) and url else ""
+    if context.get("green_initial_consultation_path"):
+        return (
+            "Great. Before we arrange your consultation, please review and accept our booking policy."
+            f"{link}\n\n"
+            "Reply with ‘I accept’ when you are ready to continue. Once you’ve accepted it, I’ll show you "
+            "the available consultation options."
+        )
+    return (
+        f"Please review the Consultation & Booking Policy{f': {url}' if url else ' above'}, then reply ‘I accept’ "
+        "when you are ready to continue."
     )
 
 
