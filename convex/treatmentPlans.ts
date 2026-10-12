@@ -627,7 +627,32 @@ export const getPatientActivePlan = query({
       .order("desc")
       .take(1);
 
-    return plans[0] ?? null;
+    const plan = plans[0];
+    if (!plan) return null;
+
+    // Library exercises store only an id: attach the library name/instructions so the patient
+    // sees what to do. Clinic-written exercises already carry their own name and instructions.
+    const phases = await Promise.all(
+      plan.phases.map(async (phase) => ({
+        ...phase,
+        exercises: await Promise.all(
+          phase.exercises.map(async (exercise) => {
+            if (exercise.name) return exercise;
+            const libraryId = ctx.db.normalizeId("exercises", exercise.exerciseId);
+            const library = libraryId ? await ctx.db.get(libraryId) : null;
+            if (!library) return exercise;
+            return {
+              ...exercise,
+              libraryName: library.name,
+              libraryInstructions: library.instructions,
+              videoUrl: exercise.videoUrl ?? library.videoUrl,
+            };
+          })
+        ),
+      }))
+    );
+
+    return { ...plan, phases };
   },
 });
 

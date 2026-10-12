@@ -78,7 +78,7 @@ export default function PackageSelector({
         <div className="space-y-3">
             <div className="flex items-center gap-2 mb-1">
                 <Sparkles className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-semibold text-gray-300">
+                <h3 className="text-sm font-semibold text-white/80">
                     Choose Your Plan
                 </h3>
             </div>
@@ -107,24 +107,24 @@ export default function PackageSelector({
                                     setExpandedPkg(isExpanded ? null : sessions);
                                 }}
                                 className={`w-full cursor-pointer text-left rounded-xl border-2 transition-all duration-200 ${isSelected
-                                    ? "border-teal-500 bg-teal-500/10 shadow-lg shadow-teal-500/10"
+                                    ? "border-teal-300 bg-white/[0.08]"
                                     : popular
-                                        ? "border-amber-500/30 bg-[#1a1a1a] hover:border-amber-500/50"
-                                        : "border-gray-700 bg-[#1a1a1a] hover:border-gray-500"
+                                        ? "border-amber-400/40 bg-[#00403c] hover:border-amber-500/50"
+                                        : "border-white/15 bg-[#00403c] hover:border-gray-500"
                                     }`}
                             >
                                 <div className="p-4">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="flex items-start gap-3 flex-1 min-w-0">
                                             {/* Radio indicator */}
-                                            <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? "border-teal-500 bg-teal-500" : "border-gray-600"
+                                            <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isSelected ? "border-teal-500 bg-teal-500" : "border-white/30"
                                                 }`}>
                                                 {isSelected && <Check className="w-3 h-3 text-white" />}
                                             </div>
 
                                             <div className="flex-1 min-w-0">
                                                 <p className="font-semibold text-white text-sm">{name}</p>
-                                                <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+                                                <p className="text-xs text-white/50 mt-0.5">{desc}</p>
                                             </div>
                                         </div>
 
@@ -134,7 +134,7 @@ export default function PackageSelector({
                                                 {formatNaira(breakdown.total)}
                                             </p>
                                             {sessions > 1 && (
-                                                <p className="text-[11px] text-gray-500">
+                                                <p className="text-[11px] text-white/50">
                                                     {formatNaira(breakdown.discountedRate)}/session
                                                 </p>
                                             )}
@@ -154,7 +154,7 @@ export default function PackageSelector({
                                                 e.stopPropagation();
                                                 setExpandedPkg(isExpanded ? null : sessions);
                                             }}
-                                            className="flex items-center gap-1 text-[11px] text-teal-400 mt-2 ml-8 hover:text-teal-300"
+                                            className="flex items-center gap-1 text-[11px] text-teal-300 mt-2 ml-8 hover:text-teal-200"
                                         >
                                             {isExpanded ? "Hide" : "View"} details
                                             <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
@@ -172,16 +172,16 @@ export default function PackageSelector({
                                             transition={{ duration: 0.2 }}
                                             className="overflow-hidden"
                                         >
-                                            <div className="px-4 pb-4 border-t border-gray-800 pt-3 ml-8 space-y-3">
+                                            <div className="px-4 pb-4 border-t border-white/10 pt-3 ml-8 space-y-3">
                                                 {/* What's included */}
                                                 <div>
-                                                    <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">
+                                                    <p className="text-[11px] text-white/50 uppercase tracking-wider mb-1.5 font-medium">
                                                         What&apos;s included
                                                     </p>
                                                     <ul className="space-y-1">
                                                         {perks.map((perk, i) => (
-                                                            <li key={i} className="flex items-start gap-1.5 text-xs text-gray-400">
-                                                                <Check className="w-3 h-3 text-teal-500 mt-0.5 flex-shrink-0" />
+                                                            <li key={i} className="flex items-start gap-1.5 text-xs text-white/65">
+                                                                <Check className="w-3 h-3 text-teal-300 mt-0.5 flex-shrink-0" />
                                                                 {perk}
                                                             </li>
                                                         ))}
@@ -190,22 +190,22 @@ export default function PackageSelector({
 
                                                 {/* Price breakdown */}
                                                 <div>
-                                                    <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">
+                                                    <p className="text-[11px] text-white/50 uppercase tracking-wider mb-1.5 font-medium">
                                                         Price Breakdown
                                                     </p>
                                                     <div className="space-y-1 text-xs">
-                                                        <div className="flex justify-between text-gray-400">
+                                                        <div className="flex justify-between text-white/65">
                                                             <span>{sessions === 1 ? "Session" : `${sessions} sessions`}</span>
                                                             <span>{sessions === 1 ? formatNaira(breakdown.sessionRate) : `${formatNaira(breakdown.discountedRate)} × ${sessions}`}</span>
                                                         </div>
                                                         {breakdown.saves > 0 && (
-                                                            <div className="flex justify-between text-green-400 pt-1 border-t border-gray-800">
+                                                            <div className="flex justify-between text-green-400 pt-1 border-t border-white/10">
                                                                 <span>Package discount ({breakdown.discountPercent}%)</span>
                                                                 <span>-{formatNaira(breakdown.saves)}</span>
                                                             </div>
                                                         )}
                                                         {/* Removed Platform Fee line for cleaner pricing display */}
-                                                        <div className="flex justify-between text-white font-semibold pt-1 border-t border-gray-800">
+                                                        <div className="flex justify-between text-white font-semibold pt-1 border-t border-white/10">
                                                             <span>Total</span>
                                                             <span>{formatNaira(breakdown.total)}</span>
                                                         </div>
@@ -214,8 +214,8 @@ export default function PackageSelector({
 
                                                 {/* Trust badges */}
                                                 <div className="flex items-center gap-2 pt-1">
-                                                    <Shield className="w-3 h-3 text-gray-600" />
-                                                    <span className="text-[10px] text-gray-600">
+                                                    <Shield className="w-3 h-3 text-white/40" />
+                                                    <span className="text-[10px] text-white/40">
                                                         Secure payment · Verified physiotherapist
                                                     </span>
                                                 </div>

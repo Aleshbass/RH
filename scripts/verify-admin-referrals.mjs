@@ -8,28 +8,31 @@ const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
 const client = new ConvexHttpClient(convexUrl);
 
 async function test() {
-  console.log("Testing updateReferralStatus directly without Clerk session...");
-  
+  console.log("Checking updateReferralStatus rejects callers without an admin session...");
+
   // Create a test referral
   const ref = await client.mutation(api.partners.createPartnerReferral, {
     partnerCode: "wellahealth",
     patientFirstName: "Test",
-    patientLastName: "AuthFallback",
+    patientLastName: "AuthCheck",
     patientPhone: "+2348011223344",
     city: "Lagos",
   });
 
   console.log("Created test referral:", ref.referralId);
 
-  // Call updateReferralStatus
-  const updated = await client.mutation(api.adminReferrals.updateReferralStatus, {
-    referralId: ref.referralId,
-    status: "booked",
-    notes: "Verified via fallback actor",
-  });
+  try {
+    await client.mutation(api.adminReferrals.updateReferralStatus, {
+      referralId: ref.referralId,
+      status: "booked",
+      notes: "Should be rejected",
+    });
+  } catch (err) {
+    console.log("Rejected as expected:", err.message);
+    return;
+  }
 
-  console.log("Successfully updated referral status:", updated);
-  console.log("All systems operational!");
+  throw new Error("updateReferralStatus accepted an unauthenticated call");
 }
 
 test().catch((err) => {

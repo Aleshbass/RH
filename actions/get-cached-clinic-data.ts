@@ -91,15 +91,30 @@ export async function getCachedClinicData() {
         CACHE_CONFIGS.CLINIC_INFO
     )
 
+    // Wrap each promise with a fallback so preview mode doesn't crash
+    // when queries throw auth errors for non-clinic-owner users
+    const safeFetch = <T,>(promise: Promise<T>, fallback: T): Promise<T> =>
+        promise.catch((err) => {
+            console.warn('[Preview Mode] Query failed, using fallback:', err?.message || err)
+            return fallback
+        })
+
     const [user, approvalStatus, clinic, stats, revenue, activity, staff, invitations] = await Promise.all([
-        userPromise,
-        approvalPromise,
-        clinicPromise,
-        statsPromise,
-        revenuePromise,
-        activityPromise,
-        staffPromise,
-        invitationsPromise
+        safeFetch(userPromise, null),
+        safeFetch(approvalPromise, null),
+        safeFetch(clinicPromise, null),
+        safeFetch(statsPromise, {
+            totalPatients: 0,
+            activeStaff: 0,
+            appointmentsToday: 0,
+            thisMonthAppointments: 0,
+            completionRate: 0,
+            pendingInvitations: 0,
+        }),
+        safeFetch(revenuePromise, null),
+        safeFetch(activityPromise, []),
+        safeFetch(staffPromise, []),
+        safeFetch(invitationsPromise, [])
     ])
 
     return { user, approvalStatus, clinic, stats, revenue, activity, staff, invitations }

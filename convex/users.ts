@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { v } from "convex/values";
-import { internalMutation, mutation, query, action, QueryCtx } from "./_generated/server";
+import { internalMutation, mutation, query, action, QueryCtx, MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import { getAuthenticatedUser, ensureUserRole } from "./auth";
@@ -140,6 +140,15 @@ export const updateOrCreateUser = internalMutation({
       return existingUser._id;
     }
 
+    const claimedId = await claimPlaceholderPatient(ctx, {
+      clerkId: clerkId as string,
+      verifiedEmail: primaryEmailObj?.verification?.status === "verified" ? email : null,
+      firstName: first_name || undefined,
+      lastName: last_name || undefined,
+      imageUrl: image_url || undefined,
+    });
+    if (claimedId) return claimedId;
+
     // User does not exist, create a new one
     const userId = await ctx.db.insert("users", {
       clerkId: clerkId as string,
@@ -158,6 +167,49 @@ export const updateOrCreateUser = internalMutation({
 });
 
 // ==== PUBLIC MUTATION: Store User from Clerk (Client-Side Sync) ====
+// Records created for a patient before they had a Clerk account.
+const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "rehabify_ref_", "joy-whatsapp:"];
+
+/**
+ * A clinic, referral or Joy may have created this patient before they had an
+ * account. Hand that record to the new Clerk user so they see their programme
+ * and history. Callers must pass an email Clerk has verified.
+ */
+async function claimPlaceholderPatient(
+  ctx: MutationCtx,
+  args: {
+    clerkId: string;
+    verifiedEmail: string | null | undefined;
+    firstName?: string;
+    lastName?: string;
+    imageUrl?: string;
+    referredByPartnerCode?: string;
+    referralPublicCode?: string;
+  }
+): Promise<Id<"users"> | null> {
+  const email = args.verifiedEmail?.toLowerCase().trim();
+  if (!email) return null;
+
+  const candidates = await ctx.db
+    .query("users")
+    .withIndex("by_email", (q) => q.eq("email", email))
+    .collect();
+  const placeholder = candidates.find((candidate) =>
+    PLACEHOLDER_CLERK_ID_PREFIXES.some((prefix) => candidate.clerkId.startsWith(prefix))
+  );
+  if (!placeholder) return null;
+
+  await ctx.db.patch(placeholder._id, {
+    clerkId: args.clerkId,
+    firstName: placeholder.firstName || args.firstName,
+    lastName: placeholder.lastName || args.lastName,
+    imageUrl: placeholder.imageUrl || args.imageUrl,
+    referredByPartnerCode: placeholder.referredByPartnerCode || args.referredByPartnerCode,
+    referralPublicCode: placeholder.referralPublicCode || args.referralPublicCode,
+  });
+  return placeholder._id;
+}
+
 export const storeUserFromClerk = mutation({
   args: {
     clerkId: v.string(),
@@ -223,6 +275,18 @@ export const storeUserFromClerk = mutation({
       }
       return existingUser._id;
     } else {
+      // Only Clerk's verified email is trusted here, never the client argument.
+      const claimedId = await claimPlaceholderPatient(ctx, {
+        clerkId: args.clerkId,
+        verifiedEmail: identity.emailVerified && typeof identity.email === "string" ? identity.email : null,
+        firstName: args.firstName,
+        lastName: args.lastName,
+        imageUrl: args.imageUrl,
+        referredByPartnerCode: args.referredByPartnerCode,
+        referralPublicCode: args.referralPublicCode,
+      });
+      if (claimedId) return claimedId;
+
       // User does not exist, create a new one
       return await ctx.db.insert("users", {
         clerkId: args.clerkId,
@@ -371,7 +435,11 @@ export const completeUserProfile = mutation({
     const userUpdatePayload: Partial<Doc<"users">> = {
       role: args.role,
       onboarded: args.finalStep === true, // Only set to true on final step
-      ...(args.onboardingSkipped !== undefined && { onboardingSkipped: args.onboardingSkipped }),
+      // An explicit flag wins (the physiotherapist skip submits finalStep + onboardingSkipped=true);
+      // otherwise finishing onboarding clears a previous skip so the account leaves preview mode
+      ...(args.onboardingSkipped !== undefined
+        ? { onboardingSkipped: args.onboardingSkipped }
+        : args.finalStep === true && { onboardingSkipped: false }),
     };
     if (args.firstName) userUpdatePayload.firstName = args.firstName;
     if (args.lastName) userUpdatePayload.lastName = args.lastName;
@@ -443,14 +511,31 @@ export const completeUserProfile = mutation({
         console.log("[completeUserProfile] Processing clinic_owner role.");
 
         // Get the clinic owned by this user
-        const clinic = await ctx.db
+        let clinic = await ctx.db
           .query("clinics")
           .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
           .first();
 
         if (!clinic) {
-          console.error("[completeUserProfile] Error: No clinic found for clinic owner:", user._id);
-          throw new Error("No clinic found for this clinic owner. Please complete clinic setup first.");
+          if (args.onboardingSkipped) {
+            // Auto-provision a starter clinic so the user can preview the dashboard
+            const defaultClinicName = args.firstName ? `${args.firstName}'s Clinic` : "My Clinic";
+            const newClinicId = await ctx.db.insert("clinics", {
+              name: (args.profileData as any)?.clinicName || defaultClinicName,
+              ownerId: user._id,
+              contactEmail: user.email,
+              contactPhone: user.phoneNumber,
+              workingHours: {},
+              settings: {
+                defaultCurrency: "NGN",
+                language: "en"
+              }
+            });
+            clinic = await ctx.db.get(newClinicId);
+          } else {
+            console.error("[completeUserProfile] Error: No clinic found for clinic owner:", user._id);
+            throw new Error("No clinic found for this clinic owner. Please complete clinic setup first.");
+          }
         }
 
         // Create or update clinic owner profile
@@ -1459,7 +1544,7 @@ export const getUserApprovalStatus = query({
 /**
  * Create approval request when user completes onboarding
  */
-export const createApprovalRequest = mutation({
+export const createApprovalRequest = internalMutation({
   args: {
     userId: v.id("users"),
     requiredDocuments: v.optional(v.array(v.string())),

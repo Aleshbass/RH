@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ShieldCheck, Lock, CreditCard, Headphones, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Lock, CreditCard, Headphones } from 'lucide-react';
 
 const features = [
     {
@@ -46,9 +46,9 @@ export function TrustSafety() {
                         viewport={{ once: true }}
                         transition={{ duration: 0.5 }}
                     >
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 border border-green-100 mb-6">
-                            <CheckCircle2 className="w-4 h-4 text-[#005b57]" />
-                            <span className="text-xs font-medium text-[#005b57]">Safety First</span>
+                        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#005b57]/[0.06] border border-[#005b57]/15 mb-6">
+                            <ShieldCheck className="w-4 h-4 text-[#005b57]" />
+                            <span className="text-xs font-semibold text-[#005b57] tracking-wide uppercase">Safety First</span>
                         </div>
                         <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight mb-4">
                             Your Trust is Our <span className="text-[#005b57]">Priority</span>

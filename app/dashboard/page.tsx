@@ -154,6 +154,26 @@ export default function DashboardPage() {
       )
     }
 
+    // Clinic owners who skipped setup can keep previewing their dashboard or resume the wizard
+    if (user.role === 'clinic_owner') {
+      return (
+        <div className="flex items-center justify-center min-h-screen px-4">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold mb-2">Finish Your Clinic Setup</h2>
+            <p className="text-gray-600 mb-4">Pick up where you left off, or keep exploring your clinic dashboard in preview mode.</p>
+            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+              <Button onClick={() => router.push('/clinic-owner')}>
+                Continue Setup
+              </Button>
+              <Button variant="outline" onClick={() => router.push('/dashboard/clinic')}>
+                Open Preview
+              </Button>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">

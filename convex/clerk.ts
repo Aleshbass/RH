@@ -122,11 +122,15 @@ export const syncUser = action({
       imageUrl: args.imageUrl,
     });
 
-    // Reconcile any guest bookings for this user
-    await ctx.runMutation(internal.marketplace.booking.claimGuestBookings, {
-      userId: userId as Id<"users">,
-      email: args.email,
-    });
+    // Reconcile guest bookings, but only for an email Clerk has verified:
+    // the client-supplied email could belong to someone else.
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity?.emailVerified && identity.email) {
+      await ctx.runMutation(internal.marketplace.booking.claimGuestBookings, {
+        userId: userId as Id<"users">,
+        email: identity.email,
+      });
+    }
 
     return userId;
   },

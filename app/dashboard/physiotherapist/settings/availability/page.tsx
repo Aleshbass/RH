@@ -13,13 +13,13 @@ import { toast } from 'sonner';
 
 // Default empty schedule for new users
 const DEFAULT_SCHEDULE = {
-    monday: { enabled: false, slots: [] },
-    tuesday: { enabled: false, slots: [] },
-    wednesday: { enabled: false, slots: [] },
-    thursday: { enabled: false, slots: [] },
-    friday: { enabled: false, slots: [] },
-    saturday: { enabled: false, slots: [] },
-    sunday: { enabled: false, slots: [] },
+    monday: { isOpen: false, slots: [] },
+    tuesday: { isOpen: false, slots: [] },
+    wednesday: { isOpen: false, slots: [] },
+    thursday: { isOpen: false, slots: [] },
+    friday: { isOpen: false, slots: [] },
+    saturday: { isOpen: false, slots: [] },
+    sunday: { isOpen: false, slots: [] },
 };
 
 export default function AvailabilitySettingsPage() {

@@ -1,317 +1,187 @@
 'use client'
 
-// Removed unused useState import
-import { useQuery, useAction } from 'convex/react'
-import { api } from '@/convex/_generated/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Users,
-  Mail,
-  Activity,
-  Shield,
-  Clock,
-  TrendingUp,
-  BarChart3,
-  FileText,
-  UserPlus,
-} from 'lucide-react'
-import Link from 'next/link'
-import { format } from 'date-fns'
-import AddPhysiotherapistModal from '@/components/dashboard/clinic/AddPhysiotherapistModal'
-import StaffTable from '@/components/clinic/staff/StaffTable'
-import { toast } from 'sonner'
 import { useEffect, useState } from 'react'
+import { useQuery, useAction } from 'convex/react'
 import { useSearchParams, usePathname, useRouter } from 'next/navigation'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import ClinicAppointmentsView from '@/components/dashboard/clinic/ClinicAppointmentsView'
+import { format } from 'date-fns'
+import { toast } from 'sonner'
+import { UserPlus } from 'lucide-react'
+import { api } from '@/convex/_generated/api'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import AddPhysiotherapistModal from '@/components/dashboard/clinic/AddPhysiotherapistModal'
+import StaffTable, { type TeamMember } from '@/components/clinic/staff/StaffTable'
 import { TourGuide } from '@/components/shared/TourGuide'
-
-
-
-// Type definitions for staff and invitations
-interface StaffMember {
-  _id: string;
-  status: string;
-  role: string;
-  user?: {
-    onboarded: boolean;
-    firstName?: string;
-    lastName?: string;
-    email?: string;
-  };
-  [key: string]: unknown;
-}
-
-interface Invitation {
-  _id: string;
-  inviteeName?: string;
-  inviteeEmail: string;
-  [key: string]: unknown;
-}
+import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { PageShell, Panel, StatTile, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 
 export default function StaffManagementPage() {
+  const { requireFullAccess, isPreviewMode } = useClinicPreview()
   const router = useRouter()
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [resendingId, setResendingId] = useState<string | null>(null)
 
-  // Queries
-  const clinicStaffQuery = useQuery(api.clinics.getClinicStaff)
-  const pendingInvitationsQuery = useQuery(api.clinics.getClinicInvitations)
-  const staffMetricsQuery = useQuery(api.clinics.getStaffMetrics)
+  // Preview mode reads as true while the user is still loading, so wait for the user first.
+  const me = useQuery(api.users.getMyUser)
+  const userLoading = me === undefined
 
-  // Actions
+  // Both queries throw for viewers who aren't a set-up clinic owner, so skip them in preview.
+  const teamQuery = useQuery(api.clinicTools.getClinicCliniciansWithCaseload, isPreviewMode ? 'skip' : {})
+  const invitationsQuery = useQuery(api.clinics.getClinicInvitations, isPreviewMode ? 'skip' : {})
+
   const resendStaffInvitation = useAction(
-    api.actions.clinics.resendClinicStaffInvitation
+    api.actions.clinics.inviteClinicStaff.resendClinicStaffInvitation
   )
 
-  const clinicStaff = clinicStaffQuery
-  const pendingInvitations = pendingInvitationsQuery
-  const staffMetrics = staffMetricsQuery
+  const team = isPreviewMode ? [] : (teamQuery as TeamMember[] | undefined)
+  const invitations = isPreviewMode ? [] : invitationsQuery
 
-  const handleRefresh = () => {
-    // Force refresh by reloading the page
-    window.location.reload()
-  }
+  const openInvite = () => requireFullAccess('Invite clinician', () => setInviteOpen(true))
 
   // Open invite modal via deep link: ?action=invite
   useEffect(() => {
-    const action = searchParams.get('action')
-    if (action === 'invite') {
-      setInviteOpen(true)
-      // Clean the URL to avoid re-triggering on refresh
+    if (userLoading) return
+    if (searchParams.get('action') === 'invite') {
+      openInvite()
       const params = new URLSearchParams(searchParams.toString())
       params.delete('action')
       const newQuery = params.toString()
       router.replace(newQuery ? `${pathname}?${newQuery}` : pathname, { scroll: false })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, pathname])
+  }, [searchParams, pathname, userLoading])
 
-
-
-  if (clinicStaff === undefined || pendingInvitations === undefined || staffMetrics === undefined) {
-    return (
-      <div className="p-8">
-        <div className="space-y-6">
-          <Skeleton className="h-8 w-64" />
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {[...Array(8)].map((_, i) => (
-              <Skeleton key={i} className="h-32" />
-            ))}
-          </div>
-          <Skeleton className="h-96" />
-        </div>
-      </div>
-    )
+  const handleResend = async (inviteeEmail: string, inviteeName: string | undefined, id: string) => {
+    if (!requireFullAccess('Resend invitation')) return
+    setResendingId(id)
+    try {
+      await resendStaffInvitation({ inviteeEmail, inviteeName })
+      toast.success('Invitation resent')
+    } catch (error) {
+      toast.error('Could not resend invitation')
+      console.error('Resend invitation error:', error)
+    } finally {
+      setResendingId(null)
+    }
   }
 
+  const loading = userLoading || team === undefined || invitations === undefined
+  const members = team ?? []
+  const openInvitations = (invitations ?? []).filter((inv: any) => inv.status === 'pending')
+  const activeCount = members.filter((m) => m.status === 'active').length
+  const suspendedCount = members.filter((m) => m.status === 'suspended').length
+  const patientsInCare = members.reduce((sum, m) => sum + (m.activeCaseload || 0), 0)
+  const visitsThisMonth = members.reduce((sum, m) => sum + (m.monthlyAppointmentsCount || 0), 0)
+
   return (
-    <div className="p-8">
-      <div className="space-y-6">
-        {/* Header */}
-        <div id="staff-page-header" className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Staff Management</h1>
-            <p className="text-gray-600">Comprehensive staff management and analytics for your clinic</p>
+    <PageShell
+      title="Team"
+      description="The clinicians who work at your clinic, and invitations you've sent."
+      actions={
+        <Button id="staff-invite-button" size="sm" className={primaryButtonClass} onClick={openInvite}>
+          <UserPlus className="mr-1.5 h-4 w-4" />
+          Invite clinician
+        </Button>
+      }
+    >
+      <AddPhysiotherapistModal open={inviteOpen} onOpenChange={setInviteOpen} />
+
+      {loading ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-[92px] rounded-xl" />
+            ))}
           </div>
-          <div className="flex gap-2">
-            <Link href="/dashboard/clinic/analytics">
-              <Button variant="outline">
-                <BarChart3 className="h-4 w-4 mr-2" />
-                Analytics
-              </Button>
-            </Link>
-            <Link href="/dashboard/clinic/audit">
-              <Button variant="outline">
-                <FileText className="h-4 w-4 mr-2" />
-                Audit Log
-              </Button>
-            </Link>
-            <AddPhysiotherapistModal
-              open={inviteOpen}
-              onOpenChange={setInviteOpen}
-              onSuccess={handleRefresh}
-              trigger={
-                <Button id="staff-invite-button">
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Invite Physiotherapist
-                </Button>
-              }
+          <Skeleton className="h-64 rounded-xl" />
+        </>
+      ) : (
+        <>
+          <div id="staff-stats-cards" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatTile
+              label="Clinicians"
+              value={members.length}
+              hint={suspendedCount > 0 ? `${activeCount} active, ${suspendedCount} suspended` : `${activeCount} active`}
             />
+            <StatTile label="Pending invitations" value={openInvitations.length} />
+            <StatTile label="Patients in care" value={patientsInCare} hint="Across all clinicians" />
+            <StatTile label="Visits this month" value={visitsThisMonth} />
           </div>
-        </div>
 
-        <Tabs id="staff-tabs" defaultValue="staff-list" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="staff-list">Staff List</TabsTrigger>
-            <TabsTrigger value="schedules">Schedules & Appointments</TabsTrigger>
-          </TabsList>
+          <div id="staff-list">
+            <Panel title="Clinicians" description={members.length > 0 ? `${members.length} on your team` : undefined}>
+              <StaffTable staff={members} onInvite={openInvite} />
+            </Panel>
+          </div>
 
-          <TabsContent value="staff-list" className="space-y-6">
-            {/* Enhanced Stats Cards */}
-            <div id="staff-stats-cards" className="grid gap-4 md:grid-cols-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Staff</CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{clinicStaff?.length || 0}</div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <p className="text-xs text-muted-foreground">Active: {clinicStaff?.filter((staff: StaffMember) => staff.status === 'active').length || 0}</p>
-                    <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                      <TrendingUp className="h-3 w-3 mr-1" />
-                      +{staffMetrics?.newThisMonth || 0} this month
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Staff Utilization</CardTitle>
-                  <Activity className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{staffMetrics?.utilization?.toFixed(1) || 0}%</div>
-                  <p className="text-xs text-muted-foreground">Average workload efficiency</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Active Today</CardTitle>
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {clinicStaff?.filter((staff: StaffMember) => staff.user?.onboarded)?.length || 0}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Currently online</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Role Distribution</CardTitle>
-                  <Shield className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {clinicStaff?.filter((staff: StaffMember) => staff.role === 'physiotherapist').length || 0}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Physiotherapists</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Pending Invitations */}
-            {pendingInvitations && pendingInvitations.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="h-5 w-5" />
-                    Pending Invitations ({pendingInvitations.length})
-                  </CardTitle>
-                  <CardDescription>Staff invitations awaiting response</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {pendingInvitations.map((invitation: Invitation) => (
-                      <div key={invitation._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                        <div className="flex items-center space-x-4">
-                          <div className="bg-orange-100 p-2 rounded-full">
-                            <Mail className="h-4 w-4 text-orange-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{invitation.inviteeName || 'Unnamed Invitee'}</p>
-                            <p className="text-sm text-gray-600">{invitation.inviteeEmail}</p>
-                            <p className="text-xs text-gray-500">
-                              Role: <span className="capitalize">{(invitation.role as string)?.replace('_', ' ')}</span>
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">
-                            <Clock className="h-3 w-3 mr-1" />
-                            Pending
-                          </Badge>
-                          <p className="text-sm text-gray-500">
-                            Sent {format(new Date(invitation._creationTime as number), 'MMM d')}
-                          </p>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={async () => {
-                              try {
-                                await resendStaffInvitation({
-                                  inviteeEmail: invitation.inviteeEmail,
-                                  inviteeName: invitation.inviteeName,
-                                })
-                                toast.success('Invitation resent')
-                              } catch (error) {
-                                toast.error('Failed to resend invitation')
-                                console.error('Resend invitation error:', error)
-                              }
-                            }}
-                          >
-                            Resend
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Enhanced Staff Management Table */}
-            <StaffTable
-              staff={clinicStaff || []}
-              onRefresh={handleRefresh}
-            />
-          </TabsContent>
-
-          <TabsContent value="schedules">
-            <ClinicAppointmentsView />
-          </TabsContent>
-        </Tabs>
-      </div>
-
+          {openInvitations.length > 0 && (
+            <Panel title="Pending invitations" description="Sent, but not yet accepted.">
+              <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+                {openInvitations.map((invitation: any) => (
+                  <li
+                    key={invitation._id}
+                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-5"
+                  >
+                    <div className="min-w-0 flex-1 basis-48">
+                      <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
+                        {invitation.inviteeName || invitation.inviteeEmail}
+                      </p>
+                      <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                        {invitation.inviteeName ? `${invitation.inviteeEmail} · ` : ''}
+                        Sent {format(new Date(invitation._creationTime), 'd MMM')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {invitation.isExpired ? (
+                        <StatusBadge tone="amber">Expired</StatusBadge>
+                      ) : (
+                        <StatusBadge tone="neutral">Pending</StatusBadge>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        disabled={resendingId === invitation._id}
+                        onClick={() =>
+                          handleResend(invitation.inviteeEmail, invitation.inviteeName, invitation._id)
+                        }
+                      >
+                        {resendingId === invitation._id ? 'Sending…' : 'Resend'}
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+        </>
+      )}
 
       <TourGuide
         tourId="clinic-staff-tour"
         steps={[
           {
-            target: "#staff-page-header",
-            title: "Staff Management",
-            content: "Manage your team of physiotherapists, view their performance, and handle invitations.",
-            position: "bottom"
+            target: '#staff-invite-button',
+            title: 'Invite clinicians',
+            content: 'Send an invitation to a physiotherapist to join your clinic.',
+            position: 'bottom',
           },
           {
-            target: "#staff-invite-button",
-            title: "Grow Your Team",
-            content: "Click here to invite new physiotherapists to join your clinic.",
-            position: "left"
+            target: '#staff-stats-cards',
+            title: 'Team at a glance',
+            content: 'How many clinicians you have, invitations waiting, and their current workload.',
+            position: 'bottom',
           },
           {
-            target: "#staff-stats-cards",
-            title: "Team Overview",
-            content: "Quick insights into your staff count, utilization, and active members.",
-            position: "bottom"
+            target: '#staff-list',
+            title: 'Manage clinicians',
+            content: 'Use the menu on each row to view availability and patients, send a message, suspend or remove.',
+            position: 'top',
           },
-          {
-            target: "#staff-tabs",
-            title: "Schedules & Appointments",
-            content: "Switch tabs to view detailed schedules and appointment loads for your staff.",
-            position: "top"
-          }
         ]}
       />
-    </div >
+    </PageShell>
   )
 }

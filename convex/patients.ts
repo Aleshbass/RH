@@ -994,11 +994,17 @@ export const reassignPatient = mutation({
     const currentPhysio = await ctx.db.get(args.currentPhysiotherapistId);
     const newPhysio = await ctx.db.get(args.newPhysiotherapistId);
 
-    if (!currentPhysio || currentPhysio.clinicId !== clinic._id) {
+    // The owner treats patients too but has no users.clinicId of their own
+    const belongsToClinic = (physio: typeof currentPhysio) =>
+      !!physio && (physio.clinicId === clinic._id || physio._id === clinic.ownerId);
+    if (!belongsToClinic(currentPhysio)) {
       throw new Error("Current physiotherapist does not belong to your clinic");
     }
-    if (!newPhysio || newPhysio.clinicId !== clinic._id) {
+    if (!belongsToClinic(newPhysio)) {
       throw new Error("New physiotherapist does not belong to your clinic");
+    }
+    if (args.currentPhysiotherapistId === args.newPhysiotherapistId) {
+      throw new Error("The patient is already with this clinician");
     }
 
     // Find the active relationship
@@ -1008,7 +1014,7 @@ export const reassignPatient = mutation({
         q.eq("patientId", args.patientId).eq("physiotherapistId", args.currentPhysiotherapistId)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
-      .unique();
+      .first();
 
     if (!relationship) {
       throw new Error("Active relationship not found between patient and current physiotherapist");
@@ -1028,6 +1034,8 @@ export const reassignPatient = mutation({
       status: "active",
       startDate: Date.now(),
       isPrimaryPhysiotherapist: relationship.isPrimaryPhysiotherapist,
+      // Keep where the patient came from (e.g. a Rehabify referral)
+      source: relationship.source,
     });
 
     // Log the reassignment

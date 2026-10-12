@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
+import { headers } from 'next/headers'
 import { DashboardHeader } from '@/components/dashboard/shared/DashboardHeader'
 import { Toaster } from "sonner"
 import NotificationToaster from '@/components/dashboard/shared/NotificationToaster'
@@ -12,6 +13,14 @@ export default async function DashboardLayout({
 }: {
   children: ReactNode
 }) {
+  const headerList = await headers()
+  const pathname = headerList.get('x-pathname') || ''
+
+  // /dashboard/clinic is a self-contained clinic portal with its own layout, preview sandbox, and auth rules
+  if (pathname.startsWith('/dashboard/clinic')) {
+    return <>{children}</>
+  }
+
   const { userId } = await auth()
 
   if (!userId) {

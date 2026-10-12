@@ -9,6 +9,7 @@ import { HowItWorks } from "@/components/landing/HowItWorks";
 import { TrustSafety } from "@/components/landing/TrustSafety";
 import { HomePageSEO } from "@/components/seo/HomePageSEO";
 import { DoctorsClinicsSection } from "@/components/landing/DoctorsClinicsSection";
+import { ClinicOnboardingSection } from "@/components/landing/ClinicOnboardingSection";
 import { SpeakToAPhysio } from "@/components/landing/SpeakToAPhysio";
 import { ForInstitutionsSection } from "@/components/landing/ForInstitutionsSection";
 import { MediloanBanner } from "@/components/landing/MediloanBanner";
@@ -28,6 +29,7 @@ const PageContent = () => (
     <RoleBasedFeatures />
     <ConnectedCareSection />
     <DoctorsClinicsSection />
+    <ClinicOnboardingSection />
     <ForInstitutionsSection />
     <FoundersCarousel />
     <TrustSafety />

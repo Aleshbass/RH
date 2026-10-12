@@ -59,11 +59,11 @@ export async function POST(request: NextRequest) {
 
         switch (event) {
             case 'charge.success':
-                await handlePaymentSuccess(data)
+                await handlePaymentSuccess(data, rawBody, signature as string)
                 break
 
             case 'charge.failed':
-                await handlePaymentFailed(data)
+                await handlePaymentFailed(data, rawBody, signature as string)
                 break
 
             case 'transfer.success':
@@ -114,7 +114,7 @@ async function handlePaymentSuccess(data: {
     channel?: string
     paid_at?: string
     [key: string]: unknown
-}) {
+}, rawBody: string, signature: string) {
     log.info('Processing successful Paystack payment', {
         action: 'paystack_payment_success',
         metadata: {
@@ -235,31 +235,12 @@ async function handlePaymentSuccess(data: {
         // 2. Regular Invoice Payments
         log.info('Processing regular invoice payment', { action: 'regular_payment_path' });
 
-        // Update payment status in the database (Use 'completed' so it triggers the invoice update)
-        await convex.mutation(api.payments.updatePaymentStatus, {
-            paystackReference: data.reference,
-            status: 'completed',
-            paystackData: {
-                amount: data.amount,
-                currency: data.currency,
-                channel: data.channel,
-                paid_at: data.paid_at,
-                customer_email: data.customer?.email,
-            }
+        // Convex re-verifies the Paystack signature, then marks the payment and invoice
+        // paid and keeps the patient balance in sync
+        await convex.mutation(api.payments.recordPaystackChargeWebhook, {
+            rawBody,
+            signature,
         })
-
-        // 3. Keep patient balance in sync automatically
-        if (data.metadata?.invoiceId) {
-            try {
-                // updatePaymentStatus handles invoice status + notifications
-                await convex.mutation(api.payments.updatePatientBalance, {
-                    invoiceId: data.metadata.invoiceId,
-                    amountPaid: data.amount
-                });
-            } catch (err) {
-                log.error('Failed to update patient balance secondary task', { error: err as Error });
-            }
-        }
 
         // Send payment notification emails
         await sendPaymentEmails({
@@ -287,7 +268,7 @@ async function handlePaymentFailed(data: {
     status: string
     metadata?: Record<string, unknown>
     [key: string]: unknown
-}) {
+}, rawBody: string, signature: string) {
     log.info('Processing failed Paystack payment', {
         action: 'paystack_payment_failed',
         metadata: {
@@ -327,12 +308,9 @@ async function handlePaymentFailed(data: {
 
         const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
-        await convex.mutation(api.payments.updatePaymentStatus, {
-            paystackReference: data.reference,
-            status: 'failed',
-            paystackData: {
-                status: data.status,
-            }
+        await convex.mutation(api.payments.recordPaystackChargeWebhook, {
+            rawBody,
+            signature,
         })
 
         await sendPaymentEmails({

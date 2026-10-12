@@ -13,12 +13,23 @@ export const generateUploadUrl = mutation({
   },
   returns: v.string(),
   handler: async (ctx, args) => {
-    // Note: We allow unauthenticated users to generate upload URLs.
-    // This is explicitly required so physiotherapists and clinic owners can upload their 
-    // profile photos during the onboarding wizard BEFORE they create a Clerk account.
-    // The actual storage mapping/linking is strictly protected by auth in the save/update mutations.
-    
-    // Generate the upload URL
+    if (args.fileName.length > 255) {
+      throw new Error("File name is too long");
+    }
+
+    // Guests may upload before they have an account (physio sign-up photo and
+    // licence documents), but only images and PDFs. Linking a stored file to a
+    // record is protected by auth in the save/update mutations.
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      const type = args.fileType.toLowerCase();
+      const guestAllowed =
+        (type.startsWith("image/") && type !== "image/svg+xml") || type === "application/pdf";
+      if (!guestAllowed) {
+        throw new Error("Please sign in to upload this type of file");
+      }
+    }
+
     return await ctx.storage.generateUploadUrl();
   },
 });

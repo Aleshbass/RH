@@ -10,6 +10,7 @@ export default clerkMiddleware(async (auth, req) => {
 
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-current-host", currentHost);
+  requestHeaders.set("x-pathname", url.pathname);
 
   // 1. Subdomain: docs.physioaroundme.com (or docs.localhost)
   if (currentHost.startsWith("docs.")) {
@@ -120,6 +121,10 @@ export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) {
     await auth.protect();
   }
+
+  return NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 });
 
 export const config = {

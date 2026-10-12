@@ -61,6 +61,13 @@ pre.shiki .line.highlighted {
 
 @variant dark (&:is(.dark *));
 
+/* Clinic theme switch: the new theme is revealed by a clip-path circle (see ClinicTheme.tsx) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
 /* Theme variables */
 :root {
   --color-background: var(--background);

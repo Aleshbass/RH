@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { 
     ArrowRight, 
     Send, 
-    CheckCircle2, 
+    Check, 
     FileText, 
     Clock, 
     TrendingUp, 
@@ -119,8 +119,8 @@ export function DoctorsClinicsSection() {
                                 >
                                     {referralSent ? (
                                         <>
-                                            <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                                            <span>Referral Dispatched & Synced! ✓</span>
+                                            <Check className="w-4 h-4 text-emerald-300" />
+                                            <span>Referral Dispatched & Synced!</span>
                                         </>
                                     ) : (
                                         <>
@@ -142,13 +142,15 @@ export function DoctorsClinicsSection() {
                             </form>
                         </div>
 
-                        {/* Feature Badges */}
-                        <div className="pt-5 mt-4 border-t border-gray-100 flex flex-wrap gap-4 text-xs text-gray-700 font-medium">
-                            <span className="flex items-center gap-1.5">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Zero phone tag
+                        {/* Capability Badges */}
+                        <div className="pt-5 mt-4 border-t border-gray-100 flex flex-wrap gap-2.5 text-xs font-medium">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#005b57]/[0.06] text-[#005b57] border border-[#005b57]/15">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#005b57]" />
+                                Zero phone tag
                             </span>
-                            <span className="flex items-center gap-1.5">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Automated follow-up
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#005b57]/[0.06] text-[#005b57] border border-[#005b57]/15">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#005b57]" />
+                                Automated follow-up
                             </span>
                         </div>
                     </motion.div>
@@ -214,11 +216,11 @@ export function DoctorsClinicsSection() {
                     </a>
 
                     <Link
-                        href="/sign-up?redirect=/role-selection?role=doctor"
+                        href="/clinic-owner"
                         className="inline-flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-300 text-gray-800 font-semibold py-4 px-8 rounded-full transition-all duration-300 shadow-sm"
                     >
                         <Building2 className="w-4 h-4 text-gray-600" />
-                        <span>Register Your Clinic / Hospital</span>
+                        <span>Onboard Your Clinic</span>
                     </Link>
                 </motion.div>
 

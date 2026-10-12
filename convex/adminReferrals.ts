@@ -116,17 +116,10 @@ export const updateReferralStatus = mutation({
         assignedPhysiotherapistId: v.optional(v.id("users")),
     },
     handler: async (ctx, args) => {
-        let adminId = "system_operator";
-        let actorType = "system";
-        try {
-            const adminUser = await ensureUserRole(ctx, ["admin"]);
-            adminId = String(adminUser._id);
-            actorType = "admin";
-        } catch {
-            // Allow script, background job, and test execution
-            adminId = "system_operator";
-            actorType = "system";
-        }
+        // Admins only: this changes referral state and creates partner commissions.
+        const adminUser = await ensureUserRole(ctx, ["admin"]);
+        const adminId = String(adminUser._id);
+        const actorType = "admin";
 
         const referral = await ctx.db.get(args.referralId);
         if (!referral) {
@@ -325,6 +318,84 @@ export const updateReferralStatus = mutation({
         }
 
         return args.referralId;
+    },
+});
+
+/**
+ * Clinics a referral can be routed to (approved clinic owners only), for the admin routing picker.
+ */
+export const listClinicsForReferralRouting = query({
+    args: {},
+    handler: async (ctx) => {
+        await ensureUserRole(ctx, ["admin"]);
+
+        const clinics = await ctx.db.query("clinics").collect();
+        const rows = await Promise.all(
+            clinics.map(async (clinic) => {
+                const approval = await ctx.db
+                    .query("accountApprovalStatus")
+                    .withIndex("by_user_id", (q) => q.eq("userId", clinic.ownerId))
+                    .unique();
+                if (approval?.status !== "approved") return null;
+                return { _id: clinic._id, name: clinic.name, city: clinic.city || "" };
+            })
+        );
+        return rows
+            .filter((row): row is NonNullable<typeof row> => row !== null)
+            .sort((a, b) => a.name.localeCompare(b.name));
+    },
+});
+
+/**
+ * Route a referral to a specific clinic. Only the assigned clinic can see the referral in its
+ * dashboard; passing no clinicId removes the assignment.
+ */
+export const assignReferralToClinic = mutation({
+    args: {
+        referralId: v.id("inboundReferrals"),
+        clinicId: v.optional(v.id("clinics")),
+    },
+    handler: async (ctx, args) => {
+        const admin = await ensureUserRole(ctx, ["admin"]);
+
+        const referral = await ctx.db.get(args.referralId);
+        if (!referral) {
+            throw new Error("Referral not found");
+        }
+
+        if (args.clinicId) {
+            const clinic = await ctx.db.get(args.clinicId);
+            if (!clinic) {
+                throw new Error("Clinic not found");
+            }
+            const approval = await ctx.db
+                .query("accountApprovalStatus")
+                .withIndex("by_user_id", (q) => q.eq("userId", clinic.ownerId))
+                .unique();
+            if (approval?.status !== "approved") {
+                throw new Error("Referrals can only be routed to approved clinics");
+            }
+        }
+
+        const now = Date.now();
+        await ctx.db.patch(args.referralId, {
+            assignedClinicId: args.clinicId,
+            updatedAt: now,
+        });
+
+        await ctx.db.insert("referralEvents", {
+            referralId: args.referralId,
+            eventName: args.clinicId ? "clinic.assigned" : "clinic.unassigned",
+            occurredAt: now,
+            actorType: "admin",
+            actorId: String(admin._id),
+            metadata: {
+                previousClinicId: referral.assignedClinicId,
+                clinicId: args.clinicId,
+            },
+        });
+
+        return { success: true };
     },
 });
 

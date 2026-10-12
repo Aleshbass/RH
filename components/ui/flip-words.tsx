@@ -36,6 +36,11 @@ export const FlipWords = ({
             stiffness: 240,
             damping: 22,
             mass: 0.8,
+            filter: {
+              type: "tween",
+              duration: 0.3,
+              ease: "easeOut",
+            },
           }}
           className={cn(
             "inline-block font-extrabold text-[#005b57] origin-center py-0.5",

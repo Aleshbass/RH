@@ -1,4 +1,4 @@
-import { mutation, query, action } from "./_generated/server";
+import { mutation, query, action, internalMutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id, Doc } from "./_generated/dataModel";
 import { api } from "./_generated/api";
@@ -140,6 +140,11 @@ export const createPaymentRecord = mutation({
 
     if (!user) {
       return { success: false, message: "User not found" };
+    }
+
+    const invoice = await ctx.db.get(args.invoiceId);
+    if (!invoice || (invoice.patientId !== user._id && user.role !== "admin")) {
+      return { success: false, message: "Invoice not found" };
     }
 
     // Create payment record
@@ -347,76 +352,165 @@ export const verifyPaystackTransaction = action({
 });
 
 /**
- * Update patient balance after successful payment
+ * Update patient balance after successful payment (internal: only called after a verified payment)
  */
-export const updatePatientBalance = mutation({
+export const updatePatientBalance = internalMutation({
   args: {
     invoiceId: v.id("invoices"),
     amountPaid: v.number()
   },
   handler: async (ctx, args) => {
+    await applyPatientBalanceUpdate(ctx, args);
+  }
+});
+
+async function applyPatientBalanceUpdate(
+  ctx: MutationCtx,
+  args: { invoiceId: Id<"invoices">; amountPaid: number }
+) {
+  {
     const invoice = await ctx.db.get(args.invoiceId);
     if (!invoice) return;
 
-    // Get patient
-    const patient = await ctx.db.get(invoice.patientId);
-    if (!patient) return;
-
-    // Update patient profile balance if it exists
-    const patientProfile = await ctx.db
-      .query("patientProfiles")
-      .withIndex("by_user_id", (q) => q.eq("userId", invoice.patientId))
-      .unique();
-
-    if (patientProfile) {
-      const currentBalance = (patientProfile as any).accountBalance || 0;
-      const newBalance = currentBalance - args.amountPaid;
-
-      await ctx.db.patch(patientProfile._id, {
-        accountBalance: newBalance,
-        lastPaymentDate: Date.now(),
-        updatedAt: Date.now()
-      } as any);
-    }
-
-    // Log the balance update
+    // Patient balances are derived from invoices; patientProfiles has no balance field, and
+    // patching one would fail schema validation and roll back the payment that triggered it.
+    // Only record the event.
     await ctx.db.insert("analytics_events", {
       type: "balance_updated",
       userId: invoice.patientId,
+      clinicId: invoice.clinicId,
       timestamp: Date.now(),
       metadata: {
         status: "completed",
         details: {
           invoiceId: args.invoiceId,
           amountPaid: args.amountPaid,
-          newBalance: ((patientProfile as any)?.accountBalance || 0) - args.amountPaid
         }
       }
     });
   }
+}
+
+const paymentStatusResult = v.object({
+  success: v.boolean(),
+  message: v.string(),
+  paymentId: v.optional(v.id("payments")),
+  invoiceId: v.optional(v.id("invoices"))
 });
 
 /**
- * Update payment and invoice status
+ * Update payment and invoice status (internal: callers must have verified the payment first)
  */
-export const updatePaymentStatus = mutation({
+export const updatePaymentStatus = internalMutation({
   args: {
     paystackReference: v.string(),
     status: v.string(),
     paystackData: v.optional(v.any())
   },
-  returns: v.object({
-    success: v.boolean(),
-    message: v.string(),
-    paymentId: v.optional(v.id("payments")),
-    invoiceId: v.optional(v.id("invoices"))
-  }),
+  returns: paymentStatusResult,
+  handler: async (ctx, args) => applyPaymentStatus(ctx, args),
+});
+
+async function verifyPaystackSignature(rawBody: string, signature: string) {
+  const secret = process.env.PAYSTACK_WEBHOOK_SECRET || process.env.PAYSTACK_SECRET_KEY;
+  if (!secret || !signature) return false;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-512" },
+    false,
+    ["sign"]
+  );
+  const digest = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
+  const expected = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  if (expected.length !== signature.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < expected.length; i++) {
+    mismatch |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+/**
+ * Record a Paystack charge webhook. The raw body and Paystack signature are verified here,
+ * inside Convex, so this public entry point cannot be used to mark arbitrary payments paid.
+ */
+export const recordPaystackChargeWebhook = mutation({
+  args: {
+    rawBody: v.string(),
+    signature: v.string(),
+  },
+  returns: paymentStatusResult,
   handler: async (ctx, args) => {
+    if (!(await verifyPaystackSignature(args.rawBody, args.signature))) {
+      throw new Error("Invalid Paystack webhook signature");
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(args.rawBody);
+    } catch {
+      throw new Error("Invalid webhook payload");
+    }
+
+    const data = payload?.data ?? {};
+    const reference = typeof data.reference === "string" ? data.reference : "";
+    if (!reference) {
+      return { success: false, message: "Missing payment reference" };
+    }
+
+    if (payload.event === "charge.success") {
+      const result = await applyPaymentStatus(ctx, {
+        paystackReference: reference,
+        status: "completed",
+        paystackData: {
+          amount: data.amount,
+          currency: data.currency,
+          channel: data.channel,
+          paid_at: data.paid_at,
+          customer_email: data.customer?.email,
+        },
+      });
+      const invoiceId = data.metadata?.invoiceId;
+      if (result.success && typeof invoiceId === "string") {
+        const normalized = ctx.db.normalizeId("invoices", invoiceId);
+        if (normalized) {
+          await applyPatientBalanceUpdate(ctx, { invoiceId: normalized, amountPaid: data.amount });
+          // Paystack names the subaccount when it split the payment to the provider's bank
+          const splitToProvider = typeof data.subaccount?.subaccount_code === "string" && data.subaccount.subaccount_code !== "";
+          await ctx.db.patch(normalized, {
+            payoutRoute: splitToProvider ? "split_to_provider" : "held_by_platform",
+          });
+        }
+      }
+      return result;
+    }
+
+    if (payload.event === "charge.failed") {
+      return await applyPaymentStatus(ctx, {
+        paystackReference: reference,
+        status: "failed",
+        paystackData: { status: data.status },
+      });
+    }
+
+    return { success: false, message: `Unhandled event ${payload.event}` };
+  },
+});
+
+async function applyPaymentStatus(
+  ctx: MutationCtx,
+  args: { paystackReference: string; status: string; paystackData?: any }
+) {
+  {
     // Find payment by reference
     const payment = await ctx.db
       .query("payments")
-      .filter((q) => q.eq(q.field("paystackReference"), args.paystackReference))
-      .unique();
+      .withIndex("by_paystack_reference", (q) => q.eq("paystackReference", args.paystackReference))
+      .first();
 
     if (!payment) {
       console.error("Payment not found for reference:", args.paystackReference);
@@ -457,7 +551,7 @@ export const updatePaymentStatus = mutation({
               data: {
                 entityId: invoice._id,
                 entityType: "invoice",
-                actionUrl: `/dashboard/physiotherapist/billing`,
+                actionUrl: invoice.clinicId ? `/dashboard/clinic/billing` : `/dashboard/physiotherapist/billing`,
                 invoiceNumber: invoice.invoiceNumber,
                 amount: payment.amount
               }
@@ -494,7 +588,7 @@ export const updatePaymentStatus = mutation({
       invoiceId: payment.invoiceId
     };
   }
-});
+}
 
 /**
  * Initialize payment for an invoice (DEPRECATED - use initializeInvoicePayment)

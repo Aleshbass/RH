@@ -1229,7 +1229,7 @@ export const recordJoyPaymentWebhook = internalMutation({
           const rehabifyAmount = args.amountKobo - commissionAmount - physioAmount;
           const billingPeriod = new Date(now).toISOString().slice(0, 7); // "YYYY-MM"
 
-          const physioUser: any = await ctx.db.get(booking.physiotherapistId);
+          const physioUser: any = booking.physiotherapistId ? await ctx.db.get(booking.physiotherapistId) : null;
 
           await ctx.db.insert("partnerCommissions", {
             partnerId: linkedReferral.partnerId,
@@ -1303,6 +1303,9 @@ export const recordJoyPaymentWebhook = internalMutation({
     }
 
     return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: now + 5 * HOUR_MS, event_id: args.paystackEventId };
+  },
+});
+
 /** Record a terminal Paystack failure without treating it as payment evidence. */
 export const recordJoyPaymentFailedWebhook = internalMutation({
   args: { reference: v.string(), paystackEventId: v.string(), failureCategory: v.optional(v.string()) },

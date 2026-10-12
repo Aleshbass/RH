@@ -10,11 +10,19 @@
  * - Payout management
  */
 
+import { createHmac } from 'node:crypto';
 import { config } from 'dotenv';
 import { ConvexClient } from 'convex/browser';
 import { api } from '../convex/_generated/api.js';
 
 config({ path: '.env.local' });
+
+// Must match the secret set in the Convex environment.
+function signPaystackBody(rawBody) {
+  const secret = process.env.PAYSTACK_WEBHOOK_SECRET || process.env.PAYSTACK_SECRET_KEY;
+  if (!secret) throw new Error('Set PAYSTACK_SECRET_KEY to simulate a signed webhook');
+  return createHmac('sha512', secret).update(rawBody).digest('hex');
+}
 
 const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL;
 const client = new ConvexClient(CONVEX_URL);
@@ -208,16 +216,21 @@ async function testPaymentProcessing(invoice, patient) {
       // Simulate successful payment webhook
       logInfo('Simulating successful payment webhook...');
       
-      const paymentUpdate = await client.mutation(api.payments.updatePaymentStatus, {
-        paystackReference: payment.paystackReference,
-        status: 'completed',
-        paystackData: {
-          transactionId: `trans_${Date.now()}`,
-          gatewayResponse: 'Successful',
-          paidAt: Date.now(),
+      // Payment status can only change through a signed Paystack webhook.
+      const rawBody = JSON.stringify({
+        event: 'charge.success',
+        data: {
+          reference: payment.paystackReference,
+          amount: invoice.totalAmount,
+          currency: 'NGN',
           channel: 'card',
-          fees: invoice.paystackFeeAmount
+          paid_at: new Date().toISOString(),
+          metadata: { invoiceId: invoice._id }
         }
+      });
+      const paymentUpdate = await client.mutation(api.payments.recordPaystackChargeWebhook, {
+        rawBody,
+        signature: signPaystackBody(rawBody)
       });
       
       if (paymentUpdate.success) {

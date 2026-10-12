@@ -78,6 +78,8 @@ import type * as calendar_types from "../calendar/types.js";
 import type * as calendar_webhook from "../calendar/webhook.js";
 import type * as chat from "../chat.js";
 import type * as clerk from "../clerk.js";
+import type * as clinicBilling from "../clinicBilling.js";
+import type * as clinicTools from "../clinicTools.js";
 import type * as clinics from "../clinics.js";
 import type * as commercialTerms from "../commercialTerms.js";
 import type * as crons from "../crons.js";
@@ -240,6 +242,8 @@ declare const fullApi: ApiFromModules<{
   "calendar/webhook": typeof calendar_webhook;
   chat: typeof chat;
   clerk: typeof clerk;
+  clinicBilling: typeof clinicBilling;
+  clinicTools: typeof clinicTools;
   clinics: typeof clinics;
   commercialTerms: typeof commercialTerms;
   crons: typeof crons;

@@ -255,21 +255,21 @@ export default function BookingPage() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#121212] flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
+            <div className="min-h-screen bg-[#002e2c] flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-teal-300" />
             </div>
         );
     }
 
     if (!profile) {
         return (
-            <div className="min-h-screen bg-[#121212] flex items-center justify-center">
+            <div className="min-h-screen bg-[#002e2c] flex items-center justify-center">
                 <div className="text-center">
-                    <p className="text-gray-400 mb-4">Physiotherapist not found</p>
+                    <p className="text-white/65 mb-4">Physiotherapist not found</p>
                     <Button
                         onClick={() => router.push("/find-a-physio")}
                         variant="outline"
-                        className="border-gray-700 text-gray-300 hover:bg-gray-800"
+                        className="border-white/15 text-white/80 hover:bg-white/[0.07]"
                     >
                         <ArrowLeft className="h-4 w-4 mr-2" />
                         Back to Search
@@ -478,7 +478,7 @@ export default function BookingPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#121212] flex flex-col">
+        <div className="min-h-screen bg-[#002e2c] flex flex-col">
             <main className="flex-1 flex items-center justify-center px-4 py-8">
                 {/* Step: Select Time */}
                 {step === "select-time" && (
@@ -500,7 +500,7 @@ export default function BookingPage() {
                             <div className="flex justify-end">
                                 <Button
                                     onClick={goToPackageSelection}
-                                    className="bg-teal-600 hover:bg-teal-700 text-white px-8"
+                                    className="bg-white text-[#002e2c] hover:bg-emerald-50 px-8"
                                 >
                                     Continue
                                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -513,9 +513,9 @@ export default function BookingPage() {
                 {/* Step: Select Package */}
                 {step === "select-package" && selectedSlot && (
                     <div className="max-w-lg mx-auto w-full">
-                        <div className="bg-[#1a1a1a] rounded-xl p-5 sm:p-6 border border-gray-800">
+                        <div className="bg-[#00403c] rounded-xl p-5 sm:p-6 border border-white/10">
                             {/* Physio header mini */}
-                            <div className="flex items-center gap-3 mb-5 pb-4 border-b border-gray-800">
+                            <div className="flex items-center gap-3 mb-5 pb-4 border-b border-white/10">
                                 {profile.imageUrl && (
                                     <Image
                                         src={profile.imageUrl}
@@ -529,7 +529,7 @@ export default function BookingPage() {
                                     <p className="text-sm font-medium text-white">
                                         {profile.fullName}
                                     </p>
-                                    <p className="text-xs text-gray-500">
+                                    <p className="text-xs text-white/50">
                                         {formatDate(selectedSlot.start)} · {formatTime(selectedSlot.start)}
                                     </p>
                                 </div>
@@ -548,14 +548,14 @@ export default function BookingPage() {
                                 <Button
                                     onClick={goBack}
                                     variant="outline"
-                                    className="flex-1 border-gray-300 bg-white text-black hover:bg-gray-100"
+                                    className="flex-1 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
                                 >
                                     <ArrowLeft className="w-4 h-4 mr-2" />
                                     Back
                                 </Button>
                                 <Button
                                     onClick={goToDetails}
-                                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white"
+                                    className="flex-1 bg-white text-[#002e2c] hover:bg-emerald-50"
                                 >
                                     Continue
                                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -568,18 +568,18 @@ export default function BookingPage() {
                 {/* Step: Details */}
                 {step === "details" && selectedSlot && (
                     <div className="max-w-lg mx-auto w-full">
-                        <div className="bg-[#1a1a1a] rounded-xl p-5 sm:p-6 border border-gray-800">
+                        <div className="bg-[#00403c] rounded-xl p-5 sm:p-6 border border-white/10">
                             <h2 className="text-xl font-semibold text-white mb-6">
                                 Booking Details
                             </h2>
 
                             {/* Selected Time Summary */}
-                            <div className="bg-gray-800 rounded-lg p-4 mb-6">
-                                <p className="text-gray-400 text-sm mb-1">Selected Time</p>
+                            <div className="bg-white/[0.07] rounded-lg p-4 mb-6">
+                                <p className="text-white/65 text-sm mb-1">Selected Time</p>
                                 <p className="text-white font-medium">
                                     {formatDate(selectedSlot.start)}
                                 </p>
-                                <p className="text-teal-400">
+                                <p className="text-teal-300">
                                     {formatTime(selectedSlot.start)} -{" "}
                                     {formatTime(selectedSlot.end)}
                                 </p>
@@ -589,7 +589,7 @@ export default function BookingPage() {
                             {profile.offersOnlineSessions &&
                                 profile.offersInPersonSessions && (
                                     <div className="mb-6">
-                                        <Label className="text-gray-300 mb-3 block">
+                                        <Label className="text-white/80 mb-3 block">
                                             Session Mode
                                         </Label>
                                         <RadioGroup
@@ -602,32 +602,32 @@ export default function BookingPage() {
                                             <div
                                                 className={`flex items-center space-x-3 p-4 rounded-lg border ${sessionMode === "online"
                                                     ? "border-teal-500 bg-teal-500/10"
-                                                    : "border-gray-700 bg-gray-800"
+                                                    : "border-white/15 bg-white/[0.07]"
                                                     }`}
                                             >
                                                 <RadioGroupItem
                                                     value="online"
                                                     id="online"
-                                                    className="border-gray-600"
+                                                    className="border-white/30"
                                                 />
                                                 <Label
                                                     htmlFor="online"
                                                     className="flex items-center gap-2 cursor-pointer text-white"
                                                 >
-                                                    <Video className="h-4 w-4 text-teal-400" />
+                                                    <Video className="h-4 w-4 text-teal-300" />
                                                     Online (Video Call)
                                                 </Label>
                                             </div>
                                             <div
                                                 className={`flex items-center space-x-3 p-4 rounded-lg border ${sessionMode === "in-person"
                                                     ? "border-teal-500 bg-teal-500/10"
-                                                    : "border-gray-700 bg-gray-800"
+                                                    : "border-white/15 bg-white/[0.07]"
                                                     }`}
                                             >
                                                 <RadioGroupItem
                                                     value="in-person"
                                                     id="in-person"
-                                                    className="border-gray-600"
+                                                    className="border-white/30"
                                                 />
                                                 <Label
                                                     htmlFor="in-person"
@@ -644,7 +644,7 @@ export default function BookingPage() {
                             {/* Exact Address for In-Person */}
                             {sessionMode === "in-person" && (
                                 <div className="mb-6">
-                                    <Label htmlFor="address" className="text-gray-300 mb-2 block">
+                                    <Label htmlFor="address" className="text-white/80 mb-2 block">
                                         Exact Home Address <span className="text-red-400">*</span>
                                     </Label>
                                     <Textarea
@@ -652,7 +652,7 @@ export default function BookingPage() {
                                         value={patientAddress}
                                         onChange={(e) => setPatientAddress(e.target.value)}
                                         placeholder="Enter your exact street address, apartment number, and any special instructions for the physiotherapist..."
-                                        className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 resize-none"
+                                        className="bg-white/[0.07] border-white/15 text-white placeholder:text-white/50 resize-none"
                                         rows={3}
                                         required
                                     />
@@ -661,7 +661,7 @@ export default function BookingPage() {
 
                             {/* Notes */}
                             <div className="mb-6">
-                                <Label htmlFor="notes" className="text-gray-300 mb-2 block">
+                                <Label htmlFor="notes" className="text-white/80 mb-2 block">
                                     Additional Notes (Optional)
                                 </Label>
                                 <Textarea
@@ -669,19 +669,19 @@ export default function BookingPage() {
                                     value={notes}
                                     onChange={(e) => setNotes(e.target.value)}
                                     placeholder="Tell the physiotherapist about your condition..."
-                                    className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 resize-none"
+                                    className="bg-white/[0.07] border-white/15 text-white placeholder:text-white/50 resize-none"
                                     rows={4}
                                 />
                             </div>
 
                             {/* Price Summary */}
-                            <div className="bg-gray-800 rounded-lg p-4 mb-6 space-y-2">
+                            <div className="bg-white/[0.07] rounded-lg p-4 mb-6 space-y-2">
                                 <div className="flex justify-between items-center">
                                     <div>
-                                        <span className="text-gray-300 text-sm font-medium">
+                                        <span className="text-white/80 text-sm font-medium">
                                             {packageName}
                                         </span>
-                                        <span className="text-gray-500 text-xs ml-2">
+                                        <span className="text-white/50 text-xs ml-2">
                                             {selectedPackage} session{selectedPackage > 1 ? "s" : ""}
                                         </span>
                                     </div>
@@ -703,7 +703,7 @@ export default function BookingPage() {
                                     </div>
                                 )}
                                 {selectedPackage > 1 && packageBreakdown && (
-                                    <p className="text-[11px] text-gray-500">
+                                    <p className="text-[11px] text-white/50">
                                         {formatNaira(Math.round(packageBreakdown.total / selectedPackage))}/session average
                                     </p>
                                 )}
@@ -711,13 +711,13 @@ export default function BookingPage() {
                                 {/* Paystack Processing Fee (patient-facing surcharge) */}
                                 {feeSurcharge.applies && (
                                     <>
-                                        <div className="flex justify-between items-center text-xs pt-2 border-t border-gray-700">
-                                            <span className="text-gray-400">Payment Processing Fee <span className="text-gray-600">(Paystack)</span></span>
-                                            <span className="text-gray-300 font-medium">
+                                        <div className="flex justify-between items-center text-xs pt-2 border-t border-white/15">
+                                            <span className="text-white/65">Payment Processing Fee <span className="text-white/40">(Paystack)</span></span>
+                                            <span className="text-white/80 font-medium">
                                                 {formatNaira(feeSurcharge.feeNaira)}
                                             </span>
                                         </div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-gray-700">
+                                        <div className="flex justify-between items-center pt-2 border-t border-white/15">
                                             <span className="text-white text-sm font-semibold">Total to Pay</span>
                                             <span className="text-xl font-bold text-white">
                                                 {formatNaira(feeSurcharge.grossNaira)}
@@ -730,7 +730,7 @@ export default function BookingPage() {
                                 <button
                                     type="button"
                                     onClick={() => setStep("select-package")}
-                                    className="text-teal-400 text-xs hover:text-teal-300 underline pt-1"
+                                    className="text-teal-300 text-xs hover:text-teal-200 underline pt-1"
                                 >
                                     Change plan
                                 </button>
@@ -738,60 +738,60 @@ export default function BookingPage() {
 
                             {/* Guest checkout form */}
                             {showGuestForm && !isSignedIn && (
-                                <div className="bg-gray-900 border border-teal-700 rounded-xl p-5 mb-5 space-y-4">
-                                    <p className="text-teal-400 text-sm font-semibold">Quick Checkout — No Account Needed</p>
+                                <div className="bg-[#003633] border border-teal-300/40 rounded-xl p-5 mb-5 space-y-4">
+                                    <p className="text-teal-300 text-sm font-semibold">Quick Checkout — No Account Needed</p>
                                     <div>
-                                        <Label htmlFor="guestName" className="text-gray-300 mb-1 block text-xs">Full Name (Optional)</Label>
+                                        <Label htmlFor="guestName" className="text-white/80 mb-1 block text-xs">Full Name (Optional)</Label>
                                         <div className="relative">
                                             <Input
                                                 id="guestName"
                                                 value={guestName}
                                                 onChange={(e) => setGuestName(e.target.value)}
                                                 placeholder="Your full name"
-                                                className="bg-gray-800 border-gray-700 text-white pl-9"
+                                                className="bg-white/[0.07] border-white/15 text-white pl-9"
                                             />
                                         </div>
                                     </div>
                                     <div>
-                                        <Label htmlFor="guestEmail" className="text-gray-300 mb-1 block text-xs">Email Address <span className="text-red-400">*</span></Label>
+                                        <Label htmlFor="guestEmail" className="text-white/80 mb-1 block text-xs">Email Address <span className="text-red-400">*</span></Label>
                                         <div className="relative">
-                                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
                                             <Input
                                                 id="guestEmail"
                                                 type="email"
                                                 value={guestEmail}
                                                 onChange={(e) => setGuestEmail(e.target.value)}
                                                 placeholder="you@example.com"
-                                                className="bg-gray-800 border-gray-700 text-white pl-9"
+                                                className="bg-white/[0.07] border-white/15 text-white pl-9"
                                             />
                                         </div>
                                     </div>
                                     <div>
-                                        <Label htmlFor="guestPhone" className="text-gray-300 mb-1 block text-xs">Phone Number (Optional)</Label>
+                                        <Label htmlFor="guestPhone" className="text-white/80 mb-1 block text-xs">Phone Number (Optional)</Label>
                                         <div className="relative">
-                                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
                                             <Input
                                                 id="guestPhone"
                                                 type="tel"
                                                 value={guestPhone}
                                                 onChange={(e) => setGuestPhone(e.target.value)}
                                                 placeholder="080xxxxxxxx"
-                                                className="bg-gray-800 border-gray-700 text-white pl-9"
+                                                className="bg-white/[0.07] border-white/15 text-white pl-9"
                                             />
                                         </div>
                                     </div>
                                     <Button
                                         onClick={handleGuestPay}
                                         disabled={isProcessing || !guestEmail.trim()}
-                                        className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+                                        className="w-full bg-white text-[#002e2c] hover:bg-emerald-50"
                                     >
                                         {isProcessing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</> : "Continue to Payment"}
                                     </Button>
-                                    <p className="text-center text-xs text-gray-500">
+                                    <p className="text-center text-xs text-white/50">
                                         Already have an account?{" "}
                                         <Link
                                             href={`/sign-in?redirect=/book/${rawParam}/${sessionDuration}`}
-                                            className="text-teal-400 hover:underline"
+                                            className="text-teal-300 hover:underline"
                                         >
                                             Sign in instead
                                         </Link>
@@ -805,7 +805,7 @@ export default function BookingPage() {
                                 <Button
                                     onClick={goBack}
                                     variant="outline"
-                                    className="flex-1 border-gray-300 bg-white text-black hover:bg-gray-100"
+                                    className="flex-1 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
                                 >
                                     <ArrowLeft className="w-4 h-4 mr-2" />
                                     Back
@@ -813,7 +813,7 @@ export default function BookingPage() {
                                 <Button
                                     onClick={handleBooking}
                                     disabled={isProcessing || (sessionMode === "in-person" && !patientAddress.trim())}
-                                    className="flex-1 bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50"
+                                    className="flex-1 bg-white text-[#002e2c] hover:bg-emerald-50 disabled:opacity-50"
                                 >
                                     {isProcessing ? (
                                         <>
@@ -837,44 +837,44 @@ export default function BookingPage() {
                 {/* Step: Confirmation */}
                 {step === "confirm" && (
                     <div className="max-w-lg mx-auto text-center">
-                        <div className="bg-[#1a1a1a] rounded-xl p-8 border border-gray-800">
-                            <div className="w-16 h-16 bg-teal-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <div className="bg-[#00403c] rounded-xl p-8 border border-white/10">
+                            <div className="w-16 h-16 bg-[#005b57] rounded-full flex items-center justify-center mx-auto mb-6">
                                 <CheckCircle2 className="w-8 h-8 text-white" />
                             </div>
 
                             <h2 className="text-2xl font-bold text-white mb-2">
                                 Booking Confirmed!
                             </h2>
-                            <p className="text-gray-400 mb-6">
+                            <p className="text-white/65 mb-6">
                                 Your {packageName.toLowerCase()} with {profile.fullName} has been scheduled.
                             </p>
 
                             {selectedSlot && (
-                                <div className="bg-gray-800 rounded-lg p-4 mb-6 text-left">
-                                    <p className="text-gray-400 text-sm mb-1">First Session</p>
+                                <div className="bg-white/[0.07] rounded-lg p-4 mb-6 text-left">
+                                    <p className="text-white/65 text-sm mb-1">First Session</p>
                                     <p className="text-white font-medium">
                                         {formatDate(selectedSlot.start)}
                                     </p>
-                                    <p className="text-teal-400">
+                                    <p className="text-teal-300">
                                         {formatTime(selectedSlot.start)} -{" "}
                                         {formatTime(selectedSlot.end)}
                                     </p>
                                     {selectedPackage > 1 && (
-                                        <p className="text-gray-500 text-sm mt-2">
+                                        <p className="text-white/50 text-sm mt-2">
                                             + {selectedPackage - 1} more sessions to be scheduled
                                         </p>
                                     )}
                                 </div>
                             )}
 
-                            <p className="text-sm text-gray-500 mb-6">
+                            <p className="text-sm text-white/50 mb-6">
                                 You will receive a confirmation email with the session details
                                 and meeting link.
                             </p>
 
                             <Button
                                 onClick={() => router.push("/dashboard/patient/appointments")}
-                                className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+                                className="w-full bg-white text-[#002e2c] hover:bg-emerald-50"
                             >
                                 View My Appointments
                             </Button>

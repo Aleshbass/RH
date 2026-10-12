@@ -88,9 +88,8 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
             <div className="mt-6">
                 <button
                     onClick={() => setState("open")}
-                    className="w-full bg-gradient-to-br from-[#0d1f17] to-[#111916] rounded-xl border border-emerald-800/40 p-5 text-left hover:border-emerald-600/50 transition-all group relative overflow-hidden"
+                    className="w-full bg-white/[0.05] rounded-xl border border-emerald-800/40 p-5 text-left hover:border-emerald-600/50 transition-all group relative overflow-hidden"
                 >
-                    <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2" />
                     <div className="relative z-10 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-lg bg-emerald-500/15 flex items-center justify-center group-hover:bg-emerald-500/25 transition-colors">
@@ -115,7 +114,7 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
     // ── Success state ──
     if (state === "success") {
         return (
-            <div className="mt-6 bg-gradient-to-br from-[#0d1f17] to-[#111916] rounded-xl border border-emerald-600/50 p-5">
+            <div className="mt-6 bg-white/[0.05] rounded-xl border border-emerald-600/50 p-5">
                 <div className="flex items-center gap-3 mb-3">
                     <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
                         <CheckCircle2 className="w-5 h-5 text-emerald-400" />
@@ -125,12 +124,12 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
                         <p className="text-emerald-400/80 text-xs">The Rehabify team has been notified</p>
                     </div>
                 </div>
-                <p className="text-gray-400 text-[13px] leading-relaxed">
+                <p className="text-white/65 text-[13px] leading-relaxed">
                     Your MediLoan request has been submitted. The Rehabify Health team will review it and
                     initiate your loan. You&#39;ll receive an <span className="text-emerald-400 font-medium">SMS from MediLoan</span> with
                     a secure link to complete your application.
                 </p>
-                <p className="text-gray-600 text-[11px] mt-3 leading-relaxed border-t border-gray-800/40 pt-2">
+                <p className="text-white/40 text-[11px] mt-3 leading-relaxed border-t border-white/10 pt-2">
                     All loan matters are handled by MediLoan (MyItura) — an independent third party. Rehabify Health does not manage loan repayments.
                 </p>
             </div>
@@ -139,8 +138,7 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
 
     // ── Open / submitting / error: application form ──
     return (
-        <div className="mt-6 bg-gradient-to-br from-[#0d1f17] to-[#111916] rounded-xl border border-emerald-700/40 p-5 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+        <div className="mt-6 bg-white/[0.05] rounded-xl border border-emerald-700/40 p-5 relative overflow-hidden">
             <div className="relative z-10">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-4">
@@ -155,13 +153,13 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
                     </div>
                     <button
                         onClick={() => { setState("idle"); setError(""); }}
-                        className="text-gray-500 hover:text-gray-300 transition-colors p-1"
+                        className="text-white/50 hover:text-white/80 transition-colors p-1"
                     >
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                <p className="text-gray-400 text-[13px] leading-relaxed mb-4">
+                <p className="text-white/65 text-[13px] leading-relaxed mb-4">
                     Fill in your details and MediLoan will SMS you a secure link to complete your loan application.
                     You can specify the exact treatment amount directly inside MediLoan&#39;s app.
                 </p>
@@ -170,51 +168,51 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
                     {/* Name row */}
                     <div className="grid grid-cols-2 gap-2.5">
                         <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
                             <input
                                 type="text"
                                 placeholder="First name"
                                 required
                                 value={firstName}
                                 onChange={(e) => setFirstName(e.target.value)}
-                                className="w-full bg-black/30 border border-gray-700/50 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-gray-600 focus:border-emerald-600/60 focus:outline-none transition-colors"
+                                className="w-full bg-white/[0.06] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-white/40 focus:border-emerald-600/60 focus:outline-none transition-colors"
                             />
                         </div>
                         <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
                             <input
                                 type="text"
                                 placeholder="Last name"
                                 required
                                 value={lastName}
                                 onChange={(e) => setLastName(e.target.value)}
-                                className="w-full bg-black/30 border border-gray-700/50 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-gray-600 focus:border-emerald-600/60 focus:outline-none transition-colors"
+                                className="w-full bg-white/[0.06] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-white/40 focus:border-emerald-600/60 focus:outline-none transition-colors"
                             />
                         </div>
                     </div>
 
                     {/* Phone */}
                     <div className="relative">
-                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
                         <input
                             type="tel"
                             placeholder="Phone number (e.g. 08012345678)"
                             required
                             value={phone}
                             onChange={(e) => setPhone(e.target.value)}
-                            className="w-full bg-black/30 border border-gray-700/50 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-gray-600 focus:border-emerald-600/60 focus:outline-none transition-colors"
+                            className="w-full bg-white/[0.06] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-white/40 focus:border-emerald-600/60 focus:outline-none transition-colors"
                         />
                     </div>
 
                     {/* Email (optional) */}
                     <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
                         <input
                             type="email"
                             placeholder="Email address (optional)"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="w-full bg-black/30 border border-gray-700/50 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-gray-600 focus:border-emerald-600/60 focus:outline-none transition-colors"
+                            className="w-full bg-white/[0.06] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-white/40 focus:border-emerald-600/60 focus:outline-none transition-colors"
                         />
                     </div>
 
@@ -223,14 +221,14 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
                         <select
                             value={gender}
                             onChange={(e) => setGender(e.target.value)}
-                            className="w-full bg-black/30 border border-gray-700/50 rounded-lg px-3 py-2.5 text-sm text-gray-400 focus:border-emerald-600/60 focus:outline-none transition-colors appearance-none"
+                            className="w-full bg-white/[0.06] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white/65 focus:border-emerald-600/60 focus:outline-none transition-colors appearance-none"
                         >
                             <option value="">Gender (optional)</option>
                             <option value="male">Male</option>
                             <option value="female">Female</option>
                             <option value="other">Prefer not to say</option>
                         </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
                     </div>
 
                     {/* Error */}
@@ -244,7 +242,7 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
                     <button
                         type="submit"
                         disabled={state === "submitting"}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition-all flex items-center justify-center gap-2"
+                        className="w-full bg-white text-[#002e2c] hover:bg-emerald-50 disabled:opacity-60 disabled:cursor-not-allowed font-semibold py-2.5 rounded-lg text-sm transition-all flex items-center justify-center gap-2"
                     >
                         {state === "submitting" ? (
                             <><Loader2 className="w-4 h-4 animate-spin" /> Sending Application...</>
@@ -255,7 +253,7 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
                 </form>
 
                 {/* Legal disclaimer */}
-                <p className="text-gray-600 text-[10px] mt-3 leading-relaxed border-t border-gray-800/40 pt-2">
+                <p className="text-white/40 text-[10px] mt-3 leading-relaxed border-t border-white/10 pt-2">
                     MediLoan is a service by MyItura — an independent third party. Rehabify Health does not manage,
                     guarantee, or take responsibility for loan outcomes. All loan queries go directly to MediLoan.{" "}
                     <a
@@ -316,39 +314,39 @@ export default function PhysioBookingPage() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#121212] flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
+            <div className="min-h-screen bg-[#002e2c] flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-teal-300" />
             </div>
         );
     }
 
     if (!profile) {
         return (
-            <div className="min-h-screen bg-[#121212] flex items-center justify-center p-4">
+            <div className="min-h-screen bg-[#002e2c] flex items-center justify-center p-4">
                 <div className="w-full max-w-md">
-                    <div className="bg-[#1a1a1a] rounded-xl border border-gray-800 p-8 text-center">
-                        <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center mx-auto mb-6">
-                            <svg className="w-8 h-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div className="bg-[#00403c] rounded-xl border border-white/10 p-8 text-center">
+                        <div className="w-16 h-16 rounded-full bg-white/[0.07] flex items-center justify-center mx-auto mb-6">
+                            <svg className="w-8 h-8 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                             </svg>
                         </div>
                         <h1 className="text-xl font-semibold text-white mb-2">Profile Not Available</h1>
-                        <p className="text-gray-400 text-sm mb-6 leading-relaxed">
+                        <p className="text-white/65 text-sm mb-6 leading-relaxed">
                             This physiotherapist hasn&#39;t enabled their booking page yet.
                             <br />
-                            <span className="text-gray-500">
+                            <span className="text-white/50">
                                 If you&#39;re the owner of this profile, please enable your profile on the marketplace to start accepting bookings.
                             </span>
                         </p>
                         <div className="space-y-3">
-                            <a href="/dashboard/physiotherapist/settings/marketplace" className="block w-full py-3 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors text-center">
+                            <a href="/dashboard/physiotherapist/settings/marketplace" className="block w-full py-3 px-4 bg-white text-[#002e2c] hover:bg-emerald-50 rounded-lg font-medium transition-colors text-center">
                                 Enable My Profile
                             </a>
                         </div>
                     </div>
                     <div className="mt-6 text-center">
-                        <p className="text-gray-600 text-xs">Powered by</p>
-                        <p className="text-gray-500 text-sm font-medium">Rehabify Health</p>
+                        <p className="text-white/40 text-xs">Powered by</p>
+                        <p className="text-white/50 text-sm font-medium">Rehabify Health</p>
                     </div>
                 </div>
             </div>
@@ -360,10 +358,10 @@ export default function PhysioBookingPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#121212] flex items-center justify-center p-4">
+        <div className="min-h-screen bg-[#002e2c] flex items-center justify-center p-4">
             <div className="w-full max-w-md">
                 {/* Profile Card */}
-                <div className="bg-[#1a1a1a] rounded-xl border border-gray-800 p-6 mb-6">
+                <div className="bg-[#00403c] rounded-xl border border-white/10 p-6 mb-6">
                     <div className="flex items-center gap-4 mb-2">
                         {profile.imageUrl ? (
                             <Image
@@ -374,14 +372,14 @@ export default function PhysioBookingPage() {
                                 className="rounded-full object-cover"
                             />
                         ) : (
-                            <div className="w-16 h-16 rounded-full bg-teal-600 flex items-center justify-center text-white text-xl font-bold">
+                            <div className="w-16 h-16 rounded-full bg-[#005b57] flex items-center justify-center text-white text-xl font-bold">
                                 {profile.fullName.split(" ").map((n: string) => n[0]).join("")}
                             </div>
                         )}
                     </div>
                     <h1 className="text-xl font-bold text-white mt-4">{profile.fullName}</h1>
                     {profile.specializations && profile.specializations.length > 0 && (
-                        <p className="text-gray-400 text-sm mt-1">
+                        <p className="text-white/65 text-sm mt-1">
                             {profile.specializations.slice(0, 2).join(" • ")}
                         </p>
                     )}
@@ -393,20 +391,20 @@ export default function PhysioBookingPage() {
                         <button
                             key={session.id}
                             onClick={() => handleSessionSelect(session.duration)}
-                            className="w-full bg-[#1a1a1a] border border-gray-800 rounded-xl p-5 text-left hover:border-gray-700 hover:bg-[#222] transition-all group"
+                            className="w-full bg-[#00403c] border border-white/10 rounded-xl p-5 text-left hover:border-white/15 hover:bg-[#004a45] transition-all group"
                         >
                             <div className="flex items-center justify-between">
                                 <div>
                                     <h3 className="text-white font-semibold text-lg">{session.title}</h3>
                                     {session.description && (
-                                        <p className="text-gray-500 text-sm mt-1">{session.description}</p>
+                                        <p className="text-white/50 text-sm mt-1">{session.description}</p>
                                     )}
-                                    <div className="flex items-center gap-1 mt-2 text-gray-400">
+                                    <div className="flex items-center gap-1 mt-2 text-white/65">
                                         <Clock className="w-4 h-4" />
                                         <span className="text-sm">{session.duration}m</span>
                                     </div>
                                 </div>
-                                <ArrowRight className="w-5 h-5 text-gray-600 group-hover:text-teal-500 transition-colors" />
+                                <ArrowRight className="w-5 h-5 text-white/40 group-hover:text-teal-200 transition-colors" />
                             </div>
                         </button>
                     ))}
@@ -417,8 +415,8 @@ export default function PhysioBookingPage() {
 
                 {/* Footer */}
                 <div className="mt-8 text-center">
-                    <p className="text-gray-600 text-sm">Powered by</p>
-                    <p className="text-gray-400 font-medium">Rehabify Health</p>
+                    <p className="text-white/40 text-sm">Powered by</p>
+                    <p className="text-white/65 font-medium">Rehabify Health</p>
                 </div>
             </div>
         </div>

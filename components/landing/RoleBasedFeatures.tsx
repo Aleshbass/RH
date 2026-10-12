@@ -7,7 +7,6 @@ import {
   Clock, 
   BadgePercent, 
   ArrowRight, 
-  CheckCircle2, 
   TrendingDown, 
   Activity 
 } from "lucide-react";
@@ -191,14 +190,14 @@ export default function RoleBasedFeatures() {
               </h3>
             </div>
 
-            {/* Feature Check List */}
+            {/* Feature Highlights */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-              <div className="flex items-center gap-2.5 text-xs sm:text-sm text-gray-700 font-semibold bg-white/80 rounded-xl p-3 border border-gray-100 shadow-sm">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <div className="flex items-center gap-2.5 text-xs sm:text-sm text-neutral-800 font-medium bg-white/90 rounded-xl p-3 border border-rose-100 shadow-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#005b57]" />
                 <span>AI posture form check</span>
               </div>
-              <div className="flex items-center gap-2.5 text-xs sm:text-sm text-gray-700 font-semibold bg-white/80 rounded-xl p-3 border border-gray-100 shadow-sm">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <div className="flex items-center gap-2.5 text-xs sm:text-sm text-neutral-800 font-medium bg-white/90 rounded-xl p-3 border border-rose-100 shadow-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#005b57]" />
                 <span>Direct physio chat line</span>
               </div>
             </div>

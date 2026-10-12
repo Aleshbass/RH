@@ -7,7 +7,13 @@ import { createHash } from "crypto";
  * substantive wording changes, publish a new version and effective date; do
  * not overwrite the version a previous patient accepted.
  */
-export const consultationBookingPolicySections = [
+type PolicySection = {
+  readonly title: string;
+  readonly paragraphs: readonly string[];
+  readonly bullets?: readonly string[];
+};
+
+export const consultationBookingPolicySections: readonly PolicySection[] = [
   {
     title: "1. Purpose of this policy",
     paragraphs: [
@@ -68,7 +74,7 @@ export const consultationBookingPolicySections = [
       "For booking, payment, or policy questions, contact Rehabify at rehabify.app@gmail.com.",
     ],
   },
-] as const;
+];
 
 const canonicalPolicyText = consultationBookingPolicySections
   .map((section) => [section.title, ...section.paragraphs, ...(section.bullets ?? [])].join("\n"))

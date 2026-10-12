@@ -9,7 +9,7 @@ import {
     DialogHeader,
     DialogTitle,
     DialogDescription,
-} from "@/components/ui/dialog"
+} from '@/components/ui/dialog'
 import {
     Select,
     SelectContent,
@@ -19,19 +19,37 @@ import {
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Loader2, ArrowRightLeft, Users, Calendar } from 'lucide-react'
-import { format } from 'date-fns'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
+import { EmptyState, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
+import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+
+/** Accepts both getClinicCliniciansWithCaseload rows and getClinicStaff rows. */
+interface StaffOption {
+    userId: string
+    role?: string
+    status?: string
+    firstName?: string
+    lastName?: string
+    user?: { firstName?: string; lastName?: string } | null
+}
 
 interface PatientListModalProps {
     isOpen: boolean
     onClose: () => void
     physiotherapistId: string
     physiotherapistName: string
-    allStaff: any[] // List of all staff for reassignment options
+    allStaff: StaffOption[] // List of all staff for reassignment options
+}
+
+function stageTone(stage?: string) {
+    switch (stage) {
+        case 'Mid': return 'teal' as const
+        case 'Discharge Readiness': return 'green' as const
+        default: return 'neutral' as const
+    }
 }
 
 export default function PatientListModal({
@@ -41,8 +59,12 @@ export default function PatientListModal({
     physiotherapistName,
     allStaff
 }: PatientListModalProps) {
+    const { requireFullAccess } = useClinicPreview()
     const [reassigningPatientId, setReassigningPatientId] = useState<string | null>(null)
     const [targetPhysioId, setTargetPhysioId] = useState<string>('')
+    const [saving, setSaving] = useState(false)
+
+    const currentUser = useQuery(api.users.getMyUser)
 
     // Fetch patients for this physiotherapist
     const patients = useQuery(api.patients.getPhysiotherapistPatients,
@@ -51,9 +73,16 @@ export default function PatientListModal({
 
     const reassignPatient = useMutation(api.patients.reassignPatient)
 
+    const resetReassign = () => {
+        setReassigningPatientId(null)
+        setTargetPhysioId('')
+    }
+
     const handleReassign = async () => {
         if (!reassigningPatientId || !targetPhysioId) return
+        if (!requireFullAccess('Reassign patient')) return
 
+        setSaving(true)
         try {
             await reassignPatient({
                 patientId: reassigningPatientId as Id<"users">,
@@ -62,101 +91,111 @@ export default function PatientListModal({
                 reason: "Clinic owner reassignment"
             })
 
-            toast.success('Patient reassigned successfully')
-            setReassigningPatientId(null)
-            setTargetPhysioId('')
+            toast.success('Patient reassigned')
+            resetReassign()
         } catch (error) {
-            toast.error('Failed to reassign patient')
+            toast.error('Could not reassign patient')
             console.error('Reassignment error:', error)
+        } finally {
+            setSaving(false)
         }
     }
 
-    // Filter out the current physiotherapist from the target list
-    const availablePhysios = allStaff.filter(
-        staff => staff.userId !== physiotherapistId && staff.role === 'physiotherapist' && staff.status === 'active'
-    )
+    // Active physiotherapists other than the one whose list this is
+    const otherPhysios = allStaff
+        .filter(
+            (staff) =>
+                staff.userId !== physiotherapistId &&
+                (staff.role ?? 'physiotherapist') === 'physiotherapist' &&
+                (staff.status ?? 'active') === 'active'
+        )
+        .map((staff) => ({
+            id: staff.userId,
+            label: `${staff.firstName ?? staff.user?.firstName ?? ''} ${staff.lastName ?? staff.user?.lastName ?? ''}`.trim() || 'Clinician',
+        }))
 
-    const getStageColor = (stage: string) => {
-        switch (stage) {
-            case 'Initial': return 'bg-blue-100 text-blue-800'
-            case 'Mid': return 'bg-purple-100 text-purple-800'
-            case 'Discharge Readiness': return 'bg-green-100 text-green-800'
-            default: return 'bg-gray-100 text-gray-800'
-        }
-    }
+    // The clinic owner can always take the patient
+    const ownerId = currentUser?._id as string | undefined
+    const reassignOptions = [
+        ...(ownerId && ownerId !== physiotherapistId ? [{ id: ownerId, label: 'You (owner)' }] : []),
+        ...otherPhysios.filter((p) => p.id !== ownerId),
+    ]
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+            <DialogContent className="flex max-w-2xl flex-col">
                 <DialogHeader>
-                    <DialogTitle>Patient List: {physiotherapistName}</DialogTitle>
+                    <DialogTitle className="text-base font-semibold">Patients: {physiotherapistName || 'Clinician'}</DialogTitle>
                     <DialogDescription>
-                        View and manage patients assigned to this physiotherapist.
+                        Patients currently under this clinician&apos;s care. Reassign to move a patient to someone else.
                     </DialogDescription>
                 </DialogHeader>
 
                 {patients === undefined ? (
-                    <div className="flex justify-center py-12">
-                        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                    <div className="space-y-2">
+                        {[0, 1, 2].map((i) => (
+                            <Skeleton key={i} className="h-16 w-full rounded-xl" />
+                        ))}
                     </div>
                 ) : patients.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-                        <Users className="h-12 w-12 mb-4 text-gray-300" />
-                        <p>No patients assigned to this physiotherapist.</p>
-                    </div>
+                    <EmptyState
+                        icon={<Users className="h-8 w-8" />}
+                        title="No patients assigned"
+                        description="This clinician doesn't have any active patients."
+                    />
                 ) : (
-                    <ScrollArea className="flex-1 pr-4">
-                        <div className="space-y-4">
+                    <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
+                        <ul className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
+                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                             {patients.map((patient: any) => (
-                                <div key={patient._id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors gap-4">
-                                    <div className="flex items-center space-x-4">
-                                        <Avatar className="h-10 w-10">
-                                            <AvatarImage src={patient.imageUrl} />
-                                            <AvatarFallback>{patient.firstName?.[0]}{patient.lastName?.[0]}</AvatarFallback>
+                                <li key={patient._id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex min-w-0 items-center gap-3">
+                                        <Avatar className="h-9 w-9 shrink-0">
+                                            <AvatarImage src={patient.imageUrl} alt="" />
+                                            <AvatarFallback className="bg-neutral-100 text-xs dark:bg-neutral-800">
+                                                {patient.firstName?.[0]}{patient.lastName?.[0]}
+                                            </AvatarFallback>
                                         </Avatar>
-                                        <div>
-                                            <h4 className="font-medium">{patient.firstName} {patient.lastName}</h4>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <Badge variant="secondary" className={getStageColor(patient.stage)}>
-                                                    {patient.stage}
-                                                </Badge>
-                                                <span className="text-xs text-gray-500 flex items-center gap-1">
-                                                    <Calendar className="h-3 w-3" />
-                                                    {patient.sessionCount} sessions
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
+                                                {patient.firstName} {patient.lastName}
+                                            </p>
+                                            <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                                                {patient.stage && <StatusBadge tone={stageTone(patient.stage)}>{patient.stage}</StatusBadge>}
+                                                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                                                    {patient.sessionCount ?? 0} sessions
                                                 </span>
                                             </div>
                                         </div>
                                     </div>
 
                                     {reassigningPatientId === patient._id ? (
-                                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-200">
-                                            <Select value={targetPhysioId} onValueChange={setTargetPhysioId}>
-                                                <SelectTrigger className="w-[200px]">
-                                                    <SelectValue placeholder="Select new physio" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {availablePhysios.map(physio => (
-                                                        <SelectItem key={physio.userId} value={physio.userId}>
-                                                            {physio.user?.firstName} {physio.user?.lastName}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
+                                        <div className="flex flex-wrap gap-2">
+                                            {reassignOptions.length === 0 ? (
+                                                <p className="w-full text-xs text-neutral-500 sm:w-[200px]">No one else to reassign to.</p>
+                                            ) : (
+                                                <Select value={targetPhysioId} onValueChange={setTargetPhysioId}>
+                                                    <SelectTrigger className="w-full sm:w-[200px]">
+                                                        <SelectValue placeholder="Choose clinician" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {reassignOptions.map((option) => (
+                                                            <SelectItem key={option.id} value={option.id}>
+                                                                {option.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            )}
                                             <Button
                                                 size="sm"
+                                                className={primaryButtonClass}
                                                 onClick={handleReassign}
-                                                disabled={!targetPhysioId}
+                                                disabled={!targetPhysioId || saving}
                                             >
-                                                Confirm
+                                                {saving ? 'Moving…' : 'Confirm'}
                                             </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={() => {
-                                                    setReassigningPatientId(null)
-                                                    setTargetPhysioId('')
-                                                }}
-                                            >
+                                            <Button size="sm" variant="ghost" onClick={resetReassign} disabled={saving}>
                                                 Cancel
                                             </Button>
                                         </div>
@@ -164,16 +203,19 @@ export default function PatientListModal({
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            onClick={() => setReassigningPatientId(patient._id)}
+                                            className="self-start sm:self-auto"
+                                            onClick={() => {
+                                                setTargetPhysioId('')
+                                                setReassigningPatientId(patient._id)
+                                            }}
                                         >
-                                            <ArrowRightLeft className="h-3 w-3 mr-2" />
                                             Reassign
                                         </Button>
                                     )}
-                                </div>
+                                </li>
                             ))}
-                        </div>
-                    </ScrollArea>
+                        </ul>
+                    </div>
                 )}
             </DialogContent>
         </Dialog>

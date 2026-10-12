@@ -54,47 +54,6 @@ function getMonthDays(year: number, month: number) {
     return days;
 }
 
-// Generate mock slots as fallback (Mon-Fri 9am-5pm)
-function generateMockSlots(
-    startDate: number,
-    endDate: number,
-    sessionDuration: number
-): AvailableSlot[] {
-    const slots: AvailableSlot[] = [];
-    const durationMs = sessionDuration * 60 * 1000;
-    const interval = sessionDuration <= 30 ? 15 : 30; // 15-min intervals for short sessions
-    const now = Date.now();
-
-    const currentDay = new Date(startDate);
-    currentDay.setHours(0, 0, 0, 0);
-
-    while (currentDay.getTime() <= endDate) {
-        const dayOfWeek = currentDay.getDay();
-
-        // Only Mon-Sat (adjust as needed)
-        if (dayOfWeek >= 1 && dayOfWeek <= 6) {
-            // 9am to 5pm with configurable intervals
-            for (let minutes = 9 * 60; minutes < 17 * 60; minutes += interval) {
-                const slotStart = new Date(currentDay);
-                slotStart.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
-
-                // Only future slots
-                if (slotStart.getTime() > now) {
-                    slots.push({
-                        start: slotStart.getTime(),
-                        end: slotStart.getTime() + durationMs,
-                        duration: sessionDuration,
-                    });
-                }
-            }
-        }
-
-        currentDay.setDate(currentDay.getDate() + 1);
-    }
-
-    return slots;
-}
-
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const MONTHS = [
     "January",
@@ -139,22 +98,13 @@ export default function CalendarBookingWidget({
         };
     }, [currentYear, currentMonth]);
 
-    // Try to use real Convex query, fallback to mock if not available
-    const convexSlots = useQuery(api.calendar.availability.getAvailableSlots, {
+    // Only real availability is bookable; undefined while loading.
+    const availableSlots: AvailableSlot[] | undefined = useQuery(api.calendar.availability.getAvailableSlots, {
         physiotherapistId,
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
         sessionDuration,
     });
-
-    // Use Convex slots if available, otherwise generate mock slots
-    const availableSlots = useMemo(() => {
-        if (convexSlots !== undefined) {
-            return convexSlots;
-        }
-        // Fallback to mock while loading or if API not ready
-        return generateMockSlots(dateRange.startDate, dateRange.endDate, sessionDuration);
-    }, [convexSlots, dateRange.startDate, dateRange.endDate, sessionDuration]);
 
     // Generate calendar days
     const days = useMemo(
@@ -270,10 +220,10 @@ export default function CalendarBookingWidget({
     };
 
     return (
-        <div className="bg-[#1a1a1a] text-white rounded-xl overflow-hidden shadow-2xl">
+        <div className="bg-[#00403c] text-white rounded-xl overflow-hidden shadow-2xl">
             <div className="flex flex-col lg:flex-row">
                 {/* Left Sidebar - Profile Info */}
-                <div className="w-full lg:w-64 p-6 border-b lg:border-b-0 lg:border-r border-gray-800">
+                <div className="w-full lg:w-64 p-6 border-b lg:border-b-0 lg:border-r border-white/10">
                     {/* Profile */}
                     <div className="flex items-center gap-3 mb-2">
                         {physiotherapistImage ? (
@@ -283,7 +233,7 @@ export default function CalendarBookingWidget({
                                 className="w-10 h-10 rounded-full object-cover"
                             />
                         ) : (
-                            <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center text-white font-bold">
+                            <div className="w-10 h-10 rounded-full bg-[#005b57] flex items-center justify-center text-white font-bold">
                                 {physiotherapistName
                                     .split(" ")
                                     .map((n) => n[0])
@@ -291,17 +241,17 @@ export default function CalendarBookingWidget({
                             </div>
                         )}
                     </div>
-                    <span className="text-sm text-gray-400">{physiotherapistName}</span>
+                    <span className="text-sm text-white/65">{physiotherapistName}</span>
 
                     {/* Session Info */}
                     <h2 className="text-xl font-bold mt-4 mb-1">
                         {getSessionTitle()}
                     </h2>
                     {sessionDescription && (
-                        <p className="text-sm text-gray-500 mb-4">{sessionDescription}</p>
+                        <p className="text-sm text-white/50 mb-4">{sessionDescription}</p>
                     )}
 
-                    <div className="space-y-3 text-sm text-gray-400 mt-4">
+                    <div className="space-y-3 text-sm text-white/65 mt-4">
                         <div className="flex items-center gap-2">
                             <Clock className="w-4 h-4" />
                             <span>{sessionDuration}m</span>
@@ -309,7 +259,7 @@ export default function CalendarBookingWidget({
 
                         {offersOnlineSessions && (
                             <div className="flex items-center gap-2">
-                                <Video className="w-4 h-4 text-teal-400" />
+                                <Video className="w-4 h-4 text-teal-300" />
                                 <span>Video Call</span>
                             </div>
                         )}
@@ -322,29 +272,36 @@ export default function CalendarBookingWidget({
                 </div>
 
                 {/* Center - Calendar */}
-                <div className="flex-1 p-6 border-b lg:border-b-0 lg:border-r border-gray-800">
+                <div className="flex-1 p-6 border-b lg:border-b-0 lg:border-r border-white/10">
                     {/* Month Navigation */}
                     <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-medium">
-                            <span className="text-gray-400">{MONTHS[currentMonth]}</span>{" "}
-                            {currentYear}
+                        <h3 className="flex items-center gap-2 text-lg font-medium">
+                            <span>
+                                <span className="text-white/65">{MONTHS[currentMonth]}</span>{" "}
+                                {currentYear}
+                            </span>
+                            {availableSlots === undefined && (
+                                <Loader2 className="w-4 h-4 animate-spin text-teal-300" aria-label="Loading availability" />
+                            )}
                         </h3>
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={goToPreviousMonth}
+                                aria-label="Previous month"
                                 disabled={!canGoPrevious}
                                 className={cn(
                                     "p-2 rounded-lg transition-colors",
                                     canGoPrevious
-                                        ? "hover:bg-gray-800 text-gray-400 hover:text-white"
-                                        : "text-gray-700 cursor-not-allowed"
+                                        ? "hover:bg-white/[0.07] text-white/65 hover:text-white"
+                                        : "text-white/25 cursor-not-allowed"
                                 )}
                             >
                                 <ChevronLeft className="w-5 h-5" />
                             </button>
                             <button
                                 onClick={goToNextMonth}
-                                className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors"
+                                aria-label="Next month"
+                                className="p-2 rounded-lg hover:bg-white/[0.07] text-white/65 hover:text-white transition-colors"
                             >
                                 <ChevronRight className="w-5 h-5" />
                             </button>
@@ -356,7 +313,7 @@ export default function CalendarBookingWidget({
                         {WEEKDAYS.map((day) => (
                             <div
                                 key={day}
-                                className="text-center text-xs text-gray-500 font-medium py-2"
+                                className="text-center text-xs text-white/50 font-medium py-2"
                             >
                                 {day}
                             </div>
@@ -387,13 +344,13 @@ export default function CalendarBookingWidget({
                                     disabled={past || !hasSlots}
                                     className={cn(
                                         "aspect-square rounded-lg flex items-center justify-center text-sm font-medium transition-all relative",
-                                        past && "text-gray-700 cursor-not-allowed",
-                                        !past && !hasSlots && "text-gray-600 cursor-not-allowed",
+                                        past && "text-white/25 cursor-not-allowed",
+                                        !past && !hasSlots && "text-white/40 cursor-not-allowed",
                                         !past &&
                                         hasSlots &&
                                         !selected &&
-                                        "bg-gray-800 text-white hover:bg-gray-700 cursor-pointer",
-                                        selected && "bg-white text-black",
+                                        "bg-white/[0.07] text-white hover:bg-white/[0.14] cursor-pointer",
+                                        selected && "bg-white text-[#002e2c]",
                                         isTodayDay && !selected && "ring-1 ring-teal-500"
                                     )}
                                 >
@@ -425,8 +382,8 @@ export default function CalendarBookingWidget({
                                         className={cn(
                                             "px-2 py-1 rounded",
                                             timeFormat === "12h"
-                                                ? "bg-gray-700 text-white"
-                                                : "text-gray-500 hover:text-gray-300"
+                                                ? "bg-white/[0.14] text-white"
+                                                : "text-white/50 hover:text-white/80"
                                         )}
                                     >
                                         12h
@@ -436,8 +393,8 @@ export default function CalendarBookingWidget({
                                         className={cn(
                                             "px-2 py-1 rounded",
                                             timeFormat === "24h"
-                                                ? "bg-gray-700 text-white"
-                                                : "text-gray-500 hover:text-gray-300"
+                                                ? "bg-white/[0.14] text-white"
+                                                : "text-white/50 hover:text-white/80"
                                         )}
                                     >
                                         24h
@@ -448,10 +405,10 @@ export default function CalendarBookingWidget({
                             {/* Time Slots */}
                             {availableSlots === undefined ? (
                                 <div className="flex items-center justify-center py-8">
-                                    <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
+                                    <Loader2 className="w-6 h-6 animate-spin text-teal-300" />
                                 </div>
                             ) : slotsForSelectedDate.length === 0 ? (
-                                <p className="text-gray-500 text-sm text-center py-8">
+                                <p className="text-white/50 text-sm text-center py-8">
                                     No available slots for this date
                                 </p>
                             ) : (
@@ -467,14 +424,14 @@ export default function CalendarBookingWidget({
                                                 className={cn(
                                                     "w-full py-3 px-4 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
                                                     isSlotSelected
-                                                        ? "bg-teal-600 text-white"
-                                                        : "bg-gray-800 text-white hover:bg-gray-700 border border-gray-700"
+                                                        ? "bg-white text-[#002e2c]"
+                                                        : "bg-white/[0.07] text-white hover:bg-white/[0.14] border border-white/15"
                                                 )}
                                             >
                                                 <span
                                                     className={cn(
                                                         "w-2 h-2 rounded-full",
-                                                        isSlotSelected ? "bg-white" : "bg-teal-500"
+                                                        isSlotSelected ? "bg-[#005b57]" : "bg-teal-300"
                                                     )}
                                                 />
                                                 {formatTime(slot.start)}
@@ -486,7 +443,7 @@ export default function CalendarBookingWidget({
                         </>
                     ) : (
                         <div className="flex flex-col items-center justify-center py-8 text-center">
-                            <p className="text-gray-500 text-sm">
+                            <p className="text-white/50 text-sm">
                                 Select a date to view available times
                             </p>
                         </div>
@@ -500,7 +457,7 @@ export default function CalendarBookingWidget({
                     href="https://physioaroundme.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-gray-400 font-bold font-cal hover:text-gray-300 transition-colors"
+                    className="text-sm text-white/65 font-bold font-cal hover:text-white/80 transition-colors"
                 >
                     physioaroundme.com
                 </a>
@@ -511,15 +468,15 @@ export default function CalendarBookingWidget({
           width: 4px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-          background: #2a2a2a;
+          background: rgba(255, 255, 255, 0.06);
           border-radius: 2px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #4a4a4a;
+          background: rgba(255, 255, 255, 0.2);
           border-radius: 2px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #5a5a5a;
+          background: rgba(255, 255, 255, 0.3);
         }
       `}</style>
         </div>

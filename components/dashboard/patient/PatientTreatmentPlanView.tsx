@@ -16,7 +16,6 @@ import { StorageImage } from "@/components/media/StorageImage";
 import { ExerciseCompletionModal } from "./treatment/ExerciseCompletionModal";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Play, CalendarDays, TrendingUp, Upload } from "lucide-react";
-import { useAction } from "convex/react";
 import { useToast } from "@/components/ui/use-toast";
 
 import { Id } from "@/convex/_generated/dataModel";
@@ -66,7 +65,7 @@ export function PatientTreatmentPlanView({ treatmentPlanId }: PatientTreatmentPl
     return todayProgress?.some((c: any) => c.exerciseId === exerciseId);
   };
 
-  const generateUploadUrl = useAction(api.files.generateUploadUrl);
+  const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const updateTreatmentPlan = useMutation(api.treatmentPlans.updateTreatmentPlan);
   const { toast } = useToast();
   const [uploadingImages, setUploadingImages] = useState<Record<string, { before: boolean; after: boolean }>>({});

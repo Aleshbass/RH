@@ -1,387 +1,190 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Progress } from '@/components/ui/progress'
-import {
-  Users,
-  DollarSign,
-  Calendar,
-  Video,
-  TrendingUp,
-  TrendingDown,
-  Activity,
-  CheckCircle,
-  XCircle,
-  AlertTriangle
-} from 'lucide-react'
 import { TourGuide } from '@/components/shared/TourGuide'
+import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
+import { PageShell, Panel, StatTile, formatNaira } from '@/components/clinic/ui'
 
-// Removed unused AnalyticsData interface - data is accessed directly from queries
+const pct = (value: number) => `${Number(value || 0).toFixed(1)}%`
+
+function signedPct(value: number) {
+  const v = Number(value || 0)
+  return `${v > 0 ? '+' : ''}${v.toFixed(v % 1 === 0 ? 0 : 1)}%`
+}
+
+function Row({ label, value, strong }: { label: string; value: ReactNode; strong?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
+      <span className={strong ? 'text-sm font-medium text-neutral-900 dark:text-white' : 'text-sm text-neutral-600 dark:text-neutral-400'}>
+        {label}
+      </span>
+      <span
+        className={
+          strong
+            ? 'text-sm font-semibold tabular-nums text-neutral-900 dark:text-white'
+            : 'text-sm tabular-nums text-neutral-900 dark:text-neutral-100'
+        }
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
 
 export default function OwnerAnalyticsPage() {
-  // Get analytics data
+  const { isPreviewMode } = useClinicPreview()
   const analyticsData = useQuery(api.clinics.getOwnerAnalytics)
   const revenueData = useQuery(api.clinics.getClinicRevenue)
   const staffMetrics = useQuery(api.clinics.getStaffMetrics)
   const appointmentStats = useQuery(api.clinics.getClinicAppointmentStats)
 
-  if (analyticsData === undefined || revenueData === undefined || staffMetrics === undefined || appointmentStats === undefined) {
+  const description = isPreviewMode
+    ? 'Sample figures are shown until your clinic is set up.'
+    : 'How your clinic is doing this month.'
+
+  if (
+    analyticsData === undefined ||
+    revenueData === undefined ||
+    staffMetrics === undefined ||
+    appointmentStats === undefined
+  ) {
     return (
-      <div className="p-8">
-        <div className="space-y-6">
-          <Skeleton className="h-8 w-64" />
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {[...Array(8)].map((_, i) => (
-              <Skeleton key={i} className="h-32" />
-            ))}
-          </div>
-          <div className="grid gap-6 md:grid-cols-2">
-            {[...Array(4)].map((_, i) => (
-              <Skeleton key={i} className="h-64" />
-            ))}
-          </div>
+      <PageShell title="Reports" description={description}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-[92px] rounded-xl" />
+          ))}
         </div>
-      </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-56 rounded-xl" />
+          ))}
+        </div>
+      </PageShell>
     )
   }
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: 'NGN',
-      minimumFractionDigits: 0,
-    }).format(amount)
-  }
+  // Revenue values are already in naira.
+  const revenueGrowth = revenueData.growth ?? 0
+  const utilization = staffMetrics.utilization ?? 0
+  const totalAppointments = appointmentStats.total ?? 0
+  const noShows = appointmentStats.noShows ?? 0
+  const telehealthSessions = analyticsData.telehealth?.sessionsCount ?? 0
+  const telehealthHours = Math.round((analyticsData.telehealth?.totalMinutes ?? 0) / 60)
 
-  const formatPercentage = (value: number) => {
-    return `${value.toFixed(1)}%`
+  // Plain, rule-based tips. Only shown when a rule actually applies.
+  const tips: string[] = []
+  if (staffMetrics.active > 0 && utilization >= 85) {
+    tips.push(`Your clinicians are ${pct(utilization)} booked. Consider inviting another clinician before the team is overloaded.`)
+  } else if (staffMetrics.active > 0 && utilization < 50) {
+    tips.push(`Your clinicians are ${pct(utilization)} booked, so you have room to take on more patients.`)
   }
-
-  const getGrowthBadge = (growth: number) => {
-    if (growth > 0) {
-      return (
-        <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-          <TrendingUp className="h-3 w-3 mr-1" />
-          +{formatPercentage(growth)}
-        </Badge>
-      )
-    } else if (growth < 0) {
-      return (
-        <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
-          <TrendingDown className="h-3 w-3 mr-1" />
-          {formatPercentage(growth)}
-        </Badge>
-      )
-    } else {
-      return (
-        <Badge variant="secondary">
-          No change
-        </Badge>
-      )
-    }
+  if (totalAppointments > 0 && (noShows > 3 || noShows / totalAppointments > 0.08)) {
+    tips.push(`${noShows} patients missed their appointment this month. A reminder the day before can help.`)
+  }
+  if ((revenueData.pendingPayments ?? 0) > 0) {
+    tips.push(`${formatNaira(revenueData.pendingPayments)} is still unpaid on sent invoices.`)
   }
 
   return (
-    <div className="p-8">
-      <div className="space-y-6">
-        {/* Header */}
-        <div id="analytics-header">
-          <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
-          <p className="text-gray-600">Comprehensive insights into your clinic&apos;s performance</p>
-        </div>
-
-        {/* Key Metrics Cards */}
-        <div id="analytics-key-metrics" className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {/* Revenue */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(revenueData?.totalRevenue || 0)}</div>
-              <div className="flex items-center gap-2 mt-2">
-                <p className="text-xs text-muted-foreground">This month: {formatCurrency(revenueData?.thisMonth || 0)}</p>
-                {getGrowthBadge(revenueData?.growth || 0)}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Staff */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Staff</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{staffMetrics?.active || 0}</div>
-              <div className="flex items-center gap-2 mt-2">
-                <p className="text-xs text-muted-foreground">
-                  {formatPercentage(staffMetrics?.utilization || 0)} utilization
-                </p>
-                <Badge variant="outline">
-                  +{staffMetrics?.newThisMonth || 0} this month
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Appointments */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Appointments</CardTitle>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{appointmentStats?.total || 0}</div>
-              <div className="flex items-center gap-2 mt-2">
-                <p className="text-xs text-muted-foreground">
-                  {formatPercentage(appointmentStats?.completionRate || 0)} completion rate
-                </p>
-                <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                  <CheckCircle className="h-3 w-3 mr-1" />
-                  {appointmentStats?.completed || 0} completed
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Telehealth */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Telehealth</CardTitle>
-              <Video className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{Math.round((analyticsData?.telehealth?.totalMinutes || 0) / 60)}h</div>
-              <div className="flex items-center gap-2 mt-2">
-                <p className="text-xs text-muted-foreground">
-                  {analyticsData?.telehealth?.sessionsCount || 0} sessions
-                </p>
-                {getGrowthBadge(analyticsData?.telehealth?.growth || 0)}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Detailed Analytics */}
-        <div id="analytics-detailed" className="grid gap-6 md:grid-cols-2">
-          {/* Staff Performance */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Staff Performance
-              </CardTitle>
-              <CardDescription>Staff utilization and workload metrics</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Overall Utilization</span>
-                  <span className="font-medium">{formatPercentage(staffMetrics?.utilization || 0)}</span>
-                </div>
-                <Progress value={staffMetrics?.utilization || 0} className="h-2" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 pt-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{staffMetrics?.active || 0}</div>
-                  <div className="text-xs text-gray-600">Active Staff</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{staffMetrics?.newThisMonth || 0}</div>
-                  <div className="text-xs text-gray-600">New This Month</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Appointment Breakdown */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                Appointment Breakdown
-              </CardTitle>
-              <CardDescription>Patient throughput and appointment outcomes</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                  <div>
-                    <div className="font-medium">{appointmentStats?.completed || 0}</div>
-                    <div className="text-xs text-gray-600">Completed</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <XCircle className="h-4 w-4 text-red-500" />
-                  <div>
-                    <div className="font-medium">{appointmentStats?.cancelled || 0}</div>
-                    <div className="text-xs text-gray-600">Cancelled</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-orange-500" />
-                  <div>
-                    <div className="font-medium">{appointmentStats?.noShows || 0}</div>
-                    <div className="text-xs text-gray-600">No-shows</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-blue-500" />
-                  <div>
-                    <div className="font-medium">{formatPercentage(appointmentStats?.completionRate || 0)}</div>
-                    <div className="text-xs text-gray-600">Success Rate</div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Revenue Trends */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
-                Revenue Analysis
-              </CardTitle>
-              <CardDescription>Financial performance and trends</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm">This Month</span>
-                  <span className="font-medium">{formatCurrency(revenueData?.thisMonth || 0)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm">Last Month</span>
-                  <span className="font-medium">{formatCurrency(revenueData?.lastMonth || 0)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm">Growth</span>
-                  {getGrowthBadge(revenueData?.growth || 0)}
-                </div>
-              </div>
-
-              <div className="pt-4 border-t">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{formatCurrency(revenueData?.totalRevenue || 0)}</div>
-                  <div className="text-xs text-gray-600">Total Revenue</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Patient Metrics */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5" />
-                Patient Metrics
-              </CardTitle>
-              <CardDescription>Patient acquisition and retention</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{analyticsData?.patients?.total || 0}</div>
-                  <div className="text-xs text-gray-600">Total Patients</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{analyticsData?.patients?.active || 0}</div>
-                  <div className="text-xs text-gray-600">Active Patients</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">{analyticsData?.patients?.newThisMonth || 0}</div>
-                  <div className="text-xs text-gray-600">New This Month</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">{formatPercentage(analyticsData?.patients?.retention || 0)}</div>
-                  <div className="text-xs text-gray-600">Retention Rate</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Quick Actions */}
-        <Card id="analytics-insights">
-          <CardHeader>
-            <CardTitle>Quick Insights</CardTitle>
-            <CardDescription>Key takeaways and recommendations</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="bg-green-50 p-4 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <TrendingUp className="h-4 w-4 text-green-600" />
-                  <span className="font-medium text-green-800">Strong Performance</span>
-                </div>
-                <p className="text-sm text-green-700">
-                  Your clinic is performing well with {formatPercentage(appointmentStats?.completionRate || 0)} appointment completion rate.
-                </p>
-              </div>
-
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Users className="h-4 w-4 text-blue-600" />
-                  <span className="font-medium text-blue-800">Staff Utilization</span>
-                </div>
-                <p className="text-sm text-blue-700">
-                  Staff utilization at {formatPercentage(staffMetrics?.utilization || 0)}. Consider optimizing schedules for better efficiency.
-                </p>
-              </div>
-
-              <div className="bg-purple-50 p-4 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Video className="h-4 w-4 text-purple-600" />
-                  <span className="font-medium text-purple-800">Telehealth Growth</span>
-                </div>
-                <p className="text-sm text-purple-700">
-                  Telehealth sessions growing by {formatPercentage(analyticsData?.telehealth?.growth || 0)}. Great adoption rate!
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+    <PageShell title="Reports" description={description}>
+      <div id="analytics-key-metrics" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile
+          label="Revenue this month"
+          value={formatNaira(revenueData.thisMonth ?? 0)}
+          hint={`${signedPct(revenueGrowth)} vs last month`}
+        />
+        <StatTile
+          label="Visits this month"
+          value={totalAppointments}
+          hint={`${pct(appointmentStats.completionRate ?? 0)} attended`}
+        />
+        <StatTile
+          label="Active patients"
+          value={analyticsData.patients?.active ?? 0}
+          hint={`${analyticsData.patients?.newThisMonth ?? 0} new this month`}
+        />
+        <StatTile
+          label="Active clinicians"
+          value={staffMetrics.active ?? 0}
+          hint={`${pct(utilization)} booked`}
+        />
       </div>
 
+      <div id="analytics-detailed" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Panel title="Revenue" description="Paid invoices">
+          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+            <Row label="This month" value={formatNaira(revenueData.thisMonth ?? 0)} />
+            <Row label="Last month" value={formatNaira(revenueData.lastMonth ?? 0)} />
+            <Row label="Unpaid invoices" value={formatNaira(revenueData.pendingPayments ?? 0)} />
+            <Row label="All time" value={formatNaira(revenueData.totalRevenue ?? 0)} strong />
+          </div>
+        </Panel>
+
+        <Panel title="Appointments" description="This month">
+          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+            <Row label="Booked" value={totalAppointments} />
+            <Row label="Completed" value={appointmentStats.completed ?? 0} />
+            <Row label="Cancelled" value={appointmentStats.cancelled ?? 0} />
+            <Row label="No-shows" value={noShows} />
+            <Row label="Video consultations (all time)" value={`${telehealthSessions} · ${telehealthHours}h`} />
+            <Row label="Attendance rate" value={pct(appointmentStats.completionRate ?? 0)} strong />
+          </div>
+        </Panel>
+
+        <Panel title="Patients">
+          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+            <Row label="All patients" value={analyticsData.patients?.total ?? 0} />
+            <Row label="In active care" value={analyticsData.patients?.active ?? 0} />
+            <Row label="New this month" value={analyticsData.patients?.newThisMonth ?? 0} />
+            <Row label="Still in care" value={pct(analyticsData.patients?.retention ?? 0)} strong />
+          </div>
+        </Panel>
+
+        <Panel title="Team">
+          <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+            <Row label="Clinicians" value={staffMetrics.total ?? 0} />
+            <Row label="Active" value={staffMetrics.active ?? 0} />
+            <Row label="Joined this month" value={staffMetrics.newThisMonth ?? 0} />
+            <Row label="Booked capacity" value={pct(utilization)} strong />
+          </div>
+        </Panel>
+      </div>
+
+      {tips.length > 0 && (
+        <div id="analytics-insights">
+          <Panel title="Tips">
+            <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+              {tips.map((tip) => (
+                <li key={tip} className="px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300 sm:px-5">
+                  {tip}
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        </div>
+      )}
 
       <TourGuide
         tourId="clinic-analytics-tour"
         steps={[
           {
-            target: "#analytics-header",
-            title: "Analytics Dashboard",
-            content: "Gain comprehensive insights into your clinic's performance, revenue, and growth.",
-            position: "bottom"
+            target: '#analytics-key-metrics',
+            title: 'This month at a glance',
+            content: 'Revenue, visits, patients and clinicians for the current month.',
+            position: 'bottom',
           },
           {
-            target: "#analytics-key-metrics",
-            title: "Key Metrics",
-            content: "Track vital stats like total revenue, active staff, appointment volume, and telehealth sessions.",
-            position: "bottom"
+            target: '#analytics-detailed',
+            title: 'Breakdown',
+            content: 'Revenue, appointments, patients and team numbers in more detail.',
+            position: 'top',
           },
-          {
-            target: "#analytics-detailed",
-            title: "Deep Dive",
-            content: "Explore detailed breakdowns of staff performance, appointment outcomes, and revenue trends.",
-            position: "top"
-          },
-          {
-            target: "#analytics-insights",
-            title: "Smart Insights",
-            content: "Get AI-driven recommendations and highlights to optimize your clinic's operations.",
-            position: "top"
-          }
         ]}
       />
-    </div >
+    </PageShell>
   )
 }

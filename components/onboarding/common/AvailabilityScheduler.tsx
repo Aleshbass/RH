@@ -98,9 +98,9 @@ export const AvailabilityScheduler = React.memo(({ value, onChange, readOnly = f
     };
 
     return (
-        <div className="bg-gray-50 p-3 sm:p-4 rounded-xl border border-gray-200">
+        <div className="bg-gray-50 p-3 sm:p-4 rounded-xl border border-gray-200 dark:bg-neutral-900 dark:border-neutral-800">
             {DAYS_OF_WEEK.map((day) => (
-                <div key={day} className="flex flex-col py-3 sm:py-4 border-b border-gray-200 last:border-0">
+                <div key={day} className="flex flex-col py-3 sm:py-4 border-b border-gray-200 last:border-0 dark:border-neutral-800">
                     {/* Mobile-first: Day header with toggle */}
                     <div className="flex items-center justify-between sm:justify-start mb-3 sm:mb-0">
                         <div className="flex items-center gap-3 sm:gap-4 sm:w-32">
@@ -109,7 +109,7 @@ export const AvailabilityScheduler = React.memo(({ value, onChange, readOnly = f
                                 onCheckedChange={(checked) => handleDayToggle(day, checked)}
                                 disabled={readOnly}
                             />
-                            <span className="capitalize font-medium text-gray-700 text-sm sm:text-base">{day}</span>
+                            <span className="capitalize font-medium text-gray-700 text-sm sm:text-base dark:text-neutral-200">{day}</span>
                         </div>
 
                         {/* Copy button - mobile optimized */}
@@ -117,7 +117,7 @@ export const AvailabilityScheduler = React.memo(({ value, onChange, readOnly = f
                             <div className="sm:hidden">
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600" title="Copy times" type="button">
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300" title="Copy times" type="button">
                                             <Copy className="w-4 h-4" />
                                         </Button>
                                     </DropdownMenuTrigger>
@@ -152,7 +152,7 @@ export const AvailabilityScheduler = React.memo(({ value, onChange, readOnly = f
                                                 onValueChange={(val) => updateSlot(day, index, 'start', val)}
                                                 disabled={readOnly}
                                             >
-                                                <SelectTrigger className="flex-1 sm:w-28 h-11 sm:h-9 text-sm bg-white">
+                                                <SelectTrigger className="flex-1 sm:w-28 h-11 sm:h-9 text-sm bg-white dark:bg-neutral-950">
                                                     <SelectValue placeholder="Start" />
                                                 </SelectTrigger>
                                                 <SelectContent className="h-60">
@@ -161,13 +161,13 @@ export const AvailabilityScheduler = React.memo(({ value, onChange, readOnly = f
                                                     ))}
                                                 </SelectContent>
                                             </Select>
-                                            <span className="text-gray-400 px-1">-</span>
+                                            <span className="text-gray-400 px-1 dark:text-neutral-500">-</span>
                                             <Select
                                                 value={slot.end}
                                                 onValueChange={(val) => updateSlot(day, index, 'end', val)}
                                                 disabled={readOnly}
                                             >
-                                                <SelectTrigger className="flex-1 sm:w-28 h-11 sm:h-9 text-sm bg-white">
+                                                <SelectTrigger className="flex-1 sm:w-28 h-11 sm:h-9 text-sm bg-white dark:bg-neutral-950">
                                                     <SelectValue placeholder="End" />
                                                 </SelectTrigger>
                                                 <SelectContent className="h-60">
@@ -185,7 +185,7 @@ export const AvailabilityScheduler = React.memo(({ value, onChange, readOnly = f
                                                             <Button
                                                                 variant="ghost"
                                                                 size="icon"
-                                                                className="h-11 w-11 sm:h-8 sm:w-8 text-gray-400 hover:text-gray-600"
+                                                                className="h-11 w-11 sm:h-8 sm:w-8 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300"
                                                                 onClick={() => addSlot(day)}
                                                                 title="Add time slot"
                                                                 type="button"
@@ -196,7 +196,7 @@ export const AvailabilityScheduler = React.memo(({ value, onChange, readOnly = f
                                                             <div className="hidden sm:block">
                                                                 <DropdownMenu>
                                                                     <DropdownMenuTrigger asChild>
-                                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600" title="Copy times" type="button">
+                                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300" title="Copy times" type="button">
                                                                             <Copy className="w-4 h-4" />
                                                                         </Button>
                                                                     </DropdownMenuTrigger>
@@ -235,7 +235,7 @@ export const AvailabilityScheduler = React.memo(({ value, onChange, readOnly = f
                             </div>
                         ) : (
                             <div className="flex py-2 sm:justify-end">
-                                <span className="text-gray-400 text-sm italic">Unavailable</span>
+                                <span className="text-gray-400 text-sm italic dark:text-neutral-500">Unavailable</span>
                             </div>
                         )}
                     </div>

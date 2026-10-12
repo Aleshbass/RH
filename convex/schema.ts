@@ -129,6 +129,21 @@ export default defineSchema({
     website: v.optional(v.string()), // Public website URL
     specializations: v.optional(v.array(v.string())), // e.g., ['Sports Rehab', 'Pediatrics'],
     workingHours: v.optional(v.any()), // Could be structured e.g., { monday: { start: "09:00", end: "17:00" } }
+    // Registration details captured during clinic owner onboarding
+    state: v.optional(v.string()),
+    registrationNumber: v.optional(v.string()),
+    clinicType: v.optional(v.string()),
+    yearEstablished: v.optional(v.number()),
+    services: v.optional(v.array(v.string())),
+    facilities: v.optional(v.array(v.string())),
+    equipment: v.optional(v.array(v.string())),
+    additionalNotes: v.optional(v.string()),
+    // Services the clinic bills for, used to pre-fill payment requests
+    priceList: v.optional(v.array(v.object({
+      name: v.string(),
+      priceNaira: v.number(),
+      durationMinutes: v.optional(v.number()),
+    }))),
     settings: v.optional(v.object({ // Clinic-specific settings
       defaultCurrency: v.optional(v.string()), // e.g., "NGN"
       language: v.optional(v.string()), // e.g., "en"
@@ -327,6 +342,10 @@ export default defineSchema({
     startDate: v.number(), // When the relationship started
     endDate: v.optional(v.number()), // When the relationship ended (if applicable)
     notes: v.optional(v.string()), // Clinical notes about the relationship
+    // How the patient arrived: added directly by the clinic or referred by Rehabify
+    source: v.optional(v.union(v.literal("clinic_direct"), v.literal("rehabify_referral"))),
+    // Follow-up task: when the clinic should next check in with this patient
+    nextCheckInAt: v.optional(v.number()),
   })
     .index("by_patient", ["patientId"])
     .index("by_clinic", ["clinicId"])
@@ -623,6 +642,8 @@ export default defineSchema({
     isOnline: v.optional(v.boolean()), // True for online/telehealth appointments
     meetingLink: v.optional(v.string()), // GetStream or other video platform meeting link
     videoCallId: v.optional(v.id("videoCalls")), // Link to videoCalls table
+    // True for entries created only to anchor a clinical note or follow-up log; not a real visit
+    isRecordOnly: v.optional(v.boolean()),
   })
     .index("by_patient_id_and_time", ["patientId", "startTime"])
     .index("by_clinic_id_and_time", ["clinicId", "startTime"])
@@ -694,6 +715,16 @@ export default defineSchema({
     planForNextSession: v.optional(v.string()),
     voiceNoteUrl: v.optional(v.string()), // Link to stored voice note (e.g., Convex file storage ID)
     attachments: v.optional(v.array(v.id("_storage"))), // IDs of files in Convex storage
+    // Structured clinical documentation (clinic EHR)
+    noteType: v.optional(v.union(
+      v.literal("initial_assessment"),
+      v.literal("treatment_note"),
+      v.literal("follow_up"),
+      v.literal("discharge_summary"),
+      v.literal("follow_up_outreach")
+    )),
+    diagnosis: v.optional(v.string()),
+    goals: v.optional(v.string()),
   })
     .index("by_appointment_id", ["appointmentId"])
     .index("by_patient_id_and_date", ["patientId", "sessionDate"]),
@@ -843,6 +874,8 @@ export default defineSchema({
       order: v.number(),
       exercises: v.array(v.object({
         exerciseId: v.string(),
+        name: v.optional(v.string()), // Free-text exercise name for custom (non-library) exercises
+        instructions: v.optional(v.string()),
         sets: v.number(),
         reps: v.number(),
         duration: v.optional(v.string()),
@@ -996,7 +1029,11 @@ export default defineSchema({
     status: v.union(v.literal("draft"), v.literal("sent"), v.literal("paid"), v.literal("overdue"), v.literal("void"), v.literal("partial_payment"), v.literal("failed")),
     paymentMethod: v.optional(v.string()),
     paymentReference: v.optional(v.string()), // Paystack payment reference
+    paymentLink: v.optional(v.string()), // Shareable Paystack checkout URL (clinic payment requests)
     paymentDate: v.optional(v.float64()),
+    // Where an online payment's provider share went: split straight to the
+    // clinic/physio bank by Paystack, or held by Rehabify for a manual transfer.
+    payoutRoute: v.optional(v.union(v.literal("split_to_provider"), v.literal("held_by_platform"))),
     notes: v.optional(v.string()),
     relatedAppointmentIds: v.optional(v.array(v.id("appointments"))),
     physiotherapistShare: v.optional(v.float64()), // Amount physiotherapist gets after fees
@@ -1084,11 +1121,10 @@ export default defineSchema({
 
     // Tracking the patient lifecycle
     patientId: v.optional(v.id("users")), // Linked once they sign up
-    // Legacy partner referrals may already be linked to a marketplace booking.
-    bookingId: v.optional(v.id("marketplaceBookings")),
     appointmentId: v.optional(v.id("appointments")), // Associated first appointment
     bookingId: v.optional(v.id("marketplaceBookings")), // Linked marketplace booking
     assignedPhysiotherapistId: v.optional(v.id("users")), // Matched physiotherapist
+    assignedClinicId: v.optional(v.id("clinics")), // Clinic routed by Rehabify admin; only this clinic can see the referral
 
     // Controlled referral statuses (spec-compliant 16 statuses + legacy compat)
     status: v.union(
@@ -1137,7 +1173,8 @@ export default defineSchema({
     .index("by_partner_id", ["partnerId"])
     .index("by_partner_and_environment", ["partnerId", "environment"])
     .index("by_link_id", ["linkId"])
-    .index("by_whatsapp_phone", ["whatsappPhone"]),
+    .index("by_whatsapp_phone", ["whatsappPhone"])
+    .index("by_assigned_clinic", ["assignedClinicId"]),
 
   // MyItura MediLoan applications — formally initiated with the MyItura SDK
   loanApplications: defineTable({
@@ -2275,6 +2312,18 @@ export default defineSchema({
     .index("by_status", ["status"]),
 
   // Physiotherapist bank accounts for split payments
+  // Clinic payout account: a Paystack subaccount that receives the clinic's share of patient payments
+  clinicPayoutAccounts: defineTable({
+    clinicId: v.id("clinics"),
+    subaccountCode: v.string(),
+    bankCode: v.string(),
+    bankName: v.string(),
+    accountNumber: v.string(),
+    accountName: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_clinic_id", ["clinicId"]),
+
   physiotherapistBankAccounts: defineTable({
     physiotherapistId: v.id("users"),
     subaccountCode: v.string(), // Paystack subaccount code
@@ -2396,8 +2445,6 @@ export default defineSchema({
     physiotherapistId: v.optional(v.id("users")),
     patientId: v.id("users"),
     appointmentId: v.optional(v.id("appointments")), // Created after payment
-    // Legacy partner-attributed bookings retain their source referral.
-    referralId: v.optional(v.id("inboundReferrals")),
 
     // Session details
     sessionType: v.string(), // "initial_consult", "follow_up", "package"

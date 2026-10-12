@@ -4,6 +4,7 @@ import { useState, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -22,13 +23,16 @@ function AdminReferralsContent() {
     const initialPartner = searchParams.get('partner') || 'all'
 
     const referrals = useQuery(api.adminReferrals.getInboundReferrals)
+    const routableClinics = useQuery(api.adminReferrals.listClinicsForReferralRouting)
     const updateReferral = useMutation(api.adminReferrals.updateReferralStatus)
+    const assignReferralToClinic = useMutation(api.adminReferrals.assignReferralToClinic)
 
     const [selectedReferral, setSelectedReferral] = useState<any>(null)
     const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false)
     const [statusToUpdate, setStatusToUpdate] = useState<ReferralStatus>('pending')
     const [commission, setCommission] = useState('')
     const [notes, setNotes] = useState('')
+    const [clinicToAssign, setClinicToAssign] = useState('none')
     const [isUpdating, setIsUpdating] = useState(false)
 
     // Search and filter states
@@ -41,6 +45,7 @@ function AdminReferralsContent() {
         setStatusToUpdate(referral.status)
         setCommission(referral.commissionEarned ? (referral.commissionEarned / 100).toString() : '')
         setNotes(referral.clinicalNotes || '')
+        setClinicToAssign(referral.assignedClinicId || 'none')
         setIsUpdateModalOpen(true)
     }
 
@@ -57,6 +62,13 @@ function AdminReferralsContent() {
                     ? (isNaN(parseFloat(commission)) ? undefined : Math.round(parseFloat(commission) * 100))
                     : undefined
             })
+            const currentClinic = selectedReferral.assignedClinicId || 'none'
+            if (clinicToAssign !== currentClinic) {
+                await assignReferralToClinic({
+                    referralId: selectedReferral._id,
+                    clinicId: clinicToAssign === 'none' ? undefined : (clinicToAssign as Id<'clinics'>),
+                })
+            }
             toast.success("Referral status updated successfully")
             setIsUpdateModalOpen(false)
         } catch (error: any) {
@@ -411,6 +423,24 @@ function AdminReferralsContent() {
                                     <SelectItem value="cancelled">Cancelled</SelectItem>
                                 </SelectContent>
                             </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label htmlFor="referral-clinic" className="text-sm font-medium">Route to clinic</label>
+                            <Select value={clinicToAssign} onValueChange={setClinicToAssign}>
+                                <SelectTrigger id="referral-clinic">
+                                    <SelectValue placeholder="Not routed to a clinic" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">Not routed to a clinic</SelectItem>
+                                    {routableClinics?.map((clinic: { _id: string; name: string; city: string }) => (
+                                        <SelectItem key={clinic._id} value={clinic._id}>
+                                            {clinic.name}{clinic.city ? ` · ${clinic.city}` : ''}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-gray-500">Only the selected clinic will see this referral in its dashboard.</p>
                         </div>
 
                         {(statusToUpdate === 'completed' || statusToUpdate === 'paid_out') && (

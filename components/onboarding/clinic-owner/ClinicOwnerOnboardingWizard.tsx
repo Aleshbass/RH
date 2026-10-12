@@ -5,8 +5,7 @@ import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Loader2, Upload, Twitter, Instagram, Linkedin, Globe, Users, Search as SearchIcon } from 'lucide-react';
-import OnboardingSuccessModal from '@/components/onboarding/common/OnboardingSuccessModal';
+import { ChevronRight, ChevronLeft, Loader2, Upload, Twitter, Instagram, Linkedin, Globe, Users, Search as SearchIcon, Sparkles } from 'lucide-react';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { useMutation, useQuery } from 'convex/react';
 import { toast } from 'sonner';
@@ -21,6 +20,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { FileUpload } from '@/components/ui/file-upload';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+} from '@/components/ui/dialog';
 import LocationSearch from '@/components/marketplace/LocationSearch';
 import { useClinicDocuments } from '@/lib/hooks/useClinicDocuments';
 import { cn } from '@/lib/utils';
@@ -124,6 +131,45 @@ const steps = [
     { id: 'review', title: 'Review & Submit' },
 ];
 
+const DOCUMENTS_STEP = 7;
+const DRAFT_STORAGE_KEY = 'clinicOwnerOnboardingData';
+const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Form fields validated on each step (the documents step is checked separately)
+const stepFields: (keyof FormValues)[][] = [
+    ['firstName', 'lastName', 'email', 'phoneNumber', 'yearsInBusiness', 'isOwner', 'positionIfNotOwner'],
+    ['clinicName', 'registrationNumber', 'clinicType', 'yearEstablished'],
+    ['clinicEmail', 'clinicPhone', 'website'],
+    ['address', 'city', 'state'],
+    ['services', 'specialties'],
+    ['facilities', 'equipmentAvailable'],
+    ['operatingHours', 'additionalNotes'],
+    [],
+    ['referralSource', 'acceptTerms'],
+];
+
+// Everything the clinic record stores from the wizard; sent on every save so edits are never lost
+function buildClinicDetails(values: FormValues) {
+    return {
+        name: values.clinicName,
+        address: values.address || undefined,
+        city: values.city || undefined,
+        state: values.state || undefined,
+        contactEmail: values.clinicEmail || undefined,
+        contactPhone: values.clinicPhone || undefined,
+        website: values.website || undefined,
+        registrationNumber: values.registrationNumber || undefined,
+        clinicType: values.clinicType || undefined,
+        yearEstablished: Number.isFinite(values.yearEstablished) ? values.yearEstablished : undefined,
+        services: values.services?.length ? values.services : undefined,
+        specializations: values.specialties?.length ? values.specialties : undefined,
+        facilities: values.facilities?.length ? values.facilities : undefined,
+        equipment: values.equipmentAvailable?.length ? values.equipmentAvailable : undefined,
+        workingHours: values.operatingHours ?? undefined,
+        additionalNotes: values.additionalNotes || undefined,
+    };
+}
+
 export default function ClinicOwnerOnboardingWizard() {
     const router = useRouter();
     const { data, updateClinicOwnerData, setActualClinicId, completeOnboarding } = useOnboardingStore();
@@ -137,8 +183,11 @@ export default function ClinicOwnerOnboardingWizard() {
 
     const [currentStep, setCurrentStep] = useState(0);
     const [direction, setDirection] = useState(0);
-    const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [isFinishing, setIsFinishing] = useState(false);
+    const [otherReferralChosen, setOtherReferralChosen] = useState(false);
     const [isAvailabilityLoading, setIsAvailabilityLoading] = useState(false);
+    const [isSkipping, setIsSkipping] = useState(false);
+    const [isSkipModalOpen, setIsSkipModalOpen] = useState(false);
 
 
     // Document State
@@ -258,16 +307,33 @@ export default function ClinicOwnerOnboardingWizard() {
         }
     }, [currentUser, setValue, clinicOwnerData.firstName]);
 
-    // Restore guest saving logic
+    // Persist progress after each step so a refresh or a skip can resume where the owner left off.
+    // Uploaded documents live only in memory and must be re-attached after a reload.
+    const saveDraft = (step: number, extra: Record<string, unknown> = {}) => {
+        try {
+            localStorage.setItem(
+                DRAFT_STORAGE_KEY,
+                JSON.stringify({
+                    formData: watch(),
+                    currentStep: step,
+                    guestProfilePhotoId,
+                    actualClinicId,
+                    timestamp: Date.now(),
+                    ...extra,
+                })
+            );
+        } catch { }
+    };
+
+    // Restore a saved draft
     useEffect(() => {
         if (!isSignedIn) return;
 
         try {
-            const savedData = localStorage.getItem('clinicOwnerOnboardingData');
+            const savedData = localStorage.getItem(DRAFT_STORAGE_KEY);
             if (savedData) {
                 const parsed = JSON.parse(savedData);
-                // Check if the data is recent (within last 24 hours)
-                if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+                if (Date.now() - parsed.timestamp < DRAFT_MAX_AGE_MS) {
                     // Restore form values
                     const fieldsToRestore = [
                         'firstName', 'lastName', 'email', 'phoneNumber', 'yearsInBusiness', 
@@ -291,9 +357,16 @@ export default function ClinicOwnerOnboardingWizard() {
                         setActualClinicId(parsed.actualClinicId);
                     }
 
-                    // Jump to the review step so they can re-submit
-                    setCurrentStep(steps.length - 1);
-                    toast.success('Welcome back! Your onboarding data has been restored.');
+                    // Resume on the step they reached. Documents are not kept across reloads,
+                    // so anyone who had passed that step goes back to re-attach them.
+                    const savedStep = typeof parsed.currentStep === 'number' ? parsed.currentStep : 0;
+                    const resumeStep = Math.max(0, Math.min(savedStep, DOCUMENTS_STEP));
+                    setCurrentStep(resumeStep);
+                    toast.success(
+                        savedStep > DOCUMENTS_STEP
+                            ? 'Welcome back! Please re-attach your documents to finish.'
+                            : 'Welcome back! We restored your progress.'
+                    );
                 }
             }
         } catch { }
@@ -310,57 +383,45 @@ export default function ClinicOwnerOnboardingWizard() {
         }
     }, [currentStep]);
 
+    const hasRequiredDocuments = () =>
+        businessLicense.length > 0 && taxRegistration.length > 0 && insuranceProof.length > 0 && ownerIdentification.length > 0;
+
+    const goToStep = (step: number) => {
+        setDirection(step > currentStep ? 1 : -1);
+        setCurrentStep(step);
+    };
+
     const nextStep = async () => {
-        let fieldsToValidate: any[] = [];
-
-        switch (currentStep) {
-            case 0: fieldsToValidate = ['firstName', 'lastName', 'email', 'phoneNumber', 'yearsInBusiness', 'isOwner', 'positionIfNotOwner']; break;
-            case 1: fieldsToValidate = ['clinicName', 'registrationNumber', 'clinicType', 'yearEstablished']; break;
-            case 2: fieldsToValidate = ['clinicEmail', 'clinicPhone', 'website']; break;
-            case 3: fieldsToValidate = ['address', 'city', 'state']; break;
-            case 4: fieldsToValidate = ['services', 'specialties']; break;
-            case 5: fieldsToValidate = ['facilities', 'equipmentAvailable']; break;
-            case 6: fieldsToValidate = ['operatingHours', 'additionalNotes']; break;
-            case 7:
-                if (businessLicense.length === 0 || taxRegistration.length === 0 || insuranceProof.length === 0 || ownerIdentification.length === 0) {
-                    toast.error("Please upload all required documents");
-                    return;
-                }
-                break;
-            case 8: fieldsToValidate = ['referralSource', 'acceptTerms']; break;
-        }
-
-        if (currentStep !== 7) {
-            const isStepValid = await trigger(fieldsToValidate);
+        if (currentStep === DOCUMENTS_STEP) {
+            if (!hasRequiredDocuments()) {
+                toast.error("Please upload all required documents");
+                return;
+            }
+        } else {
+            const isStepValid = await trigger(stepFields[currentStep]);
             if (!isStepValid) return;
         }
 
-        // Special handling for clinic creation after step 3 (Address)
-        // We only create the clinic immediately if the user is authenticated.
-        if (currentStep === 3 && !actualClinicId && isSignedIn) {
-            const values = watch();
+        // Save the clinic record once the location is known. createClinic updates the owner's
+        // existing clinic (including the placeholder made by "Skip"), so this never duplicates.
+        if (currentStep === 3 && isSignedIn) {
             try {
-                const result = await createClinicMutation({
-                    name: values.clinicName,
-                    address: values.address,
-                    city: values.city,
-                    contactEmail: values.clinicEmail,
-                    contactPhone: values.clinicPhone,
-                });
+                const result = await createClinicMutation(buildClinicDetails(watch()));
                 if (result.success && result.clinicId) {
                     setActualClinicId(result.clinicId);
                 } else {
-                    toast.error("Failed to create clinic record");
+                    toast.error("Failed to save clinic record");
                     return;
                 }
             } catch (error) {
-                console.error("Clinic creation error:", error);
-                toast.error("Failed to create clinic record");
+                console.error("Clinic save error:", error);
+                toast.error("Failed to save clinic record");
                 return;
             }
         }
 
         if (currentStep < steps.length - 1) {
+            saveDraft(currentStep + 1);
             setDirection(1);
             setCurrentStep(prev => prev + 1);
         } else {
@@ -380,22 +441,31 @@ export default function ClinicOwnerOnboardingWizard() {
 
         // ── If not signed in, save form data and redirect to sign-up ──
         if (!isSignedIn) {
-            try {
-                localStorage.setItem(
-                    'clinicOwnerOnboardingData',
-                    JSON.stringify({
-                        formData,
-                        guestProfilePhotoId,
-                        actualClinicId,
-                        timestamp: Date.now(),
-                    })
-                );
-            } catch { }
+            saveDraft(currentStep);
             toast.info('Create your account to complete onboarding');
-            router.push('/sign-up?redirect=/clinic-owner');
+            router.push('/sign-up?redirect_url=/clinic-owner');
             return;
         }
 
+        // Validate every step, not just this one: a restored draft may have gaps
+        for (let step = 0; step < stepFields.length; step++) {
+            if (step === DOCUMENTS_STEP) {
+                if (!hasRequiredDocuments()) {
+                    toast.error("Please upload all required documents");
+                    goToStep(DOCUMENTS_STEP);
+                    return;
+                }
+                continue;
+            }
+            const valid = await trigger(stepFields[step]);
+            if (!valid) {
+                toast.error(`Please complete the "${steps[step].title}" step`);
+                goToStep(step);
+                return;
+            }
+        }
+
+        setIsFinishing(true);
         try {
             // Helper to upload image and get storageId
             const uploadImage = async (file: File) => {
@@ -417,24 +487,13 @@ export default function ClinicOwnerOnboardingWizard() {
             if (clinicImageOutside) outsideImageId = await uploadImage(clinicImageOutside);
             if (clinicImageInside) insideImageId = await uploadImage(clinicImageInside);
 
-            // Ensure clinic exists
-            let clinicId = actualClinicId;
-            if (!clinicId) {
-                console.log("Clinic ID missing, creating clinic...");
-                const result = await createClinicMutation({
-                    name: formData.clinicName,
-                    address: formData.address,
-                    city: formData.city,
-                    contactEmail: formData.clinicEmail,
-                    contactPhone: formData.clinicPhone,
-                });
-                if (result.success && result.clinicId) {
-                    clinicId = result.clinicId;
-                    setActualClinicId(result.clinicId);
-                } else {
-                    throw new Error("Failed to create clinic record");
-                }
+            // Save every clinic detail (creates the clinic, or updates the owner's existing one)
+            const clinicResult = await createClinicMutation(buildClinicDetails(formData));
+            if (!clinicResult.success || !clinicResult.clinicId) {
+                throw new Error("Failed to save clinic record");
             }
+            const clinicId = clinicResult.clinicId;
+            setActualClinicId(clinicId);
 
             // 2. Upload Documents
             if (clinicId) {
@@ -475,24 +534,68 @@ export default function ClinicOwnerOnboardingWizard() {
                 finalStep: true,
             });
 
-            // 4. Show Success Modal FIRST
-            setShowSuccessModal(true);
-
-            // 5. Update Store & Complete Onboarding (Delayed to allow modal to appear)
-            // We don't want to trigger the layout redirect immediately
             updateClinicOwnerData({
                 ...formData,
                 onboardingCompleted: true,
             });
             completeOnboarding();
+            try {
+                localStorage.removeItem(DRAFT_STORAGE_KEY);
+            } catch { }
 
-            // The modal's onContinue will handle the redirect
-            // router.push('/dashboard'); 
-
-
+            // The onboarding layout redirects as soon as the account is onboarded,
+            // so go straight to the clinic dashboard rather than showing a modal.
+            toast.success("Application submitted! We'll notify you once your clinic is verified.");
+            router.replace('/dashboard/clinic');
         } catch (error: any) {
             console.error("Submission error:", error);
             toast.error(error.message || "Failed to complete onboarding");
+        } finally {
+            setIsFinishing(false);
+        }
+    };
+
+    // --- Skip to Preview Dashboard ---
+    const handleSkipToPreview = async () => {
+        setIsSkipping(true);
+        const currentFormValues = watch();
+
+        // 1. Persist current values and step so "Complete Onboarding" resumes here
+        saveDraft(currentStep, { onboardingSkipped: true });
+
+        if (!isSignedIn) {
+            setIsSkipping(false);
+            setIsSkipModalOpen(false);
+            toast.info("Entering Clinic OS Preview Sandbox.");
+            router.push('/dashboard/clinic');
+            return;
+        }
+
+        try {
+            await completeUserProfileMutation({
+                role: 'clinic_owner',
+                profileData: {
+                    referralSource: currentFormValues.referralSource || 'preview_skipped',
+                    yearsInBusiness: currentFormValues.yearsInBusiness || 0,
+                    gender: 'prefer_not_to_say',
+                    clinicLocation: currentFormValues.clinicLocation,
+                },
+                firstName: currentFormValues.firstName || currentUser?.firstName || undefined,
+                lastName: currentFormValues.lastName || currentUser?.lastName || undefined,
+                finalStep: false,
+                onboardingSkipped: true,
+            });
+
+            toast.info("Entering Preview Mode. Welcome to your Clinic OS.");
+            router.push('/dashboard/clinic');
+        } catch (error: any) {
+            console.error("Skip error:", error);
+            // Even if database provisioning takes a moment, allow entering preview mode smoothly
+            toast.info("Entering Preview Mode.");
+            router.push('/dashboard/clinic');
+        } finally {
+            setIsSkipping(false);
+            setIsSkipModalOpen(false);
         }
     };
 
@@ -515,16 +618,28 @@ export default function ClinicOwnerOnboardingWizard() {
         { id: 'friend', label: 'Friend/Colleague', icon: Users },
         { id: 'other', label: 'Other', icon: Globe },
     ];
+    const referralSourceValue = watch('referralSource') || '';
+    const isPresetReferralSource = socialOptions.slice(0, 5).some(o => o.label === referralSourceValue);
+    // "Other" is active once chosen, or when a restored draft holds a custom answer
+    const isOtherReferralSource = !isPresetReferralSource && (otherReferralChosen || referralSourceValue !== '');
 
     return (
         <div className="w-full max-w-xl mx-auto px-4 py-6">
-            <OnboardingSuccessModal
-                isOpen={showSuccessModal}
-                userRole="clinic_owner"
-                onContinue={() => router.push('/dashboard')}
-            />
-            {/* Progress Bar */}
+            {/* Progress Bar & Header */}
             <div className="mb-8">
+                <div className="flex items-center justify-between mb-2.5">
+                    <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+                        Clinic Setup • Step {currentStep + 1} of {steps.length}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => setIsSkipModalOpen(true)}
+                        className="text-xs font-medium text-[#005b57] hover:text-[#00443e] hover:underline flex items-center gap-1 transition-colors"
+                    >
+                        <span>Skip to Preview</span>
+                        <ChevronRight className="w-3 h-3" />
+                    </button>
+                </div>
                 <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                     <motion.div
                         className="h-full bg-[#005b57]"
@@ -533,9 +648,9 @@ export default function ClinicOwnerOnboardingWizard() {
                         transition={{ duration: 0.3 }}
                     />
                 </div>
-                <div className="flex justify-between mt-2 text-xs text-gray-400 font-medium uppercase tracking-wider">
-                    <span>Step {currentStep + 1} of {steps.length}</span>
+                <div className="flex justify-between mt-2 text-xs text-gray-400 font-medium">
                     <span>{steps[currentStep].title}</span>
+                    <span className="text-gray-400">Preview mode available</span>
                 </div>
             </div>
 
@@ -695,7 +810,7 @@ export default function ClinicOwnerOnboardingWizard() {
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Clinic Type</Label>
-                                        <Select onValueChange={(val) => setValue('clinicType', val)} defaultValue={watch('clinicType')}>
+                                        <Select onValueChange={(val) => setValue('clinicType', val, { shouldValidate: true })} value={watch('clinicType') || undefined}>
                                             <SelectTrigger>
                                                 <SelectValue placeholder="Select Type" />
                                             </SelectTrigger>
@@ -1025,7 +1140,9 @@ export default function ClinicOwnerOnboardingWizard() {
                                                 <div className="grid grid-cols-3 gap-3">
                                                     {socialOptions.map((option) => {
                                                         const Icon = option.icon;
-                                                        const isSelected = field.value === option.label || (option.id === 'other' && !socialOptions.slice(0, 5).some(o => o.label === field.value) && field.value !== '');
+                                                        const isSelected = option.id === 'other'
+                                                            ? isOtherReferralSource
+                                                            : field.value === option.label;
 
                                                         return (
                                                             <div
@@ -1033,8 +1150,9 @@ export default function ClinicOwnerOnboardingWizard() {
                                                                 onClick={() => {
                                                                     if (option.id !== 'other') {
                                                                         field.onChange(option.label);
-                                                                    } else {
+                                                                    } else if (!isOtherReferralSource) {
                                                                         field.onChange(''); // Clear for manual input
+                                                                        setOtherReferralChosen(true);
                                                                     }
                                                                 }}
                                                                 className={cn(
@@ -1052,7 +1170,7 @@ export default function ClinicOwnerOnboardingWizard() {
                                         />
 
                                         {/* Manual Input if "Other" is selected or value doesn't match predefined options */}
-                                        {(!socialOptions.slice(0, 5).some(o => o.label === watch('referralSource')) && (
+                                        {isOtherReferralSource && (
                                             <motion.div
                                                 initial={{ opacity: 0, height: 0 }}
                                                 animate={{ opacity: 1, height: 'auto' }}
@@ -1061,12 +1179,12 @@ export default function ClinicOwnerOnboardingWizard() {
                                                 <Label className="text-xs text-gray-500 mb-1.5 block">Please specify</Label>
                                                 <Input
                                                     placeholder="e.g. Conference, Flyer, etc."
-                                                    value={watch('referralSource') === 'Search Engine' || watch('referralSource') === 'Friend/Colleague' || watch('referralSource') === 'X (Twitter)' || watch('referralSource') === 'Instagram' || watch('referralSource') === 'LinkedIn' ? '' : watch('referralSource')}
-                                                    onChange={(e) => setValue('referralSource', e.target.value)}
+                                                    value={watch('referralSource')}
+                                                    onChange={(e) => setValue('referralSource', e.target.value, { shouldValidate: true })}
                                                     className="h-11"
                                                 />
                                             </motion.div>
-                                        ))}
+                                        )}
 
                                         {errors.referralSource && <p className="text-xs text-red-500">{errors.referralSource.message as string}</p>}
                                     </div>
@@ -1092,7 +1210,7 @@ export default function ClinicOwnerOnboardingWizard() {
             </div>
 
             {/* Navigation Buttons */}
-            <div className="flex justify-between pt-6 mt-6 border-t border-gray-100">
+            <div className="flex justify-between items-center pt-6 mt-6 border-t border-gray-100">
                 <Button
                     type="button"
                     onClick={prevStep}
@@ -1103,24 +1221,81 @@ export default function ClinicOwnerOnboardingWizard() {
                     Back
                 </Button>
 
-                <Button
-                    type="button"
-                    onClick={nextStep}
-                    disabled={isSubmitting}
-                    className="bg-[#005b57] hover:bg-[#00443e] text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-900/10"
-                >
-                    {isSubmitting ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : currentStep === steps.length - 1 ? (
-                        'Complete'
-                    ) : (
-                        <>
-                            Next
-                            <ChevronRight className="w-4 h-4 ml-2" />
-                        </>
-                    )}
-                </Button>
+                <div className="flex items-center gap-2.5">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setIsSkipModalOpen(true)}
+                        disabled={isSkipping || isSubmitting || isFinishing}
+                        className="text-xs text-neutral-500 hover:text-neutral-900 h-12 px-3"
+                    >
+                        Skip for now
+                    </Button>
+
+                    <Button
+                        type="button"
+                        onClick={nextStep}
+                        disabled={isSubmitting || isSkipping || isFinishing}
+                        className="bg-[#005b57] hover:bg-[#00443e] text-white min-w-[120px] h-12 rounded-xl shadow-lg shadow-teal-900/10"
+                    >
+                        {isSubmitting || isFinishing ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : currentStep === steps.length - 1 ? (
+                            'Complete'
+                        ) : (
+                            <>
+                                Next
+                                <ChevronRight className="w-4 h-4 ml-2" />
+                            </>
+                        )}
+                    </Button>
+                </div>
             </div>
+
+            {/* Skip to Preview Confirmation Modal */}
+            <Dialog open={isSkipModalOpen} onOpenChange={setIsSkipModalOpen}>
+                <DialogContent className="sm:max-w-md rounded-3xl p-6 bg-white dark:bg-[#1C1C1E] border border-black/[0.08] dark:border-white/[0.08]">
+                    <DialogHeader className="text-left space-y-2">
+                        <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/40 text-[#005b57] flex items-center justify-center">
+                            <Sparkles className="w-5 h-5" />
+                        </div>
+                        <DialogTitle className="text-lg font-semibold tracking-tight text-neutral-950 dark:text-white">
+                            Explore Clinic OS in Preview Mode?
+                        </DialogTitle>
+                        <DialogDescription className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed space-y-2">
+                            <span>
+                                You can explore the complete Clinic OS layout, EHR timeline, and appointment calendar immediately without completing all registration steps right now.
+                            </span>
+                            <span className="block mt-2 font-medium text-amber-700 dark:text-amber-400">
+                                Note: Your dashboard will be in read-only preview mode. You cannot book real patients or accept payments until onboarding is completed and verified by admin.
+                            </span>
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 pt-3 sm:space-x-0">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIsSkipModalOpen(false)}
+                            className="h-10 rounded-xl text-xs"
+                        >
+                            Continue Setup
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={handleSkipToPreview}
+                            disabled={isSkipping}
+                            className="h-10 rounded-xl text-xs bg-[#005b57] hover:bg-[#00443e] text-white"
+                        >
+                            {isSkipping ? (
+                                <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                            ) : (
+                                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                            )}
+                            Enter Preview Mode
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div >
     );
 }

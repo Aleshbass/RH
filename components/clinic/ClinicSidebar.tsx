@@ -3,191 +3,146 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useQuery } from 'convex/react'
+import { api } from '@/convex/_generated/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
+import { ClinicThemeToggle } from '@/components/clinic/ClinicTheme'
 import {
   Users,
   Calendar,
   Settings,
   ChevronRight,
-  BarChart3,
+  ChevronLeft,
   LayoutDashboard,
   UserCheck,
-  Receipt,
-  User,
+  CreditCard,
   Building2,
-  ChevronLeft
+  Inbox,
+  BarChart3,
+  type LucideIcon,
 } from 'lucide-react'
 
 interface SidebarProps {
   className?: string
+  onNavigate?: () => void
+  collapsible?: boolean
 }
 
-// Simplified sidebar - Clinic owners focus on staff management
-// Patients, appointments, billing, etc. are managed by individual physiotherapists
-const sidebarGroups = [
-  {
-    label: 'Main',
-    items: [
-      {
-        title: 'Dashboard',
-        href: '/dashboard/clinic',
-        icon: LayoutDashboard,
-        description: 'Overview'
-      }
-    ]
-  },
-  {
-    label: 'Management',
-    items: [
-      {
-        title: 'Staff',
-        href: '/dashboard/clinic/staff',
-        icon: UserCheck,
-        description: 'Manage physiotherapists'
-      },
-      {
-        title: 'Patients',
-        href: '/dashboard/clinic/patients',
-        icon: Users,
-        description: 'View all patients'
-      },
-      {
-        title: 'Appointments',
-        href: '/dashboard/clinic/appointments',
-        icon: Calendar,
-        description: 'Clinic schedule'
-      }
-    ]
-  },
-  {
-    label: 'Insights',
-    items: [
-      // Removed Reports link
-    ]
-  }
+type NavItem = {
+  title: string
+  href: string
+  icon: LucideIcon
+  badgeKey?: 'newReferrals'
+}
+
+const mainItems: NavItem[] = [
+  { title: 'Home', href: '/dashboard/clinic', icon: LayoutDashboard },
+  { title: 'Appointments', href: '/dashboard/clinic/appointments', icon: Calendar },
+  { title: 'Patients', href: '/dashboard/clinic/patients', icon: Users },
+  { title: 'Referrals', href: '/dashboard/clinic/referrals', icon: Inbox, badgeKey: 'newReferrals' },
+  { title: 'Billing', href: '/dashboard/clinic/billing', icon: CreditCard },
+  { title: 'Team', href: '/dashboard/clinic/staff', icon: UserCheck },
+  { title: 'Reports', href: '/dashboard/clinic/analytics', icon: BarChart3 },
 ]
 
-const bottomItems = [
-  {
-    title: 'Settings',
-    href: '/dashboard/clinic/settings',
-    icon: Settings,
-    description: 'Clinic configuration'
-  },
-  {
-    title: 'Profile',
-    href: '/dashboard/profile',
-    icon: User,
-    description: 'Personal account management'
-  }
+const bottomItems: NavItem[] = [
+  { title: 'Clinic settings', href: '/dashboard/clinic/settings', icon: Building2 },
+  { title: 'Account', href: '/dashboard/settings', icon: Settings },
 ]
 
-export default function ClinicSidebar({ className }: SidebarProps) {
+function isActivePath(pathname: string, href: string) {
+  if (href === '/dashboard/clinic') return pathname === href
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+export default function ClinicSidebar({ className, onNavigate, collapsible = true }: SidebarProps) {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const counts = useQuery(api.clinicTools.getClinicNavCounts, {})
+  const collapsed = collapsible && isCollapsed
+
+  const renderItem = (item: NavItem) => {
+    const active = isActivePath(pathname, item.href)
+    const Icon = item.icon
+    const badge = item.badgeKey ? counts?.[item.badgeKey] ?? 0 : 0
+
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={onNavigate}
+        title={collapsed ? item.title : undefined}
+        aria-current={active ? 'page' : undefined}
+        className={cn(
+          'relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+          active
+            ? 'bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-white'
+            : 'text-neutral-600 hover:bg-neutral-100/70 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-white',
+          collapsed && 'justify-center px-0'
+        )}
+      >
+        <Icon
+          className={cn(
+            'h-4 w-4 shrink-0',
+            active ? 'text-[#005b57] dark:text-[#2dd4bf]' : 'text-neutral-400 dark:text-neutral-500'
+          )}
+        />
+        {!collapsed && <span className="flex-1 truncate">{item.title}</span>}
+        {badge > 0 && (
+          <span
+            className={cn(
+              'min-w-5 rounded-full bg-[#005b57] px-1.5 text-center text-[11px] font-medium leading-5 text-white dark:bg-[#2dd4bf] dark:text-neutral-950',
+              collapsed && 'absolute right-1 top-0.5 min-w-4 px-1 text-[10px] leading-4'
+            )}
+            aria-label={`${badge} new`}
+          >
+            {badge}
+          </span>
+        )}
+      </Link>
+    )
+  }
 
   return (
-    <div className={cn(
-      "flex flex-col h-full bg-white border-r border-gray-200 transition-all duration-300",
-      isCollapsed ? "w-16" : "w-64",
-      className
-    )}>
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
-        {!isCollapsed && (
-          <div className="flex items-center space-x-2">
-            <Building2 className="h-6 w-6 text-primary" />
-            <span className="font-semibold text-lg">Clinic Portal</span>
-          </div>
+    <aside
+      className={cn(
+        'flex h-full flex-col border-r border-neutral-200 bg-white transition-[width] duration-200 dark:border-neutral-800 dark:bg-neutral-950',
+        collapsed ? 'w-16' : 'w-60',
+        className
+      )}
+    >
+      <div className="flex h-14 items-center justify-between border-b border-neutral-200 px-4 dark:border-neutral-800">
+        {!collapsed && (
+          <Link href="/dashboard/clinic" onClick={onNavigate} className="flex min-w-0 items-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#005b57] text-white">
+              <Building2 className="h-3.5 w-3.5" />
+            </div>
+            <span className="truncate text-sm font-semibold text-neutral-900 dark:text-white">Rehabify Clinic</span>
+          </Link>
         )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="h-8 w-8 p-0"
-        >
-          {isCollapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-        </Button>
+        {collapsible && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="h-7 w-7 p-0 text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </Button>
+        )}
       </div>
 
-      {/* Navigation */}
-      <ScrollArea className="flex-1 py-2">
-        <nav className="px-2 space-y-6">
-          {sidebarGroups.map((group, groupIndex) => (
-            <div key={group.label} className="space-y-1">
-              {!isCollapsed && (
-                <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">
-                  {group.label}
-                </h4>
-              )}
-              {group.items.map((item) => {
-                const isActive = pathname === item.href
-                const Icon = item.icon
-
-                return (
-                  <Link key={item.href} href={item.href}>
-                    <Button
-                      variant={isActive ? "secondary" : "ghost"}
-                      className={cn(
-                        "w-full justify-start h-auto py-2 px-2",
-                        isActive && "bg-primary/10 text-primary hover:bg-primary/15",
-                        "hover:bg-gray-100 transition-colors",
-                        isCollapsed && "px-0 justify-center"
-                      )}
-                      title={isCollapsed ? item.title : undefined}
-                    >
-                      <Icon className={cn("h-4 w-4 shrink-0", !isCollapsed && "mr-2")} />
-                      {!isCollapsed && (
-                        <span className="text-sm">{item.title}</span>
-                      )}
-                    </Button>
-                  </Link>
-                )
-              })}
-              {groupIndex < sidebarGroups.length - 1 && !isCollapsed && (
-                <Separator className="my-2" />
-              )}
-            </div>
-          ))}
-        </nav>
+      <ScrollArea className="flex-1 py-3">
+        <nav className="space-y-0.5 px-2">{mainItems.map(renderItem)}</nav>
       </ScrollArea>
 
-      {/* Bottom Navigation */}
-      <div className="border-t border-gray-200 p-2">
-        <nav className="space-y-1">
-          {bottomItems.map((item) => {
-            const isActive = pathname === item.href
-            const Icon = item.icon
-
-            return (
-              <Link key={item.href} href={item.href}>
-                <Button
-                  variant={isActive ? "secondary" : "ghost"}
-                  className={cn(
-                    "w-full justify-start h-auto py-2 px-2",
-                    isActive && "bg-primary/10 text-primary",
-                    "hover:bg-gray-100 transition-colors",
-                    isCollapsed && "px-0 justify-center"
-                  )}
-                  title={isCollapsed ? item.title : undefined}
-                >
-                  <Icon className={cn("h-4 w-4", !isCollapsed && "mr-2")} />
-                  {!isCollapsed && (
-                    <span className="text-sm">{item.title}</span>
-                  )}
-                </Button>
-              </Link>
-            )
-          })}
-        </nav>
+      <div className="border-t border-neutral-200 p-2 dark:border-neutral-800">
+        <nav className="space-y-0.5">{bottomItems.map(renderItem)}</nav>
+        <ClinicThemeToggle withLabel={!collapsed} className={cn('mt-0.5', collapsed && 'mx-auto')} />
       </div>
-    </div>
+    </aside>
   )
 }

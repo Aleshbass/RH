@@ -126,6 +126,7 @@ export const metadata: Metadata = {
 };
 
 import { headers } from "next/headers";
+import { clinicThemeNoFlashScript } from "@/lib/clinic-theme";
 
 export default async function RootLayout({
   children,
@@ -133,8 +134,10 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   let isSubdomainHost = false;
+  let isClinicPortal = false;
   try {
     const headersList = await headers();
+    isClinicPortal = (headersList.get("x-pathname") || "").startsWith("/dashboard/clinic");
     const host = (headersList.get("host") || "").toLowerCase();
     const isSubdomainHeader = headersList.get("x-is-b2b-subdomain") === "true";
     isSubdomainHost =
@@ -147,7 +150,13 @@ export default async function RootLayout({
   }
 
   return (
-    <html lang="en">
+    // The clinic portal sets the `dark` class on <html> before hydration.
+    <html lang="en" suppressHydrationWarning>
+      {isClinicPortal && (
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: clinicThemeNoFlashScript }} />
+        </head>
+      )}
       <body
         className={`${calSans.variable} ${matter.variable} font-sans antialiased`}
       >

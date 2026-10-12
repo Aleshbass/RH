@@ -1,10 +1,25 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
-import { getConvexClient } from '@/lib/convex-client';
+import { auth } from '@clerk/nextjs/server';
+import { ConvexHttpClient } from 'convex/browser';
 import { Id } from '@/convex/_generated/dataModel';
 
 export async function POST(request: NextRequest) {
   try {
+    // Act as the signed-in patient so Convex can check the invoice belongs to them
+    const { userId, getToken } = await auth();
+    const token = userId ? await getToken({ template: 'convex' }) : null;
+    if (!token) {
+      return NextResponse.json({ error: 'Please sign in to pay this invoice' }, { status: 401 });
+    }
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (!convexUrl) {
+      return NextResponse.json({ error: 'Payments are not configured' }, { status: 500 });
+    }
+    const convex = new ConvexHttpClient(convexUrl);
+    convex.setAuth(token);
+    const getConvexClient = () => convex;
+
     const body = await request.json();
     const { invoiceId } = body;
 
@@ -69,17 +84,15 @@ export async function POST(request: NextRequest) {
     const random = Math.random().toString(36).substring(2, 15);
     const txRef = `INV_${invoice.invoiceNumber}_${timestamp}_${random}`;
 
-    // Get physiotherapist's subaccount if available
+    // Settle to the clinic's payout account (clinic invoices) or the physiotherapist's subaccount
     let subaccountCode: string | null = null;
-    if (invoice.physiotherapistId) {
-      try {
-        const bankDetails = await getConvexClient().query(api.flutterwave.getPhysiotherapistBankDetails, {
-          physiotherapistId: invoice.physiotherapistId
-        });
-        subaccountCode = bankDetails?.subaccountId || null;
-      } catch {
-        console.log('No subaccount found for physiotherapist');
-      }
+    try {
+      const settlement = await getConvexClient().query(api.clinicBilling.getInvoiceSettlement, {
+        invoiceId: invoiceId as Id<'invoices'>
+      });
+      subaccountCode = settlement?.subaccountCode || null;
+    } catch {
+      console.log('No payout subaccount found for invoice');
     }
 
     // Determine absolute origin from the incoming request
@@ -129,13 +142,20 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
 
     if (data.status === true) {
-      // Save payment reference to database via Convex
-      await getConvexClient().mutation(api.payments.createPaymentRecord, {
+      // Save payment reference to database via Convex. Without this record the webhook
+      // cannot match the payment, so stop here if it fails.
+      const record = await getConvexClient().mutation(api.payments.createPaymentRecord, {
         invoiceId: invoiceId as Id<'invoices'>,
         reference: txRef,
         amount: totalPayable,
         paymentMethod: 'paystack'
       });
+      if (!record?.success) {
+        return NextResponse.json(
+          { error: record?.message || 'Could not record payment' },
+          { status: 403 }
+        );
+      }
 
       return NextResponse.json({
         success: true,

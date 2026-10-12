@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     ArrowRight, 
-    CheckCircle2, 
     ShieldCheck, 
     Clock, 
     Activity, 
@@ -150,14 +149,14 @@ export function HowItWorks() {
                             </div>
                         </div>
 
-                        {/* Feature bullets */}
+                        {/* Feature Highlights */}
                         <div className="pt-4 border-t border-gray-100 space-y-2">
-                            <div className="flex items-center gap-2 text-xs text-gray-700 font-medium">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <div className="flex items-center gap-2 text-xs text-neutral-600 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#005b57]" />
                                 <span>Takes under 60 seconds</span>
                             </div>
-                            <div className="flex items-center gap-2 text-xs text-gray-700 font-medium">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <div className="flex items-center gap-2 text-xs text-neutral-600 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#005b57]" />
                                 <span>Voice note & local language friendly</span>
                             </div>
                         </div>
@@ -224,14 +223,14 @@ export function HowItWorks() {
                             </div>
                         </div>
 
-                        {/* Feature bullets */}
+                        {/* Feature Highlights */}
                         <div className="pt-4 border-t border-gray-100 space-y-2">
-                            <div className="flex items-center gap-2 text-xs text-gray-700 font-medium">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <div className="flex items-center gap-2 text-xs text-neutral-600 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#005b57]" />
                                 <span>Verified MRTBN licensing check</span>
                             </div>
-                            <div className="flex items-center gap-2 text-xs text-gray-700 font-medium">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <div className="flex items-center gap-2 text-xs text-neutral-600 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#005b57]" />
                                 <span>Transparent fixed pricing upfront</span>
                             </div>
                         </div>
@@ -281,14 +280,14 @@ export function HowItWorks() {
                             </div>
                         </div>
 
-                        {/* Feature bullets */}
+                        {/* Feature Highlights */}
                         <div className="pt-4 border-t border-gray-100 space-y-2">
-                            <div className="flex items-center gap-2 text-xs text-gray-700 font-medium">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <div className="flex items-center gap-2 text-xs text-neutral-600 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#005b57]" />
                                 <span>Daily exercise reminders via WhatsApp</span>
                             </div>
-                            <div className="flex items-center gap-2 text-xs text-gray-700 font-medium">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <div className="flex items-center gap-2 text-xs text-neutral-600 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#005b57]" />
                                 <span>Continuous therapist supervision</span>
                             </div>
                         </div>
