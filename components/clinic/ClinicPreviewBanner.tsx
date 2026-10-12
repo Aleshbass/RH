@@ -29,7 +29,8 @@ export default function ClinicPreviewBanner() {
       : {
           icon: Eye,
           text: "You're viewing sample data. Finish setting up your clinic to add real patients and take payments.",
-          action: isOnboardingIncomplete ? { href: '/clinic-owner', label: 'Finish setup' } : null,
+          // Signed-out visitors are asked to sign in there and brought straight back
+          action: { href: '/clinic-owner', label: isOnboardingIncomplete ? 'Finish setup' : 'Set up your clinic' },
         }
 
   const Icon = content.icon

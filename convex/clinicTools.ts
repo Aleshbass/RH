@@ -1194,13 +1194,26 @@ export const getClinicFollowUpQueue = query({
   args: {},
   handler: async (ctx) => {
     const auth = await getOwnerClinicOrPreview(ctx);
-    if (!auth) return [];
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    if (!auth) {
+      // Sample row so preview visitors can see how check-ins work
+      return [
+        {
+          patientId: "prev_p2" as Id<"users">,
+          patientName: "Chukwudi Eze",
+          phone: "+234 802 987 6543",
+          lastVisitAt: now - 9 * DAY,
+          daysSinceLastVisit: 9,
+          lastVisitStatus: "completed",
+          checkInDueAt: null,
+        },
+      ];
+    }
     const { clinic } = auth;
 
     const staffIds = await getClinicStaffUserIds(ctx, clinic);
     const patientIds = await getActiveClinicPatientIds(ctx, clinic);
-    const now = Date.now();
-    const DAY = 24 * 60 * 60 * 1000;
 
     const rows = await Promise.all(
       patientIds.slice(0, 100).map(async (patientId) => {
@@ -1629,7 +1642,49 @@ export const getClinicCliniciansWithCaseload = query({
   args: {},
   handler: async (ctx) => {
     const auth = await getOwnerClinicOrPreview(ctx);
-    if (!auth) return [];
+    if (!auth) {
+      // Sample team for preview visitors (actions on them are blocked in the UI)
+      const weekdays = Object.fromEntries(
+        ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map((day, i) => [
+          day,
+          { isOpen: i < 5, slots: [{ start: "09:00", end: "17:00" }] },
+        ])
+      );
+      return [
+        {
+          profileId: "prev_prof1",
+          userId: "prev_doc1" as Id<"users">,
+          firstName: "Kunle",
+          lastName: "Balogun",
+          email: "kunle@example.com",
+          phoneNumber: "",
+          imageUrl: undefined,
+          role: "physiotherapist",
+          status: "active",
+          specializations: ["Sports rehabilitation"],
+          licenseNumber: null,
+          availabilitySchedule: weekdays,
+          activeCaseload: 2,
+          monthlyAppointmentsCount: 14,
+        },
+        {
+          profileId: "prev_prof2",
+          userId: "prev_doc2" as Id<"users">,
+          firstName: "Amara",
+          lastName: "Okafor",
+          email: "amara@example.com",
+          phoneNumber: "",
+          imageUrl: undefined,
+          role: "physiotherapist",
+          status: "active",
+          specializations: ["Spinal therapy"],
+          licenseNumber: null,
+          availabilitySchedule: weekdays,
+          activeCaseload: 1,
+          monthlyAppointmentsCount: 9,
+        },
+      ];
+    }
     const { clinic } = auth;
 
     const profiles = await ctx.db

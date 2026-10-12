@@ -8,6 +8,15 @@ import { api } from '@/convex/_generated/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { useClerk, useUser } from '@clerk/nextjs'
 import { ClinicThemeToggle } from '@/components/clinic/ClinicTheme'
 import {
   Users,
@@ -21,6 +30,8 @@ import {
   Building2,
   Inbox,
   BarChart3,
+  LogIn,
+  LogOut,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -49,12 +60,87 @@ const mainItems: NavItem[] = [
 
 const bottomItems: NavItem[] = [
   { title: 'Clinic settings', href: '/dashboard/clinic/settings', icon: Building2 },
-  { title: 'Account', href: '/dashboard/settings', icon: Settings },
 ]
 
 function isActivePath(pathname: string, href: string) {
   if (href === '/dashboard/clinic') return pathname === href
   return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+/**
+ * Who is signed in, with account settings (Clerk) and sign out.
+ */
+function AccountMenu({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+  const { isLoaded, isSignedIn, user } = useUser()
+  const { openUserProfile, signOut } = useClerk()
+
+  if (!isLoaded) return null
+
+  if (!isSignedIn) {
+    return (
+      <Link
+        href="/sign-in?redirect_url=/dashboard/clinic"
+        onClick={onNavigate}
+        title={collapsed ? 'Sign in' : undefined}
+        className={cn(
+          'mt-0.5 flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-100/70 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800/60 dark:hover:text-white',
+          collapsed && 'justify-center px-0'
+        )}
+      >
+        <LogIn className="h-4 w-4 shrink-0 text-neutral-400 dark:text-neutral-500" />
+        {!collapsed && <span>Sign in</span>}
+      </Link>
+    )
+  }
+
+  const name = user.fullName || user.primaryEmailAddress?.emailAddress || 'Account'
+  const email = user.primaryEmailAddress?.emailAddress
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title={collapsed ? name : undefined}
+          className={cn(
+            'mt-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-neutral-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57]/40 dark:hover:bg-neutral-800/60',
+            collapsed && 'justify-center px-0'
+          )}
+        >
+          <Avatar className="h-7 w-7 shrink-0">
+            <AvatarImage src={user.imageUrl} alt="" />
+            <AvatarFallback className="bg-neutral-100 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+              {name[0]?.toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          {!collapsed && (
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-neutral-900 dark:text-white">{name}</span>
+              {email && email !== name && (
+                <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">{email}</span>
+              )}
+            </span>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-56">
+        <DropdownMenuItem
+          onClick={() => {
+            onNavigate?.()
+            openUserProfile()
+          }}
+        >
+          <Settings className="mr-2 h-4 w-4 text-neutral-500" />
+          Account settings
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => signOut({ redirectUrl: '/' })}>
+          <LogOut className="mr-2 h-4 w-4 text-neutral-500" />
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 export default function ClinicSidebar({ className, onNavigate, collapsible = true }: SidebarProps) {
@@ -142,6 +228,7 @@ export default function ClinicSidebar({ className, onNavigate, collapsible = tru
       <div className="border-t border-neutral-200 p-2 dark:border-neutral-800">
         <nav className="space-y-0.5">{bottomItems.map(renderItem)}</nav>
         <ClinicThemeToggle withLabel={!collapsed} className={cn('mt-0.5', collapsed && 'mx-auto')} />
+        <AccountMenu collapsed={collapsed} onNavigate={onNavigate} />
       </div>
     </aside>
   )

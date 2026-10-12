@@ -19,14 +19,17 @@ export default function ClinicOwnerOnboardingLayout({
 
   useEffect(() => {
     if (isLoaded) {
-      // If no user is logged in, redirect to sign in
+      // Not signed in: sign in, then come straight back to clinic onboarding
+      // (without the return path they landed on /dashboard and then /role-selection)
       if (!user) {
-        router.replace('/sign-in');
+        router.replace('/sign-in?redirect_url=%2Fclinic-owner');
+        return;
       }
 
-      // If user already completed onboarding, skip onboarding flow
-      if (currentUser && (currentUser as { onboarded?: boolean }).onboarded) {
-        router.replace('/dashboard');
+      // Already onboarded: go to their dashboard
+      if (currentUser?.onboarded) {
+        router.replace(currentUser.role === 'clinic_owner' ? '/dashboard/clinic' : '/dashboard');
+        return;
       }
 
       // Set role if not already set

@@ -35,6 +35,7 @@ import {
   useClinicianOptions,
 } from './patient-record-shared'
 import { ClinicianPickerDialog, EditPatientDetailsDialog } from './PatientRecordDialogs'
+import { samplePatientRecord } from './sample-patient-record'
 
 type PatientRecord = NonNullable<FunctionReturnType<typeof api.clinicTools.getClinicPatientFullRecord>>
 type SessionLog = PatientRecord['sessionLogs'][number]
@@ -70,24 +71,18 @@ export default function PatientClinicalRecordDrawer({
         side="right"
         className="flex w-full flex-col gap-0 border-l border-neutral-200 bg-white p-0 shadow-none dark:border-neutral-800 dark:bg-neutral-900 sm:max-w-2xl"
       >
-        {isSample ? (
-          <NoticeState
-            title="Sample patient"
-            description="This is example data. Finish your clinic setup to open real patient records."
-          />
-        ) : (
-          <ErrorBoundary
-            key={String(patientId)}
-            fallback={
-              <NoticeState
-                title="This record couldn't be opened"
-                description="The patient may no longer be linked to your clinic, or the connection dropped. Close this panel and try again."
-              />
-            }
-          >
-            <PatientRecord patientId={patientId as Id<'users'>} />
-          </ErrorBoundary>
-        )}
+        <ErrorBoundary
+          key={String(patientId)}
+          fallback={
+            <NoticeState
+              title="This record couldn't be opened"
+              description="The patient may no longer be linked to your clinic, or the connection dropped. Close this panel and try again."
+            />
+          }
+        >
+          {/* Sample patients show a read-only example record; every action asks to finish setup */}
+          <PatientRecord patientId={patientId as Id<'users'>} isSample={isSample} />
+        </ErrorBoundary>
       </SheetContent>
     </Sheet>
   )
@@ -137,8 +132,9 @@ const CARE_STATUS: Record<PatientRecord['careStatus'], { label: string; tone: 'g
 
 const GENDER_LABELS: Record<string, string> = { male: 'Male', female: 'Female', other: 'Other' }
 
-function PatientRecord({ patientId }: { patientId: Id<'users'> }) {
-  const record = useQuery(api.clinicTools.getClinicPatientFullRecord, { patientId })
+function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSample: boolean }) {
+  const liveRecord = useQuery(api.clinicTools.getClinicPatientFullRecord, isSample ? 'skip' : { patientId })
+  const record = isSample ? samplePatientRecord(String(patientId)) : liveRecord
   const [tab, setTab] = useState('timeline')
   const { requireFullAccess } = useClinicPreview()
   const clinicians = useClinicianOptions()

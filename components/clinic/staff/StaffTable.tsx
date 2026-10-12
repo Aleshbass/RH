@@ -271,7 +271,13 @@ export default function StaffTable({ staff, onInvite }: StaffTableProps) {
                                                 <Calendar className="mr-2 h-4 w-4 text-neutral-500" />
                                                 Working hours
                                             </DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => setPatientsFor(member)}>
+                                            <DropdownMenuItem
+                                                onClick={() =>
+                                                    String(member.userId).startsWith('prev_')
+                                                        ? requireFullAccess('View clinician patients')
+                                                        : setPatientsFor(member)
+                                                }
+                                            >
                                                 <Users className="mr-2 h-4 w-4 text-neutral-500" />
                                                 View patients
                                             </DropdownMenuItem>

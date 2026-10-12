@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ChevronLeft, Loader2, Upload, Twitter, Instagram, Linkedin, Globe, Users, Search as SearchIcon, Sparkles } from 'lucide-react';
 import { useOnboardingStore } from '@/stores/onboardingStore';
 import { useMutation, useQuery } from 'convex/react';
+import { ConvexError } from 'convex/values';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
@@ -116,6 +117,18 @@ const fullSchema = z.object({
 });
 
 type FormValues = z.infer<typeof fullSchema>;
+
+/** A readable message from a Convex error (ConvexError data, or the text after Convex's prefix). */
+function errorMessage(error: unknown, fallback: string) {
+    if (error instanceof ConvexError) {
+        return typeof error.data === 'string' ? error.data : fallback;
+    }
+    if (error instanceof Error && error.message) {
+        const cleaned = error.message.replace(/^[\s\S]*Uncaught (?:Convex)?Error:\s*/, '').split('\n')[0].trim();
+        return cleaned && cleaned !== 'Server Error' && !cleaned.startsWith('[CONVEX') ? cleaned : fallback;
+    }
+    return fallback;
+}
 
 // --- Steps Configuration ---
 
@@ -415,7 +428,7 @@ export default function ClinicOwnerOnboardingWizard() {
                 }
             } catch (error) {
                 console.error("Clinic save error:", error);
-                toast.error("Failed to save clinic record");
+                toast.error(errorMessage(error, "Could not save your clinic. Please try again."));
                 return;
             }
         }
@@ -549,7 +562,7 @@ export default function ClinicOwnerOnboardingWizard() {
             router.replace('/dashboard/clinic');
         } catch (error: any) {
             console.error("Submission error:", error);
-            toast.error(error.message || "Failed to complete onboarding");
+            toast.error(errorMessage(error, "Could not submit your application. Please try again."));
         } finally {
             setIsFinishing(false);
         }

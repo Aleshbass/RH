@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
@@ -39,14 +39,21 @@ export const createClinic = mutation({
     // Get the authenticated user
     const user = await getAuthenticatedUser(ctx);
 
-    // Only allow clinic owners to create clinics
+    // The wizard saves the clinic before its final step sets the role, so an account
+    // that is still onboarding becomes a clinic owner here (same rule as completeUserProfile).
+    // ConvexError so the message reaches the browser in production.
     if (user.role !== "clinic_owner") {
-      throw new Error("Only clinic owners can create clinics");
+      if (user.onboarded && user.role) {
+        throw new ConvexError(
+          `This account is already set up as a ${user.role.replace(/_/g, " ")}. Sign in with a different email to register a clinic.`
+        );
+      }
+      await ctx.db.patch(user._id, { role: "clinic_owner" });
     }
 
     const name = args.name.trim();
     if (!name) {
-      throw new Error("Clinic name is required");
+      throw new ConvexError("Clinic name is required");
     }
 
     // Only overwrite fields the caller actually provided

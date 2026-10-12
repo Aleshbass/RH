@@ -33,7 +33,13 @@ export function PageShell({
   className?: string
 }) {
   return (
-    <div className={cn('mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8', className)}>
+    // Extra bottom room so the last card clears mobile browser bars and the home indicator
+    <div
+      className={cn(
+        'mx-auto w-full max-w-6xl px-4 pt-6 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:px-6 lg:px-8 lg:pt-8 lg:pb-16',
+        className
+      )}
+    >
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight text-neutral-900 dark:text-white sm:text-2xl">

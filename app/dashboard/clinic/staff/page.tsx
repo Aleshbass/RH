@@ -27,15 +27,15 @@ export default function StaffManagementPage() {
   const me = useQuery(api.users.getMyUser)
   const userLoading = me === undefined
 
-  // Both queries throw for viewers who aren't a set-up clinic owner, so skip them in preview.
-  const teamQuery = useQuery(api.clinicTools.getClinicCliniciansWithCaseload, isPreviewMode ? 'skip' : {})
+  // The team query returns a sample team for preview visitors; invitations throw for them, so skip.
+  const teamQuery = useQuery(api.clinicTools.getClinicCliniciansWithCaseload, {})
   const invitationsQuery = useQuery(api.clinics.getClinicInvitations, isPreviewMode ? 'skip' : {})
 
   const resendStaffInvitation = useAction(
     api.actions.clinics.inviteClinicStaff.resendClinicStaffInvitation
   )
 
-  const team = isPreviewMode ? [] : (teamQuery as TeamMember[] | undefined)
+  const team = teamQuery as TeamMember[] | undefined
   const invitations = isPreviewMode ? [] : invitationsQuery
 
   const openInvite = () => requireFullAccess('Invite clinician', () => setInviteOpen(true))
