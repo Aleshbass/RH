@@ -91,6 +91,11 @@ _TREATMENT_RE = re.compile(
     r"([^.!?]{2,160}?)(?=\s+(?:but|however)\b|[.!?]|$)",
     re.IGNORECASE,
 )
+_GENERIC_SELF_CARE_RE = re.compile(
+    r"\b(?:just|only)\s+((?:pain\s+relief\s+)?(?:medicine|medicines|medication|medications|"
+    r"drugs?|tablets?|painkillers?|cream|creams|gel|gels))\b",
+    re.IGNORECASE,
+)
 _SEEN_CLINICIAN_NO_RE = re.compile(
     r"\b(?:have\s+not|haven['’]t|never)\s+(?:seen|spoken\s+to)\s+(?:anyone\b|(?:a\s+|any\s+)?"
     r"(?:doctor|clinician|physio(?:therapist)?|health(?:care)?\s+professional)\b)",
@@ -298,6 +303,13 @@ def enrich_from_user_text(extracted: ExtractedTriage, user_text: str) -> Extract
             ]
             if values:
                 updates["previous_treatment"] = values
+        else:
+            # Preserve even a non-specific, patient-reported self-care step.
+            # We must not guess which medicine they used, but "just pain
+            # relief drugs" is still useful information for the recap.
+            generic_self_care = _GENERIC_SELF_CARE_RE.search(text)
+            if generic_self_care:
+                updates["previous_treatment"] = [generic_self_care.group(1).strip()]
     if not updates:
         return extracted
     return extracted.model_copy(update=updates)

@@ -49,7 +49,12 @@ _ALLOWED: dict[ConversationStage, set[ConversationStage]] = {
     },
     ConversationStage.AWAITING_PAYMENT: {ConversationStage.AWAITING_PAYMENT, ConversationStage.BOOKING_CONFIRMED},
     ConversationStage.BOOKING_CONFIRMED: {ConversationStage.BOOKING_CONFIRMED},
-    ConversationStage.SPECIALIST_REVIEW: {ConversationStage.AWAITING_SPECIALIST_REVIEW},
+    # A patient who chooses the specialist-review route must review the
+    # booking policy before we collect a receipt email or initialise payment.
+    ConversationStage.SPECIALIST_REVIEW: {
+        ConversationStage.POLICY_REVIEW,
+        ConversationStage.AWAITING_SPECIALIST_REVIEW,
+    },
     ConversationStage.AWAITING_SPECIALIST_REVIEW: {ConversationStage.REVIEW_OUTCOME_PENDING},
     ConversationStage.REVIEW_OUTCOME_PENDING: {ConversationStage.REVIEW_OUTCOME_PENDING},
     ConversationStage.MEDICAL_ESCALATION: {ConversationStage.MEDICAL_ESCALATION},

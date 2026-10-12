@@ -73,7 +73,7 @@ _ORANGE_INSTRUCTION = (
 )
 
 _AMBER_MESSAGE = (
-    "Based on what you've shared, I want a clinician to take a quick look before "
+    "Thanks for letting me know. Based on what you've shared, I want a clinician to take a quick look before "
     "we continue with the usual Rehabify pathway. "
     "I can arrange a short specialist triage review for a couple of minutes for ₦6,000 instead of "
     "jumping straight to a standard physio booking. "

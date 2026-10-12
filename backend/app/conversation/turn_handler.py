@@ -548,7 +548,9 @@ def _resend_safety_block(
             context = dict(conversation.booking_context or {}) if conversation else {}
             context["amber_review_awaiting_email"] = True
             if conversation is not None:
-                conversation.booking_context = context
+                _set_substate(conversation, AWAITING_RH_PAYMENT_EMAIL, context)
+            state.booking_context = context
+            state.booking_substate = AWAITING_RH_PAYMENT_EMAIL
             reply = "Your specialist safety review for a couple of minutes is ₦6,000. Please reply with the email address you want to use for your secure payment receipt."
         elif context.get("amber_review_awaiting_email"):
             email = user_text.strip().casefold()
@@ -559,8 +561,28 @@ def _resend_safety_block(
         elif context.get("amber_review_id"):
             reply = "Your ₦6,000 specialist review payment is being verified. RH will assign an eligible reviewer and I’ll update you here."
     _audit_turn(session, identity, state.extracted, safety, phase)
+    conversation = session.get(Conversation, state.conversation_id)
+    target_stage = _stage_for_booking_substate(
+        conversation.booking_substate if conversation is not None else None
+    ) or ConversationStage.SPECIALIST_REVIEW
+    # Conversations created before the booking-state/stage split can retain
+    # STORY_CAPTURE even though their persisted booking substate proves they
+    # are already in policy or payment. Reconcile only that stale metadata;
+    # never manufacture a booking state from a stage value.
+    current_stage = state.stage
+    if current_stage == ConversationStage.STORY_CAPTURE and conversation is not None and conversation.booking_substate:
+        logger.warning(
+            "reconciling_legacy_booking_stage conversation_id=%s substate=%s",
+            conversation.id,
+            conversation.booking_substate,
+        )
+        conversation.stage = target_stage.value
+        current_stage = target_stage
+        state.stage = target_stage
+    stage = assert_transition(current_stage, target_stage)
     save_turn(
-        session, state, user_text, reply, state.extracted, phase, language, wa_message_id
+        session, state, user_text, reply, state.extracted, phase, language, wa_message_id,
+        stage=stage,
     )
     return TurnResult(
         reply_text=reply,
@@ -761,7 +783,9 @@ def _start_paid_amber_review(session: Session, identity: Identity, state: Conver
     context = dict(conversation.booking_context or {})
     context.update({"amber_review_id": review_id, "amber_review_payment_url": payment.authorization_url, "amber_review_email": email})
     context.pop("amber_review_awaiting_email", None)
-    conversation.booking_context = context
+    _set_substate(conversation, AWAITING_RH_PAYMENT, context)
+    state.booking_context = context
+    state.booking_substate = AWAITING_RH_PAYMENT
     append(session, kind=AuditKind.BOOKING, actor_phone=patient.phone_e164, person_id=patient.id, payload={"decision": "amber_review_payment_created", "review_id": review_id, "amount_kobo": 600_000})
     return f"Your specialist review for a couple of minutes is ₦6,000. Pay securely here: {payment.authorization_url}\n\nAfter payment is verified, RH will assign an eligible reviewer and I’ll update you here."
 

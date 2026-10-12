@@ -44,6 +44,15 @@ def test_rh_payment_email_substate_stays_in_booking_router():
     assert _stage_for_booking_substate(AWAITING_RH_PAYMENT_EMAIL) == ConversationStage.AWAITING_PAYMENT
 
 
+def test_specialist_review_can_progress_to_policy_review():
+    from app.conversation.stage_machine import assert_transition
+
+    assert assert_transition(
+        ConversationStage.SPECIALIST_REVIEW,
+        ConversationStage.POLICY_REVIEW,
+    ) == ConversationStage.POLICY_REVIEW
+
+
 def test_policy_acceptance_allows_short_unambiguous_reply():
     from app.conversation.turn_handler import _is_explicit_policy_acceptance
 

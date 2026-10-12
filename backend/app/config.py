@@ -18,8 +18,10 @@ class Settings(BaseSettings):
         return value
     redis_url: str = "redis://localhost:6379/0"
     gemini_api_key: str = ""
-    gemini_text_model: str = "gemini-2.0-flash"
-    gemini_live_model: str = "gemini-2.0-flash-live"
+    # Keep local/default deployments on current, supported Gemini models. The
+    # production environment can still override these explicitly.
+    gemini_text_model: str = "gemini-3.8-flash"
+    gemini_live_model: str = "gemini-3.8-live"
     # Gemini remains Joy's default.  The other adapters are explicit
     # server-side fallbacks; clients never receive any provider credential.
     llm_provider: str = "gemini"

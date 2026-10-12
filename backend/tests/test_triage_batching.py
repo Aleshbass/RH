@@ -476,3 +476,16 @@ def test_story_enrichment_keeps_named_self_care_for_the_confirmation_summary():
     assert extracted.mechanism == "i bent down to pick something up"
     assert extracted.previous_treatment == ["Nurofen", "Voltarol gel"]
     assert "You’ve tried: Nurofen and Voltarol gel" in summary
+
+
+def test_story_enrichment_keeps_generic_pain_relief_for_the_confirmation_summary():
+    from app.triage.extraction import enrich_from_user_text
+    from app.triage.summary import confirmation_summary
+
+    extracted = enrich_from_user_text(
+        ExtractedTriage(body_location="upper back", onset="two weeks", seen_clinician=False),
+        "I have not seen anyone yet; just pain relief drugs.",
+    )
+
+    assert extracted.previous_treatment == ["pain relief drugs"]
+    assert "You’ve tried: pain relief drugs" in confirmation_summary(extracted)
