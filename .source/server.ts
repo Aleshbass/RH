@@ -25,12 +25,12 @@ import * as __fd_glob_11 from "../content/docs/api-reference/index.mdx?collectio
 import * as __fd_glob_10 from "../content/docs/api-reference/eligibility.mdx?collection=docs"
 import * as __fd_glob_9 from "../content/docs/api-reference/clinical-reports.mdx?collection=docs"
 import * as __fd_glob_8 from "../content/docs/index.mdx?collection=docs"
-import { default as __fd_glob_7 } from "../content/docs/api-reference/meta.json?collection=docs"
-import { default as __fd_glob_6 } from "../content/docs/webhooks/meta.json?collection=docs"
+import { default as __fd_glob_7 } from "../content/docs/webhooks/meta.json?collection=docs"
+import { default as __fd_glob_6 } from "../content/docs/sdks-widgets/meta.json?collection=docs"
 import { default as __fd_glob_5 } from "../content/docs/sandbox/meta.json?collection=docs"
-import { default as __fd_glob_4 } from "../content/docs/sdks-widgets/meta.json?collection=docs"
-import { default as __fd_glob_3 } from "../content/docs/guides/meta.json?collection=docs"
-import { default as __fd_glob_2 } from "../content/docs/getting-started/meta.json?collection=docs"
+import { default as __fd_glob_4 } from "../content/docs/guides/meta.json?collection=docs"
+import { default as __fd_glob_3 } from "../content/docs/getting-started/meta.json?collection=docs"
+import { default as __fd_glob_2 } from "../content/docs/api-reference/meta.json?collection=docs"
 import { default as __fd_glob_1 } from "../content/docs/mint.json?collection=docs"
 import { default as __fd_glob_0 } from "../content/docs/meta.json?collection=docs"
 import { server } from 'fumadocs-mdx/runtime/server';
@@ -41,4 +41,4 @@ const create = server<typeof Config, import("fumadocs-mdx/runtime/types").Intern
   }
 }>();
 
-export const docs = await create.docs("docs", "content/docs", {"meta.json": __fd_glob_0, "mint.json": __fd_glob_1, "getting-started/meta.json": __fd_glob_2, "guides/meta.json": __fd_glob_3, "sdks-widgets/meta.json": __fd_glob_4, "sandbox/meta.json": __fd_glob_5, "webhooks/meta.json": __fd_glob_6, "api-reference/meta.json": __fd_glob_7, }, {"index.mdx": __fd_glob_8, "api-reference/clinical-reports.mdx": __fd_glob_9, "api-reference/eligibility.mdx": __fd_glob_10, "api-reference/index.mdx": __fd_glob_11, "api-reference/partner-integration-v1.mdx": __fd_glob_12, "api-reference/providers.mdx": __fd_glob_13, "api-reference/referrals.mdx": __fd_glob_14, "api-reference/sessions.mdx": __fd_glob_15, "getting-started/authentication.mdx": __fd_glob_16, "getting-started/errors.mdx": __fd_glob_17, "getting-started/index.mdx": __fd_glob_18, "getting-started/quickstart.mdx": __fd_glob_19, "guides/corporate-wellness.mdx": __fd_glob_20, "guides/gym-fitness-recovery.mdx": __fd_glob_21, "guides/hmo-integration.mdx": __fd_glob_22, "guides/hospital-clinic-referral.mdx": __fd_glob_23, "guides/index.mdx": __fd_glob_24, "sandbox/testing.mdx": __fd_glob_25, "sdks-widgets/embed-widget.mdx": __fd_glob_26, "sdks-widgets/index.mdx": __fd_glob_27, "sdks-widgets/react-component.mdx": __fd_glob_28, "sdks-widgets/whatsapp-deep-links.mdx": __fd_glob_29, "webhooks/event-catalog.mdx": __fd_glob_30, "webhooks/index.mdx": __fd_glob_31, "webhooks/retry-policy.mdx": __fd_glob_32, "webhooks/signature-verification.mdx": __fd_glob_33, });
+export const docs = await create.docs("docs", "content/docs", {"meta.json": __fd_glob_0, "mint.json": __fd_glob_1, "api-reference/meta.json": __fd_glob_2, "getting-started/meta.json": __fd_glob_3, "guides/meta.json": __fd_glob_4, "sandbox/meta.json": __fd_glob_5, "sdks-widgets/meta.json": __fd_glob_6, "webhooks/meta.json": __fd_glob_7, }, {"index.mdx": __fd_glob_8, "api-reference/clinical-reports.mdx": __fd_glob_9, "api-reference/eligibility.mdx": __fd_glob_10, "api-reference/index.mdx": __fd_glob_11, "api-reference/partner-integration-v1.mdx": __fd_glob_12, "api-reference/providers.mdx": __fd_glob_13, "api-reference/referrals.mdx": __fd_glob_14, "api-reference/sessions.mdx": __fd_glob_15, "getting-started/authentication.mdx": __fd_glob_16, "getting-started/errors.mdx": __fd_glob_17, "getting-started/index.mdx": __fd_glob_18, "getting-started/quickstart.mdx": __fd_glob_19, "guides/corporate-wellness.mdx": __fd_glob_20, "guides/gym-fitness-recovery.mdx": __fd_glob_21, "guides/hmo-integration.mdx": __fd_glob_22, "guides/hospital-clinic-referral.mdx": __fd_glob_23, "guides/index.mdx": __fd_glob_24, "sandbox/testing.mdx": __fd_glob_25, "sdks-widgets/embed-widget.mdx": __fd_glob_26, "sdks-widgets/index.mdx": __fd_glob_27, "sdks-widgets/react-component.mdx": __fd_glob_28, "sdks-widgets/whatsapp-deep-links.mdx": __fd_glob_29, "webhooks/event-catalog.mdx": __fd_glob_30, "webhooks/index.mdx": __fd_glob_31, "webhooks/retry-policy.mdx": __fd_glob_32, "webhooks/signature-verification.mdx": __fd_glob_33, });
