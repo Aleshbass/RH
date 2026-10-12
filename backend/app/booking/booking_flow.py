@@ -242,7 +242,7 @@ def booking_policy_acceptance_prompt(context: dict) -> str:
     link = f"\n\n[Review & Accept Booking Policy] {url}" if isinstance(url, str) and url else ""
     if context.get("green_initial_consultation_path"):
         return (
-            "Great. Before we arrange your consultation, please review and accept our booking policy."
+            "Before we arrange your consultation, please review and accept our booking policy."
             f"{link}\n\n"
             "Reply with ‘I accept’ when you are ready to continue. Once you’ve accepted it, I’ll show you "
             "the available consultation options."

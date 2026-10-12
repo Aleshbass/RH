@@ -147,7 +147,7 @@ def test_green_policy_reminder_includes_the_policy_link_and_next_step():
         "policy_presented": {"url": "https://example.test/policy"},
     })
 
-    assert "Great. Before we arrange your consultation" in reply
+    assert "Before we arrange your consultation" in reply
     assert "https://example.test/policy" in reply
     assert "available consultation options" in reply
 
