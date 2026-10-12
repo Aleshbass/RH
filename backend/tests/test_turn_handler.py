@@ -134,7 +134,7 @@ def test_initial_consultation_offer_explains_the_green_path_before_booking():
 
     assert "Initial Consultation with a Clinician — ₦6,000" in reply
     assert "This is not a full physiotherapy consultation." in reply
-    assert "Book Initial Consultation" in reply
+    assert "Reply Yes to continue." in reply
     assert _initial_consultation_confirmed("Book Initial Consultation") is True
     assert _initial_consultation_confirmed("Yes") is True
 

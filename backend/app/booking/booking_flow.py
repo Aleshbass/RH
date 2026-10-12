@@ -231,7 +231,7 @@ def initial_consultation_offer() -> str:
         "We offer this first because we don’t want you paying for a full consultation when you may need a "
         "different type of care.\n\n"
         "Would you like to continue with the ₦6,000 Initial Consultation?\n\n"
-        "Reply ‘Book Initial Consultation’ or Yes to continue."
+        "Reply Yes to continue."
     )
 
 
