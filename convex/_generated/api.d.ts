@@ -25,6 +25,7 @@ import type * as actions_emails_sendAppointmentRescheduledPatientEmail from "../
 import type * as actions_emails_sendAppointmentRescheduledProviderEmail from "../actions/emails/sendAppointmentRescheduledProviderEmail.js";
 import type * as actions_emails_sendAppointmentScheduledEmail from "../actions/emails/sendAppointmentScheduledEmail.js";
 import type * as actions_emails_sendApprovalEmail from "../actions/emails/sendApprovalEmail.js";
+import type * as actions_emails_sendClinicPatientInviteEmail from "../actions/emails/sendClinicPatientInviteEmail.js";
 import type * as actions_emails_sendClinicStaffInvitationEmail from "../actions/emails/sendClinicStaffInvitationEmail.js";
 import type * as actions_emails_sendClinicStaffInviteOwnerAcceptedEmail from "../actions/emails/sendClinicStaffInviteOwnerAcceptedEmail.js";
 import type * as actions_emails_sendClinicStaffInviteOwnerDeclinedEmail from "../actions/emails/sendClinicStaffInviteOwnerDeclinedEmail.js";
@@ -192,6 +193,7 @@ declare const fullApi: ApiFromModules<{
   "actions/emails/sendAppointmentRescheduledProviderEmail": typeof actions_emails_sendAppointmentRescheduledProviderEmail;
   "actions/emails/sendAppointmentScheduledEmail": typeof actions_emails_sendAppointmentScheduledEmail;
   "actions/emails/sendApprovalEmail": typeof actions_emails_sendApprovalEmail;
+  "actions/emails/sendClinicPatientInviteEmail": typeof actions_emails_sendClinicPatientInviteEmail;
   "actions/emails/sendClinicStaffInvitationEmail": typeof actions_emails_sendClinicStaffInvitationEmail;
   "actions/emails/sendClinicStaffInviteOwnerAcceptedEmail": typeof actions_emails_sendClinicStaffInviteOwnerAcceptedEmail;
   "actions/emails/sendClinicStaffInviteOwnerDeclinedEmail": typeof actions_emails_sendClinicStaffInviteOwnerDeclinedEmail;

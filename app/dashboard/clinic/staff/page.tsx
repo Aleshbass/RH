@@ -9,17 +9,13 @@ import { UserPlus } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import EnhancedClinicStaffInviteModal, {
-  type StaffType,
-} from '@/components/dashboard/clinic/EnhancedClinicStaffInviteModal'
+import EnhancedClinicStaffInviteModal from '@/components/dashboard/clinic/EnhancedClinicStaffInviteModal'
 import StaffTable, { type TeamMember } from '@/components/clinic/staff/StaffTable'
-import FrontDeskList from '@/components/clinic/staff/FrontDeskList'
 import RolesPanel from '@/components/clinic/staff/RolesPanel'
 import {
   roleLabel,
   teamError,
   type ClinicRole,
-  type FrontDeskMember,
   type StaffInvitation,
 } from '@/components/clinic/staff/team-shared'
 import { TourGuide } from '@/components/shared/TourGuide'
@@ -34,16 +30,15 @@ export default function StaffManagementPage() {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [inviteType, setInviteType] = useState<StaffType>('clinician')
   const [resendingId, setResendingId] = useState<string | null>(null)
 
   // Preview mode reads as true while the user is still loading, so wait for the user first.
   const me = useQuery(api.users.getMyUser)
   const userLoading = me === undefined
 
-  // Team, front desk and roles return samples for preview visitors; invitations throw for them, so skip.
+  // The team is clinicians only; an administrator signs in with the owner's account.
+  // Team and roles return samples for preview visitors; invitations throw for them, so skip.
   const teamQuery = useQuery(api.clinicTools.getClinicCliniciansWithCaseload, {})
-  const frontDesk = useQuery(api.clinicTools.getClinicFrontDeskStaff, {}) as FrontDeskMember[] | undefined
   const roles = useQuery(api.clinicTools.listClinicRoles, {}) as ClinicRole[] | undefined
   const invitationsQuery = useQuery(api.clinics.getClinicInvitations, isPreviewMode ? 'skip' : {}) as
     | StaffInvitation[]
@@ -56,11 +51,7 @@ export default function StaffManagementPage() {
   const team = teamQuery as TeamMember[] | undefined
   const invitations: StaffInvitation[] | undefined = isPreviewMode ? [] : invitationsQuery
 
-  const openInvite = (type: StaffType = 'clinician') =>
-    requireFullAccess('Invite team member', () => {
-      setInviteType(type)
-      setInviteOpen(true)
-    })
+  const openInvite = () => requireFullAccess('Invite clinician', () => setInviteOpen(true))
 
   // Open invite modal via deep link: ?action=invite
   useEffect(() => {
@@ -93,39 +84,26 @@ export default function StaffManagementPage() {
     }
   }
 
-  const loading = userLoading || team === undefined || frontDesk === undefined || invitations === undefined
+  const loading = userLoading || team === undefined || invitations === undefined
   const members = team ?? []
-  const deskStaff = frontDesk ?? []
   const openInvitations = (invitations ?? []).filter((inv) => inv.status === 'pending')
-  const teamSize = members.length + deskStaff.length
-  const suspendedCount = [...members, ...deskStaff].filter((m) => m.status === 'suspended').length
+  const suspendedCount = members.filter((m) => m.status === 'suspended').length
   const patientsInCare = members.reduce((sum, m) => sum + (m.activeCaseload || 0), 0)
   const visitsThisMonth = members.reduce((sum, m) => sum + (m.monthlyAppointmentsCount || 0), 0)
-
-  const teamHint = [
-    plural(members.length, 'clinician'),
-    `${deskStaff.length} front desk`,
-    suspendedCount > 0 ? `${suspendedCount} suspended` : null,
-  ]
-    .filter(Boolean)
-    .join(', ')
+  const teamHint = suspendedCount > 0 ? `${plural(suspendedCount, 'clinician')} suspended` : undefined
 
   return (
     <PageShell
       title="Team"
-      description="Everyone who works at your clinic, which pages they can open, and invitations you've sent."
+      description="The clinicians at your clinic, which pages they can open, and invitations you've sent."
       actions={
-        <Button id="staff-invite-button" size="sm" className={primaryButtonClass} onClick={() => openInvite()}>
+        <Button id="staff-invite-button" size="sm" className={primaryButtonClass} onClick={openInvite}>
           <UserPlus className="mr-1.5 h-4 w-4" />
-          Invite
+          Invite clinician
         </Button>
       }
     >
-      <EnhancedClinicStaffInviteModal
-        isOpen={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        defaultStaffType={inviteType}
-      />
+      <EnhancedClinicStaffInviteModal isOpen={inviteOpen} onClose={() => setInviteOpen(false)} />
 
       {loading ? (
         <>
@@ -139,7 +117,7 @@ export default function StaffManagementPage() {
       ) : (
         <>
           <div id="staff-stats-cards" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatTile label="Team members" value={teamSize} hint={teamHint} />
+            <StatTile label="Clinicians" value={members.length} hint={teamHint} />
             <StatTile label="Pending invitations" value={openInvitations.length} />
             <StatTile label="Patients in care" value={patientsInCare} hint="Across all clinicians" />
             <StatTile label="Visits this month" value={visitsThisMonth} />
@@ -147,11 +125,7 @@ export default function StaffManagementPage() {
 
           <div id="staff-list" className="space-y-6">
             <Panel title="Clinicians" description="Treat patients and take bookings.">
-              <StaffTable staff={members} roles={roles} onInvite={() => openInvite('clinician')} />
-            </Panel>
-
-            <Panel title="Front desk" description="Receptionists and administrators. They don't treat patients.">
-              <FrontDeskList staff={deskStaff} roles={roles} onInvite={() => openInvite('front_desk')} />
+              <StaffTable staff={members} roles={roles} onInvite={openInvite} />
             </Panel>
           </div>
 
@@ -172,8 +146,6 @@ export default function StaffManagementPage() {
                         Sent {format(new Date(invitation._creationTime), 'd MMM')}
                       </p>
                       <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                        {invitation.role === 'physiotherapist' ? 'Clinician' : 'Front desk'}
-                        {' · '}
                         {roleLabel(invitation.clinicRoleId, roles)}
                       </p>
                     </div>
@@ -210,14 +182,14 @@ export default function StaffManagementPage() {
         steps={[
           {
             target: '#staff-invite-button',
-            title: 'Invite your team',
-            content: 'Invite a clinician, or a receptionist or administrator for the front desk.',
+            title: 'Invite your clinicians',
+            content: 'Invite the physiotherapists who work at your clinic. They sign in with their own account.',
             position: 'bottom',
           },
           {
             target: '#staff-stats-cards',
             title: 'Team at a glance',
-            content: 'How many people are on your team, invitations waiting, and the current workload.',
+            content: 'How many clinicians you have, invitations waiting, and the current workload.',
             position: 'bottom',
           },
           {

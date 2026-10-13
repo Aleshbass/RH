@@ -17,20 +17,11 @@ import { primaryButtonClass } from '@/components/clinic/ui'
 import { fieldClass, isPreviewId, labelClass } from '@/components/clinic/patients/patient-record-shared'
 import { FULL_ACCESS, roleSummary, teamError, type ClinicRole } from '@/components/clinic/staff/team-shared'
 
-export type StaffType = 'clinician' | 'front_desk'
-
 interface EnhancedClinicStaffInviteModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess?: () => void
-  /** Which "Joining as" option starts selected */
-  defaultStaffType?: StaffType
 }
-
-const STAFF_TYPES: { value: StaffType; title: string; hint: string }[] = [
-  { value: 'clinician', title: 'Clinician', hint: 'Treats patients' },
-  { value: 'front_desk', title: 'Front desk', hint: 'Receptionist, admin' },
-]
 
 const buildLink = (code?: string) =>
   code && typeof window !== 'undefined' ? `${window.location.origin.replace(/\/$/, '')}/staff-invite/${code}` : undefined
@@ -51,7 +42,6 @@ export default function EnhancedClinicStaffInviteModal({
   isOpen,
   onClose,
   onSuccess,
-  defaultStaffType = 'clinician',
 }: EnhancedClinicStaffInviteModalProps) {
   const [submitting, setSubmitting] = useState(false)
 
@@ -60,15 +50,15 @@ export default function EnhancedClinicStaffInviteModal({
       <DialogContent className="w-[calc(100vw-2rem)] max-w-lg space-y-5 border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900 sm:p-6">
         <DialogHeader className="space-y-1 text-left">
           <DialogTitle className="text-base font-semibold text-neutral-900 dark:text-neutral-50">
-            Invite to your team
+            Invite a clinician
           </DialogTitle>
           <DialogDescription className="text-sm text-neutral-500 dark:text-neutral-400">
-            They get an email with a link to join your clinic. The link works for 7 days.
+            They get an email with a link to join your clinic and sign in with their own account. The link works
+            for 7 days.
           </DialogDescription>
         </DialogHeader>
         {/* Mounted only while open, so the form starts empty each time */}
         <InviteForm
-          defaultStaffType={defaultStaffType}
           submitting={submitting}
           setSubmitting={setSubmitting}
           onCancel={onClose}
@@ -83,13 +73,11 @@ export default function EnhancedClinicStaffInviteModal({
 }
 
 function InviteForm({
-  defaultStaffType,
   submitting,
   setSubmitting,
   onCancel,
   onSent,
 }: {
-  defaultStaffType: StaffType
   submitting: boolean
   setSubmitting: (value: boolean) => void
   onCancel: () => void
@@ -100,7 +88,6 @@ function InviteForm({
     api.actions.clinics.inviteClinicStaff.createClinicStaffInvitationWithNotification
   )
 
-  const [staffType, setStaffType] = useState<StaffType>(defaultStaffType)
   const [roleId, setRoleId] = useState<string>(FULL_ACCESS)
   const [form, setForm] = useState({ email: '', name: '', message: '' })
 
@@ -127,7 +114,8 @@ function InviteForm({
         message: form.message.trim() || undefined,
         sendEmail: true,
         origin: window.location.origin,
-        staffType,
+        // The team is clinicians only; an administrator uses the owner's account
+        staffType: 'clinician',
         clinicRoleId,
       })
 
@@ -164,43 +152,6 @@ function InviteForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div role="radiogroup" aria-labelledby="invite-joining-as" className="space-y-1.5">
-        <p id="invite-joining-as" className={labelClass}>
-          Joining as
-        </p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {STAFF_TYPES.map((option) => {
-            const selected = staffType === option.value
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                disabled={submitting}
-                onClick={() => setStaffType(option.value)}
-                className={cn(
-                  'min-w-0 rounded-md border px-3 py-2 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57] disabled:opacity-60 dark:focus-visible:ring-[#2dd4bf]',
-                  selected
-                    ? 'border-[#005b57] bg-[#005b57]/5 dark:border-[#2dd4bf] dark:bg-[#2dd4bf]/10'
-                    : 'border-neutral-200 bg-white hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950 dark:hover:bg-neutral-800/60'
-                )}
-              >
-                <span
-                  className={cn(
-                    'block text-sm font-medium',
-                    selected ? 'text-[#005b57] dark:text-[#2dd4bf]' : 'text-neutral-900 dark:text-neutral-100'
-                  )}
-                >
-                  {option.title}
-                </span>
-                <span className="block text-xs text-neutral-500 dark:text-neutral-400">{option.hint}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="min-w-0 space-y-1.5">
           <Label htmlFor="invite-email" className={labelClass}>
@@ -225,7 +176,7 @@ function InviteForm({
           <Input
             id="invite-name"
             autoComplete="off"
-            placeholder="e.g. Ngozi Obi"
+            placeholder="e.g. Dr Ngozi Obi"
             value={form.name}
             onChange={set('name')}
             disabled={submitting}

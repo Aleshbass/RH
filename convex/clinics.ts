@@ -263,7 +263,9 @@ export const invitePhysiotherapist = mutation({
       clinicOwnerId: clinic.ownerId,
       inviteeEmail,
       inviteeName: args.inviteeName,
-      role: args.staffType === "front_desk" ? "receptionist" : "physiotherapist",
+      // The clinic team is clinicians only; an administrator signs in with the owner's account.
+      // (staffType is still accepted from older clients but ignored.)
+      role: "physiotherapist",
       status: "pending",
       createdAt: Date.now(),
       expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days

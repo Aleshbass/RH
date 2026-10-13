@@ -140,9 +140,11 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
   const clinicians = useClinicianOptions()
   const reopenCare = useMutation(api.clinicTools.reopenPatientCare)
   const reassignPatient = useMutation(api.patients.reassignPatient)
+  const resendInvite = useMutation(api.clinicTools.resendClinicPatientInvite)
   const [editOpen, setEditOpen] = useState(false)
   const [reopenOpen, setReopenOpen] = useState(false)
   const [changeOpen, setChangeOpen] = useState(false)
+  const [sendingInvite, setSendingInvite] = useState(false)
 
   if (record === undefined) return <RecordSkeleton />
   if (record === null) {
@@ -155,6 +157,21 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
   }
 
   const { patient, profile } = record
+
+  /** Email the "your clinic added you" link again (patients who haven't created their account) */
+  const handleResendInvite = async () => {
+    if (!requireFullAccess('Resend invite')) return
+    if (isPreviewId(patient._id)) return
+    setSendingInvite(true)
+    try {
+      const result = await resendInvite({ patientId: patientId })
+      toast.success('Invite sent', { description: `We've emailed ${result.email} again.` })
+    } catch (err) {
+      toast.error(friendlyError(err, 'Could not send the invite. Please try again.'))
+    } finally {
+      setSendingInvite(false)
+    }
+  }
   const fullName = `${patient.firstName ?? ''} ${patient.lastName ?? ''}`.trim() || 'Patient'
   const initials = `${patient.firstName?.[0] ?? ''}${patient.lastName?.[0] ?? ''}`.toUpperCase() || 'P'
   const contact = [patient.phoneNumber, patient.email].filter(Boolean).join(' · ')
@@ -254,7 +271,20 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
           {profile?.referralSource === 'rehabify_referral' && (
             <StatusBadge tone="teal">Referred by Rehabify</StatusBadge>
           )}
+          {!patient.hasAccount && <StatusBadge tone="neutral">Hasn&apos;t joined yet</StatusBadge>}
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {!patient.hasAccount && patient.email && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={subtleButtonClass}
+                disabled={sendingInvite}
+                onClick={handleResendInvite}
+              >
+                {sendingInvite ? 'Sending…' : 'Resend invite'}
+              </Button>
+            )}
             {!isActive && (
               <Button
                 type="button"

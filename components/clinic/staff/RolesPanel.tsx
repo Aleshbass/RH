@@ -285,7 +285,7 @@ function RoleForm({
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
     if (!name.trim()) {
-      toast.error('Give the role a name, e.g. Receptionist')
+      toast.error('Give the role a name, e.g. Clinician')
       return
     }
     onSubmit({ roleId: initial.roleId, name: name.trim(), permissions })
@@ -302,7 +302,7 @@ function RoleForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={40}
-          placeholder="e.g. Receptionist"
+          placeholder="e.g. Clinician"
           autoComplete="off"
           disabled={saving}
           className={cn(fieldClass, 'h-9')}

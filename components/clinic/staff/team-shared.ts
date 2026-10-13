@@ -65,8 +65,8 @@ export const pluralPeople = (count: number) => (count === 1 ? '1 person' : `${co
 
 /** Suggested starting points shown before the owner has made any roles. */
 export const ROLE_TEMPLATES: { name: string; permissions: ClinicArea[] }[] = [
-  { name: 'Receptionist', permissions: ['appointments', 'patients'] },
-  { name: 'Administrator', permissions: ['appointments', 'patients', 'billing', 'reports', 'team'] },
+  { name: 'Clinician', permissions: ['appointments', 'patients', 'referrals'] },
+  { name: 'Lead clinician', permissions: ['appointments', 'patients', 'referrals', 'team', 'reports'] },
 ]
 
 /** Teal checkbox to match the clinic accent. */

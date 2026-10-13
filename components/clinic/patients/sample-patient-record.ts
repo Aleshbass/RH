@@ -102,6 +102,7 @@ export function samplePatientRecord(patientId: string): PatientRecord {
       firstName: p.first,
       lastName: p.last,
       email: p.email,
+      hasAccount: false,
       phoneNumber: p.phone,
       imageUrl: undefined,
       _creationTime: now - 15 * DAY,

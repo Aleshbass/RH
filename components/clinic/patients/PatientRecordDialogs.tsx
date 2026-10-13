@@ -118,9 +118,13 @@ export function EditPatientDetailsDialog({
 function EditDetailsForm({ record, onDone }: { record: PatientRecord; onDone: () => void }) {
   const { requireFullAccess } = useClinicPreview()
   const updateDetails = useMutation(api.clinicTools.updateClinicPatientDetails)
+  const resendInvite = useMutation(api.clinicTools.resendClinicPatientInvite)
   const { patient, profile } = record
+  // Until the patient creates their account the clinic can fix the email (e.g. a typo)
+  const canEditEmail = !patient.hasAccount
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
+    email: patient.email ?? '',
     firstName: patient.firstName ?? '',
     lastName: patient.lastName ?? '',
     phoneNumber: patient.phoneNumber ?? '',
@@ -151,10 +155,13 @@ function EditDetailsForm({ record, onDone }: { record: PatientRecord; onDone: ()
       toast.error('Add both a name and a phone number for the emergency contact, or leave both empty')
       return
     }
+    const newEmail = form.email.trim().toLowerCase()
+    const emailChanged = canEditEmail && newEmail !== '' && newEmail !== (patient.email ?? '').toLowerCase()
     setSaving(true)
     try {
       await updateDetails({
         patientId: patient._id,
+        email: emailChanged ? newEmail : undefined,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         phoneNumber: form.phoneNumber.trim() || undefined,
@@ -168,7 +175,13 @@ function EditDetailsForm({ record, onDone }: { record: PatientRecord; onDone: ()
             ? { name: emergencyName, relationship: form.emergencyRelationship.trim(), phone: emergencyPhone }
             : undefined,
       })
-      toast.success('Patient details saved')
+      if (emailChanged) {
+        // The first invite went to the old address, so send it to the corrected one
+        await resendInvite({ patientId: patient._id })
+        toast.success('Details saved', { description: `Invite email sent to ${newEmail}.` })
+      } else {
+        toast.success('Patient details saved')
+      }
       onDone()
     } catch (err) {
       toast.error(friendlyError(err, 'Could not save the details. Please try again.'))
@@ -211,14 +224,34 @@ function EditDetailsForm({ record, onDone }: { record: PatientRecord; onDone: ()
           <Label htmlFor="edit-email" className={labelClass}>
             Email
           </Label>
-          <Input
-            id="edit-email"
-            value={patient.email ?? ''}
-            readOnly
-            disabled
-            className={cn(fieldClass, 'h-9 text-neutral-500 dark:text-neutral-400')}
-          />
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">The patient signs in with this, so it can&apos;t be changed here.</p>
+          {canEditEmail ? (
+            <>
+              <Input
+                id="edit-email"
+                type="email"
+                value={form.email}
+                onChange={set('email')}
+                className={cn(fieldClass, 'h-9')}
+              />
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                They haven&apos;t created their account yet. If you change this, we&apos;ll send the invite to the new
+                address.
+              </p>
+            </>
+          ) : (
+            <>
+              <Input
+                id="edit-email"
+                value={patient.email ?? ''}
+                readOnly
+                disabled
+                className={cn(fieldClass, 'h-9 text-neutral-500 dark:text-neutral-400')}
+              />
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                The patient signs in with this, so only they can change it.
+              </p>
+            </>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="edit-phone" className={labelClass}>

@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query, QueryCtx, MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { getAuthenticatedUser } from "./auth";
+import { internal } from "./_generated/api";
 import { clinicPaymentSplit } from "./clinicFees";
 import { loadClinicFeeConfig } from "./clinicFeeSettings";
 
@@ -518,6 +519,7 @@ export const addClinicPatient = mutation({
       )
       .first();
 
+    const alreadyInCare = existingRel?.status === "active" && existingRel.clinicId === clinic._id;
     if (!existingRel) {
       await ctx.db.insert("patientPhysiotherapistRelationships", {
         patientId,
@@ -528,15 +530,57 @@ export const addClinicPatient = mutation({
         status: "active",
         source: "clinic_direct",
       });
-    } else if (existingRel.status !== "active" || existingRel.clinicId !== clinic._id) {
+    } else if (!alreadyInCare) {
       await ctx.db.patch(existingRel._id, { status: "active", clinicId: clinic._id });
     }
+
+    // Let the patient know, with a link to create (or sign in to) their account
+    const emailSent = alreadyInCare ? false : await schedulePatientInviteEmail(ctx, clinic, patientUser);
 
     return {
       success: true,
       patientId: patientUser._id,
+      emailSent,
       message: `Patient ${args.firstName} ${args.lastName} enrolled successfully.`,
     };
+  },
+});
+
+// Records a clinic, referral or Joy created before the patient had an account
+// (kept in step with PLACEHOLDER_CLERK_ID_PREFIXES in convex/users.ts)
+const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "rehabify_ref_", "joy-whatsapp:"];
+
+/** True once the patient has signed up and owns the account. */
+function patientHasAccount(patient: Doc<"users">) {
+  return !PLACEHOLDER_CLERK_ID_PREFIXES.some((prefix) => patient.clerkId.startsWith(prefix));
+}
+
+/** Email the patient that this clinic added them. Returns false when there's no email to send to. */
+async function schedulePatientInviteEmail(ctx: MutationCtx, clinic: Doc<"clinics">, patient: Doc<"users">) {
+  if (!patient.email) return false;
+  await ctx.scheduler.runAfter(0, internal.actions.emails.sendClinicPatientInviteEmail.sendClinicPatientInviteEmail, {
+    patientEmail: patient.email,
+    patientFirstName: patient.firstName,
+    clinicName: clinic.name,
+    clinicPhone: clinic.contactPhone,
+    hasAccount: patientHasAccount(patient),
+  });
+  return true;
+}
+
+/** Send the "your clinic added you" email again, e.g. after correcting the address. */
+export const resendClinicPatientInvite = mutation({
+  args: { patientId: v.id("users") },
+  handler: async (ctx, args) => {
+    const { clinic } = await requireClinicWrite(ctx, "patients");
+    await assertPatientInClinic(ctx, clinic, args.patientId);
+    const patient = await ctx.db.get(args.patientId);
+    if (!patient) throw new ConvexError("Patient not found");
+    if (!patient.email) {
+      throw new ConvexError("This patient has no email address. Add one under Edit details first.");
+    }
+    await schedulePatientInviteEmail(ctx, clinic, patient);
+    return { success: true, email: patient.email };
   },
 });
 
@@ -742,6 +786,8 @@ export const getClinicPatientFullRecord = query({
         firstName: patient.firstName,
         lastName: patient.lastName,
         email: patient.email,
+        // False until the patient creates their account from the clinic's invite email
+        hasAccount: patientHasAccount(patient),
         phoneNumber: patient.phoneNumber,
         imageUrl: patient.imageUrl,
         _creationTime: patient._creationTime,
@@ -831,11 +877,16 @@ export const updateClinicPatientDetails = mutation({
     emergencyContact: v.optional(
       v.object({ name: v.string(), relationship: v.string(), phone: v.string() })
     ),
+    // Only while the patient hasn't created their account yet (e.g. to fix a typo before
+    // resending the invite). Once they have an account, the email is their login.
+    email: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const member = await requireClinicWrite(ctx, "patients");
-    const { user, clinic } = member;
+    const { clinic } = member;
     await assertPatientInClinic(ctx, clinic, args.patientId);
+    const patient = await ctx.db.get(args.patientId);
+    if (!patient) throw new ConvexError("Patient not found");
 
     const firstName = args.firstName.trim();
     const lastName = args.lastName.trim();
@@ -843,10 +894,30 @@ export const updateClinicPatientDetails = mutation({
       throw new ConvexError("First and last name are required");
     }
 
+    let email: string | undefined;
+    const newEmail = args.email?.trim().toLowerCase();
+    if (newEmail && newEmail !== (patient.email ?? "").toLowerCase()) {
+      if (patientHasAccount(patient)) {
+        throw new ConvexError("This patient has their own account, so only they can change their email.");
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+        throw new ConvexError("Enter a valid email address");
+      }
+      const taken = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q: any) => q.eq("email", newEmail))
+        .first();
+      if (taken && taken._id !== patient._id) {
+        throw new ConvexError("Another account already uses this email address.");
+      }
+      email = newEmail;
+    }
+
     await ctx.db.patch(args.patientId, {
       firstName,
       lastName,
       phoneNumber: args.phoneNumber?.trim() || undefined,
+      ...(email && { email }),
     });
 
     const profileFields = {
@@ -2628,8 +2699,8 @@ export const listClinicRoles = query({
     if (!member) {
       // Sample roles for preview visitors
       return [
-        { _id: "prev_role1" as Id<"clinicRoles">, name: "Receptionist", permissions: ["appointments", "patients"] as ClinicArea[], memberCount: 1 },
-        { _id: "prev_role2" as Id<"clinicRoles">, name: "Administrator", permissions: ["appointments", "patients", "billing", "reports"] as ClinicArea[], memberCount: 0 },
+        { _id: "prev_role1" as Id<"clinicRoles">, name: "Clinician", permissions: ["appointments", "patients", "referrals"] as ClinicArea[], memberCount: 1 },
+        { _id: "prev_role2" as Id<"clinicRoles">, name: "Lead clinician", permissions: ["appointments", "patients", "referrals", "team", "reports"] as ClinicArea[], memberCount: 1 },
       ];
     }
     const [roles, members] = await Promise.all([
@@ -2657,7 +2728,7 @@ export const saveClinicRole = mutation({
   handler: async (ctx, args) => {
     const { clinic } = await getOwnerClinic(ctx);
     const name = args.name.trim().replace(/\s+/g, " ");
-    if (!name) throw new ConvexError("Give the role a name, e.g. Receptionist");
+    if (!name) throw new ConvexError("Give the role a name, e.g. Clinician");
     if (name.length > 40) throw new ConvexError("Keep the role name under 40 characters");
     const permissions = Array.from(new Set(args.permissions.filter(isClinicArea)));
 

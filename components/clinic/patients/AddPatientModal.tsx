@@ -60,7 +60,7 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
 
     setIsSubmitting(true)
     try {
-      await addPatient({
+      const result = await addPatient({
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
         email: formData.email.trim(),
@@ -74,7 +74,11 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
         assignedClinicianId: formData.assignedClinicianId ? (formData.assignedClinicianId as any) : undefined,
       })
 
-      toast.success('Patient added')
+      toast.success('Patient added', {
+        description: result?.emailSent
+          ? `We've emailed ${formData.email.trim()} a link to see their appointments and exercises.`
+          : undefined,
+      })
       setFormData({
         firstName: '',
         lastName: '',
@@ -106,7 +110,8 @@ export default function AddPatientModal({ isOpen, onClose, onSuccess }: AddPatie
             Add patient
           </DialogTitle>
           <DialogDescription className="text-sm text-neutral-500">
-            Creates a record for this patient at your clinic. Only name and email are required.
+            Creates a record for this patient at your clinic and emails them a link to their Rehabify account.
+            Only name and email are required.
           </DialogDescription>
         </DialogHeader>
 
