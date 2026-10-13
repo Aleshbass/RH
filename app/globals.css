@@ -232,30 +232,34 @@ body {
   }
 }
 
-/* Stream Video SDK menu/tooltip overrides (scoped to our call container) */
-.rehabify-stream .str-video__menu,
-.rehabify-stream .str-video__context-menu,
-.rehabify-stream .str-video__floating-menu,
-.rehabify-stream .str-video__tooltip-content {
-  color: #fff !important;
+/* Stream Video tiles inside our light call room (components/video/room).
+   Only the video element comes from Stream; every control and overlay is ours. */
+.rh-call .str-video__participant-view {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  border-radius: inherit;
+  outline: none;
 }
-
-.rehabify-stream .str-video__menu-title,
-.rehabify-stream .str-video__menu-item,
-.rehabify-stream .str-video__menu-item span,
-.rehabify-stream .str-video__menu-item-label {
-  color: #fff !important;
+.rh-call .str-video__video {
+  background-color: transparent;
 }
-
-.rehabify-stream .str-video__menu-item svg,
-.rehabify-stream .str-video__menu-title svg {
-  color: #fff !important;
-  stroke: #fff !important;
+.rh-call .str-video__video--screen-share {
+  object-fit: contain;
 }
-
-.rehabify-stream .str-video__menu-item:hover,
-.rehabify-stream .str-video__menu-item[aria-selected="true"] {
-  background-color: rgba(255, 255, 255, 0.08) !important;
+.rh-call .str-video__video-preview-container {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  box-shadow: none;
+}
+.rh-call .str-chat {
+  --str-chat__font-family: inherit;
+  --str-chat__primary-color: #005b57;
+  --str-chat__active-primary-color: #00443e;
 }
 
 /* DayPicker alignment fixes */

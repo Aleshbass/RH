@@ -1,28 +1,14 @@
 'use client'
-import React, { useEffect, useState, useRef } from 'react'
-import {
-  StreamVideo,
-  StreamVideoClient,
-  StreamCall,
-  useCallStateHooks,
-  SpeakerLayout,
-  CallingState,
-  useCall,
-  StreamTheme,
-  CallControls,
-} from '@stream-io/video-react-sdk'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { StreamVideo, StreamVideoClient, StreamCall, StreamTheme, CallingState } from '@stream-io/video-react-sdk'
 import '@stream-io/video-react-sdk/dist/css/styles.css'
 import { useUser } from '@clerk/nextjs'
 import { api } from '@/convex/_generated/api'
-import { Button } from '@/components/ui/button'
-import { Loader2, Phone, Video, Users, Copy, XOctagon, MessageSquare } from 'lucide-react'
+import { Loader2, PhoneOff } from 'lucide-react'
 import { toast } from 'sonner'
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { StreamChat } from 'stream-chat'
-import { Chat as StreamChatUI, Channel, MessageList, MessageInput, Window as ChatWindow, ChannelHeader, Thread } from 'stream-chat-react'
-import { useQueryUntyped } from '@/lib/convexUntyped'
-import { useActionUntyped, useMutationUntyped } from '@/lib/convexUntyped'
 import { useAction, useMutation, useQuery } from 'convex/react'
+import { CallLobby, CallRoom, CallStatusScreen, type CallChat } from '@/components/video/room'
 
 interface StreamVideoCallProps {
   callId: string
@@ -38,270 +24,8 @@ interface StreamVideoCallProps {
   }>
 }
 
-// Floating control bar wrapped around Stream's reliable CallControls
-const FloatingCallControls = ({ onLeave, canEndForAll, onEndForAll }: { onLeave: () => void; canEndForAll: boolean; onEndForAll: () => void }) => {
-  return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex items-center justify-center">
-      <div className="pointer-events-auto rounded-full bg-black/70 backdrop-blur supports-[backdrop-filter]:bg-black/40 shadow-lg ring-1 ring-white/10">
-        <div className="flex items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-3 text-white">
-          <CallControls onLeave={onLeave} />
-          {canEndForAll && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onEndForAll}
-              className="ml-1 rounded-full bg-red-600/80 hover:bg-red-600 text-white"
-              title="End call for everyone"
-            >
-              <XOctagon className="h-5 w-5" />
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
+type StreamCallHandle = ReturnType<StreamVideoClient['call']>
 
-// Call UI Component
-const CallUI = ({ onCallEnd, callId, showChat, onToggleChat, chatClient, chatChannel, onEndForAll, canEndForAll }: { onCallEnd: () => void, callId: string, showChat: boolean, onToggleChat: () => void, chatClient: StreamChat | null, chatChannel: ReturnType<StreamChat['channel']> | null, onEndForAll: () => void, canEndForAll: boolean }) => {
-  const call = useCall()
-  const { useCallCallingState, useParticipantCount } = useCallStateHooks()
-  const callingState = useCallCallingState()
-  const participantCount = useParticipantCount()
-  const [copied, setCopied] = useState(false)
-  const [lastCallingState, setLastCallingState] = useState<CallingState | null>(null)
-
-  // Connection feedback via toasts on state transitions with detailed messages
-  useEffect(() => {
-    if (!callingState || lastCallingState === callingState) return
-    setLastCallingState(callingState)
-    if (callingState === CallingState.RECONNECTING) {
-      toast.warning('Network issue detected: Attempting to reconnect...', {
-        description: 'Please check your internet connection'
-      })
-    } else if (callingState === CallingState.OFFLINE) {
-      toast.error('Call disconnected', {
-        description: 'Weak or no internet connection. You can try to rejoin.'
-      })
-    } else if (callingState === CallingState.JOINED) {
-      toast.success('Connected successfully')
-    }
-  }, [callingState, lastCallingState])
-
-  // Timeout warning for long joining states
-  useEffect(() => {
-    if (callingState === CallingState.JOINING) {
-      const timeout = setTimeout(() => {
-        toast.warning('Taking longer than expected...', {
-          description: 'This may be due to slow internet. Please wait or try again.'
-        })
-      }, 15000) // 15 seconds
-      return () => clearTimeout(timeout)
-    }
-  }, [callingState])
-
-  const connectionLabel = (() => {
-    switch (callingState) {
-      case CallingState.JOINED: return 'Good'
-      case CallingState.JOINING: return 'Connecting'
-      case CallingState.RECONNECTING: return 'Reconnecting'
-      case CallingState.OFFLINE: return 'Disconnected'
-      default: return String(callingState || '')
-    }
-  })()
-
-  const connectionClass = (() => {
-    switch (callingState) {
-      case CallingState.JOINED: return 'bg-green-600/20 text-green-400 ring-1 ring-green-500/30'
-      case CallingState.JOINING: return 'bg-blue-600/20 text-blue-300 ring-1 ring-blue-500/30'
-      case CallingState.RECONNECTING: return 'bg-yellow-600/20 text-yellow-300 ring-1 ring-yellow-500/30'
-      case CallingState.OFFLINE: return 'bg-red-600/20 text-red-300 ring-1 ring-red-500/30'
-      default: return 'bg-gray-600/20 text-gray-300 ring-1 ring-gray-500/30'
-    }
-  })()
-
-  const retryJoin = async () => {
-    try {
-      // Only attempt re-join when offline to avoid duplicate joins
-      if (callingState === CallingState.OFFLINE) {
-        await call?.join({ create: false })
-        toast.message('Rejoin attempt sent')
-      }
-    } catch (e) {
-      toast.error('Failed to rejoin. Please check your connection.')
-    }
-  }
-
-  const shareLink = `${window.location.origin}/video-call/${callId}`
-
-  // Auto-redirect when call ends - use multiple detection methods
-  const hasRedirectedRef = useRef(false)
-
-  // Method 1: Listen to Stream's call.ended event directly
-  useEffect(() => {
-    if (!call) return
-
-    const handleCallEnded = () => {
-      console.log('Stream call.ended event received')
-      if (!hasRedirectedRef.current) {
-        hasRedirectedRef.current = true
-        toast.info('Call has ended')
-        setTimeout(() => onCallEnd(), 500) // Short delay for toast to show
-      }
-    }
-
-    // Subscribe to call.ended event
-    call.on('call.ended', handleCallEnded)
-
-    return () => {
-      call.off('call.ended', handleCallEnded)
-    }
-  }, [call, onCallEnd])
-
-  // Method 2: Detect LEFT or IDLE state (backup for when event doesn't fire)
-  useEffect(() => {
-    const isCallEnded = callingState === CallingState.LEFT || callingState === CallingState.IDLE
-
-    if (isCallEnded && !hasRedirectedRef.current) {
-      console.log('Call state is ended:', callingState)
-      // Give a small delay to distinguish from transient states
-      const timeout = setTimeout(() => {
-        if (!hasRedirectedRef.current) {
-          hasRedirectedRef.current = true
-          console.log('Auto-redirecting after call ended...')
-          onCallEnd()
-        }
-      }, 2000)
-      return () => clearTimeout(timeout)
-    }
-  }, [callingState, onCallEnd])
-
-  const handleLeave = async () => {
-    try {
-      await call?.leave()
-      onCallEnd()
-    } catch (error) {
-      // Ignore error if already left; callingState effect will handle navigation
-      console.error('Error leaving call:', error)
-    }
-  }
-
-  const copyLink = () => {
-    navigator.clipboard.writeText(shareLink)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
-  if (callingState === CallingState.JOINING) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-gray-900">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto text-gray-700" />
-          <p className="text-xl">Joining call...</p>
-          <p className="text-sm text-gray-400">Call ID: {callId}</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (callingState === CallingState.OFFLINE) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-gray-900">
-        <div className="text-center space-y-4">
-          <Phone className="h-12 w-12 text-red-600 mx-auto" />
-          <p className="text-xl">Call Disconnected</p>
-          <div className="flex items-center justify-center gap-3">
-            <Button onClick={retryJoin}>
-              Try to Rejoin
-            </Button>
-            <Button onClick={onCallEnd} variant="outline">
-              Go Back
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // If participant count is 0 (everyone left), show call ended screen
-  if (participantCount === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-        <div className="text-center space-y-4">
-          <Phone className="h-12 w-12 text-gray-400 mx-auto" />
-          <p className="text-xl">Call Ended</p>
-          <p className="text-gray-400">All participants have left the call.</p>
-          <Button onClick={onCallEnd} variant="outline" className="border-white/20 hover:bg-white/10">
-            Go Back to Dashboard
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="h-screen flex flex-col bg-neutral-950 text-white">
-      {/* Header */}
-      <div className="bg-neutral-900/60 backdrop-blur px-4 py-3 flex items-center justify-between border-b border-white/10">
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <Users className="h-5 w-5 text-white" />
-            <span className="text-white/90">{participantCount} participant{participantCount !== 1 ? 's' : ''}</span>
-          </div>
-          <div className={`hidden sm:flex items-center gap-2 px-2 py-0.5 rounded-full ${connectionClass}`} title="Connection status">
-            <span className="inline-block h-2 w-2 rounded-full bg-current"></span>
-            <span className="text-xs font-medium">{connectionLabel}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="sm" variant="secondary" onClick={copyLink}>
-                <Copy className="h-4 w-4 mr-1" />
-                {copied ? 'Copied!' : 'Copy Link'}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Copy call link</TooltipContent>
-          </Tooltip>
-          <Button size="sm" variant="secondary" onClick={onToggleChat}>
-            <MessageSquare className="h-4 w-4 mr-1" /> {showChat ? 'Hide Chat' : 'Show Chat'}
-          </Button>
-          <div className="text-sm text-white/60">
-            Call ID: {callId}
-          </div>
-        </div>
-      </div>
-
-      {/* Video + Chat */}
-      <div className="flex-1 relative bg-neutral-950 p-0 sm:p-4">
-        <div className="h-full w-full flex gap-0 sm:gap-4">
-          <div className="flex-1 min-w-0 rounded-none sm:rounded-md overflow-hidden border-0 sm:border">
-            <SpeakerLayout participantsBarPosition="bottom" />
-          </div>
-          {showChat && chatClient && chatChannel && (
-            <div className="w-[360px] min-w-[320px] max-w-[420px] h-full rounded-md overflow-hidden border bg-white text-gray-900">
-              <StreamChatUI client={chatClient} theme="str-chat__theme-light">
-                <Channel channel={chatChannel}>
-                  <ChatWindow>
-                    <ChannelHeader title={`Call ${callId}`} live />
-                    <MessageList hideDeletedMessages={true} />
-                    <MessageInput focus />
-                    <Thread fullWidth={false} />
-                  </ChatWindow>
-                </Channel>
-              </StreamChatUI>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Floating Controls (never disappear) */}
-      <FloatingCallControls onLeave={handleLeave} canEndForAll={canEndForAll} onEndForAll={onEndForAll} />
-    </div>
-  )
-}
-
-// Main Stream Video Call Component
 export default function StreamVideoCall({
   callId,
   callType = 'default',
@@ -310,20 +34,17 @@ export default function StreamVideoCall({
   participants,
 }: StreamVideoCallProps) {
   const { user, isLoaded } = useUser()
-  // Prefer Convex user's uploaded profile photo (fallback to Clerk)
-  // Use typed hooks from convex/react
-
-  const getMyUserQuery = api.users.getMyUser
-  const convexUser = useQuery(getMyUserQuery)
+  // Prefer the Convex profile (uploaded photo, full name) over Clerk's.
+  const convexUser = useQuery(api.users.getMyUser)
   const [client, setClient] = useState<StreamVideoClient | null>(null)
-  type StreamCallHandle = ReturnType<StreamVideoClient['call']>
   const [call, setCall] = useState<StreamCallHandle | null>(null)
+  const [chatToken, setChatToken] = useState<string | undefined>()
+  const [apiKey, setApiKey] = useState<string | undefined>()
   const [error, setError] = useState<string | null>(null)
+  const [joining, setJoining] = useState(false)
+  const [joined, setJoined] = useState(false)
+  const [chat, setChat] = useState<CallChat | null>(null)
   const initializedRef = useRef(false)
-  const [chatClient, setChatClient] = useState<StreamChat | null>(null)
-  const [chatChannel, setChatChannel] = useState<ReturnType<StreamChat['channel']> | null>(null)
-  const [showChat, setShowChat] = useState(true)
-  const [canEndForAll, setCanEndForAll] = useState(false)
 
   const getStreamToken = useAction(api.stream.getStreamToken)
   const createStreamCall = useAction(api.stream.createStreamCall)
@@ -332,277 +53,169 @@ export default function StreamVideoCall({
   const setMyRsvpStatus = useMutation(api.videoCalls.setMyRsvpStatus)
   const joinVideoCallMutation = useMutation(api.videoCalls.joinVideoCall)
 
-  const onCallEndRef = useRef(onCallEnd)
-  useEffect(() => {
-    onCallEndRef.current = onCallEnd
-  }, [onCallEnd])
+  // Participant IDs come from the call's Convex record (Convex user IDs), not Clerk.
+  const isMe = (id: string) => id === user?.id || id === convexUser?._id
+  // Hosts may end the call for everyone.
+  const canEndForAll = !!participants?.some((p) => isMe(p.userId) && p.role === 'host')
+  const others = (participants ?? []).filter((p) => !isMe(p.userId))
 
-  // Determine if the current user can end the call for everyone (host)
-  useEffect(() => {
-    if (!user) return
-    try {
-      // Prefer roles from provided participants if available
-      const isHostFromProps = Array.isArray(participants)
-        ? !!participants.find(p => p.userId === user.id && p.role === 'host')
-        : false
-      setCanEndForAll(isHostFromProps)
-    } catch {
-      setCanEndForAll(false)
-    }
-  }, [participants, user])
+  const displayName = React.useMemo(() => {
+    const full = [convexUser?.firstName, convexUser?.lastName].filter(Boolean).join(' ')
+    return full || user?.fullName || user?.emailAddresses[0]?.emailAddress || 'Guest'
+  }, [convexUser?.firstName, convexUser?.lastName, user?.fullName, user?.emailAddresses])
+  const displayImage = convexUser?.imageUrl || user?.imageUrl
 
-  // Compute display fields used in initialization
-  const displayName = React.useMemo(
-    () => convexUser?.firstName || user?.fullName || user?.emailAddresses[0]?.emailAddress || 'Anonymous',
-    [convexUser?.firstName, user?.fullName, user?.emailAddresses]
-  )
-  const displayImage = React.useMemo(
-    () => convexUser?.imageUrl || user?.imageUrl,
-    [convexUser?.imageUrl, user?.imageUrl]
-  )
-
-  // Initialize Stream client and call
+  // Connect and prepare the call (without joining) so the lobby can preview devices.
   useEffect(() => {
-    if (!isLoaded || !user || client) return
-    if (initializedRef.current) return
+    if (!isLoaded || !user || initializedRef.current) return
     initializedRef.current = true
 
-    const initializeStream = async () => {
+    const prepare = async () => {
       try {
-        console.log('Initializing Stream Video for call:', callId)
-
-        // Get Stream token from Convex
-        const { token, apiKey, chatToken } = await getStreamToken({
-          userId: user.id,
-          userName: displayName,
-          userImage: displayImage,
-        })
-
-        console.log('Got Stream token, API Key:', apiKey)
-
-        // Initialize or reuse Stream client instance to avoid duplicates
+        const res = await getStreamToken({ userId: user.id, userName: displayName, userImage: displayImage })
         const streamClient = StreamVideoClient.getOrCreateInstance({
-          apiKey,
-          user: {
-            id: user.id,
-            name: displayName,
-            image: displayImage,
-          },
-          token,
+          apiKey: res.apiKey,
+          user: { id: user.id, name: displayName, image: displayImage },
+          token: res.token,
         })
-
-        console.log('Stream client initialized')
+        setApiKey(res.apiKey)
+        setChatToken(res.chatToken)
         setClient(streamClient)
-
-        // Ensure the call exists server-side with proper roles (host for creator)
-        try {
-          await createStreamCall({
-            callId,
-            callType,
-            participants: [
-              {
-                userId: user.id,
-                userName: displayName,
-                userImage: displayImage,
-                role: 'host',
-              },
-            ],
-            settings: {
-              recordingEnabled: false,
-              transcriptionEnabled: false,
-              maxDuration: 7200,
-              geoFencing: false,
-            },
-          })
-        } catch (e) {
-          // Safe to ignore if it already exists
-          console.debug('[stream] createStreamCall idempotent failure (likely exists):', e)
-        }
-
-        // Create call handle and join (create if needed) without auto-starting devices
-        const streamCall = streamClient.call(callType, callId)
-        await streamCall.join({ create: true })
-
-        // Inform backend that this user has joined (for accurate active status & participant tracking)
-        try {
-          await joinVideoCallMutation({ roomId: callId })
-        } catch (e) {
-          console.warn('[stream] joinVideoCall mutation failed (non-fatal):', e)
-        }
-
-        // Mark RSVP as accepted for this user
-        try {
-          await setMyRsvpStatus({ roomId: callId, status: 'accepted' })
-        } catch (error) {
-          console.warn('[rsvp] failed to mark accepted:', error)
-        }
-
-        setCall(streamCall)
-        console.log('Successfully joined Stream call')
-        toast.success('Joined call successfully')
-
-        // Initialize Stream Chat client and channel for this call
-        if (chatToken) {
-          try {
-            const sc = StreamChat.getInstance(apiKey)
-            await sc.connectUser({
-              id: user.id,
-              name: displayName,
-              image: displayImage,
-            }, chatToken)
-
-            const channel = sc.channel('messaging', callId, { name: `Call ${callId}` })
-            try {
-              await channel.watch()
-            } catch {
-              // If watch fails (likely due to membership), ensure membership server-side then retry
-              try { await ensureChatMembership({ callId, userId: user.id }) } catch { }
-              try {
-                await channel.watch()
-              } catch {
-                try { await channel.create(); await channel.watch() } catch { }
-              }
-            }
-            // Ensure the current user is a channel member even if watch succeeded (non-member watchers can't markRead)
-            try {
-              type ChannelLike = {
-                state?: { members?: Record<string, unknown> | Map<string, unknown> }
-                addMembers?: (ids: string[]) => Promise<void>
-                markRead?: () => Promise<void>
-              }
-              const c = channel as unknown as ChannelLike
-              const members = c?.state?.members
-              const meMember = members instanceof Map
-                ? members.get(user.id)
-                : (members as Record<string, unknown> | undefined)?.[user.id]
-              if (!meMember) {
-                try { await ensureChatMembership({ callId, userId: user.id }) } catch { }
-                // Best-effort client-side addMembers in case server path is slow
-                try { await c.addMembers?.([user.id]) } catch { }
-                try { await channel.watch() } catch { }
-              }
-              // Best-effort markRead now that membership should be ensured
-              try { await c.markRead?.() } catch { }
-            } catch { }
-            setChatClient(sc)
-            setChatChannel(channel)
-          } catch (error) {
-            console.warn('Chat initialization failed:', error)
-          }
-        } else {
-          console.warn('No Stream Chat token issued; disabling in-call chat UI to prevent markRead errors')
-          setShowChat(false)
-        }
-      } catch (error) {
-        console.error('Failed to initialize Stream:', error)
-        setError(error instanceof Error ? error.message : 'Failed to initialize video call')
-        toast.error('Failed to join call: ' + (error instanceof Error ? error.message : 'Unknown error'))
+        setCall(streamClient.call(callType, callId))
+      } catch (err) {
+        console.error('Failed to prepare Stream call:', err)
+        setError(err instanceof Error ? err.message : 'Failed to set up the video call')
       }
     }
+    void prepare()
+  }, [isLoaded, user, callId, callType, getStreamToken, displayName, displayImage])
 
-    initializeStream()
-  }, [isLoaded, user, callId, callType, client, getStreamToken, createStreamCall, ensureChatMembership, setMyRsvpStatus, displayName, displayImage])
+  const connectChat = useCallback(async () => {
+    if (!chatToken || !apiKey || !user) return
+    try {
+      const chatClient = StreamChat.getInstance(apiKey)
+      if (!chatClient.userID) {
+        await chatClient.connectUser({ id: user.id, name: displayName, image: displayImage }, chatToken)
+      }
+      const channel = chatClient.channel('messaging', callId, { name: 'In-call messages' })
+      try {
+        await channel.watch()
+      } catch {
+        // Not a member yet: add membership server-side, then retry.
+        try { await ensureChatMembership({ callId, userId: user.id }) } catch { }
+        try { await channel.watch() } catch {
+          try { await channel.create(); await channel.watch() } catch { }
+        }
+      }
+      // Non-member watchers can't mark messages read.
+      if (!channel.state.members[user.id]) {
+        try { await ensureChatMembership({ callId, userId: user.id }) } catch { }
+        try { await channel.watch() } catch { }
+      }
+      setChat({ client: chatClient, channel })
+    } catch (err) {
+      console.warn('In-call chat unavailable:', err)
+    }
+  }, [chatToken, apiKey, user, displayName, displayImage, callId, ensureChatMembership])
 
-  // Disconnect only on actual page unload to avoid Strict Mode double-unmounts interrupting the call.
+  const join = async () => {
+    if (!call || !user) return
+    setJoining(true)
+    try {
+      try {
+        // Ensures the call exists with this user as host; harmless if it already exists.
+        await createStreamCall({
+          callId,
+          callType,
+          participants: [{ userId: user.id, userName: displayName, userImage: displayImage, role: 'host' }],
+          settings: { recordingEnabled: false, transcriptionEnabled: false, maxDuration: 7200, geoFencing: false },
+        })
+      } catch (e) {
+        console.debug('[stream] createStreamCall (likely already exists):', e)
+      }
+      await call.join({ create: true })
+      setJoined(true)
+      void joinVideoCallMutation({ roomId: callId }).catch((e) => console.warn('[stream] joinVideoCall failed:', e))
+      void setMyRsvpStatus({ roomId: callId, status: 'accepted' }).catch((e) => console.warn('[rsvp] failed:', e))
+      void connectChat()
+    } catch (err) {
+      console.error('Failed to join call:', err)
+      toast.error("Couldn't join the call. Check your connection and try again.")
+    } finally {
+      setJoining(false)
+    }
+  }
+
+  const endForAll = async () => {
+    try {
+      await endStreamCall({ callId, callType })
+    } catch (err) {
+      console.error('endStreamCall failed:', err)
+      toast.error("Couldn't end the call for everyone")
+      return
+    }
+    try {
+      const state = call?.state.callingState
+      if (state !== CallingState.LEFT) await call?.leave()
+    } catch { }
+    onCallEnd()
+  }
+
+  // Disconnect only on real page unload so Strict Mode remounts don't drop the call.
   useEffect(() => {
     const handleUnload = () => {
-      // Fire-and-forget; the browser may terminate the process quickly
-      try { chatClient?.disconnectUser() } catch { }
-      try { client?.disconnectUser() } catch { }
+      try { void chat?.client.disconnectUser() } catch { }
+      try { void client?.disconnectUser() } catch { }
     }
-    if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', handleUnload)
-      window.addEventListener('pagehide', handleUnload)
-    }
+    window.addEventListener('beforeunload', handleUnload)
+    window.addEventListener('pagehide', handleUnload)
     return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('beforeunload', handleUnload)
-        window.removeEventListener('pagehide', handleUnload)
-      }
+      window.removeEventListener('beforeunload', handleUnload)
+      window.removeEventListener('pagehide', handleUnload)
     }
-  }, [client, chatClient])
-
-  if (!isLoaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-gray-900">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto text-gray-700" />
-          <p className="text-xl">Loading...</p>
-        </div>
-      </div>
-    )
-  }
+  }, [client, chat])
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-gray-900">
-        <div className="text-center space-y-4">
-          <Phone className="h-12 w-12 text-red-600 mx-auto" />
-          <p className="text-xl">Call Connection Failed</p>
-          <p className="text-gray-400">{error}</p>
-          <Button onClick={onCallEnd} variant="outline">
-            Go Back
-          </Button>
-        </div>
-      </div>
+      <CallStatusScreen icon={<PhoneOff className="h-6 w-6" />} title="Couldn't set up the call" description={error}>
+        <button
+          type="button"
+          onClick={onCallEnd}
+          className="h-11 rounded-full bg-neutral-900 px-6 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+        >
+          Go back
+        </button>
+      </CallStatusScreen>
     )
   }
 
-  if (!client || !call) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white text-gray-900">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto text-gray-700" />
-          <p className="text-xl">Initializing video call...</p>
-          <p className="text-gray-500">Please wait while we set up your call</p>
-          <Button onClick={onCallEnd} variant="outline">
-            Cancel
-          </Button>
-        </div>
-      </div>
-    )
+  if (!isLoaded || !client || !call) {
+    return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Getting your call ready" />
   }
 
   return (
-    <StreamVideo client={client}>
-      <StreamCall call={call}>
-        <StreamTheme>
-          <div className={`rehabify-stream ${isFullscreen ? 'fixed inset-0 z-50' : 'h-screen'}`}>
-            <CallUI
-              onCallEnd={onCallEnd}
-              callId={callId}
-              showChat={showChat}
-              onToggleChat={() => setShowChat(!showChat)}
-              chatClient={chatClient}
-              chatChannel={chatChannel}
-              onEndForAll={async () => {
-                if (window.confirm('End call for everyone? Participants will not be able to rejoin this call.')) {
-                  try {
-                    // End the call for everyone on the server first
-                    try { await endStreamCall({ callId, callType }) } catch (error) {
-                      console.error('endStreamCall failed:', error)
-                      toast.error('Failed to end call for everyone')
-                    }
-                    // Best-effort local leave; ignore if already left
-                    try {
-                      const state = call?.state?.callingState
-                      if (state !== CallingState.LEFT && state !== CallingState.OFFLINE) {
-                        await call?.leave()
-                      }
-                    } catch (leaveErr) {
-                      console.warn('Ignoring leave error during end-for-all:', leaveErr)
-                    }
-                  } finally {
-                    // Always navigate away from the call page
-                    onCallEnd()
-                  }
-                }
-              }}
-              canEndForAll={canEndForAll}
-            />
-          </div>
-        </StreamTheme>
-      </StreamCall>
-    </StreamVideo>
+    <div className={isFullscreen ? 'fixed inset-0 z-50' : 'h-[100dvh]'}>
+      <StreamVideo client={client}>
+        <StreamCall call={call}>
+          <StreamTheme className="h-full">
+            {joined ? (
+              <CallRoom
+                onLeft={onCallEnd}
+                onEndForAll={canEndForAll ? () => void endForAll() : undefined}
+                waitingFor={others.length === 1 ? others[0].userName : undefined}
+                chat={chat}
+              />
+            ) : (
+              <CallLobby
+                eyebrow="Video call"
+                details={others.length > 0 && <p>With {others.map((p) => p.userName).join(', ')}</p>}
+                joining={joining}
+                onJoin={() => void join()}
+              />
+            )}
+          </StreamTheme>
+        </StreamCall>
+      </StreamVideo>
+    </div>
   )
 }

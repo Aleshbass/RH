@@ -1,12 +1,15 @@
+import { Toaster } from 'sonner'
+
 export default function VideoCallLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    // Minimal layout for video calls - no header, no footer, full screen
+    // Minimal full-screen layout for calls: no site header or footer.
     return (
-        <div className="min-h-screen bg-gray-900">
+        <div className="min-h-[100dvh] bg-[#f5f6f5]">
             {children}
+            <Toaster position="top-center" />
         </div>
     );
 }

@@ -1,23 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import Image from 'next/image'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAction, useQuery } from 'convex/react'
-import {
-  CallControls,
-  CallingState,
-  SpeakerLayout,
-  StreamCall,
-  StreamTheme,
-  StreamVideo,
-  StreamVideoClient,
-  useCallStateHooks,
-} from '@stream-io/video-react-sdk'
+import { StreamCall, StreamTheme, StreamVideo, StreamVideoClient } from '@stream-io/video-react-sdk'
 import '@stream-io/video-react-sdk/dist/css/styles.css'
-import { Loader2, Video } from 'lucide-react'
+import { CalendarClock, CalendarX, Link2Off, Loader2, PhoneOff, WifiOff } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
-import { Button } from '@/components/ui/button'
+import { CallLobby, CallRoom, CallStatusScreen } from '@/components/video/room'
 
 // Short patient join link sent by Joy on WhatsApp: /v/<booking code>.
 // Joy patients have no login; the code is checked server-side before a
@@ -53,48 +43,8 @@ function useNow(intervalMs: number) {
   return now
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col px-4 py-8">
-      <Image src="/logos/MainRehabify.svg" alt="Rehabify Health" width={100} height={32} className="mb-8 h-8 w-auto self-start" priority />
-      <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">{children}</div>
-      <p className="mt-6 text-center text-sm text-neutral-500">Need help? Reply to Joy on WhatsApp.</p>
-    </main>
-  )
-}
-
-function InCall({ clinicianName, onLeft }: { clinicianName: string; onLeft: () => void }) {
-  const { useCallCallingState, useRemoteParticipants } = useCallStateHooks()
-  const callingState = useCallCallingState()
-  const remoteParticipants = useRemoteParticipants()
-
-  // Covers both hanging up and the clinician ending the call for everyone.
-  useEffect(() => {
-    if (callingState === CallingState.LEFT) onLeft()
-  }, [callingState, onLeft])
-
-  return (
-    <div className="flex h-[100dvh] flex-col bg-neutral-950 text-white">
-      <header className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
-        <span className="truncate text-sm text-white/80">Online appointment with {clinicianName}</span>
-        <span className="shrink-0 text-xs text-white/40">Rehabify Health</span>
-      </header>
-      <div className="relative min-h-0 flex-1">
-        <SpeakerLayout participantsBarPosition="bottom" />
-        {remoteParticipants.length === 0 && (
-          <div className="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4">
-            <p className="rounded-full bg-black/60 px-4 py-2 text-sm text-white/90 backdrop-blur">
-              Waiting for {clinicianName} to join…
-            </p>
-          </div>
-        )}
-      </div>
-      <div className="flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
-        <CallControls />
-      </div>
-    </div>
-  )
-}
+const primaryButton =
+  'inline-flex h-12 items-center justify-center gap-2 rounded-full bg-brand px-8 text-[15px] font-medium text-white shadow-[0_12px_30px_-12px_rgba(0,91,87,0.7)] transition-all hover:bg-brand-dark active:scale-[0.98] disabled:opacity-60'
 
 export default function PatientJoinPage() {
   const params = useParams()
@@ -104,152 +54,182 @@ export default function PatientJoinPage() {
   const getCallToken = useAction(api.stream.getJoyPatientCallToken)
   const now = useNow(15_000)
 
-  const [phase, setPhase] = useState<'lobby' | 'connecting' | 'in_call' | 'left'>('lobby')
+  const [phase, setPhase] = useState<'idle' | 'preparing' | 'lobby' | 'joining' | 'in_call' | 'left'>('idle')
   const [notice, setNotice] = useState<string | null>(null)
   const [client, setClient] = useState<StreamVideoClient | null>(null)
   const [call, setCall] = useState<StreamCallHandle | null>(null)
+  const callIdRef = useRef<string | null>(null)
+
+  const windowState = !session
+    ? null
+    : session.cancelled
+      ? 'cancelled'
+      : now < session.opensAt
+        ? 'too_early'
+        : now > session.closesAt
+          ? 'ended'
+          : 'open'
 
   // A signed-in clinician opening the patient link goes to their own call page.
   useEffect(() => {
     if (session?.clinicianCallPath) router.replace(session.clinicianCallPath)
   }, [session?.clinicianCallPath, router])
 
-  // Release the camera, microphone and socket when the call is left or the page closes.
+  // Release the camera, microphone and socket when the page closes.
   useEffect(() => () => { void client?.disconnectUser() }, [client])
 
-  const join = useCallback(async () => {
-    setPhase('connecting')
+  const prepare = useCallback(async () => {
+    setPhase('preparing')
     setNotice(null)
-    let streamClient: StreamVideoClient | null = null
     try {
-      const res = await getCallToken({ code })
-      if (!res.ok) {
-        // convex/stream.ts is @ts-nocheck, so the action result arrives untyped.
-        setNotice(REFUSAL_TEXT[res.reason as JoinRefusal])
-        setPhase('lobby')
-        return
+      let streamClient = client
+      let callId = callIdRef.current
+      if (!streamClient || !callId) {
+        const res = await getCallToken({ code })
+        if (!res.ok) {
+          // convex/stream.ts is @ts-nocheck, so the action result arrives untyped.
+          setNotice(REFUSAL_TEXT[res.reason as JoinRefusal])
+          setPhase('idle')
+          return
+        }
+        streamClient = StreamVideoClient.getOrCreateInstance({
+          apiKey: res.apiKey,
+          user: { id: res.userId, name: res.userName },
+          token: res.token,
+        })
+        callId = res.callId as string
+        callIdRef.current = callId
+        setClient(streamClient)
       }
-      streamClient = StreamVideoClient.getOrCreateInstance({
-        apiKey: res.apiKey,
-        user: { id: res.userId, name: res.userName },
-        token: res.token,
-      })
-      const streamCall = streamClient.call('default', res.callId)
-      await streamCall.join({ create: false })
-      setClient(streamClient)
-      setCall(streamCall)
+      // A call that has been left can't be rejoined, so every attempt gets a fresh handle.
+      setCall(streamClient.call('default', callId))
+      setPhase('lobby')
+    } catch (error) {
+      console.error('[patient-join] failed to prepare call', error)
+      setNotice("We couldn't connect you. Check your internet connection and try again.")
+      setPhase('idle')
+    }
+  }, [client, code, getCallToken])
+
+  // Get the call ready as soon as the join window is open.
+  useEffect(() => {
+    if (windowState === 'open' && phase === 'idle' && !notice && !session?.clinicianCallPath) void prepare()
+  }, [windowState, phase, notice, session?.clinicianCallPath, prepare])
+
+  const join = async () => {
+    if (!call) return
+    setPhase('joining')
+    setNotice(null)
+    try {
+      await call.join({ create: false })
       setPhase('in_call')
     } catch (error) {
       console.error('[patient-join] failed to join call', error)
-      await streamClient?.disconnectUser().catch(() => {})
       setNotice("We couldn't connect you. Check your internet connection and try again.")
       setPhase('lobby')
     }
-  }, [code, getCallToken])
+  }
 
   const handleLeft = useCallback(() => {
     setCall(null)
-    setClient(null)
     setPhase('left')
   }, [])
 
-  if (phase === 'in_call' && client && call && session) {
+  if (session === undefined || session?.clinicianCallPath) {
+    return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Loading your appointment" />
+  }
+
+  if (session === null) {
+    return (
+      <CallStatusScreen
+        icon={<Link2Off className="h-6 w-6" />}
+        title="Link not recognised"
+        description="Check that you opened the full link Joy sent you on WhatsApp, or reply to Joy for help."
+      />
+    )
+  }
+
+  const durationMinutes = Math.round((session.endTime - session.startTime) / 60_000)
+  const details = (
+    <>
+      <p>
+        with <span className="font-medium text-neutral-900">{session.clinicianName}</span>
+      </p>
+      <p>
+        {formatDay(session.startTime)} · {formatTime(session.startTime)} · {durationMinutes} min
+      </p>
+      <p className="pt-1 text-sm text-neutral-500">
+        Booking code <span className="font-mono tracking-wider text-neutral-800">{session.bookingCode}</span>
+      </p>
+    </>
+  )
+
+  if (call && client && (phase === 'lobby' || phase === 'joining' || phase === 'in_call')) {
     return (
       <StreamVideo client={client}>
         <StreamCall call={call}>
-          <StreamTheme>
-            <InCall clinicianName={session.clinicianName} onLeft={handleLeft} />
+          <StreamTheme className="h-full">
+            {phase === 'in_call' ? (
+              <CallRoom title={`Appointment with ${session.clinicianName}`} waitingFor={session.clinicianName} onLeft={handleLeft} />
+            ) : (
+              <CallLobby eyebrow="Online appointment" details={details} joining={phase === 'joining'} notice={notice} onJoin={() => void join()} />
+            )}
           </StreamTheme>
         </StreamCall>
       </StreamVideo>
     )
   }
 
-  if (session === undefined || session?.clinicianCallPath) {
+  if (windowState === 'cancelled') {
+    return <CallStatusScreen icon={<CalendarX className="h-6 w-6" />} title="Appointment cancelled" description={REFUSAL_TEXT.cancelled} />
+  }
+
+  if (windowState === 'ended') {
     return (
-      <Shell>
-        <div className="flex items-center justify-center py-10">
-          <Loader2 className="h-8 w-8 animate-spin text-brand" aria-label="Loading" />
-        </div>
-      </Shell>
+      <CallStatusScreen
+        icon={<PhoneOff className="h-6 w-6" />}
+        title="This appointment has ended"
+        description="Thank you for joining. Your physiotherapist will follow up with any next steps on WhatsApp."
+      />
     )
   }
 
-  if (session === null) {
+  if (windowState === 'too_early') {
     return (
-      <Shell>
-        <h1 className="text-xl font-semibold text-neutral-900">Link not recognised</h1>
-        <p className="mt-2 text-neutral-600">Check that you opened the full link Joy sent you on WhatsApp.</p>
-      </Shell>
+      <CallStatusScreen
+        icon={<CalendarClock className="h-6 w-6" />}
+        title="Your appointment opens soon"
+        description={
+          <div className="space-y-1">
+            {details}
+            <p className="pt-3">
+              You can join from <span className="font-medium text-neutral-900">{formatTime(session.opensAt)}</span>. Keep this page open.
+            </p>
+          </div>
+        }
+      />
     )
   }
 
-  const durationMinutes = Math.round((session.endTime - session.startTime) / 60_000)
-  const windowState = session.cancelled
-    ? 'cancelled'
-    : now < session.opensAt
-      ? 'too_early'
-      : now > session.closesAt
-        ? 'ended'
-        : 'open'
+  if (phase === 'left') {
+    return (
+      <CallStatusScreen icon={<PhoneOff className="h-6 w-6" />} title="You left the appointment" description={`Your appointment with ${session.clinicianName} is still open.`}>
+        <button type="button" onClick={() => void prepare()} className={primaryButton}>
+          Rejoin
+        </button>
+      </CallStatusScreen>
+    )
+  }
 
-  return (
-    <Shell>
-      <p className="text-sm font-medium text-brand">
-        {phase === 'left' ? "You've left the appointment" : 'Online appointment'}
-      </p>
-      <h1 className="mt-1 text-2xl font-semibold text-neutral-900">with {session.clinicianName}</h1>
-      <dl className="mt-5 space-y-3 text-neutral-700">
-        <div>
-          <dt className="sr-only">Date</dt>
-          <dd>{formatDay(session.startTime)}</dd>
-        </div>
-        <div>
-          <dt className="sr-only">Time</dt>
-          <dd>{formatTime(session.startTime)} · {durationMinutes} minutes</dd>
-        </div>
-        <div className="flex items-baseline gap-2">
-          <dt className="text-sm text-neutral-500">Booking code</dt>
-          <dd className="font-mono text-base tracking-wider text-neutral-900">{session.bookingCode}</dd>
-        </div>
-      </dl>
+  if (notice) {
+    return (
+      <CallStatusScreen icon={<WifiOff className="h-6 w-6" />} title="Couldn't connect" description={notice}>
+        <button type="button" onClick={() => void prepare()} className={primaryButton}>
+          Try again
+        </button>
+      </CallStatusScreen>
+    )
+  }
 
-      <div className="mt-6">
-        {windowState === 'open' && (
-          <>
-            <Button
-              size="lg"
-              className="h-12 w-full bg-brand text-base text-white hover:bg-brand-dark"
-              disabled={phase === 'connecting'}
-              onClick={join}
-            >
-              {phase === 'connecting' ? (
-                <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Connecting…</>
-              ) : (
-                <><Video className="mr-2 h-5 w-5" /> {phase === 'left' ? 'Rejoin appointment' : 'Join appointment'}</>
-              )}
-            </Button>
-            <p className="mt-3 text-center text-sm text-neutral-500">
-              We&apos;ll ask to use your camera and microphone.
-            </p>
-          </>
-        )}
-        {windowState === 'too_early' && (
-          <>
-            <Button size="lg" className="h-12 w-full text-base" disabled>
-              Opens at {formatTime(session.opensAt)}
-            </Button>
-            <p className="mt-3 text-center text-sm text-neutral-500">
-              You can join from {Math.round((session.startTime - session.opensAt) / 60_000)} minutes before your appointment. Keep this page open.
-            </p>
-          </>
-        )}
-        {windowState === 'ended' && <p className="text-neutral-600">{REFUSAL_TEXT.ended}</p>}
-        {windowState === 'cancelled' && <p className="text-neutral-600">{REFUSAL_TEXT.cancelled}</p>}
-        {notice && windowState === 'open' && (
-          <p role="alert" className="mt-3 text-center text-sm text-red-600">{notice}</p>
-        )}
-      </div>
-    </Shell>
-  )
+  return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Getting your appointment ready" />
 }
