@@ -4,7 +4,8 @@
  * Use these functions to manually test the reminder system
  */
 
-import { action, internalAction } from "../_generated/server";
+// Test helpers: internal only (run with `npx convex run testing/testReminders:<name>`).
+import { internalAction as action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 
 /**

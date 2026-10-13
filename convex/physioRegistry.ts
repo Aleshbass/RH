@@ -6,7 +6,7 @@
  * Completely separate from Rehabify Health platform membership.
  */
 
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { ensureUserRole } from "./auth";
 
@@ -144,8 +144,21 @@ export const linkClerkUser = mutation({
     clerkUserId: v.string(),
   },
   handler: async (ctx, args) => {
+    // Only the signed-in user can link an entry to their own account, an entry that
+    // already belongs to someone else cannot be taken over, and when both emails are
+    // known they must match (registry ids are visible in the public directory).
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || identity.subject !== args.clerkUserId) throw new Error("Please sign in to link your registry entry.");
     const entry = await ctx.db.get(args.registryEntryId);
     if (!entry) throw new Error("Registry entry not found");
+    if (entry.clerkUserId && entry.clerkUserId !== args.clerkUserId) {
+      throw new Error("This registry entry is already linked to another account.");
+    }
+    const signedInEmail = typeof identity.email === "string" ? identity.email.trim().toLowerCase() : "";
+    const entryEmail = typeof (entry as any).email === "string" ? (entry as any).email.trim().toLowerCase() : "";
+    if (signedInEmail && entryEmail && signedInEmail !== entryEmail) {
+      throw new Error("Sign in with the email address used for this registration.");
+    }
 
     await ctx.db.patch(args.registryEntryId, {
       clerkUserId: args.clerkUserId,
@@ -348,7 +361,7 @@ export const getPublicProfile = query({
 
 // ── Public: Get profile photo URL ───────────────────────
 
-export const getProfilePhotoUrl = query({
+export const getProfilePhotoUrl = internalQuery({
   args: { storageId: v.id("_storage") },
   handler: async (ctx, args) => {
     return await ctx.storage.getUrl(args.storageId);
@@ -357,7 +370,7 @@ export const getProfilePhotoUrl = query({
 
 // ── Public: Get license certificate URL ─────────────────
 
-export const getLicenseCertUrl = query({
+export const getLicenseCertUrl = internalQuery({
   args: { storageId: v.id("_storage") },
   handler: async (ctx, args) => {
     return await ctx.storage.getUrl(args.storageId);
@@ -659,7 +672,7 @@ export const deleteProfilePhoto = mutation({
 
 // ── Admin/System: Recalculate all rankings ──────────────
 
-export const recalculateRankings = mutation({
+export const recalculateRankings = internalMutation({
   args: {},
   handler: async (ctx) => {
     const all = await ctx.db.query("physioRegistry").collect();
@@ -709,7 +722,7 @@ interface SearchResult {
   source: "registry" | "platform";
 }
 
-export const searchRegistry = query({
+export const searchRegistry = internalQuery({
   args: {
     searchQuery: v.optional(v.string()),
     licenseNumber: v.optional(v.string()),

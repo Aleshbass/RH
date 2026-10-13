@@ -1,10 +1,16 @@
 "use node";
 
-import { action } from "../../_generated/server";
+import { internalAction } from "../../_generated/server";
 import { v } from "convex/values";
 import { sendEmail } from "../../../lib/email/emailService";
+import { escapeHtml, plainSubject } from "../../helpers/escapeHtml";
 
-export const sendPartnershipInquiryEmail = action({
+/**
+ * Admin notification for a partnership inquiry submitted from the public website.
+ * Internal: scheduled by public.submitPartnershipInquiry for each admin user, so the
+ * recipient always comes from the users table. The visitor's text is HTML-escaped.
+ */
+export const sendPartnershipInquiryEmail = internalAction({
   args: {
     adminEmail: v.string(),
     name: v.string(),
@@ -21,12 +27,13 @@ export const sendPartnershipInquiryEmail = action({
     try {
       const result = await sendEmail({
         to: args.adminEmail,
+        subject: plainSubject(`New Partnership Inquiry: ${args.organization}`),
         template: 'PARTNERSHIP_INQUIRY',
         data: {
-          name: args.name,
-          email: args.email,
-          organization: args.organization,
-          message: args.message,
+          name: escapeHtml(args.name),
+          email: escapeHtml(args.email),
+          organization: escapeHtml(args.organization),
+          message: escapeHtml(args.message),
         }
       });
 

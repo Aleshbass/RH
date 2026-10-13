@@ -1,9 +1,12 @@
 import { query } from "./_generated/server";
+import { ensureUserRole } from "./auth";
 import { v } from "convex/values";
 
 export const debugCallTokens = query({
   args: { callId: v.id("videoCalls") },
   handler: async (ctx, args) => {
+    // Exposes call room details and participant tokens: admins only.
+    await ensureUserRole(ctx, ["admin"]);
     console.log("🔍 DEBUG: Checking tokens for call:", args.callId);
     
     // Get the call

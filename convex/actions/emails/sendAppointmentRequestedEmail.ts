@@ -1,13 +1,16 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
+import { internalAction } from "../../_generated/server";
 import { sendEmail } from "../../../lib/email/emailService";
+import { appLink } from "../../helpers/appUrl";
+import { escapeHtml, escapeOptional, plainSubject } from "../../helpers/escapeHtml";
 
 /**
  * Send an appointment requested email to the physiotherapist.
+ * Internal: scheduled by appointment/booking mutations, never callable from a browser.
  */
-export const sendAppointmentRequestedEmail = action({
+export const sendAppointmentRequestedEmail = internalAction({
   args: {
     to: v.string(),
     patientName: v.string(),
@@ -24,17 +27,17 @@ export const sendAppointmentRequestedEmail = action({
     try {
       const result = await sendEmail({
         to: args.to,
-        subject: args.subjectOverride,
+        subject: args.subjectOverride ? plainSubject(args.subjectOverride) : undefined,
         template: 'APPOINTMENT_REQUESTED',
         data: {
-          patientName: args.patientName,
-          physiotherapistName: args.physiotherapistName,
+          patientName: escapeHtml(args.patientName),
+          physiotherapistName: escapeHtml(args.physiotherapistName),
           appointmentDate: args.appointmentDate,
-          appointmentTime: args.appointmentTime,
-          clinicName: args.clinicName,
-          clinicAddress: args.clinicAddress,
-          viewLink: args.viewLink,
-          approveLink: args.approveLink,
+          appointmentTime: escapeHtml(args.appointmentTime),
+          clinicName: escapeOptional(args.clinicName),
+          clinicAddress: escapeOptional(args.clinicAddress),
+          viewLink: appLink(args.viewLink),
+          approveLink: args.approveLink ? appLink(args.approveLink) : undefined,
         },
       });
       return { success: result.success, messageId: result.messageId, error: result.error };

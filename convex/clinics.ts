@@ -1,5 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
@@ -1226,7 +1226,7 @@ export const getClinicPatientsLegacy = query({
 /**
  * Get clinic patient statistics
  */
-export const getClinicPatientStats = query({
+export const getClinicPatientStats = internalQuery({
   args: {},
   handler: async (ctx) => {
     // Sample data only for genuine preview viewers; a real owner gets real data or the error

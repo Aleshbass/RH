@@ -1,95 +1,44 @@
-import { NextRequest, NextResponse } from "next/server";
-import { authenticatePartner } from "@/lib/partner-auth";
-import { getConvexClient } from "@/lib/convex-client";
-import { api } from "@/convex/_generated/api";
+import type { NextRequest } from "next/server";
+import { authenticatePartner, logPartnerRequest } from "@/lib/partner-api/auth";
+import { callPartnerGateway } from "@/lib/partner-api/gateway";
+import { apiError, apiJson, coreError, internalError, listBody, parseIsoParam, parseLimit } from "@/lib/partner-api/http";
 
-/**
- * GET /api/v1/partners/sessions
- *
- * Lists clinical sessions, appointments, and attendance tracking for partner referrals.
- */
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const STATUSES = ["scheduled", "completed", "cancelled", "no_show"];
+
+/** GET /v1/partners/sessions — appointments for your referrals (no clinical notes). */
 export async function GET(req: NextRequest) {
-  const startTime = Date.now();
-  const { partner, response, requestId, traceId } = await authenticatePartner(req);
-  if (!partner) return response!;
+  const auth = await authenticatePartner(req);
+  if (!auth.ok) return auth.response;
+  const { partner, ctx } = auth;
+  const params = req.nextUrl.searchParams;
+
+  const limit = parseLimit(params.get("limit"));
+  if (limit === null) return apiError(ctx, 400, "invalid_parameter", "limit must be an integer between 1 and 100.", { param: "limit" });
+  const status = params.get("status") || undefined;
+  if (status && !STATUSES.includes(status)) {
+    return apiError(ctx, 400, "invalid_parameter", `status must be one of: ${STATUSES.join(", ")}.`, { param: "status" });
+  }
+  const from = parseIsoParam(params.get("from"));
+  const to = parseIsoParam(params.get("to"));
+  if (from === null) return apiError(ctx, 400, "invalid_parameter", "from must be an ISO-8601 timestamp.", { param: "from" });
+  if (to === null) return apiError(ctx, 400, "invalid_parameter", "to must be an ISO-8601 timestamp.", { param: "to" });
 
   try {
-    const { searchParams } = new URL(req.url);
-    const referralId = searchParams.get("referral_id") || undefined;
-    const patientPhone = searchParams.get("patient_phone") || undefined;
-    const status = searchParams.get("status") || undefined;
-    const limit = Number(searchParams.get("limit")) || 50;
-
-    const convex = getConvexClient();
-    const sessions = await convex.query(api.partners.listPartnerSessions, {
+    const result = await callPartnerGateway("listSessions", {
       partnerCode: partner.code,
       environment: partner.environment,
-      referralId,
-      patientPhone,
+      referralIdentifier: params.get("referral_id")?.trim() || undefined,
       status,
+      from,
+      to,
       limit,
     });
-
-    const latencyMs = Math.max(1, Date.now() - startTime);
-
-    // Audit log in partnerActivityLogs
-    convex
-      .mutation(api.partners.logPartnerActivity, {
-        partnerId: partner.code,
-        environment: partner.environment,
-        eventId: `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-        eventType: "sessions.listed",
-        direction: "inbound",
-        url: req.nextUrl.pathname,
-        method: "GET",
-        statusCode: 200,
-        latencyMs,
-        status: "success",
-        requestId,
-        traceId,
-        requestPayload: { referralId, patientPhone, status, limit },
-        responsePayload: { count: sessions.length },
-        occurredAt: Date.now(),
-      })
-      .catch((err) => console.error("Failed to log sessions query activity:", err));
-
-    return NextResponse.json(
-      {
-        status: "success",
-        environment: partner.environment,
-        total_sessions: sessions.length,
-        sessions,
-        request_id: requestId,
-        trace_id: traceId,
-      },
-      {
-        status: 200,
-        headers: {
-          "X-Rehabify-Request-Id": requestId,
-          "X-Rehabify-Trace-Id": traceId,
-          "X-Rehabify-Environment": partner.environment,
-        },
-      }
-    );
+    const response = result?.ok ? apiJson(ctx, listBody(result.data, result.hasMore, null)) : coreError(ctx, result);
+    return logPartnerRequest(req, auth, response, { eventType: "api.sessions_list", errorCode: result?.ok ? undefined : result?.code });
   } catch (error) {
-    console.error("Sessions fetch error:", error);
-    return NextResponse.json(
-      {
-        error: {
-          code: "sessions_fetch_failed",
-          message: error instanceof Error ? error.message : "Internal server error",
-          request_id: requestId,
-          trace_id: traceId,
-        },
-      },
-      {
-        status: 500,
-        headers: {
-          "X-Rehabify-Request-Id": requestId,
-          "X-Rehabify-Trace-Id": traceId,
-          "X-Rehabify-Environment": partner.environment,
-        },
-      }
-    );
+    return logPartnerRequest(req, auth, internalError(ctx, error), { eventType: "api.sessions_list", errorCode: "internal_error" });
   }
 }

@@ -6,8 +6,13 @@
  * dashboard statistics for AwaDoc-sourced bookings.
  */
 
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { ensureUserRole, getAuthenticatedUser } from "./auth";
+import { assertServerCaller, assertServerOrAdmin, isServerCaller } from "./helpers/serverSecret";
+
+// Access: functions called by the AwaDoc Next.js routes (webhook, complete-session,
+// validate-guest) require CONVEX_SERVER_SECRET; dashboard reads require an admin.
 
 // ── Shared constants ────────────────────────────────────
 
@@ -62,8 +67,10 @@ export const logEvent = mutation({
         responsePayload: v.optional(v.any()),
         status: v.union(v.literal("success"), v.literal("error")),
         errorMessage: v.optional(v.string()),
+        serverSecret: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        assertServerCaller(args.serverSecret);
         // Idempotency: skip if event already logged
         const existing = await ctx.db
             .query("awadocEventLog")
@@ -107,8 +114,11 @@ export const getAvailablePhysios = query({
         serviceArea: v.optional(v.string()),
         preferredMode: v.optional(v.string()),
         specialistType: v.optional(v.string()),
+        serverSecret: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        // AwaDoc webhook route (secret) or the admin AwaDoc test page
+        await assertServerOrAdmin(ctx, args.serverSecret);
         // Query all marketplace-available physios
         let physios = await ctx.db
             .query("physiotherapistProfiles")
@@ -210,15 +220,24 @@ export const getAvailablePhysios = query({
     },
 });
 
-// ── Look up a user by ID (for doctor details in callbacks) ──
+// ── Look up the assigned therapist (doctor details in AwaDoc callbacks) ──
 
+/**
+ * Server-only. Returns just the fields the AwaDoc routes send in their callbacks
+ * (name, email, avatar), and only for users with a physiotherapist profile.
+ */
 export const getUserById = query({
-    args: { userId: v.id("users") },
+    args: { userId: v.id("users"), serverSecret: v.optional(v.string()) },
     handler: async (ctx, args) => {
+        assertServerCaller(args.serverSecret);
+        const profile = await ctx.db
+            .query("physiotherapistProfiles")
+            .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+            .first();
+        if (!profile) return null;
         const user = await ctx.db.get(args.userId);
         if (!user) return null;
         return {
-            id: user._id,
             firstName: user.firstName ?? "",
             lastName: user.lastName ?? "",
             email: user.email ?? "",
@@ -251,8 +270,10 @@ export const createSession = mutation({
         grossAmount: v.optional(v.number()),
         currency: v.optional(v.string()),
         physiotherapistId: v.optional(v.id("users")),
+        serverSecret: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        assertServerCaller(args.serverSecret);
         const now = Date.now();
 
         // Calculate commission split using shared helper
@@ -305,8 +326,10 @@ export const updateSessionStatus = mutation({
         appointmentId: v.optional(v.id("appointments")),
         physiotherapistId: v.optional(v.id("users")),
         grossAmount: v.optional(v.number()),
+        serverSecret: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        assertServerCaller(args.serverSecret);
         const session = await ctx.db
             .query("awadocSessions")
             .withIndex("by_therapy_id", (q) =>
@@ -348,7 +371,7 @@ export const updateSessionStatus = mutation({
 
 // ── Find session by request ID ──────────────────────────
 
-export const getSessionByRequestId = query({
+export const getSessionByRequestId = internalQuery({
     args: { requestId: v.string() },
     handler: async (ctx, args) => {
         return await ctx.db
@@ -360,15 +383,29 @@ export const getSessionByRequestId = query({
 
 // ── Find session by therapy ID ─────────────────────
 
+/**
+ * Server routes (secret) get the full session. A signed-in caller gets it only when
+ * they are the assigned physiotherapist or an admin, and never with the guest token;
+ * anyone else gets null (the video-call page reads this for the physio's view).
+ */
 export const getSessionByTherapyId = query({
-    args: { therapyId: v.string() },
+    args: { therapyId: v.string(), serverSecret: v.optional(v.string()) },
     handler: async (ctx, args) => {
-        return await ctx.db
+        const fromServer = isServerCaller(args.serverSecret);
+        const viewer = fromServer ? null : await getAuthenticatedUser(ctx).catch(() => null);
+        if (!fromServer && !viewer) return null;
+
+        const session = await ctx.db
             .query("awadocSessions")
             .withIndex("by_therapy_id", (q) =>
                 q.eq("therapyId", args.therapyId)
             )
             .unique();
+        if (!session || fromServer) return session;
+
+        if (viewer!.role !== "admin" && viewer!._id !== session.physiotherapistId) return null;
+        const { guestToken: _guestToken, guestTokenExpiresAt: _guestTokenExpiresAt, ...visible } = session;
+        return visible;
     },
 });
 
@@ -377,6 +414,7 @@ export const getSessionByTherapyId = query({
 export const getDashboardStats = query({
     args: {},
     handler: async (ctx) => {
+        await ensureUserRole(ctx, ["admin"]);
         // Note: For large datasets, add time-range filters and use indexed queries.
         // Currently acceptable for early-stage with low AwaDoc session volume.
         const allSessions = await ctx.db.query("awadocSessions").collect();
@@ -425,8 +463,10 @@ export const setGuestToken = mutation({
         therapyId: v.string(),
         guestToken: v.string(),
         guestTokenExpiresAt: v.number(),
+        serverSecret: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        assertServerCaller(args.serverSecret);
         const session = await ctx.db
             .query("awadocSessions")
             .withIndex("by_therapy_id", (q) =>
@@ -454,8 +494,10 @@ export const validateGuestToken = query({
     args: {
         therapyId: v.string(),
         guestToken: v.string(),
+        serverSecret: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        assertServerCaller(args.serverSecret);
         const session = await ctx.db
             .query("awadocSessions")
             .withIndex("by_therapy_id", (q) =>
@@ -506,8 +548,11 @@ export const completeSession = mutation({
         therapyId: v.string(),
         notes: v.optional(v.string()),
         actualDurationMinutes: v.optional(v.number()),
+        serverSecret: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        // The complete-session route checks the signed-in physio is assigned before calling
+        assertServerCaller(args.serverSecret);
         const session = await ctx.db
             .query("awadocSessions")
             .withIndex("by_therapy_id", (q) =>

@@ -1,154 +1,84 @@
 /**
- * Enterprise Referral Code Cookie & Storage Persistence Utility
- * 
- * Provides robust 30-day attribution tracking across patient sessions.
- * Uses a dual-layer strategy:
- * 1. Primary: 30-day document.cookie (path=/, SameSite=Lax, Secure on HTTPS)
- * 2. Secondary: localStorage mirrored fallback (for Safari ITP / mobile WebView resilience)
+ * Partner referral-link attribution (client side).
+ *
+ * The attribution cookie is set SERVER-SIDE by middleware.ts when a visitor opens
+ * /r/<code>: `rhb_partner_ref`, 30 days, on the parent domain (.physioaroundme.com) so it
+ * survives moving between subdomains and through Clerk sign-up/OAuth redirects.
+ *
+ * Only the public link code is stored. The partner is always resolved and validated on
+ * the server (active, unexpired, live link of an approved partner), so editing this
+ * value cannot attribute a patient to an arbitrary partner.
  */
 
 export const REFERRAL_COOKIE_NAME = "rhb_partner_ref";
-export const REFERRAL_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days (2,592,000 seconds)
+export const REFERRAL_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const STORAGE_KEY = "rhb_partner_ref";
+const CODE_PATTERN = /^[A-Za-z0-9_-]{3,64}$/;
 
 export interface PartnerReferralAttribution {
   publicCode: string;
-  partnerId: string;
-  campaignName?: string;
   capturedAt: number;
   expiresAt: number;
 }
 
-/**
- * Sets a 30-day persistent referral attribution cookie and localStorage record.
- */
-export function setPartnerReferralCookie(params: {
-  publicCode: string;
-  partnerId: string;
-  campaignName?: string;
-}): PartnerReferralAttribution | null {
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    return null;
-  }
-
+function parse(raw: string | null | undefined): PartnerReferralAttribution | null {
+  if (!raw) return null;
   try {
-    const now = Date.now();
-    const expiresAt = now + REFERRAL_COOKIE_MAX_AGE_SECONDS * 1000;
-
-    const attribution: PartnerReferralAttribution = {
-      publicCode: params.publicCode.trim(),
-      partnerId: params.partnerId.trim(),
-      campaignName: params.campaignName?.trim() || undefined,
-      capturedAt: now,
-      expiresAt,
-    };
-
-    const serialized = encodeURIComponent(JSON.stringify(attribution));
-
-    // Determine security flags
-    const isSecure = window.location.protocol === "https:";
-    const secureFlag = isSecure ? "; Secure" : "";
-    const cookieString = `${REFERRAL_COOKIE_NAME}=${serialized}; Max-Age=${REFERRAL_COOKIE_MAX_AGE_SECONDS}; Path=/; SameSite=Lax${secureFlag}`;
-
-    // 1. Set Primary Cookie
-    document.cookie = cookieString;
-
-    // 2. Set Secondary Fallback in localStorage
-    try {
-      window.localStorage.setItem(REFERRAL_COOKIE_NAME, JSON.stringify(attribution));
-    } catch {
-      // Ignore localStorage quotas or incognito restrictions
-    }
-
-    // 3. Set Tertiary Fallback in sessionStorage
-    try {
-      window.sessionStorage.setItem(REFERRAL_COOKIE_NAME, JSON.stringify(attribution));
-    } catch {
-      // Ignore sessionStorage quotas
-    }
-
-    return attribution;
-  } catch (error) {
-    console.error("[REFERRAL COOKIE] Failed to set referral persistence:", error);
+    const parsed = JSON.parse(raw) as Partial<PartnerReferralAttribution>;
+    if (!parsed || typeof parsed.publicCode !== "string" || !CODE_PATTERN.test(parsed.publicCode)) return null;
+    if (typeof parsed.expiresAt !== "number" || parsed.expiresAt <= Date.now()) return null;
+    return { publicCode: parsed.publicCode, capturedAt: parsed.capturedAt ?? 0, expiresAt: parsed.expiresAt };
+  } catch {
     return null;
   }
 }
 
-/**
- * Retrieves the active partner referral attribution if present and unexpired.
- * Checks document.cookie first, then localStorage, then sessionStorage.
- */
+/** Mirrors the server cookie into localStorage (fallback for browsers that drop cookies). */
+export function rememberReferralCode(publicCode: string): void {
+  if (typeof window === "undefined" || !CODE_PATTERN.test(publicCode)) return;
+  try {
+    const now = Date.now();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ publicCode, capturedAt: now, expiresAt: now + REFERRAL_COOKIE_MAX_AGE_SECONDS * 1000 })
+    );
+  } catch {
+    /* storage unavailable (private mode) */
+  }
+}
+
+/** The most recent unexpired referral-link code, from the cookie or the local mirror. */
 export function getPartnerReferralCookie(): PartnerReferralAttribution | null {
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    return null;
-  }
-
-  const now = Date.now();
-
-  // 1. Try reading from document.cookie
+  if (typeof document === "undefined") return null;
   try {
-    const cookieMatch = document.cookie
-      .split("; ")
-      .find((row) => row.startsWith(`${REFERRAL_COOKIE_NAME}=`));
-
-    if (cookieMatch) {
-      const value = decodeURIComponent(cookieMatch.split("=")[1] || "");
-      if (value) {
-        const parsed = JSON.parse(value) as PartnerReferralAttribution;
-        if (parsed && parsed.expiresAt && parsed.expiresAt > now) {
-          return parsed;
-        }
-      }
-    }
-  } catch (error) {
-    console.debug("[REFERRAL COOKIE] Cookie parsing failed:", error);
-  }
-
-  // 2. Fallback to localStorage
-  try {
-    const localVal = window.localStorage.getItem(REFERRAL_COOKIE_NAME);
-    if (localVal) {
-      const parsed = JSON.parse(localVal) as PartnerReferralAttribution;
-      if (parsed && parsed.expiresAt && parsed.expiresAt > now) {
-        return parsed;
-      } else {
-        window.localStorage.removeItem(REFERRAL_COOKIE_NAME);
-      }
+    const cookies = document.cookie.split("; ").filter((row) => row.startsWith(`${REFERRAL_COOKIE_NAME}=`));
+    for (const row of cookies) {
+      const value = parse(decodeURIComponent(row.slice(REFERRAL_COOKIE_NAME.length + 1)));
+      if (value) return value;
     }
   } catch {
-    // Ignore localStorage read errors
+    /* malformed cookie */
   }
-
-  // 3. Fallback to sessionStorage
   try {
-    const sessionVal = window.sessionStorage.getItem(REFERRAL_COOKIE_NAME);
-    if (sessionVal) {
-      const parsed = JSON.parse(sessionVal) as PartnerReferralAttribution;
-      if (parsed && parsed.expiresAt && parsed.expiresAt > now) {
-        return parsed;
-      } else {
-        window.sessionStorage.removeItem(REFERRAL_COOKIE_NAME);
-      }
-    }
+    const stored = parse(window.localStorage.getItem(STORAGE_KEY));
+    if (stored) return stored;
+    window.localStorage.removeItem(STORAGE_KEY);
   } catch {
-    // Ignore sessionStorage read errors
+    /* storage unavailable */
   }
-
   return null;
 }
 
-/**
- * Clears the referral attribution from cookies and browser storages.
- */
-export function clearPartnerReferralCookie(): void {
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    return;
-  }
+export function getReferralPublicCode(): string | undefined {
+  return getPartnerReferralCookie()?.publicCode;
+}
 
+/** Clears the local copy after it has been claimed (the cookie simply expires). */
+export function clearPartnerReferralCookie(): void {
+  if (typeof window === "undefined") return;
   try {
-    document.cookie = `${REFERRAL_COOKIE_NAME}=; Max-Age=0; Path=/; SameSite=Lax`;
-    window.localStorage.removeItem(REFERRAL_COOKIE_NAME);
-    window.sessionStorage.removeItem(REFERRAL_COOKIE_NAME);
+    window.localStorage.removeItem(STORAGE_KEY);
   } catch {
-    // Ignore cleanup errors
+    /* ignore */
   }
 }

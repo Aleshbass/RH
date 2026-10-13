@@ -1,11 +1,38 @@
-import { query, mutation } from "./_generated/server"
+import { query, mutation, internalQuery } from "./_generated/server"
 import { v } from "convex/values"
 import { Id } from "./_generated/dataModel"
+import { ensureUserRole } from "./auth"
+import { assertServerCaller } from "./helpers/serverSecret"
 
-// System health monitoring
+// Size caps for analytics rows written on behalf of the public /api/analytics/* routes
+const MAX_NAME = 100
+const MAX_MESSAGE = 2000
+const MAX_METADATA_JSON = 4000
+
+function capString(value: string | undefined, max: number): string | undefined {
+  return typeof value === "string" ? value.slice(0, max) : undefined
+}
+
+/** Metadata as given when its JSON is small enough, otherwise a marker (never the oversized value). */
+function capMetadata(metadata: unknown): Record<string, unknown> | undefined {
+  if (metadata === undefined || metadata === null) return undefined
+  let size = 0
+  try {
+    size = JSON.stringify(metadata).length
+  } catch {
+    return { truncated: true }
+  }
+  if (size > MAX_METADATA_JSON || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return { truncated: true, originalSize: size }
+  }
+  return metadata as Record<string, unknown>
+}
+
+// System health monitoring (admin dashboard)
 export const getSystemHealth = query({
   args: {},
   handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"])
     try {
       const now = Date.now()
       const oneHourAgo = now - (60 * 60 * 1000)
@@ -111,15 +138,19 @@ export const getSystemHealth = query({
   }
 })
 
-// Performance metrics tracking
+// Performance metrics tracking (server only: /api/analytics/* routes)
 export const recordPerformanceMetric = mutation({
   args: {
     metric: v.string(),
     value: v.number(),
     userId: v.optional(v.string()),
-    metadata: v.optional(v.any())
+    metadata: v.optional(v.any()),
+    serverSecret: v.optional(v.string())
   },
-  handler: async (ctx, { metric, value, userId, metadata }) => {
+  handler: async (ctx, { metric, value, userId, metadata: rawMetadata, serverSecret }) => {
+    assertServerCaller(serverSecret)
+    if (!Number.isFinite(value)) return
+    const metadata = capMetadata(rawMetadata)
     try {
       const page = typeof (metadata as any)?.path === 'string'
         ? (metadata as any).path
@@ -130,14 +161,14 @@ export const recordPerformanceMetric = mutation({
       const connection = typeof (metadata as any)?.connection === 'string' ? (metadata as any).connection : undefined
 
       await ctx.db.insert("performanceMetrics", {
-        metric,
+        metric: metric.slice(0, MAX_NAME),
         value,
-        userId,
+        userId: capString(userId, MAX_NAME),
         timestamp: Date.now(),
-        page,
-        sessionId,
-        userAgent,
-        connection,
+        page: (page as string).slice(0, 500),
+        sessionId: capString(sessionId, MAX_NAME),
+        userAgent: capString(userAgent, 500),
+        connection: capString(connection, MAX_NAME),
         metadata
       })
     } catch (error) {
@@ -147,7 +178,7 @@ export const recordPerformanceMetric = mutation({
 })
 
 // User analytics
-export const getUserAnalytics = query({
+export const getUserAnalytics = internalQuery({
   args: {
     timeframe: v.optional(v.union(v.literal("day"), v.literal("week"), v.literal("month")))
   },
@@ -230,7 +261,7 @@ export const getUserAnalytics = query({
 })
 
 // Business metrics
-export const getBusinessMetrics = query({
+export const getBusinessMetrics = internalQuery({
   args: {
     timeframe: v.optional(v.union(v.literal("day"), v.literal("week"), v.literal("month")))
   },
@@ -333,22 +364,24 @@ export const getBusinessMetrics = query({
   }
 })
 
-// System logging
+// System logging (server only: /api/analytics/track)
 export const logSystemEvent = mutation({
   args: {
     level: v.union(v.literal("info"), v.literal("warn"), v.literal("error")),
     message: v.string(),
     userId: v.optional(v.string()),
     action: v.optional(v.string()),
-    metadata: v.optional(v.any())
+    metadata: v.optional(v.any()),
+    serverSecret: v.optional(v.string())
   },
-  handler: async (ctx, { level, message, userId, action, metadata }) => {
+  handler: async (ctx, { level, message, userId, action, metadata, serverSecret }) => {
+    assertServerCaller(serverSecret)
     try {
       await ctx.db.insert("systemLogs", {
-        userId: userId,
+        userId: capString(userId, MAX_NAME),
         type: level || "info",
-        action: action || "unknown",
-        details: { message, ...metadata },
+        action: capString(action, MAX_NAME) || "unknown",
+        details: { ...capMetadata(metadata), message: message.slice(0, MAX_MESSAGE) },
         timestamp: Date.now()
       })
     } catch (error) {

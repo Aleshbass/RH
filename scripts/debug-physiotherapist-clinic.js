@@ -22,8 +22,8 @@ async function debugPhysiotherapistClinics() {
       console.log(`\n👨‍⚕️ Physiotherapist: ${physio.firstName} ${physio.lastName} (${physio.email})`);
       
              // Check physiotherapist profile
-       const profile = await client.query("physiotherapists:getPhysiotherapistProfile", {
-         userId: physio._id
+       const profile = await client.query("marketplace/search:getPhysiotherapistProfile", {
+         physiotherapistId: physio._id
        });
       
       if (!profile) {

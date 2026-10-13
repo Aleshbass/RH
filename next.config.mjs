@@ -7,9 +7,10 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
 
-  // Disable TypeScript errors during build for production deployment
+  // Type errors fail the build so they never reach production.
+  // (stream-chat-react's react-markdown@8 types are shimmed in types/react-markdown.)
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
 
   // Bundle optimization

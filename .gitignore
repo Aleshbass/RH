@@ -31,12 +31,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files: never commit secrets. Configure Vercel/Convex env vars instead (vercel env pull / npx convex env set).
 .env
-.env.production
-.env.development
-# Allow .env.local for local development
-!.env.local
+.env.*
+!.env.example
 
 # vercel
 .vercel

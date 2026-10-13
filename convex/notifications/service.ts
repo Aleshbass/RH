@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, internalMutation, action, query } from "../_generated/server";
+import { mutation, internalMutation, action, query, internalAction, internalQuery } from "../_generated/server";
 import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
@@ -69,7 +69,7 @@ interface NotificationPayload {
 /**
  * Send a notification with fallback and retry mechanisms
  */
-export const sendNotificationWithFallback = mutation({
+export const sendNotificationWithFallback = internalMutation({
   args: {
     userId: v.id("users"),
     type: v.union(
@@ -299,7 +299,7 @@ export const processEmailForNotification = internalMutation({
 /**
  * Test notification system - useful for debugging
  */
-export const testNotification = action({
+export const testNotification = internalAction({
   args: {
     userId: v.id("users"),
     includeEmail: v.optional(v.boolean()),
@@ -344,7 +344,7 @@ export const testNotification = action({
  * Schedule automatic cleanup of retry queues
  * This should be called periodically (e.g., daily) via Convex scheduler
  */
-export const scheduleCleanup = action({
+export const scheduleCleanup = internalAction({
   args: {},
   handler: async (ctx) => {
     try {
@@ -407,7 +407,7 @@ export const performScheduledCleanup = internalMutation({
 /**
  * Create a new notification
  */
-export const createNotification = mutation({
+export const createNotification = internalMutation({
   args: {
     userId: v.id("users"),
     type: v.string(),
@@ -606,7 +606,7 @@ export const deliverNotification = internalMutation({
 /**
  * Mark a notification as read
  */
-export const markAsRead = mutation({
+export const markAsRead = internalMutation({
   args: {
     notificationId: v.id("notifications"),
   },
@@ -637,7 +637,7 @@ export const markAsRead = mutation({
 /**
  * Get user notifications
  */
-export const getUserNotifications = query({
+export const getUserNotifications = internalQuery({
   args: {
     userId: v.id("users"),
     status: v.optional(v.union(
@@ -667,7 +667,7 @@ export const getUserNotifications = query({
 /**
  * Get notification stats
  */
-export const getNotificationStats = query({
+export const getNotificationStats = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -708,7 +708,7 @@ export const getNotificationStats = query({
 /**
  * Mark notifications as read
  */
-export const markNotificationsAsRead = mutation({
+export const markNotificationsAsRead = internalMutation({
   args: {
     notificationIds: v.array(v.id("notifications")),
   },
@@ -726,7 +726,7 @@ export const markNotificationsAsRead = mutation({
 /**
  * Delete notifications
  */
-export const deleteNotifications = mutation({
+export const deleteNotifications = internalMutation({
   args: {
     notificationIds: v.array(v.id("notifications")),
   },
@@ -741,7 +741,7 @@ export const deleteNotifications = mutation({
 /**
  * Get notification preferences
  */
-export const getNotificationPreferences = query({
+export const getNotificationPreferences = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -779,7 +779,7 @@ export const getNotificationPreferences = query({
 /**
  * Update notification preferences
  */
-export const updateNotificationPreferences = mutation({
+export const updateNotificationPreferences = internalMutation({
   args: {
     userId: v.id("users"),
     preferences: v.object({

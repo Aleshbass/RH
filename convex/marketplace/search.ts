@@ -5,7 +5,7 @@
  */
 
 import { v } from "convex/values";
-import { query, mutation } from "../_generated/server";
+import { query, mutation, internalQuery } from "../_generated/server";
 
 /**
  * Search and filter physiotherapists in the marketplace
@@ -355,7 +355,7 @@ export const getPhysiotherapistProfile = query({
 /**
  * Get marketplace statistics
  */
-export const getMarketplaceStats = query({
+export const getMarketplaceStats = internalQuery({
   handler: async (ctx) => {
     const allPhysios = await ctx.db
       .query("physiotherapistProfiles")

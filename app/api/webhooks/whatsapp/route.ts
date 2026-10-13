@@ -1,42 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ConvexHttpClient } from "convex/browser";
-import { api } from "@/convex/_generated/api";
+import { createHmac, timingSafeEqual } from "crypto";
+import { callJoyConvexGateway } from "@/lib/joy-integration/convex-gateway";
 
 export const runtime = "nodejs";
 
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-const convex = convexUrl ? new ConvexHttpClient(convexUrl) : null;
-
 /**
- * Extract tracking code from incoming WhatsApp text.
- * Matches:
- *  - START RHB-95942
- *  - START RHB-95942 - Hello Joy...
- *  - REHAB_REF_RHB-95942
- *  - RHB-95942
+ * Meta WhatsApp Cloud API webhook (optional direct channel; Joy normally links
+ * referrals through the authenticated /api/v1/joy/referrals/link route).
+ *
+ * Security: every POST must carry Meta's X-Hub-Signature-256 (HMAC-SHA256 of the raw
+ * body with WHATSAPP_APP_SECRET). Without the secret configured the endpoint refuses
+ * all messages. Linking goes through the HMAC-signed Joy gateway and the response
+ * never contains patient identifiers.
  */
+
 function extractTrackingCode(text?: string): string | null {
   if (!text) return null;
-  const cleanPunctuation = (val: string) => val.replace(/[.,!?;:()]+$/, "").trim().toUpperCase();
-
-  const startMatch = text.match(/START\s+([A-Za-z0-9_-]+)/i);
-  if (startMatch) return cleanPunctuation(startMatch[1]);
-
-  const refMatch = text.match(/REHAB_REF_([A-Za-z0-9_-]+)/i);
-  if (refMatch) return cleanPunctuation(refMatch[1]);
-
-  const sentenceMatch = text.match(/(?:tracking|referral)\s+code\s+(?:is\s+)?[:#]?\s*([A-Za-z0-9_-]+)/i);
-  if (sentenceMatch) return cleanPunctuation(sentenceMatch[1]);
-
-  const rhbMatch = text.match(/\b(RHB-[A-Za-z0-9_-]+)\b/i);
-  if (rhbMatch) return cleanPunctuation(rhbMatch[1]);
-
-  return null;
+  const match = text.match(/\bRHB\s*[-–—]?\s*(\d{4,16})\b/i);
+  return match ? `RHB-${match[1]}` : null;
 }
 
-/**
- * Normalizes phone number into E.164 format.
- */
 function normalizePhone(rawPhone?: string): string {
   if (!rawPhone) return "";
   const cleaned = rawPhone.replace(/[^\d+]/g, "");
@@ -46,121 +29,67 @@ function normalizePhone(rawPhone?: string): string {
   return `+${cleaned}`;
 }
 
-/**
- * GET - Meta WhatsApp Webhook verification
- */
+function validSignature(rawBody: string, header: string | null): boolean {
+  const secret = process.env.WHATSAPP_APP_SECRET;
+  if (!secret || !header || !header.startsWith("sha256=")) return false;
+  const expected = Buffer.from(createHmac("sha256", secret).update(rawBody, "utf8").digest("hex"));
+  const actual = Buffer.from(header.slice("sha256=".length));
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+/** Meta webhook verification handshake. */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const mode = searchParams.get("hub.mode");
-  const token = searchParams.get("hub.verify_token");
-  const challenge = searchParams.get("hub.challenge");
-
-  const expectedToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || "rehabify_whatsapp_verify_token";
-
-  if (mode === "subscribe" && token === expectedToken) {
-    console.log("[WhatsApp Webhook] Verification successful");
-    return new Response(challenge || "", { status: 200 });
+  const expectedToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+  if (expectedToken && searchParams.get("hub.mode") === "subscribe" && searchParams.get("hub.verify_token") === expectedToken) {
+    return new Response(searchParams.get("hub.challenge") || "", { status: 200 });
   }
-
   return NextResponse.json({ error: "Verification failed" }, { status: 403 });
 }
 
-/**
- * POST - Inbound WhatsApp message processor
- */
 export async function POST(request: NextRequest) {
+  if (!process.env.WHATSAPP_APP_SECRET) {
+    return NextResponse.json({ error: "WhatsApp webhook is not configured" }, { status: 503 });
+  }
+  const rawBody = await request.text();
+  if (!validSignature(rawBody, request.headers.get("x-hub-signature-256"))) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  let body: any;
   try {
-    const body = await request.json();
+    body = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
 
-    let senderPhone = "";
-    let senderName = "";
-    let messageText = "";
-    let explicitTrackingCode = "";
+  const change = body?.object === "whatsapp_business_account" ? body.entry?.[0]?.changes?.[0]?.value : null;
+  const message = change?.messages?.[0];
+  if (!message) return NextResponse.json({ status: "ignored" }, { status: 200 });
 
-    // 1. Check for Meta Cloud API format
-    if (body.object === "whatsapp_business_account" && Array.isArray(body.entry)) {
-      const entry = body.entry[0];
-      const change = entry?.changes?.[0]?.value;
-      const contact = change?.contacts?.[0];
-      const message = change?.messages?.[0];
+  const senderPhone = normalizePhone(message.from);
+  const senderName: string = change?.contacts?.[0]?.profile?.name || "";
+  const text: string =
+    message.type === "text"
+      ? message.text?.body || ""
+      : message.type === "button"
+        ? message.button?.text || message.button?.payload || ""
+        : message.interactive?.button_reply?.title || "";
+  const trackingCode = extractTrackingCode(text);
+  if (!senderPhone || !trackingCode) return NextResponse.json({ status: "ok", linked: false }, { status: 200 });
 
-      if (message) {
-        senderPhone = message.from || "";
-        senderName = contact?.profile?.name || "";
-        if (message.type === "text") {
-          messageText = message.text?.body || "";
-        } else if (message.type === "button") {
-          messageText = message.button?.text || message.button?.payload || "";
-        } else if (message.type === "interactive") {
-          messageText = message.interactive?.button_reply?.title || message.interactive?.button_reply?.id || "";
-        }
-      }
-    } else {
-      // 2. Direct / simulated webhook format
-      senderPhone = body.from || body.phone || body.sender || "";
-      senderName = body.name || body.sender_name || "";
-      messageText = body.text || body.message || body.body || "";
-      explicitTrackingCode = body.tracking_code || body.trackingCode || "";
-    }
-
-    const normalizedSender = normalizePhone(senderPhone);
-    const trackingCode = explicitTrackingCode || extractTrackingCode(messageText);
-
-    console.log("[WhatsApp Webhook] Incoming message:", {
-      from: normalizedSender,
-      trackingCode,
-      messagePreview: messageText.slice(0, 100),
-    });
-
-    if (!convex) {
-      console.error("[WhatsApp Webhook] Convex client not initialized - missing NEXT_PUBLIC_CONVEX_URL");
-      return NextResponse.json({ status: "error", message: "Convex client not initialized" }, { status: 500 });
-    }
-
-    if (!normalizedSender) {
-      return NextResponse.json({ status: "ignored", message: "No sender phone found in payload" }, { status: 200 });
-    }
-
-    // If tracking code is found, link directly to referral
-    if (trackingCode) {
-      const linkResult = await convex.mutation(api.joyIntegration.linkTrackingCodeToWhatsApp, {
-        trackingCode,
-        phone: normalizedSender,
-        joyPersonId: normalizedSender.replace(/\D/g, ""),
-        name: senderName || undefined,
-        message: messageText || undefined,
-      });
-
-      console.log("[WhatsApp Webhook] Link result:", linkResult);
-
-      return NextResponse.json({
-        status: "ok",
-        linked: linkResult.success,
-        trackingCode,
-        referralStatus: linkResult.status,
-        patientId: linkResult.patientId,
-      });
-    }
-
-    // Even if no tracking code was in the message, check if this phone number
-    // resolves to an existing patient or pending referral
-    const resolveResult = await convex.mutation(api.joyIntegration.linkTrackingCodeToWhatsApp, {
-      trackingCode: "", // empty will fall through or fail gracefully
-      phone: normalizedSender,
-      joyPersonId: normalizedSender.replace(/\D/g, ""),
+  try {
+    const result = (await callJoyConvexGateway("link_referral", {
+      tracking_code: trackingCode,
+      phone: senderPhone,
+      joy_person_id: senderPhone.replace(/\D/g, ""),
       name: senderName || undefined,
-      message: messageText || undefined,
-    }).catch(() => null);
-
-    return NextResponse.json({
-      status: "ok",
-      processed: true,
-      phone: normalizedSender,
-      trackingCodeFound: false,
-      result: resolveResult,
-    });
-  } catch (error: any) {
-    console.error("[WhatsApp Webhook] Error processing message:", error);
-    return NextResponse.json({ status: "error", error: error.message }, { status: 500 });
+      message: text.slice(0, 2000) || undefined,
+    })) as { success?: boolean };
+    return NextResponse.json({ status: "ok", linked: Boolean(result?.success) }, { status: 200 });
+  } catch (error) {
+    console.error("[WhatsApp Webhook] link failed", error instanceof Error ? error.message : error);
+    // 500 so Meta retries delivery.
+    return NextResponse.json({ status: "error" }, { status: 500 });
   }
 }

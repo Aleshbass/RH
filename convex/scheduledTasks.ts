@@ -1,8 +1,13 @@
-import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { getAuthenticatedUser } from "./auth";
 
-// Create a scheduled task
+/** Task types that act on one clinic (data.clinicId); a clinic owner may queue these for their own clinic. */
+const CLINIC_TASK_TYPES = ["resource_conflict_check", "maintenance_check"];
+
+// Create a scheduled task. Admins may queue any task; a clinic owner may queue clinic-scoped
+// checks for their own clinic. (maintenance_reminder sweeps every clinic, so it is admin-only.)
 export const create = mutation({
   args: {
     type: v.string(),
@@ -11,6 +16,19 @@ export const create = mutation({
     status: v.optional(v.union(v.literal("pending"), v.literal("completed"), v.literal("failed"))),
   },
   handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (user.role !== "admin") {
+      if (user.role !== "clinic_owner" || !CLINIC_TASK_TYPES.includes(args.type)) {
+        throw new ConvexError("You don't have permission to schedule this task");
+      }
+      const rawClinicId = args.data?.clinicId;
+      const clinicId = typeof rawClinicId === "string" ? ctx.db.normalizeId("clinics", rawClinicId) : null;
+      const clinic = clinicId ? await ctx.db.get(clinicId) : null;
+      if (!clinic || clinic.ownerId !== user._id) {
+        throw new ConvexError("You can only schedule tasks for your own clinic");
+      }
+    }
+
     const taskId = await ctx.db.insert("scheduledTasks", {
       type: args.type,
       scheduledFor: args.scheduledTime,
@@ -31,7 +49,7 @@ export const create = mutation({
 });
 
 // Get pending tasks
-export const getPendingTasks = query({
+export const getPendingTasks = internalQuery({
   args: {
     type: v.optional(v.string()),
   },
@@ -133,7 +151,7 @@ export const cleanupOldTasks = internalMutation({
 });
 
 // Update scheduled tasks table in schema
-export const updateTaskStatus = mutation({
+export const updateTaskStatus = internalMutation({
   args: {
     taskId: v.id("scheduledTasks"),
     status: v.union(v.literal("pending"), v.literal("running"), v.literal("completed"), v.literal("failed")),

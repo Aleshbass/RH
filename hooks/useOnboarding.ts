@@ -16,7 +16,13 @@ export function useOnboarding() {
     const { isLoaded, isSignedIn } = useUser();
     const onboardingStatus = useQuery(api.users.getOnboardingStatus);
     const completeOnboardingMutation = useMutation(api.users.completeOnboarding);
-    const recordMetric = useMutation(api.analytics.recordPerformanceMetric);
+    // Metrics are written by our server only (CONVEX_SERVER_SECRET), so go through the analytics route
+    const recordMetric = (metric: { metric: string; value: number; metadata?: Record<string, unknown> }) =>
+        fetch("/api/analytics/track", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "performance-metric", data: metric }),
+        });
 
     const [showTour, setShowTour] = useState(false);
     const [isCompleted, setIsCompleted] = useState(false);

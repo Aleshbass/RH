@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { v } from "convex/values";
-import { mutation, query, action } from "../_generated/server";
+import { mutation, query, action, internalMutation, internalQuery, internalAction } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 
@@ -20,7 +20,7 @@ interface WebhookPayload {
 }
 
 // Sync calendar events
-export const syncCalendarEvents = mutation({
+export const syncCalendarEvents = internalMutation({
   args: {
     userId: v.id("users"),
     calendarId: v.string(),
@@ -66,7 +66,7 @@ export const syncCalendarEvents = mutation({
 });
 
 // Lookup a calendar watch by channelId
-export const getWatchByChannelId = query({
+export const getWatchByChannelId = internalQuery({
   args: { channelId: v.string() },
   handler: async (ctx, args) => {
     const watch = await ctx.db
@@ -135,7 +135,8 @@ async function syncToCalendar(ctx: any, calendarEvents: any[], localEvents: any[
       const appointment = await ctx.db.get(localEvent.appointmentId);
       
       if (appointment) {
-        const result = await ctx.runMutation(internal.calendar.service.createCalendarEvent, {
+        // createCalendarEvent is an action (Google API call), so it is scheduled from this mutation
+        await ctx.scheduler.runAfter(0, internal.calendar.service.createCalendarEventInternal, {
           userId,
           appointmentId: appointment._id,
           summary: `Physiotherapy Session - ${appointment.serviceType}`,
@@ -148,8 +149,8 @@ async function syncToCalendar(ctx: any, calendarEvents: any[], localEvents: any[
         
         results.push({
           type: "recreated",
-          eventId: result.eventId,
-          action: "synced_to_calendar",
+          appointmentId: appointment._id,
+          action: "scheduled_calendar_recreate",
         });
       }
     }
@@ -209,7 +210,7 @@ function detectConflicts(calendarEvents: any[], localEvents: any[]) {
 }
 
 // Handle Google Calendar webhook
-export const handleCalendarWebhook = action({
+export const handleCalendarWebhook = internalAction({
   args: {
     payload: v.object({
       resourceId: v.string(),
@@ -251,7 +252,7 @@ function verifyWebhookSignature(payload: any): boolean {
 }
 
 // Set up calendar watch
-export const setupCalendarWatch = mutation({
+export const setupCalendarWatch = internalMutation({
   args: {
     userId: v.id("users"),
     calendarId: v.string(),
@@ -294,7 +295,7 @@ export const setupCalendarWatch = mutation({
 });
 
 // Renew calendar watch
-export const renewCalendarWatch = mutation({
+export const renewCalendarWatch = internalMutation({
   args: {
     channelId: v.string(),
   },

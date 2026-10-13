@@ -1,2281 +1,158 @@
-import { query, mutation, action } from "./_generated/server";
-import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
-import { api } from "./_generated/api";
-import { publicAppUrl } from "./helpers/appUrl";
+/**
+ * Partner Portal backend (Clerk-authenticated) and partner onboarding.
+ *
+ * Security model:
+ *  - Every function resolves access from the signed-in identity (requirePartnerAccess);
+ *    the partnerCode argument only selects which organisation an admin is viewing.
+ *  - API keys are generated in actions with real randomness, shown ONCE, and stored
+ *    only as SHA-256 hashes. Webhook signing secrets are revealed only on request.
+ *  - Live keys and live webhooks require approved production access (go-live).
+ *  - The REST API reaches partner data only through convex/partnerGateway.ts.
+ */
+import { ConvexError, v } from "convex/values";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { paginationOptsValidator } from "convex/server";
+import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import {
+  adminDisplayName,
+  findOwnedPartner,
+  getViewer,
+  requireAdmin,
+  requirePartnerAccess,
+  requirePartnerEnvAccess,
+  requireViewer,
+} from "./helpers/partnerAccess";
+import {
+  type PartnerEnv,
+  findPartnerReferral,
+  hasProductionAccess,
+  isPartnerApproved,
+  normalizePhone,
+  partnerApprovalStatus,
+  randomString,
+  referralEnv,
+  referralSessions,
+  serializeReferral,
+  toPublicStatus,
+  validateWebhookUrl,
+  webhookTargetFor,
+} from "./helpers/partnerShared";
+import { buildReport, createReferralCore, sandboxAdvanceCore, type SandboxStep } from "./helpers/partnerReferralCore";
 
-// Helper to generate human-readable tracking codes like RHB-73921
-function generateTrackingCode(): string {
-  const num = Math.floor(10000 + Math.random() * 90000);
-  return `RHB-${num}`;
+const envV = v.union(v.literal("sandbox"), v.literal("live"));
+const BASE62 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+const MAX_ACTIVE_KEYS_PER_ENV = 10;
+
+const partnerTypeV = v.union(
+  v.literal("hmo"),
+  v.literal("hospital"),
+  v.literal("corporate"),
+  v.literal("gym"),
+  v.literal("telemedicine"),
+  v.literal("pharmacy"),
+  v.literal("employer"),
+  v.literal("digital_health")
+);
+
+async function logPortalActivity(
+  ctx: { db: any },
+  partner: Doc<"partners">,
+  env: PartnerEnv,
+  eventType: string,
+  details: Record<string, unknown> = {}
+) {
+  await ctx.db.insert("partnerActivityLogs", {
+    partnerId: partner.code,
+    environment: env,
+    eventId: `evt_portal_${Date.now()}_${randomString(6, BASE62)}`,
+    eventType,
+    direction: "inbound",
+    url: "/partners/portal",
+    method: "POST",
+    statusCode: 200,
+    latencyMs: 0,
+    status: "success",
+    requestPayload: details,
+    occurredAt: Date.now(),
+  });
 }
 
-/**
- * Validates a partner API key.
- * Supports sandbox keys, registered database keys, and multi-key architecture.
- */
-export const validatePartnerApiKey = query({
-  args: {
-    apiKey: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const key = args.apiKey.trim();
+function partnerSummary(partner: Doc<"partners">) {
+  return {
+    _id: partner._id,
+    name: partner.name,
+    code: partner.code,
+    type: partner.type,
+    tier: partner.tier,
+    logoUrl: partner.logoUrl,
+    website: partner.website,
+    contactName: partner.contactName,
+    contactEmail: partner.contactEmail,
+    contactPhone: partner.contactPhone,
+    technicalContactEmail: partner.technicalContactEmail,
+    financeContactEmail: partner.financeContactEmail,
+    coverageStates: partner.coverageStates ?? [],
+    coverageCities: partner.coverageCities ?? [],
+    supportedCareModes: partner.supportedCareModes ?? [],
+    isActive: partner.isActive,
+    approvalStatus: partnerApprovalStatus(partner),
+    rejectionReason: partner.rejectionReason,
+    productionStatus: partner.productionStatus ?? "not_requested",
+    productionRequestedAt: partner.productionRequestedAt,
+    productionReviewedAt: partner.productionReviewedAt,
+    productionRejectionReason: partner.productionRejectionReason,
+    credentialsRotatedAt: partner.credentialsRotatedAt,
+    createdAt: partner.createdAt,
+  };
+}
+
+// ─── Identity & onboarding ───────────────────────────────────────────────────
 
-    // 1. Check partnerApiKeys table first (multi-key architecture)
-    const keyRecord = await ctx.db
-      .query("partnerApiKeys")
-      .withIndex("by_key", (q) => q.eq("key", key))
-      .first();
-
-    if (keyRecord && keyRecord.status === "active") {
-      const partner = await ctx.db
-        .query("partners")
-        .withIndex("by_code", (q) => q.eq("code", keyRecord.partnerId))
-        .first();
-
-      if (partner && partner.isActive) {
-        return {
-          _id: partner._id,
-          name: partner.name,
-          code: partner.code,
-          type: partner.type,
-          contactEmail: partner.contactEmail,
-          isActive: partner.isActive,
-          tier: partner.tier,
-          environment: keyRecord.environment,
-          isSandbox: keyRecord.environment === "sandbox",
-          keyId: keyRecord._id,
-          keyPrefix: keyRecord.keyPrefix,
-        };
-      }
-    }
-
-    // 2. Default built-in sandbox keys for testing & local development
-    if (
-      key === "sk_test_rehabify_sandbox" ||
-      key === "sk_test_rehab_sandbox_sec_881290" ||
-      key.startsWith("sk_test_")
-    ) {
-      return {
-        _id: "sandbox_partner_id" as unknown as Id<"partners">,
-        name: "Sandbox Partner (Test Mode)",
-        code: "sandbox_partner",
-        type: "hospital" as const,
-        contactEmail: "partners@physioaroundme.com",
-        isActive: true,
-        tier: "sandbox",
-        environment: "sandbox" as const,
-        isSandbox: true,
-        keyPrefix: key.slice(0, 12) + "...",
-      };
-    }
-
-    // 3. Lookup in database partners table (legacy or primary dual keys)
-    let partner = await ctx.db
-      .query("partners")
-      .withIndex("by_live_api_key", (q) => q.eq("liveApiKey", key))
-      .first();
-    let env: "sandbox" | "live" = "live";
-
-    if (!partner) {
-      partner = await ctx.db
-        .query("partners")
-        .withIndex("by_test_api_key", (q) => q.eq("testApiKey", key))
-        .first();
-      if (partner) env = "sandbox";
-    }
-
-    if (!partner) {
-      partner = await ctx.db
-        .query("partners")
-        .withIndex("by_api_key", (q) => q.eq("apiKey", key))
-        .first();
-      if (partner) {
-        env = key.startsWith("sk_test_") ? "sandbox" : "live";
-      }
-    }
-
-    if (!partner || !partner.isActive) {
-      return null;
-    }
-
-    return {
-      ...partner,
-      environment: env,
-      isSandbox: env === "sandbox",
-      keyPrefix: key.slice(0, 12) + "...",
-    };
-  },
-});
-
-/**
- * Records an API key last used timestamp upon request authentication.
- */
-export const recordApiKeyUsage = mutation({
-  args: {
-    keyId: v.optional(v.id("partnerApiKeys")),
-    partnerCode: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    if (args.keyId) {
-      const record = await ctx.db.get(args.keyId);
-      if (record) {
-        await ctx.db.patch(args.keyId, { lastUsedAt: now });
-      }
-    }
-  },
-});
-
-/**
- * Creates a new partner referral.
- * Supports partner-generated external IDs (e.g. HMO-REF-9921) and auto-generates tracking codes.
- */
-export const createPartnerReferral = mutation({
-  args: {
-    partnerCode: v.string(),
-    partnerExternalId: v.optional(v.string()),
-    patientFirstName: v.string(),
-    patientLastName: v.string(),
-    patientPhone: v.string(),
-    patientEmail: v.optional(v.string()),
-    city: v.optional(v.string()),
-    area: v.optional(v.string()),
-    hospitalClinic: v.optional(v.string()),
-    condition: v.optional(v.string()),
-    clinicalNotes: v.optional(v.string()),
-    priority: v.optional(v.string()),
-    recommendedSessions: v.optional(v.number()),
-    billingMode: v.optional(v.string()),
-    callbackUrl: v.optional(v.string()),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const env: "sandbox" | "live" = args.environment || (args.partnerCode === "sandbox_partner" ? "sandbox" : "live");
-    const cleanPhone = args.patientPhone.replace(/\s+/g, "");
-
-    // Sandbox Test Phone Number Scenario 4: Ineligible policy simulation
-    if (env === "sandbox" && cleanPhone.endsWith("8000000004")) {
-      await ctx.db.insert("partnerActivityLogs", {
-        partnerId: args.partnerCode,
-        environment: "sandbox",
-        eventId: `req_${now}_${Math.random().toString(36).substring(2, 7)}`,
-        eventType: "referral.rejected",
-        direction: "inbound",
-        url: "/api/v1/partners/referrals",
-        method: "POST",
-        statusCode: 400,
-        latencyMs: 18,
-        status: "error",
-        patientName: `${args.patientFirstName} ${args.patientLastName}`,
-        errorMessage: "Patient insurance policy is expired or ineligible for coverage.",
-        requestPayload: {
-          patientPhone: args.patientPhone,
-          patientFirstName: args.patientFirstName,
-          patientLastName: args.patientLastName,
-        },
-        responsePayload: {
-          error: {
-            code: "ineligible_policy",
-            message: "Patient insurance policy is expired or ineligible for coverage.",
-          },
-        },
-        occurredAt: now,
-      });
-
-      throw new Error("Patient insurance policy is expired or ineligible for coverage.");
-    }
-
-    // Idempotency check: if partnerExternalId is provided, check if it already exists
-    if (args.partnerExternalId) {
-      const existing = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_external_id", (q) =>
-          q.eq("partnerExternalId", args.partnerExternalId)
-        )
-        .first();
-
-      if (existing && existing.partnerId === args.partnerCode) {
-        return {
-          referralId: existing._id,
-          trackingCode: existing.trackingCode || `RHB-${existing._id.slice(-5).toUpperCase()}`,
-          partnerExternalId: existing.partnerExternalId,
-          status: existing.status,
-          environment: existing.environment || env,
-          createdAt: existing.createdAt,
-          isDuplicate: true,
-        };
-      }
-    }
-
-    // Backend burst safeguard: prevent high-velocity flood attacks (>50 referrals in 10s per partner)
-    if (args.partnerCode !== "sandbox_partner") {
-      const tenSecondsAgo = now - 10000;
-      const recentReferrals = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerCode))
-        .order("desc")
-        .take(55);
-
-      const burstCount = recentReferrals.filter((r) => r.createdAt > tenSecondsAgo).length;
-      if (burstCount >= 50) {
-        throw new Error("Rate limit exceeded: too many referrals submitted in a short interval. Please throttle your client.");
-      }
-    }
-
-    const trackingCode = generateTrackingCode();
-
-    const referralId = await ctx.db.insert("inboundReferrals", {
-      partnerId: args.partnerCode,
-      partnerExternalId: args.partnerExternalId,
-      trackingCode,
-      patientFirstName: args.patientFirstName,
-      patientLastName: args.patientLastName,
-      patientPhone: args.patientPhone,
-      patientEmail: args.patientEmail,
-      city: args.city || "Lagos",
-      area: args.area,
-      hospitalClinic: args.hospitalClinic || args.partnerCode,
-      condition: args.condition || args.clinicalNotes || "General Physiotherapy",
-      clinicalNotes: args.clinicalNotes,
-      priority: args.priority || "standard",
-      recommendedSessions: args.recommendedSessions || 4,
-      billingMode: args.billingMode || "patient_self_pay",
-      callbackUrl: args.callbackUrl,
-      status: "received",
-      environment: env,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Log immutable audit event for referral creation
-    await ctx.db.insert("referralEvents", {
-      referralId,
-      eventName: "referral.received",
-      occurredAt: now,
-      actorType: "partner",
-      actorId: args.partnerCode,
-      metadata: {
-        source: "partner_api",
-        environment: env,
-        partnerExternalId: args.partnerExternalId,
-        priority: args.priority || "standard",
-      },
-    });
-
-    // Log in partnerActivityLogs for Developer Console & Activity Inspector
-    await ctx.db.insert("partnerActivityLogs", {
-      partnerId: args.partnerCode,
-      environment: env,
-      eventId: `req_${now}_${Math.random().toString(36).substring(2, 7)}`,
-      eventType: "referral.received",
-      direction: "inbound",
-      url: "/api/v1/partners/referrals",
-      method: "POST",
-      statusCode: 201,
-      latencyMs: 0, // Internal audit record. Real HTTP round-trip latency is logged at the API route layer.
-      status: "success",
-      trackingCode,
-      patientName: `${args.patientFirstName} ${args.patientLastName}`,
-      requestPayload: {
-        partnerExternalId: args.partnerExternalId,
-        patientFirstName: args.patientFirstName,
-        patientLastName: args.patientLastName,
-        patientPhone: args.patientPhone,
-        condition: args.condition,
-        priority: args.priority,
-      },
-      responsePayload: {
-        status: "success",
-        referral_id: referralId,
-        tracking_code: trackingCode,
-      },
-      occurredAt: now,
-    });
-
-    // Notify administrators about the new partner referral if in live mode
-    if (env === "live") {
-      const admins = await ctx.db
-        .query("users")
-        .withIndex("by_role", (q) => q.eq("role", "admin"))
-        .collect();
-
-      for (const admin of admins) {
-        await ctx.db.insert("notifications", {
-          userId: admin._id,
-          type: "system_alert",
-          title: "New Partner Referral Received",
-          message: `Partner [${args.partnerCode}] referred patient ${args.patientFirstName} ${args.patientLastName} (${trackingCode})`,
-          data: {
-            referralId,
-            trackingCode,
-            partnerExternalId: args.partnerExternalId,
-            partnerCode: args.partnerCode,
-          },
-          status: "pending",
-          priority: "high",
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-    }
-
-    // Trigger real outbound webhook if callback URL is configured
-    const partner = await ctx.db
-      .query("partners")
-      .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
-      .first();
-
-    // Schedule professional email notifications to partner and admin in live mode
-    if (env === "live") {
-      const siteUrl = publicAppUrl();
-      const trackingUrl = `${siteUrl}/track/${trackingCode}`;
-      const whatsappPhone = "+2348061525811";
-      const whatsappIntakeUrl = `https://wa.me/2348061525811?text=REHAB_REF_${encodeURIComponent(trackingCode)}`;
-      const patientFullName = `${args.patientFirstName} ${args.patientLastName}`;
-
-      // 1. Partner confirmation email (if partner contactEmail is configured)
-      if (partner?.contactEmail) {
-        await ctx.scheduler.runAfter(
-          0,
-          api["actions/emails/index"].sendPartnerReferralCreatedEmail,
-          {
-            partnerEmail: partner.contactEmail,
-            partnerName: partner.name || args.partnerCode,
-            contactName: (partner as any)?.contactName || partner.name || args.partnerCode,
-            patientName: patientFullName,
-            trackingCode,
-            trackingUrl,
-            whatsappIntakeUrl,
-            whatsappPhone,
-            condition: args.condition,
-            priority: args.priority || "standard",
-            createdAt: now,
-          }
-        );
-      }
-
-      // 2. Admin notification emails with direct WhatsApp + call links for proactive outreach
-      const adminEmails = process.env.ADMIN_EMAIL 
-        ? [process.env.ADMIN_EMAIL] 
-        : ["info@physioaroundme.com", "admin@physioaroundme.com"];
-
-      for (const adminEmail of adminEmails) {
-        await ctx.scheduler.runAfter(
-          0,
-          api["actions/emails/index"].sendAdminReferralCreatedEmail,
-          {
-            adminEmail,
-            partnerName: partner?.name || args.partnerCode,
-            patientName: patientFullName,
-            patientPhone: args.patientPhone,
-            patientEmail: args.patientEmail,
-            trackingCode,
-            trackingUrl,
-            whatsappIntakeUrl,
-            whatsappPhone,
-            condition: args.condition,
-            priority: args.priority || "standard",
-            city: args.city,
-            recommendedSessions: args.recommendedSessions,
-            createdAt: now,
-          }
-        );
-      }
-    }
-
-    const targetUrl = args.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
-    const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
-
-    if (targetUrl) {
-      if (secret && secret !== "whsec_default") {
-        await ctx.scheduler.runAfter(100, api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
-          partnerId: args.partnerCode,
-          environment: env,
-          eventType: "referral.received",
-          targetUrl,
-          secret,
-          trackingCode,
-          patientName: `${args.patientFirstName} ${args.patientLastName}`,
-          payload: {
-            event: "referral.received",
-            environment: env,
-            created_at: Math.floor(now / 1000),
-            data: {
-              referral_id: referralId,
-              tracking_code: trackingCode,
-              partner_external_id: args.partnerExternalId || null,
-              patient: {
-                first_name: args.patientFirstName,
-                last_name: args.patientLastName,
-                phone: args.patientPhone,
-              },
-              status: "received",
-            },
-          },
-        });
-      } else {
-        // Record skipped delivery in audit log due to unconfigured secret
-        await ctx.db.insert("partnerActivityLogs", {
-          partnerId: args.partnerCode,
-          environment: env,
-          eventId: `evt_${now}_skipped_no_secret`,
-          eventType: "referral.received",
-          direction: "outbound",
-          url: targetUrl,
-          method: "POST",
-          statusCode: 400,
-          latencyMs: 0,
-          status: "error",
-          trackingCode,
-          patientName: `${args.patientFirstName} ${args.patientLastName}`,
-          errorMessage: "Webhook delivery skipped: No signing secret configured for partner webhook endpoint.",
-          occurredAt: now,
-        });
-      }
-    }
-
-    // Sandbox Automated Progression Triggers (Functional Documentation Scenarios)
-    if (env === "sandbox") {
-      if (cleanPhone.endsWith("8000000001")) {
-        // Scenario 1: Instant Intake Success within 5 seconds
-        await ctx.scheduler.runAfter(5000, api.partners.progressSandboxReferral, {
-          referralId,
-          eventType: "patient.intake_completed",
-          newStatus: "contacted",
-          partnerCode: args.partnerCode,
-          targetUrl,
-          secret,
-        });
-      } else if (cleanPhone.endsWith("8000000002")) {
-        // Scenario 2: Provider Auto-Matched within 10 seconds
-        await ctx.scheduler.runAfter(10000, api.partners.progressSandboxReferral, {
-          referralId,
-          eventType: "provider.matched",
-          newStatus: "booked",
-          partnerCode: args.partnerCode,
-          targetUrl,
-          secret,
-        });
-      } else if (cleanPhone.endsWith("8000000003")) {
-        // Scenario 3: Session Auto-Completed within 15 seconds
-        await ctx.scheduler.runAfter(15000, api.partners.progressSandboxReferral, {
-          referralId,
-          eventType: "session.completed",
-          newStatus: "in_treatment",
-          partnerCode: args.partnerCode,
-          targetUrl,
-          secret,
-        });
-      } else if (cleanPhone.endsWith("8000000005")) {
-        // Scenario 5: Webhook Delivery Failure Simulation
-        await ctx.scheduler.runAfter(3000, api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
-          partnerId: args.partnerCode,
-          environment: "sandbox",
-          eventType: "webhook.delivery_failure_sim",
-          targetUrl: "https://httpstat.us/500",
-          secret,
-          trackingCode,
-          patientName: `${args.patientFirstName} ${args.patientLastName}`,
-          payload: {
-            event: "webhook.delivery_failure_sim",
-            message: "Simulated endpoint 500 error for testing retry policies",
-          },
-        });
-      }
-    }
-
-    return {
-      referralId,
-      trackingCode,
-      partnerExternalId: args.partnerExternalId,
-      status: "received",
-      environment: env,
-      createdAt: now,
-      isDuplicate: false,
-    };
-  },
-});
-
-/**
- * Progresses a sandbox referral through lifecycle milestones and dispatches real webhooks.
- */
-export const progressSandboxReferral = mutation({
-  args: {
-    referralId: v.id("inboundReferrals"),
-    eventType: v.string(),
-    newStatus: v.string(),
-    partnerCode: v.string(),
-    targetUrl: v.optional(v.string()),
-    secret: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const referral = await ctx.db.get(args.referralId);
-    if (!referral) return;
-
-    let assignedPhysio: any = null;
-    const patchData: any = {
-      status: args.newStatus,
-      updatedAt: Date.now(),
-    };
-
-    if (args.eventType === "provider.matched") {
-      const physioProfile = await ctx.db.query("physiotherapistProfiles").first();
-      if (physioProfile) {
-        patchData.assignedPhysiotherapistId = physioProfile.userId;
-        const physioUser = await ctx.db.get(physioProfile.userId);
-        assignedPhysio = {
-          name: `${physioUser?.firstName || "Dr. Babatunde"} ${physioUser?.lastName || "Adeyemi (PT)"}`.trim(),
-          license_number: physioProfile.licenseNumber || "MRTBN/PT/2018/4821",
-        };
-      }
-    }
-
-    await ctx.db.patch(args.referralId, patchData);
-
-    await ctx.db.insert("referralEvents", {
-      referralId: args.referralId,
-      eventName: args.eventType,
-      occurredAt: Date.now(),
-      actorType: "system",
-      actorId: "sandbox_lifecycle_runner",
-      metadata: {
-        status: args.newStatus,
-        environment: "sandbox",
-      },
-    });
-
-    if (args.targetUrl && args.secret && args.secret !== "whsec_default") {
-      await ctx.scheduler.runAfter(0, api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
-        partnerId: args.partnerCode,
-        environment: "sandbox",
-        eventType: args.eventType,
-        targetUrl: args.targetUrl,
-        secret: args.secret,
-        trackingCode: referral.trackingCode,
-        patientName: `${referral.patientFirstName} ${referral.patientLastName}`,
-        payload: {
-          event: args.eventType,
-          environment: "sandbox",
-          created_at: Math.floor(Date.now() / 1000),
-          data: {
-            referral_id: args.referralId,
-            tracking_code: referral.trackingCode,
-            status: args.newStatus,
-            patient: {
-              first_name: referral.patientFirstName,
-              last_name: referral.patientLastName,
-              phone: referral.patientPhone,
-            },
-            assigned_physiotherapist: assignedPhysio,
-          },
-        },
-      });
-    }
-  },
-});
-
-/**
- * Looks up a referral by internal ID, partner external ID, or human tracking code.
- */
-export const getReferralDetails = query({
-  args: {
-    identifier: v.string(),
-    partnerCode: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const term = args.identifier.trim();
-    const upperTerm = term.toUpperCase();
-
-    let referral = null;
-
-    // 1. Try by exact tracking code
-    referral = await ctx.db
-      .query("inboundReferrals")
-      .withIndex("by_tracking_code", (q) => q.eq("trackingCode", term))
-      .first();
-
-    // 1b. Try uppercase tracking code (e.g. rhb-72941 -> RHB-72941)
-    if (!referral && term !== upperTerm) {
-      referral = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_tracking_code", (q) => q.eq("trackingCode", upperTerm))
-        .first();
-    }
-
-    // 2. Try by partner external ID
-    if (!referral) {
-      referral = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_external_id", (q) =>
-          q.eq("partnerExternalId", term)
-        )
-        .first();
-    }
-
-    // 3. Try by full Convex document ID
-    if (!referral) {
-      try {
-        const doc = await ctx.db.get(term as unknown as Id<"inboundReferrals">);
-        if (doc && "patientFirstName" in doc) {
-          referral = doc;
-        }
-      } catch {
-        // Not a valid Convex document ID format, continue
-      }
-    }
-
-    // 4. Try resolving by generated tracking code suffix (e.g. RHB-9K91K where 9K91K is the last 5 chars of _id)
-    if (!referral) {
-      const suffix = upperTerm.replace(/^RHB-?/i, "").toLowerCase();
-      if (suffix.length >= 4) {
-        // Search recent inbound referrals to find matching ID suffix or case-insensitive code
-        const allReferrals = await ctx.db.query("inboundReferrals").order("desc").take(100);
-        const match = allReferrals.find((r) => {
-          const docIdLower = (r._id as string).toLowerCase();
-          const rCodeUpper = (r.trackingCode || "").toUpperCase();
-          const rExternalUpper = (r.partnerExternalId || "").toUpperCase();
-          return (
-            docIdLower.endsWith(suffix) ||
-            rCodeUpper === upperTerm ||
-            rCodeUpper.replace(/^RHB-?/i, "") === upperTerm.replace(/^RHB-?/i, "") ||
-            rExternalUpper === upperTerm
-          );
-        });
-        if (match) {
-          referral = match;
-        }
-      }
-    }
-
-    if (!referral) {
-      return null;
-    }
-
-    // Optional partner scoping check
-    if (args.partnerCode && referral.partnerId && referral.partnerId !== args.partnerCode && args.partnerCode !== "sandbox_partner") {
-      return null;
-    }
-
-    // Enrich with assigned physiotherapist information
-    let assignedPhysiotherapist = null;
-    let physioUserId = referral.assignedPhysiotherapistId;
-    let latestBooking: any = null;
-
-    const referralBookingId = (referral as any).bookingId;
-    if (referralBookingId) {
-      latestBooking = await ctx.db.get(referralBookingId);
-      if (latestBooking?.physiotherapistId && !physioUserId) {
-        physioUserId = latestBooking.physiotherapistId;
-      }
-    }
-
-    if (!physioUserId && referral.patientId) {
-      latestBooking = await ctx.db
-        .query("marketplaceBookings")
-        .withIndex("by_patient", (q: any) => q.eq("patientId", referral.patientId!))
-        .order("desc")
-        .first();
-      if (latestBooking?.physiotherapistId) {
-        physioUserId = latestBooking.physiotherapistId;
-      }
-    }
-
-    if (physioUserId) {
-      const physioUser = await ctx.db.get(physioUserId);
-      const physioProfile = await ctx.db
-        .query("physiotherapistProfiles")
-        .withIndex("by_user_id", (q) => q.eq("userId", physioUserId!))
-        .first();
-
-      if (physioUser) {
-        assignedPhysiotherapist = {
-          id: physioUser._id,
-          name: `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim() || "Assigned Physiotherapist",
-          licenseNumber: physioProfile?.licenseNumber || "MRTBN/PT/VERIFIED",
-          specialization: physioProfile?.specializations?.[0] || "Orthopedic Rehabilitation",
-          rating: physioProfile?.averageRating || 4.9,
-          phone: physioUser.phoneNumber || undefined,
-        };
-      }
-    }
-
-    // Count session completions if patient is registered
-    let sessionsCompleted = 0;
-    let nextSessionAt: number | null = null;
-    let lastSessionAt: number | null = null;
-
-    if (referral.patientId) {
-      const appointments = await ctx.db
-        .query("appointments")
-        .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", referral.patientId!))
-        .collect();
-
-      sessionsCompleted = appointments.filter((a) => a.status === "completed").length;
-
-      const upcoming = appointments
-        .filter((a) => (a.status === "scheduled" || a.status === "confirmed") && a.startTime > Date.now())
-        .sort((a, b) => a.startTime - b.startTime);
-
-      if (upcoming.length > 0) {
-        nextSessionAt = upcoming[0].startTime;
-      }
-
-      const past = appointments
-        .filter((a) => a.status === "completed")
-        .sort((a, b) => b.startTime - a.startTime);
-
-      if (past.length > 0) {
-        lastSessionAt = past[0].startTime;
-      }
-    }
-
-    if (!nextSessionAt && latestBooking && latestBooking.sessionDate && latestBooking.sessionDate > Date.now()) {
-      nextSessionAt = latestBooking.sessionDate;
-    }
-
-    // Determine accurate effective status
-    let effectiveStatus = referral.status;
-    if (latestBooking) {
-      if (latestBooking.paymentStatus === "completed" && (effectiveStatus === "received" || effectiveStatus === "intake_started" || effectiveStatus === "booked" || effectiveStatus === "pending")) {
-        effectiveStatus = "in_treatment";
-      } else if (latestBooking.bookingStatus === "pending_payment" && (effectiveStatus === "received" || effectiveStatus === "intake_started" || effectiveStatus === "pending")) {
-        effectiveStatus = "booked";
-      }
-    }
-
-    return {
-      _id: referral._id,
-      trackingCode: referral.trackingCode || `RHB-${referral._id.slice(-5).toUpperCase()}`,
-      partnerId: referral.partnerId,
-      partnerExternalId: referral.partnerExternalId,
-      patient: {
-        firstName: referral.patientFirstName,
-        lastName: referral.patientLastName,
-        phone: referral.patientPhone,
-        email: referral.patientEmail,
-        city: referral.city,
-        area: referral.area,
-      },
-      careDetails: {
-        serviceScope: referral.condition || "General Rehabilitation",
-        priority: referral.priority || "standard",
-        recommendedSessions: referral.recommendedSessions || 4,
-        preferredCareMode: referral.preferredCareMode || "patient_choice",
-      },
-      // Sanitized metadata for backward compatibility (no internal clinical notes or diagnoses exposed)
-      clinicalNotes: {
-        condition: referral.condition || "General Rehabilitation",
-        priority: referral.priority || "standard",
-        recommendedSessions: referral.recommendedSessions || 4,
-        referringDoctor: referral.hospitalClinic,
-      },
-      billingMode: referral.billingMode || "patient_self_pay",
-      status: effectiveStatus,
-      assignedPhysiotherapist,
-      sessions: {
-        completed: sessionsCompleted,
-        total: referral.recommendedSessions || 4,
-        lastSessionAt,
-        nextSessionAt,
-      },
-      createdAt: referral.createdAt,
-      updatedAt: referral.updatedAt,
-    };
-  },
-});
-
-/**
- * Returns genuine clinical report data backed by verified session logs and clinical outcomes.
- * No hardcoded cosmetic scores or mock formulas.
- */
-export const getPartnerClinicalReport = query({
-  args: {
-    identifier: v.string(),
-    partnerCode: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const term = args.identifier.trim();
-    let referral: any = await ctx.db
-      .query("inboundReferrals")
-      .withIndex("by_tracking_code", (q) => q.eq("trackingCode", term))
-      .first();
-
-    if (!referral) {
-      referral = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_external_id", (q) => q.eq("partnerExternalId", term))
-        .first();
-    }
-
-    if (!referral) {
-      try {
-        const doc = await ctx.db.get(term as any);
-        if (doc && "patientFirstName" in doc) referral = doc;
-      } catch {}
-    }
-
-    if (!referral) return null;
-    if (args.partnerCode !== "sandbox_partner" && referral.partnerId && referral.partnerId !== args.partnerCode) {
-      return null;
-    }
-
-    // Query real session logs for the patient
-    let sessionLogs: any[] = [];
-    if (referral.patientId) {
-      sessionLogs = await ctx.db
-        .query("sessionLogs")
-        .filter((q) => q.eq(q.field("patientId"), referral.patientId))
-        .order("desc")
-        .collect();
-    }
-
-    // Resolve assigned physiotherapist
-    let physioUser: any = null;
-    let physioProfile: any = null;
-    const physioId = referral.assignedPhysiotherapistId;
-    if (physioId) {
-      physioUser = await ctx.db.get(physioId);
-      physioProfile = await ctx.db
-        .query("physiotherapistProfiles")
-        .withIndex("by_user_id", (q) => q.eq("userId", physioId))
-        .first();
-    }
-
-    const completedCount = sessionLogs.length;
-    const prescribedTotal = referral.recommendedSessions || 4;
-
-    // Real milestones from actual session logs
-    const clinicalMilestones = [
-      {
-        milestone: "Intake & Clinical Triage",
-        status: referral.status !== "received" && referral.status !== "pending" ? "completed" : "in_progress",
-        completedAt: referral.createdAt,
-        notes: `Clinical case recorded: ${referral.condition || "General Rehabilitation"}`,
-      },
-      {
-        milestone: "MRTBN Specialist Allocation",
-        status: physioUser ? "completed" : "pending",
-        completedAt: referral.assignedPhysiotherapistId ? referral.updatedAt : null,
-        notes: physioUser
-          ? `Allocated to ${physioUser.firstName} ${physioUser.lastName} (${physioProfile?.licenseNumber || "MRTBN/PT/VERIFIED"})`
-          : "Matching certified physical therapist in patient's locality",
-      },
-      {
-        milestone: "Initial Baseline Assessment",
-        status: completedCount > 0 ? "completed" : "pending",
-        completedAt: completedCount > 0 ? sessionLogs[sessionLogs.length - 1].sessionDate : null,
-        notes: completedCount > 0
-          ? sessionLogs[sessionLogs.length - 1].subjectiveAssessment || "Baseline range of motion and pain assessment documented."
-          : "Initial consultation and ROM assessment pending",
-      },
-      {
-        milestone: "Rehabilitation Treatment Sessions",
-        status: completedCount >= prescribedTotal ? "completed" : completedCount > 0 ? "in_progress" : "scheduled",
-        completedAt: completedCount >= prescribedTotal ? sessionLogs[0].sessionDate : null,
-        notes: `${completedCount} of ${prescribedTotal} prescribed clinical sessions completed`,
-      },
-      {
-        milestone: "Discharge & Functional Recovery Report",
-        status: referral.status === "completed" ? "completed" : "pending",
-        completedAt: referral.status === "completed" ? referral.updatedAt : null,
-        notes: referral.status === "completed"
-          ? "Patient successfully completed rehabilitation program and discharged."
-          : "Active rehabilitation in progress",
-      },
-    ];
-
-    // Summarize latest real clinician notes
-    const latestLog = sessionLogs[0];
-    const initialLog = sessionLogs[sessionLogs.length - 1];
-
-    return {
-      report_id: `REP-${referral.trackingCode.replace(/^RHB-?/i, "")}`,
-      referral_id: referral._id,
-      tracking_code: referral.trackingCode,
-      partner_reference: referral.partnerExternalId || null,
-      patient: {
-        name: `${referral.patientFirstName} ${referral.patientLastName}`.trim(),
-        phone: referral.patientPhone,
-        city: referral.city,
-        area: referral.area || null,
-      },
-      service_scope: referral.condition || "General Rehabilitation",
-      treating_physiotherapist: physioUser
-        ? {
-            name: `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim(),
-            license_number: physioProfile?.licenseNumber || "MRTBN/PT/VERIFIED",
-            specialization: physioProfile?.specializations?.[0] || "Orthopedic Rehabilitation",
-          }
-        : null,
-      treatment_summary: {
-        prescribed_sessions: prescribedTotal,
-        completed_sessions: completedCount,
-        clinical_notes_recorded: sessionLogs.length,
-        latest_subjective_assessment: latestLog?.subjectiveAssessment || null,
-        latest_objective_assessment: latestLog?.objectiveAssessment || null,
-        treatment_administered: latestLog?.treatmentAdministered || null,
-        status: referral.status === "completed" ? "discharged" : completedCount > 0 ? "in_rehabilitation" : "assessment_scheduled",
-      },
-      clinical_milestones: clinicalMilestones,
-      session_history: sessionLogs.map((log) => ({
-        session_id: log._id,
-        session_date: log.sessionDate,
-        subjective: log.subjectiveAssessment || null,
-        objective: log.objectiveAssessment || null,
-        treatment: log.treatmentAdministered || null,
-        plan: log.planForNextSession || null,
-      })),
-      verified_clinical_data: true,
-    };
-  },
-});
-
-/**
- * List all referrals for a partner with optional status and search filtering.
- */
-export const listPartnerReferrals = query({
-  args: {
-    partnerCode: v.string(),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-    status: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const env = args.environment || (args.partnerCode === "sandbox_partner" ? "sandbox" : "live");
-    let referrals = [];
-
-    if (args.partnerCode === "sandbox_partner") {
-      referrals = await ctx.db
-        .query("inboundReferrals")
-        .order("desc")
-        .take(args.limit || 50);
-    } else {
-      referrals = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerCode))
-        .order("desc")
-        .take(args.limit || 50);
-    }
-
-    // Isolate by environment
-    referrals = referrals.filter((r) =>
-      env === "sandbox"
-        ? (r.environment === "sandbox" || (!r.environment && args.partnerCode === "sandbox_partner"))
-        : (r.environment === "live" || (!r.environment && args.partnerCode !== "sandbox_partner"))
-    );
-
-    if (args.status) {
-      referrals = referrals.filter((r) => r.status === args.status);
-    }
-
-    return referrals.map((r) => ({
-      referralId: r._id,
-      trackingCode: r.trackingCode || `RHB-${r._id.slice(-5).toUpperCase()}`,
-      partnerExternalId: r.partnerExternalId,
-      patientName: `${r.patientFirstName} ${r.patientLastName}`,
-      phone: r.patientPhone,
-      city: r.city || "Lagos",
-      condition: r.condition,
-      status: r.status,
-      environment: r.environment || env,
-      recommendedSessions: r.recommendedSessions || 4,
-      createdAt: r.createdAt,
-    }));
-  },
-});
-
-/**
- * Lists clinical appointments and sessions for partner referrals.
- */
-export const listPartnerSessions = query({
-  args: {
-    partnerCode: v.string(),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-    referralId: v.optional(v.string()),
-    patientPhone: v.optional(v.string()),
-    status: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const env = args.environment || (args.partnerCode === "sandbox_partner" ? "sandbox" : "live");
-    let referrals = [];
-
-    if (args.partnerCode === "sandbox_partner") {
-      referrals = await ctx.db.query("inboundReferrals").order("desc").take(50);
-    } else {
-      referrals = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerCode))
-        .order("desc")
-        .take(50);
-    }
-
-    if (args.referralId) {
-      const refId = args.referralId.trim();
-      referrals = referrals.filter(
-        (r) =>
-          r._id === refId ||
-          r.trackingCode === refId ||
-          r.partnerExternalId === refId
-      );
-    }
-
-    if (args.patientPhone) {
-      const cleanPhone = args.patientPhone.replace(/\s+/g, "");
-      referrals = referrals.filter(
-        (r) => r.patientPhone && r.patientPhone.replace(/\s+/g, "").includes(cleanPhone)
-      );
-    }
-
-    const sessionsList: any[] = [];
-
-    for (const referral of referrals) {
-      if (referral.patientId) {
-        const apts = await ctx.db
-          .query("appointments")
-          .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", referral.patientId!))
-          .collect();
-
-        for (let i = 0; i < apts.length; i++) {
-          const a = apts[i];
-          if (args.status && a.status !== args.status) continue;
-
-          sessionsList.push({
-            sessionId: a._id,
-            sessionNumber: i + 1,
-            referralId: referral._id,
-            trackingCode: referral.trackingCode,
-            partnerExternalId: referral.partnerExternalId || null,
-            patientName: `${referral.patientFirstName} ${referral.patientLastName}`.trim(),
-            sessionType: (a as any).serviceType || referral.condition || "Comprehensive Physiotherapy",
-            scheduledAt: new Date(a.startTime).toISOString(),
-            completedAt: a.status === "completed" && a.endTime ? new Date(a.endTime).toISOString() : null,
-            status: a.status,
-            providerName: (a as any).physiotherapistName || "MRTBN Verified Physiotherapist",
-            modality: referral.preferredCareMode || "patient_choice",
-            notesSummary: (a as any).notes || null,
-          });
-        }
-      }
-    }
-
-    // If sandbox mode with no completed appointments yet, return clean test records
-    if (sessionsList.length === 0 && (env === "sandbox" || args.partnerCode === "sandbox_partner")) {
-      const sampleRef = referrals[0];
-      return [
-        {
-          sessionId: "ses_sandbox_001",
-          sessionNumber: 1,
-          referralId: sampleRef?._id || "ref_sandbox_sample_1",
-          trackingCode: sampleRef?.trackingCode || "RHB-72941",
-          partnerExternalId: sampleRef?.partnerExternalId || "HMO-REF-2026-0091",
-          patientName: sampleRef ? `${sampleRef.patientFirstName} ${sampleRef.patientLastName}` : "Adeola Balogun",
-          sessionType: "Initial Comprehensive Assessment",
-          scheduledAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          completedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 50 * 60 * 1000).toISOString(),
-          status: "completed",
-          providerName: "Dr. Babatunde Adeyemi (PT)",
-          modality: "home_visit",
-          notesSummary: "Baseline ROM and strength evaluation. Prescribed therapeutic exercise.",
-        },
-        {
-          sessionId: "ses_sandbox_002",
-          sessionNumber: 2,
-          referralId: sampleRef?._id || "ref_sandbox_sample_1",
-          trackingCode: sampleRef?.trackingCode || "RHB-72941",
-          partnerExternalId: sampleRef?.partnerExternalId || "HMO-REF-2026-0091",
-          patientName: sampleRef ? `${sampleRef.patientFirstName} ${sampleRef.patientLastName}` : "Adeola Balogun",
-          sessionType: "Therapeutic Exercise & Manual Mobilization",
-          scheduledAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-          completedAt: null,
-          status: "scheduled",
-          providerName: "Dr. Babatunde Adeyemi (PT)",
-          modality: "home_visit",
-          notesSummary: null,
-        },
-      ];
-    }
-
-    return sessionsList.slice(0, args.limit || 50);
-  },
-});
-
-/**
- * Searches MRTBN-verified therapists for partner directory lookups.
- */
-export const searchVerifiedProviders = query({
-  args: {
-    city: v.optional(v.string()),
-    specialty: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const profiles = await ctx.db
-      .query("physiotherapistProfiles")
-      .collect();
-
-    const maxResults = args.limit || 20;
-    const results = [];
-
-    for (const profile of profiles) {
-      if (results.length >= maxResults) break;
-
-      const user = await ctx.db.get(profile.userId);
-      if (!user) continue;
-
-      const location = profile.location || "Lagos";
-      if (args.city && !location.toLowerCase().includes(args.city.toLowerCase())) {
-        continue;
-      }
-
-      if (
-        args.specialty &&
-        !profile.specializations?.some((s) => s.toLowerCase().includes(args.specialty!.toLowerCase()))
-      ) {
-        continue;
-      }
-
-      results.push({
-        id: profile._id,
-        name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Licensed Physiotherapist",
-        title: "Physiotherapist (PT)",
-        licenseNumber: profile.licenseNumber || "MRTBN/PT/VERIFIED",
-        city: location,
-        state: location.includes("Lagos") ? "Lagos State" : location,
-        experienceYears: profile.yearsOfExperience || 5,
-        rating: profile.averageRating || 4.9,
-        reviewCount: profile.reviewCount || 12,
-        specializations: profile.specializations || ["Musculoskeletal", "Orthopedics", "Sports Injury"],
-        offersHomeVisit: profile.offersInPersonSessions ?? true,
-        offersVirtual: profile.offersOnlineSessions ?? true,
-        offersClinic: true,
-      });
-    }
-
-    return results;
-  },
-});
-
-/**
- * Real-time analytics and overview for the Partner Portal Dashboard.
- */
-export const getPartnerDashboardOverview = query({
-  args: {
-    partnerCode: v.string(),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-  },
-  handler: async (ctx, args) => {
-    const env: "sandbox" | "live" =
-      args.environment || (args.partnerCode === "sandbox_partner" ? "sandbox" : "live");
-
-    let referrals = [];
-
-    if (args.partnerCode === "sandbox_partner") {
-      referrals = await ctx.db
-        .query("inboundReferrals")
-        .order("desc")
-        .take(100);
-    } else {
-      referrals = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerCode))
-        .order("desc")
-        .take(100);
-    }
-
-    // Filter referrals cleanly by environment
-    referrals = referrals.filter((r) =>
-      env === "sandbox"
-        ? r.environment === "sandbox" || (!r.environment && args.partnerCode === "sandbox_partner")
-        : r.environment === "live" || (!r.environment && args.partnerCode !== "sandbox_partner")
-    );
-
-    const totalReferrals = referrals.length;
-    const activeInTreatment = referrals.filter(
-      (r) => r.status === "booked" || r.status === "in_treatment"
-    ).length;
-    const completed = referrals.filter(
-      (r) => r.status === "completed" || r.status === "paid_out"
-    ).length;
-    const pending = referrals.filter(
-      (r) => r.status === "pending" || r.status === "contacted" || r.status === "received"
-    ).length;
-
-    let totalSessionsPrescribed = 0;
-    referrals.forEach((r) => {
-      totalSessionsPrescribed += r.recommendedSessions || 4;
-    });
-
-    // Lookup partner details from database if not sandbox
-    let partnerInfo = {
-      name: "Sandbox Partner (Test Mode)",
-      code: "sandbox_partner",
-      partnerIdFormatted: "PRT-SANDBOX-01",
-      type: "hospital",
-      tier: "sandbox",
-      apiKey: "sk_test_rehabify_sandbox",
-      liveApiKey: "sk_live_rehabify_prod",
-      testApiKey: "sk_test_rehabify_sandbox",
-      keyPrefix: "sk_test_reha...",
-      logoUrl: undefined as string | undefined,
-      contactEmail: "partners@physioaroundme.com",
-      contactPhone: "+234 1 888 7342",
-      coverageStates: ["Lagos", "Abuja"],
-      coverageCities: ["Ikeja", "Victoria Island", "Lekki"],
-      webhookUrl: "https://api.partner.com/webhook",
-      liveWebhookUrl: "",
-      testWebhookUrl: "https://api.partner.com/webhook",
-      webhookSecret: "whsec_test_rehabify_secret_99281",
-      liveWebhookSecret: "whsec_live",
-      testWebhookSecret: "whsec_test_rehabify_secret_99281",
-      isSandbox: env === "sandbox",
-      approvalStatus: "approved",
-      activeEnvironment: env,
-    };
-
-    if (args.partnerCode !== "sandbox_partner") {
-      const dbPartner = await ctx.db
-        .query("partners")
-        .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
-        .first();
-
-      if (dbPartner) {
-        // Query primary key from partnerApiKeys if available
-        const keyRecord = await ctx.db
-          .query("partnerApiKeys")
-          .withIndex("by_partner_and_env", (q) =>
-            q.eq("partnerId", args.partnerCode).eq("environment", env)
-          )
-          .filter((q) => q.eq(q.field("status"), "active"))
-          .first();
-
-        const liveKey = dbPartner.liveApiKey || dbPartner.apiKey || "sk_live_rehabify";
-        const testKey = dbPartner.testApiKey || `sk_test_${dbPartner.code}_sec_9921`;
-        const activeKey = keyRecord?.key || (env === "sandbox" ? testKey : liveKey);
-        const keyPrefix = keyRecord?.keyPrefix || activeKey.slice(0, 12) + "...";
-
-        const liveWebhook = dbPartner.liveWebhookUrl || dbPartner.webhookUrl || "";
-        const testWebhook = dbPartner.testWebhookUrl || dbPartner.webhookUrl || "";
-        const activeWebhook = env === "sandbox" ? testWebhook : liveWebhook;
-
-        const liveSecret = dbPartner.liveWebhookSecret || dbPartner.webhookSecret || "whsec_live";
-        const testSecret = dbPartner.testWebhookSecret || "whsec_test";
-        const activeSecret = env === "sandbox" ? testSecret : liveSecret;
-
-        partnerInfo = {
-          name: dbPartner.name,
-          code: dbPartner.code,
-          partnerIdFormatted: `PRT-${dbPartner._id.slice(-5).toUpperCase()}-${dbPartner.code.slice(0, 6).toUpperCase()}`,
-          type: dbPartner.type,
-          tier: dbPartner.tier,
-          apiKey: activeKey,
-          liveApiKey: liveKey,
-          testApiKey: testKey,
-          keyPrefix,
-          logoUrl: dbPartner.logoUrl,
-          contactEmail: dbPartner.contactEmail,
-          contactPhone: dbPartner.contactPhone || "",
-          coverageStates: dbPartner.coverageStates || ["Lagos"],
-          coverageCities: dbPartner.coverageCities || ["Ikeja", "Victoria Island"],
-          webhookUrl: activeWebhook,
-          liveWebhookUrl: liveWebhook,
-          testWebhookUrl: testWebhook,
-          webhookSecret: activeSecret,
-          liveWebhookSecret: liveSecret,
-          testWebhookSecret: testSecret,
-          isSandbox: env === "sandbox",
-          approvalStatus: dbPartner.approvalStatus || (dbPartner.isActive ? "approved" : "pending"),
-          activeEnvironment: env,
-        };
-      }
-    }
-
-    return {
-      metrics: {
-        totalReferrals,
-        activeInTreatment,
-        completed,
-        pending,
-        totalSessionsPrescribed,
-      },
-      partnerInfo,
-      recentReferrals: referrals.slice(0, 10).map((r) => ({
-        referralId: r._id,
-        trackingCode: r.trackingCode || `RHB-${r._id.slice(-5).toUpperCase()}`,
-        partnerExternalId: r.partnerExternalId,
-        patientName: `${r.patientFirstName} ${r.patientLastName}`,
-        phone: r.patientPhone,
-        city: r.city || "Lagos",
-        condition: r.condition,
-        status: r.status,
-        environment: r.environment || env,
-        recommendedSessions: r.recommendedSessions || 4,
-        createdAt: r.createdAt,
-      })),
-    };
-  },
-});
-
-/**
- * Updates a partner's webhook URL and optionally rotates their webhook secret.
- */
-export const updatePartnerWebhookSettings = mutation({
-  args: {
-    partnerCode: v.string(),
-    webhookUrl: v.string(),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-    rotateSecret: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    const env: "sandbox" | "live" = args.environment || "sandbox";
-    const cleanUrl = args.webhookUrl.trim();
-
-    if (args.partnerCode === "sandbox_partner") {
-      return {
-        success: true,
-        webhookUrl: cleanUrl,
-        webhookSecret: "whsec_test_rehabify_secret_99281",
-        environment: env,
-      };
-    }
-
-    const partner = await ctx.db
-      .query("partners")
-      .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
-      .first();
-
-    if (!partner) {
-      throw new Error("Partner not found");
-    }
-
-    const now = Date.now();
-    const updates: Record<string, any> = {
-      updatedAt: now,
-    };
-
-    if (env === "live") {
-      updates.liveWebhookUrl = cleanUrl;
-      updates.webhookUrl = cleanUrl;
-    } else {
-      updates.testWebhookUrl = cleanUrl;
-    }
-
-    let secret = env === "live" ? partner.liveWebhookSecret : partner.testWebhookSecret;
-    if (args.rotateSecret || !secret) {
-      const randomSecret = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-      secret = `whsec_${randomSecret}`;
-      if (env === "live") {
-        updates.liveWebhookSecret = secret;
-        updates.webhookSecret = secret;
-      } else {
-        updates.testWebhookSecret = secret;
-      }
-    }
-
-    await ctx.db.patch(partner._id, updates);
-
-    // Record setting update in partnerActivityLogs
-    await ctx.db.insert("partnerActivityLogs", {
-      partnerId: args.partnerCode,
-      environment: env,
-      eventId: `evt_wh_${now}`,
-      eventType: "webhook.endpoint_updated",
-      direction: "inbound",
-      url: cleanUrl,
-      method: "PATCH",
-      statusCode: 200,
-      latencyMs: 12,
-      status: "success",
-      requestPayload: { webhookUrl: cleanUrl, environment: env },
-      responsePayload: { status: "saved" },
-      occurredAt: now,
-    });
-
-    return {
-      success: true,
-      webhookUrl: cleanUrl,
-      webhookSecret: secret,
-      environment: env,
-    };
-  },
-});
-
-/**
- * Admin action to create a new partner and generate their live API key.
- */
-export const createPartnerAccount = mutation({
-  args: {
-    name: v.string(),
-    code: v.string(),
-    type: v.union(
-      v.literal("hmo"),
-      v.literal("hospital"),
-      v.literal("corporate"),
-      v.literal("gym"),
-      v.literal("telemedicine")
-    ),
-    contactEmail: v.string(),
-    contactPhone: v.optional(v.string()),
-    tier: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const code = args.code.trim().toLowerCase().replace(/\s+/g, "_");
-
-    const existing = await ctx.db
-      .query("partners")
-      .withIndex("by_code", (q) => q.eq("code", code))
-      .first();
-
-    if (existing) {
-      throw new Error(`Partner with code '${code}' already exists.`);
-    }
-
-    const randomKey = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    const apiKey = `sk_live_${randomKey}`;
-
-    const randomSecret = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    const webhookSecret = `whsec_${randomSecret}`;
-
-    const now = Date.now();
-    const partnerId = await ctx.db.insert("partners", {
-      name: args.name.trim(),
-      code,
-      apiKey,
-      type: args.type,
-      contactEmail: args.contactEmail.trim().toLowerCase(),
-      contactPhone: args.contactPhone?.trim(),
-      webhookSecret,
-      isActive: true,
-      tier: args.tier || "standard",
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    return {
-      partnerId,
-      code,
-      apiKey,
-      webhookSecret,
-    };
-  },
-});
-
-/**
- * Lists available partners for portal partner switching.
- */
-export const listPartners = query({
-  args: {},
-  handler: async (ctx) => {
-    const partners = await ctx.db.query("partners").collect();
-    return [
-      {
-        _id: "sandbox_partner_id" as unknown as Id<"partners">,
-        name: "Sandbox Partner (Test Mode)",
-        code: "sandbox_partner",
-        type: "hospital" as const,
-        tier: "sandbox",
-        contactEmail: "partners@physioaroundme.com",
-        isActive: true,
-        apiKey: "sk_test_rehabify_sandbox",
-        webhookUrl: "https://api.partner.com/webhook",
-        webhookSecret: "whsec_test_rehabify_secret_99281",
-        isSandbox: true,
-      },
-      ...partners.map((p) => ({
-        _id: p._id,
-        name: p.name,
-        code: p.code,
-        type: p.type,
-        tier: p.tier,
-        contactEmail: p.contactEmail,
-        isActive: p.isActive,
-        apiKey: p.apiKey,
-        webhookUrl: p.webhookUrl || "",
-        webhookSecret: p.webhookSecret || "whsec_live",
-        isSandbox: false,
-      })),
-    ];
-  },
-});
-
-/**
- * Regenerates / rolls a partner's API key.
- */
-/**
- * Regenerates / rolls a partner's API key with environment awareness.
- */
-export const rotatePartnerApiKey = mutation({
-  args: {
-    partnerCode: v.string(),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-  },
-  handler: async (ctx, args) => {
-    const env: "sandbox" | "live" = args.environment || "live";
-    const prefix = env === "sandbox" ? "sk_test_" : "sk_live_";
-    const rand = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    const newApiKey = `${prefix}${rand}`;
-    const keyPrefix = `${prefix}${rand.slice(0, 4)}...${rand.slice(-4)}`;
-    const now = Date.now();
-
-    if (args.partnerCode === "sandbox_partner") {
-      return {
-        apiKey: newApiKey,
-        keyPrefix,
-        environment: env,
-        rotated: true,
-      };
-    }
-
-    const partner = await ctx.db
-      .query("partners")
-      .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
-      .first();
-
-    if (!partner) {
-      throw new Error("Partner not found");
-    }
-
-    // Mark existing active keys for this environment as rolling or revoked
-    const existingKeys = await ctx.db
-      .query("partnerApiKeys")
-      .withIndex("by_partner_and_env", (q) =>
-        q.eq("partnerId", args.partnerCode).eq("environment", env)
-      )
-      .collect();
-
-    for (const k of existingKeys) {
-      if (k.status === "active") {
-        await ctx.db.patch(k._id, { status: "revoked" });
-      }
-    }
-
-    // Insert new active key in partnerApiKeys
-    const keyId = await ctx.db.insert("partnerApiKeys", {
-      partnerId: args.partnerCode,
-      name: env === "sandbox" ? "Rotated Sandbox Key" : "Rotated Production Key",
-      key: newApiKey,
-      keyPrefix,
-      environment: env,
-      status: "active",
-      createdAt: now,
-      lastUsedAt: undefined,
-    });
-
-    // Update partner record
-    const updates: Record<string, any> = { updatedAt: now };
-    if (env === "live") {
-      updates.liveApiKey = newApiKey;
-      updates.apiKey = newApiKey;
-    } else {
-      updates.testApiKey = newApiKey;
-    }
-    await ctx.db.patch(partner._id, updates);
-
-    // Audit log
-    await ctx.db.insert("partnerActivityLogs", {
-      partnerId: args.partnerCode,
-      environment: env,
-      eventId: `evt_key_rotate_${now}`,
-      eventType: "api_key.rotated",
-      direction: "inbound",
-      url: "/portal/developers",
-      method: "POST",
-      statusCode: 200,
-      latencyMs: 18,
-      status: "success",
-      requestPayload: { environment: env },
-      responsePayload: { keyPrefix, status: "active" },
-      occurredAt: now,
-    });
-
-    return {
-      keyId,
-      apiKey: newApiKey,
-      keyPrefix,
-      environment: env,
-      rotated: true,
-    };
-  },
-});
-
-/**
- * Lists API keys for a partner and environment.
- */
-export const listPartnerApiKeys = query({
-  args: {
-    partnerCode: v.string(),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-  },
-  handler: async (ctx, args) => {
-    const env = args.environment || "sandbox";
-
-    let keys = await ctx.db
-      .query("partnerApiKeys")
-      .withIndex("by_partner_and_env", (q) =>
-        q.eq("partnerId", args.partnerCode).eq("environment", env)
-      )
-      .order("desc")
-      .collect();
-
-    if (keys.length === 0) {
-      const partner = await ctx.db
-        .query("partners")
-        .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
-        .first();
-
-      if (!partner) return [];
-
-      const keyVal =
-        env === "sandbox"
-          ? partner.testApiKey || (args.partnerCode === "sandbox_partner" ? "sk_test_rehabify_sandbox" : null)
-          : partner.liveApiKey || partner.apiKey || null;
-
-      if (!keyVal) return [];
-
-      return [
-        {
-          _id: "key_primary" as any,
-          partnerId: args.partnerCode,
-          name: env === "sandbox" ? "Default Sandbox Key" : "Primary Live Key",
-          key: keyVal,
-          keyPrefix: keyVal.slice(0, 12) + "...",
-          environment: env,
-          status: "active" as const,
-          createdAt: partner.createdAt || Date.now(),
-          lastUsedAt: undefined,
-        },
-      ];
-    }
-
-    return keys;
-  },
-});
-
-/**
- * Generates a brand new named API key.
- */
-export const generatePartnerApiKey = mutation({
-  args: {
-    partnerCode: v.string(),
-    name: v.string(),
-    environment: v.union(v.literal("sandbox"), v.literal("live")),
-  },
-  handler: async (ctx, args) => {
-    const prefix = args.environment === "sandbox" ? "sk_test_" : "sk_live_";
-    const rand = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    const key = `${prefix}${rand}`;
-    const keyPrefix = `${prefix}${rand.slice(0, 4)}...${rand.slice(-4)}`;
-    const now = Date.now();
-
-    const keyId = await ctx.db.insert("partnerApiKeys", {
-      partnerId: args.partnerCode,
-      name: args.name.trim() || (args.environment === "sandbox" ? "Test Key" : "Live Key"),
-      key,
-      keyPrefix,
-      environment: args.environment,
-      status: "active",
-      createdAt: now,
-      lastUsedAt: undefined,
-    });
-
-    const partner = await ctx.db
-      .query("partners")
-      .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
-      .first();
-
-    if (partner) {
-      if (args.environment === "live" && !partner.liveApiKey) {
-        await ctx.db.patch(partner._id, { liveApiKey: key, apiKey: key, updatedAt: now });
-      } else if (args.environment === "sandbox" && !partner.testApiKey) {
-        await ctx.db.patch(partner._id, { testApiKey: key, updatedAt: now });
-      }
-    }
-
-    await ctx.db.insert("partnerActivityLogs", {
-      partnerId: args.partnerCode,
-      environment: args.environment,
-      eventId: `evt_key_${now}`,
-      eventType: "api_key.created",
-      direction: "inbound",
-      url: "/portal/developers",
-      method: "POST",
-      statusCode: 201,
-      latencyMs: 14,
-      status: "success",
-      requestPayload: { name: args.name, environment: args.environment },
-      responsePayload: { keyPrefix, status: "active" },
-      occurredAt: now,
-    });
-
-    return {
-      keyId,
-      name: args.name,
-      key,
-      keyPrefix,
-      environment: args.environment,
-      status: "active",
-      createdAt: now,
-    };
-  },
-});
-
-/**
- * Revokes an existing API key.
- */
-export const revokePartnerApiKey = mutation({
-  args: {
-    keyId: v.id("partnerApiKeys"),
-    partnerCode: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const keyRecord = await ctx.db.get(args.keyId);
-    if (!keyRecord || keyRecord.partnerId !== args.partnerCode) {
-      throw new Error("API key not found");
-    }
-
-    await ctx.db.patch(args.keyId, { status: "revoked" });
-    return { success: true, keyId: args.keyId };
-  },
-});
-
-/**
- * Logs an activity or webhook delivery event in partnerActivityLogs.
- */
-export const logPartnerActivity = mutation({
-  args: {
-    partnerId: v.string(),
-    environment: v.union(v.literal("sandbox"), v.literal("live")),
-    eventId: v.string(),
-    eventType: v.string(),
-    direction: v.union(v.literal("inbound"), v.literal("outbound")),
-    url: v.string(),
-    method: v.string(),
-    statusCode: v.number(),
-    latencyMs: v.number(),
-    status: v.union(v.literal("success"), v.literal("error")),
-    queryId: v.optional(v.string()),
-    requestId: v.optional(v.string()),
-    traceId: v.optional(v.string()),
-    patientName: v.optional(v.string()),
-    trackingCode: v.optional(v.string()),
-    requestHeaders: v.optional(v.any()),
-    requestPayload: v.optional(v.any()),
-    responseHeaders: v.optional(v.any()),
-    responsePayload: v.optional(v.any()),
-    errorMessage: v.optional(v.string()),
-    occurredAt: v.number(),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db.insert("partnerActivityLogs", {
-      ...args,
-    });
-  },
-});
-
-/**
- * Lists activity and callback delivery logs for the Partner Portal inspector.
- */
-export const listPartnerActivityLogs = query({
-  args: {
-    partnerCode: v.string(),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-    eventType: v.optional(v.string()),
-    status: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const env = args.environment || "sandbox";
-    const maxLimit = args.limit || 50;
-
-    let logs = await ctx.db
-      .query("partnerActivityLogs")
-      .withIndex("by_partner_and_env", (q) =>
-        q.eq("partnerId", args.partnerCode).eq("environment", env)
-      )
-      .order("desc")
-      .take(maxLimit);
-
-    if (args.eventType && args.eventType !== "all") {
-      logs = logs.filter((l) => l.eventType === args.eventType);
-    }
-    if (args.status && args.status !== "all") {
-      logs = logs.filter((l) => l.status === args.status);
-    }
-
-    return logs;
-  },
-});
-
-/**
- * Provides date-bucketed timeseries and conversion funnel analytics for Recharts.
- */
-export const getPartnerAnalyticsTimeseries = query({
-  args: {
-    partnerCode: v.string(),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-    days: v.optional(v.number()),
-    range: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const env = args.environment || "sandbox";
-    let numDays = args.days || 14;
-    if (args.range === "7d") numDays = 7;
-    else if (args.range === "30d") numDays = 30;
-    else if (args.range === "90d") numDays = 90;
-
-    const now = Date.now();
-    const dayMs = 24 * 60 * 60 * 1000;
-
-    let referrals = [];
-    if (args.partnerCode === "sandbox_partner") {
-      referrals = await ctx.db.query("inboundReferrals").order("desc").take(200);
-    } else {
-      referrals = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerCode))
-        .order("desc")
-        .take(200);
-    }
-
-    referrals = referrals.filter((r) =>
-      env === "sandbox"
-        ? (r.environment === "sandbox" || (!r.environment && args.partnerCode === "sandbox_partner"))
-        : (r.environment === "live" || (!r.environment && args.partnerCode !== "sandbox_partner"))
-    );
-
-    const daysArray = [];
-    for (let i = numDays - 1; i >= 0; i--) {
-      const bucketDate = new Date(now - i * dayMs);
-      const dateLabel = bucketDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const bucketStart = new Date(bucketDate.getFullYear(), bucketDate.getMonth(), bucketDate.getDate()).getTime();
-      const bucketEnd = bucketStart + dayMs;
-
-      const dayReferrals = referrals.filter((r) => r.createdAt >= bucketStart && r.createdAt < bucketEnd);
-      const completed = dayReferrals.filter((r) => r.status === "completed" || r.status === "attended").length;
-      const active = dayReferrals.filter((r) => r.status === "in_treatment" || r.status === "booked" || r.status === "received").length;
-
-      daysArray.push({
-        date: dateLabel,
-        referrals: dayReferrals.length,
-        active,
-        completed,
-        intakeStarts: Math.round(dayReferrals.length * 0.85),
-      });
-    }
-
-    const volumeData = daysArray.map((d) => ({
-      date: d.date,
-      referrals: d.referrals,
-      booked: d.active,
-    }));
-
-    // Calculate real Care Modality distribution from actual database referrals
-    let clinicCount = 0;
-    let homeVisitCount = 0;
-    let teleRehabCount = 0;
-
-    referrals.forEach((r) => {
-      const mode = (r.preferredCareMode || (r as any).careMode || "clinic").toLowerCase();
-      if (mode.includes("home")) {
-        homeVisitCount++;
-      } else if (mode.includes("virtual") || mode.includes("tele") || mode.includes("remote")) {
-        teleRehabCount++;
-      } else {
-        clinicCount++;
-      }
-    });
-
-    const totalModes = clinicCount + homeVisitCount + teleRehabCount;
-    const careModeData = totalModes > 0
-      ? [
-          { name: "Clinic Sessions", value: Math.round((clinicCount / totalModes) * 100), count: clinicCount, fill: "#005b57" },
-          { name: "Home Visits", value: Math.round((homeVisitCount / totalModes) * 100), count: homeVisitCount, fill: "#F59E0B" },
-          { name: "Tele-Rehab", value: Math.max(0, 100 - Math.round((clinicCount / totalModes) * 100) - Math.round((homeVisitCount / totalModes) * 100)), count: teleRehabCount, fill: "#002e2c" },
-        ]
-      : [
-          { name: "Clinic Sessions", value: 0, count: 0, fill: "#005b57" },
-          { name: "Home Visits", value: 0, count: 0, fill: "#F59E0B" },
-          { name: "Tele-Rehab", value: 0, count: 0, fill: "#002e2c" },
-        ];
-
-    // Calculate real Clinical Progression Funnel from actual referral statuses
-    const totalCount = referrals.length;
-    const joyIntakeStarted = referrals.filter((r) => r.status !== "cancelled").length;
-    const triageMatched = referrals.filter((r) =>
-      Boolean(r.assignedPhysiotherapistId) ||
-      ["booked", "in_treatment", "completed", "paid_out"].includes(r.status)
-    ).length;
-    const activeTreatment = referrals.filter((r) =>
-      ["in_treatment", "completed", "paid_out"].includes(r.status)
-    ).length;
-    const careCompleted = referrals.filter((r) =>
-      ["completed", "paid_out"].includes(r.status)
-    ).length;
-
-    const funnelData = [
-      { stage: "Total Referrals", count: totalCount, fill: "#005b57" },
-      { stage: "Joy Intake Started", count: joyIntakeStarted, fill: "#F59E0B" },
-      { stage: "Triage & Matched", count: triageMatched, fill: "#002e2c" },
-      { stage: "Active Treatment", count: activeTreatment, fill: "#F43F5E" },
-      { stage: "Care Completed", count: careCompleted, fill: "#10B981" },
-    ];
-
-    const funnel = [
-      { name: "Total Referrals", count: totalCount, color: "#005b57" },
-      { name: "Joy Intake Started", count: joyIntakeStarted, color: "#F59E0B" },
-      { name: "Triage & Matched", count: triageMatched, color: "#002e2c" },
-      { name: "Active Treatment", count: activeTreatment, color: "#F43F5E" },
-      { name: "Care Completed", count: careCompleted, color: "#10B981" },
-    ];
-
-    return {
-      timeseries: daysArray,
-      volumeData,
-      careModeData,
-      funnelData,
-      funnel,
-    };
-  },
-});
-
-/**
- * Calculates 24h integration health, success rate %, average latency ms, and active endpoints.
- */
-export const getIntegrationHealth = query({
-  args: {
-    partnerCode: v.string(),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-  },
-  handler: async (ctx, args) => {
-    const env = args.environment || "sandbox";
-    const logs = await ctx.db
-      .query("partnerActivityLogs")
-      .withIndex("by_partner_and_env", (q) =>
-        q.eq("partnerId", args.partnerCode).eq("environment", env)
-      )
-      .order("desc")
-      .take(50);
-
-    const totalCalls = logs.length;
-    const successCalls = logs.filter((l) => l.status === "success").length;
-    const successRate = totalCalls > 0 ? Math.round((successCalls / totalCalls) * 1000) / 10 : 100;
-
-    let totalLatency = 0;
-    logs.forEach((l) => (totalLatency += l.latencyMs));
-    const avgLatency = totalCalls > 0 ? Math.round(totalLatency / totalCalls) : 0;
-
-    const referralLogs = logs.filter((l) => l.url?.includes("referrals"));
-    const avgReferralLatency = referralLogs.length > 0
-      ? Math.round(referralLogs.reduce((a, b) => a + b.latencyMs, 0) / referralLogs.length)
-      : (totalCalls > 0 ? avgLatency : 42);
-
-    const webhookLogs = logs.filter((l) => l.direction === "outbound");
-    const avgWebhookLatency = webhookLogs.length > 0
-      ? Math.round(webhookLogs.reduce((a, b) => a + b.latencyMs, 0) / webhookLogs.length)
-      : 0;
-
-    const partner = await ctx.db
-      .query("partners")
-      .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
-      .first();
-
-    const isSandboxPartner = args.partnerCode === "sandbox_partner";
-    const webhookUrl = isSandboxPartner
-      ? (env === "sandbox" ? "https://api.partner.com/webhook" : "")
-      : (env === "sandbox"
-        ? (partner?.testWebhookUrl || partner?.webhookUrl)
-        : (partner?.liveWebhookUrl || partner?.webhookUrl));
-
-    return {
-      successRate,
-      avgLatencyMs: avgLatency,
-      totalCalls,
-      endpoints: [
-        {
-          name: "Patient Referral Ingestion",
-          method: "POST",
-          path: "/api/v1/partners/referrals",
-          type: "REST API",
-          status: "operational",
-          latencyMs: avgReferralLatency,
-          avgLatencyMs: avgReferralLatency,
-          uptime: "99.9%",
-          description: "Patient intake & triage dispatch",
-        },
-        {
-          name: "Referral Milestone Lookup",
-          method: "GET",
-          path: "/api/v1/partners/referrals/:id",
-          type: "REST API",
-          status: "operational",
-          latencyMs: avgReferralLatency ? Math.round(avgReferralLatency * 0.7) : 32,
-          avgLatencyMs: avgReferralLatency ? Math.round(avgReferralLatency * 0.7) : 32,
-          uptime: "99.9%",
-          description: "Real-time care milestone lookup",
-        },
-        {
-          name: "Webhook Delivery Listener",
-          method: "POST",
-          path: webhookUrl ? webhookUrl : "Not Configured",
-          type: "Event Stream",
-          status: webhookUrl ? (avgWebhookLatency > 0 ? "operational" : "connected") : "not_configured",
-          latencyMs: avgWebhookLatency || (webhookUrl ? 52 : 0),
-          avgLatencyMs: avgWebhookLatency || (webhookUrl ? 52 : 0),
-          uptime: webhookUrl ? "99.8%" : "N/A",
-          targetUrl: webhookUrl || null,
-          description: webhookUrl
-            ? (webhookUrl.includes("api.partner.com")
-              ? "Placeholder endpoint (Save your server URL to activate)"
-              : `Connected: ${webhookUrl}`)
-            : "Save live endpoint URL to activate",
-        },
-        {
-          name: "WhatsApp Joy Engine",
-          method: "BOT",
-          path: "Joy Conversational AI",
-          type: "Conversational Intake",
-          status: "operational",
-          latencyMs: 95,
-          avgLatencyMs: 95,
-          uptime: "99.9%",
-          description: "Zero-friction automated patient triage",
-        },
-      ],
-    };
-  },
-});
-
-/**
- * Triggers a real, signed HTTP webhook delivery to test the partner's callback endpoint.
- */
-export const triggerRealTestWebhook = action({
-  args: {
-    partnerCode: v.string(),
-    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
-    eventType: v.optional(v.string()),
-    customUrl: v.optional(v.string()),
-  },
-  handler: async (ctx, args): Promise<any> => {
-    const env = args.environment || "sandbox";
-    const eventType = args.eventType || "referral.status_updated";
-    const now = Date.now();
-
-    const overview: any = await ctx.runQuery(api.partners.getPartnerDashboardOverview, {
-      partnerCode: args.partnerCode,
-      environment: env,
-    });
-
-    const targetUrl = (args.customUrl || overview?.partnerInfo?.webhookUrl || "").trim();
-    if (!targetUrl) {
-      return {
-        success: false,
-        statusCode: 400,
-        errorMessage: "Please enter and save your webhook callback URL first.",
-        deliveredTo: "",
-      };
-    }
-
-    const secret = overview?.partnerInfo?.webhookSecret || "whsec_test_secret";
-    const requestId = `req_${now}_${Math.random().toString(36).substring(2, 8)}`;
-    const traceId = `trc_${now}_${Math.random().toString(36).substring(2, 10)}`;
-
-    const payload = {
-      id: `evt_test_${Math.random().toString(36).substring(2, 10)}`,
-      event: eventType,
-      environment: env,
-      created_at: Math.floor(now / 1000),
-      data: {
-        referral_id: `ref_${env}_test_72941`,
-        tracking_code: "RHB-72941",
-        partner_external_id: "HMO-REF-2026-0091",
-        patient_name: "Adeola Balogun",
-        status: "in_treatment",
-        assigned_physiotherapist: {
-          name: "Dr. Babatunde Adeyemi (PT)",
-          license_number: "MRTBN/PT/2018/4821",
-        },
-        sessions: {
-          completed: 2,
-          total: 6,
-        },
-      },
-    };
-
-    return await ctx.runAction(api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
-      partnerId: args.partnerCode,
-      environment: env,
-      eventType,
-      targetUrl,
-      secret,
-      payload,
-      trackingCode: "RHB-72941",
-      patientName: "Adeola Balogun",
-      requestId,
-      traceId,
-    });
-  },
-});
-
-/**
- * Backward compatibility alias for legacy triggerTestWebhook calls.
- */
-export const triggerTestWebhook = mutation({
-  args: {
-    partnerCode: v.string(),
-    eventType: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const eventType = args.eventType || "referral.status_updated";
-
-    let webhookUrl = "https://api.partner.com/webhook";
-    let webhookSecret = "whsec_test_rehabify_secret_99281";
-
-    if (args.partnerCode !== "sandbox_partner") {
-      const partner = await ctx.db
-        .query("partners")
-        .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
-        .first();
-
-      if (partner?.webhookUrl) {
-        webhookUrl = partner.webhookUrl;
-        webhookSecret = partner.webhookSecret || "whsec_live";
-      }
-    }
-
-    const payload = {
-      id: `evt_test_${Math.random().toString(36).substring(2, 10)}`,
-      event: eventType,
-      created_at: Math.floor(now / 1000),
-      data: {
-        referral_id: "ref_live_test_72941",
-        tracking_code: "RHB-72941",
-        partner_external_id: "HMO-REF-2026-0091",
-        patient_name: "Adeola Balogun",
-        status: "in_treatment",
-        assigned_physiotherapist: {
-          name: "Dr. Babatunde Adeyemi (PT)",
-          license_number: "MRTBN/PT/2018/4821",
-        },
-        sessions: {
-          completed: 2,
-          total: 6,
-        },
-      },
-    };
-
-    return {
-      success: true,
-      deliveredTo: webhookUrl,
-      event: eventType,
-      payload,
-      timestamp: now,
-      statusCode: 200,
-      latencyMs: 94,
-    };
-  },
-});
-
-/**
- * Resolves the authenticated partner organization for the currently logged-in user.
- * Checks Clerk authentication, user role, and returns approval status and company info.
- */
 export const getCurrentUserPartner = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return {
-        isAuthenticated: false,
-        isAdmin: false,
-        partner: null,
-        status: "unauthenticated" as const,
-      };
+    const viewer = await getViewer(ctx);
+    if (!viewer) {
+      return { isAuthenticated: false, isAdmin: false, partner: null, status: "unauthenticated" as const, claimable: false };
     }
-
-    // Check if user is a Rehabify admin
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    const isAdmin = user?.role === "admin";
-
-    // Lookup partner by Clerk ID
-    let partner = await ctx.db
-      .query("partners")
-      .withIndex("by_owner_clerk_id", (q) => q.eq("ownerClerkId", identity.subject))
-      .first();
-
-    // Fallback: check by email match if not linked by clerk ID yet
-    if (!partner && identity.email) {
-      const email = identity.email.toLowerCase().trim();
-      const allPartners = await ctx.db.query("partners").collect();
-      const matched = allPartners.find(
-        (p) =>
-          p.contactEmail?.toLowerCase() === email ||
-          p.ownerEmail?.toLowerCase() === email
-      );
-      if (matched) {
-        partner = matched;
-      }
-    }
-
+    const partner = await findOwnedPartner(ctx, viewer.identity);
     if (!partner) {
-      return {
-        isAuthenticated: true,
-        isAdmin,
-        partner: null,
-        status: "no_partner" as const,
-      };
+      return { isAuthenticated: true, isAdmin: viewer.isAdmin, partner: null, status: "no_partner" as const, claimable: false };
     }
-
-    const approvalStatus = partner.approvalStatus || (partner.isActive ? "approved" : "pending");
-
+    const approvalStatus = partnerApprovalStatus(partner);
     return {
       isAuthenticated: true,
-      isAdmin,
-      partner: {
-        _id: partner._id,
-        name: partner.name,
-        code: partner.code,
-        type: partner.type,
-        logoUrl: partner.logoUrl,
-        contactEmail: partner.contactEmail,
-        contactPhone: partner.contactPhone,
-        coverageStates: partner.coverageStates || ["Lagos"],
-        coverageCities: partner.coverageCities || ["Ikeja", "Victoria Island"],
-        supportedCareModes: partner.supportedCareModes || ["remote", "face_to_face"],
-        tier: partner.tier,
-        isActive: partner.isActive,
-        approvalStatus,
-        rejectionReason: partner.rejectionReason,
-        createdAt: partner.createdAt,
-      },
+      isAdmin: viewer.isAdmin,
+      partner: partnerSummary(partner),
       status: approvalStatus,
+      claimable: !partner.ownerClerkId,
     };
   },
 });
 
-/**
- * Self-service registration for healthcare institutions and corporate partners.
- * Submits an application in 'pending' status for Rehabify admin verification.
- */
+/** Links an admin-created organisation to the signed-in owner (verified owner email). */
+export const claimPartnerAccount = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await requireViewer(ctx);
+    const partner = await findOwnedPartner(ctx, viewer.identity);
+    if (!partner) throw new ConvexError("No partner organisation is waiting for this account.");
+    if (partner.ownerClerkId && partner.ownerClerkId !== viewer.identity.subject) {
+      throw new ConvexError("This organisation is already linked to another account.");
+    }
+    if (!partner.ownerClerkId) {
+      await ctx.db.patch(partner._id, { ownerClerkId: viewer.identity.subject, updatedAt: Date.now() });
+    }
+    if (viewer.user && !viewer.user.role) await ctx.db.patch(viewer.user._id, { role: "partner" });
+    return { code: partner.code };
+  },
+});
+
 export const applyForPartner = mutation({
   args: {
     name: v.string(),
-    type: v.union(
-      v.literal("hmo"),
-      v.literal("hospital"),
-      v.literal("corporate"),
-      v.literal("gym"),
-      v.literal("telemedicine"),
-      v.literal("pharmacy"),
-      v.literal("employer"),
-      v.literal("digital_health")
-    ),
+    type: partnerTypeV,
     logoUrl: v.optional(v.string()),
     logoStorageId: v.optional(v.id("_storage")),
     website: v.optional(v.string()),
@@ -2287,236 +164,926 @@ export const applyForPartner = mutation({
     supportedCareModes: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("You must be logged in with Clerk to apply for partner access.");
-    }
-
+    const viewer = await requireViewer(ctx);
     const email = args.contactEmail.trim().toLowerCase();
     const cleanName = args.name.trim();
+    if (cleanName.length < 2 || cleanName.length > 120) throw new ConvexError("Enter your organisation's name.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ConvexError("Enter a valid contact email address.");
 
-    // Check if user already has an application
-    const existing = await ctx.db
-      .query("partners")
-      .withIndex("by_owner_clerk_id", (q) => q.eq("ownerClerkId", identity.subject))
-      .first();
+    const existing = await findOwnedPartner(ctx, viewer.identity);
+    if (existing) throw new ConvexError("You already have a registered partner organisation or a pending application.");
 
-    if (existing) {
-      throw new Error("You already have a registered partner organization or pending application.");
-    }
+    let logoUrl: string | undefined;
+    if (args.logoStorageId) logoUrl = (await ctx.storage.getUrl(args.logoStorageId)) ?? undefined;
+    else if (args.logoUrl && /^https:\/\//.test(args.logoUrl.trim())) logoUrl = args.logoUrl.trim();
 
-    // Resolve uploaded logo from storage if provided
-    let resolvedLogoUrl = args.logoUrl?.trim() || undefined;
-    if (args.logoStorageId) {
-      const storageUrl = await ctx.storage.getUrl(args.logoStorageId);
-      if (storageUrl) {
-        resolvedLogoUrl = storageUrl;
-      }
-    }
-
-    // Generate unique code slug
-    let baseCode = cleanName.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 24);
+    let baseCode = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24);
     if (!baseCode) baseCode = "partner";
     let code = baseCode;
-    let counter = 1;
-    while (true) {
+    for (let counter = 2; ; counter++) {
       const match = await ctx.db
         .query("partners")
         .withIndex("by_code", (q) => q.eq("code", code))
         .first();
       if (!match) break;
-      code = `${baseCode}_${counter++}`;
+      code = `${baseCode}_${counter}`;
     }
 
-    const randomKey = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    const apiKey = `sk_live_${randomKey}`;
-    const randomSecret = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    const webhookSecret = `whsec_${randomSecret}`;
     const now = Date.now();
-
+    const website = args.website?.trim();
     const partnerId = await ctx.db.insert("partners", {
       name: cleanName,
       code,
-      apiKey,
       type: args.type,
-      logoUrl: resolvedLogoUrl,
+      logoUrl,
       logoStorageId: args.logoStorageId,
+      website: website && /^https?:\/\//.test(website) ? website : website ? `https://${website}` : undefined,
+      contactName: args.contactName?.trim() || undefined,
       contactEmail: email,
-      contactPhone: args.contactPhone?.trim(),
-      ownerClerkId: identity.subject,
-      ownerEmail: email,
-      coverageStates: args.coverageStates || ["Lagos"],
-      coverageCities: args.coverageCities || ["Ikeja", "Victoria Island"],
-      supportedCareModes: args.supportedCareModes || ["remote", "face_to_face"],
-      webhookSecret,
-      isActive: false, // Inactive until approved by Rehabify admin
+      contactPhone: args.contactPhone?.trim() || undefined,
+      ownerClerkId: viewer.identity.subject,
+      ownerEmail: viewer.identity.email?.toLowerCase() ?? email,
+      coverageStates: args.coverageStates ?? [],
+      coverageCities: args.coverageCities ?? [],
+      supportedCareModes: args.supportedCareModes ?? ["remote", "face_to_face"],
+      isActive: false,
       approvalStatus: "pending",
-      tier: "sandbox",
+      productionStatus: "not_requested",
+      tier: "standard",
       createdAt: now,
       updatedAt: now,
     });
 
-    // Update user role to "partner" if existing in users table
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (user && !user.role) {
-      await ctx.db.patch(user._id, { role: "partner" });
+    if (viewer.user && (!viewer.user.role || viewer.user.role === "patient")) {
+      // Partners are organisations; a brand-new account becomes a partner account.
+      if (!viewer.user.role) await ctx.db.patch(viewer.user._id, { role: "partner" });
     }
 
-    // Notify administrators
     const admins = await ctx.db
       .query("users")
       .withIndex("by_role", (q) => q.eq("role", "admin"))
       .collect();
-
     const adminEmails = new Set<string>();
-
     for (const admin of admins) {
       await ctx.db.insert("notifications", {
         userId: admin._id,
         type: "system_alert",
         title: "New Partner Application",
-        message: `Organization "${cleanName}" (${args.type.toUpperCase()}) applied for partner access.`,
-        data: {
-          partnerId,
-          code,
-          name: cleanName,
-          type: args.type,
-          contactEmail: email,
-        },
+        message: `"${cleanName}" (${args.type.toUpperCase()}) applied for partner access.`,
+        data: { partnerId, code, name: cleanName, type: args.type, contactEmail: email },
         status: "pending",
         priority: "high",
         createdAt: now,
         updatedAt: now,
       });
-
-      if (admin.email) {
-        // Prevent accidental delivery to deprecated domains
-        const cleanEmail = admin.email.replace(/@rehabifyhealth\.com$/i, "@physioaroundme.com");
-        adminEmails.add(cleanEmail);
-      }
+      if (admin.email) adminEmails.add(admin.email.toLowerCase());
     }
-
-    // Always ensure the dedicated Rehabify Partner Operations inbox is notified
-    const partnerOpsEmail = process.env.PARTNER_OPERATIONS_EMAIL || "partners@physioaroundme.com";
-    adminEmails.add(partnerOpsEmail);
-
-    // The applicant themselves must NEVER receive this internal Rehabify admin notification,
-    // even if their email happens to match a platform administrator account
-    adminEmails.delete(email.toLowerCase().trim());
-
-    // Ensure Rehabify partner operations email is present
-    if (adminEmails.size === 0) {
-      adminEmails.add("partners@physioaroundme.com");
-    }
-
-    // Dispatch automated email notification to all admins
+    adminEmails.add((process.env.PARTNER_OPERATIONS_EMAIL || "partners@physioaroundme.com").toLowerCase());
+    adminEmails.delete(email);
     for (const adminEmail of adminEmails) {
-      await ctx.scheduler.runAfter(
-        0,
-        (api as any).actions.emails.sendPartnerApplicationEmails.sendPartnerApplicationSubmittedAdminEmail,
-        {
-          adminEmail,
-          organizationName: cleanName,
-          organizationType: args.type,
-          contactName: args.contactName,
-          contactEmail: email,
-          contactPhone: args.contactPhone,
-          coverageStates: args.coverageStates,
-        }
-      );
+      await ctx.scheduler.runAfter(0, internal.actions.emails.sendPartnerApplicationEmails.sendPartnerApplicationSubmittedAdminEmail, {
+        adminEmail,
+        organizationName: cleanName,
+        organizationType: args.type,
+        contactName: args.contactName,
+        contactEmail: email,
+        contactPhone: args.contactPhone,
+        coverageStates: args.coverageStates,
+      });
     }
-
-    return {
-      partnerId,
-      code,
-      name: cleanName,
-      approvalStatus: "pending",
-    };
+    return { partnerId, code, name: cleanName, approvalStatus: "pending" as const };
   },
 });
 
-/**
- * Allows a verified partner or Rehabify administrator to update their company profile and branding.
- */
 export const updatePartnerBranding = mutation({
   args: {
     partnerCode: v.string(),
     name: v.optional(v.string()),
-    logoUrl: v.optional(v.string()),
     logoStorageId: v.optional(v.id("_storage")),
+    removeLogo: v.optional(v.boolean()),
+    website: v.optional(v.string()),
+    contactName: v.optional(v.string()),
     contactEmail: v.optional(v.string()),
     contactPhone: v.optional(v.string()),
+    technicalContactEmail: v.optional(v.string()),
+    financeContactEmail: v.optional(v.string()),
     coverageStates: v.optional(v.array(v.string())),
     coverageCities: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Unauthorized. Please log in to update company settings.");
-    }
-
-    // Check if user is admin
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .first();
-    const isAdmin = user?.role === "admin";
-
-    const partner = await ctx.db
-      .query("partners")
-      .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
-      .first();
-
-    if (!partner) {
-      throw new Error("Partner organization not found.");
-    }
-
-    // Check ownership
-    if (!isAdmin && partner.ownerClerkId !== identity.subject) {
-      throw new Error("You do not have permission to edit this organization's branding.");
-    }
-
-    const updates: Record<string, any> = {
-      updatedAt: Date.now(),
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const updates: Partial<Doc<"partners">> = { updatedAt: Date.now() };
+    const email = (value?: string) => {
+      const clean = value?.trim().toLowerCase();
+      if (!clean) return undefined;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) throw new ConvexError(`"${value}" is not a valid email address.`);
+      return clean;
     };
-
-    if (args.name !== undefined && args.name.trim()) {
-      updates.name = args.name.trim();
-    }
-    if (args.logoStorageId) {
+    if (args.name !== undefined && args.name.trim()) updates.name = args.name.trim().slice(0, 120);
+    if (args.removeLogo) {
+      updates.logoUrl = undefined;
+      updates.logoStorageId = undefined;
+    } else if (args.logoStorageId) {
       updates.logoStorageId = args.logoStorageId;
-      const storageUrl = await ctx.storage.getUrl(args.logoStorageId);
-      if (storageUrl) {
-        updates.logoUrl = storageUrl;
-      }
-    } else if (args.logoUrl !== undefined) {
-      updates.logoUrl = args.logoUrl.trim() || undefined;
+      updates.logoUrl = (await ctx.storage.getUrl(args.logoStorageId)) ?? undefined;
     }
-    if (args.contactEmail !== undefined && args.contactEmail.trim()) {
-      updates.contactEmail = args.contactEmail.trim().toLowerCase();
+    if (args.website !== undefined) {
+      const site = args.website.trim();
+      updates.website = site ? (/^https?:\/\//.test(site) ? site : `https://${site}`) : undefined;
     }
-    if (args.contactPhone !== undefined) {
-      updates.contactPhone = args.contactPhone.trim() || undefined;
+    if (args.contactName !== undefined) updates.contactName = args.contactName.trim() || undefined;
+    if (args.contactEmail !== undefined) {
+      const clean = email(args.contactEmail);
+      if (!clean) throw new ConvexError("A primary contact email is required.");
+      updates.contactEmail = clean;
     }
-    if (args.coverageStates !== undefined) {
-      updates.coverageStates = args.coverageStates;
-    }
-    if (args.coverageCities !== undefined) {
-      updates.coverageCities = args.coverageCities;
-    }
+    if (args.technicalContactEmail !== undefined) updates.technicalContactEmail = email(args.technicalContactEmail);
+    if (args.financeContactEmail !== undefined) updates.financeContactEmail = email(args.financeContactEmail);
+    if (args.contactPhone !== undefined) updates.contactPhone = args.contactPhone.trim() || undefined;
+    if (args.coverageStates !== undefined) updates.coverageStates = args.coverageStates.slice(0, 40);
+    if (args.coverageCities !== undefined) updates.coverageCities = args.coverageCities.slice(0, 100);
     await ctx.db.patch(partner._id, updates);
+    const fresh = await ctx.db.get(partner._id);
+    return { success: true, partner: partnerSummary(fresh!) };
+  },
+});
 
+// ─── Admin: organisations ────────────────────────────────────────────────────
+
+/** Admin-only partner switcher. Never includes credentials. */
+export const adminListPartners = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const partners = await ctx.db.query("partners").order("desc").collect();
+    return partners.map((p) => ({
+      code: p.code,
+      name: p.name,
+      type: p.type,
+      approvalStatus: partnerApprovalStatus(p),
+      productionStatus: p.productionStatus ?? "not_requested",
+      isActive: p.isActive,
+    }));
+  },
+});
+
+/** Admin creates an organisation; the owner claims it by signing in with ownerEmail. */
+export const adminCreatePartner = mutation({
+  args: {
+    name: v.string(),
+    type: partnerTypeV,
+    ownerEmail: v.string(),
+    contactName: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
+    tier: v.optional(v.union(v.literal("standard"), v.literal("enterprise"))),
+  },
+  handler: async (ctx, args) => {
+    const admin = await requireAdmin(ctx);
+    const email = args.ownerEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ConvexError("Enter a valid owner email.");
+    let baseCode = args.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24) || "partner";
+    let code = baseCode;
+    for (let counter = 2; ; counter++) {
+      const match = await ctx.db
+        .query("partners")
+        .withIndex("by_code", (q) => q.eq("code", code))
+        .first();
+      if (!match) break;
+      code = `${baseCode}_${counter}`;
+    }
+    const now = Date.now();
+    const partnerId = await ctx.db.insert("partners", {
+      name: args.name.trim(),
+      code,
+      type: args.type,
+      contactName: args.contactName?.trim() || undefined,
+      contactEmail: email,
+      contactPhone: args.contactPhone?.trim() || undefined,
+      ownerEmail: email,
+      isActive: true,
+      approvalStatus: "approved",
+      approvedAt: now,
+      approvedBy: adminDisplayName(admin.user),
+      productionStatus: "not_requested",
+      tier: args.tier ?? "standard",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.scheduler.runAfter(0, internal.actions.emails.sendPartnerApplicationEmails.sendPartnerApplicationApprovedEmail, {
+      partnerEmail: email,
+      organizationName: args.name.trim(),
+      partnerCode: code,
+      contactName: args.contactName,
+      approvedBy: adminDisplayName(admin.user),
+    });
+    return { partnerId, code };
+  },
+});
+
+// ─── Dashboard ───────────────────────────────────────────────────────────────
+
+export const getPartnerDashboardOverview = query({
+  args: { partnerCode: v.string(), environment: envV },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const referrals = await ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_partner_and_environment", (q) => q.eq("partnerId", partner.code).eq("environment", args.environment))
+      .order("desc")
+      .take(2000);
+    const counts = { received: 0, contacted: 0, booked: 0, in_treatment: 0, completed: 0, not_suitable: 0, cancelled: 0, closed: 0 };
+    let totalSessionsPrescribed = 0;
+    for (const r of referrals) {
+      counts[toPublicStatus(r.status)]++;
+      totalSessionsPrescribed += r.recommendedSessions ?? 0;
+    }
+    const keys = await ctx.db
+      .query("partnerApiKeys")
+      .withIndex("by_partner_env_status", (q) => q.eq("partnerId", partner.code).eq("environment", args.environment).eq("status", "active"))
+      .collect();
+    const target = webhookTargetFor(partner, args.environment);
     return {
-      success: true,
-      partner: {
-        ...partner,
-        ...updates,
+      metrics: {
+        totalReferrals: referrals.length,
+        activeInTreatment: counts.booked + counts.in_treatment,
+        completed: counts.completed,
+        pending: counts.received + counts.contacted,
+        statusCounts: counts,
+        totalSessionsPrescribed,
+        countIsCapped: referrals.length >= 2000,
+      },
+      partnerInfo: {
+        ...partnerSummary(partner),
+        partnerIdFormatted: `PRT-${partner.code.toUpperCase().slice(0, 10)}`,
+        activeEnvironment: args.environment,
+        isSandbox: args.environment === "sandbox",
+        hasProductionAccess: hasProductionAccess(partner),
+        webhookUrl: target.url ?? "",
+        liveWebhookUrl: webhookTargetFor(partner, "live").url ?? "",
+        testWebhookUrl: webhookTargetFor(partner, "sandbox").url ?? "",
+        hasWebhookSecret: Boolean(target.secret),
+        activeKeyCount: keys.length,
+      },
+      recentReferrals: await Promise.all(referrals.slice(0, 10).map((r) => referralRow(ctx, r))),
+    };
+  },
+});
+
+async function referralRow(ctx: any, r: Doc<"inboundReferrals">) {
+  return {
+    referralId: r._id,
+    trackingCode: r.trackingCode ?? "",
+    partnerExternalId: r.partnerExternalId ?? null,
+    patientName: `${r.patientFirstName} ${r.patientLastName ?? ""}`.trim(),
+    phone: r.patientPhone,
+    city: r.city ?? null,
+    condition: r.condition ?? r.reason ?? null,
+    status: toPublicStatus(r.status),
+    environment: referralEnv(r),
+    source: r.conversionSource ?? "api",
+    recommendedSessions: r.recommendedSessions ?? null,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+}
+
+export const listPartnerReferrals = query({
+  args: {
+    partnerCode: v.string(),
+    environment: envV,
+    status: v.optional(v.string()),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    let q = ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_partner_and_environment", (idx) => idx.eq("partnerId", partner.code).eq("environment", args.environment))
+      .order("desc");
+    if (args.status && args.status !== "all") {
+      const wanted = args.status;
+      const statuses = (["received", "consent_pending", "contacted", "intake_started", "intake_completed", "qualified", "redirected_for_safety", "booked", "attended", "treatment_active", "completed", "cancelled", "not_suitable", "refunded", "closed", "pending", "in_treatment", "paid_out"] as const).filter(
+        (s) => toPublicStatus(s) === wanted
+      );
+      q = q.filter((f) => f.or(...statuses.map((s) => f.eq(f.field("status"), s))));
+    }
+    const page = await q.paginate({ ...args.paginationOpts, numItems: Math.min(Math.max(args.paginationOpts.numItems, 1), 100) });
+    return { ...page, page: await Promise.all(page.page.map((r) => referralRow(ctx, r))) };
+  },
+});
+
+export const searchPartnerReferrals = query({
+  args: { partnerCode: v.string(), environment: envV, term: v.string() },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const term = args.term.trim();
+    if (term.length < 2) return [];
+    const exact = await findPartnerReferral(ctx, partner.code, args.environment, term);
+    if (exact) return [await referralRow(ctx, exact)];
+    const needle = term.toLowerCase();
+    const phone = normalizePhone(term);
+    const recent = await ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_partner_and_environment", (q) => q.eq("partnerId", partner.code).eq("environment", args.environment))
+      .order("desc")
+      .take(500);
+    const matches = recent.filter((r) => {
+      const name = `${r.patientFirstName} ${r.patientLastName ?? ""}`.toLowerCase();
+      return name.includes(needle) || (phone && r.patientPhoneNormalized === phone) || (r.condition ?? "").toLowerCase().includes(needle);
+    });
+    return Promise.all(matches.slice(0, 50).map((r) => referralRow(ctx, r)));
+  },
+});
+
+export const getPartnerReferralDetail = query({
+  args: { partnerCode: v.string(), environment: envV, referralId: v.string() },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const referral = await findPartnerReferral(ctx, partner.code, args.environment, args.referralId);
+    if (!referral) return null;
+    const events = await ctx.db
+      .query("referralEvents")
+      .withIndex("by_referral_id", (q) => q.eq("referralId", referral._id))
+      .order("asc")
+      .collect();
+    const timeline = events
+      .filter((e) => !e.eventName.startsWith("commission.") && !e.eventName.startsWith("clinic."))
+      .map((e) => ({ name: e.eventName, occurredAt: e.occurredAt, actorType: e.actorType ?? "system" }));
+    const deliveries = await ctx.db
+      .query("partnerWebhookDeliveries")
+      .withIndex("by_referral", (q) => q.eq("referralId", referral._id))
+      .order("desc")
+      .take(50);
+    return {
+      referral: await serializeReferral(ctx, referral, { includePatient: true }),
+      report: await buildReport(ctx, referral),
+      sessions: await referralSessions(ctx, referral),
+      timeline,
+      webhookDeliveries: deliveries.map((d) => ({
+        _id: d._id,
+        eventId: d.eventId,
+        eventType: d.eventType,
+        status: d.status,
+        attempts: d.attempts,
+        lastStatusCode: d.lastStatusCode ?? null,
+        createdAt: d.createdAt,
+      })),
+    };
+  },
+});
+
+// ─── Sandbox tools (portal) ──────────────────────────────────────────────────
+
+export const createSandboxReferral = mutation({
+  args: {
+    partnerCode: v.string(),
+    partnerReference: v.optional(v.string()),
+    firstName: v.string(),
+    lastName: v.optional(v.string()),
+    phone: v.string(),
+    email: v.optional(v.string()),
+    city: v.optional(v.string()),
+    condition: v.optional(v.string()),
+    recommendedSessions: v.optional(v.number()),
+    preferredMode: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true });
+    if (!args.firstName.trim()) throw new ConvexError("First name is required.");
+    const result = await createReferralCore(ctx, {
+      partnerCode: partner.code,
+      environment: "sandbox",
+      source: "portal",
+      input: {
+        partnerReference: args.partnerReference,
+        patient: { firstName: args.firstName, lastName: args.lastName, phone: args.phone, email: args.email, city: args.city },
+        clinical: { condition: args.condition, recommendedSessions: args.recommendedSessions },
+        care: { preferredMode: args.preferredMode },
+        consent: { granted: true, method: "sandbox_test" },
+      },
+    });
+    if (!result.ok) throw new ConvexError(result.message);
+    return result.referral;
+  },
+});
+
+export const advanceSandboxReferral = mutation({
+  args: {
+    partnerCode: v.string(),
+    referralId: v.string(),
+    status: v.union(
+      v.literal("contacted"),
+      v.literal("provider_matched"),
+      v.literal("booked"),
+      v.literal("in_treatment"),
+      v.literal("completed"),
+      v.literal("not_suitable"),
+      v.literal("cancelled"),
+      v.literal("closed")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const { partner, actor } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true });
+    const referral = await findPartnerReferral(ctx, partner.code, "sandbox", args.referralId);
+    if (!referral) throw new ConvexError("Sandbox referral not found.");
+    const result = await sandboxAdvanceCore(ctx, referral, args.status as SandboxStep, actor);
+    if (!result.ok) throw new ConvexError(result.message);
+    return { success: true };
+  },
+});
+
+// ─── API keys ────────────────────────────────────────────────────────────────
+
+export const listPartnerApiKeys = query({
+  args: { partnerCode: v.string(), environment: envV },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const keys = await ctx.db
+      .query("partnerApiKeys")
+      .withIndex("by_partner_and_env", (q) => q.eq("partnerId", partner.code).eq("environment", args.environment))
+      .order("desc")
+      .collect();
+    return keys
+      .filter((k) => Boolean(k.keyHash)) // legacy plaintext keys no longer authenticate
+      .map((k) => ({
+        _id: k._id,
+        name: k.name,
+        keyPrefix: k.keyPrefix,
+        last4: k.last4 ?? null,
+        environment: k.environment,
+        status: k.status === "rolling" ? "active" : k.status,
+        createdAt: k.createdAt,
+        lastUsedAt: k.lastUsedAt ?? null,
+        revokedAt: k.revokedAt ?? null,
+      }));
+  },
+});
+
+/** Internal: authorization check reused by actions (auth propagates from the action). */
+export const assertPartnerEnvAccess = internalQuery({
+  args: { partnerCode: v.string(), environment: envV, forWrite: v.boolean() },
+  handler: async (ctx, args) => {
+    const { partner, actor } = await requirePartnerEnvAccess(ctx, args.partnerCode, args.environment, { forWrite: args.forWrite });
+    return { code: partner.code, actor };
+  },
+});
+
+export const insertApiKey = internalMutation({
+  args: {
+    partnerCode: v.string(),
+    environment: envV,
+    name: v.string(),
+    keyHash: v.string(),
+    keyPrefix: v.string(),
+    last4: v.string(),
+    revokeKeyId: v.optional(v.id("partnerApiKeys")),
+  },
+  handler: async (ctx, args) => {
+    // Re-check inside the transaction (the action's identity propagates here).
+    const { partner, actor } = await requirePartnerEnvAccess(ctx, args.partnerCode, args.environment, { forWrite: true });
+    const active = await ctx.db
+      .query("partnerApiKeys")
+      .withIndex("by_partner_env_status", (q) => q.eq("partnerId", partner.code).eq("environment", args.environment).eq("status", "active"))
+      .collect();
+    const revoking = args.revokeKeyId ? active.find((k) => k._id === args.revokeKeyId) : undefined;
+    if (args.revokeKeyId && !revoking) throw new ConvexError("The key to rotate was not found or is already revoked.");
+    if (active.length - (revoking ? 1 : 0) >= MAX_ACTIVE_KEYS_PER_ENV) {
+      throw new ConvexError(`You can have at most ${MAX_ACTIVE_KEYS_PER_ENV} active ${args.environment} keys. Revoke an unused key first.`);
+    }
+    const now = Date.now();
+    const keyId = await ctx.db.insert("partnerApiKeys", {
+      partnerId: partner.code,
+      name: args.name,
+      keyHash: args.keyHash,
+      keyPrefix: args.keyPrefix,
+      last4: args.last4,
+      environment: args.environment,
+      status: "active",
+      createdAt: now,
+      createdBy: actor,
+    });
+    if (revoking) await ctx.db.patch(revoking._id, { status: "revoked", revokedAt: now, revokedBy: actor });
+    await logPortalActivity(ctx, partner, args.environment, revoking ? "api_key.rotated" : "api_key.created", {
+      name: args.name,
+      keyPrefix: args.keyPrefix,
+      revokedKeyPrefix: revoking?.keyPrefix,
+    });
+    return { keyId, createdAt: now };
+  },
+});
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+type MintedKey = { keyId: Id<"partnerApiKeys">; key: string; keyPrefix: string; name: string; environment: PartnerEnv; createdAt: number };
+
+async function mintKey(ctx: any, args: { partnerCode: string; environment: PartnerEnv; name: string; revokeKeyId?: Id<"partnerApiKeys"> }): Promise<MintedKey> {
+  await ctx.runQuery(internal.partners.assertPartnerEnvAccess, { partnerCode: args.partnerCode, environment: args.environment, forWrite: true });
+  const prefix = args.environment === "live" ? "sk_live_" : "sk_test_";
+  const secret = randomString(40, BASE62);
+  const key = `${prefix}${secret}`;
+  const keyPrefix = `${prefix}${secret.slice(0, 4)}…${secret.slice(-4)}`;
+  const name = args.name.trim().slice(0, 60) || (args.environment === "live" ? "Live key" : "Sandbox key");
+  const result: { keyId: Id<"partnerApiKeys">; createdAt: number } = await ctx.runMutation(internal.partners.insertApiKey, {
+    partnerCode: args.partnerCode,
+    environment: args.environment,
+    name,
+    keyHash: await sha256Hex(key),
+    keyPrefix,
+    last4: secret.slice(-4),
+    revokeKeyId: args.revokeKeyId,
+  });
+  return { keyId: result.keyId as Id<"partnerApiKeys">, key, keyPrefix, name, environment: args.environment, createdAt: result.createdAt as number };
+}
+
+/** Creates an API key. The full key is returned ONCE and never stored. */
+export const createPartnerApiKey = action({
+  args: { partnerCode: v.string(), environment: envV, name: v.string() },
+  handler: async (ctx, args): Promise<MintedKey> => mintKey(ctx, args),
+});
+
+/** Replaces a key with a new one and revokes the old key immediately. */
+export const rotatePartnerApiKey = action({
+  args: { partnerCode: v.string(), keyId: v.id("partnerApiKeys") },
+  handler: async (ctx, args): Promise<{ keyId: Id<"partnerApiKeys">; key: string; keyPrefix: string; name: string; environment: PartnerEnv; createdAt: number }> => {
+    const existing: { environment: PartnerEnv; name: string } | null = await ctx.runQuery(internal.partners.getKeyForRotation, {
+      partnerCode: args.partnerCode,
+      keyId: args.keyId,
+    });
+    if (!existing) throw new ConvexError("API key not found.");
+    return mintKey(ctx, { partnerCode: args.partnerCode, environment: existing.environment, name: existing.name, revokeKeyId: args.keyId });
+  },
+});
+
+export const getKeyForRotation = internalQuery({
+  args: { partnerCode: v.string(), keyId: v.id("partnerApiKeys") },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true });
+    const key = await ctx.db.get(args.keyId);
+    if (!key || key.partnerId !== partner.code || key.status === "revoked") return null;
+    return { environment: key.environment, name: key.name };
+  },
+});
+
+export const revokePartnerApiKey = mutation({
+  args: { partnerCode: v.string(), keyId: v.id("partnerApiKeys") },
+  handler: async (ctx, args) => {
+    const { partner, actor } = await requirePartnerAccess(ctx, args.partnerCode);
+    const key = await ctx.db.get(args.keyId);
+    if (!key || key.partnerId !== partner.code) throw new ConvexError("API key not found.");
+    if (key.status !== "revoked") {
+      await ctx.db.patch(key._id, { status: "revoked", revokedAt: Date.now(), revokedBy: actor });
+      await logPortalActivity(ctx, partner, key.environment, "api_key.revoked", { keyPrefix: key.keyPrefix });
+    }
+    return { success: true, keyId: key._id };
+  },
+});
+
+// ─── Webhook endpoints & signing secrets ─────────────────────────────────────
+
+export const persistWebhookSettings = internalMutation({
+  args: {
+    partnerCode: v.string(),
+    environment: envV,
+    url: v.optional(v.string()),
+    newSecret: v.optional(v.string()),
+    onlyIfMissingSecret: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerEnvAccess(ctx, args.partnerCode, args.environment, { forWrite: true });
+    const now = Date.now();
+    const current = webhookTargetFor(partner, args.environment);
+    const patch: Partial<Doc<"partners">> = { updatedAt: now };
+    let secretChanged = false;
+    if (args.newSecret && (!args.onlyIfMissingSecret || !current.secret)) {
+      secretChanged = true;
+      if (args.environment === "live") {
+        patch.liveWebhookSecret = args.newSecret;
+        patch.webhookSecret = args.newSecret;
+      } else {
+        patch.testWebhookSecret = args.newSecret;
+      }
+    }
+    if (args.url !== undefined) {
+      if (args.environment === "live") {
+        patch.liveWebhookUrl = args.url;
+        patch.webhookUrl = args.url;
+      } else {
+        patch.testWebhookUrl = args.url;
+      }
+    }
+    await ctx.db.patch(partner._id, patch);
+    await logPortalActivity(ctx, partner, args.environment, secretChanged && args.url === undefined ? "webhook.secret_rotated" : "webhook.endpoint_updated", {
+      url: args.url,
+      secretRotated: secretChanged,
+    });
+    return { secretChanged };
+  },
+});
+
+/** Saves the endpoint URL for an environment; creates a signing secret if none exists. */
+export const saveWebhookEndpoint = action({
+  args: { partnerCode: v.string(), environment: envV, url: v.string() },
+  handler: async (ctx, args): Promise<{ webhookUrl: string; secret: string | null }> => {
+    const checked = validateWebhookUrl(args.url);
+    if (!checked.ok) throw new ConvexError(checked.error);
+    const candidate = `whsec_${randomString(40, BASE62)}`;
+    const result: { secretChanged: boolean } = await ctx.runMutation(internal.partners.persistWebhookSettings, {
+      partnerCode: args.partnerCode,
+      environment: args.environment,
+      url: checked.url,
+      newSecret: candidate,
+      onlyIfMissingSecret: true,
+    });
+    // The secret is returned only when it was just created; reveal it later on demand.
+    return { webhookUrl: checked.url, secret: result.secretChanged ? candidate : null };
+  },
+});
+
+export const removeWebhookEndpoint = mutation({
+  args: { partnerCode: v.string(), environment: envV },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const patch: Partial<Doc<"partners">> = { updatedAt: Date.now() };
+    if (args.environment === "live") {
+      patch.liveWebhookUrl = undefined;
+      patch.webhookUrl = undefined;
+    } else {
+      patch.testWebhookUrl = undefined;
+    }
+    await ctx.db.patch(partner._id, patch);
+    await logPortalActivity(ctx, partner, args.environment, "webhook.endpoint_removed");
+    return { success: true };
+  },
+});
+
+export const rotateWebhookSecret = action({
+  args: { partnerCode: v.string(), environment: envV },
+  handler: async (ctx, args): Promise<{ secret: string }> => {
+    const secret = `whsec_${randomString(40, BASE62)}`;
+    await ctx.runMutation(internal.partners.persistWebhookSettings, {
+      partnerCode: args.partnerCode,
+      environment: args.environment,
+      newSecret: secret,
+    });
+    return { secret };
+  },
+});
+
+/** Reveals the signing secret on explicit request (logged). */
+export const revealWebhookSecret = mutation({
+  args: { partnerCode: v.string(), environment: envV },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true });
+    const secret = webhookTargetFor(partner, args.environment).secret;
+    if (!secret) throw new ConvexError(`No ${args.environment} signing secret yet — save your webhook endpoint first.`);
+    await logPortalActivity(ctx, partner, args.environment, "webhook.secret_revealed");
+    return { secret };
+  },
+});
+
+// ─── Activity, health & analytics ────────────────────────────────────────────
+
+export const listPartnerActivityLogs = query({
+  args: {
+    partnerCode: v.string(),
+    environment: envV,
+    eventType: v.optional(v.string()),
+    status: v.optional(v.string()),
+    direction: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const limit = Math.min(Math.max(Math.floor(args.limit ?? 50), 1), 200);
+    const filtered = Boolean((args.eventType && args.eventType !== "all") || (args.status && args.status !== "all") || (args.direction && args.direction !== "all"));
+    const logs = await ctx.db
+      .query("partnerActivityLogs")
+      .withIndex("by_partner_env_occurred", (q) => q.eq("partnerId", partner.code).eq("environment", args.environment))
+      .order("desc")
+      .take(filtered ? 1000 : limit);
+    return logs
+      .filter((l) => !args.eventType || args.eventType === "all" || l.eventType === args.eventType || l.eventType.startsWith(`${args.eventType}.`))
+      .filter((l) => !args.status || args.status === "all" || l.status === args.status)
+      .filter((l) => !args.direction || args.direction === "all" || l.direction === args.direction)
+      .slice(0, limit)
+      .map((l) => ({
+        _id: l._id,
+        eventId: l.eventId,
+        eventType: l.eventType,
+        direction: l.direction,
+        url: l.url,
+        method: l.method,
+        statusCode: l.statusCode,
+        latencyMs: l.latencyMs,
+        status: l.status,
+        requestId: l.requestId,
+        trackingCode: l.trackingCode,
+        requestHeaders: l.requestHeaders,
+        requestPayload: l.requestPayload,
+        responsePayload: l.responsePayload,
+        errorMessage: l.errorMessage,
+        occurredAt: l.occurredAt,
+      }));
+  },
+});
+
+/** Real integration health for the last 24 hours (no synthetic numbers). */
+export const getIntegrationHealth = query({
+  args: { partnerCode: v.string(), environment: envV },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const since = Date.now() - 24 * 60 * 60 * 1000;
+    const logs = await ctx.db
+      .query("partnerActivityLogs")
+      .withIndex("by_partner_env_occurred", (q) => q.eq("partnerId", partner.code).eq("environment", args.environment).gte("occurredAt", since))
+      .take(5000);
+    const api = logs.filter((l) => l.direction === "inbound" && l.url.startsWith("/api/v1"));
+    const apiErrors = api.filter((l) => l.statusCode >= 500).length;
+    const deliveries = await ctx.db
+      .query("partnerWebhookDeliveries")
+      .withIndex("by_partner_env_created", (q) => q.eq("partnerId", partner.code).eq("environment", args.environment).gte("createdAt", since))
+      .take(5000);
+    const finished = deliveries.filter((d) => d.status === "succeeded" || d.status === "failed");
+    const succeeded = finished.filter((d) => d.status === "succeeded");
+    const latencies = succeeded.map((d) => d.lastLatencyMs ?? 0).filter((n) => n > 0);
+    const target = webhookTargetFor(partner, args.environment);
+    return {
+      windowHours: 24,
+      api: {
+        requests: api.length,
+        serverErrors: apiErrors,
+        clientErrors: api.filter((l) => l.statusCode >= 400 && l.statusCode < 500).length,
+        successRate: api.length ? Math.round(((api.length - apiErrors) / api.length) * 1000) / 10 : null,
+        avgLatencyMs: api.length ? Math.round(api.reduce((s, l) => s + l.latencyMs, 0) / api.length) : null,
+        truncated: logs.length >= 5000,
+      },
+      webhooks: {
+        endpointConfigured: Boolean(target.url && target.secret),
+        endpointUrl: target.url ?? null,
+        events: deliveries.length,
+        delivered: succeeded.length,
+        failed: deliveries.filter((d) => d.status === "failed").length,
+        retrying: deliveries.filter((d) => d.status === "pending" && d.attempts > 0).length,
+        skipped: deliveries.filter((d) => d.status === "skipped").length,
+        successRate: finished.length ? Math.round((succeeded.length / finished.length) * 1000) / 10 : null,
+        avgLatencyMs: latencies.length ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : null,
       },
     };
   },
 });
 
+export const getPartnerAnalyticsTimeseries = query({
+  args: { partnerCode: v.string(), environment: envV, range: v.optional(v.union(v.literal("7d"), v.literal("30d"), v.literal("90d"))) },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const days = args.range === "7d" ? 7 : args.range === "90d" ? 90 : 30;
+    const dayMs = 24 * 60 * 60 * 1000;
+    const end = Date.now();
+    const start = end - days * dayMs;
+    const referrals = await ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_partner_and_environment", (q) => q.eq("partnerId", partner.code).eq("environment", args.environment).gte("_creationTime", start))
+      .take(5000);
+    const buckets = new Map<string, { date: string; referrals: number; contacted: number; booked: number; completed: number }>();
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date(end - i * dayMs).toISOString().slice(0, 10);
+      buckets.set(date, { date, referrals: 0, contacted: 0, booked: 0, completed: 0 });
+    }
+    const bump = (ts: number | undefined, key: "referrals" | "contacted" | "booked" | "completed") => {
+      if (!ts || ts < start) return;
+      const bucket = buckets.get(new Date(ts).toISOString().slice(0, 10));
+      if (bucket) bucket[key]++;
+    };
+    const modes = { remote: 0, in_person: 0, patient_choice: 0 };
+    for (const r of referrals) {
+      bump(r.createdAt, "referrals");
+      bump(r.contactedAt, "contacted");
+      bump(r.bookedAt, "booked");
+      bump(r.completedAt, "completed");
+      const mode = r.preferredCareMode === "remote" ? "remote" : r.preferredCareMode === "face_to_face" || r.preferredCareMode === "in_person" ? "in_person" : "patient_choice";
+      modes[mode]++;
+    }
+    const reached = (r: Doc<"inboundReferrals">, stage: "contacted" | "booked" | "in_treatment" | "completed") => {
+      const status = toPublicStatus(r.status);
+      const order = ["received", "contacted", "booked", "in_treatment", "completed"];
+      const at = { contacted: r.contactedAt, booked: r.bookedAt, in_treatment: r.treatmentStartedAt, completed: r.completedAt }[stage];
+      return Boolean(at) || order.indexOf(status) >= order.indexOf(stage);
+    };
+    return {
+      rangeDays: days,
+      timeseries: Array.from(buckets.values()),
+      funnel: [
+        { stage: "Referrals", count: referrals.length },
+        { stage: "Contacted", count: referrals.filter((r) => reached(r, "contacted")).length },
+        { stage: "Booked", count: referrals.filter((r) => reached(r, "booked")).length },
+        { stage: "In treatment", count: referrals.filter((r) => reached(r, "in_treatment")).length },
+        { stage: "Completed", count: referrals.filter((r) => reached(r, "completed")).length },
+      ],
+      careModes: [
+        { mode: "remote", label: "Tele-rehab", count: modes.remote },
+        { mode: "in_person", label: "In person", count: modes.in_person },
+        { mode: "patient_choice", label: "Patient's choice", count: modes.patient_choice },
+      ],
+    };
+  },
+});
+
+// ─── Go-live (production access) ─────────────────────────────────────────────
+
+export const getGoLiveChecklist = query({
+  args: { partnerCode: v.string() },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const sandboxKeys = await ctx.db
+      .query("partnerApiKeys")
+      .withIndex("by_partner_and_env", (q) => q.eq("partnerId", partner.code).eq("environment", "sandbox"))
+      .collect();
+    const sandboxReferral = await ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_partner_and_environment", (q) => q.eq("partnerId", partner.code).eq("environment", "sandbox"))
+      .first();
+    const delivered = await ctx.db
+      .query("partnerWebhookDeliveries")
+      .withIndex("by_partner_env_created", (q) => q.eq("partnerId", partner.code).eq("environment", "sandbox"))
+      .order("desc")
+      .take(200);
+    const bank = await ctx.db
+      .query("partnerBankAccounts")
+      .withIndex("by_partner_code", (q) => q.eq("partnerCode", partner.code))
+      .first();
+    const items = [
+      { key: "approved", label: "Organisation approved by Rehabify", done: isPartnerApproved(partner), required: true },
+      { key: "sandbox_key", label: "Created a sandbox API key", done: sandboxKeys.some((k) => k.keyHash), required: true },
+      { key: "sandbox_referral", label: "Created a referral in sandbox", done: Boolean(sandboxReferral), required: true },
+      { key: "sandbox_webhook", label: "Received a sandbox webhook (2xx response)", done: delivered.some((d) => d.status === "succeeded"), required: false },
+      { key: "contacts", label: "Technical and finance contacts added", done: Boolean(partner.technicalContactEmail && partner.financeContactEmail), required: false },
+      { key: "bank", label: "Payout bank account verified (needed to receive commissions)", done: Boolean(bank?.isVerified), required: false },
+    ];
+    return {
+      productionStatus: partner.productionStatus ?? "not_requested",
+      productionRequestedAt: partner.productionRequestedAt ?? null,
+      productionRejectionReason: partner.productionRejectionReason ?? null,
+      canRequest: items.filter((i) => i.required).every((i) => i.done) && (partner.productionStatus ?? "not_requested") !== "approved",
+      items,
+    };
+  },
+});
+
+export const requestProductionAccess = mutation({
+  args: { partnerCode: v.string(), note: v.optional(v.string()), expectedMonthlyReferrals: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const { partner, viewer } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true });
+    const status = partner.productionStatus ?? "not_requested";
+    if (status === "approved") throw new ConvexError("Production access is already approved.");
+    if (status === "requested") throw new ConvexError("Your request is already with the Rehabify team.");
+    if (status === "suspended") throw new ConvexError("Production access is suspended. Contact partners@physioaroundme.com.");
+    const sandboxReferral = await ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_partner_and_environment", (q) => q.eq("partnerId", partner.code).eq("environment", "sandbox"))
+      .first();
+    if (!sandboxReferral) throw new ConvexError("Create at least one sandbox referral before requesting production access.");
+    const now = Date.now();
+    const note = [args.note?.trim(), args.expectedMonthlyReferrals ? `Expected monthly referrals: ${Math.round(args.expectedMonthlyReferrals)}` : undefined]
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, 2000);
+    await ctx.db.patch(partner._id, {
+      productionStatus: "requested",
+      productionRequestedAt: now,
+      productionRequestNote: note || undefined,
+      productionRejectionReason: undefined,
+      updatedAt: now,
+    });
+    await logPortalActivity(ctx, partner, "live", "production.requested", { requestedBy: viewer.identity.email });
+    const admins = await ctx.db
+      .query("users")
+      .withIndex("by_role", (q) => q.eq("role", "admin"))
+      .collect();
+    for (const admin of admins) {
+      await ctx.db.insert("notifications", {
+        userId: admin._id,
+        type: "system_alert",
+        title: "Partner go-live request",
+        message: `${partner.name} requested production (live) API access.`,
+        data: { partnerCode: partner.code },
+        status: "pending",
+        priority: "high",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    await ctx.scheduler.runAfter(0, internal.actions.emails.sendPartnerApplicationEmails.sendPartnerGoLiveEmail, {
+      to: (process.env.PARTNER_OPERATIONS_EMAIL || "partners@physioaroundme.com").toLowerCase(),
+      kind: "requested",
+      organizationName: partner.name,
+      partnerCode: partner.code,
+      note: note || undefined,
+    });
+    return { productionStatus: "requested" as const };
+  },
+});

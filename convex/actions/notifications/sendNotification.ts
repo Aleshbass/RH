@@ -3,7 +3,7 @@
 
 "use node";
 
-import { action } from "../../_generated/server";
+import { action, internalAction } from "../../_generated/server";
 import { api, internal } from "../../_generated/api";
 import { v } from "convex/values";
 import { Id } from "../../_generated/dataModel";
@@ -29,7 +29,7 @@ interface ActionResult {
   error?: string;
 }
 
-export const sendNotificationWithFallback = action({
+export const sendNotificationWithFallback = internalAction({
   args: { 
     // Define args based on your actual requirements
     userId: v.id("users"), 
@@ -78,7 +78,7 @@ export const sendNotificationWithFallback = action({
   },
 });
 
-export const sendFormattedNotification = action({
+export const sendFormattedNotification = internalAction({
   args: { 
     // Define args based on your actual requirements
     userId: v.id("users"), 

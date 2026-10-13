@@ -1,6 +1,7 @@
 'use client'
 
-import { useQuery } from 'convex/react'
+import { useConvexAuth, useQuery } from 'convex/react'
+import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { api } from '@/convex/_generated/api'
 import { Id } from '@/convex/_generated/dataModel'
@@ -50,11 +51,12 @@ interface InvoiceData {
 function SharedInvoicePageComponent() {
   const params = useParams()
   const invoiceId = params?.invoiceId as Id<"invoices">
-  
-  // Query the shareable invoice (no authentication required)
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth()
+
+  // Only the invoice's patient, provider, clinic owner or an admin can view it (signed in)
   const invoice = useQuery(
     api.billing.getShareableInvoice,
-    invoiceId ? { invoiceId } : 'skip'
+    invoiceId && isAuthenticated ? { invoiceId } : 'skip'
   ) as InvoiceData | null | undefined
 
   if (!params || !params.invoiceId) {
@@ -69,6 +71,22 @@ function SharedInvoicePageComponent() {
     )
   }
   
+  if (!authLoading && !isAuthenticated) {
+    const redirectPath = encodeURIComponent(`/invoices/shared/${invoiceId}`)
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="text-center">
+          <Receipt className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Sign in to view this invoice</h1>
+          <p className="text-gray-600 mb-6">Invoices are only visible to the patient and their care provider.</p>
+          <Button asChild>
+            <Link href={`/sign-in?redirect_url=${redirectPath}`}>Sign in</Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   if (invoice === undefined) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -86,7 +104,7 @@ function SharedInvoicePageComponent() {
         <div className="text-center">
           <Receipt className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Invoice Not Found</h1>
-          <p className="text-gray-600">The invoice you&apos;re looking for doesn&apos;t exist or has been removed.</p>
+          <p className="text-gray-600">The invoice you&apos;re looking for doesn&apos;t exist, has been removed, or isn&apos;t shared with your account.</p>
         </div>
       </div>
     )

@@ -1,13 +1,17 @@
 import { httpRouter } from "convex/server";
 import { calendarWebhook, webhookHealth } from "./calendar/webhook";
 import {
-  recordExternalRequest, resolvePatient, linkReferral, updatePatientLocation, resolvePhysiotherapist, findMatches,
+  recordExternalRequest, resolvePatient, linkReferral, resolveReferralContext, updatePatientLocation, resolvePhysiotherapist, findMatches,
   resolveAvailabilityProfile, createPendingBooking, createAdminScheduledVirtualBooking, resolvePartnerAttribution, getBooking,
   preparePaymentAttempt, recordPaymentInitialization, recordPaymentWebhook, recordPaymentFailedWebhook, createSpecialistReview, prepareSpecialistReviewPayment, recordSpecialistReviewPaymentInitialization, recordSpecialistReviewPaymentWebhook, cancelBooking, enqueueEvent, markEventDelivery, respondToBooking, replacementCandidates, reassignBooking,
 } from "./joyGateway";
-import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking } from "./joyGateway";
+import { readResolvePhysiotherapist, readFindMatches, readAvailability, readBooking, operationalQuery, operationalMutation } from "./joyGateway";
+import { rpc as partnerGatewayRpc } from "./partnerGateway";
 
 const http = httpRouter();
+
+// Partner REST API → Convex bridge (HMAC-signed, fixed operation allowlist).
+http.route({ path: "/partner-gateway/rpc", method: "POST", handler: partnerGatewayRpc });
 
 http.route({
   path: "/webhooks/google-calendar",
@@ -25,6 +29,7 @@ http.route({ path: "/joy-integration/record_external_request", method: "POST", h
 http.route({ path: "/joy-integration/resolve_patient", method: "POST", handler: resolvePatient });
 http.route({ path: "/joy-integration/resolve_or_create_patient", method: "POST", handler: resolvePatient });
 http.route({ path: "/joy-integration/link_referral", method: "POST", handler: linkReferral });
+http.route({ path: "/joy-integration/resolve_referral_context", method: "POST", handler: resolveReferralContext });
 http.route({ path: "/joy-integration/update_patient_location", method: "POST", handler: updatePatientLocation });
 http.route({ path: "/joy-integration/resolve_physiotherapist", method: "POST", handler: resolvePhysiotherapist });
 http.route({ path: "/joy-integration/find_matches", method: "POST", handler: findMatches });
@@ -47,6 +52,9 @@ http.route({ path: "/joy-integration/mark_event_delivery", method: "POST", handl
 http.route({ path: "/joy-integration/respond_to_booking", method: "POST", handler: respondToBooking });
 http.route({ path: "/joy-integration/replacement_candidates", method: "POST", handler: replacementCandidates });
 http.route({ path: "/joy-integration/reassign_booking", method: "POST", handler: reassignBooking });
+// Physio / family / admin operations from Joy (fixed allowlist in joyOperations.ts)
+http.route({ path: "/joy-integration/operational_query", method: "POST", handler: operationalQuery });
+http.route({ path: "/joy-integration/operational_mutation", method: "POST", handler: operationalMutation });
 http.route({ path: "/joy-read/resolve_physiotherapist", method: "POST", handler: readResolvePhysiotherapist });
 http.route({ path: "/joy-read/find_matches", method: "POST", handler: readFindMatches });
 http.route({ path: "/joy-read/availability", method: "POST", handler: readAvailability });

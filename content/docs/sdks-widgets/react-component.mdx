@@ -1,62 +1,18 @@
 ---
-title: React Component
-description: Embed pre-built Rehabify booking and referral components into React and Next.js applications.
+title: React components (coming soon)
+description: A React component package (@rehabify/react) is planned but not yet published. Here's how to integrate from a React or Next.js app today.
 ---
 
-# React Component (`@rehabify/react`)
+<Callout type="warn" title="Coming soon">The `@rehabify/react` package hasn't been published yet, so there's nothing to install. Any install command or component import you may have seen for it is out of date.</Callout>
 
-Use our React component library to drop interactive booking modals and partner referral buttons into your React or Next.js applications.
+## Integrating from React or Next.js today
 
----
+Don't call the Partner API from the browser. Your secret key would be exposed, and partner endpoints don't send CORS headers. Use one of these patterns instead:
 
-## Installation
+1. **Server-side referral.** Your React app posts to your own backend (for example, a Next.js Route Handler or Server Action). The backend calls [`POST /partners/referrals`](/docs/api-reference/referrals#create-a-referral) with the key from a server-only environment variable, and returns the `tracking_code` and `links.whatsapp_intake_url` to the browser.
+2. **Referral link.** Render a link or button that opens your [referral link](/docs/guides/no-code-referral-links) at `https://physioaroundme.com/r/<public_code>`. This requires no backend.
+3. **Your own form, posted to the public lead endpoint.** Submit the form from the browser to the [public lead endpoint](/docs/api-reference/referral-links#public-lead-capture). It's CORS-enabled and needs no API key. Include an explicit, unticked consent checkbox.
 
-```bash
-pnpm add @rehabify/react
-```
+The server-side pattern keeps your key in a server environment variable, such as `REHABIFY_API_KEY`. Never use a `NEXT_PUBLIC_` variable for it.
 
-```bash
-npm install @rehabify/react
-```
-
----
-
-## Usage in Next.js / React
-
-```tsx
-'use client';
-
-import { useState } from 'react';
-import { RehabifyBookingModal, useRehabify } from '@rehabify/react';
-
-export default function WellnessPortal() {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div className="p-8">
-      <button 
-        onClick={() => setIsOpen(true)}
-        className="px-6 py-3 bg-teal-600 text-white font-semibold rounded-lg shadow-md hover:bg-teal-700"
-      >
-        Schedule Physiotherapy Session
-      </button>
-
-      <RehabifyBookingModal
-        isOpen={isOpen}
-        onClose={() => setIsOpen(false)}
-        partnerKey={process.env.NEXT_PUBLIC_REHABIFY_KEY!}
-        patient={{
-          firstName: 'Oluwaseun',
-          lastName: 'Bakare',
-          phone: '+2348039876543',
-          city: 'Lagos',
-        }}
-        onSuccess={(booking) => {
-          console.log('Booked:', booking.referralId);
-          setIsOpen(false);
-        }}
-      />
-    </div>
-  );
-}
-```
+We'll document the component package here when it's published.

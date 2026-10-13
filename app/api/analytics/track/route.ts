@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { api } from '@/convex/_generated/api'
 import { ConvexHttpClient } from 'convex/browser'
+import { convexServerSecret } from '@/lib/convex-server-secret'
 import { log } from '@/lib/monitoring/logger'
 
 let convexClient: ConvexHttpClient | null = null
@@ -23,7 +24,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true })
     }
     const { type, data = {} } = JSON.parse(text)
-    
+    const serverSecret = convexServerSecret()
+
     // Log the analytics event
     log.info(`Analytics event: ${type}`, {
       userId: data.userId,
@@ -35,6 +37,7 @@ export async function POST(request: NextRequest) {
     switch (type) {
       case 'user-event':
         await getConvexClient().mutation(api.analytics.logSystemEvent, {
+          serverSecret,
           level: 'info',
           message: `User event: ${data.action}`,
           userId: data.userId,
@@ -50,6 +53,7 @@ export async function POST(request: NextRequest) {
 
       case 'page-view':
         await getConvexClient().mutation(api.analytics.recordPerformanceMetric, {
+          serverSecret,
           metric: 'page_view',
           value: 1,
           userId: data.userId,
@@ -64,6 +68,7 @@ export async function POST(request: NextRequest) {
 
       case 'business-event':
         await getConvexClient().mutation(api.analytics.recordPerformanceMetric, {
+          serverSecret,
           metric: `business_${data.event}`,
           value: data.value || 1,
           userId: data.userId,
@@ -78,6 +83,7 @@ export async function POST(request: NextRequest) {
 
       case 'performance-metric':
         await getConvexClient().mutation(api.analytics.recordPerformanceMetric, {
+          serverSecret,
           metric: data.metric,
           value: data.value,
           userId: data.userId,
@@ -90,6 +96,7 @@ export async function POST(request: NextRequest) {
 
       case 'error':
         await getConvexClient().mutation(api.analytics.logSystemEvent, {
+          serverSecret,
           level: 'error',
           message: data.message,
           userId: data.userId,

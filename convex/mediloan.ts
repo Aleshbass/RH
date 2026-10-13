@@ -1,5 +1,6 @@
 import { mutation, query, action } from "./_generated/server";
 import { v } from "convex/values";
+import { assertServerCaller } from "./helpers/serverSecret";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PATIENT-FACING: Submit a loan interest request
@@ -212,7 +213,7 @@ export const logInitiatedLoan = mutation({
 /**
  * Called by /api/myitura/webhook when MyItura sends status updates.
  * Matches the loan by sdkReference or clientReference and updates its status.
- * Auth/signature verification is handled upstream in the Next.js API route.
+ * The route authenticates MyItura; this mutation only accepts our server (CONVEX_SERVER_SECRET).
  */
 export const updateLoanFromWebhook = mutation({
     args: {
@@ -222,8 +223,10 @@ export const updateLoanFromWebhook = mutation({
         disbursedAt: v.optional(v.number()),
         repaymentStatus: v.optional(v.string()),
         lastWebhookPayload: v.optional(v.string()),
+        serverSecret: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        assertServerCaller(args.serverSecret);
         let loan = null;
 
         if (args.sdkReference) {
@@ -246,7 +249,7 @@ export const updateLoanFromWebhook = mutation({
         const updates: Record<string, any> = {
             status: args.status,
             updatedAt: Date.now(),
-            lastWebhookPayload: args.lastWebhookPayload,
+            lastWebhookPayload: args.lastWebhookPayload?.slice(0, 20_000),
         };
         if (args.disbursedAt) updates.disbursedAt = args.disbursedAt;
         if (args.repaymentStatus) updates.repaymentStatus = args.repaymentStatus;

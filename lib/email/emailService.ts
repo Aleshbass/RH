@@ -30,7 +30,8 @@ export type EmailTemplate =
   | 'PARTNER_APPLICATION_APPROVED'
   | 'PARTNER_APPLICATION_DECLINED'
   | 'PARTNER_REFERRAL_CREATED'
-  | 'ADMIN_REFERRAL_CREATED';
+  | 'ADMIN_REFERRAL_CREATED'
+  | 'PARTNER_NOTICE';
 
 // Data interfaces for each email template
 export interface InvitationCreatedData {
@@ -279,6 +280,28 @@ export interface AdminReferralCreatedData {
   createdAt: string | number | Date;
 }
 
+/** Generic partner notice (go-live, credential rotation). All fields are HTML-escaped. */
+export interface PartnerNoticeData {
+  badge: string;
+  heading: string;
+  subheading?: string;
+  greetingName?: string;
+  paragraphs: string[];
+  calloutTitle?: string;
+  calloutText?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // Discriminated union for EmailOptions
 export type EmailOptions =
   | { to: string; subject?: string; template: 'INVITATION_CREATED'; data: InvitationCreatedData }
@@ -308,7 +331,8 @@ export type EmailOptions =
   | { to: string; subject?: string; template: 'PARTNER_APPLICATION_APPROVED'; data: PartnerApplicationApprovedData }
   | { to: string; subject?: string; template: 'PARTNER_APPLICATION_DECLINED'; data: PartnerApplicationDeclinedData }
   | { to: string; subject?: string; template: 'PARTNER_REFERRAL_CREATED'; data: PartnerReferralCreatedData }
-  | { to: string; subject?: string; template: 'ADMIN_REFERRAL_CREATED'; data: AdminReferralCreatedData };
+  | { to: string; subject?: string; template: 'ADMIN_REFERRAL_CREATED'; data: AdminReferralCreatedData }
+  | { to: string; subject?: string; template: 'PARTNER_NOTICE'; data: PartnerNoticeData };
 
 /**
  * Send an email using the specified template and data
@@ -1410,6 +1434,42 @@ export function getEmailContent(options: EmailOptions): { subject: string; body:
           </table>
         `
       };
+
+    case 'PARTNER_NOTICE': {
+      const d = options.data;
+      const cta = d.ctaUrl && /^https:\/\//.test(d.ctaUrl)
+        ? `<div style="text-align: center; margin: 24px 0 8px 0;"><a href="${escapeHtml(d.ctaUrl)}" style="display: inline-block; background-color: #004D4A; color: #ffffff; font-size: 14px; font-weight: 600; padding: 13px 32px; border-radius: 9999px; text-decoration: none;">${escapeHtml(d.ctaLabel || "Open Partner Portal")} →</a></div>`
+        : "";
+      const callout = d.calloutText
+        ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; background-color: #f0fdfa; border: 1px solid #99f6e4; border-radius: 14px; margin: 8px 0 20px 0;"><tr><td style="padding: 16px 18px;"><div style="color: #115e59; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;">${escapeHtml(d.calloutTitle || "Details")}</div><p style="margin: 0; color: #134e4a; font-size: 14px; line-height: 1.5;">${escapeHtml(d.calloutText)}</p></td></tr></table>`
+        : "";
+      return {
+        subject: options.subject || d.heading,
+        body: `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; background-color: #f5f5f7; margin: 0; padding: 24px 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+            <tr><td align="center">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 580px; width: 100%; background-color: #ffffff; border-radius: 18px; border: 1px solid #e5e5ea; overflow: hidden;">
+                <tr><td align="center" style="padding: 32px 24px 20px 24px; border-bottom: 1px solid #f2f2f7;">
+                  <img src="https://res.cloudinary.com/dubeogufg/image/upload/v1764254773/MainRehabify_xfzfil.png" alt="Rehabify Health" style="height: 36px; width: auto; display: block; margin: 0 auto 16px auto;" />
+                  <div style="display: inline-block; background-color: #e6f4f1; color: #005b57; border-radius: 9999px; padding: 5px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px;">${escapeHtml(d.badge)}</div>
+                  <h1 style="color: #1d1d1f; font-size: 21px; font-weight: 600; margin: 0 0 6px 0;">${escapeHtml(d.heading)}</h1>
+                  ${d.subheading ? `<p style="color: #86868b; font-size: 14px; margin: 0;">${escapeHtml(d.subheading)}</p>` : ""}
+                </td></tr>
+                <tr><td style="padding: 26px 24px;">
+                  ${d.greetingName ? `<p style="color: #1d1d1f; font-size: 15px; margin: 0 0 14px 0;">Hello <strong>${escapeHtml(d.greetingName)}</strong>,</p>` : ""}
+                  ${d.paragraphs.map((p) => `<p style="color: #48484a; font-size: 14px; line-height: 1.6; margin: 0 0 14px 0;">${escapeHtml(p)}</p>`).join("")}
+                  ${callout}
+                  ${cta}
+                </td></tr>
+                <tr><td align="center" style="background-color: #fafafc; padding: 20px; border-top: 1px solid #f2f2f7;">
+                  <p style="color: #86868b; font-size: 12px; margin: 0;">Rehabify Health Partner Operations · partners@physioaroundme.com</p>
+                </td></tr>
+              </table>
+            </td></tr>
+          </table>
+        `
+      };
+    }
 
     default:
       return {

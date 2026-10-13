@@ -1,10 +1,11 @@
 // @ts-nocheck
 import { v } from "convex/values";
-import { mutation, query, action, internalQuery } from "./_generated/server";
+import { mutation, query, action, internalQuery, internalMutation, internalAction } from "./_generated/server";
 import { getUserByIdOrThrow } from "./users";
 import { Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import { publicAppUrl } from "./helpers/appUrl";
+import { ensureUserRole } from "./auth";
 
 /**
  * Internal query to get account status and user in one call
@@ -61,7 +62,7 @@ export const getStatusAndUser = internalQuery({
  * Submit an account for admin review
  * Called after onboarding is complete for roles that require approval (physiotherapist, clinic_owner)
  */
-export const submitForReview = mutation({
+export const submitForReview = internalMutation({
   args: {
     userId: v.id("users"),
   },
@@ -129,6 +130,14 @@ export const getStatus = query({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    // Only the user themselves (dashboard guard) or an admin may read an approval status.
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const viewer = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+    if (!viewer || (viewer._id !== args.userId && viewer.role !== "admin")) return null;
     // Verify user exists
     await getUserByIdOrThrow(ctx, args.userId);
 
@@ -150,6 +159,8 @@ export const getApprovalDetails = query({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    // Admin review dialog only: includes the applicant's details and documents.
+    await ensureUserRole(ctx, ["admin"]);
     // Verify user exists
     const user = await getUserByIdOrThrow(ctx, args.userId);
 
@@ -249,6 +260,8 @@ export const listPendingApprovals = query({
     cursor: v.optional(v.id("accountApprovalStatus")),
   },
   handler: async (ctx, args) => {
+    // Admin dashboard only: lists applicants with their details.
+    await ensureUserRole(ctx, ["admin"]);
     const limit = args.limit ?? 10;
 
     const statuses = await ctx.db
@@ -296,7 +309,7 @@ export const getPendingApprovals = listPendingApprovals;
  * Approve an account
  * Called by admin
  */
-export const approveAccount = action({
+export const approveAccount = internalAction({
   args: {
     statusId: v.id("accountApprovalStatus"),
     adminUserId: v.id("users"),
@@ -400,7 +413,7 @@ export const approveAccount = action({
  * Decline an account
  * Called by admin
  */
-export const declineAccount = action({
+export const declineAccount = internalAction({
   args: {
     statusId: v.id("accountApprovalStatus"),
     adminUserId: v.id("users"),
@@ -473,7 +486,7 @@ export const declineAccount = action({
 /**
  * Get status by ID
  */
-export const getStatusById = query({
+export const getStatusById = internalQuery({
   args: {
     statusId: v.id("accountApprovalStatus"),
   },
@@ -498,7 +511,7 @@ export const getStatusById = query({
 /**
  * Update status (internal)
  */
-export const updateStatus = mutation({
+export const updateStatus = internalMutation({
   args: {
     statusId: v.id("accountApprovalStatus"),
     status: v.union(

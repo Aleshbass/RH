@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getConvexClient } from "@/lib/convex-client";
+import { convexServerSecret } from "@/lib/convex-server-secret";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import crypto from "crypto";
@@ -57,14 +58,22 @@ export async function POST(request: NextRequest) {
     // ── Verify signature (use raw body string to avoid JSON re-serialization differences) ──
     try {
         const verification = verifyInboundSignature(rawBody, timestamp, signature);
-        
+
         if (!verification.valid) {
+            // Never echo verification details to the caller: they would let anyone forge a signature.
             console.warn("[AwaDoc] Invalid signature for event:", eventId, verification.debug);
-            await logEvent(eventId, body?.event_type ?? "unknown", "inbound", body, null, "error", "Signature verification failed");
-            return NextResponse.json({ 
-                error: "Invalid signature", 
-                debug_info: verification.debug 
-            }, { status: 401 });
+            // Record the rejection without storing the unverified body. Prefixed id so an
+            // unverified request cannot overwrite the log entry of a genuine event.
+            await logEvent(
+                `rejected:${eventId.slice(0, 120)}`,
+                String(body?.event_type ?? "unknown").slice(0, 120),
+                "inbound",
+                { rejected: "invalid signature", bodyLength: rawBody.length },
+                null,
+                "error",
+                verification.debug?.error ?? "Signature verification failed"
+            );
+            return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
         }
     } catch (sigErr) {
         console.error("[AwaDoc] Signature verification threw:", sigErr);
@@ -201,6 +210,7 @@ async function handleAvailabilityQuery(body: any) {
         physios = await convex.query(api.awadoc.getAvailablePhysios, {
             serviceArea,
             preferredMode: preferredMode ?? undefined,
+            serverSecret: convexServerSecret(),
         });
     } catch (queryErr) {
         console.error("[AwaDoc] Failed to query physios for availability:", queryErr);
@@ -293,6 +303,7 @@ async function handleTherapyRequest(body: any) {
         physios = await convex.query(api.awadoc.getAvailablePhysios, {
             serviceArea: "ALL",
             preferredMode,
+            serverSecret: convexServerSecret(),
         });
     } catch (queryErr) {
         console.error("[AwaDoc] Failed to query available physios:", queryErr);
@@ -348,6 +359,7 @@ async function handleTherapyRequest(body: any) {
             grossAmount: sessionRate,
             currency: "NGN",
             physiotherapistId: selectedPhysio.userId,
+            serverSecret: convexServerSecret(),
         });
     } catch (mutErr) {
         console.error("[AwaDoc] Failed to create session:", {
@@ -417,6 +429,7 @@ async function handleTherapyConfirmed(body: any) {
     // First verify the session exists before updating
     const existingSession = await convex.query(api.awadoc.getSessionByTherapyId, {
         therapyId,
+        serverSecret: convexServerSecret(),
     });
 
     if (!existingSession) {
@@ -439,6 +452,7 @@ async function handleTherapyConfirmed(body: any) {
             grossAmount: body.context?.therapy?.pricing?.amount
                 ? Math.round(body.context.therapy.pricing.amount * 100) // Naira → kobo
                 : undefined,
+            serverSecret: convexServerSecret(),
         });
     } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
@@ -575,6 +589,7 @@ async function getPhysioDetails(physiotherapistId: string) {
     try {
         const user = await convex.query(api.awadoc.getUserById, {
             userId: physiotherapistId as Id<"users">,
+            serverSecret: convexServerSecret(),
         });
         if (user) {
             return {
@@ -616,6 +631,7 @@ async function sendDoctorAssignedCallback(therapyId: string, session: any) {
             therapyId,
             guestToken,
             guestTokenExpiresAt,
+            serverSecret: convexServerSecret(),
         });
         guestTokenStored = true;
     } catch (err) {
@@ -720,6 +736,7 @@ async function logEvent(
             responsePayload,
             status,
             errorMessage,
+            serverSecret: convexServerSecret(),
         });
     } catch (err) {
         console.error("[AwaDoc] Failed to log event:", err);

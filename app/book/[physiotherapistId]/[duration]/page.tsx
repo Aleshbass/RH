@@ -28,6 +28,7 @@ import CalendarBookingWidget from "@/components/marketplace/CalendarBookingWidge
 import PackageSelector, { type SimplePackageBreakdown } from "@/components/marketplace/PackageSelector";
 import { toast } from "sonner";
 import { formatNaira, calculatePaystackInboundGrossAmount } from "@/lib/pricing";
+import { getReferralPublicCode } from "@/lib/referralCookie";
 
 type BookingStep = "select-time" | "select-package" | "details" | "confirm";
 
@@ -130,9 +131,9 @@ export default function BookingPage() {
         api.marketplace.booking.guestCreateMarketplaceBooking
     );
 
-    // Complete booking mutation (for free sessions)
-    const completeBooking = useMutation(
-        api.marketplace.booking.completeMarketplaceBooking
+    // Confirm a genuinely free session (server re-checks that the physio charges nothing)
+    const confirmFreeBooking = useMutation(
+        api.marketplace.booking.confirmFreeMarketplaceBooking
     );
 
     // Save treatment prefs mutation
@@ -388,6 +389,8 @@ export default function BookingPage() {
                 patientAddress: sessionMode === "in-person" ? patientAddress : undefined,
                 conditionLabel: treatmentPrefs?.conditionLabel,
                 conditionLevel: treatmentPrefs?.conditionLevel,
+                // Partner referral-link code (validated server-side; first partner wins)
+                referralPublicCode: getReferralPublicCode(),
             };
 
             let result;
@@ -402,13 +405,10 @@ export default function BookingPage() {
                 });
             }
 
-            // Free session — skip payment
-            if (totalAmount === 0) {
+            // Free session — only when the server priced the booking at zero
+            if (result.fees?.serviceAmount === 0) {
+                await confirmFreeBooking({ bookingId: result.bookingId });
                 toast.success("Booking confirmed!");
-                await completeBooking({
-                    bookingId: result.bookingId,
-                    paymentReference: `FREE_${result.bookingId}_${Date.now()}`,
-                });
                 setStep("confirm");
                 setIsProcessing(false);
                 return;
@@ -422,7 +422,10 @@ export default function BookingPage() {
         } catch (error: any) {
             console.error("Booking error:", error);
             toast.error("Booking failed", {
-                description: error.message || "Failed to create booking. Please try again.",
+                description:
+                    (typeof error?.data === "string" ? error.data : undefined) ||
+                    error.message ||
+                    "Failed to create booking. Please try again.",
             });
             setIsProcessing(false);
         }
@@ -690,7 +693,7 @@ export default function BookingPage() {
                                             ? formatNaira(packageBreakdown.total)
                                             : sessionRate > 0
                                                 ? formatNaira(sessionRate)
-                                                : "Free"
+                                                : "Standard rate"
                                         }
                                     </span>
                                 </div>

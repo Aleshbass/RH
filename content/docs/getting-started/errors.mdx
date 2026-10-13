@@ -1,143 +1,214 @@
 ---
-title: Errors & Status Codes
-description: Understand error formats, HTTP status codes, rate limits, and troubleshooting steps.
+title: Errors
+description: The error object, every error code with its HTTP status and type, and how to handle and retry failures.
 ---
 
-# Errors & Troubleshooting
+The API uses standard HTTP status codes. `2xx` means success, `4xx` means something in the request needs to change, and `5xx` means something went wrong on Rehabify's side.
 
-Rehabify returns standard HTTP status codes along with a structured JSON error object for failed requests.
+## The error object
 
----
-
-## Error Response Format
+Every error response has the same shape:
 
 ```json
 {
-  "status": "error",
   "error": {
-    "code": "invalid_phone_number",
-    "message": "The provided phone number '+234800000' is not a valid Nigerian mobile number.",
+    "type": "invalid_request_error",
+    "code": "validation_error",
+    "message": "patient.phone must be a valid phone number (E.164, e.g. +2348012345678).",
     "param": "patient.phone",
-    "doc_url": "https://physioaroundme.com/docs/getting-started/errors#invalid_phone_number"
+    "request_id": "req_5f2c9a1b7d3e4f60a1b2c3d4",
+    "doc_url": "https://docs.physioaroundme.com/getting-started/errors#validation_error"
   }
 }
 ```
 
----
-
-## HTTP Status Codes
-
-| Code | Status | Meaning |
-| :--- | :--- | :--- |
-| `200` | **OK** | The request was successful. |
-| `201` | **Created** | The referral or resource was created successfully. |
-| `400` | **Bad Request** | Required parameters missing or malformed JSON payload. |
-| `401` | **Unauthorized** | Missing, invalid, or expired API key. |
-| `403` | **Forbidden** | Your API key does not have the required permission scope. |
-| `404` | **Not Found** | The requested resource (e.g. `referral_id`) does not exist. |
-| `429` | **Too Many Requests** | Rate limit exceeded for your tier. |
-| `500` | **Internal Server Error** | Something went wrong on Rehabify servers. Contact support. |
-
----
-
-## Rate Limiting & 429 Too Many Requests
-
-All partner API endpoints are protected by tier-aware rate limits. When a client exceeds the allowable rate or burst capacity, the API responds with `HTTP 429 Too Many Requests`.
-
-### Rate Limit Response Headers
-
-Every partner API response includes standard HTTP rate limit headers:
-
-| Header | Description |
+| Field | Description |
 | :--- | :--- |
-| `X-RateLimit-Limit` | Maximum allowable requests within the current quota window |
-| `X-RateLimit-Remaining` | Number of requests remaining in the current window |
-| `X-RateLimit-Reset` | Unix timestamp (in seconds) when the quota window resets |
-| `Retry-After` | (Only on 429) Number of seconds to wait before retrying |
+| `type` | The broad category of error (see the table below). |
+| `code` | A stable, machine-readable code. Branch on this value. |
+| `message` | A human-readable explanation. It may change over time, so don't parse it. |
+| `param` | The field or query parameter at fault, such as `patient.phone`. Present only when a specific field is at fault. |
+| `request_id` | The request's ID. It matches the `X-Request-Id` header. Quote it to support. |
+| `doc_url` | A link to this page, anchored at the error code. |
+| `existing` | Only on `duplicate_partner_reference`: the `id` and `tracking_code` of the referral that already exists. |
 
-### Example 429 Response
+### Error types
 
-```http
-HTTP/1.1 429 Too Many Requests
-Content-Type: application/json
-X-RateLimit-Limit: 10
-X-RateLimit-Remaining: 0
-X-RateLimit-Reset: 1789050125
-Retry-After: 1
-X-Rehabify-Request-Id: req_01K4R7G9T4
+| `type` | Used for |
+| :--- | :--- |
+| `invalid_request_error` | Malformed requests, invalid fields, missing consent, inactive links and idempotency misuse |
+| `authentication_error` | Missing or invalid API key |
+| `permission_error` | Your organisation or key isn't allowed to do this |
+| `not_found_error` | The resource or endpoint doesn't exist in this environment |
+| `conflict_error` | The request conflicts with existing state |
+| `rate_limit_error` | Too many requests |
+| `api_error` | A problem on Rehabify's side, or a feature that isn't available yet |
 
+## All error codes
+
+| HTTP | type | code | meaning |
+| :--- | :--- | :--- | :--- |
+| 400 | `invalid_request_error` | [`invalid_json`](#invalid_json) | Body is not valid JSON |
+| 400 | `invalid_request_error` | [`invalid_parameter`](#invalid_parameter) | A query parameter is invalid (`param` set) |
+| 401 | `authentication_error` | [`missing_api_key`](#missing_api_key) | No key supplied |
+| 401 | `authentication_error` | [`invalid_api_key`](#invalid_api_key) | Key unknown or revoked |
+| 403 | `permission_error` | [`partner_inactive`](#partner_inactive) | Organisation not approved / suspended |
+| 403 | `permission_error` | [`production_access_required`](#production_access_required) | Live key used but production access is not approved |
+| 403 | `permission_error` | [`sandbox_only`](#sandbox_only) | Sandbox-only endpoint called with a live key |
+| 404 | `not_found_error` | [`referral_not_found`](#referral_not_found) | No referral with that id / tracking code / partner_reference in this environment |
+| 404 | `not_found_error` | [`referral_link_not_found`](#referral_link_not_found) | Referral link not found |
+| 404 | `not_found_error` | [`resource_not_found`](#resource_not_found) | Unknown endpoint |
+| 409 | `conflict_error` | [`duplicate_partner_reference`](#duplicate_partner_reference) | A referral with this partner_reference already exists in this environment. `error.existing` = `{ "id", "tracking_code" }` |
+| 409 | `conflict_error` | [`idempotency_request_in_progress`](#idempotency_request_in_progress) | Concurrent request with the same Idempotency-Key |
+| 409 | `conflict_error` | [`webhook_endpoint_not_configured`](#webhook_endpoint_not_configured) | No webhook endpoint for this environment (sandbox trigger) |
+| 410 | `invalid_request_error` | [`link_inactive`](#link_inactive) | Public lead endpoint: link inactive or expired |
+| 422 | `invalid_request_error` | [`validation_error`](#validation_error) | Field failed validation (`param` set) |
+| 422 | `invalid_request_error` | [`consent_required`](#consent_required) | `consent.granted` must be `true` |
+| 422 | `invalid_request_error` | [`patient_ineligible`](#patient_ineligible) | Sandbox scenario +2348000000004 |
+| 422 | `invalid_request_error` | [`idempotency_key_reused`](#idempotency_key_reused) | Idempotency-Key reused with a different body |
+| 422 | `invalid_request_error` | [`invalid_status_transition`](#invalid_status_transition) | Sandbox advance to an invalid status |
+| 429 | `rate_limit_error` | [`rate_limit_exceeded`](#rate_limit_exceeded) | Too many requests |
+| 500 | `api_error` | [`internal_error`](#internal_error) | Unexpected error (safe to retry with the same Idempotency-Key) |
+| 501 | `api_error` | [`feature_not_available`](#feature_not_available) | Endpoint not yet available in live (eligibility) |
+| 503 | `api_error` | [`service_unavailable`](#service_unavailable) | Temporary outage — retry with backoff |
+
+## Handling errors
+
+| Situation | Retry? | How |
+| :--- | :--- | :--- |
+| `429 rate_limit_exceeded` | Yes | Wait for `Retry-After` seconds, then retry with backoff. |
+| `500 internal_error`, `503 service_unavailable`, network timeouts | Yes | Exponential backoff with jitter, using the **same** `Idempotency-Key`. |
+| `409 idempotency_request_in_progress` | Yes | Wait a moment, then retry with the same key and body. |
+| `409 duplicate_partner_reference` | No | Use `error.existing` to fetch the referral that already exists. |
+| Other `4xx` errors | No | Fix the request first. Retrying unchanged gives the same error. |
+
+[Conventions](/docs/getting-started/conventions#rate-limits) includes a ready-made retry helper for Node.js and Python.
+
+## 400 Bad Request
+
+### `invalid_json` [#invalid_json]
+
+The request body isn't valid JSON. Check for trailing commas, unescaped quotes or a truncated body, and send `Content-Type: application/json`.
+
+### `invalid_parameter` [#invalid_parameter]
+
+A query parameter is invalid, and `param` names it. Common causes: `limit` outside 1–100, a `status` value that isn't allowed for that endpoint, or a timestamp filter that isn't ISO-8601.
+
+## 401 Unauthorized
+
+### `missing_api_key` [#missing_api_key]
+
+The request had no API key. Send `Authorization: Bearer <key>` or `X-API-Key: <key>`. See [Authentication](/docs/getting-started/authentication).
+
+### `invalid_api_key` [#invalid_api_key]
+
+The key isn't recognised or has been revoked. Check for copy errors and stray whitespace, and make sure your deployment loads the right secret. If the key was lost or revoked, create a new one in **Developers → API keys**.
+
+## 403 Forbidden
+
+### `partner_inactive` [#partner_inactive]
+
+Your organisation hasn't been approved yet, or has been suspended. Contact [partners@physioaroundme.com](mailto:partners@physioaroundme.com).
+
+### `production_access_required` [#production_access_required]
+
+You used a live key, but your organisation doesn't have approved production access, either because it hasn't been granted yet or because it was suspended. Request production access in the Partner Portal, or use a sandbox key. See [Production access](/docs/getting-started/authentication#production-access-going-live).
+
+### `sandbox_only` [#sandbox_only]
+
+You called a sandbox-only endpoint (`/sandbox/*`) with a live key. Use a `sk_test_` key.
+
+## 404 Not Found
+
+### `referral_not_found` [#referral_not_found]
+
+No referral with that `id`, `tracking_code` or `partner_reference` exists in this environment. You also get this error when the referral belongs to another partner, or to the other environment (for example, a sandbox referral fetched with a live key).
+
+### `referral_link_not_found` [#referral_link_not_found]
+
+No referral link matches the `id` (for `PATCH /partners/referral-links/{id}`) or the `public_code` (for the public lead endpoint).
+
+### `resource_not_found` [#resource_not_found]
+
+The endpoint doesn't exist. Check the path and make sure it includes `/v1`, for example `https://api.physioaroundme.com/v1/partners/referrals`.
+
+## 409 Conflict
+
+### `duplicate_partner_reference` [#duplicate_partner_reference]
+
+A referral with this `partner_reference` already exists in this environment. The error tells you which one:
+
+```json
 {
-  "status": "error",
   "error": {
-    "code": "rate_limit_exceeded",
-    "message": "Rate limit exceeded for tier 'sandbox'. Limit: 10 requests per window. Please retry after 1s.",
-    "retry_after_seconds": 1,
-    "request_id": "req_01K4R7G9T4",
-    "doc_url": "https://physioaroundme.com/docs/getting-started/errors#rate_limit_exceeded"
+    "type": "conflict_error",
+    "code": "duplicate_partner_reference",
+    "message": "A referral with partner_reference HMO-REF-2026-0091 already exists.",
+    "request_id": "req_8a1d4c7e2b9f4a3c8d6e1f0a",
+    "doc_url": "https://docs.physioaroundme.com/getting-started/errors#duplicate_partner_reference",
+    "existing": { "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a", "tracking_code": "RHB-4829173655" }
   }
 }
 ```
 
-### Exponential Backoff with Jitter
+If this is the same patient you referred before, use `existing.id` to fetch that referral instead of creating a new one. If it's a different referral, send a different `partner_reference`.
 
-When handling `429 Too Many Requests` or transient `5xx` errors, your client should implement exponential backoff with full jitter:
+### `idempotency_request_in_progress` [#idempotency_request_in_progress]
 
-```typescript
-async function fetchWithRetry(
-  url: string,
-  options: RequestInit,
-  maxRetries = 3
-): Promise<Response> {
-  let attempt = 0;
+Another request with the same `Idempotency-Key` is still being processed. Wait briefly, then retry with the same key and body. You'll get the original response.
 
-  while (attempt <= maxRetries) {
-    const res = await fetch(url, options);
+### `webhook_endpoint_not_configured` [#webhook_endpoint_not_configured]
 
-    if (res.status !== 429 && res.status < 500) {
-      return res;
-    }
+`POST /sandbox/trigger-webhook` was called, but no webhook endpoint is configured for this environment. Set one in **Developers → Webhooks** in the Partner Portal.
 
-    attempt++;
-    if (attempt > maxRetries) {
-      return res;
-    }
+## 410 Gone
 
-    // Honor the Retry-After header if provided
-    const retryAfter = res.headers.get("Retry-After");
-    let backoffMs: number;
+### `link_inactive` [#link_inactive]
 
-    if (retryAfter) {
-      backoffMs = parseInt(retryAfter, 10) * 1000;
-    } else {
-      // Exponential backoff with random jitter: 2^attempt * 250ms + random jitter
-      const baseDelay = Math.pow(2, attempt) * 250;
-      backoffMs = baseDelay + Math.random() * 200;
-    }
+Returned by the public lead endpoint when the referral link is inactive or past its `expires_at`. Reactivate the link (`PATCH /partners/referral-links/{id}` with `"status": "active"`) or create a new one. See [Referral links](/docs/api-reference/referral-links).
 
-    console.warn(`[Rehabify API] 429/5xx encountered. Retrying in ${backoffMs}ms (Attempt ${attempt}/${maxRetries})...`);
-    await new Promise((resolve) => setTimeout(resolve, backoffMs));
-  }
+## 422 Unprocessable Entity
 
-  throw new Error("Max retries exceeded");
-}
-```
+### `validation_error` [#validation_error]
 
----
+A field failed validation. `param` names the field (for example `patient.phone`) and `message` explains the rule. Field rules are listed in [Create a referral](/docs/api-reference/referrals#create-a-referral).
 
-## Common Error Codes
+### `consent_required` [#consent_required]
 
-### `invalid_api_key`
-* **Cause**: The API key in the `Authorization` header is malformed, revoked, or belongs to another environment.
-* **Fix**: Verify you are sending `Bearer sk_test_...` or `Bearer sk_live_...`.
+`consent.granted` is missing or isn't `true`. Rehabify only accepts referrals for patients who have agreed to be contacted. Capture consent first, then send `"consent": { "granted": true }`.
 
-### `invalid_phone_number`
-* **Cause**: Phone number does not adhere to E.164 international format (e.g. `+2348031234567`).
-* **Fix**: Sanitize phone numbers before submission by prepending `+234` for Nigerian lines.
+### `patient_ineligible` [#patient_ineligible]
 
-### `pre_auth_expired`
-* **Cause**: The HMO pre-authorization code provided has lapsed past its 7-day validity window.
-* **Fix**: Request a new pre-authorization token from the HMO sponsor or generate a fresh referral.
+Returned in sandbox when `patient.phone` is the magic number `+2348000000004`. No referral is created. Use it to test how your system handles a rejected referral.
 
-### `rate_limit_exceeded`
-* **Cause**: Your account exceeded the API calls allowed for your tier (e.g. 10 req/sec on Standard, 50 req/sec on Enterprise).
-* **Fix**: Upgrade your tier on the [Pricing Page](/partnerships#pricing), respect `Retry-After`, and implement exponential client-side backoff.
+### `idempotency_key_reused` [#idempotency_key_reused]
+
+The `Idempotency-Key` was already used in the last 24 hours with a different request body. Use a new key whenever the body changes.
+
+### `invalid_status_transition` [#invalid_status_transition]
+
+`POST /sandbox/referrals/{id}/advance` asked for a status that can't follow the current one: either a move backwards, or a move out of a terminal status. See [Sandbox & testing](/docs/sandbox/testing#advance-a-referral).
+
+## 429 Too Many Requests
+
+### `rate_limit_exceeded` [#rate_limit_exceeded]
+
+You've exceeded your rate limit: 10 requests per second in sandbox, or 20 per second in live (100 per second on enterprise contracts). The public lead endpoint allows 5 requests per 10 minutes per IP address. Wait for the number of seconds in the `Retry-After` header, then retry with backoff.
+
+## 500 Internal Server Error
+
+### `internal_error` [#internal_error]
+
+Something unexpected went wrong on Rehabify's side. It's safe to retry with the same `Idempotency-Key`. If the error persists, contact support with the `request_id`.
+
+## 501 Not Implemented
+
+### `feature_not_available` [#feature_not_available]
+
+The endpoint isn't available in live yet. Currently this applies to `POST /partners/eligibility`, which is [coming soon](/docs/api-reference/eligibility). Only a simulated preview is available, in sandbox.
+
+## 503 Service Unavailable
+
+### `service_unavailable` [#service_unavailable]
+
+A temporary outage. Retry with exponential backoff, using the same `Idempotency-Key` for `POST` requests.

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "../_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { api } from "../_generated/api";
 
@@ -12,7 +12,7 @@ interface AppointmentWithCalendar {
 }
 
 // Create appointment with Google Calendar integration
-export const createAppointmentWithCalendar = mutation({
+export const createAppointmentWithCalendar = internalMutation({
   args: {
     patientId: v.id("users"),
     physiotherapistId: v.id("users"),
@@ -93,7 +93,7 @@ export const createAppointmentWithCalendar = mutation({
 });
 
 // Update appointment with calendar sync
-export const updateAppointmentWithCalendar = mutation({
+export const updateAppointmentWithCalendar = internalMutation({
   args: {
     appointmentId: v.id("appointments"),
     startTime: v.optional(v.number()),
@@ -154,7 +154,7 @@ export const updateAppointmentWithCalendar = mutation({
 });
 
 // Cancel appointment with calendar sync
-export const cancelAppointmentWithCalendar = mutation({
+export const cancelAppointmentWithCalendar = internalMutation({
   args: { appointmentId: v.id("appointments") },
   handler: async (ctx, args) => {
     const appointment = await ctx.db.get(args.appointmentId) as Doc<"appointments"> | null;
@@ -190,7 +190,7 @@ export const cancelAppointmentWithCalendar = mutation({
 });
 
 // Get appointment with calendar details
-export const getAppointmentWithCalendar = query({
+export const getAppointmentWithCalendar = internalQuery({
   args: { appointmentId: v.id("appointments") },
   handler: async (ctx, args) => {
     const appointment = await ctx.db.get(args.appointmentId);
@@ -215,7 +215,7 @@ export const getAppointmentWithCalendar = query({
 });
 
 // Get appointments with calendar sync status
-export const getAppointmentsWithCalendarSync = query({
+export const getAppointmentsWithCalendarSync = internalQuery({
   args: {
     userId: v.id("users"),
     startDate: v.optional(v.number()),

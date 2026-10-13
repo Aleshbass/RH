@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
 /**
@@ -442,7 +442,7 @@ export const completePatientOnboarding = mutation({
 /**
  * Get invitation by code with validation
  */
-export const getInvitationByCode = query({
+export const getInvitationByCode = internalQuery({
   args: { code: v.string() },
   handler: async (ctx, args) => {
     const invitation = await ctx.db

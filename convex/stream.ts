@@ -6,6 +6,7 @@ import { action } from "./_generated/server"
 import { StreamClient } from "@stream-io/node-sdk"
 import { api, internal } from "./_generated/api"
 import type { Doc, Id } from './_generated/dataModel'
+import { assertServerCaller } from "./helpers/serverSecret"
 import { StreamChat } from 'stream-chat'
 
 // Stream token generation action - securely generates tokens server-side
@@ -334,13 +335,16 @@ export const getJoyPatientCallToken = action({
   },
 })
 
-// Generate a Stream token for an AwaDoc guest patient (no auth required)
+// Generate a Stream token for an AwaDoc guest patient. Server only: /api/awadoc/validate-guest
+// checks the guest token first, then calls this with CONVEX_SERVER_SECRET.
 export const getGuestStreamToken = action({
   args: {
     guestUserId: v.string(),
     guestUserName: v.string(),
+    serverSecret: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    assertServerCaller(args.serverSecret)
     // Enforce guest-only namespace to prevent collision with Clerk user IDs
     if (!args.guestUserId.startsWith('awadoc-guest-')) {
       throw new Error("Invalid guest user ID format: must start with 'awadoc-guest-'")

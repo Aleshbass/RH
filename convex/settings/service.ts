@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "../_generated/server";
+import { mutation, query, internalQuery, internalMutation } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
 // Default settings
@@ -110,7 +110,7 @@ const defaultClinicSettings = {
 /**
  * Get user settings with defaults
  */
-export const getUserSettings = query({
+export const getUserSettings = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -254,7 +254,7 @@ export const updateUserSettings = mutation({
 /**
  * Get clinic settings with defaults
  */
-export const getClinicSettings = query({
+export const getClinicSettings = internalQuery({
   args: {
     clinicId: v.id("clinics"),
   },
@@ -272,7 +272,7 @@ export const getClinicSettings = query({
 /**
  * Update clinic settings
  */
-export const updateClinicSettings = mutation({
+export const updateClinicSettings = internalMutation({
   args: {
     clinicId: v.id("clinics"),
     scheduling: v.optional(v.object({

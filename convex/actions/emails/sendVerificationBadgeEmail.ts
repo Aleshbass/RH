@@ -1,11 +1,26 @@
 "use node";
-// @ts-nocheck
 
+import { v } from "convex/values";
+import { internalAction } from "../../_generated/server";
 import { publicAppUrl } from "../../helpers/appUrl";
-const { actionGeneric } = require("convex/server");
+import { escapeHtml } from "../../helpers/escapeHtml";
 
-export const sendVerificationBadgeConfirmation = actionGeneric(async (ctx: any, args: any) => {
-  const { userEmail, userName, tier, amount, expiresAt, paymentReference } = args;
+/**
+ * Verification badge confirmation email. Internal: scheduled by
+ * marketplace/verification after a Paystack-verified payment activates the badge, with
+ * the physiotherapist's address taken from the users table.
+ */
+export const sendVerificationBadgeConfirmation = internalAction({
+  args: {
+    userEmail: v.string(),
+    userName: v.optional(v.string()),
+    tier: v.union(v.literal("monthly"), v.literal("12_month"), v.literal("yearly")),
+    amount: v.number(), // kobo
+    expiresAt: v.number(),
+    paymentReference: v.string(),
+  },
+  handler: async (_ctx, args) => {
+  const { userEmail, userName, tier, expiresAt } = args;
     
   if (!userEmail) {
     console.error("No email provided");
@@ -53,7 +68,7 @@ export const sendVerificationBadgeConfirmation = actionGeneric(async (ctx: any, 
           </div>
           
           <div class="content">
-            <p>Dear ${userName || "Valued Professional"},</p>
+            <p>Dear ${escapeHtml(userName || "Valued Professional")},</p>
             
             <p>Congratulations! Your verification badge purchase has been successfully processed, and your profile is now verified on RehabifyHealth.</p>
             
@@ -62,7 +77,7 @@ export const sendVerificationBadgeConfirmation = actionGeneric(async (ctx: any, 
               <div class="details">
                 <strong>Plan:</strong> ${tierDisplay} Badge<br>
                 <strong>Amount Paid:</strong> ₦${(args.amount / 100).toLocaleString()}<br>
-                <strong>Payment Reference:</strong> ${args.paymentReference}<br>
+                <strong>Payment Reference:</strong> ${escapeHtml(args.paymentReference)}<br>
                 <strong>Expires:</strong> ${expiryDate}
               </div>
             </div>
@@ -128,4 +143,5 @@ export const sendVerificationBadgeConfirmation = actionGeneric(async (ctx: any, 
     console.error("Error sending verification badge email:", error);
     return { success: false, error: String(error) };
   }
+  },
 });

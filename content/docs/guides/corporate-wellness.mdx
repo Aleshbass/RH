@@ -1,24 +1,71 @@
 ---
-title: Corporate Wellness & HR Guide
-description: Deliver desk ergonomics, posture rehabilitation, and employee physical wellness programs.
+title: Corporate wellness
+description: Offer physiotherapy to employees through a private campaign link or sponsored referrals, without the employer seeing clinical details.
 ---
 
-# Corporate Wellness & HR Guide
+Back pain, neck strain and repetitive strain injuries are common in desk-based work. Employers and HR teams can give staff easy access to licensed physiotherapists through Rehabify, with or without engineering work.
 
-Prolonged desk work, repetitive strain, and back pain account for over 40% of workplace productivity losses. Rehabify empowers HR and People teams to provide direct physiotherapy benefits to employees.
+## Option 1: A staff campaign link (no code)
 
----
+Create a [referral link](/docs/guides/no-code-referral-links) for your staff campaign and share it on your intranet, in an HR email or on posters as a QR code.
 
-## Corporate Setup Options
+```bash
+curl https://api.physioaroundme.com/v1/partners/referral-links \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "campaign_name": "Staff wellness Q4",
+    "default_care_mode": "patient_choice",
+    "expires_at": "2027-01-31T23:59:59.000Z"
+  }'
+```
 
-### 1. Subsidized Care Packages
-Companies purchase bulk session credits (e.g. 50 sessions/quarter) allocated across staff members. Employees schedule home or office visits via the corporate WhatsApp link.
+- Employees refer themselves through a short form with explicit consent, and then chat with Joy on WhatsApp.
+- `expires_at` ends the campaign automatically.
+- Link stats (`clicks`, `leads`, `signups`, `bookings`, `payments`) show participation, without exposing any individual's health information.
 
-### 2. Onsite Ergonomic Audits
-Rehabify physiotherapists visit your corporate offices to assess employee workstations, provide posture workshops, and deliver on-demand 30-minute musculoskeletal relief sessions.
+## Option 2: Sponsored referrals by API
 
-### 3. HR Analytics Dashboard
-HR administrators receive quarterly de-identified health metrics:
-* Most common workplace physical complaints (e.g., *72% Lower Back Pain, 18% Carpal Tunnel*).
-* Employee participation and satisfaction rates (CSAT / NPS).
-* Average pain reduction score across treated staff members.
+If your occupational health or HR system refers employees directly, for example after a workplace injury, create referrals with `billing_mode: "corporate_sponsored"`:
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/referrals \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 8e7d6c5b-4a3f-4e2d-9c1b-0a9f8e7d6c5b" \
+  -d '{
+    "partner_reference": "OH-CASE-2026-0412",
+    "patient": {
+      "first_name": "Tunde",
+      "last_name": "Adeleke",
+      "phone": "+2348031234567",
+      "email": "tunde.adeleke@example.com",
+      "city": "Lagos",
+      "state": "Lagos"
+    },
+    "clinical": { "condition": "Lower back pain", "recommended_sessions": 6 },
+    "care": { "preferred_mode": "remote", "preferred_contact_channel": "email" },
+    "billing_mode": "corporate_sponsored",
+    "consent": { "granted": true, "method": "electronic", "captured_at": "2026-10-13T08:00:00.000Z" },
+    "metadata": { "department": "Operations", "site": "Lagos HQ" }
+  }'
+```
+
+`care.preferred_mode: "remote"` asks for virtual sessions, which suits staff who can't leave the office. Use `metadata` for reporting dimensions such as department or site. Never put health details there.
+
+Commercial arrangements for sponsored care, such as rates and invoicing, are agreed with Rehabify separately. Contact [partners@physioaroundme.com](mailto:partners@physioaroundme.com).
+
+## Employee privacy
+
+- Employers never receive clinical notes. Webhooks and progress reports contain statuses, attendance and milestones only.
+- Webhooks never contain personal data. Contact details are only available through the API and your dashboard.
+- With the campaign link, employees refer themselves. The referrals created through your link appear in your dashboard and the API, alongside the link's aggregate stats. Tell staff what you'll see before you launch the campaign.
+- The public tracking page at `https://physioaroundme.com/track/<tracking_code>` shows only the status timeline.
+
+## Tracking participation
+
+- Subscribe to [webhooks](/docs/webhooks) to count bookings and completions per department, using `metadata`.
+- Use [`GET /partners/referral-links`](/docs/api-reference/referral-links#list-referral-links) to read campaign stats.
+- Use [progress reports](/docs/api-reference/clinical-reports) for attendance on sponsored referrals.

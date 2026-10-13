@@ -15,7 +15,8 @@ import { deliverJoyEvent } from '@/lib/joy-integration/events'
  * Events handled:
  * - charge.success — payment was successful
  * - charge.failed — payment failed
- * - transfer.success — payout to physiotherapist completed
+ * - transfer.success / transfer.failed / transfer.reversed — partner & doctor payouts
+ * - refund.processed — refunds (reverses partner commissions)
  */
 
 function verifyWebhookSignature(body: string, signature: string | null): boolean {
@@ -67,12 +68,13 @@ export async function POST(request: NextRequest) {
                 break
 
             case 'transfer.success':
-                await handleTransferCompleted(data, rawBody, signature as string)
-                break
-
             case 'transfer.failed':
             case 'transfer.reversed':
-                await handleTransferFailedOrReversed(data, event)
+                await handleTransferEvent(data, rawBody, signature as string, event)
+                break
+
+            case 'refund.processed':
+                await handleRefundProcessed(data, rawBody, signature as string)
                 break
 
             default:
@@ -183,53 +185,34 @@ async function handlePaymentSuccess(data: {
 
         const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
 
-        // 1. Check for Verification Badge Payments
-        const transactionType = Array.isArray(data.metadata?.custom_fields)
-            ? data.metadata.custom_fields.find((f: any) => f.variable_name === 'transaction_type')?.value
-            : undefined;
-        
-        const transactionId = Array.isArray(data.metadata?.custom_fields)
-            ? data.metadata.custom_fields.find((f: any) => f.variable_name === 'transaction_id')?.value
-            : undefined;
+        // Marketplace bookings: completed only from this verified event (idempotent).
+        // Convex re-verifies the Paystack signature and checks the amount.
+        if (String(data.reference || '').startsWith('MKT_')) {
+            const result = await convex.mutation(api.marketplace.booking.recordMarketplacePaystackWebhook, {
+                rawBody,
+                signature,
+            })
+            log.info('Marketplace booking payment processed', {
+                action: 'paystack_marketplace_payment',
+                metadata: { reference: data.reference, result },
+            })
+            return
+        }
 
-        const isVerificationByReference = data.reference?.startsWith('VERIFICATION_');
-
-        if ((transactionType === 'verification_badge' && transactionId) || isVerificationByReference) {
-            log.info('🏆 Processing verification badge payment...');
-            
-            let txId = transactionId;
-            if (!txId && isVerificationByReference) {
-                const parts = data.reference.split('_');
-                if (parts.length >= 2) txId = parts[1];
-            }
-            
-            if (txId) {
-                const result = await convex.mutation(api.marketplace.verification.completeVerificationPurchase, {
-                    transactionId: txId,
-                    paymentReference: data.reference,
-                });
-                
-                if (result.success && result.userId) {
-                    try {
-                        const userEmail = data.customer?.email || data.metadata?.email || "";
-                        const userName = data.customer?.first_name || data.metadata?.userName || "";
-                        
-                        if (userEmail) {
-                            await convex.action(api.actions.emails.sendVerificationBadgeEmail.sendVerificationBadgeConfirmation, {
-                                userEmail,
-                                userName,
-                                tier: result.tier,
-                                amount: data.amount,
-                                expiresAt: result.expiresAt,
-                                paymentReference: data.reference,
-                            });
-                        }
-                    } catch (emailError) {
-                        log.error('Error sending verification email', { error: emailError as Error });
-                    }
-                }
-                return; // Stop execution if it's a verification badge
-            }
+        // 1. Verification badge payments (VERIFICATION_ references): completed only from
+        // this verified event (idempotent). Convex re-verifies the Paystack signature, takes
+        // the transaction from the reference, checks amount/currency and sends the
+        // confirmation email to the physiotherapist's own address.
+        if (String(data.reference || '').startsWith('VERIFICATION_')) {
+            const result = await convex.mutation(api.marketplace.verification.recordVerificationPaystackWebhook, {
+                rawBody,
+                signature,
+            })
+            log.info('Verification badge payment processed', {
+                action: 'paystack_verification_payment',
+                metadata: { reference: data.reference, result },
+            })
+            return
         }
 
         // 2. Regular Invoice Payments
@@ -256,7 +239,7 @@ async function handlePaymentSuccess(data: {
             action: 'paystack_success_handler_error',
             extra: { reference: data.reference }
         })
-        if (String(data.reference || '').startsWith('JOY_')) throw error
+        if (String(data.reference || '').startsWith('JOY_') || String(data.reference || '').startsWith('MKT_') || String(data.reference || '').startsWith('VERIFICATION_')) throw error
     }
 }
 
@@ -330,136 +313,34 @@ async function handlePaymentFailed(data: {
 }
 
 /**
- * Handle transfer completed (payout to physiotherapist or referring doctor)
+ * Transfer events (partner commission payouts and referring-doctor payouts).
+ * Convex verifies the Paystack signature and settles or releases the payout from its
+ * own transfer record — nothing is parsed out of the reference string here.
  */
-async function handleTransferCompleted(data: any, rawBody: string, signature: string) {
-    log.info('Transfer completed', {
-        action: 'paystack_transfer_completed',
-        metadata: {
-            reference: data.reference,
-            amount: data.amount,
-            reason: data.reason
-        }
+async function handleTransferEvent(data: any, rawBody: string, signature: string, event: string) {
+    const { ConvexHttpClient } = await import('convex/browser')
+    const { api } = await import('@/convex/_generated/api') as any
+    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+    const result = await convex.mutation(api.monthlySettlements.recordPaystackTransferWebhook, { rawBody, signature })
+    log.info('Paystack transfer event processed', {
+        action: 'paystack_transfer_event',
+        metadata: { event, reference: data?.reference, result },
     })
-
-    try {
-        const reference = String(data.reference || '');
-        const reason = String(data.reason || '');
-        const metadata = data.metadata as Record<string, unknown> | undefined;
-
-        // Check if this is a partner monthly commission disbursement (starts with TRF_RH_ or TRF_BULK_)
-        if (reference.startsWith('TRF_RH_') || reference.startsWith('TRF_BULK_')) {
-            const { ConvexHttpClient } = await import('convex/browser');
-            const { api } = await import('@/convex/_generated/api') as any;
-            const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-
-            const parts = reference.split('_');
-            const partnerCode = parts.length >= 3 ? parts[2] : undefined;
-            const billingPeriodRaw = parts.length >= 4 ? parts[3] : '';
-            const billingPeriod = billingPeriodRaw.length === 6
-                ? `${billingPeriodRaw.slice(0, 4)}-${billingPeriodRaw.slice(4, 6)}`
-                : undefined;
-
-            await convex.mutation(api.monthlySettlements.processMonthlyBulkPayout, {
-                partnerCode,
-                billingPeriod: billingPeriod || new Date().toISOString().slice(0, 7),
-                payoutBatchReference: reference,
-                note: `Paystack webhook transfer.success (${data.transfer_code || reference})`,
-            });
-            log.info(`Updated partner commission settlement from Paystack transfer.success: ${reference}`);
-            return;
-        }
-
-        let referralId: string | null = null;
-        
-            // 1. Check if admin explicitly attached a referralId in metadata
-        if (metadata && metadata.referralId) {
-            referralId = String(metadata.referralId);
-            log.info('Resolved referralId from direct metadata', { action: 'paystack_transfer_id_metadata' });
-        } else {
-            // 2. Fallback check reference or reason with explicit prefixes to prevent random 32-char collisions
-            // They can type "referral:xyz" or "convex:xyz"
-            const convexIdRegex = /(?:referral:|convex:)([a-zA-Z0-9_-]{32})/;
-            
-            const refMatch = reference.match(convexIdRegex);
-            const reasonMatch = reason.match(convexIdRegex);
-            
-            if (refMatch) {
-                referralId = String(refMatch[1]);
-                log.info('Resolved referralId from reference matching fallback', { action: 'paystack_transfer_id_fallback_reference' });
-            } else if (reasonMatch) {
-                referralId = String(reasonMatch[1]);
-                log.info('Resolved referralId from reason matching fallback', { action: 'paystack_transfer_id_fallback_reason' });
-            }
-        }
-
-        if (referralId) {
-            const { ConvexHttpClient } = await import('convex/browser')
-            const { api } = await import('@/convex/_generated/api') as any
-            const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
-            
-            await convex.mutation(api.adminReferrals.webhookUpdateReferralPayout, {
-                referralId,
-                amountPaidOut: Number(data.amount) || 0, // Pass amount in kobo
-                signature,
-                payload: rawBody
-            });
-            
-            log.info(`Updated referral ${referralId} with payout commission of ${data.amount}`);
-        }
-    } catch (error) {
-        log.error('Failed to process transfer completion', { error: error as Error })
-        ErrorTracker.captureException(error as Error, {
-            action: 'paystack_transfer_handler_error',
-            extra: { reference: data.reference }
-        })
-    }
 }
 
 /**
- * Handle transfer failed or reversed — roll back commission settlements
+ * Refunds: marks the marketplace booking refunded and reverses the partner commission
+ * earned on that payment (or books a negative adjustment if it was already paid out).
  */
-async function handleTransferFailedOrReversed(data: any, event: string) {
-    const reference = String(data.reference || '');
-    const reason = String(data.reason || data.message || event);
-
-    log.warn(`Paystack transfer ${event}: ${reference}`, {
-        action: 'paystack_transfer_failed_or_reversed',
-        metadata: { reference, reason, amount: data.amount }
+async function handleRefundProcessed(data: any, rawBody: string, signature: string) {
+    const { ConvexHttpClient } = await import('convex/browser')
+    const { api } = await import('@/convex/_generated/api') as any
+    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!)
+    const result = await convex.mutation(api.marketplace.booking.recordPaystackRefundWebhook, { rawBody, signature })
+    log.info('Paystack refund processed', {
+        action: 'paystack_refund_processed',
+        metadata: { reference: data?.transaction_reference ?? data?.transaction?.reference, result },
     })
-
-    // Only roll back partner commission settlements (TRF_RH_ or TRF_BULK_)
-    if (reference.startsWith('TRF_RH_') || reference.startsWith('TRF_BULK_')) {
-        try {
-            const { ConvexHttpClient } = await import('convex/browser');
-            const { api } = await import('@/convex/_generated/api') as any;
-            const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-
-            // Parse partner code and billing period from reference
-            // Format: TRF_RH_{partnerCode}_{YYYYMM}_{timestamp} or TRF_BULK_{partnerCode}_{YYYYMM}_{timestamp}_{index}
-            const parts = reference.split('_');
-            const partnerCode = parts.length >= 3 ? parts[2] : undefined;
-            const billingPeriodRaw = parts.length >= 4 ? parts[3] : '';
-            const billingPeriod = billingPeriodRaw.length === 6
-                ? `${billingPeriodRaw.slice(0, 4)}-${billingPeriodRaw.slice(4, 6)}`
-                : undefined;
-
-            await convex.mutation(api.monthlySettlements.rollbackPayoutSettlement, {
-                partnerCode,
-                billingPeriod: billingPeriod || new Date().toISOString().slice(0, 7),
-                batchReference: reference,
-                failureReason: reason,
-            });
-
-            log.info(`Rolled back partner commission settlement after ${event}: ${reference}`);
-        } catch (error) {
-            log.error(`Failed to roll back commission settlement for ${reference}`, { error: error as Error });
-            ErrorTracker.captureException(error as Error, {
-                action: 'paystack_transfer_rollback_error',
-                extra: { reference, event }
-            });
-        }
-    }
 }
 
 /**

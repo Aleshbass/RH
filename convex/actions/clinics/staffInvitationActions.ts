@@ -2,8 +2,8 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
-import { api } from "../../_generated/api";
+import { action, internalAction } from "../../_generated/server";
+import { api, internal } from "../../_generated/api";
 import { sendEmail } from "../../../lib/email/emailService";
 import { publicAppUrl } from "../../helpers/appUrl";
 
@@ -66,7 +66,7 @@ export const acceptStaffInvitationWithNotification = action({
 
           if (clinicOwner?.email) {
             const staffLink = `${appUrl}/dashboard/clinic/staff`;
-            await ctx.runAction((api as any).actions.emails.sendClinicStaffInviteOwnerAcceptedEmail, {
+            await ctx.runAction(internal.actions.emails.sendClinicStaffInviteOwnerAcceptedEmail.sendClinicStaffInviteOwnerAcceptedEmail, {
               to: clinicOwner.email,
               clinicOwnerName: `${clinicOwner.firstName || ''} ${clinicOwner.lastName || ''}`.trim() || clinicOwner.email,
               inviteeName: invitation.inviteeName || 'Team Member',
@@ -143,7 +143,7 @@ export const declineStaffInvitationWithNotification = action({
         if (clinicOwner?.email) {
           const appUrl = publicAppUrl();
           const staffLink = `${appUrl}/dashboard/clinic/staff`;
-          await ctx.runAction((api as any).actions.emails.sendClinicStaffInviteOwnerDeclinedEmail, {
+          await ctx.runAction(internal.actions.emails.sendClinicStaffInviteOwnerDeclinedEmail.sendClinicStaffInviteOwnerDeclinedEmail, {
             to: clinicOwner.email,
             clinicOwnerName: `${clinicOwner.firstName || ''} ${clinicOwner.lastName || ''}`.trim() || clinicOwner.email,
             inviteeName: invitation.inviteeName || 'Team Member',
@@ -174,7 +174,7 @@ export const declineStaffInvitationWithNotification = action({
 /**
  * Create staff member directly with welcome email
  */
-export const createStaffDirectWithWelcome = action({
+export const createStaffDirectWithWelcome = internalAction({
   args: {
     email: v.string(),
     firstName: v.optional(v.string()),

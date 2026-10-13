@@ -16,3 +16,9 @@ export function publicAppUrl(): string {
     return `https://${PRODUCTION_HOST}`;
   }
 }
+
+/** Absolute link for emails: a relative app path ("/dashboard/...") is put on publicAppUrl(). */
+export function appLink(pathOrUrl: string): string {
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  return `${publicAppUrl()}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+}

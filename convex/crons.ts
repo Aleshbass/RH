@@ -87,4 +87,20 @@ crons.interval(
 crons.interval("expire-joy-provider-responses", { minutes: 5 }, internal.joyIntegration.dispatchExpiredJoyProviderResponses, {});
 crons.interval("retry-joy-event-outbox", { minutes: 1 }, internal.joyIntegration.retryJoyEvents, {});
 
+// Partner webhooks: safety net for deliveries whose scheduled retry was lost.
+crons.interval(
+  "partner-webhook-delivery-sweeper",
+  { minutes: 5 },
+  internal.partnerWebhooks.sweepDeliveries,
+  {}
+);
+
+// Partner API: drop expired idempotency keys and gateway replay nonces.
+crons.interval(
+  "partner-api-cleanup",
+  { hours: 1 },
+  internal.partnerApi.cleanupExpired,
+  {}
+);
+
 export default crons;

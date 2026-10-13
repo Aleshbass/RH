@@ -249,8 +249,8 @@ export function createRateLimitResponse({
 
   return NextResponse.json(
     {
-      status: "error",
       error: {
+        type: "rate_limit_error",
         code: "rate_limit_exceeded",
         message:
           customMessage ||
@@ -258,8 +258,7 @@ export function createRateLimitResponse({
         retry_after_seconds: rateLimitResult.retryAfter,
         request_id: requestId,
         trace_id: traceId,
-        doc_url:
-          "https://physioaroundme.com/docs/getting-started/errors#rate_limit_exceeded",
+        doc_url: "https://docs.physioaroundme.com/getting-started/errors#rate_limit_exceeded",
       },
     },
     {

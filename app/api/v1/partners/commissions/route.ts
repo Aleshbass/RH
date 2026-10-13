@@ -1,66 +1,41 @@
-import { NextRequest, NextResponse } from "next/server";
-import { authenticatePartner } from "@/lib/partner-auth";
-import { getConvexClient } from "@/lib/convex-client";
-import { api } from "@/convex/_generated/api";
+import type { NextRequest } from "next/server";
+import { authenticatePartner, logPartnerRequest } from "@/lib/partner-api/auth";
+import { callPartnerGateway } from "@/lib/partner-api/gateway";
+import { apiError, apiJson, coreError, internalError, listBody, parseLimit } from "@/lib/partner-api/http";
 
-/**
- * GET /api/v1/partners/commissions
- *
- * Returns itemized per-transaction commission ledger for partner earnings.
- */
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const STATUSES = ["pending", "approved", "paid", "reversed", "cancelled"];
+
+/** GET /v1/partners/commissions — commission ledger (sandbox always returns an empty list). */
 export async function GET(req: NextRequest) {
-  const { partner, response } = await authenticatePartner(req);
-  if (!partner) return response!;
-
-  const url = new URL(req.url);
-  const statusParam = url.searchParams.get("status") || "all";
-  const limitParam = parseInt(url.searchParams.get("limit") || "100", 10);
-
+  const auth = await authenticatePartner(req);
+  if (!auth.ok) return auth.response;
+  const { partner, ctx } = auth;
+  const params = req.nextUrl.searchParams;
+  const limit = parseLimit(params.get("limit"));
+  if (limit === null) return apiError(ctx, 400, "invalid_parameter", "limit must be an integer between 1 and 100.", { param: "limit" });
+  const status = params.get("status") || undefined;
+  if (status && !STATUSES.includes(status)) {
+    return apiError(ctx, 400, "invalid_parameter", `status must be one of: ${STATUSES.join(", ")}.`, { param: "status" });
+  }
+  const billingPeriod = params.get("billing_period") || undefined;
+  if (billingPeriod && !/^\d{4}-(0[1-9]|1[0-2])$/.test(billingPeriod)) {
+    return apiError(ctx, 400, "invalid_parameter", "billing_period must be YYYY-MM.", { param: "billing_period" });
+  }
   try {
-    const convex = getConvexClient();
-    const ledger = await convex.query(api.commercialTerms.listPartnerCommissions, {
-      partnerId: partner.code,
-      status: statusParam,
-      limit: limitParam,
+    const result = await callPartnerGateway("listCommissions", {
+      partnerCode: partner.code,
+      environment: partner.environment,
+      status,
+      billingPeriod,
+      limit,
+      cursor: params.get("cursor") || undefined,
     });
-
-    const summary = await convex.query(api.commercialTerms.getPartnerCommercialSummary, {
-      partnerId: partner.code,
-    });
-
-    return NextResponse.json({
-      status: "success",
-      partner_id: partner.code,
-      kpis: summary.kpis,
-      count: ledger.length,
-      commissions: (ledger as any[]).map((c: any) => ({
-        commission_id: c._id,
-        referral_id: c.referralId,
-        tracking_code: c.trackingCode,
-        patient_name: c.patientName,
-        event_trigger: c.eventType,
-        gross_transaction_ngn: (c.grossTransactionAmount / 100).toFixed(2),
-        commission_rate: typeof c.commissionRate === "number" && c.commissionRate > 100
-          ? `₦${(c.commissionRate / 100).toFixed(2)} fixed`
-          : `${c.commissionRate}%`,
-        commission_earned_ngn: (c.commissionAmount / 100).toFixed(2),
-        net_payable_ngn: (c.netPayable / 100).toFixed(2),
-        status: c.status,
-        settlement_id: c.settlementId || null,
-        notes: c.notes || null,
-        earned_at: c.earnedAtIso,
-      })),
-    });
+    const response = result?.ok ? apiJson(ctx, listBody(result.data, result.hasMore, result.nextCursor)) : coreError(ctx, result);
+    return logPartnerRequest(req, auth, response, { eventType: "api.commissions_list" });
   } catch (error) {
-    console.error("Commissions fetch error:", error);
-    return NextResponse.json(
-      {
-        error: {
-          code: "commissions_fetch_failed",
-          message: error instanceof Error ? error.message : "Internal server error",
-        },
-      },
-      { status: 500 }
-    );
+    return logPartnerRequest(req, auth, internalError(ctx, error), { eventType: "api.commissions_list", errorCode: "internal_error" });
   }
 }

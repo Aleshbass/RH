@@ -1,12 +1,35 @@
 // @ts-nocheck
 import { v } from "convex/values";
-import { internalMutation, mutation, query, action, QueryCtx, MutationCtx } from "./_generated/server";
+import { internalMutation, mutation, query, action, QueryCtx, MutationCtx, internalQuery } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import { getAuthenticatedUser, ensureUserRole } from "./auth";
 import { publicAppUrl } from "./helpers/appUrl";
+import { attributeUserToLink } from "./helpers/partnerAttribution";
 
 // ==== QUERIES ====
+
+/**
+ * Display details of another user (chat headers, avatars). Requires a signed-in caller and
+ * returns only the name, avatar and role, never contact details. Server code that needs
+ * the whole record uses the internal getUserById.
+ */
+export const getUserPublicProfile = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const user = await ctx.db.get(args.userId);
+    if (!user) return null;
+    return {
+      _id: user._id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      imageUrl: user.imageUrl,
+      role: user.role,
+    };
+  },
+});
 
 /**
  * Get the currently authenticated user
@@ -33,7 +56,7 @@ export const getMyUser = query({
  * Get a user by email address
  * Used by actions that only know the patient's email (e.g., invitations)
  */
-export const getUserByEmail = query({
+export const getUserByEmail = internalQuery({
   args: { email: v.string() },
   handler: async (ctx, args) => {
     if (!args.email) return null as any
@@ -49,7 +72,7 @@ export const getUserByEmail = query({
  * Get a user by ID
  * @returns The user document or null if not found
  */
-export const getUserById = query({
+export const getUserById = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.userId);
@@ -60,7 +83,7 @@ export const getUserById = query({
  * Get a user's email by ID
  * Used by the notification system to send emails
  */
-export const getUserEmail = query({
+export const getUserEmail = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
@@ -205,8 +228,6 @@ async function claimPlaceholderPatient(
     firstName: placeholder.firstName || args.firstName,
     lastName: placeholder.lastName || args.lastName,
     imageUrl: placeholder.imageUrl || args.imageUrl,
-    referredByPartnerCode: placeholder.referredByPartnerCode || args.referredByPartnerCode,
-    referralPublicCode: placeholder.referralPublicCode || args.referralPublicCode,
   });
   return placeholder._id;
 }
@@ -263,16 +284,13 @@ export const storeUserFromClerk = mutation({
         updates.imageUrl = args.imageUrl;
       }
 
-      // If user did not previously have partner attribution and a referral code is now provided, persist it
-      if (args.referredByPartnerCode && !existingUser.referredByPartnerCode) {
-        updates.referredByPartnerCode = args.referredByPartnerCode;
-      }
-      if (args.referralPublicCode && !existingUser.referralPublicCode) {
-        updates.referralPublicCode = args.referralPublicCode;
-      }
-
       if (Object.keys(updates).length > 0) {
         await ctx.db.patch(existingUser._id, updates);
+      }
+      // Partner attribution: only a server-validated, active, live referral-link code
+      // counts (client-supplied partner codes are ignored). First partner wins.
+      if (args.referralPublicCode && !existingUser.referredByPartnerCode) {
+        await attributeUserToLink(ctx, { ...existingUser, ...updates } as Doc<"users">, args.referralPublicCode, "referral_link", { countSignup: true });
       }
       return existingUser._id;
     } else {
@@ -283,24 +301,31 @@ export const storeUserFromClerk = mutation({
         firstName: args.firstName,
         lastName: args.lastName,
         imageUrl: args.imageUrl,
-        referredByPartnerCode: args.referredByPartnerCode,
-        referralPublicCode: args.referralPublicCode,
       });
-      if (claimedId) return claimedId;
+      if (claimedId) {
+        const claimed = await ctx.db.get(claimedId);
+        if (claimed && args.referralPublicCode) {
+          await attributeUserToLink(ctx, claimed, args.referralPublicCode, "referral_link", { countSignup: true });
+        }
+        return claimedId;
+      }
 
       // User does not exist, create a new one
-      return await ctx.db.insert("users", {
+      const newUserId = await ctx.db.insert("users", {
         clerkId: args.clerkId,
         email: args.email,
         firstName: args.firstName,
         lastName: args.lastName,
         imageUrl: args.imageUrl,
-        referredByPartnerCode: args.referredByPartnerCode,
-        referralPublicCode: args.referralPublicCode,
         onboarded: false, // Default value
         hasCompletedOnboarding: false,
         onboardingVersion: 1,
       });
+      if (args.referralPublicCode) {
+        const created = await ctx.db.get(newUserId);
+        if (created) await attributeUserToLink(ctx, created, args.referralPublicCode, "referral_link", { countSignup: true });
+      }
+      return newUserId;
     }
   },
 });
@@ -327,6 +352,23 @@ export const updateProfileImageFromStorage = mutation({
 
     await ctx.db.patch(user._id, { imageUrl: url });
     return { imageUrl: url };
+  },
+});
+
+/**
+ * Remove the authenticated user's profile image.
+ */
+export const removeProfileImage = mutation({
+  args: {},
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (!user) {
+      throw new Error("User not authenticated");
+    }
+
+    await ctx.db.patch(user._id, { imageUrl: undefined });
+    return { success: true };
   },
 });
 
@@ -852,7 +894,7 @@ export const setUserRole = mutation({
 /**
  * Get all admin users (for sending notifications)
  */
-export const getAllAdmins = query({
+export const getAllAdmins = internalQuery({
   args: {},
   handler: async (ctx) => {
     const admins = await ctx.db
@@ -998,7 +1040,7 @@ export const completeTour = mutation({
 /**
  * Promote an existing user to admin
  */
-export const promoteToAdmin = mutation({
+export const promoteToAdmin = internalMutation({
   args: {
     userId: v.id("users"),
     promotedByAdminId: v.id("users"),
@@ -1083,6 +1125,8 @@ export const testNotificationEmail = action({
     testEmail: v.optional(v.string()), // Email to send to, defaults to registered Resend email
   },
   handler: async (ctx, args) => {
+    // Sends real email: admins only.
+    await ctx.runQuery(internal.monthlySettlements.assertAdminForAction, {});
     // For testing, we'll use the Resend registered email or the provided test email
     const testEmail = args.testEmail || "onboarding@resend.dev";
 

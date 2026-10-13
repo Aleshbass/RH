@@ -116,6 +116,12 @@ export const verifyBankAccount = action({
         message: v.string(),
     }),
     handler: async (ctx, args) => {
+        // Resolves account holder names through Paystack: signed-in users only, so it
+        // cannot be used as an anonymous name-lookup service.
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            return { success: false, message: "Please sign in to verify a bank account." };
+        }
         const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 
         if (!PAYSTACK_SECRET) {
@@ -269,8 +275,10 @@ export const getPhysiotherapistBankDetails = query({
             .withIndex("by_physiotherapist_id", (q: any) => q.eq("physiotherapistId", args.physiotherapistId))
             .first();
 
+        // Only the Paystack subaccount code is needed to split a payment; account
+        // numbers and names are never returned from this public query.
         if (account && account.isVerified && account.subaccountCode) {
-            return account;
+            return { subaccountCode: account.subaccountCode as string };
         }
         return null;
     }

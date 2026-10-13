@@ -1,118 +1,49 @@
-import { NextRequest, NextResponse } from "next/server";
-import { authenticatePartner } from "@/lib/partner-auth";
-import { getConvexClient } from "@/lib/convex-client";
-import { api } from "@/convex/_generated/api";
+import type { NextRequest } from "next/server";
+import { authenticatePartner, logPartnerRequest } from "@/lib/partner-api/auth";
+import { apiError, apiJson, readJsonObject } from "@/lib/partner-api/http";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/**
+ * POST /v1/partners/eligibility — COMING SOON.
+ * Live keys receive 501 until real HMO eligibility checks exist (no simulated answers
+ * are ever returned in live). Sandbox keys get a clearly-labelled simulated preview.
+ */
 export async function POST(req: NextRequest) {
-  const startTime = Date.now();
-  const { partner, response, requestId, traceId } = await authenticatePartner(req);
-  if (!partner) return response!;
+  const auth = await authenticatePartner(req);
+  if (!auth.ok) return auth.response;
+  const { partner, ctx } = auth;
 
-  try {
-    const body = await req.json();
-
-    const memberId =
-      body.member_id || body.policy_number || body.hmo_policy_number || body.id;
-    const patientName = body.patient_name || body.name || "Member";
-    const serviceType = body.service_type || "physiotherapy";
-    const requestedSessions = Number(body.requested_sessions) || 6;
-
-    if (!memberId) {
-      return NextResponse.json(
-        {
-          error: {
-            code: "missing_member_id",
-            message: "Member ID / Policy number is required for eligibility check.",
-          },
-        },
-        { status: 400 }
-      );
-    }
-
-    // Standard pre-authorization verification logic
-    const isEligible = !String(memberId).toUpperCase().includes("EXPIRED");
-    const cryptoModule = await import("crypto");
-    const hashSignature = cryptoModule
-      .createHash("sha256")
-      .update(`${partner.code}:${memberId}:${partner.environment}`)
-      .digest("hex")
-      .slice(0, 8)
-      .toUpperCase();
-    const preAuthCode = `AUTH-${partner.code.toUpperCase().slice(0, 4)}-${hashSignature}`;
-
-    if (!isEligible) {
-      return NextResponse.json({
-        status: "ineligible",
-        member_id: memberId,
-        eligible: false,
-        environment: partner.environment,
-        reason: "Policy is expired or inactive according to partner insurance verification parameters.",
-      });
-    }
-
-    const approvedSessions = Math.min(requestedSessions, 12);
-
-    const convex = getConvexClient();
-    const latencyMs = Math.max(1, Date.now() - startTime);
-
-    convex
-      .mutation(api.partners.logPartnerActivity, {
-        partnerId: partner.code,
-        environment: partner.environment,
-        eventId: `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-        eventType: "eligibility.checked",
-        direction: "inbound",
-        url: "/api/v1/partners/eligibility",
-        method: "POST",
-        statusCode: 200,
-        latencyMs,
-        status: isEligible ? "success" : "error",
-        requestId,
-        traceId,
-        patientName,
-        requestPayload: { member_id: memberId, patient_name: patientName, service_type: serviceType },
-        responsePayload: {
-          status: isEligible ? "eligible" : "ineligible",
-          pre_auth_code: isEligible ? preAuthCode : null,
-          approved_sessions: isEligible ? approvedSessions : 0,
-        },
-        occurredAt: Date.now(),
-      })
-      .catch((err) => console.error("Failed to log eligibility activity:", err));
-
-    return NextResponse.json({
-      status: "eligible",
-      eligible: true,
-      pre_auth_code: preAuthCode,
-      member: {
-        member_id: memberId,
-        name: patientName,
-        plan_tier: "Comprehensive Health Plan",
-        status: "active",
-      },
-      coverage: {
-        service: serviceType,
-        approved_sessions: approvedSessions,
-        max_annual_sessions: 20,
-        remaining_sessions: Math.max(0, 20 - approvedSessions),
-        copay_percentage: 0,
-        home_visit_covered: true,
-        clinic_visit_covered: true,
-        virtual_telehealth_covered: true,
-      },
-      valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    });
-  } catch (error) {
-    console.error("Eligibility check error:", error);
-    return NextResponse.json(
-      {
-        error: {
-          code: "eligibility_check_failed",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        },
-      },
-      { status: 500 }
+  if (partner.environment === "live") {
+    return logPartnerRequest(
+      req,
+      auth,
+      apiError(ctx, 501, "feature_not_available", "Real-time eligibility checks are coming soon. Contact partners@physioaroundme.com to join the pilot.", {
+        type: "api_error",
+      }),
+      { eventType: "api.eligibility_check", errorCode: "feature_not_available" }
     );
   }
+
+  const parsed = await readJsonObject(req);
+  if (!parsed.ok) return apiError(ctx, 400, "invalid_json", "The request body must be a JSON object.");
+  const memberId = typeof parsed.value.member_id === "string" ? parsed.value.member_id.trim() : "";
+  if (!memberId || memberId.length > 100) {
+    return apiError(ctx, 422, "validation_error", "member_id is required (1–100 characters).", { param: "member_id" });
+  }
+  const requested = parsed.value.requested_sessions;
+  if (requested !== undefined && (typeof requested !== "number" || !Number.isInteger(requested) || requested < 1 || requested > 52)) {
+    return apiError(ctx, 422, "validation_error", "requested_sessions must be an integer between 1 and 52.", { param: "requested_sessions" });
+  }
+  const eligible = !memberId.toUpperCase().includes("EXPIRED");
+  const response = apiJson(ctx, {
+    object: "eligibility_check",
+    simulated: true,
+    eligible,
+    member_id: memberId,
+    approved_sessions: eligible ? (typeof requested === "number" ? requested : 6) : 0,
+    reason: eligible ? null : "policy_inactive",
+  });
+  return logPartnerRequest(req, auth, response, { eventType: "api.eligibility_check" });
 }

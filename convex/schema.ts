@@ -70,10 +70,14 @@ export default defineSchema({
       timeFormat: v.optional(v.string()),
     })),
 
-    // Partner Referral Attribution
+    // Partner Referral Attribution (first partner wins; set only by server-validated paths)
     referredByPartnerCode: v.optional(v.string()),
     referralPublicCode: v.optional(v.string()),
     linkedReferralTrackingCode: v.optional(v.string()),
+    referralLinkId: v.optional(v.id("partnerReferralLinks")),
+    linkedReferralId: v.optional(v.id("inboundReferrals")),
+    referralAttributedAt: v.optional(v.number()),
+    referralAttributionSource: v.optional(v.string()), // "referral_link" | "partner_referral" | "joy"
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_email", ["email"])
@@ -1171,6 +1175,18 @@ export default defineSchema({
     // Isolation between Sandbox / Testing and Live Production
     environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
 
+    // Partner contract v1 fields
+    patientPhoneNormalized: v.optional(v.string()), // E.164, used for de-duplication
+    partnerMetadata: v.optional(v.record(v.string(), v.string())), // Echoed back to the partner
+    eventSequence: v.optional(v.number()), // Last webhook sequence number emitted for this referral
+    sandboxProviderAssigned: v.optional(v.boolean()), // Sandbox only: simulated provider
+    contactedAt: v.optional(v.number()),
+    providerMatchedAt: v.optional(v.number()),
+    bookedAt: v.optional(v.number()),
+    treatmentStartedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    closedAt: v.optional(v.number()),
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -1182,6 +1198,9 @@ export default defineSchema({
     .index("by_tracking_code", ["trackingCode"])
     .index("by_partner_id", ["partnerId"])
     .index("by_partner_and_environment", ["partnerId", "environment"])
+    .index("by_partner_env_external_id", ["partnerId", "environment", "partnerExternalId"])
+    .index("by_partner_and_phone", ["partnerId", "patientPhoneNormalized"])
+    .index("by_phone_normalized", ["patientPhoneNormalized"])
     .index("by_link_id", ["linkId"])
     .index("by_whatsapp_phone", ["whatsappPhone"])
     .index("by_assigned_clinic", ["assignedClinicId"]),
@@ -2512,6 +2531,8 @@ export default defineSchema({
     // partner referral link, separate from any later payment action.
     joyPartnerReferralLinkCode: v.optional(v.string()),
     referralId: v.optional(v.id("inboundReferrals")), // Referring inbound referral if referred
+    referralLinkId: v.optional(v.id("partnerReferralLinks")), // Referral link that attributed the patient
+    paidAmountKobo: v.optional(v.number()), // Amount verified by Paystack
     careMode: v.optional(v.union(v.literal("virtual"), v.literal("in_person"))),
 
     // Payment
@@ -2925,7 +2946,9 @@ export default defineSchema({
   partners: defineTable({
     name: v.string(),                         // e.g. "Wellahealth", "Reliance HMO"
     code: v.string(),                         // Unique partner slug, e.g. "wellahealth"
-    apiKey: v.string(),                       // Secret API key e.g. "sk_live_..." or "sk_test_..."
+    // LEGACY plaintext key column. Never written or read for authentication any more;
+    // API keys live hashed in partnerApiKeys. Cleared by partnerMigrations.
+    apiKey: v.optional(v.string()),
     type: v.union(
       v.literal("hmo"),
       v.literal("hospital"),
@@ -2973,6 +2996,21 @@ export default defineSchema({
     rejectionReason: v.optional(v.string()),
     approvedAt: v.optional(v.number()),
     approvedBy: v.optional(v.string()),
+    website: v.optional(v.string()),
+    // Go-live: live keys/webhooks require Rehabify approval of production access
+    productionStatus: v.optional(v.union(
+      v.literal("not_requested"),
+      v.literal("requested"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("suspended")
+    )),
+    productionRequestedAt: v.optional(v.number()),
+    productionRequestNote: v.optional(v.string()),
+    productionReviewedAt: v.optional(v.number()),
+    productionReviewedBy: v.optional(v.string()),
+    productionRejectionReason: v.optional(v.string()),
+    credentialsRotatedAt: v.optional(v.number()),
     // Status
     isActive: v.boolean(),
     tier: v.string(),                         // "sandbox", "standard", "enterprise"
@@ -3039,10 +3077,13 @@ export default defineSchema({
       v.literal("expired")
     ),
     expiresAt: v.optional(v.number()),
+    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))), // missing = live
+    createdBy: v.optional(v.string()),
     // Analytics (denormalized counters for quick display)
     clicks: v.optional(v.number()),
     leads: v.optional(v.number()),
     joyStarts: v.optional(v.number()),
+    signups: v.optional(v.number()),
     bookings: v.optional(v.number()),
     payments: v.optional(v.number()),
     createdAt: v.number(),
@@ -3050,6 +3091,7 @@ export default defineSchema({
   })
     .index("by_public_code", ["publicCode"])
     .index("by_partner_id", ["partnerId"])
+    .index("by_partner_env", ["partnerId", "environment"])
     .index("by_status", ["status"]),
 
   // ─── Referral Events (Immutable Audit Trail) ─────────────────
@@ -3167,15 +3209,29 @@ export default defineSchema({
   partnerCommissions: defineTable({
     partnerId: v.string(),
     contractId: v.optional(v.id("partnerContracts")),
-    referralId: v.id("inboundReferrals"),
-    trackingCode: v.string(),
-    patientName: v.string(),
+    // Optional: web-attributed patients (referral link sign-ups) may have no inbound referral
+    referralId: v.optional(v.id("inboundReferrals")),
+    trackingCode: v.optional(v.string()),
+    patientName: v.optional(v.string()),
     eventType: v.union(
       v.literal("booking_confirmed"),
       v.literal("session_attended"),
       v.literal("treatment_completed"),
-      v.literal("activation_bonus")
+      v.literal("activation_bonus"),
+      v.literal("payment"),
+      v.literal("refund_adjustment")
     ),
+    // Unified ledger fields (partnerLedger.ts)
+    environment: v.optional(v.union(v.literal("sandbox"), v.literal("live"))),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    linkId: v.optional(v.id("partnerReferralLinks")),
+    patientUserId: v.optional(v.id("users")),
+    idempotencyKey: v.optional(v.string()), // Unique per earning event, e.g. "payment:<reference>"
+    source: v.optional(v.string()), // "marketplace" | "joy" | "bank_transfer" | "refund"
+    reversedAt: v.optional(v.number()),
+    reversalReason: v.optional(v.string()),
+    reversesCommissionId: v.optional(v.id("partnerCommissions")),
+    payoutTransferId: v.optional(v.id("partnerPayoutTransfers")),
     grossTransactionAmount: v.number(),      // Amount patient paid or treatment cost in kobo (e.g. ₦10,000 = 1,000,000)
     commissionRate: v.number(),              // Partner percentage (e.g. 10) or fixed fee in kobo
     commissionAmount: v.number(),            // Commission earned by partner in kobo (10%)
@@ -3219,7 +3275,8 @@ export default defineSchema({
       v.literal("pending_approval"),
       v.literal("approved"),
       v.literal("settled"),
-      v.literal("cancelled")
+      v.literal("cancelled"),
+      v.literal("reversed")
     ),
     settlementId: v.optional(v.string()),    // Linked statement id e.g. "SETTLE-2026-09"
     notes: v.optional(v.string()),
@@ -3232,24 +3289,124 @@ export default defineSchema({
     .index("by_settlement_id", ["settlementId"])
     .index("by_earned_at", ["earnedAt"])
     .index("by_billing_period", ["billingPeriod"])
-    .index("by_bulk_payout_status", ["bulkPayoutStatus"]),
+    .index("by_partner_and_period", ["partnerId", "billingPeriod"])
+    .index("by_bulk_payout_status", ["bulkPayoutStatus"])
+    .index("by_idempotency_key", ["idempotencyKey"])
+    .index("by_payment_reference", ["paymentReference"])
+    .index("by_payout_transfer", ["payoutTransferId"])
+    .index("by_partner_and_patient", ["partnerId", "patientUserId"]),
 
   // ─── Partner API Keys (Multi-Key Management & Lifecycle) ─────
+  // Only a SHA-256 hash of each key is stored. The full key is shown once at creation.
   partnerApiKeys: defineTable({
     partnerId: v.string(), // partner slug/code, e.g. "wellahealth"
     name: v.string(),      // e.g. "Default Key", "Staging Server", "EMR Webhook Worker"
-    key: v.string(),       // full secret key e.g. "sk_live_..." or "sk_test_..."
-    keyPrefix: v.string(), // e.g. "sk_live_38fx..."
+    key: v.optional(v.string()), // LEGACY plaintext (pre-hashing). Never written; cleared by migration.
+    keyHash: v.optional(v.string()), // hex SHA-256 of the full key
+    keyPrefix: v.string(), // display only, e.g. "sk_live_Ab3d…"
+    last4: v.optional(v.string()),
     environment: v.union(v.literal("sandbox"), v.literal("live")),
     status: v.union(v.literal("active"), v.literal("revoked"), v.literal("rolling")),
     createdAt: v.number(),
+    createdBy: v.optional(v.string()),
     lastUsedAt: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+    revokedBy: v.optional(v.string()),
   })
     .index("by_key", ["key"])
+    .index("by_key_hash", ["keyHash"])
     .index("by_partner", ["partnerId"])
     .index("by_partner_and_env", ["partnerId", "environment"])
     .index("by_partner_env_status", ["partnerId", "environment", "status"]),
+
+  // ─── Partner Webhook Outbox (durable, retried deliveries) ─────
+  // One row per event. The event id and payload never change across retries.
+  partnerWebhookDeliveries: defineTable({
+    eventId: v.string(),                      // evt_… (stable, sent as X-Rehabify-Event-Id)
+    partnerId: v.string(),                    // partner code
+    environment: v.union(v.literal("sandbox"), v.literal("live")),
+    eventType: v.string(),
+    payload: v.string(),                      // exact JSON body that is signed and sent
+    referralId: v.optional(v.id("inboundReferrals")),
+    trackingCode: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("delivering"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("skipped")
+    ),
+    attempts: v.number(),
+    nextAttemptAt: v.optional(v.number()),
+    lastAttemptAt: v.optional(v.number()),
+    lastStatusCode: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    lastResponseSnippet: v.optional(v.string()),
+    lastLatencyMs: v.optional(v.number()),
+    lastTargetUrl: v.optional(v.string()),
+    deliveredAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_event_id", ["eventId"])
+    .index("by_partner_env_created", ["partnerId", "environment", "createdAt"])
+    .index("by_status_next_attempt", ["status", "nextAttemptAt"])
+    .index("by_referral", ["referralId"]),
+
+  // ─── Partner API Idempotency Keys (24h) ──────────────────────
+  partnerIdempotencyKeys: defineTable({
+    partnerId: v.string(),
+    environment: v.union(v.literal("sandbox"), v.literal("live")),
+    key: v.string(),
+    route: v.string(),                        // e.g. "POST /partners/referrals"
+    requestHash: v.string(),                  // SHA-256 of the canonical request body
+    status: v.union(v.literal("in_progress"), v.literal("completed")),
+    responseStatus: v.optional(v.number()),
+    responseBody: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_partner_env_key", ["partnerId", "environment", "key"])
+    .index("by_expires", ["expiresAt"]),
+
+  // ─── Partner Payout Transfers (Paystack transfer lifecycle) ───
+  partnerPayoutTransfers: defineTable({
+    transferReference: v.string(),            // our Paystack transfer reference (TRF_RH_…)
+    partnerCode: v.string(),
+    billingPeriod: v.string(),
+    amountKobo: v.number(),                   // net amount sent
+    grossCommissionKobo: v.number(),
+    feesKobo: v.number(),
+    commissionIds: v.array(v.id("partnerCommissions")),
+    status: v.union(
+      v.literal("initiated"),
+      v.literal("otp_required"),
+      v.literal("pending"),
+      v.literal("success"),
+      v.literal("failed"),
+      v.literal("reversed")
+    ),
+    transferCode: v.optional(v.string()),
+    bulkBatchCode: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
+    initiatedBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_reference", ["transferReference"])
+    .index("by_transfer_code", ["transferCode"])
+    .index("by_partner_period", ["partnerCode", "billingPeriod"])
+    .index("by_status", ["status"]),
+
+  // Replay protection for the Next.js → Convex partner gateway
+  partnerGatewayNonces: defineTable({
+    nonce: v.string(),
+    expiresAt: v.number(),
+  })
+    .index("by_nonce", ["nonce"])
+    .index("by_expires", ["expiresAt"]),
 
   // ─── Partner Activity & Webhook Callback Audit Trail ─────────
   partnerActivityLogs: defineTable({

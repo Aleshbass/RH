@@ -1,6 +1,16 @@
 // @ts-nocheck
-import { action } from "./_generated/server";
+import { action, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { ensureUserRole } from "./auth";
+
+// These actions send real reminders to every matching user, so only admins may run them.
+export const assertAdmin = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"]);
+    return null;
+  },
+});
 
 /**
  * Test suite for reminder systems
@@ -9,6 +19,7 @@ import { internal } from "./_generated/api";
 
 export const testAllReminders = action({
   handler: async (ctx) => {
+    await ctx.runQuery(internal.test_reminders.assertAdmin, {});
     const results = {
       timestamp: new Date().toISOString(),
       tests: [] as any[],
@@ -158,6 +169,7 @@ export const testAllReminders = action({
  */
 export const testExerciseReminders = action({
   handler: async (ctx) => {
+    await ctx.runQuery(internal.test_reminders.assertAdmin, {});
     console.log("🧪 Testing Exercise Reminders Only...\n");
     
     try {
@@ -174,6 +186,7 @@ export const testExerciseReminders = action({
 
 export const testInvoiceReminders = action({
   handler: async (ctx) => {
+    await ctx.runQuery(internal.test_reminders.assertAdmin, {});
     console.log("🧪 Testing Invoice Payment Reminders Only...\n");
     
     try {
@@ -192,6 +205,7 @@ export const testInvoiceReminders = action({
 
 export const testAppointmentReminders = action({
   handler: async (ctx) => {
+    await ctx.runQuery(internal.test_reminders.assertAdmin, {});
     console.log("🧪 Testing Appointment Reminders Only...\n");
     
     try {
@@ -213,6 +227,7 @@ export const testAppointmentReminders = action({
  */
 export const checkTestData = action({
   handler: async (ctx) => {
+    await ctx.runQuery(internal.test_reminders.assertAdmin, {});
     console.log("🔍 Checking Test Data Availability...\n");
 
     const data = {

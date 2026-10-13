@@ -1,44 +1,87 @@
 ---
-title: API Reference Overview
-description: Full REST API specification for Rehabify Health Partner services.
+title: API reference
+description: Base URL, authentication, every Partner API endpoint, and the OpenAPI 3.1 specification for Postman and Insomnia.
 ---
 
-# API Reference Overview
+## Base URL
 
-The Rehabify REST API gives healthcare partners programmatic access to patient triage, therapist matching, HMO pre-authorization, session scheduling, and clinical outcome metrics.
+```text
+https://api.physioaroundme.com/v1
+```
 
----
+All paths on these pages are relative to this base URL. The same API is also available at `https://physioaroundme.com/api/v1`. Sandbox and live share both hosts, and the API key decides the environment.
 
-## Core Endpoints
+## Authentication
 
-| Resource | Method | Endpoint | Description |
-| :--- | :--- | :--- | :--- |
-| **Referrals** | `POST` | `/api/v1/partners/referrals` | Create patient referral & trigger automated intake |
-| **Referrals** | `GET` | `/api/v1/partners/referrals/:id` | Get referral progress and therapist assignment |
-| **Eligibility** | `POST` | `/api/v1/partners/eligibility` | Check HMO/corporate member coverage & session allowance |
-| **Providers** | `GET` | `/api/v1/partners/providers` | Search verified physiotherapists by location and specialty |
-| **Sessions** | `GET` | `/api/v1/partners/sessions` | Retrieve scheduled and completed session history |
-| **Clinical Reports** | `GET` | `/api/v1/partners/reports/:patientId` | Fetch clinical progress notes and discharge summaries |
+Send your secret key as a bearer token, or in `X-API-Key`:
 
----
+```http
+Authorization: Bearer sk_test_xxx
+```
 
-## Request Headers
+Keys starting with `sk_test_` hit the sandbox, and keys starting with `sk_live_` hit live. Never call the API from a browser or mobile app. See [Authentication](/docs/getting-started/authentication).
 
-Every request must include:
+## OpenAPI specification
 
-| Header | Value | Description |
+A complete OpenAPI 3.1 document describes every endpoint, schema, error and webhook:
+
+**https://physioaroundme.com/openapi.json**
+
+You can import it into your API client:
+
+- **Postman:** choose **Import**, paste the URL, and Postman creates a collection. Set the collection's authorization to *Bearer Token* with your `sk_test_` key.
+- **Insomnia:** choose **Import**, then **From URL**, and paste the URL.
+- **Code generators:** any OpenAPI 3.1-compatible generator can build a typed client from the document.
+
+## Endpoints
+
+| Method | Path | Description |
 | :--- | :--- | :--- |
-| `Authorization` | `Bearer sk_live_...` | Your secret API key |
-| `Content-Type` | `application/json` | Required for `POST` and `PUT` requests |
-| `Accept` | `application/json` | Standard response format |
-| `Idempotency-Key` | *(optional)* `uuidv4` | Prevents accidental duplicate session bookings |
+| `POST` | [`/partners/referrals`](/docs/api-reference/referrals#create-a-referral) | Create a referral |
+| `GET` | [`/partners/referrals`](/docs/api-reference/referrals#list-referrals) | List referrals |
+| `GET` | [`/partners/referrals/{id}`](/docs/api-reference/referrals#retrieve-a-referral) | Retrieve a referral by `id`, `tracking_code` or `partner_reference` |
+| `GET` | [`/partners/sessions`](/docs/api-reference/sessions) | List appointments for your referrals |
+| `GET` | [`/partners/reports/{id}`](/docs/api-reference/clinical-reports#retrieve-a-progress-report) | Progress report (JSON, no clinical notes) |
+| `GET` | [`/partners/reports/{id}/pdf`](/docs/api-reference/clinical-reports#download-the-pdf) | Progress report as a PDF |
+| `GET` | [`/partners/providers`](/docs/api-reference/providers) | Verified physiotherapist directory |
+| `POST` | [`/partners/referral-links`](/docs/api-reference/referral-links#create-a-referral-link) | Create a no-code referral link |
+| `GET` | [`/partners/referral-links`](/docs/api-reference/referral-links#list-referral-links) | List your referral links |
+| `PATCH` | [`/partners/referral-links/{id}`](/docs/api-reference/referral-links#update-a-referral-link) | Activate or deactivate a link |
+| `GET` | [`/partners/commercial`](/docs/api-reference/commercial-and-commissions#retrieve-commercial-terms) | Your commercial terms and earnings summary |
+| `GET` | [`/partners/commissions`](/docs/api-reference/commercial-and-commissions#list-commissions) | Commission ledger |
+| `POST` | [`/partners/eligibility`](/docs/api-reference/eligibility) | Eligibility check. **Coming soon** (sandbox preview only) |
 
----
+### Sandbox-only endpoints
 
-## Rate Limits
+These work only with `sk_test_` keys. With a live key, they return `403 sandbox_only`.
 
-| Tier | Request Rate | Monthly API Calls |
+| Method | Path | Description |
 | :--- | :--- | :--- |
-| **Starter (Free)** | WhatsApp Deep-links only | Unlimited Deep-links |
-| **Professional** | 10 requests / second | 500 API calls / month |
-| **Enterprise** | 50 requests / second | Unlimited calls |
+| `POST` | [`/sandbox/referrals/{id}/advance`](/docs/sandbox/testing#advance-a-referral) | Move a sandbox referral to a new status, firing the matching webhooks |
+| `POST` | [`/sandbox/trigger-webhook`](/docs/sandbox/testing#trigger-a-test-webhook) | Send a test event to your sandbox webhook endpoint |
+
+### Public endpoint (no API key)
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `POST` | [`/public/referral-links/{public_code}/leads`](/docs/api-reference/referral-links#public-lead-capture) | Submit a patient lead through a referral link. CORS-enabled and rate limited per IP. |
+
+## Response headers
+
+| Header | When | Meaning |
+| :--- | :--- | :--- |
+| `X-Request-Id` | Every response | Unique request ID, such as `req_5f2c9a1b7d3e4f60a1b2c3d4`. Quote it to support. |
+| `X-Rehabify-Environment` | Every response | `sandbox` or `live` |
+| `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` | Every authenticated response | See [Rate limits](/docs/getting-started/conventions#rate-limits). |
+| `Retry-After` | `429` responses | Seconds to wait before retrying |
+| `Idempotent-Replayed` | Replayed `POST` responses | `true` when the response was replayed for a repeated `Idempotency-Key` |
+
+## Conventions at a glance
+
+- JSON bodies in UTF-8. Unknown request fields are ignored.
+- Timestamps are ISO-8601 UTC strings, such as `2026-10-13T09:30:00.000Z`.
+- Money is in integer kobo, in fields ending `_kobo`, with `"currency": "NGN"`.
+- Lists use `limit` (1–100, default 25) and `cursor`, and return `{ "object": "list", "data": [...], "has_more": ..., "next_cursor": ... }`.
+- `POST` endpoints accept `Idempotency-Key`.
+
+Details are in [Conventions](/docs/getting-started/conventions), and every error code is in [Errors](/docs/getting-started/errors).

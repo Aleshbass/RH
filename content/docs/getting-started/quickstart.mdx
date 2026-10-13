@@ -1,142 +1,391 @@
 ---
-title: 5-Minute Quickstart
-description: Send your first patient referral using the Rehabify Partner API.
+title: Quickstart
+description: Create a sandbox referral, read it back, receive a signed webhook, simulate a full care journey, and switch to live.
 ---
 
-# Quickstart Guide
+This guide takes you through the whole integration in the sandbox, from first request to go-live. In sandbox, no patient is ever contacted, no emails or WhatsApp messages are sent, and no commissions are earned, so you can experiment freely.
 
-In this guide, you will send a patient referral to Rehabify via the REST API and observe how Joy automatically initiates the WhatsApp intake.
+**You need:**
 
----
+- An approved partner account. Apply at https://partners.physioaroundme.com if you don't have one yet.
+- `curl`, Node.js 18 or later, or Python 3.8 or later with `requests` (`pip install requests`).
 
-## Step 1: Set Your Secret Key
+## 1. Get a sandbox API key
 
-Include your API secret key in the `Authorization` header of every HTTP request:
+1. Sign in to the [Partner Portal](https://partners.physioaroundme.com) and open **Developers → API keys**.
+2. Create a key in the **sandbox** environment and give it a name, such as `quickstart`. Sandbox keys start with `sk_test_`.
+3. Copy the key immediately. It's shown **only once**, because Rehabify stores only a hash of it. If you lose it, create a new key and revoke the old one.
+
+Store the key in an environment variable. The examples below read it from `REHABIFY_API_KEY`:
 
 ```bash
-export REHABIFY_SECRET_KEY="sk_test_rehab_demo_key_99182"
+export REHABIFY_API_KEY="sk_test_xxx"   # replace with your own sandbox key
 ```
 
----
+<Callout type="warn" title="Keep keys on your server">There are no shared or public sandbox keys. Every key belongs to your organisation. Never put an API key in browser code, a mobile app, a URL or a git repository. Partner endpoints don't send CORS headers, so browser calls fail anyway.</Callout>
 
-## Step 2: Create a Patient Referral
+## 2. Create a referral
 
-Send a `POST` request to `/api/v1/partners/referrals`:
+Send `POST /partners/referrals`. The patient phone number `+2348000000003` is a sandbox [magic number](/docs/sandbox/testing#magic-phone-numbers). It moves the referral through a full simulated care journey over about 35 seconds.
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
 
 ```bash
-curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
-  -H "Authorization: Bearer $REHABIFY_SECRET_KEY" \
+curl https://api.physioaroundme.com/v1/partners/referrals \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 9b2f6c1e-4d7a-4c3b-8e5f-2a1d0c9b8e7f" \
   -d '{
+    "partner_reference": "QUICKSTART-001",
     "patient": {
-      "first_name": "Tunde",
-      "last_name": "Adeleke",
-      "phone": "+2348031234567",
-      "email": "tunde.adeleke@example.com",
+      "first_name": "Adeola",
+      "last_name": "Balogun",
+      "phone": "+2348000000003",
+      "email": "adeola@example.com",
       "city": "Lagos",
-      "area": "Ikeja"
+      "state": "Lagos",
+      "area": "Ikeja",
+      "preferred_language": "en"
     },
-    "clinical_notes": {
-      "diagnosis": "L4-L5 Lumbar Disc Herniation",
+    "clinical": {
+      "condition": "Lower back pain",
+      "notes": "Two weeks of pain after lifting. No red flags.",
+      "priority": "standard",
       "recommended_sessions": 6,
-      "priority": "high",
-      "referring_doctor": "Dr. Sarah Johnson (General Hospital)"
+      "referring_clinician": "Dr. Okafor"
     },
-    "billing_mode": "hmo_direct_billing",
-    "callback_url": "https://api.yourdomain.com/webhooks/rehabify"
+    "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+    "billing_mode": "patient_self_pay",
+    "consent": {
+      "granted": true,
+      "method": "electronic",
+      "captured_at": "2026-10-13T09:00:00.000Z",
+      "privacy_notice_version": "2026-09-01"
+    },
+    "metadata": { "source": "quickstart" }
   }'
 ```
 
-```typescript
-import axios from 'axios';
+</Tab>
+<Tab>
 
-const response = await axios.post(
-  'https://api.physioaroundme.com/api/v1/partners/referrals',
-  {
-    patient: {
-      first_name: 'Tunde',
-      last_name: 'Adeleke',
-      phone: '+2348031234567',
-      email: 'tunde.adeleke@example.com',
-      city: 'Lagos',
-      area: 'Ikeja',
-    },
-    clinical_notes: {
-      diagnosis: 'L4-L5 Lumbar Disc Herniation',
-      recommended_sessions: 6,
-      priority: 'high',
-      referring_doctor: 'Dr. Sarah Johnson',
-    },
-    billing_mode: 'hmo_direct_billing',
-    callback_url: 'https://api.yourdomain.com/webhooks/rehabify',
+```js
+// create-referral.mjs (Node.js 18+, uses the built-in fetch)
+import { randomUUID } from "node:crypto";
+
+const res = await fetch("https://api.physioaroundme.com/v1/partners/referrals", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.REHABIFY_API_KEY}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": randomUUID(),
   },
-  {
-    headers: {
-      Authorization: `Bearer ${process.env.REHABIFY_SECRET_KEY}`,
-      'Content-Type': 'application/json',
+  body: JSON.stringify({
+    partner_reference: "QUICKSTART-001",
+    patient: {
+      first_name: "Adeola",
+      last_name: "Balogun",
+      phone: "+2348000000003",
+      email: "adeola@example.com",
+      city: "Lagos",
+      state: "Lagos",
+      area: "Ikeja",
+      preferred_language: "en",
     },
-  }
-);
+    clinical: {
+      condition: "Lower back pain",
+      notes: "Two weeks of pain after lifting. No red flags.",
+      priority: "standard",
+      recommended_sessions: 6,
+      referring_clinician: "Dr. Okafor",
+    },
+    care: { preferred_mode: "patient_choice", preferred_contact_channel: "whatsapp" },
+    billing_mode: "patient_self_pay",
+    consent: {
+      granted: true,
+      method: "electronic",
+      captured_at: "2026-10-13T09:00:00.000Z",
+      privacy_notice_version: "2026-09-01",
+    },
+    metadata: { source: "quickstart" },
+  }),
+});
 
-console.log('Referral Created:', response.data);
+const body = await res.json();
+if (!res.ok) {
+  throw new Error(`${res.status} ${body.error.code}: ${body.error.message} (request ${body.error.request_id})`);
+}
+console.log(body.id, body.tracking_code, body.status);
 ```
+
+</Tab>
+<Tab>
 
 ```python
+# create_referral.py (Python 3.8+, pip install requests)
+import os
+import uuid
+
 import requests
+
+resp = requests.post(
+    "https://api.physioaroundme.com/v1/partners/referrals",
+    headers={
+        "Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}",
+        "Idempotency-Key": str(uuid.uuid4()),
+    },
+    json={
+        "partner_reference": "QUICKSTART-001",
+        "patient": {
+            "first_name": "Adeola",
+            "last_name": "Balogun",
+            "phone": "+2348000000003",
+            "email": "adeola@example.com",
+            "city": "Lagos",
+            "state": "Lagos",
+            "area": "Ikeja",
+            "preferred_language": "en",
+        },
+        "clinical": {
+            "condition": "Lower back pain",
+            "notes": "Two weeks of pain after lifting. No red flags.",
+            "priority": "standard",
+            "recommended_sessions": 6,
+            "referring_clinician": "Dr. Okafor",
+        },
+        "care": {"preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp"},
+        "billing_mode": "patient_self_pay",
+        "consent": {
+            "granted": True,
+            "method": "electronic",
+            "captured_at": "2026-10-13T09:00:00.000Z",
+            "privacy_notice_version": "2026-09-01",
+        },
+        "metadata": {"source": "quickstart"},
+    },
+    timeout=30,
+)
+body = resp.json()
+if not resp.ok:
+    err = body["error"]
+    raise SystemExit(f"{resp.status_code} {err['code']}: {err['message']} (request {err['request_id']})")
+print(body["id"], body["tracking_code"], body["status"])
+```
+
+</Tab>
+</Tabs>
+
+`consent.granted` is required and must be `true`. By setting it, you confirm the patient agreed to be contacted by Rehabify. `clinical.notes` is write-only: Rehabify's clinicians see it, but the API and webhooks never return it.
+
+<Callout type="info" title="Idempotency">Sending the same request again with the same `Idempotency-Key` within 24 hours replays the original response, with the header `Idempotent-Replayed: true`, instead of creating a second referral. To create another referral, use a new `Idempotency-Key` and a new `partner_reference`. Reusing a `partner_reference` returns `409 duplicate_partner_reference`.</Callout>
+
+## 3. Inspect the response
+
+A successful call returns `201 Created` with the full [referral object](/docs/api-reference/referrals#the-referral-object):
+
+```json title="201 Created"
+{
+  "object": "referral",
+  "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+  "tracking_code": "RHB-4829173655",
+  "partner_reference": "QUICKSTART-001",
+  "environment": "sandbox",
+  "status": "received",
+  "patient": {
+    "first_name": "Adeola",
+    "last_name": "Balogun",
+    "phone": "+2348000000003",
+    "email": "adeola@example.com",
+    "city": "Lagos",
+    "state": "Lagos",
+    "area": "Ikeja",
+    "preferred_language": "en"
+  },
+  "clinical": {
+    "condition": "Lower back pain",
+    "priority": "standard",
+    "recommended_sessions": 6,
+    "referring_clinician": "Dr. Okafor"
+  },
+  "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+  "billing_mode": "patient_self_pay",
+  "provider": null,
+  "sessions": { "completed": 0, "total": 6, "last_session_at": null, "next_session_at": null },
+  "links": {
+    "tracking_url": "https://physioaroundme.com/track/RHB-4829173655",
+    "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-4829173655"
+  },
+  "metadata": { "source": "quickstart" },
+  "created_at": "2026-10-13T09:30:00.000Z",
+  "updated_at": "2026-10-13T09:30:00.000Z"
+}
+```
+
+Store `id` and `tracking_code` next to your own record. In live, give the patient `links.whatsapp_intake_url`. One tap opens a WhatsApp chat with Joy that's already linked to this referral, so the patient can start right away. `links.tracking_url` is a public status page that shows no personal data.
+
+## 4. Read the referral back
+
+You can fetch a referral by its `id`, its `tracking_code` or your own `partner_reference`. Wait about 40 seconds for the simulated journey to finish, then fetch it:
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/referrals/QUICKSTART-001 \
+  -H "Authorization: Bearer $REHABIFY_API_KEY"
+```
+
+</Tab>
+<Tab>
+
+```js
+// get-referral.mjs (Node.js 18+)
+const res = await fetch("https://api.physioaroundme.com/v1/partners/referrals/QUICKSTART-001", {
+  headers: { Authorization: `Bearer ${process.env.REHABIFY_API_KEY}` },
+});
+const referral = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${referral.error.code}: ${referral.error.message}`);
+console.log(referral.status, referral.provider);
+```
+
+</Tab>
+<Tab>
+
+```python
+# get_referral.py
 import os
 
-url = "https://api.physioaroundme.com/api/v1/partners/referrals"
-headers = {
-    "Authorization": f"Bearer {os.getenv('REHABIFY_SECRET_KEY')}",
-    "Content-Type": "application/json"
-}
+import requests
 
-payload = {
-    "patient": {
-        "first_name": "Tunde",
-        "last_name": "Adeleke",
-        "phone": "+2348031234567",
-        "city": "Lagos",
-        "area": "Ikeja"
-    },
-    "clinical_notes": {
-        "diagnosis": "L4-L5 Lumbar Disc Herniation",
-        "recommended_sessions": 6,
-        "priority": "high"
-    },
-    "billing_mode": "patient_self_pay"
-}
-
-response = requests.post(url, json=payload, headers=headers)
-print(response.json())
+resp = requests.get(
+    "https://api.physioaroundme.com/v1/partners/referrals/QUICKSTART-001",
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+resp.raise_for_status()
+referral = resp.json()
+print(referral["status"], referral["provider"])
 ```
 
----
+</Tab>
+</Tabs>
 
-## Step 3: Inspect the Response
+By now `status` is `completed` and `provider` holds the simulated physiotherapist:
 
-If successful, Rehabify responds with a `201 Created` status code and a tracking reference:
-
-```json
+```json title="Relevant fields"
 {
-  "status": "success",
-  "referral_id": "ref_982b18aa21",
-  "tracking_url": "https://physioaroundme.com/track/ref_982b18aa21",
-  "whatsapp_intake": {
-    "dispatched": true,
-    "recipient": "+2348031234567",
-    "intake_token": "tok_99182_a81",
-    "deep_link": "https://wa.me/2348061525811?text=REHAB_REF_PARTNER_tok_99182_a81"
-  },
-  "created_at": "2026-08-16T08:00:00.000Z"
+  "status": "completed",
+  "provider": { "name": "Sandbox Physiotherapist", "license_number": "SANDBOX-0001" }
 }
 ```
 
----
+## 5. Receive webhooks
 
-## What Happens Next?
+Webhooks push every status change to your server, so you don't have to poll.
 
-1. **WhatsApp Message**: Joy sends a customized welcome message to `+2348031234567`.
-2. **Intake Triage**: Joy collects the patient's availability and confirms their preferred session modality (In-Clinic or Home Visit).
-3. **Physiotherapist Match**: The patient is matched with an MRTBN-certified physiotherapist within 15 minutes.
-4. **Webhook Notification**: When the intake is completed, Rehabify fires a `patient.intake_completed` webhook to your `callback_url`.
+1. **Expose an HTTPS endpoint.** It must use `https://` and be publicly reachable. Private and internal hosts are rejected. For local development, use a tunnelling tool that gives you a public HTTPS URL.
+2. **Register it.** In the Partner Portal, go to **Developers → Webhooks**, set your **sandbox** endpoint URL, and copy the sandbox signing secret (`whsec_…`). Sandbox and live each have their own endpoint and secret, and events are never sent across environments.
+3. **Verify signatures.** Every delivery carries `X-Rehabify-Signature: t=<unix seconds>,v1=<hex>`. Here's a minimal Express receiver. [Signature verification](/docs/webhooks/signature-verification) has Python, PHP and Go versions.
+
+```js title="webhook-server.mjs"
+// npm install express
+import crypto from "node:crypto";
+import express from "express";
+
+const app = express();
+const SECRET = process.env.REHABIFY_WEBHOOK_SECRET; // the sandbox whsec_… secret
+
+function isValidSignature(rawBody, header) {
+  if (!header || !Buffer.isBuffer(rawBody)) return false;
+  let timestamp = null;
+  const signatures = [];
+  for (const part of header.split(",")) {
+    const i = part.indexOf("=");
+    if (i === -1) continue;
+    const key = part.slice(0, i).trim();
+    const value = part.slice(i + 1).trim();
+    if (key === "t") timestamp = value;
+    if (key === "v1") signatures.push(value);
+  }
+  if (!timestamp || !/^\d+$/.test(timestamp) || signatures.length === 0) return false;
+  if (Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp)) > 300) return false;
+
+  const expected = crypto.createHmac("sha256", SECRET).update(`${timestamp}.`).update(rawBody).digest();
+  return signatures.some((sig) => {
+    const received = Buffer.from(sig, "hex");
+    return received.length === expected.length && crypto.timingSafeEqual(received, expected);
+  });
+}
+
+// express.raw keeps the exact bytes that were signed. Register this route before any express.json().
+app.post("/webhooks/rehabify", express.raw({ type: "application/json" }), (req, res) => {
+  if (!isValidSignature(req.body, req.get("X-Rehabify-Signature"))) {
+    return res.status(400).send("invalid signature");
+  }
+  const event = JSON.parse(req.body.toString("utf8"));
+  console.log(event.id, event.type, event.data.referral.tracking_code);
+  res.sendStatus(200); // acknowledge within 10 seconds; do slow work asynchronously
+});
+
+app.listen(3000, () => console.log("Listening on http://localhost:3000"));
+```
+
+4. **Send a test event.** Use the portal's test button, or call the sandbox trigger endpoint:
+
+```bash
+curl https://api.physioaroundme.com/v1/sandbox/trigger-webhook \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "type": "ping" }'
+```
+
+```json title="202 Accepted"
+{
+  "object": "webhook_test",
+  "event_id": "evt_01JA4V2K8M3N5P7Q9R1S3T5V7W",
+  "type": "ping",
+  "status": "queued",
+  "endpoint": "https://example.com/webhooks/rehabify"
+}
+```
+
+5. **Watch a real journey.** Repeat step 2 with a new `partner_reference` and `Idempotency-Key`. Your endpoint receives `referral.created`, then an event for each status change (`referral.contacted`, `referral.booked`, `referral.in_treatment` and `referral.completed`), plus `referral.provider_matched` when the simulated physiotherapist is assigned. The [event catalog](/docs/webhooks/event-catalog) shows every payload.
+
+## 6. Simulate other scenarios
+
+Each magic number triggers a different journey. Any other number stays `received` until you move it yourself.
+
+| Phone | Behaviour |
+| :--- | :--- |
+| `+2348000000001` | → `contacted` after ~5 s |
+| `+2348000000002` | → `contacted` (~5 s) → `provider_matched` + `booked` (~15 s) |
+| `+2348000000003` | full journey: `contacted` (~5 s) → `booked` (~15 s) → `in_treatment` (~25 s) → `completed` (~35 s) |
+| `+2348000000004` | rejected immediately: 422 `patient_ineligible` (no referral created) |
+| `+2348000000005` | → `not_suitable` after ~10 s |
+| `+2348000000006` | → `cancelled` after ~10 s |
+| any other | stays `received` — use the advance endpoint |
+
+To move a referral yourself, create one with any other number (for example `+2348012345678`), then call the sandbox-only advance endpoint. It fires the same webhooks a real transition would:
+
+```bash
+TRACKING_CODE="RHB-0123456789"   # replace with the tracking code (or id) of a sandbox referral that is still "received"
+curl "https://api.physioaroundme.com/v1/sandbox/referrals/$TRACKING_CODE/advance" \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "status": "contacted" }'
+```
+
+See [Sandbox & testing](/docs/sandbox/testing) for the full rules.
+
+## 7. Go live
+
+1. In the Partner Portal, choose **Request production access** and work through the [go-live checklist](/docs/api-reference/partner-integration-v1).
+2. Once Rehabify approves production access, create a `sk_live_` key in **Developers → API keys**.
+3. Set your **live** webhook endpoint in **Developers → Webhooks** and store the live signing secret. It's different from your sandbox secret.
+4. Swap `REHABIFY_API_KEY` and `REHABIFY_WEBHOOK_SECRET` for their live values. The base URL stays the same.
+
+<Callout type="warn" title="Live means real patients">With a live key, Rehabify's care team and Joy contact every patient you refer, and magic phone numbers have no special behaviour. Only refer real patients who have agreed to be contacted.</Callout>

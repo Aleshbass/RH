@@ -1,0 +1,404 @@
+---
+title: Referral links
+description: Create, list and deactivate no-code referral links, read their stats, and capture leads through the public lead endpoint.
+---
+
+A **referral link** is a co-branded landing page at `https://physioaroundme.com/r/<public_code>`. Patients who open it can refer themselves through a short form, and every referral it creates is attributed to you. You can manage links in the Partner Portal under **Referral Links**, or with the endpoints on this page.
+
+The [No-code referral links guide](/docs/guides/no-code-referral-links) explains the patient experience, consent and attribution in detail.
+
+| Method | Path | |
+| :--- | :--- | :--- |
+| `POST` | `/partners/referral-links` | [Create a referral link](#create-a-referral-link) |
+| `GET` | `/partners/referral-links` | [List referral links](#list-referral-links) |
+| `PATCH` | `/partners/referral-links/{id}` | [Update a referral link](#update-a-referral-link) |
+| `POST` | `/public/referral-links/{public_code}/leads` | [Public lead capture](#public-lead-capture) (no API key) |
+
+## The referral link object
+
+```json
+{
+  "object": "referral_link",
+  "id": "kx1p9o8i7u6y5t4r3e2w1q0a9s8d7f6g",
+  "public_code": "wellah-7KQ2X9MD",
+  "url": "https://physioaroundme.com/r/wellah-7KQ2X9MD",
+  "campaign_name": "Staff wellness Q4",
+  "service_scope": "all_rehabilitation",
+  "default_care_mode": "patient_choice",
+  "status": "active",
+  "environment": "live",
+  "expires_at": "2027-01-31T23:59:59.000Z",
+  "stats": { "clicks": 0, "leads": 0, "signups": 0, "bookings": 0, "payments": 0 },
+  "created_at": "2026-10-13T09:30:00.000Z"
+}
+```
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `object` | string | Always `referral_link`. |
+| `id` | string | Link ID. Use it with `PATCH /partners/referral-links/{id}`. |
+| `public_code` | string | The non-guessable code in the URL. It contains no patient information. |
+| `url` | string | The link to share: `https://physioaroundme.com/r/<public_code>`. |
+| `campaign_name` | string or null | Your label for the link. |
+| `service_scope` | string | The services the link covers, for example `all_rehabilitation`. |
+| `default_care_mode` | string | `remote`, `in_person` or `patient_choice`. |
+| `status` | string | `active` or `inactive`. |
+| `environment` | string | `sandbox` or `live`. Links inherit the environment of the key that created them. |
+| `expires_at` | string or null | After this time the link behaves as inactive. |
+| `stats` | object | Performance counters (see below). |
+| `created_at` | string | ISO-8601 UTC. |
+
+### Stats
+
+| Stat | Counts |
+| :--- | :--- |
+| `clicks` | Unique visitors. A visitor is counted at most once per 30 minutes, and bots are excluded. |
+| `leads` | Landing-page forms submitted. |
+| `signups` | Patient accounts attributed to the link. |
+| `bookings` | Bookings created by attributed patients. |
+| `payments` | Paid bookings. |
+
+## Create a referral link
+
+```http
+POST /partners/referral-links
+```
+
+All body fields are optional. The link is created in the environment of your API key, so a `sk_test_` key creates a sandbox link. Accepts `Idempotency-Key`.
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `campaign_name` | string | A label for your own reporting, for example `Staff wellness Q4`. |
+| `service_scope` | string | The services the link covers, for example `all_rehabilitation`. |
+| `default_care_mode` | string | `remote`, `in_person` or `patient_choice`. |
+| `expires_at` | string | ISO-8601 timestamp after which the link stops accepting patients. |
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/referral-links \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 6d0e3b9a-1c2f-4e8d-a7b6-5c4d3e2f1a0b" \
+  -d '{
+    "campaign_name": "Staff wellness Q4",
+    "service_scope": "all_rehabilitation",
+    "default_care_mode": "patient_choice",
+    "expires_at": "2027-01-31T23:59:59.000Z"
+  }'
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+ (save as create-link.mjs)
+import { randomUUID } from "node:crypto";
+
+const res = await fetch("https://api.physioaroundme.com/v1/partners/referral-links", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.REHABIFY_API_KEY}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": randomUUID(),
+  },
+  body: JSON.stringify({
+    campaign_name: "Staff wellness Q4",
+    service_scope: "all_rehabilitation",
+    default_care_mode: "patient_choice",
+    expires_at: "2027-01-31T23:59:59.000Z",
+  }),
+});
+const link = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${link.error.code}: ${link.error.message}`);
+console.log(link.url);
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+import uuid
+
+import requests
+
+resp = requests.post(
+    "https://api.physioaroundme.com/v1/partners/referral-links",
+    headers={
+        "Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}",
+        "Idempotency-Key": str(uuid.uuid4()),
+    },
+    json={
+        "campaign_name": "Staff wellness Q4",
+        "service_scope": "all_rehabilitation",
+        "default_care_mode": "patient_choice",
+        "expires_at": "2027-01-31T23:59:59.000Z",
+    },
+    timeout=30,
+)
+resp.raise_for_status()
+print(resp.json()["url"])
+```
+
+</Tab>
+</Tabs>
+
+**Response:** `201 Created` with the [referral link object](#the-referral-link-object). New links start with `status: "active"` and zeroed stats.
+
+**Errors:** `422 validation_error` (for example, an invalid `default_care_mode` or `expires_at`), plus the standard [authentication errors](/docs/getting-started/authentication#authentication-errors).
+
+## List referral links
+
+```http
+GET /partners/referral-links
+```
+
+Returns your links in the key's environment as a [paginated list](/docs/getting-started/conventions#pagination). Use `limit` (1–100, default 25) and `cursor`.
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl "https://api.physioaroundme.com/v1/partners/referral-links?limit=20" \
+  -H "Authorization: Bearer $REHABIFY_API_KEY"
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+ (save as list-links.mjs)
+const res = await fetch("https://api.physioaroundme.com/v1/partners/referral-links?limit=20", {
+  headers: { Authorization: `Bearer ${process.env.REHABIFY_API_KEY}` },
+});
+const page = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${page.error.code}: ${page.error.message}`);
+for (const link of page.data) console.log(link.campaign_name, link.status, link.stats);
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+resp = requests.get(
+    "https://api.physioaroundme.com/v1/partners/referral-links",
+    params={"limit": 20},
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+resp.raise_for_status()
+for link in resp.json()["data"]:
+    print(link["campaign_name"], link["status"], link["stats"])
+```
+
+</Tab>
+</Tabs>
+
+```json title="200 OK"
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "referral_link",
+      "id": "kx1p9o8i7u6y5t4r3e2w1q0a9s8d7f6g",
+      "public_code": "wellah-7KQ2X9MD",
+      "url": "https://physioaroundme.com/r/wellah-7KQ2X9MD",
+      "campaign_name": "Staff wellness Q4",
+      "service_scope": "all_rehabilitation",
+      "default_care_mode": "patient_choice",
+      "status": "active",
+      "environment": "live",
+      "expires_at": "2027-01-31T23:59:59.000Z",
+      "stats": { "clicks": 412, "leads": 37, "signups": 21, "bookings": 14, "payments": 12 },
+      "created_at": "2026-10-13T09:30:00.000Z"
+    }
+  ],
+  "has_more": false,
+  "next_cursor": null
+}
+```
+
+## Update a referral link
+
+```http
+PATCH /partners/referral-links/{id}
+```
+
+Activates or deactivates a link. `{id}` is the link's `id`. The body has one field:
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `status` | string | `active` or `inactive`. |
+
+An inactive link shows patients an "unavailable" page, accepts no new leads and doesn't attribute anyone. Its stats and existing attributions are kept.
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/referral-links/kx1p9o8i7u6y5t4r3e2w1q0a9s8d7f6g \
+  -X PATCH \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "status": "inactive" }'
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+ (save as deactivate-link.mjs)
+const res = await fetch(
+  "https://api.physioaroundme.com/v1/partners/referral-links/kx1p9o8i7u6y5t4r3e2w1q0a9s8d7f6g",
+  {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${process.env.REHABIFY_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status: "inactive" }),
+  }
+);
+const link = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${link.error.code}: ${link.error.message}`);
+console.log(link.status);
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+resp = requests.patch(
+    "https://api.physioaroundme.com/v1/partners/referral-links/kx1p9o8i7u6y5t4r3e2w1q0a9s8d7f6g",
+    json={"status": "inactive"},
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+resp.raise_for_status()
+print(resp.json()["status"])
+```
+
+</Tab>
+</Tabs>
+
+**Response:** `200 OK` with the updated [referral link object](#the-referral-link-object).
+
+**Errors:** `404 referral_link_not_found` and `422 validation_error`, plus the standard [authentication errors](/docs/getting-started/authentication#authentication-errors).
+
+## Public lead capture
+
+```http
+POST /public/referral-links/{public_code}/leads
+```
+
+This is the endpoint the hosted landing page submits to. Because it's public, you can also post to it from your own website form:
+
+- **No API key.** It's authenticated by the link's `public_code` only, so never send your secret key here.
+- **CORS-enabled**, so you can call it from a browser.
+- **Rate limited per IP address**: 5 requests per 10 minutes. Over the limit, it returns `429 rate_limit_exceeded` with `Retry-After`.
+- The lead becomes a referral in the link's environment. It shows up in your dashboard and the API, fires `referral.created`, and is attributed to you.
+
+### Request body
+
+```json
+{
+  "patient": {
+    "first_name": "Ngozi",
+    "last_name": "Eze",
+    "phone": "+2348031234567",
+    "email": "ngozi@example.com",
+    "city": "Abuja",
+    "state": "FCT",
+    "preferred_language": "en"
+  },
+  "need": { "reason": "knee_injury", "preferred_care_mode": "patient_choice" },
+  "contact": { "preferred_channel": "whatsapp" },
+  "consent": { "granted": true, "privacy_notice_version": "2026-09-01" }
+}
+```
+
+| Field | Rules |
+| :--- | :--- |
+| `patient.first_name` | **Required.** |
+| `patient.phone` or `patient.email` | **At least one is required.** |
+| `patient.last_name`, `patient.city`, `patient.state` | Optional. |
+| `patient.preferred_language` | Optional: `en`, `yo`, `ig` or `ha`. |
+| `need.reason` | Optional. Why the patient needs care, for example `knee_injury`. |
+| `need.preferred_care_mode` | Optional: `remote`, `in_person` or `patient_choice`. |
+| `contact.preferred_channel` | Optional: `whatsapp`, `phone`, `email` or `sms`. |
+| `consent.granted` | **Required, and must be `true`.** Show an explicit consent checkbox that is unticked by default. |
+| `consent.privacy_notice_version` | Optional. The version of the privacy notice the patient saw. |
+
+### Example from a browser
+
+```js
+// Runs in the browser. No API key: the public_code identifies your link.
+async function submitLead(form) {
+  const res = await fetch(
+    "https://api.physioaroundme.com/v1/public/referral-links/wellah-7KQ2X9MD/leads",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        patient: {
+          first_name: form.first_name.value,
+          phone: form.phone.value,
+          city: form.city.value,
+        },
+        need: { reason: form.reason.value, preferred_care_mode: "patient_choice" },
+        contact: { preferred_channel: "whatsapp" },
+        consent: { granted: form.consent.checked, privacy_notice_version: "2026-09-01" },
+      }),
+    }
+  );
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error.message);
+  return body; // show body.tracking_code and a "Chat with Joy on WhatsApp" button (body.whatsapp_intake_url)
+}
+```
+
+### Responses
+
+```json title="201 Created (new lead)"
+{
+  "object": "lead",
+  "tracking_code": "RHB-7302918465",
+  "status": "received",
+  "duplicate": false,
+  "tracking_url": "https://physioaroundme.com/track/RHB-7302918465",
+  "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-7302918465"
+}
+```
+
+If the same phone number was already submitted for your organisation in the last 24 hours, no new referral is created, and the response is `200 OK` with `duplicate: true` and no tracking code:
+
+```json title="200 OK (duplicate)"
+{
+  "object": "lead",
+  "tracking_code": null,
+  "status": null,
+  "duplicate": true,
+  "tracking_url": null,
+  "whatsapp_intake_url": null
+}
+```
+
+| HTTP | Code | When |
+| :--- | :--- | :--- |
+| 201 | | The lead was accepted and a referral was created. |
+| 200 | | Duplicate: the same phone was submitted for your organisation in the last 24 hours. |
+| 404 | `referral_link_not_found` | No link has this `public_code`. |
+| 410 | `link_inactive` | The link is inactive or expired. |
+| 422 | `validation_error`, `consent_required` | A field is invalid, or `consent.granted` isn't `true`. |
+| 429 | `rate_limit_exceeded` | More than 5 requests in 10 minutes from this IP address. |

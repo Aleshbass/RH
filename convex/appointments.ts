@@ -1,7 +1,8 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
+import { onPatientSessionCompleted } from "./helpers/partnerAttribution";
 
 /**
  * Get authenticated user with role-based validation
@@ -178,7 +179,7 @@ export const createAppointment = mutation({
     // Email: confirmation to patient (schedule as action)
     const patientEmail = patient?.email as string | undefined;
     if (patientEmail) {
-      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentScheduledEmail"].sendAppointmentScheduledEmail as any, {
+      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentScheduledEmail.sendAppointmentScheduledEmail, {
         to: patientEmail,
         patientName,
         physiotherapistName,
@@ -460,6 +461,12 @@ export const updateAppointmentStatus = mutation({
 
     await ctx.db.patch(args.appointmentId, updateData);
 
+    // A completed session moves the patient's booked partner referral into treatment
+    // (fires referral.in_treatment to the partner).
+    if (args.status === "completed") {
+      await onPatientSessionCompleted(ctx, appointment.patientId);
+    }
+
     // Create notification for patient
     const patient = await ctx.db.get(appointment.patientId);
     const patientName = patient ? `${patient.firstName} ${patient.lastName}` : "Patient";
@@ -516,7 +523,7 @@ export const updateAppointmentStatus = mutation({
         const patientNameForEmail = `${patient.firstName} ${patient.lastName}`;
         const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
-        await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentCanceledPatientEmail"].sendAppointmentCanceledPatientEmail as any, {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentCanceledPatientEmail.sendAppointmentCanceledPatientEmail, {
           to: patient.email as string,
           patientName: patientNameForEmail,
           physiotherapistName,
@@ -711,7 +718,7 @@ export const rescheduleAppointment = mutation({
     const oldTimeStr = `${new Date(oldStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(oldEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     const newTimeStr = `${new Date(args.newStartTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(args.newEndTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     if (physioEmail) {
-      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRescheduledProviderEmail"].sendAppointmentRescheduledProviderEmail as any, {
+      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledProviderEmail.sendAppointmentRescheduledProviderEmail, {
         to: physioEmail,
         patientName: patientNameForEmail,
         physiotherapistName,
@@ -727,7 +734,7 @@ export const rescheduleAppointment = mutation({
     // Email: notify patient about reschedule
     const patientEmail = patient?.email as string | undefined;
     if (patientEmail) {
-      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRescheduledPatientEmail"].sendAppointmentRescheduledPatientEmail as any, {
+      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledPatientEmail.sendAppointmentRescheduledPatientEmail, {
         to: patientEmail,
         patientName: patientNameForEmail,
         physiotherapistName,
@@ -1260,7 +1267,7 @@ export const requestAppointment = mutation({
     // Send emails: provider notification and patient confirmation
     const physioEmail = physiotherapist.email as string | undefined;
     if (physioEmail) {
-      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRequestedEmail"].sendAppointmentRequestedEmail as any, {
+      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRequestedEmail.sendAppointmentRequestedEmail, {
         to: physioEmail,
         patientName,
         physiotherapistName,
@@ -1276,7 +1283,7 @@ export const requestAppointment = mutation({
 
     const patientEmail = patient.email as string | undefined;
     if (patientEmail) {
-      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentScheduledEmail"].sendAppointmentScheduledEmail as any, {
+      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentScheduledEmail.sendAppointmentScheduledEmail, {
         to: patientEmail,
         patientName,
         physiotherapistName,
@@ -1379,7 +1386,7 @@ export const cancelAppointmentAsPatient = mutation({
     const physioEmail = physiotherapist?.email as string | undefined;
     const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     if (physioEmail) {
-      await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentCanceledProviderEmail"].sendAppointmentCanceledProviderEmail as any, {
+      await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentCanceledProviderEmail.sendAppointmentCanceledProviderEmail, {
         to: physioEmail,
         patientName,
         physiotherapistName,
@@ -1395,7 +1402,7 @@ export const cancelAppointmentAsPatient = mutation({
     const patientEmail = patient.email as string | undefined;
     if (patientEmail) {
       try {
-        await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentCanceledPatientEmail"].sendAppointmentCanceledPatientEmail as any, {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentCanceledPatientEmail.sendAppointmentCanceledPatientEmail, {
           to: patientEmail,
           patientName,
           physiotherapistName,
@@ -1484,7 +1491,7 @@ export const confirmAppointmentAsPatient = mutation({
     const appointmentTimeStr = `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     if (physioEmail) {
       try {
-        await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentConfirmedProviderEmail"].sendAppointmentConfirmedProviderEmail as any, {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentConfirmedProviderEmail.sendAppointmentConfirmedProviderEmail, {
           to: physioEmail,
           patientName,
           physiotherapistName,
@@ -1624,7 +1631,7 @@ export const requestAppointmentReschedule = mutation({
       const newTimeStr = `${newStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${newEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
       try {
-        await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRescheduledProviderEmail"].sendAppointmentRescheduledProviderEmail as any, {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledProviderEmail.sendAppointmentRescheduledProviderEmail, {
           to: physioEmail,
           patientName: patientName,
           physiotherapistName: physiotherapistName,
@@ -1632,8 +1639,8 @@ export const requestAppointmentReschedule = mutation({
           oldTime: oldTimeStr,
           newDate: args.newStartTime,
           newTime: newTimeStr,
-          reason: args.reason || "No reason provided",
-          appointmentId: args.appointmentId,
+          viewLink: "/dashboard/physiotherapist/appointments",
+          subjectOverride: `Appointment rescheduled: ${patientName}`,
         });
       } catch (err) {
         console.error("Failed to send reschedule email to physiotherapist:", err);
@@ -1648,13 +1655,15 @@ export const requestAppointmentReschedule = mutation({
       const newTimeStr = `${newStartTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${newEndTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
       try {
-        await ctx.scheduler.runAfter(0, api["actions/emails/sendAppointmentRescheduledPatientEmail"].sendAppointmentRescheduledPatientEmail as any, {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendAppointmentRescheduledPatientEmail.sendAppointmentRescheduledPatientEmail, {
           to: patientEmail,
           patientName: patientName,
           physiotherapistName: physiotherapistName,
+          oldDate: appointment.startTime,
+          oldTime: `${new Date(appointment.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(appointment.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
           newDate: args.newStartTime,
           newTime: newTimeStr,
-          appointmentId: args.appointmentId,
+          viewLink: "/dashboard/patient/appointments",
         });
       } catch (err) {
         console.error("Failed to send reschedule confirmation email to patient:", err);
@@ -1671,7 +1680,7 @@ export const requestAppointmentReschedule = mutation({
 /**
  * Get all physiotherapists in a clinic (for multi-provider calendar view)
  */
-export const getClinicPhysiotherapists = query({
+export const getClinicPhysiotherapists = internalQuery({
   args: {
     clinicId: v.id("clinics"),
   },
@@ -1706,7 +1715,7 @@ export const getClinicPhysiotherapists = query({
 /**
  * Get all appointments for a clinic (multi-provider view)
  */
-export const getClinicAppointments = query({
+export const getClinicAppointments = internalQuery({
   args: {
     clinicId: v.id("clinics"),
     startDate: v.optional(v.number()),

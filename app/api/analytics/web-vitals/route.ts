@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { api } from '@/convex/_generated/api'
 import { getConvexClient } from '@/lib/convex-client'
+import { convexServerSecret } from '@/lib/convex-server-secret'
 import { log } from '@/lib/monitoring/logger'
 
 export async function POST(request: NextRequest) {
@@ -21,7 +22,8 @@ export async function POST(request: NextRequest) {
         url: data.url,
         userAgent: data.userAgent,
         timestamp: data.timestamp
-      }
+      },
+      serverSecret: convexServerSecret()
     })
 
     return NextResponse.json({ success: true })

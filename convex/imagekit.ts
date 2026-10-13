@@ -2,11 +2,15 @@
 
 import { action } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import crypto from "crypto";
 
+// Upload signatures let the holder write to our ImageKit account, so only admins (the
+// exercise library uploader) may get one.
 export const getUploadAuth = action({
     args: {},
-    handler: async () => {
+    handler: async (ctx) => {
+        await ctx.runQuery(internal.monthlySettlements.assertAdminForAction, {});
         const privateKey = process.env.IMAGEKIT_PRIVATE_KEY;
         if (!privateKey) {
             throw new Error("IMAGEKIT_PRIVATE_KEY is not set");

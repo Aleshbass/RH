@@ -40,7 +40,7 @@ export const sendPendingInvitationReminders = internalAction({
         const invitationLink = `${appUrl}/patient-invite/${inv.code}`;
 
         // Use the dedicated reminder email action
-        await ctx.runAction(api.actions.emails.sendInvitationEmail.sendInvitationReminderEmail as any, {
+        await ctx.runAction(internal.actions.emails.sendInvitationEmail.sendInvitationReminderEmail, {
           patientEmail: inv.patientEmail,
           patientName: inv.patientName,
           physiotherapistName,

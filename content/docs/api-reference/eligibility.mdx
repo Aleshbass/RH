@@ -1,79 +1,115 @@
 ---
-title: Eligibility & Pre-Auth API
-description: Verify HMO insurance policies and corporate employee session allowances.
+title: Eligibility (coming soon)
+description: Live HMO eligibility and pre-authorisation checks are coming soon. Only a simulated preview is available, and only in sandbox.
 ---
 
-# Eligibility & Pre-Authorization API
+<Callout type="warn" title="Coming soon">Live eligibility and pre-authorisation checks aren't available yet. With a live key, `POST /partners/eligibility` returns `501 feature_not_available`. Only the simulated sandbox preview described below works today. Don't depend on it in production.</Callout>
 
-The Eligibility API enables HMOs, insurance administrators, and HR benefit managers to verify patient coverage in real time before scheduling physical therapy sessions.
+When it launches, the eligibility endpoint will let HMOs and sponsors check a member's physiotherapy cover before referring them. Until then, refer covered members with `billing_mode: "hmo_direct_billing"` and put your own authorisation reference in `partner_reference` or `metadata`. See the [HMO integration guide](/docs/guides/hmo-integration).
 
----
+## Sandbox preview
 
-## Verify Policy / Member Coverage
-
-`POST /api/v1/partners/eligibility`
-
-Checks whether a patient's insurance policy or corporate benefit tier includes physiotherapy and returns the remaining approved session balance.
-
-### Request Body Parameters
-
-| Parameter | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `policy_number` | `string` | **Yes** | HMO Member ID or Corporate Staff ID |
-| `member_phone` | `string` | **Yes** | Member's verified phone number |
-| `hmo_code` | `string` | **Yes** | `RELIANCE` \| `AXA_MANSARD` \| `HYGEIA` \| `LEADWAY` \| `BASTION` |
-| `procedure_code` | `string` | No | Default: `PHYSIO_STD_SESSION` |
-
-### Example Request
-
-```bash
-curl -X POST https://api.physioaroundme.com/api/v1/partners/eligibility \
-  -H "Authorization: Bearer sk_live_99281..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "policy_number": "REL-99218-B",
-    "member_phone": "+2348039988112",
-    "hmo_code": "RELIANCE",
-    "procedure_code": "PHYSIO_POST_SURGICAL"
-  }'
+```http
+POST /partners/eligibility
 ```
 
-### Example Response (`200 OK`)
+With a `sk_test_` key, the endpoint returns a simulated result so you can prototype your flow. No HMO is contacted, and the result means nothing outside sandbox.
 
-```json
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `member_id` | string | The member's ID with their HMO. |
+| `hmo_code` | string | Your HMO code, for example `wellahealth`. |
+| `requested_sessions` | integer | Number of sessions you want to check. |
+
+Simulation rules:
+
+- Any `member_id` containing `EXPIRED` returns `eligible: false` with `reason: "policy_inactive"`.
+- Any other `member_id` returns `eligible: true`, with `approved_sessions` equal to `requested_sessions`.
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/eligibility \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "member_id": "WH-123", "hmo_code": "wellahealth", "requested_sessions": 6 }'
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+, sandbox key only (save as check-eligibility.mjs)
+const res = await fetch("https://api.physioaroundme.com/v1/partners/eligibility", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.REHABIFY_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ member_id: "WH-123", hmo_code: "wellahealth", requested_sessions: 6 }),
+});
+const check = await res.json();
+if (res.status === 501) console.log("Not available in live yet");
+else if (!res.ok) throw new Error(`${res.status} ${check.error.code}: ${check.error.message}`);
+else console.log(check.eligible, check.approved_sessions, check.reason);
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+resp = requests.post(
+    "https://api.physioaroundme.com/v1/partners/eligibility",
+    json={"member_id": "WH-123", "hmo_code": "wellahealth", "requested_sessions": 6},
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+if resp.status_code == 501:
+    print("Not available in live yet")
+else:
+    resp.raise_for_status()
+    check = resp.json()
+    print(check["eligible"], check["approved_sessions"], check["reason"])
+```
+
+</Tab>
+</Tabs>
+
+```json title="200 OK (sandbox)"
 {
-  "status": "eligible",
-  "member": {
-    "name": "Emeka Nnamdi",
-    "plan_tier": "Gold Comprehensive",
-    "policy_status": "active",
-    "expiry_date": "2027-01-31"
-  },
-  "coverage": {
-    "physiotherapy_covered": true,
-    "annual_session_limit": 12,
-    "sessions_remaining": 9,
-    "co_pay_amount_kobo": 0,
-    "pre_auth_required": false
-  },
-  "pre_auth_token": "auth_tok_881920aa1"
+  "object": "eligibility_check",
+  "simulated": true,
+  "eligible": true,
+  "member_id": "WH-123",
+  "approved_sessions": 6,
+  "reason": null
 }
 ```
 
----
+With a live key:
 
-## Error Handling for Ineligible Members
-
-If a member has exhausted their session allowance or their policy is inactive, Rehabify returns an `ineligible` status:
-
-```json
+```json title="501 Not Implemented (live)"
 {
-  "status": "ineligible",
-  "reason": "annual_limit_exceeded",
-  "message": "Member has utilized all 12 approved physiotherapy sessions for the current policy year.",
-  "fallback_option": {
-    "can_self_pay": true,
-    "negotiated_rate_kobo": 1200000
+  "error": {
+    "type": "api_error",
+    "code": "feature_not_available",
+    "message": "Eligibility checks are not yet available in live.",
+    "request_id": "req_2c7e9b4a1d6f4e8a9b0c3d5e",
+    "doc_url": "https://docs.physioaroundme.com/getting-started/errors#feature_not_available"
   }
 }
 ```
+
+## What isn't available
+
+- Real-time verification against HMO systems.
+- Pre-authorisation codes or tokens. No referral field accepts one.
+- Session allowances, co-payments or policy details.
+
+We'll announce the live endpoint in these docs when it's ready.

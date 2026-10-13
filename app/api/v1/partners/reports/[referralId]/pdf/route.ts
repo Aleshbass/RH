@@ -1,200 +1,152 @@
-import { NextRequest, NextResponse } from "next/server";
-import { authenticatePartner } from "@/lib/partner-auth";
-import { getConvexClient } from "@/lib/convex-client";
-import { api } from "@/convex/_generated/api";
+import type { NextRequest } from "next/server";
+import { jsPDF } from "jspdf";
+import { authenticatePartner, logPartnerRequest } from "@/lib/partner-api/auth";
+import { callPartnerGateway } from "@/lib/partner-api/gateway";
+import { apiError, coreError, internalError } from "@/lib/partner-api/http";
 
-interface RouteParams {
-  params: Promise<{ referralId: string }>;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type Report = {
+  referral: { id: string; tracking_code: string; partner_reference: string | null; status: string; environment: string };
+  provider: { name: string; license_number: string | null } | null;
+  summary: {
+    prescribed_sessions: number;
+    completed_sessions: number;
+    upcoming_sessions: number;
+    cancelled_sessions: number;
+    first_session_at: string | null;
+    last_session_at: string | null;
+    next_session_at: string | null;
+    discharged: boolean;
+    discharged_at: string | null;
+  };
+  milestones: Array<{ label: string; status: string; completed_at: string | null }>;
+  generated_at: string;
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  received: "Received",
+  contacted: "Contacted",
+  booked: "Booked",
+  in_treatment: "In treatment",
+  completed: "Completed",
+  not_suitable: "Not suitable",
+  cancelled: "Cancelled",
+  closed: "Closed",
+};
+
+function date(value: string | null): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Lagos" });
 }
 
-export async function GET(req: NextRequest, props: RouteParams) {
-  const { partner, response } = await authenticatePartner(req);
-  if (!partner) return response!;
+/** Renders the report as a real PDF (text only — nothing partner-supplied is interpreted). */
+function renderPdf(report: Report, partnerName: string): Buffer {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const left = 48;
+  let y = 64;
+  const line = (label: string, value: string) => {
+    doc.setFont("helvetica", "bold");
+    doc.text(label, left, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(value, left + 170, y, { maxWidth: 330 });
+    y += 20;
+  };
 
-  const { referralId } = await props.params;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("Rehabify Health — Referral Progress Report", left, y);
+  y += 22;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(110);
+  doc.text(`Prepared for ${partnerName} · Generated ${date(report.generated_at)}`, left, y);
+  if (report.referral.environment === "sandbox") {
+    y += 14;
+    doc.setTextColor(180, 83, 9);
+    doc.text("SANDBOX — test data, not a real patient record", left, y);
+  }
+  doc.setTextColor(0);
+  y += 30;
 
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text("Referral", left, y);
+  y += 20;
+  doc.setFontSize(10);
+  line("Tracking code", report.referral.tracking_code);
+  line("Your reference", report.referral.partner_reference ?? "—");
+  line("Status", STATUS_LABEL[report.referral.status] ?? report.referral.status);
+  line("Physiotherapist", report.provider ? `${report.provider.name}${report.provider.license_number ? ` (${report.provider.license_number})` : ""}` : "Not yet matched");
+  y += 10;
+
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text("Sessions", left, y);
+  y += 20;
+  doc.setFontSize(10);
+  line("Prescribed", String(report.summary.prescribed_sessions));
+  line("Completed", String(report.summary.completed_sessions));
+  line("Upcoming", String(report.summary.upcoming_sessions));
+  line("Cancelled / missed", String(report.summary.cancelled_sessions));
+  line("First session", date(report.summary.first_session_at));
+  line("Most recent session", date(report.summary.last_session_at));
+  line("Next session", date(report.summary.next_session_at));
+  line("Discharged", report.summary.discharged ? `Yes — ${date(report.summary.discharged_at)}` : "No");
+  y += 10;
+
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text("Milestones", left, y);
+  y += 20;
+  doc.setFontSize(10);
+  for (const milestone of report.milestones) {
+    const state = milestone.status === "completed" ? `Completed ${date(milestone.completed_at)}` : milestone.status === "in_progress" ? "In progress" : "Pending";
+    line(milestone.label, state);
+  }
+
+  y += 16;
+  doc.setFontSize(8);
+  doc.setTextColor(120);
+  doc.text(
+    "This report contains care progress only. Clinical notes are held by the treating physiotherapist and are not shared through the partner API.",
+    left,
+    y,
+    { maxWidth: 500 }
+  );
+  return Buffer.from(doc.output("arraybuffer"));
+}
+
+/** GET /v1/partners/reports/{id}/pdf — the progress report as a PDF document. */
+export async function GET(req: NextRequest, props: { params: Promise<{ referralId: string }> }) {
+  const auth = await authenticatePartner(req);
+  if (!auth.ok) return auth.response;
+  const { partner, ctx } = auth;
+  const identifier = ((await props.params).referralId ?? "").trim();
+  if (!identifier || identifier.length > 200) {
+    return apiError(ctx, 400, "invalid_parameter", "A referral id, tracking code or partner_reference is required.", { param: "id" });
+  }
   try {
-    const convex = getConvexClient();
-    const referral = await convex.query(api.partners.getReferralDetails, {
-      identifier: decodeURIComponent(referralId),
-      partnerCode: partner.code,
-    });
-
-    if (!referral) {
-      return NextResponse.json(
-        {
-          error: {
-            code: "referral_not_found",
-            message: `No clinical reports found for referral ID or reference '${referralId}'.`,
-          },
-        },
-        { status: 404 }
-      );
-    }
-
-    const patientFullName = `${referral.patient.firstName} ${referral.patient.lastName}`;
-    const trackingCode = referral.trackingCode;
-    const physioName = referral.assignedPhysiotherapist?.name || "Dr. Babatunde Adeyemi (PT)";
-    const licenseNumber = referral.assignedPhysiotherapist?.licenseNumber || "MRTBN/PT/2018/4821";
-
-    const htmlContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Clinical Progress Report - ${trackingCode}</title>
-  <style>
-    @media print {
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color: #002e2c;
-      background: #fff;
-      padding: 40px;
-      max-width: 800px;
-      margin: 0 auto;
-      line-height: 1.5;
-    }
-    .header {
-      border-bottom: 2px solid #005b57;
-      padding-bottom: 20px;
-      margin-bottom: 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-    }
-    .logo {
-      font-size: 24px;
-      font-weight: 800;
-      color: #005b57;
-      letter-spacing: -0.5px;
-    }
-    .badge {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      background: #e6f4f1;
-      color: #005b57;
-    }
-    .meta-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
-      background: #faf6e7;
-      padding: 16px;
-      border-radius: 12px;
-      margin-bottom: 24px;
-      font-size: 13px;
-    }
-    .meta-item strong {
-      color: #52706e;
-      display: block;
-      font-size: 11px;
-      text-transform: uppercase;
-    }
-    h2 {
-      font-size: 16px;
-      color: #002e2c;
-      border-bottom: 1px solid #e2ece9;
-      padding-bottom: 8px;
-      margin-top: 24px;
-    }
-    .milestone {
-      padding: 12px 0;
-      border-bottom: 1px dashed #e2ece9;
-    }
-    .milestone-title {
-      font-weight: 600;
-      font-size: 13px;
-    }
-    .milestone-notes {
-      font-size: 12px;
-      color: #52706e;
-    }
-    .footer {
-      margin-top: 40px;
-      border-top: 1px solid #e2ece9;
-      padding-top: 16px;
-      font-size: 11px;
-      color: #52706e;
-      display: flex;
-      justify-content: space-between;
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div>
-      <div class="logo">REHABIFY</div>
-      <p style="font-size: 12px; color: #52706e; margin: 4px 0 0 0;">Licensed Physiotherapy & Clinical Rehabilitation Network</p>
-    </div>
-    <div style="text-align: right;">
-      <span class="badge">Official Clinical Summary</span>
-      <p style="font-size: 12px; font-family: monospace; margin: 6px 0 0 0;">Ref: ${trackingCode}</p>
-    </div>
-  </div>
-
-  <div class="meta-grid">
-    <div class="meta-item">
-      <strong>Patient Name</strong>
-      ${patientFullName}
-    </div>
-    <div class="meta-item">
-      <strong>Condition / Scope</strong>
-      ${referral.careDetails?.serviceScope || "Musculoskeletal Rehabilitation"}
-    </div>
-    <div class="meta-item">
-      <strong>Treating Specialist</strong>
-      ${physioName} (${licenseNumber})
-    </div>
-    <div class="meta-item">
-      <strong>Treatment Progress</strong>
-      ${referral.sessions.completed} of ${referral.sessions.total} sessions completed (${referral.status.toUpperCase()})
-    </div>
-  </div>
-
-  <h2>Clinical Assessment & Rehabilitation Summary</h2>
-  <div class="milestone">
-    <div class="milestone-title">1. Baseline Intake & Musculoskeletal Evaluation</div>
-    <div class="milestone-notes">Triage conducted via Rehabify Clinical Protocol. Objective range-of-motion baseline established.</div>
-  </div>
-  <div class="milestone">
-    <div class="milestone-title">2. Functional Mobility & Mobilization</div>
-    <div class="milestone-notes">Active mobilization, soft tissue therapy, and progressive loading administered.</div>
-  </div>
-  <div class="milestone">
-    <div class="milestone-title">3. Milestone & Recovery Verification</div>
-    <div class="milestone-notes">Status: ${referral.status === "completed" ? "Full recovery milestone achieved. Patient discharged to home maintenance plan." : "Patient actively in rehabilitation."}</div>
-  </div>
-
-  <div class="footer">
-    <span>MRTBN Regulated Medical Provider • Rehabify Health</span>
-    <span>Generated: ${new Date().toISOString()}</span>
-  </div>
-</body>
-</html>`;
-
-    return new NextResponse(htmlContent, {
+    const result = await callPartnerGateway("getReport", { partnerCode: partner.code, environment: partner.environment, identifier });
+    if (!result?.ok) return logPartnerRequest(req, auth, coreError(ctx, result), { eventType: "api.report_pdf", errorCode: result?.code });
+    const pdf = renderPdf(result.report as Report, partner.name);
+    const filename = `rehabify-report-${String(result.report.referral.tracking_code || "referral").replace(/[^A-Za-z0-9-]/g, "")}.pdf`;
+    const response = new Response(new Uint8Array(pdf), {
       status: 200,
       headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Content-Disposition": `inline; filename="Clinical_Report_${trackingCode}.html"`,
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Length": String(pdf.length),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "X-Request-Id": ctx.requestId,
         "X-Rehabify-Environment": partner.environment,
+        ...(ctx.headers ?? {}),
       },
     });
+    return logPartnerRequest(req, auth, response, { eventType: "api.report_pdf", trackingCode: result.report.referral.tracking_code });
   } catch (error) {
-    console.error("Clinical report PDF generation error:", error);
-    return NextResponse.json(
-      {
-        error: {
-          code: "report_generation_failed",
-          message: error instanceof Error ? error.message : "Internal server error",
-        },
-      },
-      { status: 500 }
-    );
+    return logPartnerRequest(req, auth, internalError(ctx, error), { eventType: "api.report_pdf", errorCode: "internal_error" });
   }
 }

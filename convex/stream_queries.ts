@@ -1,14 +1,49 @@
 // @ts-nocheck
 import { v } from "convex/values"
-import { query } from "./_generated/server"
+import { query, internalQuery } from "./_generated/server"
 import type { Doc, Id } from './_generated/dataModel'
 
 // Query to get call metadata
+/**
+ * Call details for the call page. Only participants (or an admin) get them; anyone else,
+ * including a signed-out visitor, gets null. Participant emails are shown to admins only.
+ */
 export const getCallMetadata = query({
   args: {
     callId: v.string(),
   },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity) return null
+    const viewer = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first()
+    if (!viewer) return null
+    const metadata = await loadCallMetadata(ctx, args.callId)
+    if (!metadata) return null
+    const isAdmin = viewer.role === "admin"
+    const isParty =
+      metadata.participants.includes(viewer._id) ||
+      metadata.initiatorId === viewer._id ||
+      metadata.patientId === viewer._id ||
+      metadata.physiotherapistId === viewer._id
+    if (!isParty && !isAdmin) return null
+    return {
+      ...metadata,
+      participantDetails: metadata.participantDetails.map((p) => (isAdmin ? p : { ...p, email: undefined })),
+    }
+  },
+})
+
+/** Server-side lookup (e.g. RSVP updates after an invitation email): no auth, internal only. */
+export const getCallMetadataInternal = internalQuery({
+  args: { callId: v.string() },
+  handler: async (ctx, args) => loadCallMetadata(ctx, args.callId),
+})
+
+async function loadCallMetadata(ctx, callId: string) {
+    const args = { callId }
     const call = await ctx.db
       .query("videoCalls")
       .filter(q => 
@@ -41,8 +76,7 @@ export const getCallMetadata = query({
       ...call,
       participantDetails: participants.filter(Boolean),
     }
-  },
-})
+}
 
 // Query to get user's Stream calls
 export const getUserStreamCalls = query({

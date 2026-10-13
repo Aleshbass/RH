@@ -1,50 +1,82 @@
 ---
-title: Getting Started Overview
-description: Learn how to connect your application to the Rehabify Health platform.
+title: Getting started
+description: The path from partner application to live referrals, and which integration option fits your team.
 ---
 
-# Getting Started with Rehabify
-
-Integrating Rehabify into your healthcare product, clinic EHR, or wellness platform requires just three foundational steps:
+## From application to live referrals
 
 <Steps>
-  <Step>
-    ### Obtain Your API Keys
-    Register an organization account on the [Partner Portal](/partnerships) to generate your Sandbox (`pk_test_...`, `sk_test_...`) and Production (`pk_live_...`, `sk_live_...`) API keys.
-  </Step>
-  <Step>
-    ### Choose Your Integration Channel
-    * **REST API**: For programmatic patient referral and HMO pre-authorizations.
-    * **JavaScript Embed Widget**: For drop-in patient booking on websites.
-    * **WhatsApp Deep-Links**: For zero-code referral campaigns and doctor QR codes.
-  </Step>
-  <Step>
-    ### Configure Webhook Notifications
-    Set up an HTTPS endpoint on your server to receive real-time updates when patients complete intake, attend sessions, or receive clinical discharge summaries.
-  </Step>
+<Step title="1. Apply for partner access">
+
+Apply in the [Partner Portal](https://partners.physioaroundme.com). Rehabify reviews your organisation. Once it's approved, you get sandbox access, which includes test API keys and a sandbox webhook endpoint.
+
+</Step>
+<Step title="2. Create a sandbox API key">
+
+In the Partner Portal, go to **Developers → API keys** and create a key. Sandbox keys start with `sk_test_`. The full key is shown **once**, so store it in your secret manager straight away. See [Authentication](/docs/getting-started/authentication).
+
+</Step>
+<Step title="3. Build and test against the sandbox">
+
+Follow the [Quickstart](/docs/getting-started/quickstart). Then use the [magic phone numbers](/docs/sandbox/testing#magic-phone-numbers) and the [sandbox endpoints](/docs/sandbox/testing) to rehearse every status and webhook event. In sandbox, no real patient is ever contacted.
+
+</Step>
+<Step title="4. Request production access">
+
+In the Partner Portal, choose **Request production access** and complete the go-live checklist. Our [Go-live checklist](/docs/api-reference/partner-integration-v1) lists what we look for.
+
+</Step>
+<Step title="5. Go live">
+
+Once Rehabify approves production access, create a `sk_live_` key, set your live webhook endpoint and secret, and switch your configuration. Live keys can't be created before approval.
+
+</Step>
 </Steps>
 
----
+## Choose your integration
 
-## Environments & Base URLs
-
-| Environment | Base URL | Purpose |
+| If you want to… | Use | Start with |
 | :--- | :--- | :--- |
-| **Sandbox (Testing)** | `https://api.physioaroundme.com/api/v1` | Development and staging tests using mock test data |
-| **Production** | `https://api.physioaroundme.com/api/v1` | Live referrals with real physiotherapist assignments |
+| Refer patients from your own product or EHR | REST API | [Create a referral](/docs/api-reference/referrals#create-a-referral) |
+| Refer patients without any engineering work | No-code referral links | [No-code referral links guide](/docs/guides/no-code-referral-links) |
+| Keep your records in sync automatically | Webhooks | [Webhooks overview](/docs/webhooks) |
+| Let patients start a chat with Joy from SMS, email or a QR code | WhatsApp deep links | [WhatsApp deep links](/docs/sdks-widgets/whatsapp-deep-links) |
+| Follow treatment progress | Sessions and progress reports | [Sessions](/docs/api-reference/sessions) and [Progress reports](/docs/api-reference/clinical-reports) |
+| See what you've earned | Commercial terms and commissions | [Commercial terms & commissions](/docs/api-reference/commercial-and-commissions) |
 
----
+## Anatomy of a request
 
-## API Request Anatomy
+Every API call goes to `https://api.physioaroundme.com/v1` over HTTPS and carries your secret key:
 
-All API requests must be sent over **HTTPS** with standard JSON headers:
-
-```http
-POST /api/v1/partners/referrals HTTP/1.1
+```http title="Request"
+POST /v1/partners/referrals HTTP/1.1
 Host: api.physioaroundme.com
-Authorization: Bearer sk_test_51Mz...
+Authorization: Bearer sk_test_xxx
 Content-Type: application/json
-Accept: application/json
+Idempotency-Key: 9b2f6c1e-4d7a-4c3b-8e5f-2a1d0c9b8e7f
 ```
 
-Ready to send your first API request? Follow the [5-Minute Quickstart Guide](/docs/getting-started/quickstart).
+Every response tells you which environment handled the request and gives you an ID to quote to support:
+
+```http title="Response headers"
+HTTP/1.1 201 Created
+Content-Type: application/json
+X-Request-Id: req_5f2c9a1b7d3e4f60a1b2c3d4
+X-Rehabify-Environment: sandbox
+X-RateLimit-Limit: 10
+X-RateLimit-Remaining: 9
+X-RateLimit-Reset: 1791883801
+```
+
+[Conventions](/docs/getting-started/conventions) covers pagination, idempotency, rate limits, timestamps and money. [Errors](/docs/getting-started/errors) covers every error code.
+
+## Next steps
+
+<Cards>
+  <Card title="Quickstart" href="/docs/getting-started/quickstart">
+    Make your first sandbox referral end to end.
+  </Card>
+  <Card title="Authentication" href="/docs/getting-started/authentication">
+    How keys work, and how to rotate and revoke them.
+  </Card>
+</Cards>

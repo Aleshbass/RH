@@ -1,0 +1,247 @@
+---
+title: Conventions
+description: Base URL, request and response format, timestamps, money, identifiers, request IDs, pagination, idempotency and rate limits.
+---
+
+## Base URL and versioning
+
+```text
+https://api.physioaroundme.com/v1
+```
+
+The same API is also available at `https://physioaroundme.com/api/v1`. Both hosts serve sandbox and live traffic, and your API key decides the environment.
+
+The major version is part of the path (`/v1`). Webhook payloads carry an `api_version` field (currently `2026-10-01`) that identifies the payload format.
+
+## Requests and responses
+
+- Bodies are JSON, encoded as UTF-8. Send `Content-Type: application/json` on requests that have a body.
+- Unknown request fields are ignored, so double-check field names: a misspelled optional field is silently dropped.
+- Every resource has an `object` field (`referral`, `session`, `report`, `provider`, `referral_link`, `commercial_terms`, `commission`, `list`, and so on) that tells you what you're looking at.
+- Fields without a value are returned as `null` rather than left out.
+
+## Timestamps
+
+Timestamps are ISO-8601 strings in UTC with millisecond precision, for example `2026-10-13T09:30:00.000Z`. Query parameters that take a time (such as `created_after`, `from` and `to`) expect the same format.
+
+Two headers use Unix time in seconds instead: `X-RateLimit-Reset` and the `t` value in webhook signatures (and `X-Rehabify-Timestamp`).
+
+## Money
+
+Amounts are integers in **kobo**, in fields whose names end in `_kobo`. The currency is always given alongside the amount as `"currency": "NGN"`.
+
+| Naira | Kobo value |
+| :--- | :--- |
+| ₦15,000.00 | `1500000` |
+| ₦1,425.00 | `142500` |
+
+Percentages are plain numbers. For example, `"revenue_share_percent": 10` means 10%.
+
+## Identifiers
+
+| Identifier | Example | Notes |
+| :--- | :--- | :--- |
+| Referral `id` | `jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a` | Opaque. Store it as a string. |
+| `tracking_code` | `RHB-4829173655` | `RHB-` followed by 10 digits. Older referrals may have `RHB-` followed by 5 digits. Case-insensitive. Safe to show to patients. |
+| `partner_reference` | `HMO-REF-2026-0091` | Your own reference, 1–100 characters. Unique per partner per environment. |
+| Event `id` | `evt_01JA4T7Q9Y2V3W4X5Z6A7B8C9D` | Webhook event ID. Stable across retries. |
+| Request ID | `req_5f2c9a1b7d3e4f60a1b2c3d4` | Unique for every API request. |
+
+Endpoints that take a referral in the path (`GET /partners/referrals/{id}` and `GET /partners/reports/{id}`) accept any of the referral's `id`, `tracking_code` or your `partner_reference`. URL-encode a `partner_reference` that contains special characters.
+
+## Metadata
+
+`POST /partners/referrals` accepts a `metadata` object for your own tags:
+
+- Up to 20 keys. Each key is a string of up to 40 characters.
+- Values must be strings of up to 500 characters.
+- Metadata is echoed back on the referral and included in webhook events.
+
+Because metadata travels in webhooks, don't put personal or clinical information in it. Use it for things like plan names, campaign codes or internal IDs.
+
+## Request IDs and environment headers
+
+Every response, including error responses, carries:
+
+| Header | Example | Meaning |
+| :--- | :--- | :--- |
+| `X-Request-Id` | `req_5f2c9a1b7d3e4f60a1b2c3d4` | Unique ID for this request. Error bodies repeat it as `error.request_id`. Quote it when you contact support. |
+| `X-Rehabify-Environment` | `sandbox` or `live` | The environment that handled the request. |
+
+## Pagination
+
+List endpoints return a list object:
+
+```json
+{
+  "object": "list",
+  "data": [],
+  "has_more": true,
+  "next_cursor": "eyJjcmVhdGVkX2F0IjoiMjAyNi0xMC0xM1QwOTozMDowMC4wMDBaIn0"
+}
+```
+
+| Parameter | Description |
+| :--- | :--- |
+| `limit` | Number of items to return, from 1 to 100. Default `25`. |
+| `cursor` | The `next_cursor` value from the previous page. Treat it as an opaque string. |
+
+When `has_more` is `true`, pass `next_cursor` as `cursor` to get the next page. On the last page, `has_more` is `false` and `next_cursor` is `null`.
+
+Cursor pagination is supported on `GET /partners/referrals`, `GET /partners/referral-links` and `GET /partners/commissions`. `GET /partners/sessions` and `GET /partners/providers` return a single page of up to `limit` items, with `next_cursor` always `null`. Narrow those queries with filters if `has_more` is `true`.
+
+<Tabs items={["Node.js", "Python"]}>
+<Tab>
+
+```js
+// list-all-referrals.mjs (Node.js 18+)
+const BASE_URL = "https://api.physioaroundme.com/v1";
+const headers = { Authorization: `Bearer ${process.env.REHABIFY_API_KEY}` };
+
+let cursor = null;
+do {
+  const params = new URLSearchParams({ limit: "100", status: "in_treatment" });
+  if (cursor) params.set("cursor", cursor);
+
+  const res = await fetch(`${BASE_URL}/partners/referrals?${params}`, { headers });
+  const page = await res.json();
+  if (!res.ok) throw new Error(`${res.status} ${page.error.code}: ${page.error.message}`);
+
+  for (const referral of page.data) console.log(referral.tracking_code, referral.status);
+  cursor = page.has_more ? page.next_cursor : null;
+} while (cursor);
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+BASE_URL = "https://api.physioaroundme.com/v1"
+HEADERS = {"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"}
+
+params = {"limit": 100, "status": "in_treatment"}
+while True:
+    resp = requests.get(f"{BASE_URL}/partners/referrals", headers=HEADERS, params=params, timeout=30)
+    resp.raise_for_status()
+    page = resp.json()
+    for referral in page["data"]:
+        print(referral["tracking_code"], referral["status"])
+    if not page["has_more"]:
+        break
+    params["cursor"] = page["next_cursor"]
+```
+
+</Tab>
+</Tabs>
+
+## Idempotency
+
+Network failures happen. To retry a `POST` safely without creating duplicates, send an `Idempotency-Key` header: any unique string of up to 255 characters. A UUID v4 works well.
+
+```http
+Idempotency-Key: 9b2f6c1e-4d7a-4c3b-8e5f-2a1d0c9b8e7f
+```
+
+Rehabify remembers each key for **24 hours**, separately for each environment.
+
+| You send | Result |
+| :--- | :--- |
+| A new key | The request is processed normally. |
+| The same key with the **same** body | The original response is replayed, with the header `Idempotent-Replayed: true`. Nothing is created twice. |
+| The same key with a **different** body | `422 idempotency_key_reused` |
+| The same key while the first request is still processing | `409 idempotency_request_in_progress`. Wait briefly, then retry. |
+
+Best practices:
+
+- Generate one key per logical operation, such as "refer patient X", store it with your pending record, and reuse it **only** to retry that exact request.
+- If you change the request body (for example, to fix a validation error), use a new key.
+- Retry `429`, `500` and `503` responses, and network timeouts, with the same key.
+- All authenticated `POST` endpoints accept `Idempotency-Key`. It's strongly recommended for `POST /partners/referrals`.
+
+## Rate limits
+
+Limits depend on the environment of the API key:
+
+| Environment | Limit |
+| :--- | :--- |
+| Sandbox (`sk_test_`) | 10 requests per second |
+| Live (`sk_live_`) | 20 requests per second |
+| Live, enterprise contracts | 100 requests per second |
+
+Every authenticated response includes these headers:
+
+| Header | Meaning |
+| :--- | :--- |
+| `X-RateLimit-Limit` | Requests allowed in the current window |
+| `X-RateLimit-Remaining` | Requests left in the current window |
+| `X-RateLimit-Reset` | When the window resets, in Unix seconds |
+
+If you exceed the limit, you get `429 rate_limit_exceeded` with a `Retry-After` header (in seconds). Wait that long, then retry with exponential backoff and jitter:
+
+<Tabs items={["Node.js", "Python"]}>
+<Tab>
+
+```js
+// Retries 429, 500 and 503 responses, and network errors.
+// Pass the same Idempotency-Key in options.headers on every attempt.
+export async function fetchWithRetry(url, options, maxRetries = 4) {
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await fetch(url, options);
+    } catch (err) {
+      if (attempt >= maxRetries) throw err; // network error
+    }
+    if (res && ![429, 500, 503].includes(res.status)) return res;
+    if (attempt >= maxRetries) return res;
+
+    const retryAfter = Number(res?.headers.get("retry-after"));
+    const delayMs = retryAfter > 0
+      ? retryAfter * 1000
+      : Math.min(30_000, 500 * 2 ** attempt) * (0.5 + Math.random() / 2);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+}
+```
+
+</Tab>
+<Tab>
+
+```python
+import random
+import time
+
+import requests
+
+RETRYABLE = {429, 500, 503}
+
+
+def request_with_retry(method, url, max_retries=4, **kwargs):
+    """Retries 429/500/503, connection errors and timeouts. Pass the same Idempotency-Key header on every attempt."""
+    for attempt in range(max_retries + 1):
+        try:
+            resp = requests.request(method, url, timeout=30, **kwargs)
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt == max_retries:
+                raise
+            resp = None
+        if resp is not None and (resp.status_code not in RETRYABLE or attempt == max_retries):
+            return resp
+        retry_after = resp.headers.get("Retry-After") if resp is not None else None
+        if retry_after and retry_after.isdigit():
+            delay = int(retry_after)
+        else:
+            delay = min(30, 0.5 * 2 ** attempt) * random.uniform(0.5, 1.0)
+        time.sleep(delay)
+```
+
+</Tab>
+</Tabs>
+
+## CORS
+
+Partner endpoints (`/partners/*` and `/sandbox/*`) don't send CORS headers, because they must only be called from your servers. The public [lead capture endpoint](/docs/api-reference/referral-links#public-lead-capture) is the exception. It's CORS-enabled and needs no API key.

@@ -134,7 +134,7 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
 
   // Memoize paginated messages to prevent unnecessary re-renders
   // Get recipient user information
-  const recipientUser = useQueryUntyped(usersModule['getUserById'], { userId: recipientId });
+  const recipientUser = useQueryUntyped(usersModule['getUserPublicProfile'], { userId: recipientId });
 
   const paginatedMessages = useMemo(() => {
     if (!messages) {

@@ -26,4 +26,5 @@ export * from './notifications';
 export * from './patients';
 export * from './onboarding';
 export * from './clinics';
-export { dispatchWebhookEvent } from './partners/dispatchWebhook';
+// Partner webhook delivery is an internal action (convex/actions/partners/dispatchWebhook.ts)
+// and is intentionally not re-exported here.

@@ -1,14 +1,16 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
+import { internalAction } from "../../_generated/server";
 import { sendEmail } from "../../../lib/email/emailService";
 import { publicAppUrl } from "../../helpers/appUrl";
+import { escapeHtml, plainSubject } from "../../helpers/escapeHtml";
 
 /**
  * Send an appointment confirmed email to the physiotherapist (provider-facing).
+ * Internal: scheduled by appointment/booking mutations, never callable from a browser.
  */
-export const sendAppointmentConfirmedProviderEmail = action({
+export const sendAppointmentConfirmedProviderEmail = internalAction({
   args: {
     to: v.string(),
     patientName: v.string(),
@@ -24,13 +26,13 @@ export const sendAppointmentConfirmedProviderEmail = action({
       const viewLink = args.viewLink.startsWith('http') ? args.viewLink : `${baseUrl}${args.viewLink}`;
       const result = await sendEmail({
         to: args.to,
-        subject: args.subjectOverride,
+        subject: plainSubject(args.subjectOverride || `Appointment Confirmed by ${args.patientName}`),
         template: 'APPOINTMENT_CONFIRMED_PROVIDER',
         data: {
-          patientName: args.patientName,
-          physiotherapistName: args.physiotherapistName,
+          patientName: escapeHtml(args.patientName),
+          physiotherapistName: escapeHtml(args.physiotherapistName),
           appointmentDate: args.appointmentDate,
-          appointmentTime: args.appointmentTime,
+          appointmentTime: escapeHtml(args.appointmentTime),
           viewLink,
         },
       });

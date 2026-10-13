@@ -5,7 +5,7 @@ import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import type { GoogleCalendarEvent, CalendarCredentials } from "./types";
 import { v } from "convex/values";
-import { action } from "../_generated/server";
+import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
@@ -122,7 +122,7 @@ export async function refreshAccessToken(refreshToken: string) {
 }
 
 // Node actions for OAuth flows and Calendar operations
-export const oauthGenerateAuthUrl = action({
+export const oauthGenerateAuthUrl = internalAction({
   args: { state: v.string(), redirectUri: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ authUrl: string }> => {
     const client = new OAuth2Client(
@@ -144,7 +144,7 @@ export const oauthGenerateAuthUrl = action({
   },
 });
 
-export const oauthExchangeCodeForTokens = action({
+export const oauthExchangeCodeForTokens = internalAction({
   args: { code: v.string(), redirectUri: v.optional(v.string()) },
   handler: async (ctx, args): Promise<any> => {
     const client = new OAuth2Client(
@@ -157,7 +157,7 @@ export const oauthExchangeCodeForTokens = action({
   },
 });
 
-export const oauthRefreshAccessToken = action({
+export const oauthRefreshAccessToken = internalAction({
   args: { refreshToken: v.string() },
   handler: async (ctx, args): Promise<any> => {
     const client = new OAuth2Client(
@@ -172,7 +172,7 @@ export const oauthRefreshAccessToken = action({
 });
 
 // List user's calendars
-export const listCalendars = action({
+export const listCalendars = internalAction({
   args: { userId: v.id("users") },
   handler: async (ctx, args): Promise<any> => {
     const client = await getClientForUser(ctx, args.userId);
@@ -183,7 +183,7 @@ export const listCalendars = action({
 // Helper: Get authenticated OAuth client for a user
 async function getClientForUser(ctx: any, userId: string) {
   console.log("[GET CLIENT] Fetching credentials for user:", userId);
-  let credentials = await ctx.runQuery(internal.calendar.oauth.getCredentials, { userId });
+  let credentials = await ctx.runQuery(internal.calendar.oauth.getCredentialsInternal, { userId });
 
   if (!credentials) {
     console.error("[GET CLIENT] NO CREDENTIALS FOUND for user:", userId);
@@ -198,7 +198,7 @@ async function getClientForUser(ctx: any, userId: string) {
     await ctx.runAction(internal.calendar.oauth.refreshAccessToken, {
       userId,
     });
-    credentials = await ctx.runQuery(internal.calendar.oauth.getCredentials, { userId });
+    credentials = await ctx.runQuery(internal.calendar.oauth.getCredentialsInternal, { userId });
     if (!credentials) throw new Error("Failed to refresh credentials");
     console.log("[GET CLIENT] Token refreshed successfully");
   }
@@ -215,7 +215,7 @@ async function getClientForUser(ctx: any, userId: string) {
 
 
 // Create a calendar event
-export const createEvent = action({
+export const createEvent = internalAction({
   args: {
     userId: v.id("users"),
     appointmentId: v.id("appointments"),
@@ -316,7 +316,7 @@ export const createEvent = action({
 });
 
 // Update a calendar event
-export const updateEvent = action({
+export const updateEvent = internalAction({
   args: {
     userId: v.id("users"),
     eventId: v.string(),
@@ -370,7 +370,7 @@ export const updateEvent = action({
 });
 
 // Delete a calendar event
-export const deleteEvent = action({
+export const deleteEvent = internalAction({
   args: {
     userId: v.id("users"),
     eventId: v.string(),
@@ -389,7 +389,7 @@ export const deleteEvent = action({
 });
 
 // Setup a watch channel for Google Calendar push notifications
-export const setupWatch = action({
+export const setupWatch = internalAction({
   args: {
     userId: v.id("users"),
     calendarId: v.string(),
@@ -429,7 +429,7 @@ export const setupWatch = action({
 });
 
 // List calendar events for date range
-export const getEvents = action({
+export const getEvents = internalAction({
   args: {
     userId: v.id("users"),
     startDate: v.optional(v.number()),
@@ -462,7 +462,7 @@ export const getEvents = action({
 
 // Get free/busy information from Google Calendar
 // This is used to check for conflicts with personal calendar events
-export const getFreeBusy = action({
+export const getFreeBusy = internalAction({
   args: {
     userId: v.id("users"),
     timeMin: v.number(), // Unix timestamp

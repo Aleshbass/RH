@@ -1,7 +1,7 @@
 import { source } from "@/lib/source";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ALL_DOCS_FLAT } from "@/components/docs/DocsNav";
+import { ALL_DOCS_FLAT, findNavGroup } from "@/components/docs/DocsNav";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import {
   Card,
@@ -22,6 +22,7 @@ import {
   CodeBlockTabsList,
   CodeBlockTabsTrigger,
   Pre,
+  Blockquote,
 } from "@/components/docs/DocsMdxComponents";
 
 interface PageProps {
@@ -48,6 +49,12 @@ export default async function Page(props: PageProps) {
     currentIndex >= 0 && currentIndex < ALL_DOCS_FLAT.length - 1
       ? ALL_DOCS_FLAT[currentIndex + 1]
       : null;
+  // Breadcrumb label: the sidebar group this page belongs to (falls back to the first slug segment).
+  const navGroup = findNavGroup(currentPath);
+  const sectionLabel =
+    currentPath === "/docs"
+      ? null
+      : navGroup?.title ?? (params.slug && params.slug.length > 0 ? params.slug[0].replace(/-/g, " ") : null);
 
   const customComponents = {
     ...defaultMdxComponents,
@@ -84,13 +91,19 @@ export default async function Page(props: PageProps) {
     p: (p: any) => (
       <p className="text-sm text-[#1b3a38] leading-relaxed mb-4 font-normal" {...p} />
     ),
-    ul: (p: any) => (
-      <ul className="list-disc list-inside space-y-1.5 text-sm text-[#1b3a38] mb-4 pl-2" {...p} />
+    ul: ({ className, ...p }: any) => (
+      <ul
+        className={`list-disc list-inside space-y-1.5 text-sm text-[#1b3a38] mb-4 pl-2 ${className || ""}`}
+        {...p}
+      />
     ),
-    ol: (p: any) => (
-      <ol className="list-decimal list-inside space-y-1.5 text-sm text-[#1b3a38] mb-4 pl-2" {...p} />
+    ol: ({ className, ...p }: any) => (
+      <ol
+        className={`list-decimal list-inside space-y-1.5 text-sm text-[#1b3a38] mb-4 pl-2 ${className || ""}`}
+        {...p}
+      />
     ),
-    li: (p: any) => <li className="leading-relaxed" {...p} />,
+    li: ({ className, ...p }: any) => <li className={`leading-relaxed ${className || ""}`} {...p} />,
     a: (p: any) => (
       <a
         className="text-[#005b57] font-semibold underline underline-offset-4 hover:text-[#00443e] transition"
@@ -121,12 +134,8 @@ export default async function Page(props: PageProps) {
     td: (p: any) => (
       <td className="py-3 px-4 border-b border-[#002e2c]/10 text-xs text-[#1b3a38]" {...p} />
     ),
-    blockquote: (p: any) => (
-      <blockquote
-        className="border-l-4 border-[#005b57] pl-4 italic text-[#4a6866] my-4 bg-white/40 py-2 rounded-r-xl"
-        {...p}
-      />
-    ),
+    // Renders plain quotes, and GitHub-style "> [!WARNING]" alerts as callouts.
+    blockquote: (p: any) => <Blockquote {...p} />,
     Card,
     Cards,
     Callout,
@@ -148,10 +157,10 @@ export default async function Page(props: PageProps) {
           <Link href="/docs" className="hover:text-[#002e2c] transition">
             Docs
           </Link>
-          {params.slug && params.slug.length > 0 && (
+          {sectionLabel && (
             <>
               <span>/</span>
-              <span className="capitalize">{params.slug[0].replace(/-/g, " ")}</span>
+              <span className={navGroup ? "" : "capitalize"}>{sectionLabel}</span>
             </>
           )}
         </div>

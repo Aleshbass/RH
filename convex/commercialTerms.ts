@@ -1,8 +1,16 @@
-import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
+/**
+ * Partner commercial contracts (admin-managed) and the partner-facing commission views.
+ * Commissions themselves are written only by helpers/partnerLedger.ts from verified
+ * payments — there is no public mutation that can create one.
+ */
+import { ConvexError, v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import { requireAdmin, requirePartnerAccess } from "./helpers/partnerAccess";
+import { publicCommissionStatus } from "./helpers/partnerLedger";
+import { DEFAULT_REVENUE_SETTINGS } from "./platformSettings";
 
-// ─── Admin: Setup or update a commercial contract ─────────────
+// ─── Admin: contracts ────────────────────────────────────────────────────────
 
 export const upsertPartnerContract = mutation({
   args: {
@@ -16,11 +24,11 @@ export const upsertPartnerContract = mutation({
       v.literal("tiered_volume"),
       v.literal("hybrid")
     ),
-    baseFeePerBooking: v.optional(v.number()), // in kobo
-    revenueSharePercent: v.optional(v.number()), // e.g. 15
-    activationBonusPerPatient: v.optional(v.number()), // in kobo
+    baseFeePerBooking: v.optional(v.number()),
+    revenueSharePercent: v.optional(v.number()),
+    activationBonusPerPatient: v.optional(v.number()),
     vatApplicable: v.optional(v.boolean()),
-    withholdingTaxPercent: v.optional(v.number()), // e.g. 5
+    withholdingTaxPercent: v.optional(v.number()),
     notes: v.optional(v.string()),
     tiers: v.optional(
       v.array(
@@ -36,9 +44,22 @@ export const upsertPartnerContract = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
+    await requireAdmin(ctx);
+    const partner = await ctx.db
+      .query("partners")
+      .withIndex("by_code", (q) => q.eq("code", args.partnerId))
+      .first();
+    if (!partner) throw new ConvexError("Partner not found.");
+    const pct = (value: number | undefined, label: string) => {
+      if (value !== undefined && (value < 0 || value > 50)) throw new ConvexError(`${label} must be between 0 and 50%.`);
+    };
+    pct(args.revenueSharePercent, "Revenue share");
+    pct(args.withholdingTaxPercent, "Withholding tax");
+    for (const amount of [args.baseFeePerBooking, args.activationBonusPerPatient]) {
+      if (amount !== undefined && (amount < 0 || !Number.isInteger(amount))) throw new ConvexError("Amounts must be whole kobo values ≥ 0.");
+    }
 
-    // Check if an active contract already exists for this partner
+    const now = Date.now();
     const existing = await ctx.db
       .query("partnerContracts")
       .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerId))
@@ -46,7 +67,6 @@ export const upsertPartnerContract = mutation({
       .first();
 
     let contractId: Id<"partnerContracts">;
-
     if (existing) {
       await ctx.db.patch(existing._id, {
         contractNumber: args.contractNumber,
@@ -71,29 +91,23 @@ export const upsertPartnerContract = mutation({
         paymentTermsDays: args.paymentTermsDays ?? 30,
         payoutCurrency: args.payoutCurrency ?? "NGN",
         modelType: args.modelType,
-        baseFeePerBooking: args.baseFeePerBooking ?? 500000, // default ₦5,000
-        revenueSharePercent: args.revenueSharePercent ?? 15, // default 15%
-        activationBonusPerPatient: args.activationBonusPerPatient ?? 200000, // default ₦2,000
+        baseFeePerBooking: args.baseFeePerBooking,
+        revenueSharePercent: args.revenueSharePercent,
+        activationBonusPerPatient: args.activationBonusPerPatient,
         vatApplicable: args.vatApplicable ?? false,
-        withholdingTaxPercent: args.withholdingTaxPercent ?? 5, // default 5%
+        withholdingTaxPercent: args.withholdingTaxPercent ?? 0,
         notes: args.notes,
         createdAt: now,
         updatedAt: now,
       });
     }
 
-    // Insert or replace tiers if provided
-    if (args.tiers && args.tiers.length > 0) {
-      // Clear old tiers for this partner
+    if (args.tiers) {
       const oldTiers = await ctx.db
         .query("partnerCommissionTiers")
         .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerId))
         .collect();
-
-      for (const t of oldTiers) {
-        await ctx.db.delete(t._id);
-      }
-
+      for (const t of oldTiers) await ctx.db.delete(t._id);
       for (const tier of args.tiers) {
         await ctx.db.insert("partnerCommissionTiers", {
           contractId,
@@ -108,296 +122,151 @@ export const upsertPartnerContract = mutation({
         });
       }
     }
-
-    return { contractId, status: "active" };
+    return { contractId, status: "active" as const };
   },
 });
 
-// ─── Query: Get active contract and tiers ──────────────────────
+// ─── Partner views ───────────────────────────────────────────────────────────
 
 export const getActivePartnerContract = query({
-  args: {
-    partnerId: v.string(),
-  },
+  args: { partnerId: v.string() },
   handler: async (ctx, args) => {
-    let contract = await ctx.db
+    const { partner } = await requirePartnerAccess(ctx, args.partnerId);
+    const now = Date.now();
+    const contracts = await ctx.db
       .query("partnerContracts")
-      .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerId))
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .first();
-
-    // Default fallback contract if none configured yet
+      .withIndex("by_partner_id", (q) => q.eq("partnerId", partner.code))
+      .collect();
+    const contract = contracts
+      .filter((c) => c.status === "active" && c.effectiveFrom <= now && (!c.effectiveTo || c.effectiveTo > now))
+      .sort((a, b) => b.effectiveFrom - a.effectiveFrom)[0];
     if (!contract) {
+      const settings = (await ctx.db.query("platformRevenueSettings").order("desc").first()) ?? DEFAULT_REVENUE_SETTINGS;
       return {
         isDefault: true,
-        contractNumber: `CTR-${args.partnerId.toUpperCase()}-STD`,
-        partnerId: args.partnerId,
+        contractNumber: null,
+        partnerId: partner.code,
         status: "active" as const,
-        effectiveFrom: Date.now(),
+        modelType: "percentage_revenue_share" as const,
+        revenueSharePercent: settings.partnerPercent,
+        baseFeePerBooking: null,
+        activationBonusPerPatient: null,
+        withholdingTaxPercent: 0,
         paymentTermsDays: 30,
         payoutCurrency: "NGN",
-        modelType: "hybrid" as const,
-        baseFeePerBooking: 500000, // ₦5,000
-        revenueSharePercent: 15, // 15%
-        activationBonusPerPatient: 200000, // ₦2,000
         vatApplicable: false,
-        withholdingTaxPercent: 5,
-        tiers: [
-          { tierName: "Starter (1-10 referrals)", minReferrals: 1, maxReferrals: 10, feePerReferral: 500000, revenueSharePercent: 15 },
-          { tierName: "Growth (11-30 referrals)", minReferrals: 11, maxReferrals: 30, feePerReferral: 750000, revenueSharePercent: 18 },
-          { tierName: "Enterprise (31+ referrals)", minReferrals: 31, maxReferrals: undefined, feePerReferral: 1000000, revenueSharePercent: 20 },
-        ],
+        effectiveFrom: null,
+        tiers: [],
       };
     }
-
     const tiers = await ctx.db
       .query("partnerCommissionTiers")
-      .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerId))
+      .withIndex("by_contract_id", (q) => q.eq("contractId", contract._id))
       .collect();
-
-    return {
-      ...contract,
-      isDefault: false,
-      tiers: tiers.sort((a, b) => a.minReferrals - b.minReferrals),
-    };
+    return { ...contract, isDefault: false, tiers: tiers.sort((a, b) => a.minReferrals - b.minReferrals) };
   },
 });
 
-// ─── Mutation: Calculate and record referral commission ───────
-
-export const calculateAndRecordCommission = mutation({
-  args: {
-    referralId: v.id("inboundReferrals"),
-    eventType: v.union(
-      v.literal("booking_confirmed"),
-      v.literal("session_attended"),
-      v.literal("treatment_completed"),
-      v.literal("activation_bonus")
-    ),
-    grossAmountKobo: v.optional(v.number()), // Patient payment or session cost
-    notes: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const referral = await ctx.db.get(args.referralId);
-    if (!referral || !referral.partnerId) {
-      return null;
-    }
-
-    const partnerId = referral.partnerId;
-
-    // Check if commission already recorded for this referral + eventType
-    const existing = await ctx.db
-      .query("partnerCommissions")
-      .withIndex("by_referral_id", (q) => q.eq("referralId", args.referralId))
-      .filter((q) => q.eq(q.field("eventType"), args.eventType))
-      .first();
-
-    if (existing) {
-      return { commissionId: existing._id, alreadyRecorded: true, netPayable: existing.netPayable };
-    }
-
-    // Get active contract
-    const contract = await ctx.db
-      .query("partnerContracts")
-      .withIndex("by_partner_id", (q) => q.eq("partnerId", partnerId))
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .first();
-
-    const grossAmount = args.grossAmountKobo || 2500000; // default ₦25,000 session price
-
-    let commissionRate = 15;
-    let commissionAmount = 0;
-
-    const baseFee = contract?.baseFeePerBooking ?? 500000; // ₦5,000
-    const revShare = contract?.revenueSharePercent ?? 15;
-    const activationBonus = contract?.activationBonusPerPatient ?? 200000; // ₦2,000
-    const whtPercent = contract?.withholdingTaxPercent ?? 5;
-
-    // Volume count check for tiered pricing
-    const totalPartnerReferrals = await ctx.db
-      .query("inboundReferrals")
-      .withIndex("by_partner_id", (q) => q.eq("partnerId", partnerId))
-      .collect();
-
-    const referralCount = totalPartnerReferrals.length;
-
-    // Check tiers
-    const tiers = await ctx.db
-      .query("partnerCommissionTiers")
-      .withIndex("by_partner_id", (q) => q.eq("partnerId", partnerId))
-      .collect();
-
-    const matchedTier = tiers.find(
-      (t) => referralCount >= t.minReferrals && (!t.maxReferrals || referralCount <= t.maxReferrals)
-    );
-
-    if (args.eventType === "booking_confirmed") {
-      commissionRate = matchedTier?.feePerReferral ?? baseFee;
-      commissionAmount = commissionRate;
-    } else if (args.eventType === "session_attended") {
-      commissionRate = matchedTier?.revenueSharePercent ?? revShare;
-      commissionAmount = Math.round((grossAmount * commissionRate) / 100);
-    } else if (args.eventType === "activation_bonus") {
-      commissionRate = activationBonus;
-      commissionAmount = activationBonus;
-    } else if (args.eventType === "treatment_completed") {
-      commissionRate = matchedTier?.revenueSharePercent ?? revShare;
-      commissionAmount = Math.round((grossAmount * commissionRate) / 100);
-    }
-
-    // WHT deduction
-    const whtAmount = Math.round((commissionAmount * whtPercent) / 100);
-    const netPayable = commissionAmount - whtAmount;
-
-    const patientName = `${referral.patientFirstName} ${referral.patientLastName}`.trim();
-    const trackingCode = referral.trackingCode || `RHB-${referral._id.slice(-5).toUpperCase()}`;
-
-    const commissionId = await ctx.db.insert("partnerCommissions", {
-      partnerId,
-      contractId: contract?._id,
-      referralId: args.referralId,
-      trackingCode,
-      patientName,
-      eventType: args.eventType,
-      grossTransactionAmount: grossAmount,
-      commissionRate,
-      commissionAmount,
-      netPayable,
-      status: "approved",
-      notes: args.notes || `Milestone trigger: ${args.eventType.replace("_", " ")}`,
-      earnedAt: now,
-    });
-
-    // Also record an immutable referral event
-    await ctx.db.insert("referralEvents", {
-      referralId: args.referralId,
-      eventName: "commission.earned",
-      occurredAt: now,
-      actorType: "system",
-      metadata: {
-        eventType: args.eventType,
-        commissionAmount,
-        netPayable,
-        partnerId,
-      },
-    });
-
-    return { commissionId, commissionAmount, netPayable, alreadyRecorded: false };
-  },
-});
-
-// ─── Query: List itemized commissions for partner ─────────────
+function commissionRow(c: Doc<"partnerCommissions">) {
+  return {
+    _id: c._id,
+    referralId: c.referralId ?? null,
+    trackingCode: c.trackingCode ?? null,
+    patientName: c.patientName ?? null,
+    eventType: c.eventType,
+    grossTransactionAmount: c.grossTransactionAmount,
+    commissionRate: c.commissionRate,
+    commissionAmount: c.commissionAmount,
+    netPayable: c.netPayable,
+    careMode: c.careMode ?? null,
+    physiotherapistName: c.physiotherapistName ?? null,
+    paymentMethod: c.paymentMethod ?? null,
+    paymentReference: c.paymentReference ?? null,
+    billingPeriod: c.billingPeriod ?? null,
+    status: publicCommissionStatus(c),
+    payoutStatus: c.bulkPayoutStatus ?? "accrued",
+    notes: c.notes ?? null,
+    earnedAt: c.earnedAt,
+    paidAt: c.paidAt ?? c.settledAt ?? null,
+  };
+}
 
 export const listPartnerCommissions = query({
-  args: {
-    partnerId: v.string(),
-    status: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  },
+  args: { partnerId: v.string(), status: v.optional(v.string()), billingPeriod: v.optional(v.string()), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    let commissions = await ctx.db
-      .query("partnerCommissions")
-      .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerId))
-      .order("desc")
-      .take(args.limit || 100);
-
-    if (args.status && args.status !== "all") {
-      commissions = commissions.filter((c) => c.status === args.status);
-    }
-
-    return commissions.map((c) => ({
-      _id: c._id,
-      referralId: c.referralId,
-      trackingCode: c.trackingCode,
-      patientName: c.patientName,
-      eventType: c.eventType,
-      grossTransactionAmount: c.grossTransactionAmount,
-      commissionRate: c.commissionRate,
-      commissionAmount: c.commissionAmount,
-      netPayable: c.netPayable,
-      careMode: c.careMode || "in_person",
-      physiotherapistName: c.physiotherapistName || "MRTBN Verified Physiotherapist",
-      physiotherapistAmount: c.physiotherapistAmount || Math.round(c.grossTransactionAmount * 0.80),
-      rehabifyAmount: c.rehabifyAmount || Math.round(c.grossTransactionAmount * 0.10),
-      partnerAmount: c.partnerAmount || c.commissionAmount,
-      physioPercent: c.physioPercent || 80,
-      rehabifyPercent: c.rehabifyPercent || 10,
-      partnerPercent: c.partnerPercent || 10,
-      paymentMethod: c.paymentMethod || "paystack",
-      billingPeriod: c.billingPeriod || "2026-09",
-      bulkPayoutStatus: c.bulkPayoutStatus || (c.status === "settled" ? "paid" : "accrued"),
-      status: c.status,
-      settlementId: c.settlementId,
-      notes: c.notes,
-      earnedAt: c.earnedAt,
-      earnedAtIso: new Date(c.earnedAt).toISOString(),
-    }));
+    const { partner } = await requirePartnerAccess(ctx, args.partnerId);
+    const limit = Math.min(Math.max(Math.floor(args.limit ?? 100), 1), 500);
+    const base = args.billingPeriod
+      ? ctx.db
+          .query("partnerCommissions")
+          .withIndex("by_partner_and_period", (q) => q.eq("partnerId", partner.code).eq("billingPeriod", args.billingPeriod))
+      : ctx.db.query("partnerCommissions").withIndex("by_partner_id", (q) => q.eq("partnerId", partner.code));
+    const rows = await base.order("desc").take(args.status && args.status !== "all" ? 2000 : limit);
+    return rows
+      .filter((c) => c.environment !== "sandbox")
+      .map(commissionRow)
+      .filter((c) => !args.status || args.status === "all" || c.status === args.status)
+      .slice(0, limit);
   },
 });
 
-// ─── Query: Partner commercial overview and KPIs ──────────────
-
 export const getPartnerCommercialSummary = query({
-  args: {
-    partnerId: v.string(),
-  },
+  args: { partnerId: v.string() },
   handler: async (ctx, args) => {
-    const commissions = await ctx.db
-      .query("partnerCommissions")
-      .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerId))
-      .collect();
+    const { partner } = await requirePartnerAccess(ctx, args.partnerId);
+    const commissions = (
+      await ctx.db
+        .query("partnerCommissions")
+        .withIndex("by_partner_id", (q) => q.eq("partnerId", partner.code))
+        .collect()
+    ).filter((c) => c.environment !== "sandbox");
 
-    const totalEarnedKobo = commissions.reduce((sum, c) => sum + c.commissionAmount, 0);
-    const netPayableKobo = commissions.reduce((sum, c) => sum + c.netPayable, 0);
-
-    const pendingKobo = commissions
-      .filter((c) => c.status === "pending_approval" || c.status === "approved")
-      .reduce((sum, c) => sum + c.netPayable, 0);
-
-    const settledKobo = commissions
-      .filter((c) => c.status === "settled")
-      .reduce((sum, c) => sum + c.netPayable, 0);
-
-    const totalTransactions = commissions.length;
-
-    // Get referral count to compute tier progress
-    const referrals = await ctx.db
+    let totalEarnedKobo = 0;
+    let availablePayoutKobo = 0; // approved, not yet in a payout
+    let inPayoutKobo = 0; // transfer initiated, awaiting confirmation
+    let paidOutKobo = 0;
+    let reversedKobo = 0;
+    for (const c of commissions) {
+      const status = publicCommissionStatus(c);
+      if (status === "reversed" || status === "cancelled") {
+        reversedKobo += Math.abs(c.netPayable);
+        continue;
+      }
+      totalEarnedKobo += c.netPayable;
+      if (status === "paid") paidOutKobo += c.netPayable;
+      else if (c.bulkPayoutStatus === "pending_bulk_payout") inPayoutKobo += c.netPayable;
+      else availablePayoutKobo += c.netPayable;
+    }
+    const attributedPatients = new Set(commissions.filter((c) => c.eventType === "payment" && c.patientUserId).map((c) => c.patientUserId)).size;
+    const liveReferrals = await ctx.db
       .query("inboundReferrals")
-      .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerId))
-      .collect();
-
-    const totalReferrals = referrals.length;
-
-    // Format currency helpers (NGN)
-    const formatNaira = (kobo: number) => {
-      const naira = kobo / 100;
-      return `₦${naira.toLocaleString("en-NG", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-    };
-
+      .withIndex("by_partner_and_environment", (q) => q.eq("partnerId", partner.code).eq("environment", "live"))
+      .take(5000);
+    const naira = (kobo: number) => `₦${(kobo / 100).toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
     return {
+      // Flat fields (used by the portal KPI cards)
+      totalEarnedKobo,
+      availablePayoutKobo,
+      pendingReviewKobo: inPayoutKobo,
+      inPayoutKobo,
+      paidOutKobo,
+      reversedKobo,
+      // Formatted
       kpis: {
-        totalEarned: formatNaira(totalEarnedKobo),
-        totalEarnedKobo,
-        netPayable: formatNaira(netPayableKobo),
-        netPayableKobo,
-        pendingSettlement: formatNaira(pendingKobo),
-        pendingSettlementKobo: pendingKobo,
-        settledPaidOut: formatNaira(settledKobo),
-        settledKobo,
-        totalTransactions,
+        totalEarned: naira(totalEarnedKobo),
+        available: naira(availablePayoutKobo),
+        inPayout: naira(inPayoutKobo),
+        paidOut: naira(paidOutKobo),
+        totalTransactions: commissions.length,
       },
-      tierProgress: {
-        currentReferrals: totalReferrals,
-        nextTierThreshold: totalReferrals < 10 ? 10 : totalReferrals < 30 ? 30 : 50,
-        currentTierName: totalReferrals < 10 ? "Starter" : totalReferrals < 30 ? "Growth" : "Enterprise",
-        percentToNextTier: Math.min(100, Math.round((totalReferrals / (totalReferrals < 10 ? 10 : totalReferrals < 30 ? 30 : 50)) * 100)),
+      performance: {
+        liveReferrals: liveReferrals.length,
+        paidPatients: attributedPatients,
       },
-      recentCommissions: commissions.slice(0, 10).map((c) => ({
-        ...c,
-        formattedAmount: formatNaira(c.netPayable),
-        dateFormatted: new Date(c.earnedAt).toLocaleDateString(),
-      })),
+      recentCommissions: commissions
+        .sort((a, b) => b.earnedAt - a.earnedAt)
+        .slice(0, 10)
+        .map(commissionRow),
     };
   },
 });

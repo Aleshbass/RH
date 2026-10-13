@@ -1,109 +1,483 @@
 ---
-title: Webhook Event Catalog
-description: Complete catalog of all webhook event types and sample JSON payloads.
+title: Event catalog
+description: Every webhook event type, when it fires, and a full example payload for each.
 ---
 
-# Webhook Event Catalog
+Every event uses the same [envelope](/docs/webhooks#the-event-envelope). `data.referral` is the [referral object](/docs/api-reference/referrals#the-referral-object) **without** the `patient` block. Patient personal data is never sent in webhooks.
 
-Below is the list of events emitted by the Rehabify webhook system.
+The examples below follow one live referral, `RHB-4829173655`, from creation to completion, followed by three other outcomes. Its `data.sequence` goes up by 1 with each event. IDs and timestamps are illustrative.
 
----
+| Type | When it fires | `data.previous_status` |
+| :--- | :--- | :--- |
+| [`referral.created`](#referral-created) | A referral is created (API, referral-link lead, or portal) | `null` |
+| [`referral.contacted`](#referral-contacted) | Patient reached / intake started (incl. patient messaged Joy with the tracking code) | Usually `received` |
+| [`referral.provider_matched`](#referral-provider-matched) | A physiotherapist was assigned | The current status (matching doesn't change it) |
+| [`referral.booked`](#referral-booked) | First appointment confirmed (payment verified or care covered) | Usually `contacted` |
+| [`referral.in_treatment`](#referral-in-treatment) | Treatment under way | Usually `booked` |
+| [`referral.completed`](#referral-completed) | Care episode completed | Usually `in_treatment` |
+| [`referral.not_suitable`](#referral-not-suitable) | Not appropriate for Rehabify services | The status before the change |
+| [`referral.cancelled`](#referral-cancelled) | Cancelled / refunded | The status before the change |
+| [`referral.closed`](#referral-closed) | Closed | The status before the change |
+| [`ping`](#ping) | Test event from the portal or `POST /sandbox/trigger-webhook` | Not present |
 
-## 1. `patient.intake_completed`
-Fired when a referred patient successfully finishes their conversational intake via Joy on WhatsApp.
+## `referral.created` [#referral-created]
+
+Fires as soon as a referral is created, whether through the API, a [referral-link](/docs/guides/no-code-referral-links) lead or the Partner Portal. `previous_status` is `null`.
 
 ```json
 {
-  "event": "patient.intake_completed",
+  "id": "evt_01JA4S0A1B2C3D4E5F6G7H8J9K",
+  "object": "event",
+  "type": "referral.created",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-13T09:30:00.000Z",
+  "environment": "live",
   "data": {
-    "referral_id": "ref_839210aa9",
-    "patient": {
-      "name": "Chioma Okeke",
-      "phone": "+2348029988776",
-      "preferred_modality": "home_visit",
-      "preferred_time_of_day": "morning"
-    },
-    "intake_completed_at": "2026-08-16T08:22:00.000Z"
+    "previous_status": null,
+    "sequence": 1,
+    "referral": {
+      "object": "referral",
+      "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "partner_reference": "HMO-REF-2026-0091",
+      "environment": "live",
+      "status": "received",
+      "clinical": {
+        "condition": "Lower back pain",
+        "priority": "standard",
+        "recommended_sessions": 6,
+        "referring_clinician": "Dr. Okafor"
+      },
+      "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+      "billing_mode": "hmo_direct_billing",
+      "provider": null,
+      "sessions": { "completed": 0, "total": 6, "last_session_at": null, "next_session_at": null },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-4829173655",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-4829173655"
+      },
+      "metadata": { "member_plan": "gold" },
+      "created_at": "2026-10-13T09:30:00.000Z",
+      "updated_at": "2026-10-13T09:30:00.000Z"
+    }
   }
 }
 ```
 
----
+## `referral.contacted` [#referral-contacted]
 
-## 2. `provider.matched`
-Fired when an MRTBN-certified physiotherapist is assigned to the patient's care plan.
+Fires when Rehabify's care team or Joy reaches the patient and intake starts. This includes when the patient messages Joy on WhatsApp with the tracking code, for example through `links.whatsapp_intake_url`.
 
 ```json
 {
-  "event": "provider.matched",
+  "id": "evt_01JA4S9M2N3P4Q5R6S7T8V9W0X",
+  "object": "event",
+  "type": "referral.contacted",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-13T09:32:40.000Z",
+  "environment": "live",
   "data": {
-    "referral_id": "ref_839210aa9",
-    "provider": {
-      "id": "phy_98124801",
-      "name": "Dr. Eniola Ojuko (PT)",
-      "license_number": "MRTBN/PT/2018/1944",
-      "rating": 4.95
-    },
-    "matched_at": "2026-08-16T08:35:00.000Z"
+    "previous_status": "received",
+    "sequence": 2,
+    "referral": {
+      "object": "referral",
+      "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "partner_reference": "HMO-REF-2026-0091",
+      "environment": "live",
+      "status": "contacted",
+      "clinical": {
+        "condition": "Lower back pain",
+        "priority": "standard",
+        "recommended_sessions": 6,
+        "referring_clinician": "Dr. Okafor"
+      },
+      "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+      "billing_mode": "hmo_direct_billing",
+      "provider": null,
+      "sessions": { "completed": 0, "total": 6, "last_session_at": null, "next_session_at": null },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-4829173655",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-4829173655"
+      },
+      "metadata": { "member_plan": "gold" },
+      "created_at": "2026-10-13T09:30:00.000Z",
+      "updated_at": "2026-10-13T09:32:40.000Z"
+    }
   }
 }
 ```
 
----
+## `referral.provider_matched` [#referral-provider-matched]
 
-## 3. `session.scheduled`
-Fired when a session date and time are confirmed between the patient and therapist.
+Fires when a physiotherapist is assigned. Matching doesn't change the status, so `previous_status` equals the referral's current `status`. `referral.provider` now holds the physiotherapist's `name` and `license_number`. In sandbox, it's `{ "name": "Sandbox Physiotherapist", "license_number": "SANDBOX-0001" }`.
 
 ```json
 {
-  "event": "session.scheduled",
+  "id": "evt_01JA4SXK3L4M5N6P7Q8R9S0T1V",
+  "object": "event",
+  "type": "referral.provider_matched",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-13T09:34:05.000Z",
+  "environment": "live",
   "data": {
-    "session_id": "ses_001928a",
-    "referral_id": "ref_839210aa9",
-    "session_number": 1,
-    "scheduled_start": "2026-08-18T10:00:00.000Z",
-    "scheduled_end": "2026-08-18T11:00:00.000Z",
-    "modality": "home_visit",
-    "location_address": "Block 4, Flat 2, Lekki Phase 1, Lagos"
+    "previous_status": "contacted",
+    "sequence": 3,
+    "referral": {
+      "object": "referral",
+      "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "partner_reference": "HMO-REF-2026-0091",
+      "environment": "live",
+      "status": "contacted",
+      "clinical": {
+        "condition": "Lower back pain",
+        "priority": "standard",
+        "recommended_sessions": 6,
+        "referring_clinician": "Dr. Okafor"
+      },
+      "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+      "billing_mode": "hmo_direct_billing",
+      "provider": { "name": "Chiamaka Obi", "license_number": "MRTBN/PT/12345" },
+      "sessions": { "completed": 0, "total": 6, "last_session_at": null, "next_session_at": null },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-4829173655",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-4829173655"
+      },
+      "metadata": { "member_plan": "gold" },
+      "created_at": "2026-10-13T09:30:00.000Z",
+      "updated_at": "2026-10-13T09:34:05.000Z"
+    }
   }
 }
 ```
 
----
+## `referral.booked` [#referral-booked]
 
-## 4. `session.completed`
-Fired immediately after a physiotherapist finishes a session and submits their objective clinical progress note.
+Fires when the first appointment is confirmed: the payment has been verified, or the care is covered (for example, by HMO direct billing). If no physiotherapist had been matched yet, `referral.provider_matched` fires first.
 
 ```json
 {
-  "event": "session.completed",
+  "id": "evt_01JA4T7Q9Y2V3W4X5Z6A7B8C9D",
+  "object": "event",
+  "type": "referral.booked",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-13T09:35:12.000Z",
+  "environment": "live",
   "data": {
-    "session_id": "ses_001928a",
-    "referral_id": "ref_839210aa9",
-    "session_number": 1,
-    "completed_at": "2026-08-18T11:10:00.000Z",
-    "pain_score_before": 8,
-    "pain_score_after": 5,
-    "clinical_summary": "Initial evaluation and mobilization completed. Patient responded well to gentle manual therapy."
+    "previous_status": "contacted",
+    "sequence": 4,
+    "referral": {
+      "object": "referral",
+      "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "partner_reference": "HMO-REF-2026-0091",
+      "environment": "live",
+      "status": "booked",
+      "clinical": {
+        "condition": "Lower back pain",
+        "priority": "standard",
+        "recommended_sessions": 6,
+        "referring_clinician": "Dr. Okafor"
+      },
+      "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+      "billing_mode": "hmo_direct_billing",
+      "provider": { "name": "Chiamaka Obi", "license_number": "MRTBN/PT/12345" },
+      "sessions": { "completed": 0, "total": 6, "last_session_at": null, "next_session_at": "2026-10-15T10:00:00.000Z" },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-4829173655",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-4829173655"
+      },
+      "metadata": { "member_plan": "gold" },
+      "created_at": "2026-10-13T09:30:00.000Z",
+      "updated_at": "2026-10-13T09:35:12.000Z"
+    }
   }
 }
 ```
 
----
+## `referral.in_treatment` [#referral-in-treatment]
 
-## 5. `treatment_plan.discharged`
-Fired when the patient achieves full recovery milestones and is discharged from active physiotherapy care.
+Fires when rehabilitation sessions are under way.
 
 ```json
 {
-  "event": "treatment_plan.discharged",
+  "id": "evt_01JAA2B3C4D5E6F7G8H9J0K1M2",
+  "object": "event",
+  "type": "referral.in_treatment",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-15T10:45:00.000Z",
+  "environment": "live",
   "data": {
-    "referral_id": "ref_839210aa9",
-    "patient_name": "Chioma Okeke",
-    "discharged_at": "2026-08-28T16:00:00.000Z",
-    "total_sessions_completed": 8,
-    "final_outcome": "rehabilitated",
-    "discharge_pdf_url": "https://physioaroundme.com/api/storage/discharge_ref_839210aa9.pdf"
+    "previous_status": "booked",
+    "sequence": 5,
+    "referral": {
+      "object": "referral",
+      "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "partner_reference": "HMO-REF-2026-0091",
+      "environment": "live",
+      "status": "in_treatment",
+      "clinical": {
+        "condition": "Lower back pain",
+        "priority": "standard",
+        "recommended_sessions": 6,
+        "referring_clinician": "Dr. Okafor"
+      },
+      "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+      "billing_mode": "hmo_direct_billing",
+      "provider": { "name": "Chiamaka Obi", "license_number": "MRTBN/PT/12345" },
+      "sessions": {
+        "completed": 1,
+        "total": 6,
+        "last_session_at": "2026-10-15T10:00:00.000Z",
+        "next_session_at": "2026-10-18T10:00:00.000Z"
+      },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-4829173655",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-4829173655"
+      },
+      "metadata": { "member_plan": "gold" },
+      "created_at": "2026-10-13T09:30:00.000Z",
+      "updated_at": "2026-10-15T10:45:00.000Z"
+    }
   }
 }
 ```
+
+## `referral.completed` [#referral-completed]
+
+Fires when the care episode is complete and the patient has been discharged. A good moment to download the [progress report PDF](/docs/api-reference/clinical-reports#download-the-pdf).
+
+```json
+{
+  "id": "evt_01JC7N8P9Q0R1S2T3V4W5X6Y7Z",
+  "object": "event",
+  "type": "referral.completed",
+  "api_version": "2026-10-01",
+  "created_at": "2026-11-05T11:00:00.000Z",
+  "environment": "live",
+  "data": {
+    "previous_status": "in_treatment",
+    "sequence": 6,
+    "referral": {
+      "object": "referral",
+      "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "partner_reference": "HMO-REF-2026-0091",
+      "environment": "live",
+      "status": "completed",
+      "clinical": {
+        "condition": "Lower back pain",
+        "priority": "standard",
+        "recommended_sessions": 6,
+        "referring_clinician": "Dr. Okafor"
+      },
+      "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+      "billing_mode": "hmo_direct_billing",
+      "provider": { "name": "Chiamaka Obi", "license_number": "MRTBN/PT/12345" },
+      "sessions": {
+        "completed": 6,
+        "total": 6,
+        "last_session_at": "2026-11-05T10:00:00.000Z",
+        "next_session_at": null
+      },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-4829173655",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-4829173655"
+      },
+      "metadata": { "member_plan": "gold" },
+      "created_at": "2026-10-13T09:30:00.000Z",
+      "updated_at": "2026-11-05T11:00:00.000Z"
+    }
+  }
+}
+```
+
+## `referral.not_suitable` [#referral-not-suitable]
+
+Fires when Rehabify's services aren't appropriate for the patient. The patient is redirected to appropriate care. No clinical detail is disclosed.
+
+```json
+{
+  "id": "evt_01JA6D2E3F4G5H6J7K8M9N0P1Q",
+  "object": "event",
+  "type": "referral.not_suitable",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-14T11:20:00.000Z",
+  "environment": "live",
+  "data": {
+    "previous_status": "contacted",
+    "sequence": 3,
+    "referral": {
+      "object": "referral",
+      "id": "jd7a1s2d3f4g5h6j7k8l9z0x1c2v3b4n",
+      "tracking_code": "RHB-5938204716",
+      "partner_reference": "HMO-REF-2026-0107",
+      "environment": "live",
+      "status": "not_suitable",
+      "clinical": {
+        "condition": "Knee pain",
+        "priority": "standard",
+        "recommended_sessions": 4,
+        "referring_clinician": null
+      },
+      "care": { "preferred_mode": "in_person", "preferred_contact_channel": "phone" },
+      "billing_mode": "hmo_direct_billing",
+      "provider": null,
+      "sessions": { "completed": 0, "total": 4, "last_session_at": null, "next_session_at": null },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-5938204716",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-5938204716"
+      },
+      "metadata": { "member_plan": "silver" },
+      "created_at": "2026-10-14T08:00:00.000Z",
+      "updated_at": "2026-10-14T11:20:00.000Z"
+    }
+  }
+}
+```
+
+## `referral.cancelled` [#referral-cancelled]
+
+Fires when the referral or its booking is cancelled or refunded. If a commission was recorded for the booking, it's reversed (see [Commissions](/docs/api-reference/commercial-and-commissions#how-commissions-work)).
+
+```json
+{
+  "id": "evt_01JA7F4G5H6J7K8M9N0P1Q2R3S",
+  "object": "event",
+  "type": "referral.cancelled",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-16T15:05:00.000Z",
+  "environment": "live",
+  "data": {
+    "previous_status": "booked",
+    "sequence": 5,
+    "referral": {
+      "object": "referral",
+      "id": "jd7q9w8e7r6t5y4u3i2o1p0a9s8d7f6g",
+      "tracking_code": "RHB-7120493861",
+      "partner_reference": "HMO-REF-2026-0112",
+      "environment": "live",
+      "status": "cancelled",
+      "clinical": {
+        "condition": "Shoulder stiffness",
+        "priority": "standard",
+        "recommended_sessions": 6,
+        "referring_clinician": "Dr. Bello"
+      },
+      "care": { "preferred_mode": "remote", "preferred_contact_channel": "whatsapp" },
+      "billing_mode": "patient_self_pay",
+      "provider": { "name": "Chiamaka Obi", "license_number": "MRTBN/PT/12345" },
+      "sessions": { "completed": 0, "total": 6, "last_session_at": null, "next_session_at": null },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-7120493861",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-7120493861"
+      },
+      "metadata": {},
+      "created_at": "2026-10-14T09:10:00.000Z",
+      "updated_at": "2026-10-16T15:05:00.000Z"
+    }
+  }
+}
+```
+
+## `referral.closed` [#referral-closed]
+
+Fires when no further activity is expected on the referral, for example after the patient doesn't proceed with care.
+
+```json
+{
+  "id": "evt_01JAC8H9J0K1M2N3P4Q5R6S7T8",
+  "object": "event",
+  "type": "referral.closed",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-28T09:00:00.000Z",
+  "environment": "live",
+  "data": {
+    "previous_status": "contacted",
+    "sequence": 3,
+    "referral": {
+      "object": "referral",
+      "id": "jd7z8x7c6v5b4n3m2l1k0j9h8g7f6d5s",
+      "tracking_code": "RHB-3304817726",
+      "partner_reference": "HMO-REF-2026-0120",
+      "environment": "live",
+      "status": "closed",
+      "clinical": {
+        "condition": "Ankle sprain",
+        "priority": "standard",
+        "recommended_sessions": 4,
+        "referring_clinician": null
+      },
+      "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+      "billing_mode": "patient_self_pay",
+      "provider": null,
+      "sessions": { "completed": 0, "total": 4, "last_session_at": null, "next_session_at": null },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-3304817726",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-3304817726"
+      },
+      "metadata": {},
+      "created_at": "2026-10-14T13:45:00.000Z",
+      "updated_at": "2026-10-28T09:00:00.000Z"
+    }
+  }
+}
+```
+
+## `ping` [#ping]
+
+A test event sent from the portal or with [`POST /sandbox/trigger-webhook`](/docs/sandbox/testing#trigger-a-test-webhook). `data` contains a `message` and a `referral`. If you passed a sandbox `referral_id`, that's the referral used. Otherwise it's a sample referral with the `id` `ref_sample_000000000000000000000000` and the `tracking_code` `RHB-1234567890`. A `ping` has no `previous_status` or `sequence`.
+
+```json
+{
+  "id": "evt_01JA4V2K8M3N5P7Q9R1S3T5V7W",
+  "object": "event",
+  "type": "ping",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-13T10:00:00.000Z",
+  "environment": "sandbox",
+  "data": {
+    "message": "Test event from Rehabify",
+    "referral": {
+      "object": "referral",
+      "id": "ref_sample_000000000000000000000000",
+      "tracking_code": "RHB-1234567890",
+      "partner_reference": null,
+      "environment": "sandbox",
+      "status": "received",
+      "clinical": {
+        "condition": "Lower back pain",
+        "priority": "standard",
+        "recommended_sessions": 4,
+        "referring_clinician": null
+      },
+      "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+      "billing_mode": "patient_self_pay",
+      "provider": null,
+      "sessions": { "completed": 0, "total": 4, "last_session_at": null, "next_session_at": null },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-1234567890",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-1234567890"
+      },
+      "metadata": {},
+      "created_at": "2026-10-13T10:00:00.000Z",
+      "updated_at": "2026-10-13T10:00:00.000Z"
+    }
+  }
+}
+```
+
+## Test events for other types
+
+When you trigger any type other than `ping` from the portal or with `POST /sandbox/trigger-webhook`, the event has the normal envelope and is signed like a real one, but its `data` is marked as a test:
+
+| Field | Value in a test event |
+| :--- | :--- |
+| `data.previous_status` | `null` |
+| `data.sequence` | `0` |
+| `data.test` | `true` |
+| `data.referral` | The sandbox referral you named in `referral_id`, or the sample referral shown above |
+
+Real events never include `data.test`. Test events don't change the referral, so you can ignore them in your ordering logic.

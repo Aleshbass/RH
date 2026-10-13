@@ -1,50 +1,201 @@
 ---
-title: Sandbox & Testing Environment
-description: Test credentials, mock webhooks, and sandbox patient fixtures.
+title: Sandbox & testing
+description: Magic phone numbers, the advance and trigger-webhook endpoints, and exactly how sandbox differs from live.
 ---
 
-# Sandbox & Testing Environment
+The sandbox is a full copy of the Partner API for building and testing. It uses the same base URL, `https://api.physioaroundme.com/v1`, and you reach it with a `sk_test_` key. You get sandbox access once Rehabify approves your organisation. Create keys in the [Partner Portal](https://partners.physioaroundme.com) under **Developers → API keys**.
 
-The Rehabify Sandbox allows engineering teams to build, test, and simulate the entire end-to-end integration lifecycle without sending real WhatsApp messages or charging live credit cards.
+There are no shared or public sandbox keys. Use your own.
 
----
+## What sandbox never does
 
-## Test API Credentials
+- It never contacts patients, and never sends emails or WhatsApp messages to them.
+- It never earns commissions. `GET /partners/commissions` returns an empty list, and `earnings` in `GET /partners/commercial` are always zero.
+- It never uses real providers. Matched providers are simulated as `{ "name": "Sandbox Physiotherapist", "license_number": "SANDBOX-0001" }`.
+- It never mixes with live. Sandbox referrals, links and webhooks are invisible to live keys, and sandbox events go only to your sandbox webhook endpoint.
 
-Use the following sandbox test keys during development:
+The sandbox rate limit is 10 requests per second.
 
-| Key Type | Key Value |
+## Magic phone numbers
+
+Use these values for `patient.phone` on `POST /partners/referrals` with a test key, to simulate different journeys. Each status change fires the matching webhook, just like in live.
+
+| Phone | Behaviour |
 | :--- | :--- |
-| **Sandbox Public Key** | `pk_test_rehab_sandbox_990182` |
-| **Sandbox Secret Key** | `sk_test_rehab_sandbox_sec_881290` |
-| **Sandbox Webhook Secret** | `whsec_test_mock_secret_key_4411` |
+| `+2348000000001` | → `contacted` after ~5 s |
+| `+2348000000002` | → `contacted` (~5 s) → `provider_matched` + `booked` (~15 s) |
+| `+2348000000003` | full journey: `contacted` (~5 s) → `booked` (~15 s) → `in_treatment` (~25 s) → `completed` (~35 s) |
+| `+2348000000004` | rejected immediately: 422 `patient_ineligible` (no referral created) |
+| `+2348000000005` | → `not_suitable` after ~10 s |
+| `+2348000000006` | → `cancelled` after ~10 s |
+| any other | stays `received` — use the advance endpoint |
 
----
+## Advance a referral
 
-## Test Patient Phone Numbers
+```http
+POST /sandbox/referrals/{id}/advance
+```
 
-Simulate specific intake scenarios using these dedicated test phone numbers:
+Moves a sandbox referral to a new status and fires the same webhooks a real transition fires. `{id}` is the sandbox referral's `id` or `tracking_code`. With a live key, this endpoint returns `403 sandbox_only`.
 
-| Test Phone Number | Simulated Scenario | Triggered Webhook |
+| Field | Type | Description |
 | :--- | :--- | :--- |
-| `+2348000000001` | Instant Intake Success | `patient.intake_completed` within 5 seconds |
-| `+2348000000002` | Provider Auto-Matched | `provider.matched` within 10 seconds |
-| `+2348000000003` | Session Auto-Completed | `session.completed` with sample pain reduction score |
-| `+2348000000004` | Ineligible Policy | Returns `400 Bad Request` with `ineligible` status |
-| `+2348000000005` | Replay Attack / Webhook Fail | Simulates HTTP 500 error on webhook endpoint |
+| `status` | string | `contacted`, `booked`, `in_treatment`, `completed`, `not_suitable`, `cancelled` or `closed`. |
 
----
+Rules:
 
-## Mock Webhook Delivery Simulator
+- Statuses only move forward: `received` → `contacted` → `booked` → `in_treatment` → `completed`. `not_suitable`, `cancelled` and `closed` end the journey.
+- Moving backwards, or out of a terminal status (`completed`, `not_suitable`, `cancelled`, `closed`), returns `422 invalid_status_transition`.
+- Advancing to `booked` when no provider is matched yet fires `referral.provider_matched` first, then `referral.booked`. The provider is the simulated `Sandbox Physiotherapist`.
 
-You can manually trigger test webhook deliveries to your endpoint using cURL:
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
 
 ```bash
-curl -X POST https://api.physioaroundme.com/api/v1/sandbox/trigger-webhook \
-  -H "Authorization: Bearer sk_test_rehab_sandbox_sec_881290" \
+TRACKING_CODE="RHB-0123456789"   # a sandbox referral that is still "received"
+curl "https://api.physioaroundme.com/v1/sandbox/referrals/$TRACKING_CODE/advance" \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "event": "session.completed",
-    "target_url": "https://api.yourdomain.com/webhooks/rehabify"
-  }'
+  -d '{ "status": "booked" }'
 ```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+, sandbox key only (save as advance.mjs). Usage: node advance.mjs RHB-0123456789 booked
+const [trackingCode, status] = process.argv.slice(2);
+const res = await fetch(
+  `https://api.physioaroundme.com/v1/sandbox/referrals/${encodeURIComponent(trackingCode)}/advance`,
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.REHABIFY_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status }),
+  }
+);
+const referral = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${referral.error.code}: ${referral.error.message}`);
+console.log(referral.status, referral.provider);
+```
+
+</Tab>
+<Tab>
+
+```python
+# advance.py: python advance.py RHB-0123456789 booked
+import os
+import sys
+
+import requests
+
+tracking_code, status = sys.argv[1], sys.argv[2]
+resp = requests.post(
+    f"https://api.physioaroundme.com/v1/sandbox/referrals/{tracking_code}/advance",
+    json={"status": status},
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+resp.raise_for_status()
+referral = resp.json()
+print(referral["status"], referral["provider"])
+```
+
+</Tab>
+</Tabs>
+
+**Response:** `200 OK` with the updated [referral object](/docs/api-reference/referrals#the-referral-object).
+
+**Errors:** `403 sandbox_only` (live key), `404 referral_not_found`, and `422 invalid_status_transition` or `validation_error`.
+
+## Trigger a test webhook
+
+```http
+POST /sandbox/trigger-webhook
+```
+
+Sends a signed test event to your **sandbox** webhook endpoint. It's signed with your sandbox secret and has the same format as real events. With a live key, this endpoint returns `403 sandbox_only`. You can also send test events from the portal.
+
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `type` | string | Yes | Any [event type](/docs/webhooks/event-catalog) (`referral.created` … `referral.closed`) or `ping`. |
+| `referral_id` | string | No | The `id` or `tracking_code` of one of your sandbox referrals. Without it, a sample sandbox referral is used (`id` `ref_sample_000000000000000000000000`, `tracking_code` `RHB-1234567890`). |
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl https://api.physioaroundme.com/v1/sandbox/trigger-webhook \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "type": "referral.booked" }'
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+, sandbox key only (save as trigger-webhook.mjs)
+const res = await fetch("https://api.physioaroundme.com/v1/sandbox/trigger-webhook", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.REHABIFY_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ type: "referral.booked" }),
+});
+const result = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${result.error.code}: ${result.error.message}`);
+console.log(result.event_id, result.status, result.endpoint);
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+resp = requests.post(
+    "https://api.physioaroundme.com/v1/sandbox/trigger-webhook",
+    json={"type": "referral.booked"},
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+resp.raise_for_status()
+result = resp.json()
+print(result["event_id"], result["status"], result["endpoint"])
+```
+
+</Tab>
+</Tabs>
+
+```json title="202 Accepted"
+{
+  "object": "webhook_test",
+  "event_id": "evt_01JA4W6X8Y0Z2A4B6C8D0E2F4G",
+  "type": "referral.booked",
+  "status": "queued",
+  "endpoint": "https://example.com/webhooks/rehabify"
+}
+```
+
+The delivered event has `data.previous_status: null`, `data.sequence: 0` and `data.test: true`. A `ping` carries `data.message: "Test event from Rehabify"` and a `data.referral`. See [Test events](/docs/webhooks/event-catalog#test-events-for-other-types). Test events don't change the referral.
+
+**Errors:** `403 sandbox_only` (live key), `404 referral_not_found` (unknown `referral_id`), `409 webhook_endpoint_not_configured` (no sandbox endpoint is set), and `422 validation_error` (unknown `type`).
+
+## Other endpoints in sandbox
+
+| Endpoint | Sandbox behaviour |
+| :--- | :--- |
+| `GET /partners/sessions` | Sessions are simulated from the referral's sandbox status and have `"simulated": true`. |
+| `GET /partners/reports/{id}` and `/pdf` | Built from the simulated sessions. |
+| `POST /partners/referral-links` | Creates a sandbox link. Its leads create sandbox referrals and never attribute real patients. |
+| `GET /partners/commercial` | Your terms, with `earnings` always zero. |
+| `GET /partners/commissions` | Always an empty list. |
+| `POST /partners/eligibility` | A simulated preview (`"simulated": true`). Any `member_id` containing `EXPIRED` is ineligible. See [Eligibility](/docs/api-reference/eligibility). |

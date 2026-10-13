@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { DatabaseReader, DatabaseWriter } from './_generated/server';
 import type { Doc } from './_generated/dataModel';
@@ -8,7 +8,7 @@ import type { Doc } from './_generated/dataModel';
 /**
  * Get user settings
  */
-export const getUserSettings = query({
+export const getUserSettings = internalQuery({
   args: {
     userId: v.id("users"),
   },
@@ -146,7 +146,7 @@ export const updateUserSettings = mutation({
 /**
  * Get clinic settings
  */
-export const getClinicSettings = query({
+export const getClinicSettings = internalQuery({
   args: {
     clinicId: v.id("clinics"),
   },

@@ -1,79 +1,21 @@
 ---
-title: JavaScript Embed Widget
-description: Embed a seamless physiotherapy booking popup on any website using a single script tag.
+title: Embed widget (coming soon)
+description: An embeddable JavaScript booking widget is planned but not yet available. Here's what to use today.
 ---
 
-# JavaScript Embed Widget
+<Callout type="warn" title="Coming soon">The embeddable JavaScript widget isn't available yet. There's no script URL to include, no widget API, and no publishable key to configure. Any snippet claiming otherwise is out of date.</Callout>
 
-The Rehabify JavaScript Embed Widget lets your users discover therapists and schedule sessions without leaving your website.
+## What it will do
 
----
+The widget will let partners add a Rehabify referral or booking flow to their own website, attributed to them, without building a form or exposing a secret key. It will rely on publishable keys, which are also coming soon.
 
-## 1. Add the Script Tag
+## What to use today
 
-Paste the script before the closing `</body>` tag on your website:
+| Need | Use now |
+| :--- | :--- |
+| A "Book physiotherapy" button on your site | Link the button to your [referral link](/docs/guides/no-code-referral-links) (`https://physioaroundme.com/r/<public_code>`). It opens a co-branded landing page and attributes the patient to you. |
+| A form styled like your own site | Post it to the [public lead endpoint](/docs/api-reference/referral-links#public-lead-capture). It's CORS-enabled and needs no API key. |
+| Referrals created from your backend | The [REST API](/docs/api-reference/referrals#create-a-referral) with a secret key, server-side only. |
+| A one-tap WhatsApp start for a specific patient | The referral's [WhatsApp deep link](/docs/sdks-widgets/whatsapp-deep-links). |
 
-```html
-<script 
-  src="https://cdn.physioaroundme.com/widget/v1/rehabify.js" 
-  data-partner-key="pk_live_your_public_key"
-  async>
-</script>
-```
-
----
-
-## 2. Trigger the Booking Modal
-
-Add a button with the `data-rehabify-trigger` attribute, or call the JavaScript SDK directly:
-
-### Option A: HTML Data Attribute (No JavaScript)
-
-```html
-<button 
-  data-rehabify-trigger
-  data-specialty="sports_physio"
-  data-city="Lagos"
-  class="btn-recovery">
-  Book Physical Therapy Recovery
-</button>
-```
-
-### Option B: Programmatic JavaScript Trigger
-
-```javascript
-// Open with pre-filled patient info
-window.RehabifyWidget.open({
-  partnerKey: 'pk_live_your_public_key',
-  patient: {
-    name: 'Adaora Eze',
-    phone: '+2348031234567',
-    email: 'adaora@example.com'
-  },
-  clinical: {
-    diagnosis: 'Post-Workout Hamstring Strain',
-    preferredModality: 'home_visit'
-  },
-  onSuccess: function(booking) {
-    console.log('Session booked successfully:', booking.bookingId);
-  },
-  onClose: function() {
-    console.log('Modal closed');
-  }
-});
-```
-
----
-
-## Customizing Widget Theme
-
-You can pass custom branding options directly in the initialization object:
-
-```javascript
-window.RehabifyWidget.setTheme({
-  primaryColor: '#0D9488',
-  borderRadius: '12px',
-  darkMode: false,
-  partnerLogoUrl: 'https://yourgym.com/logo.png'
-});
-```
+We'll document the widget here when it launches.

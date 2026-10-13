@@ -3,14 +3,30 @@
  *
  * Called when a physiotherapist ends an AwaDoc therapy session.
  * Marks the session as completed and sends a callback to AwaDoc.
+ * Only the physiotherapist assigned to the session (or an admin) may call it.
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { sendCallbackEvent } from "@/lib/awadoc/awadoc";
 import { getConvexClient } from "@/lib/convex-client";
+import { convexServerSecret } from "@/lib/convex-server-secret";
 
 export async function POST(request: NextRequest) {
+    // Act as the signed-in user so Convex can check they are the session's physio (or an admin)
+    const { userId, getToken } = await auth();
+    const token = userId ? await getToken({ template: "convex" }) : null;
+    if (!token) {
+        return NextResponse.json({ error: "Please sign in" }, { status: 401 });
+    }
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (!convexUrl) {
+        return NextResponse.json({ error: "Convex is not configured" }, { status: 500 });
+    }
+    const asUser = new ConvexHttpClient(convexUrl);
+    asUser.setAuth(token);
     const convex = getConvexClient();
     let body: {
         therapyId: string;
@@ -34,8 +50,8 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        // Look up session first for details
-        const session = await convex.query(api.awadoc.getSessionByTherapyId, {
+        // Look up the session as the signed-in user: null unless they are its physio or an admin
+        const session = await asUser.query(api.awadoc.getSessionByTherapyId, {
             therapyId,
         });
 
@@ -46,11 +62,14 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        const serverSecret = convexServerSecret();
+
         // Mark session as completed in Convex
         await convex.mutation(api.awadoc.completeSession, {
             therapyId,
             notes,
             actualDurationMinutes,
+            serverSecret,
         });
 
         // Get physio details for the callback
@@ -59,6 +78,7 @@ export async function POST(request: NextRequest) {
             try {
                 const user = await convex.query(api.awadoc.getUserById, {
                     userId: session.physiotherapistId,
+                    serverSecret,
                 });
                 if (user) {
                     doctorName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || "Physiotherapist";
@@ -110,6 +130,7 @@ export async function POST(request: NextRequest) {
                 responsePayload: callbackResult,
                 status: callbackResult.success ? "success" : "error",
                 errorMessage: callbackResult.error,
+                serverSecret,
             });
         } catch {
             // Non-fatal

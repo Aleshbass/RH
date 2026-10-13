@@ -9,9 +9,31 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { auth } from "@clerk/nextjs/server";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "@/convex/_generated/api";
 import { buildSignature, getAwadocConfig } from "@/lib/awadoc/awadoc";
 
+/**
+ * This route signs payloads with the AwaDoc secret, so it must stay admin-only:
+ * an open route would let anyone forge webhook events (e.g. therapy.confirmed).
+ */
+async function isAdminCaller(): Promise<boolean> {
+    const { userId, getToken } = await auth();
+    const token = userId ? await getToken({ template: "convex" }) : null;
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (!token || !convexUrl) return false;
+    const client = new ConvexHttpClient(convexUrl);
+    client.setAuth(token);
+    const me = await client.query(api.users.getMyUser, {}).catch(() => null);
+    return me?.role === "admin";
+}
+
 export async function POST(request: NextRequest) {
+    if (!(await isAdminCaller())) {
+        return NextResponse.json({ error: "Admins only" }, { status: 403 });
+    }
+
     const config = getAwadocConfig();
 
     // Block in production unless explicitly allowed

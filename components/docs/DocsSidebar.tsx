@@ -9,8 +9,18 @@ interface DocsSidebarProps {
   onItemClick?: () => void;
 }
 
+/**
+ * On docs.physioaroundme.com the middleware rewrites "/<path>" to "/docs/<path>", so the browser
+ * path may lack the "/docs" prefix. Normalise to the "/docs/..." form used by the nav hrefs.
+ */
+function normalizeDocsPath(path: string | null): string {
+  const clean = (path || "/").replace(/\/+$/, "") || "/";
+  if (clean === "/") return "/docs";
+  return clean === "/docs" || clean.startsWith("/docs/") ? clean : `/docs${clean}`;
+}
+
 export default function DocsSidebar({ onItemClick }: DocsSidebarProps) {
-  const pathname = usePathname();
+  const pathname = normalizeDocsPath(usePathname());
 
   return (
     <nav className="space-y-6 text-xs text-[#002e2c]">
@@ -22,10 +32,9 @@ export default function DocsSidebar({ onItemClick }: DocsSidebarProps) {
 
           <div className="space-y-0.5">
             {group.items.map((item) => {
-              const isActive =
-                item.href === "/docs"
-                  ? pathname === "/docs"
-                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              // Every page has its own nav entry, so match exactly (section overviews such as
+              // /docs/webhooks must not stay highlighted on their child pages).
+              const isActive = pathname === item.href;
 
               return (
                 <Link

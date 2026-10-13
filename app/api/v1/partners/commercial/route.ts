@@ -1,68 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
-import { authenticatePartner } from "@/lib/partner-auth";
-import { getConvexClient } from "@/lib/convex-client";
-import { api } from "@/convex/_generated/api";
+import type { NextRequest } from "next/server";
+import { authenticatePartner, logPartnerRequest } from "@/lib/partner-api/auth";
+import { callPartnerGateway } from "@/lib/partner-api/gateway";
+import { apiJson, internalError } from "@/lib/partner-api/http";
 
-/**
- * GET /api/v1/partners/commercial
- *
- * Returns active commercial contract details, payment terms, and commission tiers.
- */
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/** GET /v1/partners/commercial — contract terms and earnings summary (live earnings only). */
 export async function GET(req: NextRequest) {
-  const { partner, response } = await authenticatePartner(req);
-  if (!partner) return response!;
-
+  const auth = await authenticatePartner(req);
+  if (!auth.ok) return auth.response;
+  const { partner, ctx } = auth;
   try {
-    const convex = getConvexClient();
-    const contract = await convex.query(api.commercialTerms.getActivePartnerContract, {
-      partnerId: partner.code,
-    });
-
-    const summary = await convex.query(api.commercialTerms.getPartnerCommercialSummary, {
-      partnerId: partner.code,
-    });
-
-    return NextResponse.json({
-      status: "success",
-      partner_id: partner.code,
-      contract: {
-        contract_number: contract.contractNumber,
-        model_type: contract.modelType,
-        currency: contract.payoutCurrency,
-        payment_terms: `Net-${contract.paymentTermsDays}`,
-        effective_from: new Date(contract.effectiveFrom).toISOString(),
-        pricing: {
-          base_booking_fee_ngn: ((contract.baseFeePerBooking || 500000) / 100).toFixed(2),
-          revenue_share_percent: `${contract.revenueSharePercent || 15}%`,
-          activation_bonus_ngn: ((contract.activationBonusPerPatient || 200000) / 100).toFixed(2),
-          withholding_tax_percent: `${contract.withholdingTaxPercent || 5}%`,
-          vat_applicable: contract.vatApplicable || false,
-        },
-        volume_tiers: (contract.tiers || []).map((t: any) => ({
-          tier_name: t.tierName,
-          min_referrals: t.minReferrals,
-          max_referrals: t.maxReferrals || "Unlimited",
-          fee_per_referral_ngn: t.feePerReferral ? (t.feePerReferral / 100).toFixed(2) : null,
-          revenue_share_percent: t.revenueSharePercent ? `${t.revenueSharePercent}%` : null,
-        })),
-      },
-      current_performance: {
-        tier: summary.tierProgress.currentTierName,
-        total_referrals: summary.tierProgress.currentReferrals,
-        percent_to_next_tier: `${summary.tierProgress.percentToNextTier}%`,
-        earnings_summary: summary.kpis,
-      },
-    });
+    const result = await callPartnerGateway("getCommercial", { partnerCode: partner.code, environment: partner.environment });
+    return logPartnerRequest(req, auth, apiJson(ctx, result.terms), { eventType: "api.commercial_get" });
   } catch (error) {
-    console.error("Commercial terms fetch error:", error);
-    return NextResponse.json(
-      {
-        error: {
-          code: "commercial_fetch_failed",
-          message: error instanceof Error ? error.message : "Internal server error",
-        },
-      },
-      { status: 500 }
-    );
+    return logPartnerRequest(req, auth, internalError(ctx, error), { eventType: "api.commercial_get", errorCode: "internal_error" });
   }
 }

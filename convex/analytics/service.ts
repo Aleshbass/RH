@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { mutation, query } from "../_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import { ensureUserRole } from "../auth";
 
 // Analytics event types
 const AnalyticsEventTypes = {
@@ -88,7 +89,7 @@ interface PlatformAnalytics {
 /**
  * Track an analytics event
  */
-export const trackEvent = mutation({
+export const trackEvent = internalMutation({
   args: {
     type: v.string(),
     userId: v.optional(v.id("users")),
@@ -123,7 +124,7 @@ export const trackEvent = mutation({
 /**
  * Get system metrics
  */
-export const getSystemMetrics = query({
+export const getSystemMetrics = internalQuery({
   args: {},
   handler: async (ctx): Promise<SystemMetrics> => {
     // Get database metrics (mock data for now)
@@ -194,7 +195,7 @@ export const getSystemMetrics = query({
 /**
  * Get platform analytics
  */
-export const getPlatformAnalytics = query({
+export const getPlatformAnalytics = internalQuery({
   args: {
     timeframe: v.union(
       v.literal("day"),
@@ -294,7 +295,7 @@ export const getPlatformAnalytics = query({
 /**
  * Get clinic analytics
  */
-export const getClinicAnalytics = query({
+export const getClinicAnalytics = internalQuery({
   args: {
     clinicId: v.id("clinics"),
     timeframe: v.union(
@@ -399,7 +400,7 @@ export const getClinicAnalytics = query({
 /**
  * Get system health metrics
  */
-export const getSystemHealth = query({
+export const getSystemHealth = internalQuery({
   args: {},
   handler: async (ctx) => {
     // Get basic system metrics without using non-existent _stats table
@@ -461,7 +462,7 @@ export const getSystemHealth = query({
 });
 
 /**
- * Get user activity logs
+ * Get user activity logs (admin dashboard only)
  */
 export const getUserActivityLogs = query({
   args: { limit: v.optional(v.number()) },
@@ -477,12 +478,13 @@ export const getUserActivityLogs = query({
     ipAddress: v.any(),
   })),
   handler: async (ctx, { limit = 50 }) => {
+    await ensureUserRole(ctx, ["admin"]);
     // Get recent analytics events as activity logs
     const events = await ctx.db
       .query("analytics_events")
       .withIndex("by_timestamp")
       .order("desc")
-      .take(limit);
+      .take(Math.min(Math.max(1, Math.floor(limit) || 50), 500));
 
     // Transform events into activity log format
     return Promise.all(events.map(async (event) => {

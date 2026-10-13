@@ -9,7 +9,8 @@ import { publicAppUrl } from "../helpers/appUrl";
  */
 export const sendDailyAppointmentReminders = internalMutation({
   args: {},
-  handler: async (ctx) => {
+  // Explicit return type: inferring it through the generated api types is too deep (TS2589).
+  handler: async (ctx): Promise<{ success: boolean; count: number }> => {
     const now = new Date();
     const utcYear = now.getUTCFullYear();
     const utcMonth = now.getUTCMonth();

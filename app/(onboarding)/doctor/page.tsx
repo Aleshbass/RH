@@ -101,7 +101,7 @@ export default function DoctorOnboardingPage() {
                 <div className="text-center mb-10">
                     <h2 className="text-3xl font-bold text-gray-900">Partner Profile Setup</h2>
                     <p className="mt-2 text-sm text-gray-600">
-                        Complete your profile to start referring patients and tracking your kickbacks.
+                        Complete your profile to start referring patients and tracking your referral commissions.
                     </p>
                 </div>
 
@@ -184,7 +184,7 @@ export default function DoctorOnboardingPage() {
                     <div className="pt-6 border-t border-gray-200">
                         <h3 className="text-lg font-medium text-gray-900 mb-4">Payout Details</h3>
                         <p className="text-sm text-gray-500 mb-4">
-                            We need your bank details to process your referral kickbacks.
+                            We need your bank details to process your referral commissions.
                         </p>
                         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                             <div className="sm:col-span-2">

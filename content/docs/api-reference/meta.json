@@ -2,11 +2,13 @@
   "title": "API Reference",
   "pages": [
     "index",
-    "partner-integration-v1",
     "referrals",
-    "eligibility",
-    "providers",
     "sessions",
-    "clinical-reports"
+    "clinical-reports",
+    "providers",
+    "referral-links",
+    "commercial-and-commissions",
+    "eligibility",
+    "partner-integration-v1"
   ]
 }

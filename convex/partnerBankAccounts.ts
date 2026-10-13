@@ -1,66 +1,14 @@
-import { action, mutation, query } from "./_generated/server";
-import { v } from "convex/values";
-import { api } from "./_generated/api";
-
 /**
- * Verify a bank account via Paystack's /bank/resolve API.
- * Returns the resolved account name for instant partner verification.
+ * Partner payout bank accounts.
+ *
+ * An account is saved only after Rehabify resolves it with Paystack server-side, and
+ * the account name stored is the one Paystack returns (never a client value). Only the
+ * organisation owner or an admin can view, add or remove accounts.
  */
-export const verifyPartnerBankAccount = action({
-  args: {
-    bankCode: v.string(),
-    accountNumber: v.string(),
-  },
-  returns: v.object({
-    success: v.boolean(),
-    accountName: v.optional(v.string()),
-    message: v.string(),
-  }),
-  handler: async (ctx, args) => {
-    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-
-    if (!PAYSTACK_SECRET) {
-      return { success: false, message: "Payment service not configured" };
-    }
-
-    try {
-      const url = `https://api.paystack.co/bank/resolve?account_number=${encodeURIComponent(args.accountNumber)}&bank_code=${encodeURIComponent(args.bankCode)}`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${PAYSTACK_SECRET}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Paystack bank resolve error:", errorText);
-        return { success: false, message: `Account verification failed (HTTP ${response.status})` };
-      }
-
-      const data = await response.json();
-
-      if (data.status && data.data) {
-        return {
-          success: true,
-          accountName: data.data.account_name,
-          message: "Account verified successfully",
-        };
-      } else {
-        return {
-          success: false,
-          message: data.message || "Account verification failed",
-        };
-      }
-    } catch (error) {
-      console.error("Bank verification error:", error);
-      return {
-        success: false,
-        message: "Failed to verify account. Please try again.",
-      };
-    }
-  },
-});
+import { ConvexError, v } from "convex/values";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { requirePartnerAccess } from "./helpers/partnerAccess";
 
 const FALLBACK_BANKS = [
   { name: "Access Bank", code: "044" },
@@ -88,127 +36,71 @@ const FALLBACK_BANKS = [
   { name: "Zenith Bank", code: "057" },
 ];
 
-/**
- * Get list of Nigerian banks from Paystack for the bank selector dropdown.
- */
+function cleanAccountNumber(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!/^\d{10}$/.test(digits)) throw new ConvexError("Account numbers are 10 digits (NUBAN).");
+  return digits;
+}
+
+async function paystackResolve(accountNumber: string, bankCode: string): Promise<{ ok: true; accountName: string } | { ok: false; message: string }> {
+  const secret = process.env.PAYSTACK_SECRET_KEY;
+  if (!secret) return { ok: false, message: "Payment service is not configured." };
+  try {
+    const response = await fetch(
+      `https://api.paystack.co/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`,
+      { headers: { Authorization: `Bearer ${secret}` } }
+    );
+    const data = (await response.json().catch(() => null)) as { status?: boolean; message?: string; data?: { account_name?: string } } | null;
+    if (!response.ok || !data?.status || !data.data?.account_name) {
+      return { ok: false, message: data?.message || `Account could not be verified (HTTP ${response.status}).` };
+    }
+    return { ok: true, accountName: data.data.account_name };
+  } catch {
+    return { ok: false, message: "Could not reach Paystack to verify the account. Please try again." };
+  }
+}
+
+export const assertBankAccess = internalQuery({
+  args: { partnerCode: v.string() },
+  handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true });
+    return { code: partner.code, name: partner.name };
+  },
+});
+
+/** Preview: resolves the account name with Paystack (owner/admin only). */
+export const verifyPartnerBankAccount = action({
+  args: { partnerCode: v.string(), bankCode: v.string(), accountNumber: v.string() },
+  returns: v.object({ success: v.boolean(), accountName: v.optional(v.string()), message: v.string() }),
+  handler: async (ctx, args) => {
+    await ctx.runQuery(internal.partnerBankAccounts.assertBankAccess, { partnerCode: args.partnerCode });
+    const resolved = await paystackResolve(cleanAccountNumber(args.accountNumber), args.bankCode.trim());
+    if (!resolved.ok) return { success: false, message: resolved.message };
+    return { success: true, accountName: resolved.accountName, message: "Account verified" };
+  },
+});
+
 export const getPartnerBankList = action({
   args: {},
-  returns: v.array(
-    v.object({
-      name: v.string(),
-      code: v.string(),
-    })
-  ),
-  handler: async (ctx) => {
-    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-
-    if (!PAYSTACK_SECRET) {
-      return FALLBACK_BANKS;
-    }
-
+  returns: v.array(v.object({ name: v.string(), code: v.string() })),
+  handler: async () => {
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) return FALLBACK_BANKS;
     try {
-      const response = await fetch("https://api.paystack.co/bank?country=nigeria", {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${PAYSTACK_SECRET}`,
-        },
+      const response = await fetch("https://api.paystack.co/bank?country=nigeria&perPage=200", {
+        headers: { Authorization: `Bearer ${secret}` },
       });
-
-      if (!response.ok) {
-        return FALLBACK_BANKS;
-      }
-
-      const data = await response.json();
-
-      if (data.status && data.data && data.data.length > 0) {
-        return data.data
-          .map((bank: any) => ({
-            name: bank.name,
-            code: bank.code,
-          }))
-          .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
-      }
-
-      return FALLBACK_BANKS;
-    } catch (error) {
-      console.error("Failed to fetch bank list:", error);
+      if (!response.ok) return FALLBACK_BANKS;
+      const data = (await response.json()) as { status?: boolean; data?: Array<{ name: string; code: string }> };
+      if (!data.status || !data.data?.length) return FALLBACK_BANKS;
+      return data.data.map((b) => ({ name: b.name, code: b.code })).sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
       return FALLBACK_BANKS;
     }
   },
 });
 
-/**
- * Create a Paystack transfer recipient for a partner's bank account.
- * This enables automated transfers from Paystack Dashboard.
- */
-export const createPartnerTransferRecipient = action({
-  args: {
-    partnerCode: v.string(),
-    accountName: v.string(),
-    bankCode: v.string(),
-    accountNumber: v.string(),
-  },
-  returns: v.object({
-    success: v.boolean(),
-    recipientCode: v.optional(v.string()),
-    message: v.string(),
-  }),
-  handler: async (ctx, args) => {
-    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-
-    if (!PAYSTACK_SECRET) {
-      return { success: false, message: "Payment service not configured" };
-    }
-
-    try {
-      const response = await fetch("https://api.paystack.co/transferrecipient", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${PAYSTACK_SECRET}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          type: "nuban",
-          name: args.accountName,
-          account_number: args.accountNumber,
-          bank_code: args.bankCode,
-          currency: "NGN",
-          description: `Partner payout account: ${args.partnerCode}`,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Paystack transfer recipient error:", errorText);
-        return { success: false, message: `Failed to create transfer recipient (HTTP ${response.status})` };
-      }
-
-      const data = await response.json();
-
-      if (data.status && data.data?.recipient_code) {
-        return {
-          success: true,
-          recipientCode: data.data.recipient_code,
-          message: "Transfer recipient created successfully",
-        };
-      } else {
-        return {
-          success: false,
-          message: data.message || "Failed to create transfer recipient",
-        };
-      }
-    } catch (error) {
-      console.error("Transfer recipient creation error:", error);
-      return { success: false, message: "Failed to create transfer recipient" };
-    }
-  },
-});
-
-/**
- * Save a verified partner bank account to the database.
- * If the partner already has a default account, marks the new one as default and unsets the old one.
- */
-export const savePartnerBankAccount = mutation({
+export const persistVerifiedBankAccount = internalMutation({
   args: {
     partnerCode: v.string(),
     bankCode: v.string(),
@@ -218,50 +110,29 @@ export const savePartnerBankAccount = mutation({
     paystackRecipientCode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const { partner, actor } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true });
     const now = Date.now();
-
-    // Check for existing accounts for this partner
-    const existingAccounts = await ctx.db
+    const existing = await ctx.db
       .query("partnerBankAccounts")
-      .withIndex("by_partner_code", (q: any) => q.eq("partnerCode", args.partnerCode))
+      .withIndex("by_partner_code", (q) => q.eq("partnerCode", partner.code))
       .collect();
-
-    // Check if this exact account already exists
-    const duplicate = existingAccounts.find(
-      (a) => a.accountNumber === args.accountNumber && a.bankCode === args.bankCode
-    );
-
+    for (const account of existing) {
+      if (account.isDefault) await ctx.db.patch(account._id, { isDefault: false, updatedAt: now });
+    }
+    const duplicate = existing.find((a) => a.accountNumber === args.accountNumber && a.bankCode === args.bankCode);
     if (duplicate) {
-      // Update existing record
       await ctx.db.patch(duplicate._id, {
         accountName: args.accountName,
         bankName: args.bankName,
         isVerified: true,
         isDefault: true,
-        paystackRecipientCode: args.paystackRecipientCode || duplicate.paystackRecipientCode,
+        paystackRecipientCode: args.paystackRecipientCode ?? duplicate.paystackRecipientCode,
         updatedAt: now,
       });
-
-      // Unset other defaults
-      for (const acct of existingAccounts) {
-        if (acct._id !== duplicate._id && acct.isDefault) {
-          await ctx.db.patch(acct._id, { isDefault: false, updatedAt: now });
-        }
-      }
-
-      return { success: true, accountId: duplicate._id, isUpdate: true };
+      return { accountId: duplicate._id, isUpdate: true };
     }
-
-    // Unset existing defaults
-    for (const acct of existingAccounts) {
-      if (acct.isDefault) {
-        await ctx.db.patch(acct._id, { isDefault: false, updatedAt: now });
-      }
-    }
-
-    // Create new record
     const accountId = await ctx.db.insert("partnerBankAccounts", {
-      partnerCode: args.partnerCode,
+      partnerCode: partner.code,
       bankCode: args.bankCode,
       bankName: args.bankName,
       accountNumber: args.accountNumber,
@@ -269,76 +140,112 @@ export const savePartnerBankAccount = mutation({
       isVerified: true,
       isDefault: true,
       paystackRecipientCode: args.paystackRecipientCode,
-      addedBy: args.partnerCode,
+      addedBy: actor,
       createdAt: now,
       updatedAt: now,
     });
-
-    return { success: true, accountId, isUpdate: false };
+    await ctx.db.insert("partnerActivityLogs", {
+      partnerId: partner.code,
+      environment: "live",
+      eventId: `evt_bank_${now}`,
+      eventType: "payout.bank_account_added",
+      direction: "inbound",
+      url: "/partners/portal",
+      method: "POST",
+      statusCode: 200,
+      latencyMs: 0,
+      status: "success",
+      requestPayload: { bankName: args.bankName, accountNumber: `****${args.accountNumber.slice(-4)}`, addedBy: actor },
+      occurredAt: now,
+    });
+    return { accountId, isUpdate: false };
   },
 });
 
 /**
- * Query to get bank accounts for a specific partner.
+ * Verifies the account with Paystack, creates the transfer recipient and saves it as
+ * the default payout account. The stored account name always comes from Paystack.
  */
-export const getPartnerBankAccounts = query({
-  args: {
-    partnerCode: v.string(),
+export const savePartnerBankAccount = action({
+  args: { partnerCode: v.string(), bankCode: v.string(), bankName: v.string(), accountNumber: v.string() },
+  handler: async (ctx, args): Promise<{ success: true; accountName: string }> => {
+    await ctx.runQuery(internal.partnerBankAccounts.assertBankAccess, { partnerCode: args.partnerCode });
+    const accountNumber = cleanAccountNumber(args.accountNumber);
+    const bankCode = args.bankCode.trim();
+    const resolved = await paystackResolve(accountNumber, bankCode);
+    if (!resolved.ok) throw new ConvexError(resolved.message);
+
+    let recipientCode: string | undefined;
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (secret) {
+      try {
+        const response = await fetch("https://api.paystack.co/transferrecipient", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "nuban",
+            name: resolved.accountName,
+            account_number: accountNumber,
+            bank_code: bankCode,
+            currency: "NGN",
+            description: `Partner payout account: ${args.partnerCode}`,
+          }),
+        });
+        const data = (await response.json().catch(() => null)) as { status?: boolean; data?: { recipient_code?: string } } | null;
+        if (data?.status && data.data?.recipient_code) recipientCode = data.data.recipient_code;
+      } catch {
+        // The recipient is created lazily at payout time if this fails.
+      }
+    }
+    await ctx.runMutation(internal.partnerBankAccounts.persistVerifiedBankAccount, {
+      partnerCode: args.partnerCode,
+      bankCode,
+      bankName: args.bankName.trim().slice(0, 120),
+      accountNumber,
+      accountName: resolved.accountName,
+      paystackRecipientCode: recipientCode,
+    });
+    return { success: true, accountName: resolved.accountName };
   },
+});
+
+export const getPartnerBankAccounts = query({
+  args: { partnerCode: v.string() },
   handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
     const accounts = await ctx.db
       .query("partnerBankAccounts")
-      .withIndex("by_partner_code", (q: any) => q.eq("partnerCode", args.partnerCode))
+      .withIndex("by_partner_code", (q) => q.eq("partnerCode", partner.code))
       .collect();
-
     return accounts.map((a) => ({
       _id: a._id,
-      partnerCode: a.partnerCode,
       bankCode: a.bankCode,
       bankName: a.bankName,
-      accountNumber: a.accountNumber,
+      accountNumberMasked: `******${a.accountNumber.slice(-4)}`,
+      last4: a.accountNumber.slice(-4),
       accountName: a.accountName,
       isVerified: a.isVerified,
       isDefault: a.isDefault,
-      paystackRecipientCode: a.paystackRecipientCode,
       createdAt: a.createdAt,
       updatedAt: a.updatedAt,
     }));
   },
 });
 
-/**
- * Delete a partner bank account.
- */
 export const deletePartnerBankAccount = mutation({
-  args: {
-    accountId: v.id("partnerBankAccounts"),
-    partnerCode: v.string(),
-  },
+  args: { accountId: v.id("partnerBankAccounts"), partnerCode: v.string() },
   handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true });
     const account = await ctx.db.get(args.accountId);
-    if (!account) {
-      throw new Error("Bank account not found");
-    }
-
-    if (account.partnerCode !== args.partnerCode) {
-      throw new Error("Unauthorized: this bank account does not belong to your partner organization");
-    }
-
-    await ctx.db.delete(args.accountId);
-
-    // If the deleted account was default, promote the next one
+    if (!account || account.partnerCode !== partner.code) throw new ConvexError("Bank account not found.");
+    await ctx.db.delete(account._id);
     if (account.isDefault) {
       const remaining = await ctx.db
         .query("partnerBankAccounts")
-        .withIndex("by_partner_code", (q: any) => q.eq("partnerCode", args.partnerCode))
+        .withIndex("by_partner_code", (q) => q.eq("partnerCode", partner.code))
         .first();
-
-      if (remaining) {
-        await ctx.db.patch(remaining._id, { isDefault: true, updatedAt: Date.now() });
-      }
+      if (remaining) await ctx.db.patch(remaining._id, { isDefault: true, updatedAt: Date.now() });
     }
-
     return { success: true };
   },
 });

@@ -1,48 +1,142 @@
 ---
-title: Webhooks Overview
-description: Receive real-time event updates when actions occur on Rehabify.
+title: Webhooks
+description: Get signed, real-time events whenever a referral changes. Covers endpoint setup per environment, the event envelope, delivery headers and best practices.
 ---
 
-# Webhooks Overview
+Webhooks push an event to your server every time one of your referrals changes, such as when a patient is contacted, a physiotherapist is matched, or care is completed. You don't need to poll the API.
 
-Webhooks allow Rehabify to notify your server in real time whenever an event occurs (such as a patient finishing their WhatsApp intake, a therapist confirming an appointment, or a patient completing a session).
+## Events
 
-```mermaid
-sequenceDiagram
-    participant Patient as Patient (WhatsApp)
-    participant Rehabify as Rehabify Engine
-    participant Partner as Your Server
-    
-    Patient->>Rehabify: Completes Intake & Selects Time
-    Rehabify->>Rehabify: Matches MRTBN Physio
-    Rehabify->>Partner: POST /webhook (event: patient.intake_completed)
-    Partner-->>Rehabify: 200 OK
+| Type | When it fires |
+| :--- | :--- |
+| `referral.created` | A referral is created (API, referral-link lead, or portal) |
+| `referral.contacted` | Patient reached / intake started (incl. patient messaged Joy with the tracking code) |
+| `referral.provider_matched` | A physiotherapist was assigned |
+| `referral.booked` | First appointment confirmed (payment verified or care covered) |
+| `referral.in_treatment` | Treatment under way |
+| `referral.completed` | Care episode completed |
+| `referral.not_suitable` | Not appropriate for Rehabify services |
+| `referral.cancelled` | Cancelled / refunded |
+| `referral.closed` | Closed |
+| `ping` | Test event from the portal or `POST /sandbox/trigger-webhook` |
+
+The [event catalog](/docs/webhooks/event-catalog) has a full example payload for each type.
+
+## Setting up an endpoint
+
+Configure webhooks in the [Partner Portal](https://partners.physioaroundme.com) under **Developers → Webhooks**. Each environment has its own settings:
+
+| | Sandbox | Live |
+| :--- | :--- | :--- |
+| Endpoint URL | Your sandbox endpoint | Your live endpoint |
+| Signing secret | Sandbox `whsec_…` | Live `whsec_…` |
+| Receives | Sandbox events only | Live events only |
+
+Sandbox events go only to the sandbox endpoint, and live events go only to the live endpoint. They are never crossed. Each delivery is signed with the secret of the event's environment.
+
+### Endpoint requirements
+
+- The URL must use `https://`. Plain `http://` is rejected.
+- No credentials in the URL (`https://user:pass@…` is rejected).
+- The host must be publicly reachable. `localhost`, `.local` and `.internal` hosts are rejected, as are private, loopback and link-local IP addresses. Rehabify checks the resolved address again at delivery time, so a hostname that later resolves to a private address will fail.
+- The port must be 443, 8443, or any port from 1024 upwards.
+- Redirects aren't followed. A `3xx` response counts as a failed delivery.
+
+For local development, use a tunnelling tool that gives you a public HTTPS URL.
+
+### Signing secrets
+
+Each environment has its own signing secret: `whsec_` followed by 40 alphanumeric characters. You can reveal it on demand in the portal, and rotate it at any time. After rotating, deploy the new secret to your endpoint promptly. Rehabify signs new deliveries with the new secret. To avoid rejecting deliveries during the switch, you can temporarily accept a signature that matches either the old or the new secret.
+
+## The event envelope
+
+Every delivery is an HTTP `POST` with a JSON body. The body you receive is exactly the bytes that were signed.
+
+```json
+{
+  "id": "evt_01JA4T7Q9Y2V3W4X5Z6A7B8C9D",
+  "object": "event",
+  "type": "referral.booked",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-13T09:35:12.000Z",
+  "environment": "live",
+  "data": {
+    "previous_status": "contacted",
+    "sequence": 4,
+    "referral": {
+      "object": "referral",
+      "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "partner_reference": "HMO-REF-2026-0091",
+      "environment": "live",
+      "status": "booked",
+      "clinical": {
+        "condition": "Lower back pain",
+        "priority": "standard",
+        "recommended_sessions": 6,
+        "referring_clinician": "Dr. Okafor"
+      },
+      "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+      "billing_mode": "hmo_direct_billing",
+      "provider": { "name": "Chiamaka Obi", "license_number": "MRTBN/PT/12345" },
+      "sessions": { "completed": 0, "total": 6, "last_session_at": null, "next_session_at": "2026-10-15T10:00:00.000Z" },
+      "links": {
+        "tracking_url": "https://physioaroundme.com/track/RHB-4829173655",
+        "whatsapp_intake_url": "https://wa.me/2348061525811?text=START%20RHB-4829173655"
+      },
+      "metadata": { "member_plan": "gold" },
+      "created_at": "2026-10-13T09:30:00.000Z",
+      "updated_at": "2026-10-13T09:35:12.000Z"
+    }
+  }
+}
 ```
 
----
-
-## How Webhooks Work
-
-1. You configure a webhook endpoint URL in your [Partner Portal](/partnerships) settings (e.g. `https://api.yourdomain.com/webhooks/rehabify`).
-2. When an event occurs in Rehabify, we construct an event object and send an HTTP `POST` request with a JSON payload to your configured URL.
-3. Your server validates the `X-Rehabify-Signature` header to ensure authenticity and responds with an HTTP `200 OK` status.
-
----
-
-## Headers Included with Every Webhook
-
-| Header | Description |
+| Field | Description |
 | :--- | :--- |
-| `Content-Type` | `application/json` |
-| `X-Rehabify-Event` | The type of event (e.g. `session.completed`) |
-| `X-Rehabify-Delivery-Id` | Unique ID for this webhook delivery attempt |
-| `X-Rehabify-Signature` | HMAC SHA-256 signature generated using your webhook secret |
-| `X-Rehabify-Timestamp` | Unix timestamp of when the webhook was generated |
+| `id` | Unique event ID (`evt_…`). It stays the same across retries and manual resends, so deduplicate on it. |
+| `object` | Always `event`. |
+| `type` | One of the event types above. |
+| `api_version` | The payload format version, currently `2026-10-01`. |
+| `created_at` | When the event happened (ISO-8601 UTC). |
+| `environment` | `sandbox` or `live`. |
+| `data.previous_status` | The referral's status before this event, or `null` for `referral.created`. For `referral.provider_matched`, the status doesn't change, so this is the referral's current status. |
+| `data.sequence` | Increases by 1 for every event of the same referral. Use it to ignore stale or out-of-order events. |
+| `data.referral` | The [referral object](/docs/api-reference/referrals#the-referral-object), **without** the `patient` block. |
 
----
+Patient personal data is never sent in webhooks. If you need it, fetch `GET /partners/referrals/{id}`.
 
-## Next Steps
+## Delivery headers
 
-* Explore the full [Event Catalog](/docs/webhooks/event-catalog) to see all available event payloads.
-* Implement [Signature Verification](/docs/webhooks/signature-verification) to securely validate payloads.
-* Learn about our [Retry Policy](/docs/webhooks/retry-policy) and delivery guarantees.
+| Header | Example | Description |
+| :--- | :--- | :--- |
+| `Content-Type` | `application/json` | |
+| `User-Agent` | `Rehabify-Webhooks/1.0` | |
+| `X-Rehabify-Event-Id` | `evt_01JA4T7Q9Y2V3W4X5Z6A7B8C9D` | Same as the body's `id`. Stable across retries. |
+| `X-Rehabify-Event-Type` | `referral.booked` | Same as the body's `type`. |
+| `X-Rehabify-Environment` | `live` | `sandbox` or `live`. |
+| `X-Rehabify-Delivery-Attempt` | `1` | `1` for the first attempt, up to `9` for the last retry. |
+| `X-Rehabify-Timestamp` | `1791884113` | When this attempt was sent, in Unix seconds. |
+| `X-Rehabify-Signature` | `t=1791884113,v1=5f3c…` | HMAC-SHA256 signature. See [Signature verification](/docs/webhooks/signature-verification). |
+
+## Responding
+
+Respond with any `2xx` status within **10 seconds**. Anything else counts as a failure and is retried: a non-`2xx` status, a redirect, a timeout or a connection error. Rehabify makes 8 retries over about 44.6 hours. See the [Retry policy](/docs/webhooks/retry-policy) for the schedule.
+
+## Testing your endpoint
+
+- **From the portal:** send a test event from **Developers → Webhooks**.
+- **From the API (sandbox):** call [`POST /sandbox/trigger-webhook`](/docs/sandbox/testing#trigger-a-test-webhook) with any event type or `ping`. Test events are signed and formatted exactly like real ones.
+- **Real transitions (sandbox):** refer a [magic phone number](/docs/sandbox/testing#magic-phone-numbers), or move a referral with the [advance endpoint](/docs/sandbox/testing#advance-a-referral).
+
+A test event for a referral event type has `data.previous_status: null`, `data.sequence: 0` and `data.test: true`, so you can tell it apart from real transitions. A `ping` has `data.message` and `data.referral` only.
+
+## Best practices
+
+- **Verify every signature** against the raw request body before you trust the payload.
+- **Acknowledge fast, process later.** Store the event, return `200`, and do the work in a background job.
+- **Deduplicate on the event `id`.** Delivery is at-least-once, so the same event can arrive more than once.
+- **Order by `data.sequence`.** Events can arrive out of order. Ignore any event whose `sequence` is lower than or equal to the last one you processed for that referral.
+- **Ignore unknown event types** instead of failing, so new types don't break your handler.
+- **Treat the payload as a notification.** When in doubt, fetch the current state with `GET /partners/referrals/{id}`.
+- **Keep secrets server-side,** and rotate them in the portal if they leak.

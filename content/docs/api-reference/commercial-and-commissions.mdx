@@ -1,0 +1,264 @@
+---
+title: Commercial terms & commissions
+description: Read your contract terms and earnings summary, and reconcile the commission ledger for patients attributed to you.
+---
+
+Rehabify pays partners a commission on care delivered to the patients they refer. These two endpoints show your terms and every commission entry, so finance teams can reconcile payouts.
+
+| Method | Path | |
+| :--- | :--- | :--- |
+| `GET` | `/partners/commercial` | [Retrieve commercial terms](#retrieve-commercial-terms) |
+| `GET` | `/partners/commissions` | [List commissions](#list-commissions) |
+
+All amounts are integers in kobo with `"currency": "NGN"`. For example, `1500000` is ₦15,000.00.
+
+## How commissions work
+
+- **What earns a commission.** Verified **paid** bookings by patients attributed to you. A patient is attributed to you through an API referral, a [referral link](/docs/guides/no-code-referral-links), or a [WhatsApp referral code](/docs/sdks-widgets/whatsapp-deep-links). Clicks, leads and sign-ups don't earn commission on their own.
+- **Live only.** Sandbox activity never earns commission.
+- **Rate.** Your signed contract sets the rate. If you don't have a signed contract, the platform default partner share applies, which is currently 10% of revenue.
+- **Withholding tax** is deducted as set out in your contract. `net_payable_kobo` is the commission after withholding tax.
+- **Refunds reverse commissions.** If the booking hasn't been paid out yet, its commission moves to `reversed`. If it has already been paid out, a negative adjustment is recorded instead.
+- **Payouts** are made monthly to your verified bank account. Each payout covers all approved commissions up to the billing period, minus the Paystack transfer fee and stamp duty.
+
+## Retrieve commercial terms
+
+```http
+GET /partners/commercial
+```
+
+Returns your contract terms and an earnings summary.
+
+```json title="200 OK"
+{
+  "object": "commercial_terms",
+  "contract": {
+    "contract_number": "CTR-2026-001",
+    "model": "percentage_revenue_share",
+    "revenue_share_percent": 10,
+    "base_fee_per_booking_kobo": null,
+    "withholding_tax_percent": 5,
+    "payment_terms_days": 30,
+    "currency": "NGN",
+    "effective_from": "2026-10-01T00:00:00.000Z",
+    "is_default": false
+  },
+  "earnings": {
+    "earned_kobo": 0,
+    "pending_payout_kobo": 0,
+    "paid_out_kobo": 0,
+    "reversed_kobo": 0,
+    "currency": "NGN"
+  }
+}
+```
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `contract.contract_number` | string or null | Your contract reference. |
+| `contract.model` | string | `fixed_per_patient`, `percentage_revenue_share`, `hybrid` or `tiered_volume`. |
+| `contract.revenue_share_percent` | number or null | Your share of revenue, as a percentage. |
+| `contract.base_fee_per_booking_kobo` | integer or null | A fixed amount per booking, for models that use one. |
+| `contract.withholding_tax_percent` | number or null | The withholding tax rate deducted from commissions. |
+| `contract.payment_terms_days` | integer or null | The payment terms in days. |
+| `contract.currency` | string | `NGN`. |
+| `contract.effective_from` | string or null | When the terms took effect. |
+| `contract.is_default` | boolean | `true` when no signed contract exists and the platform default partner share applies. `revenue_share_percent` is then the platform partner percent, currently `10`. |
+| `earnings.earned_kobo` | integer | Commission earned to date. |
+| `earnings.pending_payout_kobo` | integer | Earned but not yet paid out. |
+| `earnings.paid_out_kobo` | integer | Already paid to your bank account. |
+| `earnings.reversed_kobo` | integer | Reversed because of refunds. |
+| `earnings.currency` | string | `NGN`. |
+
+In sandbox, `earnings` are always zero.
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/commercial \
+  -H "Authorization: Bearer $REHABIFY_API_KEY"
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+ (save as get-commercial.mjs)
+const res = await fetch("https://api.physioaroundme.com/v1/partners/commercial", {
+  headers: { Authorization: `Bearer ${process.env.REHABIFY_API_KEY}` },
+});
+const terms = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${terms.error.code}: ${terms.error.message}`);
+const naira = (kobo) => (kobo / 100).toLocaleString("en-NG", { style: "currency", currency: "NGN" });
+console.log(terms.contract.model, naira(terms.earnings.pending_payout_kobo));
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+resp = requests.get(
+    "https://api.physioaroundme.com/v1/partners/commercial",
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+resp.raise_for_status()
+terms = resp.json()
+print(terms["contract"]["model"], f"NGN {terms['earnings']['pending_payout_kobo'] / 100:,.2f}")
+```
+
+</Tab>
+</Tabs>
+
+## List commissions
+
+```http
+GET /partners/commissions
+```
+
+Returns your commission ledger as a [paginated list](/docs/getting-started/conventions#pagination). This endpoint is live only: in sandbox, it returns an empty list.
+
+### Query parameters
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `status` | string | `pending`, `approved`, `paid`, `reversed` or `cancelled`. |
+| `billing_period` | string | A month in `YYYY-MM` format, for example `2026-10`. |
+| `limit` | integer | 1–100. Default `25`. |
+| `cursor` | string | The `next_cursor` from the previous page. |
+
+### The commission object
+
+```json
+{
+  "object": "commission",
+  "id": "kd2m4n6b8v0c1x3z5a7s9d2f4g6h8j0k",
+  "referral_id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+  "tracking_code": "RHB-4829173655",
+  "event_type": "payment",
+  "gross_amount_kobo": 1500000,
+  "commission_amount_kobo": 150000,
+  "net_payable_kobo": 142500,
+  "currency": "NGN",
+  "status": "approved",
+  "billing_period": "2026-10",
+  "earned_at": "2026-10-15T10:05:00.000Z",
+  "paid_at": null
+}
+```
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `object` | string | Always `commission`. |
+| `id` | string | Commission entry ID. |
+| `referral_id`, `tracking_code` | string | The referral the commission relates to. |
+| `event_type` | string | What generated the entry, for example `payment` for a verified paid booking. |
+| `gross_amount_kobo` | integer | The amount the patient paid. |
+| `commission_amount_kobo` | integer | Your commission before withholding tax. |
+| `net_payable_kobo` | integer | Your commission after withholding tax. |
+| `currency` | string | `NGN`. |
+| `status` | string | See the table below. |
+| `billing_period` | string | The month the entry belongs to (`YYYY-MM`). |
+| `earned_at` | string | When the commission was earned. |
+| `paid_at` | string or null | When it was paid out. |
+
+In this example, the patient paid ₦15,000.00. A 10% share gives ₦1,500.00, and 5% withholding tax leaves ₦1,425.00 net payable.
+
+| Status | Meaning |
+| :--- | :--- |
+| `pending` | Recorded, but not yet approved for payout. |
+| `approved` | Approved and included in the next monthly payout. |
+| `paid` | Paid out to your bank account. `paid_at` is set. |
+| `reversed` | Reversed because the booking was refunded. |
+| `cancelled` | Cancelled. It won't be paid. |
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl "https://api.physioaroundme.com/v1/partners/commissions?billing_period=2026-10&status=approved" \
+  -H "Authorization: Bearer $REHABIFY_API_KEY"
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+ (save as list-commissions.mjs). Sums net payable for one billing period.
+const BASE_URL = "https://api.physioaroundme.com/v1";
+const headers = { Authorization: `Bearer ${process.env.REHABIFY_API_KEY}` };
+
+let cursor = null;
+let totalNetKobo = 0;
+do {
+  const params = new URLSearchParams({ billing_period: "2026-10", status: "approved", limit: "100" });
+  if (cursor) params.set("cursor", cursor);
+  const res = await fetch(`${BASE_URL}/partners/commissions?${params}`, { headers });
+  const page = await res.json();
+  if (!res.ok) throw new Error(`${res.status} ${page.error.code}: ${page.error.message}`);
+  for (const c of page.data) totalNetKobo += c.net_payable_kobo;
+  cursor = page.has_more ? page.next_cursor : null;
+} while (cursor);
+
+console.log(`Approved for 2026-10: NGN ${(totalNetKobo / 100).toFixed(2)}`);
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+BASE_URL = "https://api.physioaroundme.com/v1"
+HEADERS = {"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"}
+
+params = {"billing_period": "2026-10", "status": "approved", "limit": 100}
+total_net_kobo = 0
+while True:
+    resp = requests.get(f"{BASE_URL}/partners/commissions", headers=HEADERS, params=params, timeout=30)
+    resp.raise_for_status()
+    page = resp.json()
+    total_net_kobo += sum(c["net_payable_kobo"] for c in page["data"])
+    if not page["has_more"]:
+        break
+    params["cursor"] = page["next_cursor"]
+
+print(f"Approved for 2026-10: NGN {total_net_kobo / 100:,.2f}")
+```
+
+</Tab>
+</Tabs>
+
+```json title="200 OK"
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "commission",
+      "id": "kd2m4n6b8v0c1x3z5a7s9d2f4g6h8j0k",
+      "referral_id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "event_type": "payment",
+      "gross_amount_kobo": 1500000,
+      "commission_amount_kobo": 150000,
+      "net_payable_kobo": 142500,
+      "currency": "NGN",
+      "status": "approved",
+      "billing_period": "2026-10",
+      "earned_at": "2026-10-15T10:05:00.000Z",
+      "paid_at": null
+    }
+  ],
+  "has_more": false,
+  "next_cursor": null
+}
+```
+
+**Errors:** `400 invalid_parameter` for an invalid `status`, `billing_period` or `limit`, plus the standard [authentication errors](/docs/getting-started/authentication#authentication-errors).

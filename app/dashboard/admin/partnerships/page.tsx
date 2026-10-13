@@ -40,6 +40,9 @@ import {
   RefreshCw,
   Send,
   Loader2,
+  Rocket,
+  Plus,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -47,9 +50,23 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Id } from "@/convex/_generated/dataModel";
+import { errorMessage } from "@/components/partners/portal/shared";
+
+const PARTNER_TYPE_OPTIONS = [
+  { value: "hospital", label: "Hospital / Clinic" },
+  { value: "hmo", label: "HMO / Insurer" },
+  { value: "corporate", label: "Corporate" },
+  { value: "employer", label: "Employer" },
+  { value: "gym", label: "Gym / Fitness" },
+  { value: "telemedicine", label: "Telemedicine" },
+  { value: "pharmacy", label: "Pharmacy" },
+  { value: "digital_health", label: "Digital health" },
+];
+
+const EMPTY_NEW_PARTNER = { name: "", type: "hospital", ownerEmail: "", contactName: "", contactPhone: "", tier: "standard" };
 
 export default function AdminPartnershipsPage() {
-  const [activeTab, setActiveTab] = useState<"revenue" | "bulk_payouts" | "applications" | "inquiries">("bulk_payouts");
+  const [activeTab, setActiveTab] = useState<"revenue" | "bulk_payouts" | "applications" | "golive" | "inquiries">("bulk_payouts");
 
   // Inquiries data & mutations
   const inquiries = useQuery(api.adminPartnerships.getPartnershipInquiries);
@@ -58,6 +75,25 @@ export default function AdminPartnershipsPage() {
   // Partner portal applications data & mutations
   const partnerApplications = useQuery(api.adminPartnerships.getPartnerApplications, {});
   const reviewApplication = useMutation(api.adminPartnerships.reviewPartnerApplication);
+  const reviewProductionAccess = useMutation(api.adminPartnerships.reviewProductionAccess);
+  const adminCreatePartner = useMutation(api.partners.adminCreatePartner);
+
+  // Declines, revocations and suspensions always carry a reason that the partner sees
+  const [reasonDialog, setReasonDialog] = useState<
+    | { kind: "application"; action: "reject"; partner: any }
+    | { kind: "production"; action: "reject" | "suspend"; partner: any }
+    | null
+  >(null);
+  const [reasonText, setReasonText] = useState("");
+  const openReasonDialog = (dialog: NonNullable<typeof reasonDialog>) => {
+    setReasonText("");
+    setReasonDialog(dialog);
+  };
+
+  // Partner organisations created by the Rehabify team
+  const [isCreatePartnerOpen, setIsCreatePartnerOpen] = useState(false);
+  const [newPartner, setNewPartner] = useState(EMPTY_NEW_PARTNER);
+  const [isCreatingPartner, setIsCreatingPartner] = useState(false);
 
   // Platform Revenue Settings
   const revenueSettings = useQuery(api.platformSettings.getPlatformRevenueSettings);
@@ -142,6 +178,7 @@ export default function AdminPartnershipsPage() {
   const [campaignName, setCampaignName] = useState("");
   const [careMode, setCareMode] = useState("patient_choice");
   const [expiresInDays, setExpiresInDays] = useState("30");
+  const [linkEnvironment, setLinkEnvironment] = useState<"live" | "sandbox">("live");
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [generatedLinkResult, setGeneratedLinkResult] = useState<{ publicCode: string; url: string } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -153,6 +190,7 @@ export default function AdminPartnershipsPage() {
     setCampaignName(`${partner.name} Referral Campaign`);
     setCareMode("patient_choice");
     setExpiresInDays("30");
+    setLinkEnvironment(partner.productionStatus === "approved" ? "live" : "sandbox");
     setGeneratedLinkResult(null);
     setCopiedLink(false);
     setIsLinkModalOpen(true);
@@ -165,22 +203,19 @@ export default function AdminPartnershipsPage() {
       const days = parseInt(expiresInDays) || 0;
       const expiresAt = days > 0 ? Date.now() + days * 24 * 60 * 60 * 1000 : undefined;
       const res = await createLinkMutation({
-        partnerId: selectedPartnerForLink.code,
+        partnerCode: selectedPartnerForLink.code,
+        environment: linkEnvironment,
         campaignName: campaignName.trim() || undefined,
         defaultCareMode: careMode,
         expiresAt,
       });
-      const host = typeof window !== "undefined" ? window.location.host : "physioaroundme.com";
-      const protocol = typeof window !== "undefined" && window.location.protocol ? window.location.protocol : "https:";
-      const linkUrl = `${protocol}//${host}/r/${res.publicCode}`;
-
       setGeneratedLinkResult({
-        publicCode: res.publicCode,
-        url: linkUrl,
+        publicCode: res.public_code,
+        url: res.url,
       });
-      toast.success("Referral link generated successfully!");
+      toast.success(linkEnvironment === "sandbox" ? "Sandbox referral link created" : "Live referral link created");
     } catch (err: any) {
-      toast.error(err.message || "Failed to generate referral link");
+      toast.error(errorMessage(err, "Failed to generate referral link"));
     } finally {
       setIsGeneratingLink(false);
     }
@@ -197,6 +232,12 @@ export default function AdminPartnershipsPage() {
 
   // Count pending applications
   const pendingCount = (partnerApplications || []).filter((p: any) => p.approvalStatus === "pending").length;
+  const goLiveRequests = (partnerApplications || []).filter(
+    (p: any) => p.approvalStatus === "approved" && p.productionStatus === "requested"
+  );
+  const productionPartners = (partnerApplications || []).filter(
+    (p: any) => p.productionStatus === "approved" || p.productionStatus === "suspended"
+  );
 
   const handleStatusChange = async (id: string, newStatus: "new" | "contacted" | "closed") => {
     setIsUpdating(id);
@@ -213,22 +254,91 @@ export default function AdminPartnershipsPage() {
     }
   };
 
-  const handleReviewPartner = async (partnerId: string, action: "approve" | "reject") => {
+  const handleReviewPartner = async (partnerId: string, action: "approve" | "reject", reason?: string) => {
     setIsUpdating(partnerId);
     try {
-      const res = await reviewApplication({
+      await reviewApplication({
         partnerId: partnerId as Id<"partners">,
         action,
+        reason,
       });
       if (action === "approve") {
-        toast.success("Partner application approved! Portal access and API keys activated.");
+        toast.success("Partner approved. Sandbox access is active; live access needs a separate go-live approval.");
       } else {
-        toast.info("Partner application declined.");
+        toast.info("Partner access declined. The partner has been emailed the reason.");
       }
+      return true;
     } catch (error: any) {
-      toast.error(error.message || "Failed to update partner application");
+      toast.error(errorMessage(error, "Failed to update partner application"));
+      return false;
     } finally {
       setIsUpdating(null);
+    }
+  };
+
+  const handleProductionReview = async (
+    partnerId: string,
+    action: "approve" | "reject" | "suspend" | "reinstate",
+    reason?: string
+  ) => {
+    setIsUpdating(partnerId);
+    try {
+      await reviewProductionAccess({ partnerId: partnerId as Id<"partners">, action, reason });
+      const messages = {
+        approve: "Production access approved. The partner can now create live keys, webhooks and links.",
+        reinstate: "Production access reinstated.",
+        reject: "Go-live request declined. The partner has been emailed the reason.",
+        suspend: "Production access suspended. Live API keys stop working immediately.",
+      };
+      toast.success(messages[action]);
+      return true;
+    } catch (error: any) {
+      toast.error(errorMessage(error, "Failed to update production access"));
+      return false;
+    } finally {
+      setIsUpdating(null);
+    }
+  };
+
+  const submitReasonDialog = async () => {
+    if (!reasonDialog) return;
+    const reason = reasonText.trim();
+    if (reason.length < 5) {
+      toast.error("Give a short reason (at least 5 characters). The partner will see it.");
+      return;
+    }
+    const ok =
+      reasonDialog.kind === "application"
+        ? await handleReviewPartner(reasonDialog.partner._id, "reject", reason)
+        : await handleProductionReview(reasonDialog.partner._id, reasonDialog.action, reason);
+    if (ok) {
+      setReasonDialog(null);
+      setReasonText("");
+    }
+  };
+
+  const handleCreatePartner = async () => {
+    if (!newPartner.name.trim() || !newPartner.ownerEmail.trim()) {
+      toast.error("Organisation name and owner email are required");
+      return;
+    }
+    setIsCreatingPartner(true);
+    try {
+      const res = await adminCreatePartner({
+        name: newPartner.name.trim(),
+        type: newPartner.type as any,
+        ownerEmail: newPartner.ownerEmail.trim(),
+        contactName: newPartner.contactName.trim() || undefined,
+        contactPhone: newPartner.contactPhone.trim() || undefined,
+        tier: newPartner.tier === "enterprise" ? "enterprise" : "standard",
+      });
+      toast.success(`Partner created (${res.code}). The owner gets sandbox access by signing in with ${newPartner.ownerEmail.trim()}.`);
+      setIsCreatePartnerOpen(false);
+      setNewPartner(EMPTY_NEW_PARTNER);
+    } catch (error: any) {
+      toast.error(errorMessage(error, "Failed to create partner"));
+    } finally {
+      setIsCreatingPartner(false);
     }
   };
 
@@ -282,7 +392,7 @@ export default function AdminPartnershipsPage() {
       });
       toast.success("Platform revenue split & pricing settings updated successfully! Changes are active platform-wide.");
     } catch (err: any) {
-      toast.error(err.message || "Failed to update revenue settings");
+      toast.error(errorMessage(err, "Failed to update revenue settings"));
     } finally {
       setIsSavingSettings(false);
     }
@@ -340,7 +450,7 @@ export default function AdminPartnershipsPage() {
       } else {
         // Manual bank wire reference
         const res = await processBulkPayoutMutation({
-          partnerId: selectedPartnerForPayout.partnerId,
+          partnerCode: selectedPartnerForPayout.partnerId,
           billingPeriod: selectedBillingPeriod,
           note: payoutNote.trim() || undefined,
         });
@@ -349,7 +459,7 @@ export default function AdminPartnershipsPage() {
         setPayoutNote("");
       }
     } catch (err: any) {
-      toast.error(err.message || "Failed to process payout");
+      toast.error(errorMessage(err, "Failed to process payout"));
     } finally {
       setIsProcessingPayout(false);
     }
@@ -374,7 +484,7 @@ export default function AdminPartnershipsPage() {
       setPendingTransferData(null);
       fetchPaystackBalance();
     } catch (err: any) {
-      toast.error(err.message || "Failed to finalize OTP transfer");
+      toast.error(errorMessage(err, "Failed to finalize OTP transfer"));
     } finally {
       setIsProcessingPayout(false);
     }
@@ -391,7 +501,7 @@ export default function AdminPartnershipsPage() {
       setIsBulkModalOpen(false);
       fetchPaystackBalance();
     } catch (err: any) {
-      toast.error(err.message || "Failed to execute bulk payout");
+      toast.error(errorMessage(err, "Failed to execute bulk payout"));
     } finally {
       setIsProcessingBulk(false);
     }
@@ -418,8 +528,7 @@ export default function AdminPartnershipsPage() {
       "Physio Share (NGN)",
       "Rehabify Share (NGN)",
       "Partner Share (NGN)",
-      "Paystack Outbound Fee (NGN)",
-      "Stamp Duty (NGN)",
+      "Withholding Tax (NGN)",
       "Net Partner Payable (NGN)",
       "Payment Channel",
       "Reference",
@@ -435,8 +544,7 @@ export default function AdminPartnershipsPage() {
       (l.physioShareKobo / 100).toFixed(2),
       (l.rehabifyShareKobo / 100).toFixed(2),
       (l.partnerShareKobo / 100).toFixed(2),
-      (l.paystackOutboundFeeKobo / 100).toFixed(2),
-      (l.stampDutyKobo / 100).toFixed(2),
+      (l.withholdingTaxKobo / 100).toFixed(2),
       (l.netPartnerAmountKobo / 100).toFixed(2),
       l.paymentMethod,
       l.paymentReference,
@@ -598,6 +706,23 @@ export default function AdminPartnershipsPage() {
           </button>
 
           <button
+            onClick={() => setActiveTab("golive")}
+            className={`py-3 px-3 border-b-2 font-medium text-sm transition flex items-center gap-2 whitespace-nowrap ${
+              activeTab === "golive"
+                ? "border-[#005b57] text-[#005b57]"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <Rocket className="w-4 h-4" />
+            <span>Go-Live Requests</span>
+            {goLiveRequests.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
+                {goLiveRequests.length}
+              </span>
+            )}
+          </button>
+
+          <button
             onClick={() => {
               setActiveTab("inquiries");
               setStatusFilter("all");
@@ -698,13 +823,13 @@ export default function AdminPartnershipsPage() {
 
               <div className="bg-white p-4 rounded-xl border border-teal-200 bg-teal-50/30 shadow-2xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-teal-800">Partner Pool (10%)</span>
+                  <span className="text-xs font-semibold text-teal-800">Partner Payable Now</span>
                   <Wallet className="w-4 h-4 text-teal-700" />
                 </div>
                 <p className="text-2xl font-bold text-teal-900 mt-2">
                   {formatNaira(monthlySummary.totals.totalPartnerCommission)}
                 </p>
-                <p className="text-[11px] text-teal-700 mt-1">Month-end bulk payouts</p>
+                <p className="text-[11px] text-teal-700 mt-1">Approved, unpaid commissions up to this cycle</p>
               </div>
             </div>
           )}
@@ -786,7 +911,7 @@ export default function AdminPartnershipsPage() {
                 <span className="text-xs text-gray-500 mr-1">
                   {monthlySummary?.partners.length || 0} referring institutions
                 </span>
-                {monthlySummary && monthlySummary.partners.some((p: any) => p.bulkPayoutStatus !== "paid" && p.totalPartnerCommission > 0) && (
+                {monthlySummary && monthlySummary.partners.some((p: any) => !p.activeTransfer && p.totalPartnerCommission > 0) && (
                   <Button
                     size="sm"
                     onClick={() => setIsBulkModalOpen(true)}
@@ -821,7 +946,7 @@ export default function AdminPartnershipsPage() {
                       <th className="py-3 px-3 text-right">Total Charged</th>
                       <th className="py-3 px-3 text-right text-emerald-800">Physio (80%)</th>
                       <th className="py-3 px-3 text-right text-blue-800">Rehabify (10%)</th>
-                      <th className="py-3 px-3 text-right text-teal-800">Partner Gross (10%)</th>
+                      <th className="py-3 px-3 text-right text-teal-800">Payable Now</th>
                       <th className="py-3 px-3 text-left">Bank Account</th>
                       <th className="py-3 px-3 text-right">Fees & Duty</th>
                       <th className="py-3 px-3 text-right text-teal-900">Net Payout</th>
@@ -911,13 +1036,25 @@ export default function AdminPartnershipsPage() {
                         </td>
 
                         <td className="py-3.5 px-2 text-center">
-                          {p.bulkPayoutStatus === "paid" ? (
+                          {p.activeTransfer ? (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800 border border-blue-200"
+                              title={`Transfer ${p.activeTransfer.reference}: commissions are marked paid when Paystack confirms it`}
+                            >
+                              <Loader2 className="w-3 h-3 text-blue-600 animate-spin" />
+                              {p.activeTransfer.status === "otp_required" ? "Awaiting OTP" : "Transfer in progress"}
+                            </span>
+                          ) : p.payoutStatus === "paid" ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 border border-emerald-200">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Settled
                             </span>
-                          ) : (
+                          ) : p.payoutStatus === "accruing_for_month_end" ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 border border-amber-200">
-                              <Clock className="w-3 h-3 text-amber-600" /> Pending
+                              <Clock className="w-3 h-3 text-amber-600" /> Payable
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-600 border border-gray-200">
+                              Nothing due
                             </span>
                           )}
                         </td>
@@ -946,7 +1083,28 @@ export default function AdminPartnershipsPage() {
                               Ledger
                             </Button>
 
-                            {p.bulkPayoutStatus === "pending" && p.totalPartnerCommission > 0 ? (
+                            {p.activeTransfer?.status === "otp_required" && p.activeTransfer.transferCode ? (
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedPartnerForPayout(p);
+                                  setPayoutMode("paystack");
+                                  setRequiresOtp(true);
+                                  setOtpCode("");
+                                  setPendingTransferData({
+                                    transferCode: p.activeTransfer.transferCode,
+                                    transferReference: p.activeTransfer.reference,
+                                  });
+                                }}
+                                className="text-xs h-7 px-2.5 bg-purple-700 hover:bg-purple-800 text-white font-semibold"
+                              >
+                                Enter OTP
+                              </Button>
+                            ) : p.activeTransfer ? (
+                              <Button variant="ghost" size="sm" disabled className="text-xs h-7 px-2 text-blue-700 font-medium">
+                                Processing
+                              </Button>
+                            ) : p.payoutStatus === "accruing_for_month_end" && p.totalPartnerCommission > 0 ? (
                               <Button
                                 size="sm"
                                 onClick={() => setSelectedPartnerForPayout(p)}
@@ -954,7 +1112,7 @@ export default function AdminPartnershipsPage() {
                               >
                                 Settle
                               </Button>
-                            ) : (
+                            ) : p.payoutStatus === "paid" ? (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -963,6 +1121,8 @@ export default function AdminPartnershipsPage() {
                               >
                                 <Check className="w-3.5 h-3.5 mr-1" /> Paid
                               </Button>
+                            ) : (
+                              <span className="text-[11px] text-gray-400 px-2">—</span>
                             )}
                           </div>
                         </td>
@@ -1405,6 +1565,19 @@ export default function AdminPartnershipsPage() {
       {/* ================================================================== */}
       {activeTab === "applications" && (
         <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-white rounded-xl border border-gray-200 text-xs">
+            <p className="text-gray-600">
+              Approving an application gives the partner <strong>sandbox</strong> access only. Live keys, webhooks and links are unlocked
+              separately under <strong>Go-Live Requests</strong>.
+            </p>
+            <Button
+              size="sm"
+              onClick={() => setIsCreatePartnerOpen(true)}
+              className="bg-[#005b57] hover:bg-[#004744] text-white text-xs font-semibold shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> Create partner
+            </Button>
+          </div>
           {partnerApplications === undefined ? (
             <div className="flex h-48 items-center justify-center">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#005b57] border-t-transparent"></div>
@@ -1503,6 +1676,36 @@ export default function AdminPartnershipsPage() {
                     </div>
                   )}
 
+                  {partner.approvalStatus === "approved" && (
+                    <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                      <span>Production access:</span>
+                      <ProductionStatusBadge status={partner.productionStatus} />
+                      {partner.productionStatus === "requested" && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("golive")}
+                          className="text-teal-700 font-semibold hover:underline"
+                        >
+                          Review request
+                        </button>
+                      )}
+                      {(partner.productionStatus === "not_requested" || partner.productionStatus === "rejected") && (
+                        <button
+                          type="button"
+                          disabled={isUpdating === partner._id}
+                          onClick={() => {
+                            if (window.confirm(`Grant live (production) access to ${partner.name} without a go-live request?`)) {
+                              void handleProductionReview(partner._id, "approve");
+                            }
+                          }}
+                          className="text-teal-700 font-semibold hover:underline disabled:opacity-50"
+                        >
+                          Grant live access
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {partner.rejectionReason && (
                     <div className="text-xs text-red-700 bg-red-50 p-3 rounded-lg border border-red-100">
                       Decline Reason: {partner.rejectionReason}
@@ -1529,7 +1732,7 @@ export default function AdminPartnershipsPage() {
                       <Button
                         variant="outline"
                         disabled={isUpdating === partner._id}
-                        onClick={() => handleReviewPartner(partner._id, "reject")}
+                        onClick={() => openReasonDialog({ kind: "application", action: "reject", partner })}
                         className="w-full border-red-200 text-red-700 hover:bg-red-50 text-xs font-semibold"
                       >
                         <XCircle className="w-4 h-4 mr-1.5" />
@@ -1548,7 +1751,7 @@ export default function AdminPartnershipsPage() {
                   ) : (
                     <div className="text-xs text-gray-500 space-y-2">
                       <p className="text-emerald-700 font-semibold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Live Portal Active
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Portal access active
                       </p>
 
                       <div className="pt-1 space-y-2">
@@ -1585,10 +1788,10 @@ export default function AdminPartnershipsPage() {
                         variant="ghost"
                         size="sm"
                         disabled={isUpdating === partner._id}
-                        onClick={() => handleReviewPartner(partner._id, "reject")}
+                        onClick={() => openReasonDialog({ kind: "application", action: "reject", partner })}
                         className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 w-full h-8 mt-1"
                       >
-                        Suspend Access
+                        Revoke Partner Access
                       </Button>
                     </div>
                   )}
@@ -1596,6 +1799,163 @@ export default function AdminPartnershipsPage() {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* VIEW: PRODUCTION (GO-LIVE) ACCESS */}
+      {/* ================================================================== */}
+      {activeTab === "golive" && (
+        <div className="space-y-6">
+          <div className="p-4 bg-teal-50/70 border border-teal-200 rounded-xl text-xs text-teal-900 flex items-start gap-2.5">
+            <div className="p-2 bg-teal-100 rounded-lg text-teal-800 shrink-0">
+              <Rocket className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="font-bold text-sm text-teal-950">Production (go-live) access</p>
+              <p className="text-teal-700 mt-0.5">
+                Approved partners start in sandbox. Live API keys, the live webhook endpoint and live referral links only work after
+                you approve production access here. Suspending production disables live keys immediately; sandbox keeps working.
+              </p>
+            </div>
+          </div>
+
+          <section className="space-y-3">
+            <h3 className="text-sm font-bold text-gray-900">Pending requests ({goLiveRequests.length})</h3>
+            {partnerApplications === undefined ? (
+              <div className="flex h-32 items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#005b57] border-t-transparent"></div>
+              </div>
+            ) : goLiveRequests.length === 0 ? (
+              <div className="text-center py-10 bg-white rounded-xl border border-gray-200 text-sm text-gray-500">
+                No go-live requests waiting for review.
+              </div>
+            ) : (
+              goLiveRequests.map((partner: any) => (
+                <div
+                  key={partner._id}
+                  className="bg-white rounded-xl border border-amber-200 p-5 flex flex-col md:flex-row md:items-start justify-between gap-4"
+                >
+                  <div className="space-y-2 text-xs flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-base font-bold text-gray-900">{partner.name}</h4>
+                      <span className="inline-flex items-center rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-800 uppercase border border-teal-100">
+                        {partner.type}
+                      </span>
+                      <span className="font-mono text-gray-500">[{partner.code}]</span>
+                    </div>
+                    <p className="text-gray-500">
+                      Requested{" "}
+                      {partner.productionRequestedAt ? format(partner.productionRequestedAt, "MMM d, yyyy 'at' h:mm a") : "recently"}
+                      {partner.contactEmail ? ` · ${partner.contactEmail}` : ""}
+                    </p>
+                    {partner.productionRequestNote ? (
+                      <p className="text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-3 whitespace-pre-wrap break-words">
+                        {partner.productionRequestNote}
+                      </p>
+                    ) : (
+                      <p className="text-gray-400 italic">No note provided.</p>
+                    )}
+                    <Link
+                      href={`/dashboard/admin/referrals?partner=${encodeURIComponent(partner.code)}`}
+                      className="inline-flex items-center gap-1 text-teal-700 hover:underline font-medium"
+                    >
+                      <FileText className="w-3.5 h-3.5" /> View this partner&apos;s referrals
+                    </Link>
+                  </div>
+                  <div className="flex md:flex-col gap-2 md:w-48 shrink-0">
+                    <Button
+                      disabled={isUpdating === partner._id}
+                      onClick={() => {
+                        if (window.confirm(`Approve live (production) access for ${partner.name}? Real patients will be contacted for their live referrals.`)) {
+                          void handleProductionReview(partner._id, "approve");
+                        }
+                      }}
+                      className="flex-1 bg-[#005b57] hover:bg-[#004744] text-white text-xs font-semibold"
+                    >
+                      <Rocket className="w-4 h-4 mr-1.5" /> Approve go-live
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={isUpdating === partner._id}
+                      onClick={() => openReasonDialog({ kind: "production", action: "reject", partner })}
+                      className="flex-1 border-red-200 text-red-700 hover:bg-red-50 text-xs font-semibold"
+                    >
+                      <XCircle className="w-4 h-4 mr-1.5" /> Decline
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-sm font-bold text-gray-900">Partners with production access ({productionPartners.length})</h3>
+            {productionPartners.length === 0 ? (
+              <div className="text-center py-8 bg-white rounded-xl border border-gray-200 text-sm text-gray-500">
+                No partners are live yet.
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200">
+                    <tr>
+                      <th className="py-3 px-4">Partner</th>
+                      <th className="py-3 px-3">Status</th>
+                      <th className="py-3 px-3">Last review</th>
+                      <th className="py-3 px-3">Reason</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {productionPartners.map((partner: any) => (
+                      <tr key={partner._id} className="hover:bg-gray-50/70">
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-gray-900">{partner.name}</div>
+                          <div className="font-mono text-[10px] text-gray-400">{partner.code}</div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <ProductionStatusBadge status={partner.productionStatus} />
+                        </td>
+                        <td className="py-3 px-3 text-gray-600 whitespace-nowrap">
+                          {partner.productionReviewedAt
+                            ? `${format(partner.productionReviewedAt, "MMM d, yyyy")} · ${partner.productionReviewedBy || "Admin"}`
+                            : "—"}
+                        </td>
+                        <td className="py-3 px-3 text-gray-600 max-w-xs">{partner.productionRejectionReason || "—"}</td>
+                        <td className="py-3 px-4 text-right">
+                          {partner.productionStatus === "approved" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={isUpdating === partner._id}
+                              onClick={() => openReasonDialog({ kind: "production", action: "suspend", partner })}
+                              className="text-xs h-7 border-red-200 text-red-700 hover:bg-red-50"
+                            >
+                              Suspend live
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              disabled={isUpdating === partner._id}
+                              onClick={() => {
+                                if (window.confirm(`Reinstate live access for ${partner.name}?`)) {
+                                  void handleProductionReview(partner._id, "reinstate");
+                                }
+                              }}
+                              className="text-xs h-7 bg-[#005b57] hover:bg-[#004744] text-white"
+                            >
+                              Reinstate
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </div>
       )}
 
@@ -1740,6 +2100,179 @@ export default function AdminPartnershipsPage() {
         </div>
       )}
 
+      {/* Reason dialog: decline application, revoke access, decline go-live, suspend live */}
+      <Dialog
+        open={!!reasonDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReasonDialog(null);
+            setReasonText("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-red-600" />
+              <span>
+                {reasonDialog?.kind === "application"
+                  ? reasonDialog.partner?.approvalStatus === "approved"
+                    ? "Revoke partner access"
+                    : "Decline application"
+                  : reasonDialog?.action === "suspend"
+                    ? "Suspend production access"
+                    : "Decline go-live request"}
+              </span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              <strong>{reasonDialog?.partner?.name}</strong> will see this reason in their email and in the Partner Portal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label htmlFor="partner-review-reason" className="text-xs font-semibold text-gray-700">
+              Reason
+            </label>
+            <textarea
+              id="partner-review-reason"
+              value={reasonText}
+              onChange={(e) => setReasonText(e.target.value)}
+              rows={4}
+              maxLength={500}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-teal-600/30"
+              placeholder="e.g. Webhook endpoint is still failing signature verification in sandbox."
+            />
+            {reasonDialog?.kind === "production" && reasonDialog.action === "suspend" && (
+              <p className="text-[11px] text-red-700">
+                Live API keys stop working immediately (403 production_access_required). Sandbox access is not affected.
+              </p>
+            )}
+            {reasonDialog?.kind === "application" && reasonDialog.partner?.approvalStatus === "approved" && (
+              <p className="text-[11px] text-red-700">This revokes portal and API access in both sandbox and live.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setReasonDialog(null);
+                setReasonText("");
+              }}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={submitReasonDialog}
+              disabled={!!isUpdating || reasonText.trim().length < 5}
+              className="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
+            >
+              {isUpdating ? "Saving..." : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin Dialog to create a partner organisation */}
+      <Dialog open={isCreatePartnerOpen} onOpenChange={setIsCreatePartnerOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <Plus className="w-5 h-5 text-teal-700" />
+              <span>Create partner organisation</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              For partners onboarded by the Rehabify team. The organisation gets sandbox access straight away and the owner claims it by
+              signing in with the owner email. Live access still needs a go-live approval.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-700">Organisation name</label>
+              <Input
+                value={newPartner.name}
+                onChange={(e) => setNewPartner((p) => ({ ...p, name: e.target.value }))}
+                placeholder="e.g. Reddington Hospital"
+                className="text-xs"
+                maxLength={120}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-700">Type</label>
+                <Select value={newPartner.type} onValueChange={(value) => setNewPartner((p) => ({ ...p, type: value }))}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PARTNER_TYPE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value} className="text-xs">
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-700">Tier</label>
+                <Select value={newPartner.tier} onValueChange={(value) => setNewPartner((p) => ({ ...p, tier: value }))}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard" className="text-xs">Standard</SelectItem>
+                    <SelectItem value="enterprise" className="text-xs">Enterprise</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-700">Owner email</label>
+              <Input
+                type="email"
+                value={newPartner.ownerEmail}
+                onChange={(e) => setNewPartner((p) => ({ ...p, ownerEmail: e.target.value }))}
+                placeholder="partnerships@hospital.com"
+                className="text-xs"
+              />
+              <p className="text-[10px] text-gray-500">The owner must sign in with this exact, verified email to claim the organisation.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-700">Contact name</label>
+                <Input
+                  value={newPartner.contactName}
+                  onChange={(e) => setNewPartner((p) => ({ ...p, contactName: e.target.value }))}
+                  className="text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-700">Contact phone</label>
+                <Input
+                  value={newPartner.contactPhone}
+                  onChange={(e) => setNewPartner((p) => ({ ...p, contactPhone: e.target.value }))}
+                  className="text-xs"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setIsCreatePartnerOpen(false)} className="text-xs">
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleCreatePartner}
+              disabled={isCreatingPartner}
+              className="bg-[#005b57] hover:bg-[#004744] text-white text-xs font-semibold"
+            >
+              {isCreatingPartner ? "Creating..." : "Create partner"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Admin Dialog to Generate Partner Referral Link */}
       <Dialog open={isLinkModalOpen} onOpenChange={setIsLinkModalOpen}>
         <DialogContent className="sm:max-w-[480px]">
@@ -1810,6 +2343,24 @@ export default function AdminPartnershipsPage() {
             </div>
           ) : (
             <div className="space-y-4 py-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-gray-700">Environment</label>
+                <Select value={linkEnvironment} onValueChange={(value) => setLinkEnvironment(value === "sandbox" ? "sandbox" : "live")}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="live" disabled={selectedPartnerForLink?.productionStatus !== "approved"}>
+                      Live (real patients)
+                    </SelectItem>
+                    <SelectItem value="sandbox">Sandbox (test leads, nobody is contacted)</SelectItem>
+                  </SelectContent>
+                </Select>
+                {selectedPartnerForLink?.productionStatus !== "approved" && (
+                  <p className="text-[10px] text-amber-700">Live links need production access. Approve go-live first.</p>
+                )}
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-gray-700">Campaign / Purpose Name</label>
                 <Input
@@ -1883,7 +2434,7 @@ export default function AdminPartnershipsPage() {
               <span>Commission Payout Disbursement</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-gray-500">
-              Disburse consolidated referral commission for <strong>{selectedPartnerForPayout?.partnerName}</strong> for billing cycle <strong>{selectedBillingPeriod}</strong>.
+              Pay every approved, unpaid commission for <strong>{selectedPartnerForPayout?.partnerName}</strong> up to and including <strong>{selectedBillingPeriod}</strong>.
             </DialogDescription>
           </DialogHeader>
 
@@ -1920,7 +2471,7 @@ export default function AdminPartnershipsPage() {
               {/* Commission Summary */}
               <div className="bg-teal-50/70 border border-teal-200 rounded-xl p-3.5 space-y-2">
                 <div className="flex justify-between items-center text-teal-950">
-                  <span className="font-semibold">Gross Commission (10%):</span>
+                  <span className="font-semibold">Payable commission:</span>
                   <span className="font-bold text-teal-900">
                     {formatNaira(selectedPartnerForPayout.totalPartnerCommission)}
                   </span>
@@ -1964,6 +2515,11 @@ export default function AdminPartnershipsPage() {
                     </div>
                   )}
 
+                  <p className="text-[11px] text-gray-500">
+                    Commissions are reserved when the transfer starts and marked paid only when Paystack confirms it. A failed or reversed
+                    transfer releases them for the next payout.
+                  </p>
+
                   {requiresOtp ? (
                     <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-xl space-y-2">
                       <div className="flex items-center gap-1.5 font-bold text-purple-900 text-xs">
@@ -2002,8 +2558,9 @@ export default function AdminPartnershipsPage() {
                     onChange={(e) => setPayoutNote(e.target.value)}
                     className="text-xs"
                   />
-                  <p className="text-[10px] text-gray-500">
-                    This reference will be recorded in the ledger and displayed on the partner portal.
+                  <p className="text-[10px] text-amber-700">
+                    Only use this after the money has left your bank: every payable commission up to this cycle is marked paid immediately,
+                    and the reference is shown in the partner&apos;s ledger.
                   </p>
                 </div>
               )}
@@ -2075,14 +2632,14 @@ export default function AdminPartnershipsPage() {
             <div className="py-2 space-y-4 text-xs">
               {(() => {
                 const eligible = monthlySummary.partners.filter(
-                  (p: any) => p.bulkPayoutStatus !== "paid" && p.totalPartnerCommission > 0 && p.hasBankAccount
+                  (p: any) => !p.activeTransfer && p.totalPartnerCommission > 0 && p.hasBankAccount && p.estimatedNetPayoutKobo > 0
                 );
                 const totalKobo = eligible.reduce(
                   (sum: number, p: any) => sum + (p.estimatedNetPayoutKobo || p.totalPartnerCommission),
                   0
                 );
                 const withoutBank = monthlySummary.partners.filter(
-                  (p: any) => p.bulkPayoutStatus !== "paid" && p.totalPartnerCommission > 0 && !p.hasBankAccount
+                  (p: any) => !p.activeTransfer && p.totalPartnerCommission > 0 && !p.hasBankAccount
                 );
 
                 return (
@@ -2171,7 +2728,7 @@ export default function AdminPartnershipsPage() {
               <span>Itemized Referral Ledger: {selectedPartnerForLedger?.partnerName}</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-gray-500">
-              Transparent 80/10/10 revenue breakdown for all patient bookings referred in <strong>{selectedBillingPeriod}</strong>.
+              Live commission entries (payments, bonuses and refund adjustments) earned in <strong>{selectedBillingPeriod}</strong>.
             </DialogDescription>
           </DialogHeader>
 
@@ -2191,8 +2748,8 @@ export default function AdminPartnershipsPage() {
                   <p className="text-sm font-bold text-emerald-700">{formatNaira(selectedPartnerForLedger.totalPhysiotherapistShare)}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Partner Commission (10%):</span>
-                  <p className="text-sm font-bold text-teal-900">{formatNaira(selectedPartnerForLedger.totalPartnerCommission)}</p>
+                  <span className="text-gray-500">Partner Earnings (cycle):</span>
+                  <p className="text-sm font-bold text-teal-900">{formatNaira(selectedPartnerForLedger.periodEarningsKobo ?? 0)}</p>
                 </div>
               </div>
 
@@ -2206,7 +2763,7 @@ export default function AdminPartnershipsPage() {
                       <th className="py-2.5 px-3 text-right">Physio Charged</th>
                       <th className="py-2.5 px-3 text-right text-emerald-800">Physio (80%)</th>
                       <th className="py-2.5 px-3 text-right text-blue-800">Rehabify (10%)</th>
-                      <th className="py-2.5 px-3 text-right text-teal-800">Partner (10%)</th>
+                      <th className="py-2.5 px-3 text-right text-teal-800">Partner (net)</th>
                       <th className="py-2.5 px-3 text-center">Channel</th>
                     </tr>
                   </thead>
@@ -2215,31 +2772,37 @@ export default function AdminPartnershipsPage() {
                       selectedPartnerForLedger.commissions.map((c: any) => (
                         <tr key={c._id} className="hover:bg-gray-50/60 transition">
                           <td className="py-2.5 px-3 whitespace-nowrap text-gray-500">
-                            {format(c.createdAt, "MMM d, yyyy")}
+                            {format(c.earnedAt, "MMM d, yyyy")}
                           </td>
                           <td className="py-2.5 px-3 font-medium text-gray-900">
-                            {c.referredPatientName || "Referred Patient"}
+                            {c.patientName || c.trackingCode || "Referred patient"}
+                            {c.eventType === "refund_adjustment" && (
+                              <span className="ml-1.5 text-[10px] font-semibold text-red-700">Refund</span>
+                            )}
+                            {c.eventType === "activation_bonus" && (
+                              <span className="ml-1.5 text-[10px] font-semibold text-teal-700">Bonus</span>
+                            )}
                           </td>
                           <td className="py-2.5 px-3">
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                              c.careMode === "face_to_face"
+                              c.careMode === "in_person"
                                 ? "bg-purple-50 text-purple-700 border border-purple-100"
                                 : "bg-blue-50 text-blue-700 border border-blue-100"
                             }`}>
-                              {c.careMode === "face_to_face" ? "In-Person" : "Virtual (6k)"}
+                              {c.careMode === "in_person" ? "In-Person" : c.careMode === "virtual" ? "Virtual" : "—"}
                             </span>
                           </td>
                           <td className="py-2.5 px-3 text-right font-medium text-gray-900">
-                            {formatNaira(c.bookingAmount)}
+                            {formatNaira(c.grossTransactionAmount)}
                           </td>
                           <td className="py-2.5 px-3 text-right text-emerald-700 font-medium">
-                            {formatNaira(c.physiotherapistAmount || Math.round(c.bookingAmount * 0.8))}
+                            {formatNaira(c.physiotherapistAmount ?? 0)}
                           </td>
                           <td className="py-2.5 px-3 text-right text-blue-700 font-medium">
-                            {formatNaira(c.rehabifyAmount || Math.round(c.bookingAmount * 0.1))}
+                            {formatNaira(c.rehabifyAmount ?? 0)}
                           </td>
                           <td className="py-2.5 px-3 text-right text-teal-900 font-bold">
-                            {formatNaira(c.partnerAmount || c.commissionAmount)}
+                            {formatNaira(c.netPayable)}
                           </td>
                           <td className="py-2.5 px-3 text-center">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${
@@ -2305,7 +2868,7 @@ export default function AdminPartnershipsPage() {
               </div>
             </div>
             <DialogDescription className="text-xs text-gray-500">
-              Official commercial settlement invoice with transparent 80/10/10 reconciliation and statutory stamp duty line item.
+              Settlement statement for the live commissions earned in this cycle, with withholding tax, transfer fee and stamp duty.
             </DialogDescription>
           </DialogHeader>
 
@@ -2401,7 +2964,9 @@ export default function AdminPartnershipsPage() {
               {/* Revenue Policy & Governance Summary */}
               <div className="p-3 bg-teal-50/60 rounded-xl border border-teal-200 text-xs text-teal-950 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                 <div>
-                  <span className="font-bold">Contract Terms:</span> 80% Clinician · 10% Platform · 10% Referring Partner
+                  <span className="font-bold">Platform split:</span> {invoiceData.splitConfig.physiotherapistPercent}% Clinician ·{" "}
+                  {invoiceData.splitConfig.rehabifyPercent}% Platform · {invoiceData.splitConfig.partnerPercent}% Referring Partner
+                  <span className="text-teal-700"> (a signed partner contract overrides the default)</span>
                 </div>
                 <div className="text-teal-800 font-medium">
                   Disbursement Schedule: End-of-Month Consolidated Bulk Transfer
@@ -2425,7 +2990,7 @@ export default function AdminPartnershipsPage() {
                         <th className="py-2.5 px-3 text-right">Gross Charged</th>
                         <th className="py-2.5 px-3 text-right text-emerald-700">Physio (80%)</th>
                         <th className="py-2.5 px-3 text-right text-blue-700">Rehabify (10%)</th>
-                        <th className="py-2.5 px-3 text-right text-teal-900 font-bold">Partner (10%)</th>
+                        <th className="py-2.5 px-3 text-right text-teal-900 font-bold">Partner Share</th>
                         <th className="py-2.5 px-3 text-center">Channel</th>
                       </tr>
                     </thead>
@@ -2498,11 +3063,15 @@ export default function AdminPartnershipsPage() {
                     <span className="font-semibold text-gray-900">{formatNaira(invoiceData.summary.totalGrossKobo)}</span>
                   </div>
                   <div className="flex justify-between text-teal-900 font-bold border-t border-gray-200 pt-2 text-sm">
-                    <span>Gross Partner Commission (10%):</span>
+                    <span>Gross Partner Commission:</span>
                     <span>{formatNaira(invoiceData.summary.totalPartnerShareKobo)}</span>
                   </div>
 
                   <div className="border-t border-gray-200 pt-2 space-y-1.5 text-gray-600">
+                    <div className="flex justify-between text-red-700 text-[11px]">
+                      <span>Less: Withholding Tax:</span>
+                      <span>- {formatNaira(invoiceData.summary.totalWithholdingTaxKobo)}</span>
+                    </div>
                     <div className="flex justify-between text-red-700 text-[11px]">
                       <span>Less: Bank Wire Transfer Fee:</span>
                       <span>- {formatNaira(invoiceData.summary.totalPaystackTransferFeesKobo)}</span>
@@ -2545,5 +3114,21 @@ export default function AdminPartnershipsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function ProductionStatusBadge({ status }: { status?: string }) {
+  const styles: Record<string, { label: string; cls: string }> = {
+    not_requested: { label: "Sandbox only", cls: "bg-gray-100 text-gray-700 border-gray-200" },
+    requested: { label: "Go-live requested", cls: "bg-amber-50 text-amber-800 border-amber-200" },
+    approved: { label: "Live", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+    rejected: { label: "Go-live declined", cls: "bg-red-50 text-red-700 border-red-200" },
+    suspended: { label: "Live suspended", cls: "bg-red-50 text-red-700 border-red-200" },
+  };
+  const style = styles[status ?? "not_requested"] ?? styles.not_requested;
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${style.cls}`}>
+      {style.label}
+    </span>
   );
 }

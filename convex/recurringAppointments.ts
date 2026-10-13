@@ -1,6 +1,95 @@
-import { mutation, query } from './_generated/server'
-import { v } from 'convex/values'
-import { Id } from './_generated/dataModel'
+import { mutation, query, QueryCtx } from './_generated/server'
+import { ConvexError, v } from 'convex/values'
+import { Doc, Id } from './_generated/dataModel'
+import { getAuthenticatedUser } from './auth'
+import { assertPatientInClinic, assertStaffInClinic, getClinicStaffUserIds } from './clinicTools'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Access. A series and its appointments are visible to their patient and
+// physiotherapist, the owner of the clinic they belong to, and admins. Only the
+// clinical side (physiotherapist, clinic owner, admin) may create or reshape a
+// series; a patient may view and cancel.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type SeriesAccess = 'none' | 'patient' | 'clinical'
+
+type SeriesParties = {
+  patientId: Id<'users'>
+  physiotherapistId: Id<'users'>
+  clinicId?: Id<'clinics'>
+}
+
+/** The signed-in user, or null when signed out (queries return empty rather than throw). */
+async function getCallerOrNull(ctx: QueryCtx): Promise<Doc<'users'> | null> {
+  const identity = await ctx.auth.getUserIdentity()
+  if (!identity) return null
+  return await ctx.db
+    .query('users')
+    .withIndex('by_clerk_id', (q) => q.eq('clerkId', identity.subject))
+    .unique()
+}
+
+async function getOwnedClinic(ctx: QueryCtx, user: Doc<'users'>): Promise<Doc<'clinics'> | null> {
+  if (user.role !== 'clinic_owner') return null
+  return await ctx.db
+    .query('clinics')
+    .withIndex('by_owner_id', (q) => q.eq('ownerId', user._id))
+    .first()
+}
+
+/** True when the user owns the clinic the record belongs to (by clinicId, or via its clinician). */
+async function ownsClinicOf(ctx: QueryCtx, user: Doc<'users'>, record: SeriesParties): Promise<boolean> {
+  const clinic = await getOwnedClinic(ctx, user)
+  if (!clinic) return false
+  if (record.clinicId === clinic._id) return true
+  const staffIds = await getClinicStaffUserIds(ctx, clinic)
+  return staffIds.has(record.physiotherapistId)
+}
+
+async function getSeriesAccess(ctx: QueryCtx, user: Doc<'users'>, record: SeriesParties): Promise<SeriesAccess> {
+  if (user.role === 'admin') return 'clinical'
+  if (record.physiotherapistId === user._id) return 'clinical'
+  if (await ownsClinicOf(ctx, user, record)) return 'clinical'
+  if (record.patientId === user._id) return 'patient'
+  return 'none'
+}
+
+/**
+ * Who may book a series: an admin; the physiotherapist themself for a patient they have an
+ * active care relationship with; or the owner of the clinic, for its own clinician and patient.
+ */
+async function assertCanCreateSeries(ctx: QueryCtx, user: Doc<'users'>, args: SeriesParties): Promise<void> {
+  if (user.role === 'admin') return
+
+  if (args.clinicId) {
+    const clinic = await ctx.db.get(args.clinicId)
+    if (!clinic) throw new ConvexError('Clinic not found')
+    const staffIds = await getClinicStaffUserIds(ctx, clinic)
+    if (!staffIds.has(args.physiotherapistId)) {
+      throw new ConvexError('Selected clinician is not a member of this clinic')
+    }
+  }
+
+  if (args.physiotherapistId === user._id) {
+    const relationship = await ctx.db
+      .query('patientPhysiotherapistRelationships')
+      .withIndex('by_patient_and_physiotherapist', (q) =>
+        q.eq('patientId', args.patientId).eq('physiotherapistId', user._id)
+      )
+      .filter((q) => q.eq(q.field('status'), 'active'))
+      .first()
+    if (relationship) return
+  }
+
+  const ownedClinic = await getOwnedClinic(ctx, user)
+  if (ownedClinic && (!args.clinicId || args.clinicId === ownedClinic._id)) {
+    await assertStaffInClinic(ctx, ownedClinic, args.physiotherapistId)
+    await assertPatientInClinic(ctx, ownedClinic, args.patientId)
+    return
+  }
+
+  throw new ConvexError('Access denied. Patient not assigned to you.')
+}
 
 // Utility functions for date handling
 function parseTime(timeString: string): { hours: number; minutes: number } {
@@ -91,6 +180,9 @@ export const createRecurringSeries = mutation({
     startTime: v.string(),
   },
   handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx)
+    await assertCanCreateSeries(ctx, user, args)
+
     const now = Date.now()
     
     // Create the recurring series
@@ -174,18 +266,22 @@ async function generateSeriesAppointments(ctx: any, seriesId: Id<'recurringSerie
   }
 }
 
-// Get recurring series for a user
+// Get recurring series for the signed-in user (only an admin may look up another user)
 export const getRecurringSeries = query({
   args: {
     userId: v.id('users'),
     role: v.union(v.literal('patient'), v.literal('physiotherapist')),
   },
   handler: async (ctx, args) => {
+    const user = await getCallerOrNull(ctx)
+    if (!user) return []
+    // The UI always passes the signed-in user; anyone but an admin gets their own series.
+    const userId = user.role === 'admin' ? args.userId : user._id
     const field = args.role === 'patient' ? 'patientId' : 'physiotherapistId'
     
     return await ctx.db
       .query('recurringSeries')
-      .withIndex(`by_${args.role}_id` as any, (q: any) => q.eq(field, args.userId))
+      .withIndex(`by_${args.role}_id` as any, (q: any) => q.eq(field, userId))
       .filter((q: any) => q.eq(q.field('isActive'), true))
       .collect()
   },
@@ -199,6 +295,14 @@ export const getSeriesAppointments = query({
     endDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const user = await getCallerOrNull(ctx)
+    if (!user) return []
+    const series = await ctx.db.get(args.seriesId)
+    if (!series) return []
+    if ((await getSeriesAccess(ctx, user, series)) === 'none') {
+      throw new ConvexError("You don't have access to this series")
+    }
+
     let query = ctx.db
       .query('appointments')
       .withIndex('by_series_id', (q: any) => q.eq('seriesId', args.seriesId))
@@ -240,9 +344,24 @@ export const updateSeriesAppointment = mutation({
     }),
   },
   handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx)
     const appointment = await ctx.db.get(args.appointmentId)
     if (!appointment || !appointment.seriesId) {
       throw new Error('Appointment not found or not part of a series')
+    }
+
+    const access = await getSeriesAccess(ctx, user, appointment)
+    if (access === 'none') {
+      throw new ConvexError("You don't have access to this appointment")
+    }
+    if (access === 'patient') {
+      // A patient may only cancel their own appointment.
+      const { status, cancellationReason, ...otherUpdates } = args.updates
+      const onlyCancelling =
+        status === 'cancelled_by_patient' && Object.values(otherUpdates).every((value) => value === undefined)
+      if (!onlyCancelling) {
+        throw new ConvexError('Only your physiotherapist or clinic can change this appointment')
+      }
     }
 
     // Mark as exception if modifying time or other core properties
@@ -264,14 +383,20 @@ export const cancelSeriesAppointment = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx)
     const appointment = await ctx.db.get(args.appointmentId)
     if (!appointment || !appointment.seriesId) {
       throw new Error('Appointment not found or not part of a series')
     }
 
+    const access = await getSeriesAccess(ctx, user, appointment)
+    if (access === 'none') {
+      throw new ConvexError("You don't have access to this appointment")
+    }
+
     // Update appointment status
     await ctx.db.patch(args.appointmentId, {
-      status: 'cancelled_by_therapist',
+      status: access === 'patient' ? 'cancelled_by_patient' : 'cancelled_by_therapist',
       cancellationReason: args.reason,
       isException: true,
     })
@@ -316,9 +441,13 @@ export const updateRecurringSeries = mutation({
     fromDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx)
     const series = await ctx.db.get(args.seriesId)
     if (!series) {
       throw new Error('Series not found')
+    }
+    if ((await getSeriesAccess(ctx, user, series)) !== 'clinical') {
+      throw new ConvexError('Only the physiotherapist or clinic can change this series')
     }
 
     // Update the series
@@ -371,6 +500,17 @@ export const deleteRecurringSeries = mutation({
     fromDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx)
+    const series = await ctx.db.get(args.seriesId)
+    if (!series) {
+      throw new Error('Series not found')
+    }
+    const access = await getSeriesAccess(ctx, user, series)
+    if (access === 'none') {
+      throw new ConvexError("You don't have access to this series")
+    }
+    const cancelledStatus = access === 'patient' ? 'cancelled_by_patient' : 'cancelled_by_therapist'
+
     if (args.mode === 'all-in-series') {
       // Deactivate the series
       await ctx.db.patch(args.seriesId, {
@@ -387,7 +527,7 @@ export const deleteRecurringSeries = mutation({
 
       for (const apt of appointments) {
         await ctx.db.patch(apt._id, {
-          status: 'cancelled_by_therapist',
+          status: cancelledStatus,
           cancellationReason: 'Series cancelled',
         })
       }
@@ -402,7 +542,7 @@ export const deleteRecurringSeries = mutation({
 
       for (const apt of appointments) {
         await ctx.db.patch(apt._id, {
-          status: 'cancelled_by_therapist',
+          status: cancelledStatus,
           cancellationReason: 'Series cancelled from this date',
         })
       }

@@ -1,59 +1,135 @@
 ---
 title: Authentication
-description: Secure your API requests using API keys and tokens.
+description: Secret API keys, sandbox and live environments, key rotation and revocation, and how to get production access.
 ---
 
-# Authentication
+The Rehabify Partner API authenticates every request with a **secret API key**. Your key also decides which environment a request runs in.
 
-The Rehabify API uses API keys to authenticate requests. You can manage your API keys in the **[Partner Portal](/partnerships)** under Developer Settings.
+## API keys and environments
 
----
-
-## API Key Types
-
-We provide two pairs of API keys for each organization:
-
-| Key Prefix | Scope | Usage |
+| Key prefix | Environment | What happens |
 | :--- | :--- | :--- |
-| `pk_test_...` | **Public Key (Sandbox)** | Used in frontend apps, mobile widgets, and embed scripts for testing. |
-| `sk_test_...` | **Secret Key (Sandbox)** | Used for backend API requests in testing and staging environments. |
-| `pk_live_...` | **Public Key (Production)** | Used in production frontend widgets and client applications. |
-| `sk_live_...` | **Secret Key (Production)** | Used for live production server-to-server API calls. |
+| `sk_test_…` | Sandbox | Test data only. No real patient is contacted, no emails or WhatsApp messages are sent to patients, no commissions are earned, and providers are simulated. |
+| `sk_live_…` | Live | Real referrals. Rehabify's care team and Joy contact your patients. |
 
----
+Both environments use the same base URL, `https://api.physioaroundme.com/v1`. Every response includes an `X-Rehabify-Environment` header (`sandbox` or `live`), and every referral has an `environment` field, so you can always tell which environment you're in.
 
-## Authorizing Requests
+Data never crosses environments. A sandbox key can't see live referrals, and a live key can't see sandbox referrals.
 
-Authenticate your API requests by including your secret API key in the `Authorization` header:
+## Creating keys
+
+Create keys in the [Partner Portal](https://partners.physioaroundme.com) under **Developers → API keys**. A key is the prefix followed by 40 alphanumeric characters, for example `sk_test_` + 40 characters.
+
+- **Shown once.** The full key is displayed only when you create it. Rehabify stores only a hash, so we can't show it again or recover it. If you lose a key, create a new one and revoke the old one.
+- **Multiple named keys.** You can have up to 10 active keys in each environment, for example one per service or per deployment. Give each key a descriptive name.
+- **Instant revocation.** Revoking a key takes effect immediately. Any further request with it fails with `401 invalid_api_key`.
+- **No shared keys.** There are no public or shared sandbox keys. Every key belongs to your organisation.
+
+<Callout type="warn" title="Keys issued before October 2026 have been revoked">All API keys and webhook signing secrets issued before this release were rotated. If your integration used one of them, create a new key in **Developers → API keys** and reveal your current webhook secret in **Developers → Webhooks**.</Callout>
+
+## Authenticating requests
+
+Send the key as a bearer token:
 
 ```http
-Authorization: Bearer sk_live_99281a8c88f...
+Authorization: Bearer sk_test_xxx
 ```
+
+If your HTTP client can't set an `Authorization` header, send the key in `X-API-Key` instead:
+
+```http
+X-API-Key: sk_test_xxx
+```
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
 
 ```bash
-curl https://api.physioaroundme.com/api/v1/partners/providers \
-  -H "Authorization: Bearer sk_live_99281a8c88f..."
+curl "https://api.physioaroundme.com/v1/partners/referrals?limit=1" \
+  -H "Authorization: Bearer $REHABIFY_API_KEY"
 ```
 
----
+</Tab>
+<Tab>
 
-## Permission Scopes
+```js
+// Node.js 18+ (save as list-referrals.mjs)
+const res = await fetch("https://api.physioaroundme.com/v1/partners/referrals?limit=1", {
+  headers: { Authorization: `Bearer ${process.env.REHABIFY_API_KEY}` },
+});
+console.log(res.status, res.headers.get("x-rehabify-environment"));
+```
 
-Each API key can be scoped to specific permissions in the Partner Portal:
+</Tab>
+<Tab>
 
-* `referrals:write`: Create new patient referrals.
-* `referrals:read`: Query referral status and tracking info.
-* `eligibility:check`: Perform HMO and corporate member coverage checks.
-* `reports:read`: Access clinical outcome notes and discharge PDFs.
-* `webhooks:manage`: Add or modify webhook subscription endpoints.
+```python
+import os
 
----
+import requests
 
-## Best Practices
+resp = requests.get(
+    "https://api.physioaroundme.com/v1/partners/referrals",
+    params={"limit": 1},
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+print(resp.status_code, resp.headers.get("X-Rehabify-Environment"))
+```
 
-> [!WARNING]
-> **Never expose your Secret Key (`sk_live_...`) in client-side code** (browser JavaScript, mobile apps, or public GitHub repositories). All secret key requests must originate from your secure backend servers.
+</Tab>
+</Tabs>
 
-1. **Store Keys in Environment Variables**: Use `.env.local` or secret managers (e.g. AWS Secrets Manager, Doppler, Vault).
-2. **Rotate Compromised Keys**: If a secret key is leaked, generate a new key in the Partner Portal and revoke the old one immediately.
-3. **Use IP Whitelisting**: For Enterprise partners, you can configure IP address restrictions on your secret keys in the Partner Dashboard.
+## Keep keys server-side
+
+<Callout type="warn" title="API keys are server-side secrets">Never ship an API key in browser JavaScript, a mobile app, a URL or a public repository. Partner endpoints don't send CORS headers, so browsers block direct calls. Call the API from your backend instead.</Callout>
+
+- Load keys from environment variables or a secret manager. Don't hard-code them.
+- Don't log keys or full `Authorization` headers. Log the `X-Request-Id` response header instead.
+- Use separate keys for separate services, so you can revoke one without touching the others.
+
+The only endpoint you can call from a browser is the public, unauthenticated [lead capture endpoint](/docs/api-reference/referral-links#public-lead-capture) used by no-code referral link forms. It needs no key.
+
+## Rotating and revoking keys
+
+Because you can hold several keys at once, you can rotate without downtime:
+
+1. Create a new key in **Developers → API keys**.
+2. Deploy it to your servers.
+3. Confirm that traffic is flowing with the new key.
+4. Revoke the old key. Revocation is immediate.
+
+If a key may have leaked, revoke it straight away and create a replacement.
+
+Webhook signing secrets are separate from API keys. Each environment has its own secret (`whsec_` followed by 40 alphanumeric characters), which you can reveal on demand or rotate in **Developers → Webhooks**. See [Webhooks](/docs/webhooks).
+
+## Production access (going live)
+
+Live keys are available only after Rehabify approves your organisation for production.
+
+1. **Apply** in the Partner Portal. Once Rehabify approves your organisation, you get sandbox access: test keys and sandbox webhooks.
+2. **Build and test** against the sandbox.
+3. **Request production access** in the portal. This opens the go-live checklist. Our [Go-live checklist](/docs/api-reference/partner-integration-v1) explains each item.
+4. **Rehabify reviews and approves** your request. You can then create `sk_live_` keys and set your live webhook endpoint.
+
+You can't create live keys before approval. If your production access is later suspended, live keys stop working and requests fail with `403 production_access_required`.
+
+## Authentication errors
+
+| HTTP | Code | Meaning | What to do |
+| :--- | :--- | :--- | :--- |
+| 401 | [`missing_api_key`](/docs/getting-started/errors#missing_api_key) | No key supplied | Send `Authorization: Bearer <key>` or `X-API-Key: <key>`. |
+| 401 | [`invalid_api_key`](/docs/getting-started/errors#invalid_api_key) | Key unknown or revoked | Check for copy errors. Create a new key if it was revoked or lost. |
+| 403 | [`partner_inactive`](/docs/getting-started/errors#partner_inactive) | Organisation not approved, or suspended | Contact Rehabify. |
+| 403 | [`production_access_required`](/docs/getting-started/errors#production_access_required) | Live key used, but production access isn't approved | Request production access, or use a sandbox key. |
+| 403 | [`sandbox_only`](/docs/getting-started/errors#sandbox_only) | A sandbox-only endpoint was called with a live key | Use a `sk_test_` key for `/sandbox/*` endpoints. |
+
+## Not available yet
+
+These features don't exist today. Don't build against them.
+
+| Feature | Status |
+| :--- | :--- |
+| Publishable (client-side) keys | Coming soon. All keys are secret, server-side keys. |
+| IP allow-listing | Coming soon |
+| Per-key permission scopes | Coming soon. Every key has full access to its environment. |

@@ -1,13 +1,13 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
+import { action, internalAction } from "../../_generated/server";
 import { api, internal } from "../../_generated/api";
 
 /**
  * Approve a user account and send notification
  */
-export const approveAccount = action({
+export const approveAccount = internalAction({
   args: {
     statusId: v.id("accountApprovalStatus"),
     adminUserId: v.id("users"),

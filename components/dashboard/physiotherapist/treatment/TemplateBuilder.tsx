@@ -68,11 +68,8 @@ export default function TemplateBuilder({ templateId, initialPhases = [], onPhas
           },
         ]
   );
-  const [templateName] = useState('');
-  const [templateDescription] = useState('');
-  const [templateCategory] = useState('general');
   const [addingToPhase, setAddingToPhase] = useState<number | null>(null);
-  const createTemplate = useMutation(api.treatmentTemplates.createTemplate);
+  const updateTemplate = useMutation(api.treatmentPlans.updateTreatmentTemplate);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
 
   const [beforePreviews, setBeforePreviews] = useState<Record<string, File | null>>({});
@@ -212,38 +209,37 @@ export default function TemplateBuilder({ templateId, initialPhases = [], onPhas
   };
 
   const onSave = async () => {
-    // If we have a templateId (edit mode), persist immediately
+    // If we have a templateId (edit mode), persist the phases on the existing template.
+    // Title/description/etc. are saved by the parent edit form.
     if (templateId) {
       try {
-        if (!templateName.trim()) {
-          toast.error('Please enter a template name');
-          return;
-        }
-
-        const template = {
-          name: templateName,
-          description: templateDescription,
-          category: templateCategory,
-          exercises: phases.map((phase) => phase.exercises).flat().map((ex: TemplateExercise) => ({
+        // Send only the fields the treatmentTemplates.phases validator accepts
+        // (name/restPeriod/instructions/imageUrl are UI-only and would be rejected).
+        const phasesPayload = phases.map((phase, idx) => ({
+          name: phase.name,
+          description: phase.description || undefined,
+          duration: phase.duration || undefined,
+          order: phase.order ?? idx + 1,
+          exercises: phase.exercises.map((ex: TemplateExercise) => ({
+            exerciseRefId: ex.exerciseRefId,
             exerciseId: ex.exerciseId,
-            name: ex.name,
-            sets: ex.sets || 3,
-            reps: ex.reps || 10,
-            duration: ex.duration || '30s',
-            restPeriod: ex.restPeriod || '60s',
-            instructions: ex.instructions || [],
-            notes: ex.notes || '',
+            sets: ex.sets ?? 3,
+            reps: ex.reps ?? 10,
+            duration: ex.duration,
+            frequency: ex.frequency || "Daily",
+            notes: ex.notes,
             videoUrl: ex.videoUrl,
-            imageUrl: ex.imageUrl,
+            youtubeId: ex.youtubeId,
             beforeImageStorageId: ex.beforeImageStorageId,
             afterImageStorageId: ex.afterImageStorageId,
           })),
-        };
+        }));
 
-        await createTemplate(template);
-        toast.success("Template created");
-      } catch {
-        toast.error("Failed to create template");
+        await updateTemplate({ templateId, phases: phasesPayload });
+        toast.success("Phases saved");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } catch (e: any) {
+        toast.error(e?.message || "Failed to save phases");
       }
       return;
     }

@@ -1,10 +1,15 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
+import { internalAction } from "../../_generated/server";
 import { sendEmail } from "../../../lib/email/emailService";
+import { escapeHtml, escapeOptional, plainSubject } from "../../helpers/escapeHtml";
 
-export const sendPaymentReceiptEmail = action({
+/**
+ * Payment receipt email. Internal: scheduled by the marketplace booking completion
+ * (after Paystack-verified payment), never callable from a browser.
+ */
+export const sendPaymentReceiptEmail = internalAction({
   args: {
     to: v.string(),
     recipientName: v.string(),
@@ -22,21 +27,24 @@ export const sendPaymentReceiptEmail = action({
   },
   handler: async (_ctx, args) => {
     try {
+      const defaultSubject = args.role === 'patient'
+        ? `Payment Receipt: Booking Confirmation`
+        : `New Payment Received: ${args.patientName}`;
       const result = await sendEmail({
         to: args.to,
-        subject: args.subjectOverride,
+        subject: plainSubject(args.subjectOverride || defaultSubject),
         template: 'PAYMENT_RECEIPT',
         data: {
-          recipientName: args.recipientName,
-          patientName: args.patientName,
-          physiotherapistName: args.physiotherapistName,
+          recipientName: escapeHtml(args.recipientName),
+          patientName: escapeHtml(args.patientName),
+          physiotherapistName: escapeHtml(args.physiotherapistName),
           amount: args.amount,
           currency: args.currency,
-          paymentReference: args.paymentReference,
+          paymentReference: escapeHtml(args.paymentReference),
           date: args.date,
-          bookingId: args.bookingId,
-          patientEmail: args.patientEmail,
-          patientPhone: args.patientPhone,
+          bookingId: escapeHtml(args.bookingId),
+          patientEmail: escapeHtml(args.patientEmail),
+          patientPhone: escapeOptional(args.patientPhone),
           role: args.role,
         },
       });

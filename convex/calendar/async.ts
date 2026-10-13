@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { v } from "convex/values";
-import { action, mutation } from "../_generated/server";
+import { action, mutation, internalAction, internalMutation } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { api } from "../_generated/api";
 
@@ -8,7 +8,7 @@ import { api } from "../_generated/api";
  * Async wrapper for creating calendar events
  * This is called via scheduler from mutations
  */
-export const createCalendarEventAsync = action({
+export const createCalendarEventAsync = internalAction({
     args: {
         userId: v.id("users"),
         appointmentId: v.id("appointments"),
@@ -27,7 +27,7 @@ export const createCalendarEventAsync = action({
             console.log("[CREATE CALENDAR ASYNC] Starting async calendar event creation");
 
             // Call the main calendar event creation action
-            const result = await ctx.runAction(internal.calendar.service.createCalendarEvent, args);
+            const result = await ctx.runAction(internal.calendar.service.createCalendarEventInternal, args);
 
             if (result.success && result.meetLink) {
                 // Update the appointment with the Google Meet link
@@ -63,7 +63,7 @@ export const createCalendarEventAsync = action({
 });
 
 // Internal mutation to update appointment with Meet link
-export const updateAppointmentWithMeetLink = mutation({
+export const updateAppointmentWithMeetLink = internalMutation({
     args: {
         appointmentId: v.id("appointments"),
         googleMeetLink: v.string(),
@@ -84,7 +84,7 @@ export const updateAppointmentWithMeetLink = mutation({
 });
 
 // Send email with Google Meet link
-export const sendMeetLinkEmail = action({
+export const sendMeetLinkEmail = internalAction({
     args: {
         to: v.string(),
         displayName: v.string(),

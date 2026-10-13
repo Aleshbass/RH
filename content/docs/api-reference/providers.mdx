@@ -1,63 +1,142 @@
 ---
-title: Providers API
-description: Search and discover MRTBN-verified physiotherapists across Nigeria.
+title: Providers
+description: Search Rehabify's directory of verified, MRTBN-licensed physiotherapists who are currently accepting patients.
 ---
 
-# Providers API
+The provider directory lists physiotherapists who are approved on Rehabify and currently accepting patients. Use it to show patients or case managers who delivers care in a given area.
 
-Search Rehabify's network of licensed physiotherapists by location, clinical specialty, gender preference, and session modalities.
+You don't need to choose a provider when you create a referral. Rehabify matches each referral with a physiotherapist, and the match appears in the referral's `provider` field and in the `referral.provider_matched` webhook.
 
----
-
-## Search Providers
-
-`GET /api/v1/partners/providers`
-
-### Query Parameters
-
-| Parameter | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `city` | `string` | No | Filter by city (e.g. `Lagos`, `Abuja`, `Port Harcourt`, `Ibadan`) |
-| `area` | `string` | No | Neighborhood / district (e.g. `Ikeja`, `Lekki`, `Maitama`) |
-| `specialty` | `string` | No | `orthopedics` \| `neuro_rehab` \| `sports_physio` \| `geriatrics` \| `pediatrics` |
-| `modality` | `string` | No | `home_visit` \| `in_clinic` \| `virtual` |
-| `verified_only` | `boolean` | No | Default: `true` |
-| `limit` | `integer` | No | Number of results (Default: `20`, Max: `100`) |
-
-### Example Request
-
-```bash
-curl "https://api.physioaroundme.com/api/v1/partners/providers?city=Lagos&specialty=sports_physio&modality=home_visit" \
-  -H "Authorization: Bearer sk_live_99281..."
-```
-
-### Example Response (`200 OK`)
+## The provider object
 
 ```json
 {
-  "total": 14,
-  "providers": [
-    {
-      "id": "phy_98124801",
-      "name": "Dr. Eniola Ojuko (PT)",
-      "mrtbn_license": "MRTBN/PT/2018/1944",
-      "rating": 4.95,
-      "review_count": 84,
-      "years_of_experience": 8,
-      "specialties": [
-        "Sports Injury Rehabilitation",
-        "Knee & ACL Recovery",
-        "Manual Therapy"
-      ],
-      "locations_served": ["Ikeja", "Maryland", "Magodo", "Omole"],
-      "session_modalities": {
-        "home_visit": true,
-        "in_clinic": true,
-        "virtual": true
-      },
-      "clinic_affiliation": "Mainland Orthopedic Recovery Clinic",
-      "next_available_slot": "2026-08-17T11:00:00.000Z"
-    }
-  ]
+  "object": "provider",
+  "id": "jh6n3b8v1c5x7z9a2s4d6f8g0h1j3k5l",
+  "name": "Chiamaka Obi",
+  "title": "Physiotherapist",
+  "license_number": "MRTBN/PT/12345",
+  "city": "Lagos",
+  "years_of_experience": 7,
+  "rating": 4.8,
+  "review_count": 23,
+  "specializations": ["Sports injury", "Orthopaedics"],
+  "modes": ["virtual", "in_person"]
 }
 ```
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `object` | string | Always `provider`. |
+| `id` | string | Provider ID. |
+| `name` | string | Full name. |
+| `title` | string or null | Professional title, for example `Physiotherapist`. |
+| `license_number` | string or null | MRTBN licence number. |
+| `city` | string or null | Primary city of practice. |
+| `years_of_experience` | integer or null | Years in practice. |
+| `rating` | number or null | Average patient rating. |
+| `review_count` | integer or null | Number of patient reviews. |
+| `specializations` | array of strings | Clinical areas of focus. |
+| `modes` | array of strings | `virtual` and/or `in_person`. |
+
+Unknown values are `null`. Rehabify never invents data to fill a gap.
+
+## List providers
+
+```http
+GET /partners/providers
+```
+
+### Query parameters
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `city` | string | Filter by city, for example `Lagos` or `Abuja`. |
+| `state` | string | Filter by state, for example `Lagos` or `FCT`. |
+| `specialty` | string | Filter by specialisation, for example `Sports injury`. |
+| `mode` | string | `virtual` or `in_person`. |
+| `limit` | integer | 1–100. Default `25`. |
+
+This endpoint returns a single page. There's no cursor and `next_cursor` is always `null`. `has_more` is `true` when more providers match than `limit` allows, so narrow your filters or raise `limit`.
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl "https://api.physioaroundme.com/v1/partners/providers?city=Lagos&mode=in_person&limit=10" \
+  -H "Authorization: Bearer $REHABIFY_API_KEY"
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+ (save as list-providers.mjs)
+const params = new URLSearchParams({ city: "Lagos", mode: "in_person", limit: "10" });
+const res = await fetch(`https://api.physioaroundme.com/v1/partners/providers?${params}`, {
+  headers: { Authorization: `Bearer ${process.env.REHABIFY_API_KEY}` },
+});
+const page = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${page.error.code}: ${page.error.message}`);
+for (const p of page.data) console.log(p.name, p.license_number, p.specializations.join(", "));
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+resp = requests.get(
+    "https://api.physioaroundme.com/v1/partners/providers",
+    params={"city": "Lagos", "mode": "in_person", "limit": 10},
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+resp.raise_for_status()
+for p in resp.json()["data"]:
+    print(p["name"], p["license_number"], ", ".join(p["specializations"]))
+```
+
+</Tab>
+</Tabs>
+
+```json title="200 OK"
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "provider",
+      "id": "jh6n3b8v1c5x7z9a2s4d6f8g0h1j3k5l",
+      "name": "Chiamaka Obi",
+      "title": "Physiotherapist",
+      "license_number": "MRTBN/PT/12345",
+      "city": "Lagos",
+      "years_of_experience": 7,
+      "rating": 4.8,
+      "review_count": 23,
+      "specializations": ["Sports injury", "Orthopaedics"],
+      "modes": ["virtual", "in_person"]
+    },
+    {
+      "object": "provider",
+      "id": "jh6q2w4e6r8t0y1u3i5o7p9a2s4d6f8g",
+      "name": "Emeka Nwosu",
+      "title": "Physiotherapist",
+      "license_number": "MRTBN/PT/20417",
+      "city": "Lagos",
+      "years_of_experience": null,
+      "rating": 4.6,
+      "review_count": 9,
+      "specializations": ["Neurological rehabilitation"],
+      "modes": ["in_person"]
+    }
+  ],
+  "has_more": true,
+  "next_cursor": null
+}
+```
+
+**Errors:** `400 invalid_parameter` for an invalid `mode` or `limit`, plus the standard [authentication errors](/docs/getting-started/authentication#authentication-errors).

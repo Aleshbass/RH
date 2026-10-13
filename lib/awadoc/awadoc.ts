@@ -90,7 +90,6 @@ export interface SignatureVerificationResult {
         bodyHash: string;
         timestamp: number;
         receivedSignature: string;
-        expectedSignature?: string;
         error?: string;
     };
 }
@@ -103,18 +102,25 @@ export function verifyInboundSignature(
     const config = getAwadocConfig();
 
     const bodyHash = crypto.createHash("sha256").update(rawBody).digest("hex");
+    // Diagnostics for server logs only. Never include the expected signature: anyone who
+    // saw it could replay the request with a valid signature.
     const debug = {
         rawBodyLength: rawBody.length,
         rawBodyPreview: rawBody.substring(0, 200),
         bodyHash,
         timestamp,
         receivedSignature: signature,
-        expectedSignature: "",
     };
+
+    // Fail closed: an empty key would make every signature forgeable
+    if (!config.secretKey) {
+        console.error("[AwaDoc] AWADOC_SECRET_KEY is not set — rejecting inbound webhook");
+        return { valid: false, debug: { ...debug, error: "webhook secret not configured" } };
+    }
 
     // Clock-skew guard (±5 minutes)
     const now = Math.floor(Date.now() / 1000);
-    if (Math.abs(now - timestamp) > 300) {
+    if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > 300) {
         console.warn("[AwaDoc] Signature rejected: timestamp skew too large", {
             now,
             received: timestamp,
@@ -124,7 +130,6 @@ export function verifyInboundSignature(
     }
 
     const expected = buildSignatureFromRaw(rawBody, timestamp, config.secretKey);
-    debug.expectedSignature = expected;
 
     // Timing-safe comparison
     try {

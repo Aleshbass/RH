@@ -1,86 +1,30 @@
-import { NextRequest, NextResponse } from "next/server";
-import { authenticatePartner } from "@/lib/partner-auth";
-import { getConvexClient } from "@/lib/convex-client";
-import { api } from "@/convex/_generated/api";
+import type { NextRequest } from "next/server";
+import { authenticatePartner, logPartnerRequest } from "@/lib/partner-api/auth";
+import { callPartnerGateway } from "@/lib/partner-api/gateway";
+import { apiError, apiJson, coreError, internalError } from "@/lib/partner-api/http";
 
-interface RouteParams {
-  params: Promise<{ referralId: string }>;
-}
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest, props: RouteParams) {
-  const { partner, response } = await authenticatePartner(req);
-  if (!partner) return response!;
-
+/** GET /v1/partners/referrals/{id} — id, tracking code, or partner_reference. */
+export async function GET(req: NextRequest, props: { params: Promise<{ referralId: string }> }) {
+  const auth = await authenticatePartner(req);
+  if (!auth.ok) return auth.response;
+  const { partner, ctx } = auth;
   const { referralId } = await props.params;
-
-  if (!referralId) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "missing_referral_id",
-          message: "Referral ID or partner reference ID is required in the path.",
-        },
-      },
-      { status: 400 }
-    );
+  const identifier = (referralId ?? "").trim();
+  if (!identifier || identifier.length > 200) {
+    return apiError(ctx, 400, "invalid_parameter", "A referral id, tracking code or partner_reference is required.", { param: "id" });
   }
-
   try {
-    const convex = getConvexClient();
-    const referral = await convex.query(api.partners.getReferralDetails, {
-      identifier: decodeURIComponent(referralId),
-      partnerCode: partner.code,
-    });
-
-    if (!referral) {
-      return NextResponse.json(
-        {
-          error: {
-            code: "referral_not_found",
-            message: `No referral found matching ID or reference '${referralId}'.`,
-          },
-        },
-        { status: 404 }
-      );
-    }
-
-    const host = req.headers.get("host") || "physioaroundme.com";
-    const protocol = host.includes("localhost") ? "http" : "https";
-    const trackingUrl = `${protocol}://${host}/track/${referral.trackingCode}`;
-
-    return NextResponse.json({
-      status: "success",
-      referral_id: referral._id,
-      tracking_code: referral.trackingCode,
-      partner_reference: referral.partnerExternalId || null,
-      tracking_url: trackingUrl,
-      current_status: referral.status,
-      patient: referral.patient,
-      clinical_notes: referral.clinicalNotes,
-      billing_mode: referral.billingMode,
-      assigned_physiotherapist: referral.assignedPhysiotherapist,
-      sessions_completed: referral.sessions.completed,
-      sessions_total: referral.sessions.total,
-      last_session_at: referral.sessions.lastSessionAt
-        ? new Date(referral.sessions.lastSessionAt).toISOString()
-        : null,
-      next_session_at: referral.sessions.nextSessionAt
-        ? new Date(referral.sessions.nextSessionAt).toISOString()
-        : null,
-      created_at: new Date(referral.createdAt).toISOString(),
-      updated_at: new Date(referral.updatedAt).toISOString(),
+    const result = await callPartnerGateway("getReferral", { partnerCode: partner.code, environment: partner.environment, identifier });
+    const response = result?.ok ? apiJson(ctx, result.referral) : coreError(ctx, result);
+    return logPartnerRequest(req, auth, response, {
+      eventType: "api.referral_get",
+      trackingCode: result?.referral?.tracking_code,
+      errorCode: result?.ok ? undefined : result?.code,
     });
   } catch (error) {
-    console.error("Failed to fetch referral status:", error);
-    return NextResponse.json(
-      {
-        error: {
-          code: "fetch_referral_failed",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        },
-      },
-      { status: 500 }
-    );
+    return logPartnerRequest(req, auth, internalError(ctx, error), { eventType: "api.referral_get", errorCode: "internal_error" });
   }
 }

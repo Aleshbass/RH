@@ -1,8 +1,15 @@
 // @ts-nocheck
 import { v } from "convex/values";
-import { mutation, action, query } from "../_generated/server";
+import { mutation, action, query, internalAction, internalMutation, internalQuery } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
 import { api, internal } from "../_generated/api";
+import {
+  calendarUserFor,
+  getCallerOrNull,
+  requireCaller,
+  requireCalendarUserInAction,
+  resolveCalendarCallerHandler,
+} from "./access";
 
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI!;
 
@@ -12,19 +19,26 @@ export interface OAuthState {
   redirectUri: string;
 }
 
-// Generate secure OAuth state
+// Generate secure OAuth state. The state is a bearer secret: whoever holds it can attach a
+// Google account to the user it was issued for, so it must be unguessable.
 function generateSecureState(): string {
-  return Math.random().toString(36).substring(2, 15);
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // Generate OAuth URL for Google Calendar
 export const generateAuthUrl = action({
   args: {
-    userId: v.id("users"),
+    // Ignored: the connection is always for the signed-in user. Kept for older clients.
+    userId: v.optional(v.id("users")),
     platform: v.union(v.literal("google"), v.literal("outlook")),
     redirectUri: v.optional(v.string()),
   },
   handler: async (ctx: any, args: any) => {
+    // Never honour another userId here, not even from an admin: whoever completes the
+    // Google consent screen would attach their Google account to that user's calendar.
+    const userId = await requireCalendarUserInAction(ctx, { allowAdminOverride: false });
     const state = generateSecureState();
     const scopes = [
       "https://www.googleapis.com/auth/calendar",
@@ -43,7 +57,7 @@ export const generateAuthUrl = action({
     // Store state for verification
     await ctx.runMutation(internal.calendar.oauth.storeOAuthState, {
       state,
-      userId: args.userId,
+      userId,
       redirectUri: args.redirectUri || GOOGLE_REDIRECT_URI,
     });
 
@@ -51,16 +65,44 @@ export const generateAuthUrl = action({
   },
 });
 
-// Internal: Get stored Google Calendar credentials for a user
+// Connection status for the signed-in user (an admin may name another user).
+// Never returns OAuth tokens to a browser; server code uses getCredentialsInternal.
+// Callers only test truthiness: null when not connected (or signed out).
 export const getCredentials = query({
+  args: { userId: v.optional(v.id("users")) },
+  handler: async (ctx, args) => {
+    const caller = await getCallerOrNull(ctx);
+    if (!caller) return null;
+    const credential = await ctx.db
+      .query("googleCalendarCredentials")
+      .withIndex("by_user_id", (q: any) => q.eq("userId", calendarUserFor(caller, args.userId)))
+      .first();
+    if (!credential) return null;
+    return { connected: true as const, updatedAt: credential.updatedAt };
+  },
+});
+
+// Internal: stored Google Calendar credentials (including tokens) for server-side API calls
+export const getCredentialsInternal = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const credential = await ctx.db
       .query("googleCalendarCredentials")
-      .filter((q: any) => q.eq(q.field("userId"), args.userId))
+      .withIndex("by_user_id", (q: any) => q.eq("userId", args.userId))
       .first();
     return credential || null;
   },
+});
+
+// Internal: resolve the signed-in caller for actions (see ./access)
+export const resolveCalendarCaller = internalQuery({
+  args: {
+    clerkId: v.string(),
+    requestedUserId: v.optional(v.id("users")),
+    allowAdminOverride: v.boolean(),
+    appointmentId: v.optional(v.id("appointments")),
+  },
+  handler: async (ctx, args) => await resolveCalendarCallerHandler(ctx, args),
 });
 
 // Exchange authorization code for tokens
@@ -75,7 +117,7 @@ export const exchangeCode = action({
       state: args.state,
     });
 
-    if (!storedState) {
+    if (!storedState || storedState.expiresAt < Date.now()) {
       throw new Error("Invalid OAuth state");
     }
 
@@ -104,7 +146,7 @@ export const exchangeCode = action({
     const expiryDate = Date.now() + (tokenData.expires_in * 1000);
     let refreshToken = tokenData.refresh_token;
     if (!refreshToken) {
-      const existing = await ctx.runQuery(internal.calendar.oauth.getCredentials, {
+      const existing = await ctx.runQuery(internal.calendar.oauth.getCredentialsInternal, {
         userId: storedState.userId,
       });
       if (!existing || !existing.refreshToken) {
@@ -129,13 +171,13 @@ export const exchangeCode = action({
   },
 });
 
-// Refresh access token
-export const refreshAccessToken = action({
+// Refresh access token (internal: only server code refreshes tokens)
+export const refreshAccessToken = internalAction({
   args: {
     userId: v.id("users"),
   },
   handler: async (ctx: any, args: any) => {
-    const credential = await ctx.runQuery(internal.calendar.oauth.getCredentials, {
+    const credential = await ctx.runQuery(internal.calendar.oauth.getCredentialsInternal, {
       userId: args.userId,
     });
 
@@ -178,7 +220,7 @@ export const refreshAccessToken = action({
 });
 
 // Store OAuth state for verification
-export const storeOAuthState = mutation({
+export const storeOAuthState = internalMutation({
   args: {
     state: v.string(),
     userId: v.id("users"),
@@ -198,7 +240,7 @@ export const storeOAuthState = mutation({
 });
 
 // Verify OAuth state
-export const verifyOAuthState = query({
+export const verifyOAuthState = internalQuery({
   args: {
     state: v.string(),
   },
@@ -213,7 +255,7 @@ export const verifyOAuthState = query({
 });
 
 // Store Google Calendar credentials
-export const storeCredentials = mutation({
+export const storeCredentials = internalMutation({
   args: {
     userId: v.id("users"),
     accessToken: v.string(),
@@ -244,7 +286,7 @@ export const storeCredentials = mutation({
 });
 
 // Clean up OAuth state after use
-export const cleanupOAuthState = mutation({
+export const cleanupOAuthState = internalMutation({
   args: {
     state: v.string(),
   },
@@ -260,15 +302,16 @@ export const cleanupOAuthState = mutation({
   },
 });
 
-// Disconnect Google Calendar
+// Disconnect Google Calendar (the signed-in user's own; an admin may name another user)
 export const disconnectGoogleCalendar = mutation({
   args: {
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
+    const caller = await requireCaller(ctx);
     const existing = await ctx.db
       .query("googleCalendarCredentials")
-      .filter((q: any) => q.eq(q.field("userId"), args.userId))
+      .withIndex("by_user_id", (q: any) => q.eq("userId", calendarUserFor(caller, args.userId)))
       .first();
 
     if (existing) {
@@ -277,15 +320,17 @@ export const disconnectGoogleCalendar = mutation({
   },
 });
 
-// Check if user has Google Calendar connected
+// Check if the signed-in user has Google Calendar connected (an admin may name another user)
 export const hasGoogleCalendarConnected = query({
   args: {
-    userId: v.id("users"),
+    userId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
+    const caller = await getCallerOrNull(ctx);
+    if (!caller) return false;
     const credentials = await ctx.db
       .query("googleCalendarCredentials")
-      .filter((q: any) => q.eq(q.field("userId"), args.userId))
+      .withIndex("by_user_id", (q: any) => q.eq("userId", calendarUserFor(caller, args.userId)))
       .first();
 
     return !!credentials;

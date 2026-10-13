@@ -2,10 +2,20 @@
 /**
  * Verification Badge Purchase & Management
  * Handles subscription tiers: monthly, 12-month, yearly
+ *
+ * A purchase is only activated from Paystack-verified evidence: either the
+ * verifyVerificationPayment action (re-verifies the reference with Paystack's API) or the
+ * signed charge webhook (recordVerificationPaystackWebhook). The completion itself is an
+ * internal, idempotent mutation.
  */
 
 import { v } from "convex/values";
-import { mutation, internalMutation } from "../_generated/server";
+import { mutation, action, internalMutation, type MutationCtx } from "../_generated/server";
+import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import { verifyPaystackSignature } from "../helpers/paystackSignature";
+
+type BadgeTier = "monthly" | "12_month" | "yearly";
 
 // Verification badge pricing in Naira (converted to kobo)
 const VERIFICATION_PRICING = {
@@ -98,80 +108,200 @@ export const purchaseVerificationBadge = mutation({
   },
 });
 
+// Paystack reference created by VerificationBadgeWidget: VERIFICATION_<transactionId>_<timestamp>
+const VERIFICATION_REFERENCE = /^VERIFICATION_([A-Za-z0-9]+)_\d+$/;
+
+type VerificationCompletion =
+  | { success: true; alreadyCompleted?: boolean; userId: Id<"users">; tier: BadgeTier; expiresAt?: number }
+  | { success: false; reason: string };
+
 /**
- * Complete verification badge purchase after payment
+ * Applies Paystack-verified payment evidence to a pending verification-badge transaction.
+ * The transaction is taken from the (Paystack-confirmed) reference, never from client
+ * metadata, and the paid amount/currency must cover the transaction. Idempotent: a
+ * repeated webhook or verify call for the same reference returns success without
+ * extending the badge or emailing again.
  */
-export const completeVerificationPurchase = mutation({
-  args: {
-    transactionId: v.id("marketplaceTransactions"),
-    paymentReference: v.string(),
-  },
-  
-  handler: async (ctx, args) => {
-    const transaction = await ctx.db.get(args.transactionId);
-    if (!transaction) {
-      throw new Error("Transaction not found");
+async function completeVerificationPaymentCore(
+  ctx: MutationCtx,
+  reference: string,
+  paid: { amountKobo: number; currency: string }
+): Promise<VerificationCompletion> {
+  const match = VERIFICATION_REFERENCE.exec(reference);
+  if (!match) return { success: false, reason: "invalid_reference" };
+  const transactionId = ctx.db.normalizeId("marketplaceTransactions", match[1]);
+  if (!transactionId) return { success: false, reason: "transaction_not_found" };
+  const transaction = await ctx.db.get(transactionId);
+  if (!transaction || transaction.type !== "verification_badge" || !transaction.badgeTier) {
+    return { success: false, reason: "transaction_not_found" };
+  }
+  const tier = transaction.badgeTier;
+
+  if (transaction.status === "completed") {
+    if (transaction.paymentReference === reference) {
+      return { success: true, alreadyCompleted: true, userId: transaction.userId, tier };
     }
-    
-    if (transaction.type !== "verification_badge") {
-      throw new Error("Invalid transaction type");
-    }
-    
-    // Update transaction
-    await ctx.db.patch(args.transactionId, {
-      status: "completed",
-      paymentReference: args.paymentReference,
-      updatedAt: Date.now(),
-      completedAt: Date.now(),
-    });
-    
-    // Get physiotherapist profile
-    const profile = await ctx.db
-      .query("physiotherapistProfiles")
-      .withIndex("by_user_id", (q) => q.eq("userId", transaction.userId))
-      .first();
-    
-    if (!profile) {
-      throw new Error("Profile not found");
-    }
-    
-    // Calculate expiration
-    const durationDays = VERIFICATION_DURATION[transaction.badgeTier!];
-    const expiresAt = Date.now() + durationDays * 24 * 60 * 60 * 1000;
-    
-    // Update profile with verification badge
-    await ctx.db.patch(profile._id, {
-      verificationBadge: {
-        status: "verified",
-        tier: transaction.badgeTier!,
-        paidAt: Date.now(),
-        expiresAt,
-        verificationFee: transaction.amount,
-        autoRenew: false, // Can be enabled later
-      },
-    });
-    
-    // Log successful activation (schema-compliant)
+    // A second, different payment for an already-activated transaction: keep a record
+    // so it can be reconciled/refunded, but do not extend the badge twice.
     await ctx.db.insert("systemLogs", {
-      action: "verification_badge_activated",
+      action: "verification_badge_duplicate_payment",
       type: "marketplace",
       timestamp: Date.now(),
       userId: transaction.userId,
-      targetEntityId: String(profile._id),
-      targetEntityType: "physiotherapist_profile",
-      details: {
-        tier: transaction.badgeTier!,
-        transactionId: String(args.transactionId),
-        paymentReference: args.paymentReference,
-      },
+      targetEntityId: String(transactionId),
+      targetEntityType: "marketplace_transaction",
+      details: { paymentReference: reference, amountKobo: paid.amountKobo, currency: paid.currency },
     });
-    
-    return { 
-      success: true,
-      userId: transaction.userId,
-      tier: transaction.badgeTier!,
+    return { success: false, reason: "transaction_already_completed" };
+  }
+  if (transaction.status !== "pending") return { success: false, reason: `transaction_${transaction.status}` };
+
+  const reused = await ctx.db
+    .query("marketplaceTransactions")
+    .withIndex("by_payment_reference", (q) => q.eq("paymentReference", reference))
+    .first();
+  if (reused && reused._id !== transactionId) return { success: false, reason: "reference_already_used" };
+
+  if (paid.currency !== (transaction.currency || "NGN")) return { success: false, reason: "currency_mismatch" };
+  if (!Number.isFinite(paid.amountKobo) || paid.amountKobo < transaction.amount) {
+    return { success: false, reason: "amount_mismatch" };
+  }
+
+  const profile = await ctx.db
+    .query("physiotherapistProfiles")
+    .withIndex("by_user_id", (q) => q.eq("userId", transaction.userId))
+    .first();
+  if (!profile) return { success: false, reason: "profile_not_found" };
+
+  const now = Date.now();
+  const durationDays = VERIFICATION_DURATION[tier];
+  const expiresAt = now + durationDays * 24 * 60 * 60 * 1000;
+
+  await ctx.db.patch(transactionId, {
+    status: "completed",
+    paymentReference: reference,
+    paymentMethod: "paystack",
+    updatedAt: now,
+    completedAt: now,
+  });
+
+  // Update profile with verification badge
+  await ctx.db.patch(profile._id, {
+    verificationBadge: {
+      status: "verified",
+      tier,
+      paidAt: now,
       expiresAt,
-    };
+      verificationFee: transaction.amount,
+      autoRenew: false, // Can be enabled later
+    },
+  });
+
+  // Log successful activation (schema-compliant)
+  await ctx.db.insert("systemLogs", {
+    action: "verification_badge_activated",
+    type: "marketplace",
+    timestamp: now,
+    userId: transaction.userId,
+    targetEntityId: String(profile._id),
+    targetEntityType: "physiotherapist_profile",
+    details: {
+      tier,
+      transactionId: String(transactionId),
+      paymentReference: reference,
+    },
+  });
+
+  // Confirmation email to the physiotherapist's own address (from the users table)
+  const user = await ctx.db.get(transaction.userId);
+  if (user?.email) {
+    const userName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || undefined;
+    await ctx.scheduler.runAfter(0, internal.actions.emails.sendVerificationBadgeEmail.sendVerificationBadgeConfirmation, {
+      userEmail: user.email,
+      userName,
+      tier,
+      amount: paid.amountKobo,
+      expiresAt,
+      paymentReference: reference,
+    });
+  }
+
+  return { success: true, userId: transaction.userId, tier, expiresAt };
+}
+
+async function fetchPaystackTransaction(reference: string) {
+  const secret = process.env.PAYSTACK_SECRET_KEY;
+  if (!secret) throw new Error("Payment service not configured");
+  const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+    headers: { Authorization: `Bearer ${secret}` },
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.status || !data.data) return null;
+  return data.data as { status: string; amount: number; currency: string; reference: string };
+}
+
+/** Applies Paystack-verified evidence to a verification-badge transaction (internal). */
+export const completeVerifiedVerificationPayment = internalMutation({
+  args: { reference: v.string(), amountKobo: v.number(), currency: v.string() },
+  handler: async (ctx, args): Promise<VerificationCompletion> =>
+    completeVerificationPaymentCore(ctx, args.reference, { amountKobo: args.amountKobo, currency: args.currency }),
+});
+
+/**
+ * Called by /api/payments/verify after checkout: re-verifies the reference with Paystack
+ * server-side (status, amount, currency) and activates the badge it paid for.
+ * Safe to call repeatedly and without auth: only a genuinely paid reference has any effect.
+ */
+export const verifyVerificationPayment = action({
+  args: { reference: v.string() },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ success: boolean; status: string; tier?: BadgeTier; expiresAt?: number }> => {
+    const reference = args.reference.trim();
+    if (!VERIFICATION_REFERENCE.test(reference)) return { success: false, status: "invalid_reference" };
+    const tx = await fetchPaystackTransaction(reference);
+    if (!tx) return { success: false, status: "not_found" };
+    if (tx.status !== "success") return { success: false, status: tx.status };
+    if (tx.reference !== reference) return { success: false, status: "reference_mismatch" };
+    const result: VerificationCompletion = await ctx.runMutation(
+      internal.marketplace.verification.completeVerifiedVerificationPayment,
+      { reference, amountKobo: Number(tx.amount) || 0, currency: String(tx.currency || "") }
+    );
+    if (!result.success) return { success: false, status: result.reason };
+    return { success: true, status: "success", tier: result.tier, expiresAt: result.expiresAt };
+  },
+});
+
+/**
+ * Paystack charge webhook for verification-badge payments (VERIFICATION_ references).
+ * The HMAC-SHA512 signature is verified here, inside Convex, before anything else, so
+ * this public entry point cannot be used to fake a payment.
+ */
+export const recordVerificationPaystackWebhook = mutation({
+  args: { rawBody: v.string(), signature: v.string() },
+  handler: async (ctx, args) => {
+    if (!(await verifyPaystackSignature(args.rawBody, args.signature))) {
+      throw new Error("Invalid Paystack webhook signature");
+    }
+    let payload: any;
+    try {
+      payload = JSON.parse(args.rawBody);
+    } catch {
+      throw new Error("Invalid webhook payload");
+    }
+    const data = payload?.data ?? {};
+    const reference = typeof data.reference === "string" ? data.reference : "";
+    if (!reference.startsWith("VERIFICATION_")) return { handled: false };
+    if (payload.event !== "charge.success") return { handled: false };
+    if (data.status !== undefined && data.status !== "success") {
+      return { handled: true, success: false, reason: `charge_${data.status}` };
+    }
+    const result = await completeVerificationPaymentCore(ctx, reference, {
+      amountKobo: Number(data.amount) || 0,
+      currency: typeof data.currency === "string" ? data.currency : "",
+    });
+    return { handled: true, ...result };
   },
 });
 

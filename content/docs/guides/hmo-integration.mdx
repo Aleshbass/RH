@@ -1,79 +1,202 @@
 ---
-title: HMO & Insurer Integration Guide
-description: Complete blueprint for Health Maintenance Organizations to offer frictionless physiotherapy care.
+title: HMO and insurer integration
+description: Refer covered members to Rehabify with HMO direct billing, keep case records in sync with webhooks, and use progress reports for utilisation review.
 ---
 
-# HMO & Insurer Integration Guide
+This guide shows how a Health Maintenance Organisation (HMO) or insurer can send covered members to Rehabify for physiotherapy, and track their care without paper claims.
 
-This guide walks through how HMOs (such as Reliance, AXA Mansard, Hygeia, and Leadway) can integrate Rehabify to provide pre-authorized physiotherapy sessions for enrollees without paper claims.
+## The workflow
 
----
+1. **A member needs physiotherapy.** A doctor recommends it, or the member asks in your app or call centre.
+2. **You authorise the care in your own system,** as you do today, and get your authorisation or case number.
+3. **Your system creates a referral** with `billing_mode: "hmo_direct_billing"` and your case number as `partner_reference`.
+4. **You give the member `links.whatsapp_intake_url`** by SMS or in your app, so they can start with Joy straight away. Rehabify's care team also contacts them.
+5. **Webhooks keep your case record in sync** as the member is contacted, booked, treated and discharged.
+6. **You pull a progress report** (JSON or PDF) for utilisation review and to close the case.
 
-## The Workflow
+<Callout type="info" title="Eligibility checks are coming soon">Live eligibility and pre-authorisation checks through the API aren't available yet. `POST /partners/eligibility` returns `501 feature_not_available` in live, and only a simulated preview works in sandbox. Authorise care in your own system and pass your reference in `partner_reference` or `metadata`. See [Eligibility](/docs/api-reference/eligibility).</Callout>
 
-```mermaid
-sequenceDiagram
-    participant Member as HMO Member
-    participant HMO as HMO App / Portal
-    participant Rehabify as Rehabify API
-    participant Physio as Verified Physio
-    
-    Member->>HMO: Requests Physio Care / Doctor Recommendation
-    HMO->>Rehabify: POST /v1/partners/referrals (with HMO policy code)
-    Rehabify->>Member: Joy WhatsApp Intake & Scheduling
-    Physio->>Member: Delivers Care (Home or Clinic)
-    Physio->>Rehabify: Logs Clinical Outcomes
-    Rehabify->>HMO: Webhook (session.completed + clinical report)
-```
+## 1. Create the referral
 
----
+Use your authorisation or case number as `partner_reference`. It must be unique per environment, and you can fetch the referral with it later. Put plan details in `metadata`, never clinical details.
 
-## 1. Verify Eligibility & Create Pre-Auth
-
-Before creating a referral, check the member's remaining annual session allowance:
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
 
 ```bash
-curl -X POST https://api.physioaroundme.com/api/v1/partners/eligibility \
-  -H "Authorization: Bearer sk_live_your_hmo_key" \
+curl https://api.physioaroundme.com/v1/partners/referrals \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 1c9e7a52-3b8d-4f6e-a1c0-9d8e7f6a5b4c" \
   -d '{
-    "policy_number": "AXA-009182",
-    "member_phone": "+2348031122334",
-    "hmo_code": "AXA_MANSARD"
-  }'
-```
-
----
-
-## 2. Dispatch the Referral
-
-Send the referral with `billing_mode: "hmo_direct_billing"`. Rehabify will bill the HMO directly at the agreed bulk rate:
-
-```bash
-curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
-  -H "Authorization: Bearer sk_live_your_hmo_key" \
-  -H "Content-Type: application/json" \
-  -d '{
+    "partner_reference": "AUTH-2026-55120",
     "patient": {
       "first_name": "Kelechi",
       "last_name": "Iheanacho",
-      "phone": "+2348031122334",
+      "phone": "08031122334",
       "city": "Lagos",
+      "state": "Lagos",
       "area": "Victoria Island"
     },
-    "clinical_notes": {
-      "diagnosis": "Post-Op Meniscus Repair",
-      "recommended_sessions": 6
+    "clinical": {
+      "condition": "Post-operative knee rehabilitation (meniscus repair)",
+      "notes": "Arthroscopic meniscus repair 3 weeks ago. Cleared for physiotherapy by the orthopaedic surgeon.",
+      "priority": "urgent",
+      "recommended_sessions": 8,
+      "referring_clinician": "Dr. Adebayo (Orthopaedics)"
     },
-    "billing_mode": "hmo_direct_billing"
+    "care": { "preferred_mode": "in_person", "preferred_contact_channel": "whatsapp" },
+    "billing_mode": "hmo_direct_billing",
+    "consent": {
+      "granted": true,
+      "method": "call_centre_verbal",
+      "captured_at": "2026-10-13T08:45:00.000Z",
+      "privacy_notice_version": "2026-09-01"
+    },
+    "metadata": { "plan": "gold", "authorised_sessions": "8" }
   }'
 ```
 
----
+</Tab>
+<Tab>
 
-## 3. Receive Closed-Loop Invoices & Medical Summaries
+```js
+// Node.js 18+. Call from your backend when an authorisation is approved.
+import { randomUUID } from "node:crypto";
 
-When each session is completed, Rehabify fires a `session.completed` webhook containing:
-1. Exact session duration & GPS check-in verification.
-2. Objective pain score reduction.
-3. Monthly itemized billing invoice reference for automatic reconciliation.
+export async function referMember(auth) {
+  const res = await fetch("https://api.physioaroundme.com/v1/partners/referrals", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.REHABIFY_API_KEY}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": auth.idempotencyKey ?? randomUUID(), // persist this with the authorisation
+    },
+    body: JSON.stringify({
+      partner_reference: auth.number, // e.g. "AUTH-2026-55120"
+      patient: {
+        first_name: auth.member.firstName,
+        last_name: auth.member.lastName,
+        phone: auth.member.phone, // "08031122334" or "+2348031122334"
+        city: auth.member.city,
+        state: auth.member.state,
+      },
+      clinical: {
+        condition: auth.condition,
+        notes: auth.clinicalNotes, // write-only: Rehabify clinicians see it, the API never returns it
+        priority: auth.urgent ? "urgent" : "standard",
+        recommended_sessions: auth.sessions,
+      },
+      care: { preferred_mode: "in_person", preferred_contact_channel: "whatsapp" },
+      billing_mode: "hmo_direct_billing",
+      consent: { granted: true, method: "call_centre_verbal", captured_at: auth.consentAt },
+      metadata: { plan: auth.plan, authorised_sessions: String(auth.sessions) },
+    }),
+  });
+
+  const body = await res.json();
+  if (res.status === 409 && body.error.code === "duplicate_partner_reference") {
+    return body.error.existing; // already referred: { id, tracking_code }
+  }
+  if (!res.ok) throw new Error(`${res.status} ${body.error.code}: ${body.error.message}`);
+  return { id: body.id, tracking_code: body.tracking_code, intake: body.links.whatsapp_intake_url };
+}
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+import uuid
+
+import requests
+
+
+def refer_member(auth):
+    """Call from your backend when an authorisation is approved."""
+    resp = requests.post(
+        "https://api.physioaroundme.com/v1/partners/referrals",
+        headers={
+            "Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}",
+            "Idempotency-Key": auth.get("idempotency_key") or str(uuid.uuid4()),  # persist this
+        },
+        json={
+            "partner_reference": auth["number"],  # e.g. "AUTH-2026-55120"
+            "patient": {
+                "first_name": auth["member"]["first_name"],
+                "last_name": auth["member"]["last_name"],
+                "phone": auth["member"]["phone"],  # "08031122334" or "+2348031122334"
+                "city": auth["member"]["city"],
+                "state": auth["member"]["state"],
+            },
+            "clinical": {
+                "condition": auth["condition"],
+                "notes": auth["clinical_summary"],  # write-only
+                "priority": "urgent" if auth["urgent"] else "standard",
+                "recommended_sessions": auth["sessions"],
+            },
+            "care": {"preferred_mode": "in_person", "preferred_contact_channel": "whatsapp"},
+            "billing_mode": "hmo_direct_billing",
+            "consent": {"granted": True, "method": "call_centre_verbal", "captured_at": auth["consent_at"]},
+            "metadata": {"plan": auth["plan"], "authorised_sessions": str(auth["sessions"])},
+        },
+        timeout=30,
+    )
+    body = resp.json()
+    if resp.status_code == 409 and body["error"]["code"] == "duplicate_partner_reference":
+        return body["error"]["existing"]  # already referred: {"id", "tracking_code"}
+    if not resp.ok:
+        raise RuntimeError(f"{resp.status_code} {body['error']['code']}: {body['error']['message']}")
+    return {"id": body["id"], "tracking_code": body["tracking_code"], "intake": body["links"]["whatsapp_intake_url"]}
+```
+
+</Tab>
+</Tabs>
+
+Metadata values must be strings, which is why `authorised_sessions` is sent as `"8"`.
+
+## 2. Hand the member over to Joy
+
+Send the member `links.whatsapp_intake_url`, for example in an SMS: *"Your physiotherapy is approved. Tap to start with Rehabify on WhatsApp: https://wa.me/2348061525811?text=START%20RHB-4829173655"*. The link opens a chat with Joy that's already linked to the referral, and `referral.contacted` fires once the member messages Joy.
+
+## 3. Keep your case record in sync
+
+Map webhook events to your case statuses:
+
+| Event | Suggested case status |
+| :--- | :--- |
+| `referral.created` | Referred |
+| `referral.contacted` | Member engaged |
+| `referral.provider_matched` | Provider assigned (record `provider.name` and `provider.license_number`) |
+| `referral.booked` | Care booked |
+| `referral.in_treatment` | In treatment |
+| `referral.completed` | Discharged: fetch the progress report |
+| `referral.not_suitable` | Not suitable (redirected to appropriate care) |
+| `referral.cancelled` | Cancelled |
+| `referral.closed` | Closed |
+
+Webhooks don't include member details, so match events on `data.referral.partner_reference`, which is your authorisation number. See [Webhooks](/docs/webhooks) and [Signature verification](/docs/webhooks/signature-verification).
+
+## 4. Pull progress reports
+
+For utilisation review, fetch the progress report by your authorisation number. It shows sessions prescribed, attended, upcoming and cancelled, plus milestone dates. It contains no clinical notes.
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/reports/AUTH-2026-55120 \
+  -H "Authorization: Bearer $REHABIFY_API_KEY"
+
+# The same report as a PDF, for the case file
+curl https://api.physioaroundme.com/v1/partners/reports/AUTH-2026-55120/pdf \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -o AUTH-2026-55120.pdf
+```
+
+See [Progress reports](/docs/api-reference/clinical-reports) for the full object, and [Sessions](/docs/api-reference/sessions) for per-appointment attendance.
+
+## Data protection
+
+- Send only the clinical information Rehabify's clinicians need, in `clinical.notes`. It's write-only and never returned.
+- Webhooks and reports never contain clinical notes, and webhooks never contain member personal data.
+- Keep API keys and webhook secrets on your servers only.

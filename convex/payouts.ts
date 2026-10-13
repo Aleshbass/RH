@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
@@ -7,7 +7,7 @@ import { api } from "./_generated/api";
  * Process split payment for completed transactions
  * Distributes funds between platform and physiotherapist/clinic
  */
-export const processSplitPayment = mutation({
+export const processSplitPayment = internalMutation({
   args: {
     invoiceId: v.id("invoices"),
     totalAmount: v.number(),
@@ -60,7 +60,7 @@ export const processSplitPayment = mutation({
 /**
  * Process bulk payout to physiotherapist/clinic bank account
  */
-export const processBulkPayout = mutation({
+export const processBulkPayout = internalMutation({
   args: {
     payoutIds: v.array(v.id("payouts")),
     bankAccountId: v.id("bankAccounts"),
@@ -108,7 +108,7 @@ export const processBulkPayout = mutation({
 /**
  * Update payout status
  */
-export const updatePayoutStatus = mutation({
+export const updatePayoutStatus = internalMutation({
   args: {
     payoutId: v.id("payouts"),
     status: v.union(
@@ -160,7 +160,7 @@ export const updatePayoutStatus = mutation({
 /**
  * Get payout history for a user
  */
-export const getPayoutHistory = query({
+export const getPayoutHistory = internalQuery({
   args: { userId: v.id("users") },
   returns: v.array(v.object({
     _id: v.id("payouts"),
@@ -218,7 +218,7 @@ export const getPayoutHistory = query({
 /**
  * Get pending payouts for a user
  */
-export const getPendingPayouts = query({
+export const getPendingPayouts = internalQuery({
   args: { userId: v.id("users") },
   returns: v.array(v.object({
     _id: v.id("payouts"),
@@ -242,7 +242,7 @@ export const getPendingPayouts = query({
 /**
  * Get payout statistics for dashboard
  */
-export const getPayoutStats = query({
+export const getPayoutStats = internalQuery({
   args: { userId: v.id("users") },
   returns: v.object({
     totalPending: v.number(),

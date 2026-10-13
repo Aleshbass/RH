@@ -1,8 +1,33 @@
-import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { query, mutation, internalMutation, internalQuery, QueryCtx, MutationCtx } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
 import { api } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { publicAppUrl } from "./helpers/appUrl";
+import { getAuthenticatedUser } from "./auth";
+import { isServerCaller } from "./helpers/serverSecret";
+
+/**
+ * True when the signed-in caller is a party to the invoice: its patient, its
+ * physiotherapist, a physiotherapist of its clinic (they see clinic invoices on their
+ * billing page), the clinic owner, or an admin. Signed-out callers are never parties.
+ */
+async function isInvoiceParty(ctx: QueryCtx | MutationCtx, invoice: Doc<"invoices">): Promise<boolean> {
+  const viewer = await getAuthenticatedUser(ctx).catch(() => null);
+  if (!viewer) return false;
+  if (viewer.role === "admin") return true;
+  if (viewer._id === invoice.patientId || viewer._id === invoice.physiotherapistId) return true;
+  if (!invoice.clinicId) return false;
+  const clinic = await ctx.db.get(invoice.clinicId);
+  if (clinic && clinic.ownerId === viewer._id) return true;
+  if (viewer.role === "physiotherapist") {
+    const profile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", viewer._id))
+      .first();
+    return profile?.clinicId === invoice.clinicId;
+  }
+  return false;
+}
 
 // Billing Flow according to PRD:
 // 1. PT completes session → can create invoice
@@ -245,7 +270,11 @@ export const generateInvoicePDF = mutation({
     message: v.string(),
   }),
   handler: async (ctx, args) => {
-    // For now, reuse the public share page as a printable/Downloadable view
+    const invoice = await ctx.db.get(args.invoiceId);
+    if (!invoice || !(await isInvoiceParty(ctx, invoice))) {
+      throw new ConvexError("Invoice not found");
+    }
+    // For now, reuse the share page (parties only) as a printable/downloadable view
     const baseUrl = publicAppUrl();
     const pdfUrl = `${baseUrl}/invoices/shared/${args.invoiceId}?download=pdf`;
     return { success: true, pdfUrl, message: "PDF generated successfully" };
@@ -691,50 +720,71 @@ export const getPatientInvoices = query({
   },
 });
 
+const invoicePaymentView = v.union(
+  v.null(),
+  v.object({
+    _id: v.id("invoices"),
+    invoiceNumber: v.string(),
+    totalAmount: v.number(),
+    status: v.string(),
+    patientId: v.id("users"),
+    physiotherapistId: v.optional(v.id("users")),
+    patientEmail: v.optional(v.string()),
+    platformFeeAmount: v.optional(v.number()),
+    paystackFeeAmount: v.optional(v.number()),
+    feeBreakdown: v.optional(v.object({
+      subtotal: v.number(),
+      discount: v.number(),
+      platformFee: v.number(),
+      paystackPercentage: v.number(),
+      paystackFlat: v.number(),
+      total: v.number(),
+      physiotherapistEarnings: v.number(),
+    })),
+  })
+);
+
+async function loadInvoicePaymentView(ctx: QueryCtx, invoice: Doc<"invoices">) {
+  const patient = await ctx.db.get(invoice.patientId);
+  return {
+    _id: invoice._id,
+    invoiceNumber: invoice.invoiceNumber,
+    totalAmount: invoice.totalAmount,
+    status: invoice.status,
+    patientId: invoice.patientId,
+    physiotherapistId: (invoice as any).physiotherapistId,
+    patientEmail: patient?.email,
+    platformFeeAmount: (invoice as any).platformFeeAmount,
+    paystackFeeAmount: (invoice as any).paystackFeeAmount,
+    feeBreakdown: (invoice as any).feeBreakdown,
+  };
+}
+
 /**
- * Lightweight fetch of an invoice by ID for payment initialization
+ * Lightweight fetch of an invoice by ID for payment initialization.
+ * Our server (CONVEX_SERVER_SECRET) or a signed-in party to the invoice; otherwise null.
+ * /api/payments/initiate calls this as the signed-in patient.
  */
 export const getInvoiceById = query({
+  args: { invoiceId: v.id("invoices"), serverSecret: v.optional(v.string()) },
+  returns: invoicePaymentView,
+  handler: async (ctx, args) => {
+    const fromServer = isServerCaller(args.serverSecret);
+    const invoice = await ctx.db.get(args.invoiceId);
+    if (!invoice) return null;
+    if (!fromServer && !(await isInvoiceParty(ctx, invoice))) return null;
+    return await loadInvoicePaymentView(ctx, invoice);
+  },
+});
+
+/** Same data as getInvoiceById, for Convex actions (convex/payments.ts). */
+export const getInvoiceByIdInternal = internalQuery({
   args: { invoiceId: v.id("invoices") },
-  returns: v.union(
-    v.null(),
-    v.object({
-      _id: v.id("invoices"),
-      invoiceNumber: v.string(),
-      totalAmount: v.number(),
-      status: v.string(),
-      patientId: v.id("users"),
-      physiotherapistId: v.optional(v.id("users")),
-      patientEmail: v.optional(v.string()),
-      platformFeeAmount: v.optional(v.number()),
-      paystackFeeAmount: v.optional(v.number()),
-      feeBreakdown: v.optional(v.object({
-        subtotal: v.number(),
-        discount: v.number(),
-        platformFee: v.number(),
-        paystackPercentage: v.number(),
-        paystackFlat: v.number(),
-        total: v.number(),
-        physiotherapistEarnings: v.number(),
-      })),
-    })
-  ),
+  returns: invoicePaymentView,
   handler: async (ctx, args) => {
     const invoice = await ctx.db.get(args.invoiceId);
     if (!invoice) return null;
-    const patient = await ctx.db.get(invoice.patientId);
-    return {
-      _id: invoice._id,
-      invoiceNumber: invoice.invoiceNumber,
-      totalAmount: invoice.totalAmount,
-      status: invoice.status,
-      patientId: invoice.patientId,
-      physiotherapistId: (invoice as any).physiotherapistId,
-      patientEmail: patient?.email,
-      platformFeeAmount: (invoice as any).platformFeeAmount,
-      paystackFeeAmount: (invoice as any).paystackFeeAmount,
-      feeBreakdown: (invoice as any).feeBreakdown,
-    };
+    return await loadInvoicePaymentView(ctx, invoice);
   },
 });
 
@@ -786,7 +836,8 @@ export const getBillingStats = query({
 });
 
 /**
- * Get shareable invoice for public viewing
+ * Invoice share page (/invoices/shared/[id]). Links carry only the invoice id, so the
+ * viewer must be signed in and a party to the invoice (or an admin); otherwise null.
  */
 export const getShareableInvoice = query({
   args: { invoiceId: v.id("invoices") },
@@ -823,11 +874,11 @@ export const getShareableInvoice = query({
   ),
   handler: async (ctx, args) => {
     const invoice = await ctx.db.get(args.invoiceId);
-    if (!invoice) {
+    if (!invoice || !(await isInvoiceParty(ctx, invoice))) {
       return null;
     }
 
-    // Get clinic and patient details for public sharing
+    // Get clinic and patient details for the share page
     const clinic = invoice.clinicId ? await ctx.db.get(invoice.clinicId as Id<"clinics">) : null;
     const patient = await ctx.db.get(invoice.patientId);
     
@@ -1115,7 +1166,7 @@ async function generateInvoiceNumber(ctx: any, clinicId?: string) {
 /**
  * Update invoice status after payment
  */
-export const updateInvoiceStatus = mutation({
+export const updateInvoiceStatus = internalMutation({
   args: {
     invoiceId: v.id("invoices"),
     status: v.union(v.literal("paid"), v.literal("failed"), v.literal("sent")),

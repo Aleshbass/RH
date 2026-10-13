@@ -4,13 +4,15 @@
     "index",
     "---Getting Started---",
     "getting-started",
-    "---API & Integrations---",
+    "---API Reference---",
     "api-reference",
+    "---Webhooks---",
     "webhooks",
-    "sdks-widgets",
-    "---Solutions & Guides---",
+    "---Sandbox & Go-live---",
+    "sandbox",
+    "---Guides---",
     "guides",
-    "---Testing---",
-    "sandbox"
+    "---Widgets & Deep Links---",
+    "sdks-widgets"
   ]
 }

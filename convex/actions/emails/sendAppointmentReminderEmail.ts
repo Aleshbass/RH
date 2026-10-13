@@ -1,13 +1,16 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
+import { internalAction } from "../../_generated/server";
 import { sendEmail } from "../../../lib/email/emailService";
+import { appLink } from "../../helpers/appUrl";
+import { escapeHtml, plainSubject } from "../../helpers/escapeHtml";
 
 /**
  * Send an appointment reminder email to the patient (patient-facing).
+ * Internal: scheduled by appointment/booking mutations, never callable from a browser.
  */
-export const sendAppointmentReminderEmail = action({
+export const sendAppointmentReminderEmail = internalAction({
   args: {
     to: v.string(),
     patientName: v.string(),
@@ -23,16 +26,16 @@ export const sendAppointmentReminderEmail = action({
     try {
       const result = await sendEmail({
         to: args.to,
-        subject: args.subjectOverride,
+        subject: args.subjectOverride ? plainSubject(args.subjectOverride) : undefined,
         template: 'APPOINTMENT_REMINDER',
         data: {
-          patientName: args.patientName,
-          physiotherapistName: args.physiotherapistName,
+          patientName: escapeHtml(args.patientName),
+          physiotherapistName: escapeHtml(args.physiotherapistName),
           appointmentDate: args.appointmentDate,
-          appointmentTime: args.appointmentTime,
-          clinicName: args.clinicName,
-          confirmLink: args.confirmLink,
-          rescheduleLink: args.rescheduleLink,
+          appointmentTime: escapeHtml(args.appointmentTime),
+          clinicName: escapeHtml(args.clinicName),
+          confirmLink: appLink(args.confirmLink),
+          rescheduleLink: appLink(args.rescheduleLink),
         },
       });
       return { success: result.success, messageId: result.messageId, error: result.error };

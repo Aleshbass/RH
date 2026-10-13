@@ -1,15 +1,17 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
+import { internalAction } from "../../_generated/server";
 import { sendEmail } from "../../../lib/email/emailService";
 import { publicAppUrl } from "../../helpers/appUrl";
+import { escapeHtml, plainSubject } from "../../helpers/escapeHtml";
 
 /**
  * Send an appointment scheduled email. This action is intentionally simple and stateless:
  * all display data is passed in from the caller (Convex mutations) to avoid auth/DB constraints in actions.
+ * Internal: scheduled by appointment/booking mutations, never callable from a browser.
  */
-export const sendAppointmentScheduledEmail = action({
+export const sendAppointmentScheduledEmail = internalAction({
   args: {
     to: v.string(),
     patientName: v.string(),
@@ -37,15 +39,15 @@ export const sendAppointmentScheduledEmail = action({
 
       const result = await sendEmail({
         to: args.to,
-        subject: args.subjectOverride,
+        subject: plainSubject(args.subjectOverride || `Your Appointment with ${args.physiotherapistName} has been scheduled`),
         template: 'APPOINTMENT_SCHEDULED',
         data: {
-          patientName: args.patientName,
-          physiotherapistName: args.physiotherapistName,
+          patientName: escapeHtml(args.patientName),
+          physiotherapistName: escapeHtml(args.physiotherapistName),
           appointmentDate: args.appointmentDate,
-          appointmentTime: args.appointmentTime,
-          clinicName: args.clinicName || 'Rehabify Health',
-          clinicAddress: args.clinicAddress || '',
+          appointmentTime: escapeHtml(args.appointmentTime),
+          clinicName: escapeHtml(args.clinicName || 'Rehabify Health'),
+          clinicAddress: escapeHtml(args.clinicAddress || ''),
           calendarLink,
           rescheduleLink,
         },

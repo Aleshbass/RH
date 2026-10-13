@@ -3,8 +3,27 @@
 
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
-import { api } from "../../_generated/api";
+import { api, internal } from "../../_generated/api";
 import { publicAppUrl } from "../../helpers/appUrl";
+
+/**
+ * Base URL for the invitation link. The browser sends its own origin, but only our app
+ * host (or localhost while developing) is accepted, so a link in an email sent from our
+ * domain can never point somewhere else.
+ */
+function invitationBaseUrl(origin?: string): string {
+  const appBase = publicAppUrl().replace(/\/$/, '');
+  if (!origin) return appBase;
+  try {
+    const url = new URL(origin);
+    const appHost = new URL(appBase).hostname;
+    const isLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    if ((url.protocol === 'https:' && url.hostname === appHost) || isLocal) return url.origin;
+  } catch {
+    // fall through to the configured app URL
+  }
+  return appBase;
+}
 
 /**
  * Create a clinic staff invitation, send email, and create a notification
@@ -86,13 +105,12 @@ export const createClinicStaffInvitationWithNotification = action({
 
       // Send email if requested (default true)
       if (args.sendEmail !== false) {
-        const envBase = publicAppUrl();
-        const baseUrl = (args.origin || envBase).replace(/\/$/, '');
+        const baseUrl = invitationBaseUrl(args.origin);
         const invitationLink = `${baseUrl}/staff-invite/${result.code}`;
 
         try {
           await ctx.runAction(
-            api.actions.emails.sendClinicStaffInvitationEmail.sendClinicStaffInvitationEmail,
+            internal.actions.emails.sendClinicStaffInvitationEmail.sendClinicStaffInvitationEmail,
             {
               inviteeEmail: args.inviteeEmail,
               inviteeName: args.inviteeName,
@@ -205,11 +223,11 @@ export const resendClinicStaffInvitation = action({
       const baseUrl = envBase.replace(/\/$/, '');
       const invitationLink = `${baseUrl}/staff-invite/${invitation.code}`;
 
-      // Send reminder email
+      // Send reminder email (to the address stored on the clinic's own invitation)
       await ctx.runAction(
-        api.actions.emails.sendClinicStaffInvitationEmail.sendClinicStaffInvitationReminderEmail,
+        internal.actions.emails.sendClinicStaffInvitationEmail.sendClinicStaffInvitationReminderEmail,
         {
-          inviteeEmail: args.inviteeEmail,
+          inviteeEmail: invitation.inviteeEmail,
           inviteeName: args.inviteeName ?? invitation.inviteeName,
           clinicOwnerName,
           clinicName,

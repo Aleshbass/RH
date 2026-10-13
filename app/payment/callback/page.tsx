@@ -20,8 +20,8 @@ function PaymentCallbackContent() {
 
   // Paystack verification
   const verifyPaystackTransaction = useAction(api.payments.verifyPaystackTransaction)
-  // Complete marketplace booking
-  const completeMarketplaceBooking = useAction((api as any).marketplace.booking.completeMarketplaceBooking)
+  // Marketplace bookings are verified with Paystack server-side and completed in Convex
+  const verifyMarketplacePayment = useAction(api.marketplace.booking.verifyMarketplacePayment)
 
   useEffect(() => {
     // Paystack parameters
@@ -50,6 +50,32 @@ function PaymentCallbackContent() {
     }
 
     const verifyPayment = async () => {
+      // Marketplace checkout (MKT_ references): the booking is confirmed only after
+      // Convex re-verifies the transaction with Paystack. The Paystack webhook does the
+      // same, so closing this page never loses a paid booking.
+      if (paymentRef.startsWith('MKT_')) {
+        try {
+          const result = await verifyMarketplacePayment({ reference: paymentRef })
+          setIsMarketplaceBooking(true)
+          if (result?.success) {
+            setStatus('success')
+            setMessage('Payment confirmed — your booking is confirmed.')
+            toast.success('Payment successful!')
+          } else if (result?.status === 'abandoned' || result?.status === 'failed') {
+            setStatus('failed')
+            setMessage('The payment was not completed. You have not been charged.')
+          } else {
+            setStatus('success')
+            setMessage('Payment received. We are confirming your booking — you will get an email shortly.')
+          }
+        } catch (error) {
+          console.error('Marketplace payment verification error:', error)
+          setStatus('success')
+          setIsMarketplaceBooking(true)
+          setMessage('Payment received. We are confirming your booking — you will get an email shortly.')
+        }
+        return
+      }
       try {
         // Paystack verification
         const result = await verifyPaystackTransaction({
@@ -57,19 +83,6 @@ function PaymentCallbackContent() {
         })
 
         if (result.success && result.status === 'success') {
-          // Check if this is a marketplace booking
-          if (result.metadata?.bookingId) {
-            try {
-              await completeMarketplaceBooking({
-                bookingId: result.metadata.bookingId,
-                paymentReference: paymentRef!,
-              })
-            } catch (err) {
-              console.error('Failed to complete marketplace booking:', err)
-            }
-            setIsMarketplaceBooking(true)
-          }
-
           setStatus('success')
           setMessage('Payment completed successfully! Your booking is confirmed.')
 
@@ -92,7 +105,7 @@ function PaymentCallbackContent() {
     }
 
     verifyPayment()
-  }, [searchParams, verifyPaystackTransaction, completeMarketplaceBooking])
+  }, [searchParams, verifyPaystackTransaction, verifyMarketplacePayment])
 
   const handleContinue = () => {
     if (isJoyPayment) {

@@ -3,7 +3,7 @@
 import React, { use, useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import NextImage from "next/image";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
   Activity,
@@ -23,7 +23,7 @@ import {
   Wifi,
 } from "lucide-react";
 import { toast } from "sonner";
-import { setPartnerReferralCookie } from "@/lib/referralCookie";
+import { rememberReferralCode } from "@/lib/referralCookie";
 
 interface PageProps {
   params: Promise<{ code: string }>;
@@ -51,16 +51,15 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
   const { code } = use(params);
 
   const linkData = useQuery(api.partnerLinks.resolveReferralLink, { publicCode: code });
-  const recordClick = useMutation(api.partnerLinks.recordLinkClick);
-  const submitLeadMutation = useMutation(api.partnerLinks.submitLead);
 
   const [step, setStep] = useState<"form" | "success">("form");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [copiedCode, setCopiedCode] = useState(false);
+  const [website, setWebsite] = useState(""); // honeypot (hidden from people)
   const [successData, setSuccessData] = useState<{
-    trackingCode: string;
-    nextAction: string;
+    trackingCode: string | null;
+    duplicate: boolean;
   } | null>(null);
 
   const [form, setForm] = useState({
@@ -72,26 +71,20 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
     reason: "back_pain",
     preferredCareMode: "patient_choice",
     preferredContactChannel: "whatsapp" as "whatsapp" | "phone" | "email" | "sms",
-    consentGranted: true,
+    // Explicit opt-in: never pre-ticked (NDPR/GDPR consent must be an affirmative act).
+    consentGranted: false,
   });
 
-  // Record click on mount once and persist 30-day attribution cookie
+  // Count the visit once (the server de-duplicates per visitor and ignores bots). The
+  // 30-day attribution cookie itself is set server-side by middleware; mirror it locally.
   const clickRecordedRef = useRef(false);
   useEffect(() => {
-    if (linkData && !linkData.expired && !clickRecordedRef.current) {
+    if (linkData?.usable && !clickRecordedRef.current) {
       clickRecordedRef.current = true;
-      recordClick({ publicCode: code }).catch(() => {});
-
-      // Persist 30-day partner referral cookie & localStorage for delayed booking/signup
-      if (linkData.partnerId) {
-        setPartnerReferralCookie({
-          publicCode: code,
-          partnerId: linkData.partnerId,
-          campaignName: linkData.campaignName,
-        });
-      }
+      fetch(`/api/v1/public/referral-links/${encodeURIComponent(code)}/click`, { method: "POST", keepalive: true }).catch(() => {});
+      if (linkData.environment === "live") rememberReferralCode(code);
     }
-  }, [linkData?._id, linkData?.partnerId, linkData?.campaignName, code]);
+  }, [linkData?.usable, linkData?.environment, code]);
 
   const handleChange = (field: keyof typeof form, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -119,25 +112,31 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
 
     setIsSubmitting(true);
     try {
-      const result = await submitLeadMutation({
-        publicCode: code,
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim() || undefined,
-        phone: form.phone.trim() || undefined,
-        email: form.email.trim() || undefined,
-        city: form.city.trim() || "Lagos",
-        reason: form.reason || undefined,
-        preferredCareMode: form.preferredCareMode,
-        nextStep: "contact_me",
-        preferredContactChannel: form.preferredContactChannel,
-        consentGranted: form.consentGranted,
-        privacyNoticeVersion: "2026-09-01",
+      const response = await fetch(`/api/v1/public/referral-links/${encodeURIComponent(code)}/leads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          website,
+          patient: {
+            first_name: form.firstName.trim(),
+            last_name: form.lastName.trim() || undefined,
+            phone: form.phone.trim() || undefined,
+            email: form.email.trim() || undefined,
+            city: form.city.trim() || undefined,
+          },
+          need: {
+            reason: form.reason || undefined,
+            preferred_care_mode: form.preferredCareMode === "face_to_face" ? "in_person" : form.preferredCareMode,
+          },
+          contact: { preferred_channel: form.preferredContactChannel },
+          consent: { granted: form.consentGranted, privacy_notice_version: "2026-09-01" },
+        }),
       });
-
-      setSuccessData({
-        trackingCode: result.trackingCode,
-        nextAction: result.nextAction,
-      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.error?.message || "Something went wrong. Please try again.");
+      }
+      setSuccessData({ trackingCode: result.tracking_code ?? null, duplicate: Boolean(result.duplicate) });
       setStep("success");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
@@ -159,7 +158,7 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
   }
 
   // Invalid or expired link
-  if (linkData === null || linkData.expired || linkData.status !== "active") {
+  if (linkData === null || !linkData.usable || !linkData.partner) {
     return (
       <div className="min-h-screen bg-[#FAF6E7] flex flex-col items-center justify-center px-4 py-16">
         <div className="w-full max-w-md p-8 bg-white rounded-3xl border border-[#002e2c]/10 text-center space-y-5 shadow-[0_8px_30px_rgba(0,46,44,0.04)]">
@@ -187,11 +186,28 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
   // --------------------------------------------------------------------------
   // SUCCESS SCREEN: Clear reassurance, tracking code, one-click WhatsApp
   // --------------------------------------------------------------------------
-  if (step === "success" && successData) {
-    const whatsappMessage = encodeURIComponent(
-      `START ${successData.trackingCode} - Hello Rehabify Health, I just registered for physiotherapy care through ${partner.name}. My tracking code is ${successData.trackingCode}. Please connect me with my care coordinator.`
+  if (step === "success" && successData && !successData.trackingCode) {
+    return (
+      <div className="min-h-screen bg-[#FAF6E7] text-[#002e2c] flex flex-col items-center justify-center px-4 py-12 font-sans antialiased">
+        <div className="w-full max-w-md p-8 bg-white rounded-3xl border border-[#002e2c]/10 text-center space-y-4 shadow-[0_8px_30px_rgba(0,46,44,0.04)]">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-800 flex items-center justify-center mx-auto border border-emerald-200">
+            <CheckCircle2 className="w-8 h-8" />
+          </div>
+          <h1 className="text-xl font-bold text-[#002e2c]">We already have your request</h1>
+          <p className="text-sm text-[#52706e] leading-relaxed">
+            You recently registered with these details. Our care team will contact you shortly using the details you gave the first time — there is no need to submit again.
+          </p>
+        </div>
+      </div>
     );
-    const joyPhone = process.env.NEXT_PUBLIC_JOY_WHATSAPP_NUMBER || "2348061525811";
+  }
+
+  if (step === "success" && successData?.trackingCode) {
+    const trackingCode = successData.trackingCode;
+    const whatsappMessage = encodeURIComponent(
+      `START ${trackingCode} - Hello Rehabify Health, I just registered for physiotherapy care through ${partner.name}. My tracking code is ${trackingCode}. Please connect me with my care coordinator.`
+    );
+    const joyPhone = (process.env.NEXT_PUBLIC_JOY_WHATSAPP_NUMBER || "2348061525811").replace(/\D/g, "");
     const whatsappUrl = `https://wa.me/${joyPhone}?text=${whatsappMessage}`;
 
     return (
@@ -233,10 +249,10 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
               </span>
               <div className="flex items-center justify-center gap-2">
                 <span className="font-mono text-2xl font-bold text-[#005b57] tracking-wider">
-                  {successData.trackingCode}
+                  {trackingCode}
                 </span>
                 <button
-                  onClick={() => copyTrackingCode(successData.trackingCode)}
+                  onClick={() => copyTrackingCode(trackingCode)}
                   className="p-1.5 text-[#52706e] hover:text-[#002e2c] rounded-lg transition"
                   title="Copy Tracking Code"
                 >
@@ -244,7 +260,7 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
                 </button>
               </div>
               <p className="text-[11px] text-[#52706e]">
-                Keep this code to track your appointments and clinical notes.
+                Keep this code to follow your care progress.
               </p>
             </div>
 
@@ -261,7 +277,7 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
               </a>
 
               <Link
-                href={`/track/${successData.trackingCode}`}
+                href={`/track/${trackingCode}`}
                 className="w-full py-3 px-6 bg-white hover:bg-[#FAF6E7] rounded-xl text-[#002e2c] font-semibold text-xs transition border border-[#002e2c]/15 flex items-center justify-center gap-2"
               >
                 <Activity className="w-4 h-4 text-[#005b57]" />
@@ -351,6 +367,17 @@ export default function PartnerReferralLandingPage({ params }: PageProps) {
       {/* Main Intake Form */}
       <main className="max-w-xl mx-auto px-4 pb-16 w-full">
         <form onSubmit={handleSubmit} className="space-y-6">
+          {linkData.environment === "sandbox" && (
+            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800 font-medium">
+              Sandbox test link — submissions create test referrals only. No one will contact you.
+            </div>
+          )}
+          <div aria-hidden="true" style={{ position: "absolute", left: "-10000px", width: 1, height: 1, overflow: "hidden" }}>
+            <label>
+              Website
+              <input type="text" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
+            </label>
+          </div>
           {error && (
             <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2 font-medium">
               <AlertCircle className="w-4 h-4 shrink-0" />

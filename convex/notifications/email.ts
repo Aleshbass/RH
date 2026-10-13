@@ -90,7 +90,7 @@ export const processEmailForNotification = internalAction({
       switch (notification.type) {
         case "account_approved":
           // Use loose typing for dynamic function reference
-          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendApprovalEmail"], {
+          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendApprovalEmail"].sendApprovalEmail, {
             userEmail: user.email,
             userName: displayName,
             userRole: user.role === "physiotherapist" ? "Physiotherapist"
@@ -105,9 +105,12 @@ export const processEmailForNotification = internalAction({
 
         case "account_declined":
           // Use loose typing for dynamic function reference
-          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendDeclineEmail"], {
+          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendDeclineEmail"].sendDeclineEmail, {
             userEmail: user.email,
             userName: displayName,
+            userRole: user.role === "physiotherapist" ? "Physiotherapist"
+              : user.role === "clinic_owner" ? "Clinic Owner"
+                : "User",
             reason: (notification.payload?.data as any)?.metadata?.reason || "Application requirements not met",
             supportLink: `${publicAppUrl()}/support`,
             requiredDocuments: ((notification.payload?.data as any)?.metadata?.requiredDocuments as string[] | undefined) || (
@@ -133,7 +136,7 @@ export const processEmailForNotification = internalAction({
 
           const dashboardLink = `${appUrl}${dashboardPath}`;
 
-          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendPatientOnboardingCompleteEmail"], {
+          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendPatientOnboardingCompleteEmail"].sendPatientOnboardingCompleteEmail, {
             patientEmail: user.email,
             patientName: displayName,
             dashboardLink,
@@ -155,7 +158,7 @@ export const processEmailForNotification = internalAction({
             const physiotherapistName = md.physiotherapistName || "your physiotherapist";
             const rescheduleLink = md.rescheduleLink || `${appUrl}/dashboard/patient/appointments`;
 
-            emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendAppointmentCanceledPatientEmail"], {
+            emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendAppointmentCanceledPatientEmail"].sendAppointmentCanceledPatientEmail, {
               to: user.email,
               patientName: displayName,
               physiotherapistName,
@@ -169,7 +172,7 @@ export const processEmailForNotification = internalAction({
             const physiotherapistName = displayName || "Physiotherapist";
             const viewLink = md.viewLink || `${appUrl}/dashboard/physiotherapist/appointments`;
 
-            emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendAppointmentCanceledProviderEmail"], {
+            emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendAppointmentCanceledProviderEmail"].sendAppointmentCanceledProviderEmail, {
               to: user.email,
               patientName,
               physiotherapistName,
@@ -205,7 +208,7 @@ export const processEmailForNotification = internalAction({
             return { success: true, message: "Appointment has already passed, skipping reminder" } as any;
           }
 
-          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendAppointmentReminderEmail"], {
+          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendAppointmentReminderEmail"].sendAppointmentReminderEmail, {
             to: user.email,
             patientName,
             physiotherapistName,
@@ -223,7 +226,7 @@ export const processEmailForNotification = internalAction({
           const appUrl = publicAppUrl();
           const patientsLink = `${appUrl}/dashboard/physiotherapist/patients`;
           // Send email to physiotherapist using dedicated action
-          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendPatientOnboardedProviderEmail"], {
+          emailResult = await (ctx.runAction as any)((internal as any)["actions/emails/sendPatientOnboardedProviderEmail"].sendPatientOnboardedProviderEmail, {
             providerEmail: user.email,
             providerName: displayName,
             patientName,

@@ -1,57 +1,29 @@
-import { NextRequest, NextResponse } from "next/server";
-import { authenticatePartner } from "@/lib/partner-auth";
-import { getConvexClient } from "@/lib/convex-client";
-import { api } from "@/convex/_generated/api";
+import type { NextRequest } from "next/server";
+import { authenticatePartner, logPartnerRequest } from "@/lib/partner-api/auth";
+import { callPartnerGateway } from "@/lib/partner-api/gateway";
+import { apiError, apiJson, coreError, internalError } from "@/lib/partner-api/http";
 
-interface RouteParams {
-  params: Promise<{ referralId: string }>;
-}
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest, props: RouteParams) {
-  const { partner, response } = await authenticatePartner(req);
-  if (!partner) return response!;
-
-  const { referralId } = await props.params;
-
+/** GET /v1/partners/reports/{id} — progress report (milestones and session counts, no clinical notes). */
+export async function GET(req: NextRequest, props: { params: Promise<{ referralId: string }> }) {
+  const auth = await authenticatePartner(req);
+  if (!auth.ok) return auth.response;
+  const { partner, ctx } = auth;
+  const identifier = ((await props.params).referralId ?? "").trim();
+  if (!identifier || identifier.length > 200) {
+    return apiError(ctx, 400, "invalid_parameter", "A referral id, tracking code or partner_reference is required.", { param: "id" });
+  }
   try {
-    const convex = getConvexClient();
-    const report = await convex.query(api.partners.getPartnerClinicalReport, {
-      identifier: decodeURIComponent(referralId),
-      partnerCode: partner.code,
-    });
-
-    if (!report) {
-      return NextResponse.json(
-        {
-          error: {
-            code: "referral_not_found",
-            message: `No clinical reports found for referral ID or reference '${referralId}'.`,
-          },
-        },
-        { status: 404 }
-      );
-    }
-
-    const host = req.headers.get("host") || "physioaroundme.com";
-    const protocol = host.includes("localhost") ? "http" : "https";
-
-    return NextResponse.json({
-      status: "success",
-      ...report,
-      pdf_download_url: `${protocol}://${host}/api/v1/partners/reports/${report.tracking_code}/pdf`,
-      generated_at: new Date().toISOString(),
+    const result = await callPartnerGateway("getReport", { partnerCode: partner.code, environment: partner.environment, identifier });
+    const response = result?.ok ? apiJson(ctx, result.report) : coreError(ctx, result);
+    return logPartnerRequest(req, auth, response, {
+      eventType: "api.report_get",
+      trackingCode: result?.report?.referral?.tracking_code,
+      errorCode: result?.ok ? undefined : result?.code,
     });
   } catch (error) {
-    console.error("Clinical report fetch error:", error);
-    return NextResponse.json(
-      {
-        error: {
-          code: "report_fetch_failed",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        },
-      },
-      { status: 500 }
-    );
+    return logPartnerRequest(req, auth, internalError(ctx, error), { eventType: "api.report_get", errorCode: "internal_error" });
   }
 }

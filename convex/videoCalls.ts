@@ -7,6 +7,31 @@ import type { Doc, Id } from './_generated/dataModel';
 import { publicAppUrl } from './helpers/appUrl';
 // Stream video imports will be handled in the action
 
+// Hosts a physiotherapist may use as an external meeting link (Google Meet / Zoom).
+const EXTERNAL_MEETING_HOSTS = [/^meet\.google\.com$/i, /^([a-z0-9-]+\.)*zoom\.us$/i];
+
+/** True for our own /video-call/<roomId> link or an https Google Meet / Zoom link. */
+function isInvitableCallLink(link: string): boolean {
+  try {
+    const url = new URL(link);
+    if (/^\/video-call\/[A-Za-z0-9_-]+\/?$/.test(url.pathname) && url.origin === new URL(publicAppUrl()).origin) return true;
+    return url.protocol === "https:" && EXTERNAL_MEETING_HOSTS.some((re) => re.test(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
+async function isActivePhysiotherapistOf(ctx: QueryCtx | MutationCtx, physiotherapistId: Id<'users'>, patientId: Id<'users'>): Promise<boolean> {
+  const relationships = await ctx.db
+    .query("patientPhysiotherapistRelationships")
+    .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", patientId).eq("physiotherapistId", physiotherapistId))
+    .collect();
+  return relationships.some((r) => r.status === "active");
+}
+
+const displayName = (u: { firstName?: string; lastName?: string } | null | undefined) =>
+  `${u?.firstName ?? ""} ${u?.lastName ?? ""}`.trim();
+
 // Action input type
 export type CreateVideoCallInput = {
   roomId?: string;
@@ -127,7 +152,9 @@ export const createVideoCall = action({
             // Send email invitation to participants (except the creator)
             if (participantId !== user._id && participantUser.email) {
               try {
-                await ctx.runAction(api["actions/emails/sendVideoCallInvitation"].sendVideoCallInvitation, {
+                // The creator hosts this call and the link is our own room link.
+                await ctx.runAction(internal.actions.emails.sendVideoCallInvitation.deliverVideoCallInvitation, {
+                  recipientUserId: participantId,
                   patientEmail: participantUser.email,
                   patientName: `${participantUser.firstName || ''} ${participantUser.lastName || ''}`.trim() || undefined,
                   physiotherapistName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Your healthcare provider',
@@ -689,11 +716,19 @@ export const scheduleVideoCall = mutation({
       })
     }
 
-    // Auto-send invitation email to patient (and create in-app notification)
+    // Auto-send the invitation email to the patient (and create the in-app notification).
+    // Only for the patient's own physiotherapist or an admin, and only with our own
+    // /video-call/ link or a Google Meet / Zoom link, so this cannot be used to email
+    // arbitrary users or arbitrary URLs from our domain. (Mutations cannot run actions,
+    // so the email is scheduled.)
     try {
       const patientUser = await ctx.db.get(args.patientId)
-      if (patientUser?.email) {
-        await ctx.runAction(api["actions/emails/sendVideoCallInvitation"].sendVideoCallInvitation as any, {
+      const mayInvite =
+        Boolean(patientUser?.email) &&
+        (user.role === "admin" || (await isActivePhysiotherapistOf(ctx, user._id, args.patientId)))
+      if (mayInvite && isInvitableCallLink(computedMeetingLink)) {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendVideoCallInvitation.deliverVideoCallInvitation, {
+          recipientUserId: args.patientId,
           patientEmail: patientUser.email,
           patientName: `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || undefined,
           physiotherapistName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Your healthcare provider',
@@ -879,6 +914,61 @@ export const getUserById = internalQuery({
 })
 
 // Get Daily.co room information and meeting token for current user
+/**
+ * Authorises an invitation sent from the physiotherapist video-calls dashboard
+ * (actions/emails/sendVideoCallInvitation). Allowed for an admin, the host of the call the
+ * link points to, or the recipient's active physiotherapist. The recipient address and
+ * both names come from the database, never from the browser.
+ */
+export const authorizeVideoCallInvitation = internalQuery({
+  args: {
+    callerClerkId: v.string(),
+    recipientId: v.optional(v.id("users")),
+    recipientEmail: v.optional(v.string()),
+    roomId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const caller = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.callerClerkId))
+      .first()
+    if (!caller) return { allowed: false, reason: "Your account was not found." }
+
+    let recipient = args.recipientId ? await ctx.db.get(args.recipientId) : null
+    if (!recipient && args.recipientEmail) {
+      const raw = args.recipientEmail.trim()
+      recipient =
+        (await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", raw)).first()) ??
+        (await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", raw.toLowerCase())).first())
+    }
+    if (!recipient?.email) {
+      return { allowed: false, reason: "The patient needs a Rehabify account with an email address before they can be invited." }
+    }
+    if (recipient._id === caller._id) return { allowed: false, reason: "You cannot invite yourself." }
+
+    let allowed = caller.role === "admin"
+    if (!allowed && args.roomId) {
+      const call =
+        (await ctx.db.query("videoCalls").withIndex("by_room_id", (q) => q.eq("roomId", args.roomId!)).first()) ??
+        (await ctx.db.query("videoCalls").withIndex("by_stream_call_id", (q) => q.eq("streamCallId", args.roomId!)).first())
+      if (call && call.status !== "ended" && call.status !== "cancelled") {
+        allowed = call.initiatorId === caller._id || call.physiotherapistId === caller._id
+      }
+    }
+    if (!allowed) allowed = await isActivePhysiotherapistOf(ctx, caller._id, recipient._id)
+    if (!allowed) {
+      return { allowed: false, reason: "You can only invite your own patients, or people to a call you host." }
+    }
+    return {
+      allowed: true,
+      recipientId: recipient._id,
+      recipientEmail: recipient.email,
+      recipientName: displayName(recipient) || undefined,
+      callerName: displayName(caller) || undefined,
+    }
+  },
+})
+
 export const getDailyRoomInfo = query({
   args: {
     callId: v.id("videoCalls"),

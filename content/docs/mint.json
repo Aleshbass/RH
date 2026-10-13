@@ -21,12 +21,12 @@
       "url": "https://physioaroundme.com"
     },
     {
-      "name": "Partnerships Hub",
-      "url": "https://physioaroundme.com/partnerships"
+      "name": "Partner Portal",
+      "url": "https://partners.physioaroundme.com"
     },
     {
-      "name": "Care Tracker",
-      "url": "https://physioaroundme.com/track"
+      "name": "OpenAPI",
+      "url": "https://physioaroundme.com/openapi.json"
     }
   ],
   "tabs": [
@@ -43,7 +43,7 @@
       "url": "webhooks"
     },
     {
-      "name": "SDKs & Widgets",
+      "name": "Widgets & Deep Links",
       "url": "sdks-widgets"
     }
   ],
@@ -55,6 +55,7 @@
         "getting-started/index",
         "getting-started/quickstart",
         "getting-started/authentication",
+        "getting-started/conventions",
         "getting-started/errors"
       ]
     },
@@ -63,14 +64,16 @@
       "pages": [
         "api-reference/index",
         "api-reference/referrals",
-        "api-reference/eligibility",
-        "api-reference/providers",
         "api-reference/sessions",
-        "api-reference/clinical-reports"
+        "api-reference/clinical-reports",
+        "api-reference/providers",
+        "api-reference/referral-links",
+        "api-reference/commercial-and-commissions",
+        "api-reference/eligibility"
       ]
     },
     {
-      "group": "Webhooks & Events",
+      "group": "Webhooks",
       "pages": [
         "webhooks/index",
         "webhooks/event-catalog",
@@ -79,18 +82,17 @@
       ]
     },
     {
-      "group": "SDKs & Widgets",
+      "group": "Sandbox & Go-live",
       "pages": [
-        "sdks-widgets/index",
-        "sdks-widgets/whatsapp-deep-links",
-        "sdks-widgets/embed-widget",
-        "sdks-widgets/react-component"
+        "sandbox/testing",
+        "api-reference/partner-integration-v1"
       ]
     },
     {
-      "group": "Partner Solutions",
+      "group": "Guides",
       "pages": [
         "guides/index",
+        "guides/no-code-referral-links",
         "guides/hmo-integration",
         "guides/hospital-clinic-referral",
         "guides/corporate-wellness",
@@ -98,9 +100,12 @@
       ]
     },
     {
-      "group": "Sandbox Testing",
+      "group": "Widgets & Deep Links",
       "pages": [
-        "sandbox/testing"
+        "sdks-widgets/index",
+        "sdks-widgets/whatsapp-deep-links",
+        "sdks-widgets/embed-widget",
+        "sdks-widgets/react-component"
       ]
     }
   ]

@@ -1,118 +1,78 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getConvexClient } from "@/lib/convex-client";
-import { api } from "@/convex/_generated/api";
+import type { NextRequest } from "next/server";
+import { checkRateLimit, getClientIp, getRateLimitHeaders } from "@/lib/rate-limiter";
+import { callPartnerGateway } from "@/lib/partner-api/gateway";
+import { apiError, apiJson, coreError, internalError, newRequestId, readJsonObject, type ResponseContext } from "@/lib/partner-api/http";
+import { validateLead } from "@/lib/partner-api/validation";
+import { publicAppUrl } from "@/lib/public-app-url";
 
-interface RouteParams {
-  params: Promise<{ publicCode: string }>;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Max-Age": "86400",
+};
+
+function joyNumber(): string {
+  return (process.env.NEXT_PUBLIC_JOY_WHATSAPP_NUMBER || "2348061525811").replace(/\D/g, "");
+}
+
+export function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS });
 }
 
 /**
- * POST /api/v1/public/referral-links/{publicCode}/leads
- *
- * Public endpoint — no auth required.
- * Submits a lead from the partner landing page.
- * Creates a referral, consent record, audit event, and outreach task.
+ * POST /v1/public/referral-links/{public_code}/leads — no-code lead capture.
+ * Public (no key), CORS-enabled, rate limited per IP (5 per 10 minutes), explicit
+ * consent required. Duplicate submissions never reveal an existing tracking code.
  */
-export async function POST(req: NextRequest, props: RouteParams) {
-  const { publicCode } = await props.params;
+export async function POST(req: NextRequest, props: { params: Promise<{ publicCode: string }> }) {
+  const ctx: ResponseContext = { requestId: newRequestId(), headers: CORS };
+  const publicCode = ((await props.params).publicCode ?? "").trim();
+  if (!publicCode || publicCode.length > 64 || !/^[A-Za-z0-9_-]+$/.test(publicCode)) {
+    return apiError(ctx, 404, "referral_link_not_found", "This referral link does not exist.");
+  }
+
+  const limit = await checkRateLimit(`lead:${getClientIp(req)}`, "public_form");
+  if (!limit.success) {
+    return apiError(ctx, 429, "rate_limit_exceeded", "Too many submissions. Please try again in a few minutes.", {
+      headers: getRateLimitHeaders(limit),
+    });
+  }
+
+  const parsed = await readJsonObject(req);
+  if (!parsed.ok) return apiError(ctx, 400, "invalid_json", "The request body must be a JSON object.");
+  // Honeypot: real visitors never fill the hidden "website" field.
+  if (typeof parsed.value.website === "string" && parsed.value.website.trim() !== "") {
+    return apiJson(ctx, { object: "lead", tracking_code: null, status: null, duplicate: true, tracking_url: null, whatsapp_intake_url: null }, 200);
+  }
+  const validation = validateLead(parsed.value);
+  if (!validation.ok) {
+    return apiError(ctx, 422, validation.code ?? "validation_error", validation.message, { param: validation.param });
+  }
 
   try {
-    const body = await req.json();
-
-    // Support both nested and flat formats
-    const firstName = body.patient?.first_name || body.first_name || body.firstName;
-    const lastName = body.patient?.last_name || body.last_name || body.lastName;
-    const phone = body.patient?.phone || body.phone;
-    const email = body.patient?.email || body.email;
-    const city = body.patient?.city || body.city;
-    const state = body.patient?.state || body.state;
-    const preferredLanguage = body.patient?.preferred_language || body.preferred_language || "en";
-
-    const reason = body.need?.reason || body.reason;
-    const preferredCareMode = body.need?.preferred_care_mode || body.preferred_care_mode || "patient_choice";
-
-    const nextStep = body.next_step?.type || body.next_step || "contact_me";
-    const preferredContactChannel = body.next_step?.preferred_channel || body.preferred_channel || "whatsapp";
-
-    const consentGranted = body.consent?.contact_allowed ?? body.consent_granted ?? true;
-    const privacyNoticeVersion = body.consent?.privacy_notice_version || body.privacy_notice_version || "2026-09-01";
-    const sessionId = body.session_id;
-
-    // Validation
-    if (!firstName) {
-      return NextResponse.json(
-        {
-          error: { code: "missing_first_name", message: "Patient first name is required." },
-        },
-        { status: 400 }
-      );
+    const result = await callPartnerGateway("submitLead", { publicCode, input: validation.input });
+    if (!result?.ok) return coreError(ctx, result);
+    if (result.duplicate) {
+      return apiJson(ctx, { object: "lead", tracking_code: null, status: null, duplicate: true, tracking_url: null, whatsapp_intake_url: null }, 200);
     }
-
-    if (!phone && !email) {
-      return NextResponse.json(
-        {
-          error: {
-            code: "missing_contact",
-            message: "At least one contact method (phone or email) is required.",
-          },
-        },
-        { status: 400 }
-      );
-    }
-
-    const convex = getConvexClient();
-    const result = await convex.mutation(api.partnerLinks.submitLead, {
-      publicCode: decodeURIComponent(publicCode),
-      sessionId,
-      firstName: String(firstName).trim(),
-      lastName: lastName ? String(lastName).trim() : undefined,
-      phone: phone ? String(phone).trim() : undefined,
-      email: email ? String(email).trim() : undefined,
-      city: city ? String(city).trim() : undefined,
-      state: state ? String(state).trim() : undefined,
-      preferredLanguage,
-      reason: reason ? String(reason).trim() : undefined,
-      preferredCareMode,
-      nextStep,
-      preferredContactChannel,
-      consentGranted: Boolean(consentGranted),
-      privacyNoticeVersion,
-    });
-
-    const host = req.headers.get("host") || "physioaroundme.com";
-    const protocol = host.includes("localhost") ? "http" : "https";
-
-    return NextResponse.json(
+    const code: string = result.trackingCode;
+    return apiJson(
+      ctx,
       {
-        status: "success",
-        referral_id: result.referralId,
-        tracking_code: result.trackingCode,
-        referral_status: result.status,
-        duplicate: result.isDuplicate,
-        next_action: result.nextAction,
-        joy_session_url: result.joySessionUrl
-          ? `${protocol}://${host}${result.joySessionUrl}`
-          : undefined,
-        contact_request_id: result.contactRequestId,
-        tracking_url: `${protocol}://${host}/track/${result.trackingCode}`,
-        created_at: new Date().toISOString(),
+        object: "lead",
+        tracking_code: code,
+        status: "received",
+        duplicate: false,
+        tracking_url: `${publicAppUrl()}/track/${encodeURIComponent(code)}`,
+        whatsapp_intake_url: `https://wa.me/${joyNumber()}?text=${encodeURIComponent(`START ${code}`)}`,
       },
-      { status: result.isDuplicate ? 200 : 201 }
+      201
     );
   } catch (error) {
-    console.error("Lead submission failed:", error);
-    const message = error instanceof Error ? error.message : "Internal server error";
-
-    if (message.includes("no longer active") || message.includes("expired")) {
-      return NextResponse.json(
-        { error: { code: "link_inactive", message } },
-        { status: 410 }
-      );
-    }
-
-    return NextResponse.json(
-      { error: { code: "lead_submission_failed", message } },
-      { status: 500 }
-    );
+    return internalError(ctx, error);
   }
 }

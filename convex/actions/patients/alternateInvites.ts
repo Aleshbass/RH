@@ -2,7 +2,7 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
+import { action, internalAction } from "../../_generated/server";
 import { api } from "../../_generated/api";
 import { publicAppUrl } from "../../helpers/appUrl";
 
@@ -30,6 +30,8 @@ export const createMagicLinkInvitation = action({
     message: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
+    // Physiotherapists only; createPatientInvitation re-checks role and approval.
+    if (!(await ctx.auth.getUserIdentity())) throw new Error("Not authenticated");
     try {
       // 1) Create Convex invitation (source of truth for code)
       const result = await ctx.runMutation(api.patientInvitations.createPatientInvitation, {
@@ -93,7 +95,7 @@ export const createMagicLinkInvitation = action({
  * Send patient invitation via SMS using Twilio.
  * Also creates our Convex invitation to generate the link/code.
  */
-export const sendPatientInvitationSms = action({
+export const sendPatientInvitationSms = internalAction({
   args: {
     phoneNumber: v.string(),
     patientName: v.optional(v.string()),
@@ -199,6 +201,8 @@ export const directCreatePatient = action({
     message: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
+    // Physiotherapists only; createPatientInvitation re-checks role and approval.
+    if (!(await ctx.auth.getUserIdentity())) throw new Error("Not authenticated");
     try {
       // Split name
       const [firstName, ...rest] = (args.patientName || "").split(" ");

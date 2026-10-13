@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
-export const logEmail = mutation({
+export const logEmail = internalMutation({
   args: {
     to: v.string(),
     template: v.string(),
@@ -24,7 +24,7 @@ export const logEmail = mutation({
   },
 });
 
-export const getLatestByRecipientAndTemplate = query({
+export const getLatestByRecipientAndTemplate = internalQuery({
   args: {
     to: v.string(),
     template: v.string(),

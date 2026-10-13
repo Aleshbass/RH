@@ -63,29 +63,8 @@ async function runDiagnostics() {
     console.error("Error querying getAvailablePhysios:", err.message || err);
   }
 
-  console.log("\n=======================================================");
-  console.log("🔍 3. INSPECTING ALL PHYSIOTHERAPIST PROFILES");
-  console.log("=======================================================");
-  try {
-    // Check using marketplace debug query if available
-    const debug = await client.query(anyApi.marketplace.debug.getMarketplaceDebugInfo, {});
-    console.log(`Total profiles: ${debug.totalProfiles}`);
-    console.log(`Profiles enabled on marketplace: ${debug.availableOnMarketplace}`);
-    console.log(`Profiles approved: ${debug.approvedProfiles}`);
-    console.log(`Ready for marketplace: ${debug.readyForMarketplace}`);
-    
-    if (debug.profiles) {
-      console.log("\nProfile breakdown:");
-      debug.profiles.forEach((p, idx) => {
-        console.log(`  #${idx + 1} [${p.name || p.userId}]:`);
-        console.log(`     isAvailableOnMarketplace: ${p.isAvailableOnMarketplace}`);
-        console.log(`     approvalStatus: ${p.approvalStatus}`);
-        console.log(`     location: ${p.location}`);
-      });
-    }
-  } catch (err) {
-    console.log("Marketplace debug query failed or not found:", err.message || err);
-  }
+  // Per-profile marketplace diagnostics need an admin session; use the Convex dashboard or
+  //   npx convex run marketplace/debug:debugMarketplaceProfiles (as an admin identity).
 }
 
 runDiagnostics().catch(console.error);

@@ -1,4 +1,4 @@
-import { mutation, query, action, internalAction } from "../_generated/server";
+import { mutation, query, action, internalAction, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
@@ -9,7 +9,8 @@ import { Id } from "../_generated/dataModel";
  */
 export const triggerRetryProcessing = internalAction({
   args: {},
-  handler: async (ctx) => {
+  // Explicit return types: inferring them through the generated api types is too deep (TS2589).
+  handler: async (ctx): Promise<{ success: boolean; message: string }> => {
     try {
       // Get the current time
       const now = Date.now();
@@ -33,11 +34,11 @@ export const triggerRetryProcessing = internalAction({
 /**
  * Get retry queue statistics
  */
-export const getRetryQueueStats = query({
+export const getRetryQueueStats = internalQuery({
   args: {
     currentTime: v.number(),
   },
-  handler: async (ctx, _args) => {
+  handler: async (ctx, _args): Promise<any> => {
     const notificationStats = {
       pending: 0,
       processing: 0,

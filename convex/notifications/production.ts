@@ -1,12 +1,12 @@
 import { v } from "convex/values";
 import { Id } from "../_generated/dataModel";
-import { action, mutation, query, internalMutation } from "../_generated/server";
+import { action, mutation, query, internalMutation, internalQuery, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 
 /**
  * Production Notification System Health Check
  */
-export const healthCheck = query({
+export const healthCheck = internalQuery({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
@@ -80,7 +80,7 @@ export const healthCheck = query({
 /**
  * Test notification system (Admin only)
  */
-export const testNotificationSystem = action({
+export const testNotificationSystem = internalAction({
   args: {
     testUserEmail: v.string(),
     testTypes: v.array(v.union(
@@ -183,7 +183,7 @@ export const testNotificationSystem = action({
 /**
  * Get detailed notification analytics
  */
-export const getNotificationAnalytics = query({
+export const getNotificationAnalytics = internalQuery({
   args: {
     timeRange: v.optional(v.union(
       v.literal("hour"),
@@ -266,7 +266,7 @@ export const getNotificationAnalytics = query({
 /**
  * Clean up old notifications (Admin utility)
  */
-export const cleanupOldNotifications = mutation({
+export const cleanupOldNotifications = internalMutation({
   args: {
     olderThanDays: v.number(),
     dryRun: v.optional(v.boolean()),
@@ -306,7 +306,7 @@ export const cleanupOldNotifications = mutation({
 /**
  * Retry failed notifications (Admin utility)
  */
-export const retryFailedNotifications = mutation({
+export const retryFailedNotifications = internalMutation({
   args: {
     notificationIds: v.optional(v.array(v.id("notifications"))),
     olderThanMinutes: v.optional(v.number()),

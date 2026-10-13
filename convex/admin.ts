@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation, action } from "./_generated/server";
+import { query, mutation, action, internalAction } from "./_generated/server";
 import { ensureUserRole } from "./auth";
 import { Id } from "./_generated/dataModel";
 
@@ -615,7 +615,7 @@ export const broadcastAnnouncement = mutation({
 /**
  * Export platform data for analytics
  */
-export const exportPlatformData = action({
+export const exportPlatformData = internalAction({
   args: {
     dataType: v.union(
       v.literal("users"),

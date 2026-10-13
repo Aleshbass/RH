@@ -11,9 +11,10 @@
  */
 
 import { v } from "convex/values";
-import { query, mutation, action } from "../_generated/server";
+import { query, mutation, action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
+import { getCallerOrNull } from "./access";
 import {
     availabilityScheduleValidator,
     dateOverrideValidator,
@@ -433,6 +434,9 @@ export const getAvailableSlots = query({
 
 /**
  * Get availability schedule for a physiotherapist
+ *
+ * Public: working hours are what a booking page shows. Only the physiotherapist
+ * (or an admin) gets the private reasons on date overrides ("Vacation", ...).
  */
 export const getAvailabilitySchedule = query({
     args: {
@@ -449,7 +453,25 @@ export const getAvailabilitySchedule = query({
         }
 
         // Normalize to handle both old onboarding format and new format
-        return normalizeAvailabilitySchedule(physioProfile.availabilitySchedule);
+        const schedule = normalizeAvailabilitySchedule(physioProfile.availabilitySchedule);
+
+        const caller = await getCallerOrNull(ctx);
+        if (caller && (caller._id === args.physiotherapistId || caller.role === "admin")) {
+            return schedule;
+        }
+
+        // Everyone else: only the fields needed to show bookable hours.
+        return {
+            timezone: schedule.timezone,
+            defaultSessionDuration: schedule.defaultSessionDuration,
+            buffer: schedule.buffer,
+            weeklyHours: schedule.weeklyHours,
+            dateOverrides: (schedule.dateOverrides ?? []).map((o) => ({
+                date: o.date,
+                isAvailable: o.isAvailable,
+                slots: o.slots,
+            })),
+        };
     },
 });
 
@@ -744,7 +766,7 @@ export const getAvailableSlotsInternal = internalQuery({
  * Get available slots with Google Calendar busy time
  * This is an action because it needs to call external APIs
  */
-export const getAvailableSlotsWithGoogleCalendar = action({
+export const getAvailableSlotsWithGoogleCalendar = internalAction({
     args: {
         physiotherapistId: v.id("users"),
         startDate: v.number(),
@@ -765,7 +787,7 @@ export const getAvailableSlotsWithGoogleCalendar = action({
 
         // Check if user has Google Calendar connected
         const credentials = await ctx.runQuery(
-            internal.calendar.oauth.getCredentials,
+            internal.calendar.oauth.getCredentialsInternal,
             { userId: args.physiotherapistId }
         );
 

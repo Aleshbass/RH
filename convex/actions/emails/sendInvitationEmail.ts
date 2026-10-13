@@ -1,15 +1,22 @@
-// @ts-nocheck
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
+import { internalAction } from "../../_generated/server";
 import { Resend } from 'resend';
+import { escapeHtml } from "../../helpers/escapeHtml";
+
+/**
+ * Patient invitation emails. These are internal actions: they are run by
+ * createPatientInvitationWithNotification (after the signed-in physiotherapist created
+ * the invitation) and by the invitation-reminder cron, never directly from a browser.
+ * Names are HTML-escaped before being placed in the template.
+ */
 
 /**
  * Send an invitation email to a patient
  * This action is specifically for sending emails and can be used by other actions
  */
-export const sendPatientInvitationEmail = action({
+export const sendPatientInvitationEmail = internalAction({
   args: {
     patientEmail: v.string(),
     patientName: v.optional(v.string()),
@@ -71,21 +78,21 @@ export const sendPatientInvitationEmail = action({
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
             <h1 style="color: #10b981;">You're invited to Rehabify Health</h1>
-            <p>Hello ${args.patientName || args.patientEmail.split('@')[0] || 'there'},</p>
-            <p>${args.physiotherapistName} has invited you to join Rehabify Health as their patient.</p>
+            <p>Hello ${escapeHtml(args.patientName || args.patientEmail.split('@')[0] || 'there')},</p>
+            <p>${escapeHtml(args.physiotherapistName)} has invited you to join Rehabify Health as their patient.</p>
             <div style="text-align: center; margin: 24px 0;">
               <p style="margin: 0 0 8px; font-weight: 600;">Scan to begin</p>
               <img src="${qrUrl}" alt="Invitation QR Code" width="240" height="240" style="display:inline-block; border: 8px solid #f3f4f6; border-radius: 12px;" />
             </div>
             <p style="text-align: center; margin: 12px 0; color: #555;">or</p>
             <div style="text-align: center; margin: 16px 0 28px;">
-              <a href="${normalizedInvitationLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">
+              <a href="${escapeHtml(normalizedInvitationLink)}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">
                 Complete Registration
               </a>
             </div>
             <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; word-break: break-all;">
               <p style="margin: 0 0 6px; font-size: 12px; color: #555;">Direct link:</p>
-              <a href="${normalizedInvitationLink}" style="color: #065f46; text-decoration: underline;">${normalizedInvitationLink}</a>
+              <a href="${escapeHtml(normalizedInvitationLink)}" style="color: #065f46; text-decoration: underline;">${escapeHtml(normalizedInvitationLink)}</a>
             </div>
             <p style="margin-top: 16px;">This invitation will expire on ${new Date(args.expiresAt).toLocaleDateString()}.</p>
             <p>If you have any questions, please contact your physiotherapist directly.</p>
@@ -134,8 +141,9 @@ export const sendPatientInvitationEmail = action({
 /**
  * Preview-only utility action: normalize a patient invitation link to production domain
  * Does NOT send an email. Useful for tests to ensure no localhost links remain.
+ * Internal (run it with `npx convex run`), so it is not part of the public API.
  */
-export const previewNormalizedPatientInvitationLink = action({
+export const previewNormalizedPatientInvitationLink = internalAction({
   args: {
     invitationLink: v.string(),
     invitationCode: v.string(),
@@ -165,7 +173,7 @@ export const previewNormalizedPatientInvitationLink = action({
 /**
  * Send a reminder email for pending invitations
  */
-export const sendInvitationReminderEmail = action({
+export const sendInvitationReminderEmail = internalAction({
   args: {
     patientEmail: v.string(),
     patientName: v.optional(v.string()),
@@ -217,21 +225,21 @@ export const sendInvitationReminderEmail = action({
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
             <h1 style="color: #10b981;">Reminder: Your Invitation is Waiting</h1>
-            <p>Hello ${args.patientName || args.patientEmail.split('@')[0] || 'there'},</p>
-            <p>This is a friendly reminder that ${args.physiotherapistName} has invited you to join Rehabify Health as their patient.</p>
+            <p>Hello ${escapeHtml(args.patientName || args.patientEmail.split('@')[0] || 'there')},</p>
+            <p>This is a friendly reminder that ${escapeHtml(args.physiotherapistName)} has invited you to join Rehabify Health as their patient.</p>
             <div style="text-align: center; margin: 24px 0;">
               <p style="margin: 0 0 8px; font-weight: 600;">Scan to continue</p>
               <img src="${reminderQrUrl}" alt="Invitation QR Code" width="240" height="240" style="display:inline-block; border: 8px solid #f3f4f6; border-radius: 12px;" />
             </div>
             <p style="text-align: center; margin: 12px 0; color: #555;">or</p>
             <div style="text-align: center; margin: 16px 0 28px;">
-              <a href="${normalizedInvitationLink}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">
+              <a href="${escapeHtml(normalizedInvitationLink)}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none;">
                 Complete Registration Now
               </a>
             </div>
             <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; word-break: break-all;">
               <p style="margin: 0 0 6px; font-size: 12px; color: #555;">Direct link:</p>
-              <a href="${normalizedInvitationLink}" style="color: #065f46; text-decoration: underline;">${normalizedInvitationLink}</a>
+              <a href="${escapeHtml(normalizedInvitationLink)}" style="color: #065f46; text-decoration: underline;">${escapeHtml(normalizedInvitationLink)}</a>
             </div>
             <p style="margin-top: 16px;">This invitation will expire on ${new Date(args.expiresAt).toLocaleDateString()}.</p>
           </div>

@@ -1,55 +1,189 @@
 ---
-title: Clinical Reports & Outcomes API
-description: Access standardized outcome measures, progress notes, and discharge summaries.
+title: Progress reports
+description: A non-clinical progress report for each referral, with session counts and care milestones, as JSON or as a PDF.
 ---
 
-# Clinical Reports & Outcomes API
+A **progress report** summarises where a referral stands: who is treating the patient, how many sessions they've attended, and which care milestones are done. It's designed for referring doctors, HMO case managers and employers. It contains **no clinical notes**, so it's safe to attach to your case record.
 
-Rehabify provides closed-loop clinical auditability. Referring doctors and HMO medical directors can query objective patient outcome data and download signed PDF summaries.
+| Method | Path | Returns |
+| :--- | :--- | :--- |
+| `GET` | `/partners/reports/{id}` | The report as JSON |
+| `GET` | `/partners/reports/{id}/pdf` | The same report as a PDF |
 
----
+`{id}` identifies the referral. It can be the referral's `id`, its `tracking_code` or your `partner_reference`, just like [Retrieve a referral](/docs/api-reference/referrals#retrieve-a-referral).
 
-## 1. Get Clinical Outcome Summary
-
-`GET /api/v1/partners/reports/:referral_id`
-
-### Example Response (`200 OK`)
+## The report object
 
 ```json
 {
-  "referral_id": "ref_839210aa9",
-  "patient_name": "Chioma Okeke",
-  "referring_doctor": "Dr. A. Balogun",
-  "diagnosis": "Cervical Radiculopathy",
-  "treatment_period": {
-    "start_date": "2026-08-01",
-    "discharge_date": "2026-08-28"
+  "object": "report",
+  "referral": {
+    "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+    "tracking_code": "RHB-4829173655",
+    "partner_reference": "HMO-REF-2026-0091",
+    "status": "in_treatment",
+    "environment": "live"
   },
-  "metrics": {
-    "initial_pain_score": 8,
-    "final_pain_score": 1,
-    "pain_reduction_percentage": 87.5,
-    "functional_score_initial": 32,
-    "functional_score_final": 88,
-    "scale_used": "Neck Disability Index (NDI)"
+  "provider": { "name": "Chiamaka Obi", "license_number": "MRTBN/PT/12345" },
+  "summary": {
+    "prescribed_sessions": 6,
+    "completed_sessions": 2,
+    "upcoming_sessions": 1,
+    "cancelled_sessions": 0,
+    "first_session_at": "2026-10-15T10:00:00.000Z",
+    "last_session_at": "2026-10-18T10:00:00.000Z",
+    "next_session_at": "2026-10-22T10:00:00.000Z",
+    "discharged": false,
+    "discharged_at": null
   },
-  "sessions_summary": {
-    "prescribed": 8,
-    "completed": 8,
-    "adherence_rate": "100%"
-  },
-  "clinical_conclusion": "Patient demonstrated complete resolution of upper limb radiating paresthesia. Cervical active ROM restored to within normal limits. Discharged to independent home exercise routine.",
-  "discharge_summary_pdf_url": "https://physioaroundme.com/api/storage/discharge_ref_839210aa9.pdf"
+  "milestones": [
+    { "key": "referral_received", "label": "Referral received", "status": "completed", "completed_at": "2026-10-13T09:30:00.000Z" },
+    { "key": "patient_contacted", "label": "Patient contacted", "status": "completed", "completed_at": "2026-10-13T09:32:40.000Z" },
+    { "key": "provider_matched", "label": "Physiotherapist matched", "status": "completed", "completed_at": "2026-10-13T09:34:05.000Z" },
+    { "key": "first_session", "label": "First session attended", "status": "completed", "completed_at": "2026-10-15T10:45:00.000Z" },
+    { "key": "treatment_completed", "label": "Treatment completed", "status": "pending", "completed_at": null }
+  ],
+  "pdf_url": "https://api.physioaroundme.com/v1/partners/reports/RHB-4829173655/pdf",
+  "generated_at": "2026-10-19T08:00:00.000Z"
 }
 ```
 
----
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `object` | string | Always `report`. |
+| `referral` | object | `id`, `tracking_code`, `partner_reference`, `status` and `environment` of the referral. |
+| `provider` | object or null | The treating physiotherapist's `name` and `license_number` (the MRTBN licence, which may be `null`). `null` until a physiotherapist is matched. |
+| `summary.prescribed_sessions` | integer | Sessions prescribed for this episode of care. |
+| `summary.completed_sessions` | integer | Sessions attended. |
+| `summary.upcoming_sessions` | integer | Sessions scheduled and not yet held. |
+| `summary.cancelled_sessions` | integer | Sessions cancelled. |
+| `summary.first_session_at`, `summary.last_session_at`, `summary.next_session_at` | string or null | ISO-8601 UTC timestamps, or `null` if not applicable. |
+| `summary.discharged` | boolean | `true` once the care episode is complete. |
+| `summary.discharged_at` | string or null | When the patient was discharged. |
+| `milestones` | array | The care milestones, in order (see below). |
+| `pdf_url` | string | Where to download this report as a PDF. It needs your API key. |
+| `generated_at` | string | When this report was generated. |
 
-## 2. Standardized Outcome Metrics Included
+### Milestones
 
-All Rehabify clinical summaries standardize on validated clinical assessment tools:
+| `key` | `label` |
+| :--- | :--- |
+| `referral_received` | Referral received |
+| `patient_contacted` | Patient contacted |
+| `provider_matched` | Physiotherapist matched |
+| `first_session` | First session attended |
+| `treatment_completed` | Treatment completed |
 
-* **Visual Analog Scale (VAS) / Numeric Pain Rating Scale (NPRS)** (0–10 scale)
-* **Patient-Specific Functional Scale (PSFS)** (0–10 rating across 3 daily tasks)
-* **Neck Disability Index (NDI) & Oswestry Disability Index (ODI)**
-* **Active Range of Motion (Goniometry measurements in degrees)**
+Each milestone's `status` is `completed`, `in_progress` or `pending`. `completed_at` is set once the milestone is `completed`, and is `null` otherwise.
+
+## Retrieve a progress report
+
+```http
+GET /partners/reports/{id}
+```
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/reports/RHB-4829173655 \
+  -H "Authorization: Bearer $REHABIFY_API_KEY"
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+ (save as get-report.mjs)
+const res = await fetch("https://api.physioaroundme.com/v1/partners/reports/RHB-4829173655", {
+  headers: { Authorization: `Bearer ${process.env.REHABIFY_API_KEY}` },
+});
+const report = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${report.error.code}: ${report.error.message}`);
+const { completed_sessions, prescribed_sessions } = report.summary;
+console.log(`${completed_sessions}/${prescribed_sessions} sessions attended`);
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+resp = requests.get(
+    "https://api.physioaroundme.com/v1/partners/reports/RHB-4829173655",
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+resp.raise_for_status()
+summary = resp.json()["summary"]
+print(f"{summary['completed_sessions']}/{summary['prescribed_sessions']} sessions attended")
+```
+
+</Tab>
+</Tabs>
+
+**Response:** `200 OK` with the [report object](#the-report-object).
+
+**Errors:** `404 referral_not_found` if no referral matches `{id}` in this environment, plus the standard [authentication errors](/docs/getting-started/authentication#authentication-errors).
+
+## Download the PDF
+
+```http
+GET /partners/reports/{id}/pdf
+```
+
+Returns the same report as a PDF document (`Content-Type: application/pdf`, sent as an attachment). The download needs the same API key as the JSON endpoint, so fetch it server-to-server. Don't give `pdf_url` to patients or embed it in a web page, because it won't work without the key. Store the file and share it through your own systems instead.
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/reports/RHB-4829173655/pdf \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -o RHB-4829173655-report.pdf
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+ (save as download-report.mjs)
+import { writeFile } from "node:fs/promises";
+
+const res = await fetch("https://api.physioaroundme.com/v1/partners/reports/RHB-4829173655/pdf", {
+  headers: { Authorization: `Bearer ${process.env.REHABIFY_API_KEY}` },
+});
+if (!res.ok) {
+  const { error } = await res.json();
+  throw new Error(`${res.status} ${error.code}: ${error.message}`);
+}
+await writeFile("RHB-4829173655-report.pdf", Buffer.from(await res.arrayBuffer()));
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+resp = requests.get(
+    "https://api.physioaroundme.com/v1/partners/reports/RHB-4829173655/pdf",
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=60,
+)
+resp.raise_for_status()
+with open("RHB-4829173655-report.pdf", "wb") as f:
+    f.write(resp.content)
+```
+
+</Tab>
+</Tabs>
+
+## What reports never contain
+
+Reports, like the rest of the Partner API, never include clinical notes, session notes, assessment findings or treatment plans. The `clinical.notes` you send when creating a referral go to Rehabify's clinicians only.

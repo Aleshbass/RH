@@ -19,8 +19,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { api } from "@/convex/_generated/api";
 import { getConvexClient } from "@/lib/convex-client";
+import { convexServerSecret } from "@/lib/convex-server-secret";
 
 // Map MyItura event types to our internal statuses
 const EVENT_STATUS_MAP: Record<string, string> = {
@@ -48,8 +50,11 @@ function isAuthorizedWebhook(request: NextRequest): boolean {
     const incomingPublicKey =
         request.headers.get("x-api-public-key") ||
         request.headers.get("X-API-Public-Key");
+    if (!incomingPublicKey) return false;
 
-    return incomingPublicKey === expectedPublicKey;
+    const expected = Buffer.from(expectedPublicKey);
+    const received = Buffer.from(incomingPublicKey);
+    return expected.length === received.length && timingSafeEqual(expected, received);
 }
 
 export async function POST(request: NextRequest) {
@@ -104,6 +109,7 @@ export async function POST(request: NextRequest) {
             disbursedAt: loanStatus === "disbursed" ? Date.now() : undefined,
             repaymentStatus: loanStatus === "repaid" ? "completed" : undefined,
             lastWebhookPayload: JSON.stringify(body),
+            serverSecret: convexServerSecret(),
         });
 
         console.log(

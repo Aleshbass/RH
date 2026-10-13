@@ -38,9 +38,7 @@
     "audit": "npm audit --production",
     "analyze": "cross-env ANALYZE=true pnpm build",
     "analyze:server": "cross-env BUNDLE_ANALYZE=server pnpm build",
-    "analyze:browser": "cross-env BUNDLE_ANALYZE=browser pnpm build",
-    "test:billing": "tsx scripts/test-billing-flow.ts",
-    "test:billing-flow": "node scripts/test-billing-flow.js"
+    "analyze:browser": "cross-env BUNDLE_ANALYZE=browser pnpm build"
   },
   "dependencies": {
     "@clerk/backend": "2.14.0",

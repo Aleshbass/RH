@@ -1,43 +1,76 @@
 ---
-title: WhatsApp Deep-Links
-description: Zero-code smart intake links and dynamic QR code generation.
+title: WhatsApp deep links
+description: One-tap links that open a WhatsApp chat with Joy, already linked to a referral through its tracking code.
 ---
 
-# WhatsApp Deep-Links (Zero-Code)
+Joy is Rehabify's WhatsApp care assistant, on **+234 806 152 5811**. A WhatsApp deep link opens a chat with Joy that's pre-filled with a referral's tracking code. When the patient sends the message, Joy links the conversation to that referral, and intake starts straight away.
 
-WhatsApp Deep-Links allow partners to fast-track patient intake through Joy AI with **zero technical integration required**.
-
-```
-https://wa.me/2348061525811?text=REHAB_REF_{PARTNER_CODE}_{PATIENT_ID}_{CASE_TYPE}
-```
-
----
-
-## URL Structure
-
-| URL Parameter | Description | Example |
-| :--- | :--- | :--- |
-| `PARTNER_CODE` | Your unique partner identifier | `GEN_HOSP_IKJ` |
-| `PATIENT_ID` | Internal patient or MRN number | `MRN-90218` |
-| `CASE_TYPE` | Primary condition code | `LOWER_BACK_PAIN` |
-
-### Live Example
+## Format
 
 ```text
-https://wa.me/2348061525811?text=REHAB_REF_RELIANCE_HMO_MBR9910_ACL_TEAR
+https://wa.me/2348061525811?text=START%20RHB-XXXXXXXXXX
 ```
 
----
+- `2348061525811` is Joy's WhatsApp number.
+- `text=START%20RHB-XXXXXXXXXX` pre-fills the message `START RHB-XXXXXXXXXX`. `%20` is the URL-encoded space, and `RHB-XXXXXXXXXX` is the referral's tracking code (`RHB-` followed by 10 digits).
 
-## How It Works
+Example:
 
-1. **Click or Scan**: The patient taps the link on an SMS, web app, or scans a printed clinic QR code.
-2. **Joy Hand-off**: WhatsApp opens immediately with pre-filled metadata.
-3. **Smart Triage**: Joy greets the patient by acknowledging the referral source (*"Welcome! Dr. Johnson from General Hospital referred you for Lower Back Pain recovery."*).
-4. **Partner Bonus**: The referring doctor/partner is automatically credited in the Partner Dashboard upon session completion.
+```text
+https://wa.me/2348061525811?text=START%20RHB-4829173655
+```
 
----
+## Where to get the link
 
-## QR Code Generator Tool
+You don't need to build it yourself. Rehabify returns it ready to use:
 
-You can generate branded clinic QR codes directly from the [Partner Portal](/partnerships) to print and place on reception desks, consultation rooms, or patient discharge envelopes.
+| Source | Field |
+| :--- | :--- |
+| `POST /partners/referrals` and `GET /partners/referrals/{id}` | `links.whatsapp_intake_url` |
+| The public lead endpoint (`POST /public/referral-links/{public_code}/leads`) | `whatsapp_intake_url` |
+
+If you do need to build one from a stored tracking code, URL-encode the message:
+
+<Tabs items={["Node.js", "Python"]}>
+<Tab>
+
+```js
+const trackingCode = "RHB-4829173655";
+const url = `https://wa.me/2348061525811?text=${encodeURIComponent(`START ${trackingCode}`)}`;
+console.log(url); // https://wa.me/2348061525811?text=START%20RHB-4829173655
+```
+
+</Tab>
+<Tab>
+
+```python
+from urllib.parse import quote
+
+tracking_code = "RHB-4829173655"
+url = f"https://wa.me/2348061525811?text={quote(f'START {tracking_code}')}"
+print(url)  # https://wa.me/2348061525811?text=START%20RHB-4829173655
+```
+
+</Tab>
+</Tabs>
+
+## How attribution works
+
+1. You create a referral (by API, referral link or the Partner Portal). It gets a unique `tracking_code` that belongs to your organisation.
+2. The patient taps the deep link and sends `START RHB-…` to Joy.
+3. Joy matches the tracking code to your referral (tracking codes are case-insensitive). If the referral is still `received`, it moves to `contacted`, and `referral.contacted` fires to your webhook endpoint.
+4. The patient is attributed to you, so their verified paid bookings earn you commission under your [commercial terms](/docs/api-reference/commercial-and-commissions).
+
+A plain `https://wa.me/2348061525811` link, with no tracking code, opens a chat with Joy but isn't linked to any referral or partner.
+
+## Sharing the link
+
+- **SMS or email:** send it right after you create the referral, for example: *"Tap to start your physiotherapy with Rehabify on WhatsApp: https://wa.me/2348061525811?text=START%20RHB-4829173655"*.
+- **In your app:** show it as a "Chat with Joy on WhatsApp" button.
+- **QR code:** encode the full URL with any QR generator, for example on a printed referral slip for that patient. Each code belongs to one referral, so don't reuse one patient's QR code for another patient. For posters and shared QR codes, use a [referral link](/docs/guides/no-code-referral-links) instead.
+
+## Good practice
+
+- Use the exact URL from the API. Don't invent tracking codes or change their format.
+- Don't add patient names or health details to the `text` parameter. The tracking code is all Joy needs.
+- Each referral's tracking page (`links.tracking_url`, at `https://physioaroundme.com/track/<tracking_code>`) shows only the status timeline, so it's safe to share alongside the deep link.

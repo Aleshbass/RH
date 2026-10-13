@@ -1,485 +1,224 @@
-import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
-
 /**
- * Generate a short, non-guessable public code for partner referral links.
- * Format: {partnerPrefix}-{random4chars}  e.g. "wella-7KQ2"
+ * No-code partner referral links: portal management, the public landing page,
+ * attribution claims, and the public (PII-free) tracking page.
+ *
+ * Lead submission and click counting are internal (convex/partnerApi.ts) and reached
+ * through the rate-limited Next.js routes, never directly from browsers.
  */
-function generatePublicCode(partnerCode: string): string {
-  const prefix = partnerCode.slice(0, 5).toLowerCase();
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  let random = "";
-  for (let i = 0; i < 4; i++) {
-    random += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return `${prefix}-${random}`;
-}
+import { ConvexError, v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
+import { requirePartnerAccess, requirePartnerEnvAccess, requireViewer } from "./helpers/partnerAccess";
+import {
+  generateLinkPublicCode,
+  isPartnerApproved,
+  linkEnv,
+  normalizeTrackingCode,
+  referralLinkUrl,
+  toPublicStatus,
+} from "./helpers/partnerShared";
+import { referralLinkView } from "./helpers/partnerReferralCore";
+import { attributeUserToLink } from "./helpers/partnerAttribution";
 
-function generateTrackingCode(): string {
-  const num = Math.floor(10000 + Math.random() * 90000);
-  return `RHB-${num}`;
-}
+const envV = v.union(v.literal("sandbox"), v.literal("live"));
 
-// ─── Admin: Create a referral link ─────────────────────────────
+// ─── Portal: manage links ────────────────────────────────────────────────────
 
-/**
- * Creates a new partner referral link (admin action).
- * POST /v1/admin/partners/{partner_id}/referral-links
- */
 export const createReferralLink = mutation({
   args: {
-    partnerId: v.string(),
+    partnerCode: v.string(),
+    environment: envV,
     campaignName: v.optional(v.string()),
     serviceScope: v.optional(v.string()),
     defaultCareMode: v.optional(v.string()),
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const { partner, actor } = await requirePartnerEnvAccess(ctx, args.partnerCode, args.environment, { forWrite: true });
     const now = Date.now();
-    const publicCode = generatePublicCode(args.partnerId);
-
-    // Ensure unique public code
-    const existing = await ctx.db
-      .query("partnerReferralLinks")
-      .withIndex("by_public_code", (q) => q.eq("publicCode", publicCode))
-      .first();
-
-    // Extremely unlikely collision — regenerate if needed
-    const finalCode = existing ? generatePublicCode(args.partnerId + now.toString().slice(-3)) : publicCode;
-
+    if (args.expiresAt !== undefined && args.expiresAt <= now) throw new ConvexError("The expiry date must be in the future.");
+    const publicCode = await generateLinkPublicCode(ctx, partner.code);
+    const defaultCareMode =
+      args.defaultCareMode === "in_person" || args.defaultCareMode === "face_to_face"
+        ? "face_to_face"
+        : args.defaultCareMode === "remote"
+          ? "remote"
+          : "patient_choice";
     const linkId = await ctx.db.insert("partnerReferralLinks", {
-      partnerId: args.partnerId,
-      publicCode: finalCode,
-      campaignName: args.campaignName,
-      serviceScope: args.serviceScope || "all_rehabilitation",
-      defaultCareMode: args.defaultCareMode || "patient_choice",
+      partnerId: partner.code,
+      publicCode,
+      campaignName: args.campaignName?.trim().slice(0, 120) || undefined,
+      serviceScope: args.serviceScope?.trim().slice(0, 80) || "all_rehabilitation",
+      defaultCareMode,
       status: "active",
-      expiresAt: args.expiresAt || undefined,
+      expiresAt: args.expiresAt,
+      environment: args.environment,
+      createdBy: actor,
       clicks: 0,
       leads: 0,
       joyStarts: 0,
+      signups: 0,
       bookings: 0,
       payments: 0,
       createdAt: now,
       updatedAt: now,
     });
-
-    return {
-      referralLinkId: linkId,
-      publicCode: finalCode,
-      url: `https://rehabify.com/r/${finalCode}`,
-      status: "active",
-      createdAt: new Date(now).toISOString(),
-    };
+    const link = await ctx.db.get(linkId);
+    return referralLinkView(link!, referralLinkUrl(publicCode));
   },
 });
-
-// ─── Public: Resolve a referral link ───────────────────────────
-
-/**
- * Resolves a public code to its partner referral link details.
- * Used by the landing page to display partner branding and defaults.
- */
-export const resolveReferralLink = query({
-  args: {
-    publicCode: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const link = await ctx.db
-      .query("partnerReferralLinks")
-      .withIndex("by_public_code", (q) => q.eq("publicCode", args.publicCode))
-      .first();
-
-    if (!link) return null;
-
-    // Check expiry
-    if (link.expiresAt && link.expiresAt < Date.now()) {
-      return { ...link, status: "expired" as const, expired: true };
-    }
-
-    if (link.status !== "active") {
-      return { ...link, expired: link.status === "expired" };
-    }
-
-    // Fetch partner details for branding
-    const partner = await ctx.db
-      .query("partners")
-      .withIndex("by_code", (q) => q.eq("code", link.partnerId))
-      .first();
-
-    return {
-      _id: link._id,
-      publicCode: link.publicCode,
-      partnerId: link.partnerId,
-      campaignName: link.campaignName,
-      serviceScope: link.serviceScope,
-      defaultCareMode: link.defaultCareMode,
-      status: link.status,
-      expired: false,
-      partner: partner
-        ? {
-            name: partner.name,
-            logoUrl: partner.logoUrl,
-            type: partner.type,
-            supportedCareModes: partner.supportedCareModes,
-          }
-        : {
-            name: "Rehabify Health Partner",
-            logoUrl: null,
-            type: "hospital" as const,
-            supportedCareModes: ["remote", "face_to_face"],
-          },
-    };
-  },
-});
-
-// ─── Public: Record a link click ───────────────────────────────
-
-/**
- * Records a click on a partner referral link.
- * Called when the landing page loads.
- */
-export const recordLinkClick = mutation({
-  args: {
-    publicCode: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const link = await ctx.db
-      .query("partnerReferralLinks")
-      .withIndex("by_public_code", (q) => q.eq("publicCode", args.publicCode))
-      .first();
-
-    if (!link || link.status !== "active") return null;
-
-    // Check expiry
-    if (link.expiresAt && link.expiresAt < Date.now()) {
-      await ctx.db.patch(link._id, { status: "expired", updatedAt: Date.now() });
-      return null;
-    }
-
-    await ctx.db.patch(link._id, {
-      clicks: (link.clicks || 0) + 1,
-      updatedAt: Date.now(),
-    });
-
-    // Record activity in partnerActivityLogs for developer console & dashboard analytics
-    const isSandbox =
-      link.partnerId === "sandbox_partner" ||
-      link.partnerId.includes("sandbox") ||
-      link.partnerId.includes("test");
-    const environment = isSandbox ? ("sandbox" as const) : ("live" as const);
-
-    await ctx.db.insert("partnerActivityLogs", {
-      partnerId: link.partnerId,
-      environment,
-      eventId: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-      eventType: "link.clicked",
-      direction: "inbound",
-      url: `/r/${args.publicCode}`,
-      method: "GET",
-      statusCode: 200,
-      latencyMs: 18,
-      status: "success",
-      requestId: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      requestPayload: {
-        publicCode: args.publicCode,
-        campaignName: link.campaignName,
-      },
-      responsePayload: { recorded: true },
-      occurredAt: Date.now(),
-    });
-
-    return { recorded: true };
-  },
-});
-
-// ─── Public: Submit a lead from the landing page ───────────────
-
-/**
- * Creates a referral from the partner landing page.
- * This is the core lead capture endpoint.
- *
- * POST /v1/public/referral-links/{public_code}/leads
- */
-export const submitLead = mutation({
-  args: {
-    publicCode: v.string(),
-    sessionId: v.optional(v.string()),
-    // Patient details
-    firstName: v.string(),
-    lastName: v.optional(v.string()),
-    phone: v.optional(v.string()),
-    email: v.optional(v.string()),
-    city: v.optional(v.string()),
-    state: v.optional(v.string()),
-    preferredLanguage: v.optional(v.string()),
-    // Need
-    reason: v.optional(v.string()),
-    preferredCareMode: v.optional(v.string()),
-    // Next step
-    nextStep: v.optional(v.string()), // defaults to "contact_me"
-    preferredContactChannel: v.optional(v.string()), // "whatsapp", "email", "sms"
-    // Consent
-    consentGranted: v.boolean(),
-    privacyNoticeVersion: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-
-    // 1. Resolve the link
-    const link = await ctx.db
-      .query("partnerReferralLinks")
-      .withIndex("by_public_code", (q) => q.eq("publicCode", args.publicCode))
-      .first();
-
-    if (!link || link.status !== "active") {
-      throw new Error("This referral link is no longer active.");
-    }
-
-    if (link.expiresAt && link.expiresAt < Date.now()) {
-      await ctx.db.patch(link._id, { status: "expired", updatedAt: now });
-      throw new Error("This referral link has expired.");
-    }
-
-    // 2. Deduplication: check by phone + partner within recent window (24h)
-    if (args.phone) {
-      const recentWindow = now - 24 * 60 * 60 * 1000;
-      const existingByPhone = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_id", (q) => q.eq("partnerId", link.partnerId))
-        .collect();
-
-      const duplicate = existingByPhone.find(
-        (r) =>
-          r.patientPhone === args.phone &&
-          r.createdAt > recentWindow
-      );
-
-      if (duplicate) {
-        return {
-          referralId: duplicate._id,
-          trackingCode: duplicate.trackingCode || "",
-          status: duplicate.status,
-          isDuplicate: true,
-          nextAction: "contact_pending",
-        };
-      }
-    }
-
-    // 3. Create the referral
-    const trackingCode = generateTrackingCode();
-
-    const referralId = await ctx.db.insert("inboundReferrals", {
-      partnerId: link.partnerId,
-      linkId: link._id,
-      campaignName: link.campaignName,
-      firstClickAt: now,
-      conversionSource: "partner_link",
-      trackingCode,
-      patientFirstName: args.firstName.trim(),
-      patientLastName: (args.lastName || "").trim(),
-      patientPhone: (args.phone || "").trim(),
-      patientEmail: args.email?.trim(),
-      city: args.city?.trim() || "Lagos",
-      state: args.state?.trim(),
-      preferredLanguage: args.preferredLanguage || "en",
-      reason: args.reason?.trim(),
-      preferredCareMode: args.preferredCareMode || link.defaultCareMode || "patient_choice",
-      preferredContactChannel: args.preferredContactChannel || "whatsapp",
-      nextStep: "contact_me",
-      consentGranted: args.consentGranted,
-      consentCapturedAt: now,
-      consentMethod: "partner_landing",
-      consentPrivacyNoticeVersion: args.privacyNoticeVersion || "2026-09-01",
-      status: args.consentGranted ? "received" : "consent_pending",
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // 4. Create consent record
-    await ctx.db.insert("patientConsents", {
-      referralId,
-      patientPhone: args.phone?.trim(),
-      patientEmail: args.email?.trim(),
-      granted: args.consentGranted,
-      capturedAt: now,
-      method: "partner_landing",
-      privacyNoticeVersion: args.privacyNoticeVersion || "2026-09-01",
-    });
-
-    // 5. Create immutable audit event
-    await ctx.db.insert("referralEvents", {
-      referralId,
-      eventName: "lead.submitted",
-      occurredAt: now,
-      actorType: "patient",
-      metadata: {
-        publicCode: args.publicCode,
-        campaignName: link.campaignName,
-        partnerId: link.partnerId,
-        nextStep: args.nextStep,
-      },
-    });
-
-    // Also log the "received" event
-    if (args.consentGranted) {
-      await ctx.db.insert("referralEvents", {
-        referralId,
-        eventName: "referral.received",
-        occurredAt: now,
-        actorType: "system",
-        metadata: { source: "partner_landing_page" },
-      });
-    }
-
-    // 5b. Record in partnerActivityLogs for Developer Console & Activity Inspector
-    const isLeadSandbox =
-      link.partnerId === "sandbox_partner" ||
-      link.partnerId.includes("sandbox") ||
-      link.partnerId.includes("test");
-    const leadEnvironment = isLeadSandbox ? ("sandbox" as const) : ("live" as const);
-    const patientFullName = `${args.firstName.trim()} ${(args.lastName || "").trim()}`.trim();
-
-    await ctx.db.insert("partnerActivityLogs", {
-      partnerId: link.partnerId,
-      environment: leadEnvironment,
-      eventId: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-      eventType: "referral.received",
-      direction: "inbound",
-      url: `/r/${args.publicCode}`,
-      method: "POST",
-      statusCode: 201,
-      latencyMs: 42,
-      status: "success",
-      patientName: patientFullName,
-      trackingCode,
-      requestId: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      requestPayload: {
-        publicCode: args.publicCode,
-        campaignName: link.campaignName,
-        preferredCareMode: args.preferredCareMode || link.defaultCareMode || "patient_choice",
-        preferredContactChannel: args.preferredContactChannel || "whatsapp",
-        city: args.city || "Lagos",
-      },
-      responsePayload: {
-        referralId,
-        trackingCode,
-        status: args.consentGranted ? "received" : "consent_pending",
-      },
-      occurredAt: now,
-    });
-
-    // 6. Create an outreach task for Rehabify Care Team
-    const contactChannel = (args.preferredContactChannel || "whatsapp") as "whatsapp" | "email" | "sms" | "phone";
-    await ctx.db.insert("partnerContactRequests", {
-      referralId,
-      channel: contactChannel,
-      status: "pending",
-      attemptCount: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // 7. Update link analytics
-    await ctx.db.patch(link._id, {
-      leads: (link.leads || 0) + 1,
-      joyStarts: args.nextStep === "start_joy" ? (link.joyStarts || 0) + 1 : link.joyStarts,
-      updatedAt: now,
-    });
-
-    // 8. Notify admins
-    const admins = await ctx.db
-      .query("users")
-      .withIndex("by_role", (q) => q.eq("role", "admin"))
-      .collect();
-
-    for (const admin of admins) {
-      await ctx.db.insert("notifications", {
-        userId: admin._id,
-        type: "system_alert",
-        title: "New Partner Referral Lead",
-        message: `Partner link [${link.partnerId}] – ${args.firstName} ${args.lastName || ""} submitted via ${args.nextStep === "start_joy" ? "Joy" : args.preferredContactChannel || "landing page"} (${trackingCode})`,
-        data: {
-          referralId,
-          trackingCode,
-          partnerId: link.partnerId,
-          publicCode: args.publicCode,
-        },
-        status: "pending",
-        priority: "high",
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    return {
-      referralId,
-      trackingCode,
-      status: args.consentGranted ? "received" : "consent_pending",
-      isDuplicate: false,
-      nextAction: "contact_pending",
-      contactRequestId: referralId,
-    };
-  },
-});
-
-// ─── Admin: List referral links for a partner ──────────────────
 
 export const listReferralLinks = query({
-  args: {
-    partnerId: v.string(),
-  },
+  args: { partnerCode: v.string(), environment: v.optional(envV) },
   handler: async (ctx, args) => {
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
     const links = await ctx.db
       .query("partnerReferralLinks")
-      .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerId))
+      .withIndex("by_partner_id", (q) => q.eq("partnerId", partner.code))
       .order("desc")
       .collect();
-
-    return links.map((link) => ({
-      ...link,
-      url: `https://rehabify.com/r/${link.publicCode}`,
-      conversionRate:
-        link.clicks && link.clicks > 0
-          ? ((link.leads || 0) / link.clicks * 100).toFixed(1) + "%"
-          : "0%",
-    }));
+    return links
+      .filter((l) => !args.environment || linkEnv(l) === args.environment)
+      .map((l) => {
+        const view = referralLinkView(l, referralLinkUrl(l.publicCode));
+        const clicks = l.clicks ?? 0;
+        return { ...view, conversionRate: clicks > 0 ? Math.round(((l.leads ?? 0) / clicks) * 1000) / 10 : 0 };
+      });
   },
 });
 
-// ─── Admin: Deactivate or reactivate a link ────────────────────
-
 export const updateLinkStatus = mutation({
-  args: {
-    linkId: v.id("partnerReferralLinks"),
-    status: v.union(v.literal("active"), v.literal("inactive")),
-  },
+  args: { partnerCode: v.string(), linkId: v.id("partnerReferralLinks"), status: v.union(v.literal("active"), v.literal("inactive")) },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.linkId, {
-      status: args.status,
-      updatedAt: Date.now(),
-    });
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode, { requireApproved: true });
+    const link = await ctx.db.get(args.linkId);
+    if (!link || link.partnerId !== partner.code) throw new ConvexError("Referral link not found.");
+    if (args.status === "active" && link.expiresAt && link.expiresAt <= Date.now()) {
+      throw new ConvexError("This link has expired. Create a new link instead.");
+    }
+    await ctx.db.patch(link._id, { status: args.status, updatedAt: Date.now() });
     return { success: true };
   },
 });
 
-// ─── Query: Get referral events timeline ───────────────────────
-
-/**
- * Returns the immutable event history for a referral.
- * Used in both admin and partner portal for status tracking.
- */
-export const getReferralTimeline = query({
-  args: {
-    referralId: v.id("inboundReferrals"),
-  },
+/** Leads that arrived through one link (for the portal's per-link view). */
+export const listLinkLeads = query({
+  args: { partnerCode: v.string(), linkId: v.id("partnerReferralLinks") },
   handler: async (ctx, args) => {
-    const events = await ctx.db
-      .query("referralEvents")
-      .withIndex("by_referral_id", (q) => q.eq("referralId", args.referralId))
-      .order("asc")
-      .collect();
-
-    return events;
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const link = await ctx.db.get(args.linkId);
+    if (!link || link.partnerId !== partner.code) throw new ConvexError("Referral link not found.");
+    const referrals = await ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_link_id", (q) => q.eq("linkId", link._id))
+      .order("desc")
+      .take(200);
+    return referrals.map((r) => ({
+      referralId: r._id,
+      trackingCode: r.trackingCode ?? "",
+      patientName: `${r.patientFirstName} ${r.patientLastName ?? ""}`.trim(),
+      status: toPublicStatus(r.status),
+      createdAt: r.createdAt,
+    }));
   },
 });
+
+// ─── Public landing page ─────────────────────────────────────────────────────
+
+/** Branding and defaults for /r/<code>. Exposes no counters or internal ids. */
+export const resolveReferralLink = query({
+  args: { publicCode: v.string() },
+  handler: async (ctx, args) => {
+    const code = args.publicCode.trim();
+    if (!code || code.length > 64) return null;
+    const link = await ctx.db
+      .query("partnerReferralLinks")
+      .withIndex("by_public_code", (q) => q.eq("publicCode", code))
+      .first();
+    if (!link) return null;
+    const partner = await ctx.db
+      .query("partners")
+      .withIndex("by_code", (q) => q.eq("code", link.partnerId))
+      .first();
+    const expired = Boolean(link.expiresAt && link.expiresAt <= Date.now());
+    const usable = link.status === "active" && !expired && Boolean(partner && isPartnerApproved(partner));
+    return {
+      publicCode: link.publicCode,
+      status: usable ? ("active" as const) : expired || link.status === "expired" ? ("expired" as const) : ("inactive" as const),
+      usable,
+      environment: linkEnv(link),
+      campaignName: link.campaignName ?? null,
+      defaultCareMode: link.defaultCareMode ?? "patient_choice",
+      partner: usable && partner
+        ? { name: partner.name, logoUrl: partner.logoUrl ?? null, type: partner.type, supportedCareModes: partner.supportedCareModes ?? [] }
+        : null,
+    };
+  },
+});
+
+/**
+ * Attributes the signed-in user to the partner behind a referral-link code (from the
+ * 30-day attribution cookie). Validated server-side; first partner wins.
+ */
+export const claimReferralAttribution = mutation({
+  args: { publicCode: v.string() },
+  handler: async (ctx, args) => {
+    const viewer = await requireViewer(ctx);
+    if (!viewer.user) return { attributed: false, reason: "user_not_ready" };
+    const result = await attributeUserToLink(ctx, viewer.user, args.publicCode, "referral_link", { countSignup: true });
+    return { attributed: result.attributed, reason: result.reason ?? null };
+  },
+});
+
+// ─── Public tracking page (no personal or clinical data) ─────────────────────
+
+const STATUS_LABEL: Record<string, string> = {
+  received: "Referral received",
+  contacted: "Care team in contact",
+  booked: "First session booked",
+  in_treatment: "Treatment in progress",
+  completed: "Treatment completed",
+  not_suitable: "Redirected to appropriate care",
+  cancelled: "Cancelled",
+  closed: "Closed",
+};
+
+export const getPublicReferralStatus = query({
+  args: { trackingCode: v.string() },
+  handler: async (ctx, args) => {
+    const code = normalizeTrackingCode(args.trackingCode);
+    if (!code) return null;
+    const referral = await ctx.db
+      .query("inboundReferrals")
+      .withIndex("by_tracking_code", (q) => q.eq("trackingCode", code))
+      .first();
+    if (!referral) return null;
+    const partner = referral.partnerId
+      ? await ctx.db
+          .query("partners")
+          .withIndex("by_code", (q) => q.eq("code", referral.partnerId!))
+          .first()
+      : null;
+    const status = toPublicStatus(referral.status);
+    const steps: Array<{ key: string; label: string; done: boolean; at: number | null }> = [
+      { key: "received", label: "Referral received", done: true, at: referral.createdAt },
+      { key: "contacted", label: "Care team in contact", done: Boolean(referral.contactedAt) || ["contacted", "booked", "in_treatment", "completed"].includes(status), at: referral.contactedAt ?? null },
+      { key: "booked", label: "First session booked", done: Boolean(referral.bookedAt) || ["booked", "in_treatment", "completed"].includes(status), at: referral.bookedAt ?? null },
+      { key: "in_treatment", label: "Treatment in progress", done: Boolean(referral.treatmentStartedAt) || ["in_treatment", "completed"].includes(status), at: referral.treatmentStartedAt ?? null },
+      { key: "completed", label: "Treatment completed", done: status === "completed", at: referral.completedAt ?? null },
+    ];
+    return {
+      trackingCode: code,
+      status,
+      statusLabel: STATUS_LABEL[status] ?? status,
+      isSandbox: referral.environment === "sandbox",
+      partnerName: partner?.name ?? null,
+      createdAt: referral.createdAt,
+      updatedAt: referral.updatedAt,
+      steps,
+      terminal: ["not_suitable", "cancelled", "closed"].includes(status) ? STATUS_LABEL[status] : null,
+    };
+  },
+});
+
+export type ReferralLinkDoc = Doc<"partnerReferralLinks">;

@@ -1,6 +1,6 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { api } from "./_generated/api";
+import { internal } from "./_generated/api";
 
 export const submitPartnershipInquiry = mutation({
   args: {
@@ -44,7 +44,7 @@ export const submitPartnershipInquiry = mutation({
 
       // 2. Schedule an email to the admin
       if (admin.email) {
-        await ctx.scheduler.runAfter(0, api.actions.emails.sendPartnershipInquiryEmail.sendPartnershipInquiryEmail, {
+        await ctx.scheduler.runAfter(0, internal.actions.emails.sendPartnershipInquiryEmail.sendPartnershipInquiryEmail, {
           adminEmail: admin.email,
           name: args.name,
           email: args.email,

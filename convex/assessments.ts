@@ -1,5 +1,5 @@
 import { v } from 'convex/values';
-import { mutation, query } from './_generated/server';
+import { mutation, query, internalQuery } from './_generated/server';
 import { Doc, Id } from './_generated/dataModel';
 // import { AssessmentType } from '@/types/assessments';
 
@@ -318,16 +318,32 @@ export const createNPSAssessment = mutation({
 export const getPatientAssessments = query({
   args: { patientId: v.id('users') },
   handler: async (ctx, args) => {
-    return await ctx.db
+    // The patient, an admin, or a physiotherapist caring for the patient sees every
+    // assessment; any other physiotherapist only sees the ones they wrote.
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+    const viewer = await ctx.db
+      .query('users')
+      .withIndex('by_clerk_id', (q) => q.eq('clerkId', identity.subject))
+      .first();
+    if (!viewer) return [];
+    const assessments = await ctx.db
       .query('assessments')
       .withIndex('by_patient', (q) => q.eq('patientId', args.patientId))
       .order('desc')
       .collect();
+    if (viewer._id === args.patientId || viewer.role === 'admin') return assessments;
+    const relationships = await ctx.db
+      .query('patientPhysiotherapistRelationships')
+      .withIndex('by_patient_and_physiotherapist', (q) => q.eq('patientId', args.patientId).eq('physiotherapistId', viewer._id))
+      .collect();
+    if (relationships.some((r) => r.status === 'active')) return assessments;
+    return assessments.filter((a) => a.physiotherapistId === viewer._id);
   },
 });
 
 // Get specific assessment
-export const getAssessment = query({
+export const getAssessment = internalQuery({
   args: { assessmentId: v.id('assessments') },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.assessmentId);
@@ -335,7 +351,7 @@ export const getAssessment = query({
 });
 
 // Get assessment history with trends
-export const getAssessmentHistory = query({
+export const getAssessmentHistory = internalQuery({
   args: { 
     patientId: v.id('users'),
     assessmentType: v.string(),

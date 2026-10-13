@@ -1,43 +1,37 @@
-import { NextRequest, NextResponse } from "next/server";
-import { authenticatePartner } from "@/lib/partner-auth";
-import { getConvexClient } from "@/lib/convex-client";
-import { api } from "@/convex/_generated/api";
+import type { NextRequest } from "next/server";
+import { authenticatePartner, logPartnerRequest } from "@/lib/partner-api/auth";
+import { callPartnerGateway } from "@/lib/partner-api/gateway";
+import { apiError, apiJson, internalError, listBody, parseLimit } from "@/lib/partner-api/http";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/** GET /v1/partners/providers — approved physiotherapists accepting patients. */
 export async function GET(req: NextRequest) {
-  const { partner, response } = await authenticatePartner(req);
-  if (!partner) return response!;
-
+  const auth = await authenticatePartner(req);
+  if (!auth.ok) return auth.response;
+  const { ctx } = auth;
+  const params = req.nextUrl.searchParams;
+  const limit = parseLimit(params.get("limit"));
+  if (limit === null) return apiError(ctx, 400, "invalid_parameter", "limit must be an integer between 1 and 100.", { param: "limit" });
+  const mode = params.get("mode") || undefined;
+  if (mode && mode !== "virtual" && mode !== "in_person") {
+    return apiError(ctx, 400, "invalid_parameter", "mode must be one of: virtual, in_person.", { param: "mode" });
+  }
+  const text = (name: string) => {
+    const value = params.get(name)?.trim();
+    return value ? value.slice(0, 100) : undefined;
+  };
   try {
-    const { searchParams } = new URL(req.url);
-    const city = searchParams.get("city") || undefined;
-    const specialty = searchParams.get("specialty") || undefined;
-    const limit = Number(searchParams.get("limit")) || 20;
-
-    const convex = getConvexClient();
-    const providers = await convex.query(api.partners.searchVerifiedProviders, {
-      city,
-      specialty,
+    const result = await callPartnerGateway("listProviders", {
+      city: text("city"),
+      state: text("state"),
+      specialty: text("specialty"),
+      mode,
       limit,
     });
-
-    return NextResponse.json({
-      status: "success",
-      count: providers.length,
-      city_filter: city || "all",
-      specialty_filter: specialty || "all",
-      providers,
-    });
+    return logPartnerRequest(req, auth, apiJson(ctx, listBody(result.data, result.hasMore, null)), { eventType: "api.providers_list" });
   } catch (error) {
-    console.error("Provider search error:", error);
-    return NextResponse.json(
-      {
-        error: {
-          code: "provider_search_failed",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        },
-      },
-      { status: 500 }
-    );
+    return logPartnerRequest(req, auth, internalError(ctx, error), { eventType: "api.providers_list", errorCode: "internal_error" });
   }
 }

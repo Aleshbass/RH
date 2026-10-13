@@ -3,7 +3,7 @@
 
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
-import { api } from "../../_generated/api";
+import { api, internal } from "../../_generated/api";
 import { publicAppUrl } from "../../helpers/appUrl";
 
 // Define the return type for the invitation result
@@ -82,7 +82,7 @@ export const createPatientInvitationWithNotification = action({
         
         // Send email using the dedicated email action
         try {
-          await ctx.runAction(api.actions.emails.sendInvitationEmail.sendPatientInvitationEmail, {
+          await ctx.runAction(internal.actions.emails.sendInvitationEmail.sendPatientInvitationEmail, {
             patientEmail: args.patientEmail,
             patientName: args.patientName,
             physiotherapistName,

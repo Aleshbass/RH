@@ -2,7 +2,7 @@
 // TypeScript TS2589 errors due to deep Convex generic inference - disabling type checking
 "use node";
 
-import { action } from "../../_generated/server";
+import { action, internalAction } from "../../_generated/server";
 import { api } from "../../_generated/api";
 import { v } from "convex/values";
 
@@ -30,7 +30,7 @@ const patientDataValidator = v.object({
  * This action calls the `completePatientOnboardingWithNotification` action and is intended
  * to be used from the client to avoid deep TypeScript type instantiation errors.
  */
-export const simplifiedCompletePatientOnboarding = action({
+export const simplifiedCompletePatientOnboarding = internalAction({
   args: {
     invitationCode: v.string(),
     patientData: patientDataValidator,

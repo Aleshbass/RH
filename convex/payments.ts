@@ -1,4 +1,4 @@
-import { mutation, query, action, internalMutation, MutationCtx } from "./_generated/server";
+import { mutation, query, action, internalMutation, MutationCtx, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { Id, Doc } from "./_generated/dataModel";
 import { api } from "./_generated/api";
@@ -24,7 +24,7 @@ const paymentMethod = v.union(
  * Initialize invoice payment with Paystack
  * This is what the UI calls to start payment process
  */
-export const initializeInvoicePayment = action({
+export const initializeInvoicePayment = internalAction({
   args: {
     invoiceId: v.id("invoices"),
     paymentMethod: v.string(),
@@ -43,7 +43,7 @@ export const initializeInvoicePayment = action({
     error?: string;
   }> => {
     // Get invoice details
-    const invoice = await ctx.runQuery(api.billing.getInvoiceById, {
+    const invoice = await ctx.runQuery(internal.billing.getInvoiceByIdInternal, {
       invoiceId: args.invoiceId
     });
 
@@ -177,7 +177,7 @@ export const createPaymentRecord = mutation({
 /**
  * Initialize Paystack payment (Server Action)
  */
-export const initializePaystackPayment = action({
+export const initializePaystackPayment = internalAction({
   args: {
     reference: v.string(),
     amount: v.number(), // In kobo
@@ -206,7 +206,7 @@ export const initializePaystackPayment = action({
       try {
         const invoiceId = (args.metadata as any)?.invoiceId;
         if (invoiceId) {
-          const invoice = await ctx.runQuery(api.billing.getInvoiceById, { invoiceId });
+          const invoice = await ctx.runQuery(internal.billing.getInvoiceByIdInternal, { invoiceId });
           if (invoice && invoice.physiotherapistId) {
             const bankDetails = await ctx.runQuery(api.paystack.getPhysiotherapistBankDetails, {
               physiotherapistId: invoice.physiotherapistId,

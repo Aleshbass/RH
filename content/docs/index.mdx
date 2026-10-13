@@ -1,70 +1,84 @@
 ---
 title: Introduction
-description: Welcome to the Rehabify Health Developer Documentation and Integration Ecosystem.
+description: Refer patients to licensed physiotherapists across Nigeria, follow every referral to discharge, and earn on the care you send — through one REST API, no-code referral links and signed webhooks.
 ---
 
-# Welcome to Rehabify Health API
+Rehabify Health connects patients with MRTBN-licensed physiotherapists across Nigeria, for in-person and virtual care. Joy, our WhatsApp care assistant, works alongside our care team to handle patient intake and scheduling.
 
-Rehabify Health is the **physiotherapy and physical rehabilitation infrastructure layer** for Nigeria and West Africa. We provide standardized APIs, real-time webhooks, drop-in SDK widgets, and automated WhatsApp workflows that enable **HMOs, hospitals, telemedicine platforms, corporate employers, and fitness centers** to seamlessly connect patients with licensed physiotherapists.
+The **Rehabify Partner Platform** lets HMOs, hospitals and clinics, employers, gyms and digital health products send patients to Rehabify, follow each referral's progress, and reconcile commissions on the care they generate.
 
-```mermaid
-flowchart LR
-    A[Partner Platform\nHMO, Hospital, Gym, Corporate] -->|REST API / Webhook / SDK| B[Rehabify Gateway\nAuth, Rate Limits, Routing]
-    B -->|Smart Intake| C[Joy AI on WhatsApp\nTriage, Scheduling, Telehealth]
-    C -->|Care Delivery| D[MRTBN-Verified Physio\nHome, Clinic, Virtual]
-    D -->|Real-time Data| E[Closed-Loop Analytics\nWebhooks, Portal, Reports]
-```
+## Three ways to integrate
 
----
+You can use any combination of these options.
 
-## Integration Channels
+| Option | What you do | Best for |
+| :--- | :--- | :--- |
+| **[REST API](/docs/api-reference)** | Create referrals from your own system and read their status, sessions and progress reports. | HMOs, EHRs, telemedicine and health apps |
+| **[No-code referral links](/docs/guides/no-code-referral-links)** | Share a co-branded link or QR code. Patients refer themselves through a short form on physioaroundme.com. | Clinics, employers, gyms and campaigns that have no engineering capacity |
+| **[Webhooks](/docs/webhooks)** | Get a signed, real-time event every time a referral changes status. | Anyone who needs to keep their own records in sync automatically |
 
-Choose the integration channel that matches your technical requirements and timeline:
+## The referral journey
 
-| Channel | Best For | Typical Setup Time | Authentication |
-| :--- | :--- | :--- | :--- |
-| **[REST API](/docs/api-reference)** | HMOs, EHRs, Telemedicine, Healthtech | 1–3 days | API Key (`Bearer sk_live_...`) |
-| **[Webhooks](/docs/webhooks)** | Real-time session sync & closed-loop reports | 1–2 hours | HMAC SHA-256 Signature |
-| **[Drop-in Embed Widget](/docs/sdks-widgets/embed-widget)** | Gym websites, corporate portals | 30 minutes | Public Key (`pk_live_...`) |
-| **[WhatsApp Deep-Links](/docs/sdks-widgets/whatsapp-deep-links)** | Clinics, Doctors, SMS campaigns, QR codes | 15 minutes | Parameterized URL Tokens |
-| **[Partner Portal](/partnerships)** | Non-technical clinic staff, HR admins | Instant | Email Magic Link / OAuth |
+Every referral moves through the same public statuses, whether you created it through the API, a referral link or the Partner Portal:
 
----
+1. **`received`**: Rehabify accepted the referral.
+2. **`contacted`**: our care team or Joy reached the patient and intake has started.
+3. **`booked`**: a physiotherapist was matched and the first appointment is confirmed.
+4. **`in_treatment`**: rehabilitation sessions are under way.
+5. **`completed`**: the care episode is complete and the patient has been discharged.
 
-## Quick Navigation
+A referral can also end as **`not_suitable`** (Rehabify isn't the right service and the patient was redirected to appropriate care), **`cancelled`**, or **`closed`** (no further activity expected). The [referral object](/docs/api-reference/referrals#statuses) lists every status.
+
+## Environments
+
+Sandbox and live share one base URL. The API key you send decides which environment you're working in.
+
+| | Sandbox | Live |
+| :--- | :--- | :--- |
+| Key prefix | `sk_test_` | `sk_live_` |
+| Base URL | `https://api.physioaroundme.com/v1` | `https://api.physioaroundme.com/v1` |
+| Patients | Test data only. Nobody is contacted, and no emails or WhatsApp messages are sent. | Real patients are contacted by Rehabify's care team and Joy. |
+| Providers | Simulated | Verified physiotherapists |
+| Commissions | Never earned | Earned on verified paid bookings |
+| Available | Once Rehabify approves your organisation | Once Rehabify approves your production access |
+
+See [Authentication](/docs/getting-started/authentication) for keys and the go-live process, and [Sandbox & testing](/docs/sandbox/testing) for magic phone numbers and test endpoints.
+
+## Your data and your patients' data
+
+- Clinical notes you send to Rehabify are shared with Rehabify clinicians only. The API and webhooks never return them.
+- Webhooks never contain patient personal data. To get the patient details you submitted, call the API.
+- Progress reports contain no clinical notes. They show session counts and milestones only.
+- The public tracking page at `https://physioaroundme.com/track/<tracking_code>` shows only the status timeline, with no personal or clinical data.
+
+## Start here
 
 <Cards>
-  <Card title="Quickstart (5 Mins)" href="/docs/getting-started/quickstart">
-    Send your first patient referral and test the Joy WhatsApp hand-off in 5 minutes.
+  <Card title="Quickstart" href="/docs/getting-started/quickstart">
+    Create a sandbox referral, read it back and receive a signed webhook in about 15 minutes.
   </Card>
-  <Card title="API Reference" href="/docs/api-reference">
-    Explore endpoints for referrals, eligibility verification, provider search, and clinical reports.
+  <Card title="Authentication" href="/docs/getting-started/authentication">
+    API keys, environments, key rotation, and how to get production access.
   </Card>
-  <Card title="Webhooks & Events" href="/docs/webhooks">
-    Listen to real-time events like `session.completed` and `treatment_plan.discharged`.
+  <Card title="API reference" href="/docs/api-reference">
+    Every endpoint, with request and response examples and an OpenAPI spec.
   </Card>
-  <Card title="Partner Guides" href="/docs/guides">
-    Tailored walkthroughs for HMO pre-auth, hospital referrals, gym recovery, and corporate wellness.
+  <Card title="No-code referral links" href="/docs/guides/no-code-referral-links">
+    Send patients to Rehabify without writing any code.
   </Card>
 </Cards>
 
----
+## Key URLs
 
-## Core Capabilities
+| What | URL |
+| :--- | :--- |
+| API base URL | `https://api.physioaroundme.com/v1` |
+| Partner Portal (keys, webhooks, referral links, go-live) | https://partners.physioaroundme.com |
+| Documentation | https://docs.physioaroundme.com |
+| OpenAPI spec | https://physioaroundme.com/openapi.json |
+| Patient site | https://physioaroundme.com |
+| Joy on WhatsApp | +234 806 152 5811 (`https://wa.me/2348061525811`) |
 
-### 1. 1-Click Patient Referrals
-Send a single JSON payload with patient contact info and clinical notes. Rehabify automatically dispatches an intake link via WhatsApp, matches with an MRTBN-certified physiotherapist, and schedules the initial assessment.
+## Need help?
 
-### 2. Pre-Authorization & Coverage Checks
-HMOs and corporate sponsors can instantly verify member eligibility and approve session allowances via `POST /v1/partners/eligibility`.
-
-### 3. Closed-Loop Clinical Reporting
-Every completed session generates detailed clinical notes, objective ROM (Range of Motion) metrics, and standardized functional recovery scores (PSFS, VAS, QuickDASH) delivered directly back to your system via Webhooks.
-
----
-
-## Need Support?
-
-* **Developer Community & Slack**: Join our partner engineering channel.
-* **Email Support**: Reach out directly to [integrations@physioaroundme.com](mailto:integrations@physioaroundme.com).
-* **Sandbox Environment**: Test all endpoints with mock test keys (`sk_test_...`) without incurring live session charges.
+Email [partners@physioaroundme.com](mailto:partners@physioaroundme.com). If your question is about a specific API call, include the `X-Request-Id` response header (for example, `req_5f2c9a1b7d3e4f60a1b2c3d4`). It helps us find the request quickly.

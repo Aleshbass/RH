@@ -5,10 +5,13 @@
  */
 
 import { v } from "convex/values";
-import { mutation } from "../_generated/server";
+import { mutation, internalMutation } from "../_generated/server";
+import { ensureUserRole } from "../auth";
 
 export const enableAllApprovedPhysios = mutation({
   handler: async (ctx) => {
+    // Changes every approved physiotherapist's marketplace profile: admins only.
+    await ensureUserRole(ctx, ["admin"]);
     // Get all approved physiotherapists
     const approvals = await ctx.db
       .query("accountApprovalStatus")
@@ -63,7 +66,7 @@ export const enableAllApprovedPhysios = mutation({
   },
 });
 
-export const enableSingleProfile = mutation({
+export const enableSingleProfile = internalMutation({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     // Get user to verify they're a physiotherapist

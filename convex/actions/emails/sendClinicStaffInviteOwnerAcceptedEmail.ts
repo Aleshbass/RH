@@ -1,13 +1,15 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
+import { internalAction } from "../../_generated/server";
 import { sendEmail } from "../../../lib/email/emailService";
+import { escapeHtml, escapeOptional, plainSubject } from "../../helpers/escapeHtml";
 
 /**
  * Notify clinic owner when a staff invitation is accepted.
+ * Internal: run by acceptStaffInvitationWithNotification with the owner's address from the DB.
  */
-export const sendClinicStaffInviteOwnerAcceptedEmail = action({
+export const sendClinicStaffInviteOwnerAcceptedEmail = internalAction({
   args: {
     to: v.string(),
     clinicOwnerName: v.string(),
@@ -20,12 +22,12 @@ export const sendClinicStaffInviteOwnerAcceptedEmail = action({
     try {
       const result = await sendEmail({
         to: args.to,
-        subject: args.subject,
+        subject: args.subject ? plainSubject(args.subject) : undefined,
         template: 'CLINIC_STAFF_INVITE_ACCEPTED_OWNER',
         data: {
-          clinicOwnerName: args.clinicOwnerName,
-          inviteeName: args.inviteeName,
-          clinicName: args.clinicName,
+          clinicOwnerName: escapeHtml(args.clinicOwnerName),
+          inviteeName: escapeHtml(args.inviteeName),
+          clinicName: escapeOptional(args.clinicName),
           staffLink: args.staffLink,
         },
       });

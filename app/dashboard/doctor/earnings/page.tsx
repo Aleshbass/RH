@@ -33,7 +33,7 @@ export default function EarningsPage() {
         <div className="space-y-6 max-w-6xl mx-auto">
             <div>
                 <h1 className="text-2xl font-bold tracking-tight text-gray-900">Earnings & Payouts</h1>
-                <p className="text-gray-500">Track your referral kickbacks and manage your payout accounts.</p>
+                <p className="text-gray-500">Track your referral commissions and manage your payout accounts.</p>
             </div>
 
             <div className="grid gap-6 md:grid-cols-3">
@@ -76,7 +76,7 @@ export default function EarningsPage() {
                     <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 flex items-start gap-3">
                         <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
                         <div className="text-sm text-amber-800">
-                            <strong>Payout Schedule:</strong> Kickback commissions are disbursed to your registered bank account automatically via Paystack. Please ensure your bank details are verified above.
+                            <strong>Payout Schedule:</strong> Referral commissions are disbursed to your registered bank account automatically via Paystack. Please ensure your bank details are verified above.
                         </div>
                     </div>
                 </div>

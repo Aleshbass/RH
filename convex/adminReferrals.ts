@@ -2,7 +2,8 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { ensureUserRole } from "./auth";
 import { Id } from "./_generated/dataModel";
-import { api } from "./_generated/api";
+import { markProviderMatched, transitionReferral } from "./helpers/partnerEvents";
+import { referralEnv } from "./helpers/partnerShared";
 
 /**
  * Get all inbound referrals for admin processing
@@ -116,7 +117,7 @@ export const updateReferralStatus = mutation({
         assignedPhysiotherapistId: v.optional(v.id("users")),
     },
     handler: async (ctx, args) => {
-        // Admins only: this changes referral state and creates partner commissions.
+        // Admins only: this changes referral state and notifies the partner (webhook).
         const adminUser = await ensureUserRole(ctx, ["admin"]);
         const adminId = String(adminUser._id);
         const actorType = "admin";
@@ -126,196 +127,28 @@ export const updateReferralStatus = mutation({
             throw new Error("Referral not found");
         }
 
-        const previousStatus = referral.status;
-        const updates: any = {
-            status: args.status,
-            updatedAt: Date.now(),
-        };
-
+        // Admin notes are recorded on the audit event; the partner's clinical notes are
+        // never overwritten.
         const effectiveNotes = args.notes ?? args.clinicalNotes;
-        if (effectiveNotes !== undefined) {
-            updates.clinicalNotes = effectiveNotes;
-        }
-
-        if (args.commissionEarned !== undefined) {
-            updates.commissionEarned = args.commissionEarned;
-        }
+        const extraPatch: Record<string, unknown> = {};
+        if (args.commissionEarned !== undefined) extraPatch.commissionEarned = args.commissionEarned;
 
         if (args.assignedPhysiotherapistId !== undefined) {
-            updates.assignedPhysiotherapistId = args.assignedPhysiotherapistId;
+            await markProviderMatched(ctx, args.referralId, args.assignedPhysiotherapistId, {
+                actorType,
+                actorId: adminId,
+            });
         }
 
-        await ctx.db.patch(args.referralId, updates);
-
-        // Immutable audit event
-        await ctx.db.insert("referralEvents", {
-            referralId: args.referralId,
-            eventName: `referral.${args.status}`,
-            occurredAt: Date.now(),
+        // Every status change goes through the shared lifecycle so the partner's
+        // webhook (referral.<status>) and milestone timestamps stay consistent.
+        // Commissions are NOT created here: they are earned only from verified payments.
+        await transitionReferral(ctx, args.referralId, args.status, {
             actorType,
             actorId: adminId,
-            metadata: {
-                previousStatus,
-                newStatus: args.status,
-                notes: effectiveNotes,
-                commissionEarned: args.commissionEarned,
-                assignedPhysiotherapistId: args.assignedPhysiotherapistId,
-            },
+            metadata: { notes: effectiveNotes, environment: referralEnv(referral) },
+            extraPatch: extraPatch as any,
         });
-
-        // Automated partner commission calculation
-        if (referral.partnerId) {
-            const now = Date.now();
-            const trackingCode = referral.trackingCode || `RHB-${referral._id.slice(-5).toUpperCase()}`;
-            const patientName = `${referral.patientFirstName} ${referral.patientLastName}`.trim();
-
-            if (args.status === "booked") {
-                const existingComm = await ctx.db
-                    .query("partnerCommissions")
-                    .withIndex("by_referral_id", (q) => q.eq("referralId", args.referralId))
-                    .filter((q) => q.eq(q.field("eventType"), "booking_confirmed"))
-                    .first();
-
-                if (!existingComm) {
-                    const contract = await ctx.db
-                        .query("partnerContracts")
-                        .withIndex("by_partner_id", (q) => q.eq("partnerId", referral.partnerId!))
-                        .filter((q) => q.eq(q.field("status"), "active"))
-                        .first();
-
-                    const fee = contract?.baseFeePerBooking ?? 500000;
-                    const wht = contract?.withholdingTaxPercent ?? 5;
-                    const net = fee - Math.round((fee * wht) / 100);
-
-                    await ctx.db.insert("partnerCommissions", {
-                        partnerId: referral.partnerId,
-                        contractId: contract?._id,
-                        referralId: args.referralId,
-                        trackingCode,
-                        patientName,
-                        eventType: "booking_confirmed",
-                        grossTransactionAmount: args.paymentAmount ?? 2500000,
-                        commissionRate: fee,
-                        commissionAmount: fee,
-                        netPayable: net,
-                        status: "approved",
-                        notes: effectiveNotes ?? "Automated trigger: appointment booked",
-                        earnedAt: now,
-                    });
-                }
-            } else if (args.status === "completed" || args.status === "attended") {
-                const existingComm = await ctx.db
-                    .query("partnerCommissions")
-                    .withIndex("by_referral_id", (q) => q.eq("referralId", args.referralId))
-                    .filter((q) => q.eq(q.field("eventType"), "treatment_completed"))
-                    .first();
-
-                if (!existingComm) {
-                    const contract = await ctx.db
-                        .query("partnerContracts")
-                        .withIndex("by_partner_id", (q) => q.eq("partnerId", referral.partnerId!))
-                        .filter((q) => q.eq(q.field("status"), "active"))
-                        .first();
-
-                    const rate = contract?.revenueSharePercent ?? 15;
-                    const gross = args.paymentAmount ?? (2500000 * (referral.recommendedSessions || 4));
-                    const fee = Math.round((gross * rate) / 100);
-                    const wht = contract?.withholdingTaxPercent ?? 5;
-                    const net = fee - Math.round((fee * wht) / 100);
-
-                    await ctx.db.insert("partnerCommissions", {
-                        partnerId: referral.partnerId,
-                        contractId: contract?._id,
-                        referralId: args.referralId,
-                        trackingCode,
-                        patientName,
-                        eventType: "treatment_completed",
-                        grossTransactionAmount: gross,
-                        commissionRate: rate,
-                        commissionAmount: fee,
-                        netPayable: net,
-                        status: "approved",
-                        notes: effectiveNotes ?? "Automated trigger: treatment completed",
-                        earnedAt: now,
-                    });
-                }
-            }
-
-            // Dispatch real-time outbound webhook to partner endpoint if configured
-            const partner = await ctx.db
-                .query("partners")
-                .withIndex("by_code", (q) => q.eq("code", referral.partnerId!))
-                .first();
-
-            const env = referral.environment || "live";
-            const targetUrl = referral.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
-            const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
-
-            if (targetUrl && secret && secret !== "whsec_default") {
-                const physioId = args.assignedPhysiotherapistId || referral.assignedPhysiotherapistId;
-                let assignedPhysio = null;
-                if (physioId) {
-                    const physioUser = await ctx.db.get(physioId);
-                    const physioProfile = await ctx.db
-                        .query("physiotherapistProfiles")
-                        .withIndex("by_user_id", (q) => q.eq("userId", physioId))
-                        .first();
-                    if (physioUser) {
-                        assignedPhysio = {
-                            name: `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim(),
-                            license_number: physioProfile?.licenseNumber || "MRTBN/PT/VERIFIED",
-                            specialization: physioProfile?.specializations?.[0] || "General Physiotherapy",
-                        };
-                    }
-                }
-
-                const eventType = args.status === "booked"
-                    ? "referral.booked"
-                    : args.status === "completed" || args.status === "attended"
-                    ? "referral.completed"
-                    : args.status === "contacted" || args.status === "intake_started" || args.status === "intake_completed"
-                    ? "referral.contacted"
-                    : args.status === "in_treatment" || args.status === "treatment_active"
-                    ? "referral.treatment_active"
-                    : "referral.status_updated";
-
-                const requestId = `req_${now}_${Math.random().toString(36).substring(2, 8)}`;
-                const traceId = `trc_${now}_${Math.random().toString(36).substring(2, 10)}`;
-
-                await ctx.scheduler.runAfter(0, api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
-                    partnerId: referral.partnerId,
-                    environment: env,
-                    eventType,
-                    targetUrl,
-                    secret,
-                    trackingCode,
-                    patientName,
-                    requestId,
-                    traceId,
-                    payload: {
-                        event: eventType,
-                        environment: env,
-                        created_at: Math.floor(now / 1000),
-                        data: {
-                            referral_id: args.referralId,
-                            tracking_code: trackingCode,
-                            partner_external_id: referral.partnerExternalId || null,
-                            status: args.status,
-                            patient: {
-                                first_name: referral.patientFirstName,
-                                last_name: referral.patientLastName,
-                                phone: referral.patientPhone,
-                            },
-                            assigned_physiotherapist: assignedPhysio,
-                            sessions: {
-                                completed: args.status === "completed" ? (referral.recommendedSessions || 4) : 1,
-                                total: referral.recommendedSessions || 4,
-                            },
-                        },
-                    },
-                });
-            }
-        }
 
         return args.referralId;
     },
@@ -410,13 +243,8 @@ export const assignPhysiotherapistToReferral = mutation({
         clinicalNotes: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
-        let adminId = "system_operator";
-        try {
-            const adminUser = await ensureUserRole(ctx, ["admin"]);
-            adminId = String(adminUser._id);
-        } catch {
-            adminId = "system_operator";
-        }
+        const adminUser = await ensureUserRole(ctx, ["admin"]);
+        const adminId = String(adminUser._id);
 
         const referral = await ctx.db.get(args.referralId);
         if (!referral) {
@@ -427,215 +255,29 @@ export const assignPhysiotherapistToReferral = mutation({
         if (!physioUser || physioUser.role !== "physiotherapist") {
             throw new Error("Assigned user must be a registered physiotherapist");
         }
-
-        const physioProfile = await ctx.db
-            .query("physiotherapistProfiles")
-            .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistUserId))
-            .first();
-
         const approval = await ctx.db
             .query("accountApprovalStatus")
             .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistUserId))
             .first();
-
         if (approval?.status !== "approved") {
             throw new Error("Assigned physiotherapist must have approved clinical credentials");
         }
 
-        const now = Date.now();
-        const updates: any = {
-            assignedPhysiotherapistId: args.physiotherapistUserId,
-            status: "booked",
-            updatedAt: now,
-        };
-
-        if (args.clinicalNotes) {
-            updates.clinicalNotes = args.clinicalNotes;
-        }
-
-        await ctx.db.patch(args.referralId, updates);
-
-        await ctx.db.insert("referralEvents", {
-            referralId: args.referralId,
-            eventName: "provider.matched",
-            occurredAt: now,
+        await markProviderMatched(ctx, args.referralId, args.physiotherapistUserId, {
             actorType: "admin",
             actorId: adminId,
-            metadata: {
-                assignedPhysiotherapistId: args.physiotherapistUserId,
-                physiotherapistName: `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim(),
-                licenseNumber: physioProfile?.licenseNumber || "MRTBN/PT/VERIFIED",
-                specialization: physioProfile?.specializations?.[0] || "General Physiotherapy",
-            },
+            metadata: { notes: args.clinicalNotes },
         });
 
-        // Dispatch outbound webhook to partner
-        if (referral.partnerId) {
-            const partner = await ctx.db
-                .query("partners")
-                .withIndex("by_code", (q) => q.eq("code", referral.partnerId!))
-                .first();
-
-            const env = referral.environment || "live";
-            const targetUrl = referral.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
-            const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
-
-            if (targetUrl && secret && secret !== "whsec_default") {
-                const trackingCode = referral.trackingCode || `RHB-${referral._id.slice(-5).toUpperCase()}`;
-                const patientName = `${referral.patientFirstName} ${referral.patientLastName}`.trim();
-                const requestId = `req_${now}_${Math.random().toString(36).substring(2, 8)}`;
-                const traceId = `trc_${now}_${Math.random().toString(36).substring(2, 10)}`;
-
-                await ctx.scheduler.runAfter(0, api["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
-                    partnerId: referral.partnerId,
-                    environment: env,
-                    eventType: "provider.matched",
-                    targetUrl,
-                    secret,
-                    trackingCode,
-                    patientName,
-                    requestId,
-                    traceId,
-                    payload: {
-                        event: "provider.matched",
-                        environment: env,
-                        created_at: Math.floor(now / 1000),
-                        data: {
-                            referral_id: args.referralId,
-                            tracking_code: trackingCode,
-                            partner_external_id: referral.partnerExternalId || null,
-                            status: "booked",
-                            patient: {
-                                first_name: referral.patientFirstName,
-                                last_name: referral.patientLastName,
-                                phone: referral.patientPhone,
-                            },
-                            assigned_physiotherapist: {
-                                id: physioUser._id,
-                                name: `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim(),
-                                license_number: physioProfile?.licenseNumber || "MRTBN/PT/VERIFIED",
-                                specialization: physioProfile?.specializations?.[0] || "General Physiotherapy",
-                            },
-                        },
-                    },
-                });
-            }
-        }
-
+        const fresh = await ctx.db.get(args.referralId);
         return {
             success: true,
             referralId: args.referralId,
             assignedPhysiotherapistId: args.physiotherapistUserId,
-            status: "booked",
+            status: fresh?.status ?? referral.status,
         };
     },
 });
 
-/**
- * Auto-update a referral's commission earned from a webhook
- * Requires HMAC signature validation since this endpoint is unauthenticated on Convex.
- */
-export const webhookUpdateReferralPayout = mutation({
-    args: {
-        signature: v.string(),
-        payload: v.string(),
-    },
-    handler: async (ctx, args) => {
-        // Parse and validate payload structure first
-        let parsedPayload: { referralId: string; amountPaidOut: number };
-        try {
-            parsedPayload = JSON.parse(args.payload);
-        } catch {
-            throw new Error("Invalid payload format");
-        }
-
-        const { referralId, amountPaidOut } = parsedPayload;
-
-        // 1. Verify positive amount
-        if (typeof amountPaidOut !== 'number' || amountPaidOut < 0) {
-            console.error(`Invalid amount paid out: ${amountPaidOut}`);
-            throw new Error("Invalid amount");
-        }
-
-        // 2. Validate HMAC signature
-        const secret = process.env.PAYMENT_WEBHOOK_SECRET;
-        if (!secret) {
-            console.error("PAYMENT_WEBHOOK_SECRET is not defined");
-            throw new Error("Server misconfigured");
-        }
-        
-        const encoder = new TextEncoder();
-        const key = await crypto.subtle.importKey(
-            'raw',
-            encoder.encode(secret),
-            { name: 'HMAC', hash: 'SHA-512' },
-            false,
-            ['sign']
-        );
-        const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(args.payload));
-        const hashArray = Array.from(new Uint8Array(signatureBuffer));
-        const computedSignature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-        const expectedBuffer = encoder.encode(computedSignature);
-        const actualBuffer = encoder.encode(args.signature);
-        
-        let isValid = expectedBuffer.length === actualBuffer.length;
-        if (isValid) {
-            // Constant-time comparison
-            let mismatch = 0;
-            for (let i = 0; i < expectedBuffer.length; i++) {
-                mismatch |= expectedBuffer[i] ^ actualBuffer[i];
-            }
-            if (mismatch !== 0) isValid = false;
-        }
-
-        if (!isValid) {
-            console.error("Invalid webhook signature!");
-            throw new Error("Unauthorized webhook call");
-        }
-
-        const referralIdToUse = referralId as Id<"inboundReferrals">;
-        const referral = await ctx.db.get(referralIdToUse);
-        if (!referral) {
-            console.error("Referral not found for webhook tracking:", referralId);
-            return;
-        }
-
-        const newCommission = (referral.commissionEarned || 0) + amountPaidOut;
-        
-        await ctx.db.patch(referralIdToUse, {
-            status: "paid_out",
-            commissionEarned: newCommission,
-            updatedAt: Date.now(),
-        });
-
-        // Also create a log entry for the audit trail
-        await ctx.db.insert("auditLogs", {
-            action: "referral_payout_webhook",
-            targetEntityType: "inboundReferrals",
-            targetEntityId: referralIdToUse,
-            timestamp: Date.now(),
-            details: {
-                previousAmount: referral.commissionEarned || 0,
-                amountAdded: amountPaidOut,
-                newTotal: newCommission,
-            }
-        });
-
-        // Immutable audit event
-        await ctx.db.insert("referralEvents", {
-            referralId: referralIdToUse,
-            eventName: "referral.paid_out",
-            occurredAt: Date.now(),
-            actorType: "system",
-            metadata: {
-                previousStatus: referral.status,
-                newStatus: "paid_out",
-                payoutAmount: amountPaidOut,
-                newCommissionTotal: newCommission,
-            },
-        });
-
-        return referralId;
-    }
-});
+// Referring-doctor payout webhooks are handled by monthlySettlements.recordPaystackTransferWebhook,
+// which verifies the Paystack signature inside Convex.

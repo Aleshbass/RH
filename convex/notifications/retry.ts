@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "../_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "../_generated/server";
 import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import { api, internal } from "../_generated/api";
@@ -14,7 +14,7 @@ const CLEANUP_FAILED_AFTER_DAYS = 30; // Delete failed retry entries after 30 da
 /**
  * Queue a failed notification for retry
  */
-export const queueFailedNotification = mutation({
+export const queueFailedNotification = internalMutation({
   args: {
     userId: v.id("users"),
     type: v.string(), 
@@ -52,7 +52,7 @@ export const queueFailedNotification = mutation({
 /**
  * Queue a failed email for retry
  */
-export const queueFailedEmail = mutation({
+export const queueFailedEmail = internalMutation({
   args: {
     notificationId: v.id("notifications"),
     retryCount: v.number(),
@@ -81,7 +81,7 @@ export const queueFailedEmail = mutation({
 /**
  * Schedule notification retry (Internal Mutation)
  */
-export const scheduleNotificationRetry = mutation({
+export const scheduleNotificationRetry = internalMutation({
   args: {
     notificationId: v.id("notifications"),
     maxRetries: v.number(),
@@ -201,8 +201,9 @@ export const processSingleEmailRetry = internalMutation({
     await ctx.db.patch(args.retryId, { status: "processing" });
     
     try {
-      // Process the email via the email routing module
-      await ctx.runMutation(internal.notifications.email.processEmailForNotification, {
+      // Process the email via the email routing module (an action, so it is scheduled:
+      // mutations cannot run actions directly)
+      await ctx.scheduler.runAfter(0, internal.notifications.email.processEmailForNotification, {
         notificationId: retry.notificationId,
         retryOnFailure: false, // Don't create recursive retries
         maxRetries: 1,
@@ -240,7 +241,7 @@ export const processSingleEmailRetry = internalMutation({
 /**
  * Process retry queues with better error handling and rate limiting
  */
-export const processRetryQueuesWithRateLimit = mutation({
+export const processRetryQueuesWithRateLimit = internalMutation({
   args: {
     batchSize: v.optional(v.number()),
     currentTime: v.optional(v.number()),
@@ -309,7 +310,7 @@ export const processRetryQueuesWithRateLimit = mutation({
 /**
  * Clean up old retry queue entries to prevent database overflow
  */
-export const cleanupRetryQueues = mutation({
+export const cleanupRetryQueues = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
@@ -382,7 +383,7 @@ export const cleanupRetryQueues = mutation({
 /**
  * Get retry queue statistics for monitoring
  */
-export const getRetryQueueStats = query({
+export const getRetryQueueStats = internalQuery({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();

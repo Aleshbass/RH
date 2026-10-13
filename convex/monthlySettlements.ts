@@ -1,1298 +1,803 @@
-import { query, mutation, action, internalMutation, internalQuery } from "./_generated/server";
-import { v } from "convex/values";
-import { api, internal } from "./_generated/api";
-import { ensureUserRole } from "./auth";
+/**
+ * Partner monthly settlements and Paystack payouts.
+ *
+ * Lifecycle of a payout:
+ *   accrued commissions (≤ billing period, incl. refund adjustments)
+ *     → admin initiates transfer → partnerPayoutTransfers row (initiated) and the
+ *       commissions are reserved (bulkPayoutStatus "pending_bulk_payout")
+ *     → Paystack transfer.success webhook (signature verified in Convex) → paid/settled
+ *     → transfer.failed / transfer.reversed → commissions released back to accrued.
+ * Commissions are never marked paid just because a transfer was requested.
+ */
+import { ConvexError, v } from "convex/values";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import { adminDisplayName, requireAdmin, requirePartnerAccess } from "./helpers/partnerAccess";
+import { randomString } from "./helpers/partnerShared";
+import { publicCommissionStatus } from "./helpers/partnerLedger";
+import { verifyPaystackSignature } from "./helpers/paystackSignature";
+import { completeMarketplaceBookingCore } from "./marketplace/booking";
 import {
   DEFAULT_REVENUE_SETTINGS,
-  calculateSplit,
-  calculatePaystackInboundFee,
   calculatePaystackOutboundFee,
   calculateStampDuty,
-  applyFeeDeduction,
 } from "./platformSettings";
 
-/**
- * Returns current billing period e.g. "2026-09"
- */
 export function getCurrentBillingPeriod(timestamp: number = Date.now()): string {
   const d = new Date(timestamp);
-  const year = d.getUTCFullYear();
-  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-/**
- * Formats a billing period to human-readable month e.g. "September 2026"
- */
 export function formatBillingPeriod(period: string): string {
   const [year, month] = period.split("-");
   const d = new Date(Date.UTC(parseInt(year, 10), parseInt(month, 10) - 1, 1));
   return d.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-/**
- * Query for Admin: Aggregate monthly bulk payouts and referral performance across
- * all referring healthcare firms, clinics, hospitals, and doctors.
- */
+function assertPeriod(period: string) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) throw new ConvexError("Billing period must be YYYY-MM.");
+}
+
+const isLive = (c: Doc<"partnerCommissions">) => c.environment !== "sandbox";
+
+/** Commissions that can be paid out now for a partner, up to and including `period`. */
+async function payableCommissions(ctx: QueryCtx | MutationCtx, partnerCode: string, period: string) {
+  const rows = await ctx.db
+    .query("partnerCommissions")
+    .withIndex("by_partner_and_period", (q) => q.eq("partnerId", partnerCode).lte("billingPeriod", period))
+    .collect();
+  return rows.filter(
+    (c) =>
+      isLive(c) &&
+      c.status === "approved" &&
+      (c.bulkPayoutStatus ?? "accrued") === "accrued" &&
+      !c.payoutTransferId
+  );
+}
+
+function payoutMath(totalKobo: number) {
+  const fee = totalKobo > 0 ? calculatePaystackOutboundFee(totalKobo) : 0;
+  const stamp = totalKobo > 0 ? calculateStampDuty(totalKobo) : 0;
+  return { feeKobo: fee, stampDutyKobo: stamp, netKobo: Math.max(0, totalKobo - fee - stamp) };
+}
+
+async function activeTransfer(ctx: QueryCtx | MutationCtx, partnerCode: string) {
+  const transfers = await ctx.db
+    .query("partnerPayoutTransfers")
+    .withIndex("by_partner_period", (q) => q.eq("partnerCode", partnerCode))
+    .collect();
+  return transfers.find((t) => t.status === "initiated" || t.status === "otp_required" || t.status === "pending") ?? null;
+}
+
+// ─── Admin: summary & invoices ───────────────────────────────────────────────
+
 export const getMonthlyBulkPayoutSummary = query({
-  args: {
-    billingPeriod: v.optional(v.string()), // e.g. "2026-09"
-  },
+  args: { billingPeriod: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx as any, ["admin"]);
-
-    const activePeriod = args.billingPeriod || getCurrentBillingPeriod();
-
-    // 1. Fetch platform settings
-    const settingsDoc = await ctx.db
-      .query("platformRevenueSettings")
-      .order("desc")
-      .first();
-
-    const platformSettings = settingsDoc || DEFAULT_REVENUE_SETTINGS;
-
-    // 2. Fetch all partners
+    await requireAdmin(ctx);
+    const period = args.billingPeriod || getCurrentBillingPeriod();
+    assertPeriod(period);
+    const settings = (await ctx.db.query("platformRevenueSettings").order("desc").first()) ?? DEFAULT_REVENUE_SETTINGS;
     const partners = await ctx.db.query("partners").collect();
-
-    // 3. Fetch all commissions for this billing period
-    const commissions = await ctx.db
+    const periodCommissions = (await ctx.db
       .query("partnerCommissions")
-      .withIndex("by_billing_period", (q) => q.eq("billingPeriod", activePeriod))
-      .collect();
+      .withIndex("by_billing_period", (q) => q.eq("billingPeriod", period))
+      .collect()).filter(isLive);
+    const bankAccounts = await ctx.db.query("partnerBankAccounts").collect();
 
-    // 4. Fetch all inbound referrals for this period
-    const allReferrals = await ctx.db
-      .query("inboundReferrals")
-      .collect();
-
-    // Group referrals & commissions by partnerId / clinic / firm
-    const partnerSummaries = partners.map((partner) => {
-      const partnerComms = commissions.filter((c) => c.partnerId === partner.code);
-      const partnerRefs = allReferrals.filter((r) => r.partnerId === partner.code);
-
-      let totalGrossKobo = 0;
-      let totalPhysioKobo = 0;
-      let totalRehabifyKobo = 0;
-      let totalPartnerKobo = 0;
-      let paystackCount = 0;
-      let bankTransferCount = 0;
-
-      for (const c of partnerComms) {
-        totalGrossKobo += c.grossTransactionAmount;
-        totalPhysioKobo += c.physiotherapistAmount || Math.round((c.grossTransactionAmount * platformSettings.physiotherapistPercent) / 100);
-        totalRehabifyKobo += c.rehabifyAmount || Math.round((c.grossTransactionAmount * platformSettings.rehabifyPercent) / 100);
-        totalPartnerKobo += c.partnerAmount || c.commissionAmount;
-
-        if (c.paymentMethod === "bank_transfer") {
-          bankTransferCount++;
-        } else {
-          paystackCount++;
-        }
-      }
-
-      const allPaid = partnerComms.length > 0 && partnerComms.every((c) => c.bulkPayoutStatus === "paid");
-      const payoutStatus = partnerComms.length === 0 
-        ? "no_earnings" 
-        : allPaid 
-        ? "paid" 
-        : "accruing_for_month_end";
-
-      return {
+    const partnerSummaries = [];
+    for (const partner of partners) {
+      const inPeriod = periodCommissions.filter((c) => c.partnerId === partner.code && c.status !== "reversed" && c.status !== "cancelled");
+      const payable = await payableCommissions(ctx, partner.code, period);
+      const payableKobo = payable.reduce((s, c) => s + c.netPayable, 0);
+      const transfer = await activeTransfer(ctx, partner.code);
+      if (inPeriod.length === 0 && payable.length === 0 && !transfer) continue;
+      const math = payoutMath(payableKobo);
+      const bank = bankAccounts.find((a) => a.partnerCode === partner.code && a.isDefault && a.isVerified);
+      const referrals = await ctx.db
+        .query("inboundReferrals")
+        .withIndex("by_partner_and_environment", (q) => q.eq("partnerId", partner.code).eq("environment", "live"))
+        .collect();
+      const periodStart = Date.parse(`${period}-01T00:00:00Z`);
+      const [y, m] = period.split("-").map(Number);
+      const periodEnd = Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1);
+      const sum = (f: (c: Doc<"partnerCommissions">) => number) => inPeriod.reduce((s, c) => s + f(c), 0);
+      const payoutStatus = transfer
+        ? "in_progress"
+        : payableKobo > 0
+          ? "accruing_for_month_end"
+          : inPeriod.length > 0 && inPeriod.every((c) => c.bulkPayoutStatus === "paid")
+            ? "paid"
+            : "no_earnings";
+      partnerSummaries.push({
         partnerId: partner.code,
         partnerName: partner.name,
-        partnerType: partner.type, // "hospital", "clinic", "corporate", "hmo"
-        contactEmail: partner.contactEmail || partner.ownerEmail,
+        partnerType: partner.type,
+        contactEmail: partner.financeContactEmail || partner.contactEmail,
         contactPhone: partner.contactPhone,
-        totalReferredPatients: partnerRefs.length,
-        totalTreatedSessions: partnerComms.length,
-        totalGrossKobo,
-        totalGrossCharged: totalGrossKobo,
-        totalPhysioKobo,
-        totalPhysiotherapistShare: totalPhysioKobo,
-        totalRehabifyKobo,
-        totalRehabifyShare: totalRehabifyKobo,
-        totalPartnerKobo,
-        totalPartnerCommission: totalPartnerKobo,
-        paystackCount,
-        bankTransferCount,
+        totalReferredPatients: referrals.filter((r) => r.createdAt >= periodStart && r.createdAt < periodEnd).length,
+        totalTreatedSessions: inPeriod.filter((c) => c.eventType === "payment").length,
+        totalGrossKobo: sum((c) => c.grossTransactionAmount),
+        totalGrossCharged: sum((c) => c.grossTransactionAmount),
+        totalPhysioKobo: sum((c) => c.physiotherapistAmount ?? 0),
+        totalPhysiotherapistShare: sum((c) => c.physiotherapistAmount ?? 0),
+        totalRehabifyKobo: sum((c) => c.rehabifyAmount ?? 0),
+        totalRehabifyShare: sum((c) => c.rehabifyAmount ?? 0),
+        periodEarningsKobo: sum((c) => c.netPayable),
+        // Amount that a payout would send now (includes carry-over and refund adjustments)
+        totalPartnerKobo: payableKobo,
+        totalPartnerCommission: payableKobo,
+        paystackCount: inPeriod.filter((c) => c.paymentMethod !== "bank_transfer").length,
+        bankTransferCount: inPeriod.filter((c) => c.paymentMethod === "bank_transfer").length,
         payoutStatus,
         bulkPayoutStatus: payoutStatus,
-        bulkPayoutSchedule: "End of Month",
-        // Fee estimates for this partner's payout
-        estimatedOutboundFeeKobo: calculatePaystackOutboundFee(totalPartnerKobo),
-        estimatedStampDutyKobo: calculateStampDuty(totalPartnerKobo),
-        estimatedNetPayoutKobo: Math.max(0, totalPartnerKobo - calculatePaystackOutboundFee(totalPartnerKobo) - calculateStampDuty(totalPartnerKobo)),
-        commissions: partnerComms,
-      };
-    });
+        bulkPayoutSchedule: "End of month",
+        estimatedOutboundFeeKobo: math.feeKobo,
+        estimatedStampDutyKobo: math.stampDutyKobo,
+        estimatedNetPayoutKobo: math.netKobo,
+        activeTransfer: transfer
+          ? { reference: transfer.transferReference, status: transfer.status, amountKobo: transfer.amountKobo, transferCode: transfer.transferCode ?? null }
+          : null,
+        commissions: inPeriod,
+        hasBankAccount: Boolean(bank),
+        bankAccountName: bank?.accountName,
+        bankName: bank?.bankName,
+        maskedAccountNumber: bank ? `****${bank.accountNumber.slice(-4)}` : undefined,
+      });
+    }
 
-    // Grand totals across all firms/clinics
-    const grandTotals = partnerSummaries.reduce(
+    const totals = partnerSummaries.reduce(
       (acc, p) => ({
-        totalPatientsReferred: acc.totalPatientsReferred + p.totalReferredPatients,
+        totalReferredPatients: acc.totalReferredPatients + p.totalReferredPatients,
         totalSessions: acc.totalSessions + p.totalTreatedSessions,
         totalGrossKobo: acc.totalGrossKobo + p.totalGrossKobo,
         totalPhysioKobo: acc.totalPhysioKobo + p.totalPhysioKobo,
         totalRehabifyKobo: acc.totalRehabifyKobo + p.totalRehabifyKobo,
         totalPartnerKobo: acc.totalPartnerKobo + p.totalPartnerKobo,
       }),
-      {
-        totalPatientsReferred: 0,
-        totalSessions: 0,
-        totalGrossKobo: 0,
-        totalPhysioKobo: 0,
-        totalRehabifyKobo: 0,
-        totalPartnerKobo: 0,
-      }
+      { totalReferredPatients: 0, totalSessions: 0, totalGrossKobo: 0, totalPhysioKobo: 0, totalRehabifyKobo: 0, totalPartnerKobo: 0 }
     );
-
-    let paystackTotalKobo = 0;
-    let bankTransferTotalKobo = 0;
-    for (const c of commissions) {
-      if (c.paymentMethod === "bank_transfer") {
-        bankTransferTotalKobo += c.grossTransactionAmount;
-      } else {
-        paystackTotalKobo += c.grossTransactionAmount;
-      }
-    }
-
-    // Resolve partner bank account status
-    const partnerBankAccounts = await ctx.db
-      .query("partnerBankAccounts")
-      .collect();
-
-    // Enrich partner summaries with bank account status
-    const enrichedPartnerSummaries = partnerSummaries.map((p) => {
-      const bankAcct = partnerBankAccounts.find(
-        (a) => a.partnerCode === p.partnerId && a.isDefault && a.isVerified
-      );
-      return {
-        ...p,
-        hasBankAccount: !!bankAcct,
-        bankAccountName: bankAcct?.accountName,
-        bankName: bankAcct?.bankName,
-        maskedAccountNumber: bankAcct?.accountNumber
-          ? `****${bankAcct.accountNumber.slice(-4)}`
-          : undefined,
-      };
-    });
-
+    const live = periodCommissions.filter((c) => c.status !== "reversed" && c.status !== "cancelled");
     return {
-      billingPeriod: activePeriod,
-      billingPeriodLabel: formatBillingPeriod(activePeriod),
+      billingPeriod: period,
+      billingPeriodLabel: formatBillingPeriod(period),
       platformSettings: {
-        rehabifyPercent: platformSettings.rehabifyPercent,
-        physiotherapistPercent: platformSettings.physiotherapistPercent,
-        partnerPercent: platformSettings.partnerPercent,
-        paystackFeeBearerInbound: (platformSettings as any).paystackFeeBearerInbound || "physiotherapist",
-        paystackFeeBearerOutbound: (platformSettings as any).paystackFeeBearerOutbound || "physiotherapist",
+        rehabifyPercent: settings.rehabifyPercent,
+        physiotherapistPercent: settings.physiotherapistPercent,
+        partnerPercent: settings.partnerPercent,
+        paystackFeeBearerInbound: (settings as { paystackFeeBearerInbound?: string }).paystackFeeBearerInbound || "physiotherapist",
+        paystackFeeBearerOutbound: (settings as { paystackFeeBearerOutbound?: string }).paystackFeeBearerOutbound || "physiotherapist",
       },
-      partnerSummaries: enrichedPartnerSummaries,
-      partners: enrichedPartnerSummaries,
-      grandTotals,
+      partnerSummaries,
+      partners: partnerSummaries,
+      grandTotals: totals,
       totals: {
-        totalReferredPatients: grandTotals.totalPatientsReferred,
-        totalPartners: partners.length,
-        totalGrossCharged: grandTotals.totalGrossKobo,
-        totalPhysiotherapistShare: grandTotals.totalPhysioKobo,
-        totalRehabifyShare: grandTotals.totalRehabifyKobo,
-        totalPartnerCommission: grandTotals.totalPartnerKobo,
-        paystackTotal: paystackTotalKobo,
-        bankTransferTotal: bankTransferTotalKobo,
+        totalReferredPatients: totals.totalReferredPatients,
+        totalPartners: partnerSummaries.length,
+        totalGrossCharged: totals.totalGrossKobo,
+        totalPhysiotherapistShare: totals.totalPhysioKobo,
+        totalRehabifyShare: totals.totalRehabifyKobo,
+        totalPartnerCommission: totals.totalPartnerKobo,
+        paystackTotal: live.filter((c) => c.paymentMethod !== "bank_transfer").reduce((s, c) => s + c.grossTransactionAmount, 0),
+        bankTransferTotal: live.filter((c) => c.paymentMethod === "bank_transfer").reduce((s, c) => s + c.grossTransactionAmount, 0),
       },
     };
   },
 });
 
-/**
- * Query for Partner Portal: Returns transparent, itemized ledger for a specific partner.
- * Shows what the physiotherapist charged, the 80% physio share, 10% Rehabify share,
- * and 10% Partner share, with payment method (Paystack vs Transfer).
- */
+/** Itemised ledger for the partner's own commissions (owner or admin). */
 export const getPartnerTransparentLedger = query({
-  args: {
-    partnerCode: v.string(),
-    billingPeriod: v.optional(v.string()),
-  },
+  args: { partnerCode: v.string(), billingPeriod: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    // 1. Fetch platform settings
-    const settingsDoc = await ctx.db
-      .query("platformRevenueSettings")
-      .order("desc")
-      .first();
-
-    const platformSettings = settingsDoc || DEFAULT_REVENUE_SETTINGS;
-
-    // 2. Fetch commissions for this partner
-    let queryBuilder = ctx.db
-      .query("partnerCommissions")
-      .withIndex("by_partner_id", (q) => q.eq("partnerId", args.partnerCode));
-
-    const commissions = await queryBuilder.order("desc").collect();
-
-    // Filter by billing period if provided
-    const filtered = args.billingPeriod
-      ? commissions.filter((c) => c.billingPeriod === args.billingPeriod)
-      : commissions;
-
-    // Map itemized ledger with full transparency
-    const itemized = filtered.map((c) => {
-      const grossKobo = c.grossTransactionAmount;
-      const physioPercent = c.physioPercent || platformSettings.physiotherapistPercent;
-      const rehabifyPercent = c.rehabifyPercent || platformSettings.rehabifyPercent;
-      const partnerPercent = c.partnerPercent || platformSettings.partnerPercent;
-
-      const physioKobo = c.physiotherapistAmount || Math.round((grossKobo * physioPercent) / 100);
-      const rehabifyKobo = c.rehabifyAmount || Math.round((grossKobo * rehabifyPercent) / 100);
-      const partnerKobo = c.partnerAmount || c.commissionAmount;
-
-      return {
-        id: c._id,
-        trackingCode: c.trackingCode,
-        patientName: c.patientName,
-        careMode: c.careMode || "in_person",
-        careModeLabel: c.careMode === "virtual" ? "Virtual Consultation" : "In-Person Session",
-        physiotherapistName: c.physiotherapistName || "MRTBN Verified Physiotherapist",
-        grossChargedKobo: grossKobo,
-        physioEarnedKobo: physioKobo,
-        physioPercent,
-        rehabifyShareKobo: rehabifyKobo,
-        rehabifyPercent,
-        partnerEarnedKobo: partnerKobo,
-        partnerPercent,
-        paymentMethod: c.paymentMethod || "paystack",
-        paymentMethodLabel: c.paymentMethod === "bank_transfer" ? "Direct Bank Transfer" : "Paystack Online",
-        paymentReference: c.paymentReference,
-        billingPeriod: c.billingPeriod || getCurrentBillingPeriod(c.earnedAt),
-        bulkPayoutStatus: c.bulkPayoutStatus || (c.status === "settled" ? "paid" : "accrued"),
-        bulkPayoutDate: "Paid in bulk at month-end",
-        earnedAt: c.earnedAt,
-      };
-    });
-
-    // Compute KPI cards
-    const totalEarnedKobo = itemized.reduce((sum, item) => sum + item.partnerEarnedKobo, 0);
-    const totalGrossKobo = itemized.reduce((sum, item) => sum + item.grossChargedKobo, 0);
-    const totalReferredPatients = new Set(itemized.map((item) => item.trackingCode)).size;
-
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const settings = (await ctx.db.query("platformRevenueSettings").order("desc").first()) ?? DEFAULT_REVENUE_SETTINGS;
+    const base = args.billingPeriod
+      ? ctx.db.query("partnerCommissions").withIndex("by_partner_and_period", (q) => q.eq("partnerId", partner.code).eq("billingPeriod", args.billingPeriod))
+      : ctx.db.query("partnerCommissions").withIndex("by_partner_id", (q) => q.eq("partnerId", partner.code));
+    const rows = (await base.order("desc").take(1000)).filter(isLive);
+    const ledger = rows.map((c) => ({
+      id: c._id,
+      trackingCode: c.trackingCode ?? null,
+      eventType: c.eventType,
+      careMode: c.careMode ?? null,
+      physiotherapistName: c.physiotherapistName ?? null,
+      grossChargedKobo: c.grossTransactionAmount,
+      partnerEarnedKobo: c.netPayable,
+      partnerPercent: c.commissionRate,
+      paymentMethod: c.paymentMethod ?? null,
+      paymentReference: c.paymentReference ?? null,
+      billingPeriod: c.billingPeriod ?? getCurrentBillingPeriod(c.earnedAt),
+      status: publicCommissionStatus(c),
+      bulkPayoutStatus: c.bulkPayoutStatus ?? "accrued",
+      earnedAt: c.earnedAt,
+    }));
+    const counted = ledger.filter((l) => l.status !== "reversed" && l.status !== "cancelled");
     return {
-      partnerCode: args.partnerCode,
+      partnerCode: partner.code,
       platformSplits: {
-        physioPercent: platformSettings.physiotherapistPercent,
-        rehabifyPercent: platformSettings.rehabifyPercent,
-        partnerPercent: platformSettings.partnerPercent,
+        physioPercent: settings.physiotherapistPercent,
+        rehabifyPercent: settings.rehabifyPercent,
+        partnerPercent: settings.partnerPercent,
       },
       summary: {
-        totalReferredPatients,
-        totalCompletedSessions: itemized.length,
-        totalGrossVolumeKobo: totalGrossKobo,
-        totalPartnerEarnedKobo: totalEarnedKobo,
-        bulkPayoutCycle: "End of Month Bulk Payout",
+        totalReferredPatients: new Set(rows.map((c) => c.patientUserId ?? c.trackingCode)).size,
+        totalPayments: counted.filter((l) => l.eventType === "payment").length,
+        totalGrossVolumeKobo: counted.reduce((s, l) => s + l.grossChargedKobo, 0),
+        totalPartnerEarnedKobo: counted.reduce((s, l) => s + l.partnerEarnedKobo, 0),
+        bulkPayoutCycle: "Monthly",
       },
-      ledger: itemized,
+      ledger,
     };
   },
 });
 
-/**
- * Mutation: Record booking payment and auto-generate the transparent 80/10/10 split.
- * Works whether payment was completed via Paystack OR confirmed via Bank Transfer!
- */
-export const recordBookingPaymentAndSplit = mutation({
-  args: {
-    bookingId: v.id("marketplaceBookings"),
-    paymentMethod: v.union(v.literal("paystack"), v.literal("bank_transfer")),
-    paymentReference: v.string(),
-    senderName: v.optional(v.string()),
-    bankName: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const booking = await ctx.db.get(args.bookingId);
-    if (!booking) {
-      throw new Error("Booking not found");
-    }
-    // Joy's admin-scheduled virtual consultations have no provider until the
-    // administrator allocates one. Their Paystack path is handled by the Joy
-    // webhook, not this provider-revenue settlement workflow.
-    if (!booking.physiotherapistId) {
-      throw new Error("Booking has not yet been assigned to a physiotherapist");
-    }
-
-    const now = Date.now();
-    const billingPeriod = getCurrentBillingPeriod(now);
-
-    // 1. Fetch platform settings
-    const settingsDoc = await ctx.db
-      .query("platformRevenueSettings")
-      .order("desc")
-      .first();
-
-    const platformSettings = settingsDoc || DEFAULT_REVENUE_SETTINGS;
-
-    // 2. Resolve Physiotherapist details
-    const physioUser = await ctx.db.get(booking.physiotherapistId);
-    const physioName = physioUser ? `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim() : "Physiotherapist";
-
-    // 3. Resolve Patient details
-    const patientUser = await ctx.db.get(booking.patientId);
-    const patientName = booking.guestName || (patientUser ? `${patientUser.firstName || ""} ${patientUser.lastName || ""}`.trim() : "Patient");
-
-    // 4. Resolve Partner referral attribution
-    // Check if patient was referred by a partner code
-    const partnerCode = booking.partnerId || patientUser?.referredByPartnerCode;
-    const hasPartner = !!partnerCode;
-
-    // 5. Calculate 3-way split (80% Physio, 10% Rehabify, 10% Partner)
-    const grossKobo = booking.serviceAmount;
-    const split = calculateSplit(grossKobo, platformSettings, hasPartner);
-
-    const careMode: "virtual" | "in_person" = booking.isOnline ? "virtual" : "in_person";
-
-    // 5b. Calculate Paystack fees (only for Paystack payments)
-    const isPaystack = args.paymentMethod === "paystack";
-    const inboundFeeKobo = isPaystack ? calculatePaystackInboundFee(grossKobo) : 0;
-    const outboundFeeKobo = calculatePaystackOutboundFee(split.partnerAmount); // For partner payout
-    const stampDutyKobo = calculateStampDuty(split.partnerAmount);
-
-    const inboundBearer = (platformSettings as any).paystackFeeBearerInbound || "physiotherapist";
-    const outboundBearer = (platformSettings as any).paystackFeeBearerOutbound || "physiotherapist";
-
-    const netAmounts = applyFeeDeduction(
-      split,
-      inboundFeeKobo,
-      outboundFeeKobo,
-      stampDutyKobo,
-      inboundBearer,
-      outboundBearer
-    );
-
-    // 6. Update booking record
-    await ctx.db.patch(booking._id, {
-      paymentStatus: "completed",
-      bookingStatus: "confirmed",
-      paymentMethod: args.paymentMethod,
-      paymentReference: args.paymentReference,
-      paidAt: now,
-      careMode,
-      physiotherapistEarnings: split.physiotherapistAmount,
-      rehabifyEarnings: split.rehabifyAmount,
-      partnerEarnings: split.partnerAmount,
-      bankTransferDetails: args.paymentMethod === "bank_transfer" ? {
-        senderName: args.senderName,
-        bankName: args.bankName,
-        confirmedAt: now,
-      } : undefined,
-      updatedAt: now,
-    });
-
-    // 7. If referred by partner, create or update partnerCommissions transparent record
-    if (hasPartner && partnerCode) {
-      // Find inbound referral record if exists
-      const referral = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_id", (q) => q.eq("partnerId", partnerCode))
-        .filter((q) => q.eq(q.field("trackingCode"), patientUser?.referralPublicCode || ""))
-        .first();
-
-      const trackingCode = referral?.trackingCode || patientUser?.referralPublicCode || `RHB-${Math.floor(10000 + Math.random() * 90000)}`;
-
-      await ctx.db.insert("partnerCommissions", {
-        partnerId: partnerCode,
-        referralId: referral?._id || (booking._id as any),
-        trackingCode,
-        patientName,
-        eventType: "booking_confirmed",
-        grossTransactionAmount: grossKobo,
-        commissionRate: split.partnerPercent,
-        commissionAmount: split.partnerAmount,
-        netPayable: netAmounts.netPartnerAmount,
-        physiotherapistId: booking.physiotherapistId,
-        physiotherapistName: physioName,
-        careMode,
-        physiotherapistAmount: split.physiotherapistAmount, // 80%
-        rehabifyAmount: split.rehabifyAmount,               // 10%
-        partnerAmount: split.partnerAmount,                 // 10%
-        physioPercent: split.physioPercent,
-        rehabifyPercent: split.rehabifyPercent,
-        partnerPercent: split.partnerPercent,
-        // Paystack fee tracking
-        paystackInboundFeeKobo: inboundFeeKobo,
-        paystackOutboundFeeKobo: outboundFeeKobo,
-        stampDutyKobo: stampDutyKobo,
-        feeBearer: inboundBearer,
-        netPhysiotherapistAmount: netAmounts.netPhysiotherapistAmount,
-        netPartnerAmount: netAmounts.netPartnerAmount,
-        netRehabifyAmount: netAmounts.netRehabifyAmount,
-        paymentMethod: args.paymentMethod,
-        paymentReference: args.paymentReference,
-        billingPeriod,
-        bulkPayoutStatus: "accrued",
-        status: "approved",
-        notes: `Recorded via ${args.paymentMethod === "bank_transfer" ? "Direct Bank Transfer" : "Paystack Gateway"}. 80/10/10 platform split applied. Fees: Inbound ₦${(inboundFeeKobo / 100).toFixed(0)}, Outbound ₦${(outboundFeeKobo / 100).toFixed(0)}, Stamp Duty ₦${(stampDutyKobo / 100).toFixed(0)} (bearer: ${inboundBearer}).`,
-        earnedAt: now,
-      });
-    }
-
-    return {
-      success: true,
-      split,
-      billingPeriod,
-      paymentMethod: args.paymentMethod,
-    };
-  },
-});
-
-/**
- * Mutation for Admin: Confirm a manual bank transfer payment for any booking.
- * Guarantees that bank transfer payments are fully tracked and never lost.
- */
-export const confirmBankTransferBooking = mutation({
-  args: {
-    bookingId: v.id("marketplaceBookings"),
-    senderName: v.string(),
-    bankName: v.string(),
-    referenceNote: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx as any, ["admin"]);
-    const adminName = `${admin.firstName || ""} ${admin.lastName || ""}`.trim() || admin.email || "Admin";
-
-    const transferRef = `TXFR-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    const booking = await ctx.db.get(args.bookingId);
-    if (!booking) throw new Error("Booking not found");
-    if (!booking.physiotherapistId) {
-      throw new Error("Booking has not yet been assigned to a physiotherapist");
-    }
-
-    const now = Date.now();
-    const billingPeriod = getCurrentBillingPeriod(now);
-
-    // 1. Fetch platform settings
-    const settingsDoc = await ctx.db
-      .query("platformRevenueSettings")
-      .order("desc")
-      .first();
-
-    const platformSettings = settingsDoc || DEFAULT_REVENUE_SETTINGS;
-
-    // 2. Resolve Physiotherapist details
-    const physioUser = await ctx.db.get(booking.physiotherapistId);
-    const physioName = physioUser ? `${physioUser.firstName || ""} ${physioUser.lastName || ""}`.trim() : "Physiotherapist";
-
-    // 3. Resolve Patient details
-    const patientUser = await ctx.db.get(booking.patientId);
-    const patientName = booking.guestName || (patientUser ? `${patientUser.firstName || ""} ${patientUser.lastName || ""}`.trim() : "Patient");
-
-    const partnerCode = booking.partnerId || patientUser?.referredByPartnerCode;
-    const hasPartner = !!partnerCode;
-
-    const grossKobo = booking.serviceAmount;
-    const split = calculateSplit(grossKobo, platformSettings, hasPartner);
-    const careMode: "virtual" | "in_person" = booking.isOnline ? "virtual" : "in_person";
-
-    await ctx.db.patch(booking._id, {
-      paymentStatus: "completed",
-      bookingStatus: "confirmed",
-      paymentMethod: "bank_transfer",
-      paymentReference: transferRef,
-      paidAt: now,
-      careMode,
-      physiotherapistEarnings: split.physiotherapistAmount,
-      rehabifyEarnings: split.rehabifyAmount,
-      partnerEarnings: split.partnerAmount,
-      bankTransferDetails: {
-        senderName: args.senderName,
-        bankName: args.bankName,
-        confirmedBy: adminName,
-        confirmedAt: now,
-      },
-      updatedAt: now,
-    });
-
-    if (hasPartner && partnerCode) {
-      const referral = await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_partner_id", (q) => q.eq("partnerId", partnerCode))
-        .filter((q) => q.eq(q.field("trackingCode"), patientUser?.referralPublicCode || ""))
-        .first();
-
-      const trackingCode = referral?.trackingCode || patientUser?.referralPublicCode || `RHB-${Math.floor(10000 + Math.random() * 90000)}`;
-
-      await ctx.db.insert("partnerCommissions", {
-        partnerId: partnerCode,
-        referralId: referral?._id || (booking._id as any),
-        trackingCode,
-        patientName,
-        eventType: "booking_confirmed",
-        grossTransactionAmount: grossKobo,
-        commissionRate: split.partnerPercent,
-        commissionAmount: split.partnerAmount,
-        netPayable: split.partnerAmount,
-        physiotherapistId: booking.physiotherapistId,
-        physiotherapistName: physioName,
-        careMode,
-        physiotherapistAmount: split.physiotherapistAmount,
-        rehabifyAmount: split.rehabifyAmount,
-        partnerAmount: split.partnerAmount,
-        physioPercent: split.physioPercent,
-        rehabifyPercent: split.rehabifyPercent,
-        partnerPercent: split.partnerPercent,
-        paymentMethod: "bank_transfer",
-        paymentReference: transferRef,
-        billingPeriod,
-        bulkPayoutStatus: "accrued",
-        status: "approved",
-        notes: `Bank Transfer confirmed by Admin (${adminName}). Sender: ${args.senderName} (${args.bankName}). ${args.referenceNote || ""}`,
-        earnedAt: now,
-      });
-    }
-
-    return { success: true, transferRef, split };
-  },
-});
-
-/**
- * Mutation for Admin: Process end-of-month bulk payout for a specific partner or all partners.
- * Marks accrued commissions as "paid" with a bulk settlement batch reference.
- */
-export const processMonthlyBulkPayout = mutation({
-  args: {
-    partnerCode: v.optional(v.string()), // If omitted, settles all partners for the period
-    partnerId: v.optional(v.string()),   // Alias from frontend
-    billingPeriod: v.string(),           // e.g. "2026-09"
-    payoutBatchReference: v.optional(v.string()), // Bank bulk wire reference e.g. "WIRE-20260930-BATCH01"
-    note: v.optional(v.string()),        // Transaction note from modal
-  },
-  handler: async (ctx, args) => {
-    const admin = await ensureUserRole(ctx as any, ["admin"]);
-    const adminName = `${admin.firstName || ""} ${admin.lastName || ""}`.trim() || admin.email || "Admin";
-
-    const targetPartnerCode = args.partnerCode || args.partnerId;
-    const batchReference = args.payoutBatchReference || args.note || `WIRE-${args.billingPeriod.replace("-", "")}-${Date.now()}`;
-
-    let commissions = await ctx.db
-      .query("partnerCommissions")
-      .withIndex("by_billing_period", (q) => q.eq("billingPeriod", args.billingPeriod))
-      .filter((q) => q.neq(q.field("bulkPayoutStatus"), "paid"))
-      .collect();
-
-    if (targetPartnerCode) {
-      commissions = commissions.filter((c) => c.partnerId === targetPartnerCode);
-    }
-
-    const now = Date.now();
-    let totalSettledKobo = 0;
-
-    for (const comm of commissions) {
-      await ctx.db.patch(comm._id, {
-        bulkPayoutStatus: "paid",
-        bulkPayoutBatchId: batchReference,
-        status: "settled",
-        settledAt: now,
-        paidAt: now,
-        notes: `${comm.notes || ""} | Bulk settled at month-end by ${adminName} ref: ${batchReference}`,
-      });
-      totalSettledKobo += comm.partnerAmount || comm.commissionAmount;
-    }
-
-    return {
-      success: true,
-      settledRecordsCount: commissions.length,
-      totalSettledKobo,
-      billingPeriod: args.billingPeriod,
-      batchReference,
-      message: `Successfully settled ${commissions.length} commission record(s) totaling ₦${Math.round(totalSettledKobo / 100).toLocaleString()}`,
-    };
-  },
-});
-
-/**
- * Query for Admin: Generate a downloadable partner invoice/settlement statement.
- * Produces structured data that the frontend renders into a printable/PDF invoice.
- */
+/** Settlement statement for one billing period (owner or admin). */
 export const generatePartnerInvoice = query({
-  args: {
-    partnerCode: v.string(),
-    billingPeriod: v.string(), // e.g. "2026-09"
-  },
+  args: { partnerCode: v.string(), billingPeriod: v.string() },
   handler: async (ctx, args) => {
-    await ensureUserRole(ctx as any, ["admin"]);
-
-    // Fetch partner details
-    const partner = await ctx.db
-      .query("partners")
-      .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
-      .first();
-
-    if (!partner) {
-      throw new Error(`Partner not found: ${args.partnerCode}`);
-    }
-
-    // Fetch platform settings
-    const settingsDoc = await ctx.db
-      .query("platformRevenueSettings")
-      .order("desc")
-      .first();
-    const platformSettings = settingsDoc || DEFAULT_REVENUE_SETTINGS;
-
-    // Fetch commissions for this partner & billing period
-    const commissions = await ctx.db
-      .query("partnerCommissions")
-      .withIndex("by_billing_period", (q) => q.eq("billingPeriod", args.billingPeriod))
-      .collect();
-
-    const partnerCommissions = commissions.filter((c) => c.partnerId === args.partnerCode);
-
-    // Fetch partner bank account
-    const bankAccount = await ctx.db
+    assertPeriod(args.billingPeriod);
+    const { partner } = await requirePartnerAccess(ctx, args.partnerCode);
+    const settings = (await ctx.db.query("platformRevenueSettings").order("desc").first()) ?? DEFAULT_REVENUE_SETTINGS;
+    const commissions = (
+      await ctx.db
+        .query("partnerCommissions")
+        .withIndex("by_partner_and_period", (q) => q.eq("partnerId", partner.code).eq("billingPeriod", args.billingPeriod))
+        .collect()
+    ).filter((c) => isLive(c) && c.status !== "reversed" && c.status !== "cancelled");
+    const bank = await ctx.db
       .query("partnerBankAccounts")
-      .withIndex("by_partner_code", (q: any) => q.eq("partnerCode", args.partnerCode))
-      .filter((q) => q.eq(q.field("isDefault"), true))
+      .withIndex("by_partner_code_default", (q) => q.eq("partnerCode", partner.code).eq("isDefault", true))
       .first();
-
-    // Build line items
-    const lineItems = partnerCommissions.map((c, idx) => {
-      return {
-        sn: idx + 1,
-        date: new Date(c.earnedAt).toISOString().split("T")[0],
-        trackingCode: c.trackingCode,
-        patientName: c.patientName,
-        physiotherapistName: c.physiotherapistName || "Physiotherapist",
-        careMode: c.careMode === "virtual" ? "Virtual" : "In-Person",
-        grossAmountKobo: c.grossTransactionAmount,
-        physioShareKobo: c.physiotherapistAmount || 0,
-        physioPercent: c.physioPercent || platformSettings.physiotherapistPercent,
-        rehabifyShareKobo: c.rehabifyAmount || 0,
-        rehabifyPercent: c.rehabifyPercent || platformSettings.rehabifyPercent,
-        partnerShareKobo: c.partnerAmount || c.commissionAmount,
-        partnerPercent: c.partnerPercent || platformSettings.partnerPercent,
-        paystackInboundFeeKobo: c.paystackInboundFeeKobo || 0,
-        paystackOutboundFeeKobo: c.paystackOutboundFeeKobo || 0,
-        stampDutyKobo: c.stampDutyKobo || 0,
-        netPartnerAmountKobo: c.netPartnerAmount || c.partnerAmount || c.commissionAmount,
-        paymentMethod: c.paymentMethod === "bank_transfer" ? "Bank Transfer" : "Paystack",
-        paymentReference: c.paymentReference || "-",
-      };
-    });
-
-    // Compute totals
-    const totalGrossKobo = lineItems.reduce((s, l) => s + l.grossAmountKobo, 0);
-    const totalPartnerShareKobo = lineItems.reduce((s, l) => s + l.partnerShareKobo, 0);
-    const totalInboundFeesKobo = lineItems.reduce((s, l) => s + l.paystackInboundFeeKobo, 0);
-    const totalOutboundFeesKobo = lineItems.reduce((s, l) => s + l.paystackOutboundFeeKobo, 0);
-    const totalStampDutyKobo = lineItems.reduce((s, l) => s + l.stampDutyKobo, 0);
-    const totalNetPayableKobo = lineItems.reduce((s, l) => s + l.netPartnerAmountKobo, 0);
-
-    // Generate invoice number
-    const invoiceNumber = `RH-INV-${args.billingPeriod.replace("-", "")}-${args.partnerCode.toUpperCase().slice(0, 8)}`;
-
+    const lineItems = commissions.map((c, i) => ({
+      sn: i + 1,
+      date: new Date(c.earnedAt).toISOString().split("T")[0],
+      trackingCode: c.trackingCode ?? "—",
+      eventType: c.eventType,
+      patientName: c.patientName ?? "—",
+      physiotherapistName: c.physiotherapistName ?? "—",
+      careMode: c.careMode === "virtual" ? "Virtual" : c.careMode === "in_person" ? "In-person" : "—",
+      grossAmountKobo: c.grossTransactionAmount,
+      physioShareKobo: c.physiotherapistAmount ?? 0,
+      rehabifyShareKobo: c.rehabifyAmount ?? 0,
+      partnerShareKobo: c.commissionAmount,
+      partnerPercent: c.commissionRate,
+      withholdingTaxKobo: c.commissionAmount - c.netPayable,
+      netPartnerAmountKobo: c.netPayable,
+      paymentMethod: c.paymentMethod === "bank_transfer" ? "Bank transfer" : "Paystack",
+      paymentReference: c.paymentReference ?? "—",
+      payoutStatus: c.bulkPayoutStatus ?? "accrued",
+    }));
+    const totalNet = lineItems.reduce((s, l) => s + l.netPartnerAmountKobo, 0);
+    const math = payoutMath(totalNet);
     return {
-      invoiceNumber,
+      invoiceNumber: `RH-STMT-${args.billingPeriod.replace("-", "")}-${partner.code.toUpperCase().slice(0, 10)}`,
       invoiceDate: new Date().toISOString().split("T")[0],
       billingPeriod: args.billingPeriod,
       billingPeriodLabel: formatBillingPeriod(args.billingPeriod),
-
-      // Issuer (Rehabify)
-      issuer: {
-        name: "Rehabify Health Technologies Ltd",
-        address: "Lagos, Nigeria",
-        email: "finance@physioaroundme.com",
-        website: "physioaroundme.com",
-      },
-
-      // Recipient (Partner)
+      issuer: { name: "Rehabify Health Technologies Ltd", address: "Lagos, Nigeria", email: "finance@physioaroundme.com", website: "physioaroundme.com" },
       recipient: {
         name: partner.name,
         code: partner.code,
         type: partner.type,
-        contactEmail: partner.contactEmail || partner.ownerEmail || "",
+        contactEmail: partner.financeContactEmail || partner.contactEmail || "",
         contactPhone: partner.contactPhone || "",
       },
-
-      // Bank account for payment
-      bankDetails: bankAccount
-        ? {
-            bankName: bankAccount.bankName,
-            accountNumber: bankAccount.accountNumber,
-            accountName: bankAccount.accountName,
-          }
+      bankDetails: bank
+        ? { bankName: bank.bankName, accountNumber: `******${bank.accountNumber.slice(-4)}`, accountName: bank.accountName }
         : null,
-
-      // Revenue split applied
       splitConfig: {
-        physiotherapistPercent: platformSettings.physiotherapistPercent,
-        rehabifyPercent: platformSettings.rehabifyPercent,
-        partnerPercent: platformSettings.partnerPercent,
-        feeBearerInbound: (platformSettings as any).paystackFeeBearerInbound || "physiotherapist",
-        feeBearerOutbound: (platformSettings as any).paystackFeeBearerOutbound || "physiotherapist",
+        physiotherapistPercent: settings.physiotherapistPercent,
+        rehabifyPercent: settings.rehabifyPercent,
+        partnerPercent: settings.partnerPercent,
       },
-
-      // Line items
       lineItems,
-
-      // Summary totals
       summary: {
-        totalSessions: lineItems.length,
-        totalGrossKobo,
-        totalPartnerShareKobo,
-        // Fees breakdown (separate line items per accounting standards)
-        totalPaystackCollectionFeesKobo: totalInboundFeesKobo,
-        totalPaystackTransferFeesKobo: totalOutboundFeesKobo,
-        totalStampDutyKobo,
-        totalFeesKobo: totalInboundFeesKobo + totalOutboundFeesKobo + totalStampDutyKobo,
-        totalNetPayableKobo,
+        totalSessions: lineItems.filter((l) => l.eventType === "payment").length,
+        totalGrossKobo: lineItems.reduce((s, l) => s + l.grossAmountKobo, 0),
+        totalPartnerShareKobo: lineItems.reduce((s, l) => s + l.partnerShareKobo, 0),
+        totalWithholdingTaxKobo: lineItems.reduce((s, l) => s + l.withholdingTaxKobo, 0),
+        totalPaystackCollectionFeesKobo: 0,
+        totalPaystackTransferFeesKobo: math.feeKobo,
+        totalStampDutyKobo: math.stampDutyKobo,
+        totalFeesKobo: math.feeKobo + math.stampDutyKobo,
+        totalNetPayableKobo: math.netKobo,
       },
-
-      // Payout status
-      payoutStatus: partnerCommissions.length === 0
-        ? "no_earnings"
-        : partnerCommissions.every((c) => c.bulkPayoutStatus === "paid")
-          ? "paid"
-          : "pending",
+      payoutStatus:
+        lineItems.length === 0 ? "no_earnings" : lineItems.every((l) => l.payoutStatus === "paid") ? "paid" : "pending",
     };
   },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PAYSTACK TRANSFER API AUTOMATION & SETTLEMENTS
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Admin: bank-transfer confirmation & manual settlement ───────────────────
 
-/**
- * Internal query: Fetch pending commission records for a partner in a billing period.
- */
-export const internalGetPendingCommissionsForPayout = internalQuery({
-  args: {
-    partnerCode: v.optional(v.string()),
-    billingPeriod: v.string(),
-  },
+/** Admin confirms a marketplace booking was paid by direct bank transfer. */
+export const confirmBankTransferBooking = mutation({
+  args: { bookingId: v.id("marketplaceBookings"), senderName: v.string(), bankName: v.string(), referenceNote: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    let commissions = await ctx.db
-      .query("partnerCommissions")
-      .withIndex("by_billing_period", (q) => q.eq("billingPeriod", args.billingPeriod))
-      .filter((q) => q.neq(q.field("bulkPayoutStatus"), "paid"))
-      .collect();
-
-    if (args.partnerCode) {
-      commissions = commissions.filter((c) => c.partnerId === args.partnerCode);
-    }
-    return commissions;
+    const admin = await requireAdmin(ctx);
+    const booking = await ctx.db.get(args.bookingId);
+    if (!booking) throw new ConvexError("Booking not found.");
+    if (booking.paymentStatus === "completed") throw new ConvexError("This booking is already paid.");
+    if (!booking.physiotherapistId) throw new ConvexError("Booking has not been assigned to a physiotherapist yet.");
+    const transferRef = `TXFR-${Date.now()}-${randomString(6, "ABCDEFGHJKMNPQRSTUVWXYZ23456789")}`;
+    await ctx.db.patch(booking._id, {
+      bankTransferDetails: {
+        senderName: args.senderName,
+        bankName: args.bankName,
+        confirmedBy: adminDisplayName(admin.user),
+        confirmedAt: Date.now(),
+      },
+    });
+    const result = await completeMarketplaceBookingCore(ctx, booking._id, {
+      paymentReference: transferRef,
+      paymentMethod: "bank_transfer",
+      paidAmountKobo: booking.serviceAmount,
+    });
+    return { ...result, success: Boolean(result?.success), transferRef };
   },
 });
 
-/**
- * Internal query: Fetch partner record and verified bank account.
- */
-export const internalGetPartnerWithBankAccount = internalQuery({
-  args: { partnerCode: v.string() },
+/** Admin records a manual (off-Paystack) wire for everything payable up to a period. */
+export const processMonthlyBulkPayout = mutation({
+  args: {
+    partnerCode: v.optional(v.string()),
+    partnerId: v.optional(v.string()),
+    billingPeriod: v.string(),
+    payoutBatchReference: v.optional(v.string()),
+    note: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    const admin = await requireAdmin(ctx);
+    assertPeriod(args.billingPeriod);
+    const targetCode = args.partnerCode || args.partnerId;
+    if (!targetCode) throw new ConvexError("Choose the partner to settle.");
+    if (await activeTransfer(ctx, targetCode)) throw new ConvexError("A Paystack payout for this partner is already in progress.");
+    const payable = await payableCommissions(ctx, targetCode, args.billingPeriod);
+    const total = payable.reduce((s, c) => s + c.netPayable, 0);
+    if (payable.length === 0 || total <= 0) throw new ConvexError("Nothing is payable for this partner.");
+    const now = Date.now();
+    const reference = args.payoutBatchReference?.trim() || `WIRE-${args.billingPeriod.replace("-", "")}-${randomString(8, "ABCDEFGHJKMNPQRSTUVWXYZ23456789")}`;
+    const transferId = await ctx.db.insert("partnerPayoutTransfers", {
+      transferReference: reference,
+      partnerCode: targetCode,
+      billingPeriod: args.billingPeriod,
+      amountKobo: total,
+      grossCommissionKobo: total,
+      feesKobo: 0,
+      commissionIds: payable.map((c) => c._id),
+      status: "success",
+      initiatedBy: `${adminDisplayName(admin.user)} (manual wire)`,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    });
+    for (const c of payable) {
+      await ctx.db.patch(c._id, {
+        bulkPayoutStatus: "paid",
+        bulkPayoutBatchId: reference,
+        payoutTransferId: transferId,
+        status: "settled",
+        settledAt: now,
+        paidAt: now,
+        notes: `${c.notes ?? ""} | Paid by manual wire ${reference}${args.note ? ` (${args.note})` : ""}`.slice(0, 2000),
+      });
+    }
+    return {
+      success: true,
+      settledRecordsCount: payable.length,
+      totalSettledKobo: total,
+      billingPeriod: args.billingPeriod,
+      batchReference: reference,
+      message: `Recorded manual payout of ₦${Math.round(total / 100).toLocaleString()} (${payable.length} commission records).`,
+    };
+  },
+});
+
+// ─── Paystack transfers ──────────────────────────────────────────────────────
+
+export const assertAdminForAction = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const admin = await requireAdmin(ctx);
+    return { name: adminDisplayName(admin.user) };
+  },
+});
+
+export const prepareTransfer = internalMutation({
+  args: { partnerCode: v.string(), billingPeriod: v.string(), initiatedBy: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    assertPeriod(args.billingPeriod);
+    if (await activeTransfer(ctx, args.partnerCode)) throw new ConvexError("A payout for this partner is already in progress.");
     const partner = await ctx.db
       .query("partners")
       .withIndex("by_code", (q) => q.eq("code", args.partnerCode))
       .first();
-
-    const bankAccounts = await ctx.db
+    if (!partner) throw new ConvexError("Partner not found.");
+    const bank = await ctx.db
       .query("partnerBankAccounts")
-      .withIndex("by_partner_code", (q) => q.eq("partnerCode", args.partnerCode))
-      .collect();
-
-    const bankAccount = bankAccounts.find((a) => a.isDefault && a.isVerified) || bankAccounts.find((a) => a.isVerified) || null;
-
-    return { partner, bankAccount };
+      .withIndex("by_partner_code_default", (q) => q.eq("partnerCode", partner.code).eq("isDefault", true))
+      .first();
+    if (!bank || !bank.isVerified) throw new ConvexError(`${partner.name} has no verified payout bank account.`);
+    const payable = await payableCommissions(ctx, partner.code, args.billingPeriod);
+    const total = payable.reduce((s, c) => s + c.netPayable, 0);
+    const math = payoutMath(total);
+    if (payable.length === 0 || math.netKobo <= 0) throw new ConvexError(`Nothing payable for ${partner.name} after fees.`);
+    const now = Date.now();
+    const reference = `TRF_RH_${randomString(20, "ABCDEFGHJKMNPQRSTUVWXYZ23456789")}`;
+    const transferId = await ctx.db.insert("partnerPayoutTransfers", {
+      transferReference: reference,
+      partnerCode: partner.code,
+      billingPeriod: args.billingPeriod,
+      amountKobo: math.netKobo,
+      grossCommissionKobo: total,
+      feesKobo: math.feeKobo + math.stampDutyKobo,
+      commissionIds: payable.map((c) => c._id),
+      status: "initiated",
+      initiatedBy: args.initiatedBy,
+      createdAt: now,
+      updatedAt: now,
+    });
+    for (const c of payable) {
+      await ctx.db.patch(c._id, { bulkPayoutStatus: "pending_bulk_payout", payoutTransferId: transferId, bulkPayoutBatchId: reference });
+    }
+    return {
+      transferId,
+      reference,
+      amountKobo: math.netKobo,
+      partnerName: partner.name,
+      bank: {
+        id: bank._id,
+        accountName: bank.accountName,
+        accountNumber: bank.accountNumber,
+        bankCode: bank.bankCode,
+        recipientCode: bank.paystackRecipientCode ?? null,
+      },
+    };
   },
 });
 
-/**
- * Internal mutation: Save Paystack transfer recipient code for a partner bank account.
- */
-export const internalSaveRecipientCode = internalMutation({
+export const saveRecipientCode = internalMutation({
+  args: { bankAccountId: v.id("partnerBankAccounts"), recipientCode: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.bankAccountId, { paystackRecipientCode: args.recipientCode, updatedAt: Date.now() });
+  },
+});
+
+async function settleTransfer(ctx: MutationCtx, transfer: Doc<"partnerPayoutTransfers">, outcome: "success" | "failed" | "reversed", reason?: string) {
+  if (transfer.status === "success" || transfer.status === "failed" || transfer.status === "reversed") {
+    // Paystack can deliver "reversed" after "success": release the commissions again.
+    if (!(transfer.status === "success" && outcome === "reversed")) return false;
+  }
+  const now = Date.now();
+  await ctx.db.patch(transfer._id, { status: outcome, failureReason: reason, updatedAt: now, completedAt: now });
+  for (const id of transfer.commissionIds) {
+    const c = await ctx.db.get(id);
+    if (!c || c.payoutTransferId !== transfer._id) continue;
+    if (outcome === "success") {
+      await ctx.db.patch(id, { bulkPayoutStatus: "paid", status: "settled", settledAt: now, paidAt: now });
+    } else {
+      await ctx.db.patch(id, {
+        bulkPayoutStatus: "accrued",
+        status: c.status === "settled" ? "approved" : c.status,
+        payoutTransferId: undefined,
+        bulkPayoutBatchId: undefined,
+        settledAt: undefined,
+        paidAt: undefined,
+        notes: `${c.notes ?? ""} | Payout ${transfer.transferReference} ${outcome}${reason ? `: ${reason}` : ""}`.slice(0, 2000),
+      });
+    }
+  }
+  return true;
+}
+
+export const markTransferState = internalMutation({
   args: {
-    bankAccountId: v.id("partnerBankAccounts"),
-    recipientCode: v.string(),
+    transferId: v.id("partnerPayoutTransfers"),
+    state: v.union(v.literal("otp_required"), v.literal("pending"), v.literal("success"), v.literal("failed")),
+    transferCode: v.optional(v.string()),
+    bulkBatchCode: v.optional(v.string()),
+    reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.bankAccountId, {
-      paystackRecipientCode: args.recipientCode,
+    const transfer = await ctx.db.get(args.transferId);
+    if (!transfer) return;
+    if (args.state === "success" || args.state === "failed") {
+      await ctx.db.patch(transfer._id, { transferCode: args.transferCode ?? transfer.transferCode, bulkBatchCode: args.bulkBatchCode ?? transfer.bulkBatchCode });
+      await settleTransfer(ctx, (await ctx.db.get(transfer._id))!, args.state, args.reason);
+      return;
+    }
+    if (transfer.status === "success" || transfer.status === "failed" || transfer.status === "reversed") return;
+    await ctx.db.patch(transfer._id, {
+      status: args.state,
+      transferCode: args.transferCode ?? transfer.transferCode,
+      bulkBatchCode: args.bulkBatchCode ?? transfer.bulkBatchCode,
       updatedAt: Date.now(),
     });
   },
 });
 
-/**
- * Internal mutation: Record payout settlement in partner commissions.
- */
-export const internalRecordPayoutSettlement = internalMutation({
-  args: {
-    partnerCode: v.optional(v.string()),
-    billingPeriod: v.string(),
-    batchReference: v.string(),
-    transferCode: v.optional(v.string()),
-    transferStatus: v.optional(v.string()),
-    settledBy: v.string(),
-    notes: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    let commissions = await ctx.db
-      .query("partnerCommissions")
-      .withIndex("by_billing_period", (q) => q.eq("billingPeriod", args.billingPeriod))
-      .filter((q) => q.neq(q.field("bulkPayoutStatus"), "paid"))
-      .collect();
+async function ensureRecipient(ctx: any, secret: string, prepared: { bank: { id: Id<"partnerBankAccounts">; accountName: string; accountNumber: string; bankCode: string; recipientCode: string | null }; partnerName: string }) {
+  if (prepared.bank.recipientCode) return prepared.bank.recipientCode;
+  const response = await fetch("https://api.paystack.co/transferrecipient", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type: "nuban",
+      name: prepared.bank.accountName,
+      account_number: prepared.bank.accountNumber,
+      bank_code: prepared.bank.bankCode,
+      currency: "NGN",
+      description: `Partner payout: ${prepared.partnerName}`,
+    }),
+  });
+  const data = (await response.json().catch(() => null)) as { status?: boolean; message?: string; data?: { recipient_code?: string } } | null;
+  if (!data?.status || !data.data?.recipient_code) throw new Error(data?.message || "Could not create the Paystack transfer recipient");
+  await ctx.runMutation(internal.monthlySettlements.saveRecipientCode, { bankAccountId: prepared.bank.id, recipientCode: data.data.recipient_code });
+  return data.data.recipient_code;
+}
 
-    if (args.partnerCode) {
-      commissions = commissions.filter((c) => c.partnerId === args.partnerCode);
-    }
-
-    const now = Date.now();
-    let totalSettledKobo = 0;
-
-    for (const comm of commissions) {
-      await ctx.db.patch(comm._id, {
-        bulkPayoutStatus: "paid",
-        bulkPayoutBatchId: args.batchReference,
-        status: "settled",
-        settledAt: now,
-        paidAt: now,
-        notes: `${comm.notes || ""} | Settled by ${args.settledBy} [Ref: ${args.batchReference}${args.transferCode ? `, Code: ${args.transferCode}` : ""}]`,
-      });
-      totalSettledKobo += comm.partnerAmount || comm.commissionAmount;
-    }
-
-    return {
-      settledCount: commissions.length,
-      totalSettledKobo,
-    };
-  },
-});
-
-/**
- * Action: Query Paystack live NGN account balance for payouts.
- */
 export const getPaystackBalance = action({
   args: {},
-  handler: async () => {
-    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-    if (!PAYSTACK_SECRET) {
-      return { success: false, message: "PAYSTACK_SECRET_KEY is not configured", balanceKobo: 0, balanceNaira: 0 };
-    }
-
+  handler: async (ctx) => {
+    await ctx.runQuery(internal.monthlySettlements.assertAdminForAction, {});
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) return { success: false, message: "PAYSTACK_SECRET_KEY is not configured", balanceKobo: 0, balanceNaira: 0 };
     try {
-      const res = await fetch("https://api.paystack.co/balance", {
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET}`,
-        },
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        return { success: false, message: `Paystack balance error: HTTP ${res.status}`, balanceKobo: 0, balanceNaira: 0 };
+      const response = await fetch("https://api.paystack.co/balance", { headers: { Authorization: `Bearer ${secret}` } });
+      const data = (await response.json().catch(() => null)) as { status?: boolean; message?: string; data?: Array<{ currency: string; balance: number }> } | null;
+      if (!response.ok || !data?.status || !Array.isArray(data.data)) {
+        return { success: false, message: data?.message || `Paystack balance error: HTTP ${response.status}`, balanceKobo: 0, balanceNaira: 0 };
       }
-
-      const data = await res.json();
-      if (data.status && Array.isArray(data.data)) {
-        const ngn = data.data.find((b: any) => b.currency === "NGN") || data.data[0];
-        const balanceKobo = ngn ? ngn.balance : 0;
-        return {
-          success: true,
-          balanceKobo,
-          balanceNaira: Math.round(balanceKobo / 100),
-          currency: ngn?.currency || "NGN",
-        };
-      }
-
-      return { success: false, message: data.message || "Failed to fetch balance", balanceKobo: 0, balanceNaira: 0 };
-    } catch (err: any) {
-      return { success: false, message: err.message || "Balance request failed", balanceKobo: 0, balanceNaira: 0 };
+      const ngn = data.data.find((b) => b.currency === "NGN") ?? data.data[0];
+      const balanceKobo = ngn?.balance ?? 0;
+      return { success: true, balanceKobo, balanceNaira: Math.round(balanceKobo / 100), currency: ngn?.currency ?? "NGN" };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : "Balance request failed", balanceKobo: 0, balanceNaira: 0 };
     }
   },
 });
 
-/**
- * Action: Execute single partner payout transfer via Paystack Transfer API.
- */
+/** Pays one partner everything payable up to `billingPeriod` via a Paystack transfer. */
 export const executePartnerPayoutTransfer = action({
-  args: {
-    partnerCode: v.optional(v.string()),
-    partnerId: v.optional(v.string()),
-    billingPeriod: v.string(),
-    note: v.optional(v.string()),
-  },
+  args: { partnerCode: v.optional(v.string()), partnerId: v.optional(v.string()), billingPeriod: v.string(), note: v.optional(v.string()) },
   returns: v.any(),
   handler: async (ctx, args): Promise<any> => {
+    const admin: { name: string } = await ctx.runQuery(internal.monthlySettlements.assertAdminForAction, {});
     const targetCode = args.partnerCode || args.partnerId;
-    if (!targetCode) {
-      throw new Error("Partner code is required to execute transfer.");
-    }
+    if (!targetCode) throw new ConvexError("Partner code is required.");
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) throw new ConvexError("Payment service not configured (PAYSTACK_SECRET_KEY missing).");
 
-    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-    if (!PAYSTACK_SECRET) {
-      throw new Error("Payment service not configured (PAYSTACK_SECRET_KEY missing)");
-    }
-
-    // 1. Fetch partner and bank account
-    const result: any = await ctx.runQuery(
-      (internal as any).monthlySettlements.internalGetPartnerWithBankAccount,
-      { partnerCode: targetCode }
-    );
-    const partner = result?.partner;
-    const bankAccount = result?.bankAccount;
-
-    if (!partner) {
-      throw new Error(`Partner not found: ${targetCode}`);
-    }
-    if (!bankAccount || !bankAccount.isVerified) {
-      throw new Error(`Partner ${partner.name} does not have a verified default bank account on file.`);
-    }
-
-    // 2. Ensure transfer recipient exists
-    let recipientCode: string = bankAccount.paystackRecipientCode || "";
-    if (!recipientCode) {
-      const recipientRes: Response = await fetch("https://api.paystack.co/transferrecipient", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          type: "nuban",
-          name: bankAccount.accountName,
-          account_number: bankAccount.accountNumber,
-          bank_code: bankAccount.bankCode,
-          currency: "NGN",
-          description: `Partner payout: ${partner.code} - ${partner.name}`,
-        }),
-      });
-
-      const recipientData: any = await recipientRes.json();
-      if (!recipientData.status || !recipientData.data?.recipient_code) {
-        throw new Error(`Failed to create Paystack transfer recipient: ${recipientData.message || "Unknown error"}`);
-      }
-
-      recipientCode = recipientData.data.recipient_code as string;
-      await ctx.runMutation((internal as any).monthlySettlements.internalSaveRecipientCode, {
-        bankAccountId: bankAccount._id,
-        recipientCode,
-      });
-    }
-
-    // 3. Fetch pending commissions
-    const commissions: any[] = await ctx.runQuery(
-      (internal as any).monthlySettlements.internalGetPendingCommissionsForPayout,
-      { partnerCode: targetCode, billingPeriod: args.billingPeriod }
-    );
-
-    if (commissions.length === 0) {
-      throw new Error(`No pending commissions to disburse for ${partner.name} in cycle ${args.billingPeriod}`);
-    }
-
-    const totalPartnerKobo = commissions.reduce(
-      (sum: number, c: any) => sum + (c.partnerAmount || c.commissionAmount || 0),
-      0
-    );
-
-    const outboundFeeKobo = calculatePaystackOutboundFee(totalPartnerKobo);
-    const stampDutyKobo = calculateStampDuty(totalPartnerKobo);
-    const netPayoutKobo = Math.max(0, totalPartnerKobo - outboundFeeKobo - stampDutyKobo);
-
-    if (netPayoutKobo <= 0) {
-      throw new Error(`Net payout after fees is ₦0. Cannot execute transfer.`);
-    }
-
-    // 4. Generate unique reference
-    const transferReference = `TRF_RH_${targetCode}_${args.billingPeriod.replace("-", "")}_${Date.now()}`;
-
-    // 5. Execute transfer
-    const transferRes: Response = await fetch("https://api.paystack.co/transfer", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        source: "balance",
-        amount: netPayoutKobo,
-        recipient: recipientCode,
-        reason: `Rehabify settlement ${args.billingPeriod} - ${partner.name}`,
-        reference: transferReference,
-      }),
-    });
-
-    const transferData: any = await transferRes.json();
-
-    if (!transferRes.ok || !transferData.status) {
-      throw new Error(transferData.message || `Paystack transfer failed (HTTP ${transferRes.status})`);
-    }
-
-    // Check if OTP required
-    if (transferData.data?.status === "otp") {
-      return {
-        success: false,
-        requiresOtp: true,
-        transferCode: transferData.data.transfer_code as string,
-        transferReference,
-        amountKobo: netPayoutKobo,
-        message: "Paystack transfer requires OTP authorization.",
-      };
-    }
-
-    // 6. Record success in Convex
-    await ctx.runMutation((internal as any).monthlySettlements.internalRecordPayoutSettlement, {
+    const prepared: any = await ctx.runMutation(internal.monthlySettlements.prepareTransfer, {
       partnerCode: targetCode,
       billingPeriod: args.billingPeriod,
-      batchReference: transferReference,
-      transferCode: transferData.data?.transfer_code,
-      transferStatus: transferData.data?.status || "pending",
-      settledBy: "Admin via Paystack Automated Transfer",
-      notes: args.note,
+      initiatedBy: admin.name,
     });
-
-    return {
-      success: true,
-      requiresOtp: false,
-      transferCode: transferData.data?.transfer_code as string,
-      transferReference,
-      amountKobo: netPayoutKobo,
-      status: (transferData.data?.status as string) || "pending",
-      message: `Disbursement of ₦${Math.round(netPayoutKobo / 100).toLocaleString()} to ${partner.name} initiated successfully via Paystack!`,
-    };
-  },
-});
-
-/**
- * Action: Finalize a pending Paystack transfer with an OTP code.
- */
-export const finalizePartnerPayoutTransfer = action({
-  args: {
-    transferCode: v.string(),
-    otp: v.string(),
-    partnerCode: v.string(),
-    billingPeriod: v.string(),
-    transferReference: v.string(),
-  },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<any> => {
-    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-    if (!PAYSTACK_SECRET) {
-      throw new Error("Payment service not configured");
-    }
-
-    const res: Response = await fetch("https://api.paystack.co/transfer/finalize_transfer", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        transfer_code: args.transferCode,
-        otp: args.otp,
-      }),
-    });
-
-    const data: any = await res.json();
-    if (!res.ok || !data.status) {
-      throw new Error(data.message || "Failed to finalize Paystack transfer with OTP");
-    }
-
-    await ctx.runMutation((internal as any).monthlySettlements.internalRecordPayoutSettlement, {
-      partnerCode: args.partnerCode,
-      billingPeriod: args.billingPeriod,
-      batchReference: args.transferReference,
-      transferCode: args.transferCode,
-      transferStatus: data.data?.status || "pending",
-      settledBy: "Admin via Paystack Transfer (OTP finalized)",
-    });
-
-    return {
-      success: true,
-      message: "Transfer finalized successfully!",
-      transferCode: args.transferCode,
-    };
-  },
-});
-
-/**
- * Action: Execute bulk monthly payout for all eligible partners via Paystack Bulk Transfer API.
- */
-export const executePaystackBulkMonthlyPayout = action({
-  args: {
-    billingPeriod: v.string(),
-  },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<any> => {
-    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-    if (!PAYSTACK_SECRET) {
-      throw new Error("Payment service not configured");
-    }
-
-    // 1. Get summary to find partners with pending payouts
-    const summary: any = await ctx.runQuery((api as any).monthlySettlements.getMonthlyBulkPayoutSummary, {
-      billingPeriod: args.billingPeriod,
-    });
-
-    if (!summary || !summary.partnerBreakdown) {
-      throw new Error("No payout records found for this billing period");
-    }
-
-    const eligiblePartners = summary.partnerBreakdown.filter(
-      (p: any) => p.bulkPayoutStatus !== "paid" && p.totalPartnerCommission > 0 && p.hasBankAccount
-    );
-
-    if (eligiblePartners.length === 0) {
-      throw new Error("No eligible partners with pending commissions and verified bank accounts were found.");
-    }
-
-    // 2. Prepare transfers list
-    const transfers: Array<{
-      amount: number;
-      recipient: string;
-      reference: string;
-      reason: string;
-      partnerCode: string;
-    }> = [];
-
-    const now = Date.now();
-    for (let i = 0; i < eligiblePartners.length; i++) {
-      const p = eligiblePartners[i];
-      const bankResult: any = await ctx.runQuery(
-        (internal as any).monthlySettlements.internalGetPartnerWithBankAccount,
-        { partnerCode: p.partnerId }
-      );
-      const bankAccount = bankResult?.bankAccount;
-
-      if (!bankAccount || !bankAccount.isVerified) continue;
-
-      let recipientCode: string = bankAccount.paystackRecipientCode || "";
-      if (!recipientCode) {
-        const recipientRes: Response = await fetch("https://api.paystack.co/transferrecipient", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            type: "nuban",
-            name: bankAccount.accountName,
-            account_number: bankAccount.accountNumber,
-            bank_code: bankAccount.bankCode,
-            currency: "NGN",
-            description: `Partner payout: ${p.partnerId}`,
-          }),
-        });
-        const recipientData: any = await recipientRes.json();
-        if (recipientData.status && recipientData.data?.recipient_code) {
-          recipientCode = recipientData.data.recipient_code as string;
-          await ctx.runMutation((internal as any).monthlySettlements.internalSaveRecipientCode, {
-            bankAccountId: bankAccount._id,
-            recipientCode,
-          });
-        }
-      }
-
-      if (!recipientCode) continue;
-
-      const netAmount = p.estimatedNetPayoutKobo || p.totalPartnerCommission;
-      if (netAmount <= 0) continue;
-
-      transfers.push({
-        amount: netAmount,
-        recipient: recipientCode,
-        reference: `TRF_BULK_${p.partnerId}_${args.billingPeriod.replace("-", "")}_${now}_${i}`,
-        reason: `Rehabify bulk payout ${args.billingPeriod} - ${p.partnerName}`,
-        partnerCode: p.partnerId,
+    try {
+      const recipient = await ensureRecipient(ctx, secret, prepared);
+      const response = await fetch("https://api.paystack.co/transfer", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "balance",
+          amount: prepared.amountKobo,
+          recipient,
+          reason: `Rehabify partner settlement to ${args.billingPeriod}${args.note ? ` — ${args.note.slice(0, 60)}` : ""}`,
+          reference: prepared.reference,
+        }),
       });
-    }
-
-    if (transfers.length === 0) {
-      throw new Error("Unable to construct valid transfer recipients for eligible partners.");
-    }
-
-    // 3. Submit bulk transfer to Paystack
-    const bulkRes: Response = await fetch("https://api.paystack.co/transfer/bulk", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        currency: "NGN",
-        source: "balance",
-        transfers: transfers.map(({ partnerCode, ...rest }) => rest),
-      }),
-    });
-
-    const bulkData: any = await bulkRes.json();
-    if (!bulkRes.ok || !bulkData.status) {
-      throw new Error(bulkData.message || "Paystack bulk transfer failed");
-    }
-
-    const batchCode = bulkData.data?.[0]?.transfer_code || `BATCH-${args.billingPeriod.replace("-", "")}-${now}`;
-
-    // 4. Record settlement for each partner
-    for (const t of transfers) {
-      await ctx.runMutation((internal as any).monthlySettlements.internalRecordPayoutSettlement, {
-        partnerCode: t.partnerCode,
-        billingPeriod: args.billingPeriod,
-        batchReference: t.reference,
-        transferCode: batchCode,
-        transferStatus: "queued",
-        settledBy: "Admin via Paystack Bulk Transfer",
+      const data = (await response.json().catch(() => null)) as { status?: boolean; message?: string; data?: { status?: string; transfer_code?: string } } | null;
+      if (!response.ok || !data?.status) throw new Error(data?.message || `Paystack transfer failed (HTTP ${response.status})`);
+      const state = data.data?.status === "otp" ? "otp_required" : data.data?.status === "success" ? "success" : "pending";
+      await ctx.runMutation(internal.monthlySettlements.markTransferState, {
+        transferId: prepared.transferId,
+        state,
+        transferCode: data.data?.transfer_code,
       });
+      return {
+        success: state !== "otp_required",
+        requiresOtp: state === "otp_required",
+        transferCode: data.data?.transfer_code,
+        transferReference: prepared.reference,
+        amountKobo: prepared.amountKobo,
+        status: state,
+        message:
+          state === "otp_required"
+            ? "Paystack requires OTP authorisation for this transfer."
+            : `Transfer of ₦${Math.round(prepared.amountKobo / 100).toLocaleString()} to ${prepared.partnerName} submitted. Commissions are marked paid when Paystack confirms it.`,
+      };
+    } catch (error) {
+      await ctx.runMutation(internal.monthlySettlements.markTransferState, {
+        transferId: prepared.transferId,
+        state: "failed",
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      throw new ConvexError(error instanceof Error ? error.message : "Transfer failed");
     }
-
-    const totalKobo = transfers.reduce((sum, t) => sum + t.amount, 0);
-
-    return {
-      success: true,
-      batchCode,
-      partnersCount: transfers.length,
-      totalAmountKobo: totalKobo,
-      message: `Bulk transfer queued for ${transfers.length} partners (Total: ₦${Math.round(totalKobo / 100).toLocaleString()}).`,
-    };
   },
 });
 
-/**
- * Mutation: Roll back payout settlement when a Paystack transfer fails or is reversed.
- * Resets affected commissions from "paid" → "pending_bulk_payout" so the admin can re-attempt.
- */
-export const rollbackPayoutSettlement = mutation({
-  args: {
-    partnerCode: v.optional(v.string()),
-    billingPeriod: v.string(),
-    batchReference: v.string(),
-    failureReason: v.optional(v.string()),
-  },
+export const getTransferByCode = internalQuery({
+  args: { transferCode: v.string() },
   handler: async (ctx, args) => {
-    let commissions = await ctx.db
-      .query("partnerCommissions")
-      .withIndex("by_billing_period", (q) => q.eq("billingPeriod", args.billingPeriod))
-      .filter((q) => q.eq(q.field("bulkPayoutStatus"), "paid"))
-      .collect();
-
-    // Match by partner and/or batch reference
-    if (args.partnerCode) {
-      commissions = commissions.filter((c) => c.partnerId === args.partnerCode);
-    }
-    if (args.batchReference) {
-      commissions = commissions.filter((c) => c.bulkPayoutBatchId === args.batchReference);
-    }
-
-    const now = Date.now();
-    let rolledBackCount = 0;
-
-    for (const comm of commissions) {
-      await ctx.db.patch(comm._id, {
-        bulkPayoutStatus: "pending_bulk_payout",
-        status: "pending_approval",
-        settledAt: undefined,
-        paidAt: undefined,
-        notes: `${comm.notes || ""} | ROLLED BACK at ${new Date(now).toISOString()} — Paystack transfer failed/reversed${args.failureReason ? `: ${args.failureReason}` : ""}`,
-      });
-      rolledBackCount++;
-    }
-
-    return { rolledBackCount };
+    return ctx.db
+      .query("partnerPayoutTransfers")
+      .withIndex("by_transfer_code", (q) => q.eq("transferCode", args.transferCode))
+      .first();
   },
 });
 
-export const internalRollbackPayoutSettlement = rollbackPayoutSettlement;
+export const finalizePartnerPayoutTransfer = action({
+  args: { transferCode: v.string(), otp: v.string(), partnerCode: v.optional(v.string()), billingPeriod: v.optional(v.string()), transferReference: v.optional(v.string()) },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<any> => {
+    await ctx.runQuery(internal.monthlySettlements.assertAdminForAction, {});
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) throw new ConvexError("Payment service not configured.");
+    const transfer: Doc<"partnerPayoutTransfers"> | null = await ctx.runQuery(internal.monthlySettlements.getTransferByCode, { transferCode: args.transferCode });
+    if (!transfer || transfer.status !== "otp_required") throw new ConvexError("No transfer is waiting for an OTP with that code.");
+    const response = await fetch("https://api.paystack.co/transfer/finalize_transfer", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ transfer_code: args.transferCode, otp: args.otp }),
+    });
+    const data = (await response.json().catch(() => null)) as { status?: boolean; message?: string; data?: { status?: string } } | null;
+    if (!response.ok || !data?.status) throw new ConvexError(data?.message || "Failed to finalise the Paystack transfer.");
+    await ctx.runMutation(internal.monthlySettlements.markTransferState, {
+      transferId: transfer._id,
+      state: data.data?.status === "success" ? "success" : "pending",
+      transferCode: args.transferCode,
+    });
+    return { success: true, message: "Transfer authorised. Commissions are marked paid when Paystack confirms the transfer.", transferCode: args.transferCode };
+  },
+});
 
+export const listPayablePartners = internalQuery({
+  args: { billingPeriod: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const partners = await ctx.db.query("partners").collect();
+    const result: string[] = [];
+    for (const partner of partners) {
+      if (await activeTransfer(ctx, partner.code)) continue;
+      const bank = await ctx.db
+        .query("partnerBankAccounts")
+        .withIndex("by_partner_code_default", (q) => q.eq("partnerCode", partner.code).eq("isDefault", true))
+        .first();
+      if (!bank?.isVerified) continue;
+      const total = (await payableCommissions(ctx, partner.code, args.billingPeriod)).reduce((s, c) => s + c.netPayable, 0);
+      if (payoutMath(total).netKobo > 0) result.push(partner.code);
+    }
+    return result;
+  },
+});
+
+/** Pays every eligible partner (verified bank account, positive balance) in one Paystack bulk transfer. */
+export const executePaystackBulkMonthlyPayout = action({
+  args: { billingPeriod: v.string() },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<any> => {
+    const admin: { name: string } = await ctx.runQuery(internal.monthlySettlements.assertAdminForAction, {});
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) throw new ConvexError("Payment service not configured.");
+    const codes: string[] = await ctx.runQuery(internal.monthlySettlements.listPayablePartners, { billingPeriod: args.billingPeriod });
+    if (codes.length === 0) throw new ConvexError("No partners have a verified bank account and a positive payable balance.");
+
+    const prepared: any[] = [];
+    for (const code of codes) {
+      try {
+        const item = await ctx.runMutation(internal.monthlySettlements.prepareTransfer, { partnerCode: code, billingPeriod: args.billingPeriod, initiatedBy: `${admin.name} (bulk)` });
+        item.recipient = await ensureRecipient(ctx, secret, item);
+        prepared.push(item);
+      } catch (error) {
+        console.error("bulk_payout_prepare_failed", { code, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    if (prepared.length === 0) throw new ConvexError("Could not prepare any transfers.");
+
+    try {
+      const response = await fetch("https://api.paystack.co/transfer/bulk", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currency: "NGN",
+          source: "balance",
+          transfers: prepared.map((p) => ({ amount: p.amountKobo, recipient: p.recipient, reference: p.reference, reason: `Rehabify partner settlement to ${args.billingPeriod}` })),
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as { status?: boolean; message?: string; data?: Array<{ reference?: string; transfer_code?: string; status?: string }> } | null;
+      if (!response.ok || !data?.status) throw new Error(data?.message || `Paystack bulk transfer failed (HTTP ${response.status})`);
+      for (const p of prepared) {
+        const row = data.data?.find((d) => d.reference === p.reference);
+        await ctx.runMutation(internal.monthlySettlements.markTransferState, {
+          transferId: p.transferId,
+          state: row?.status === "success" ? "success" : "pending",
+          transferCode: row?.transfer_code,
+        });
+      }
+    } catch (error) {
+      for (const p of prepared) {
+        await ctx.runMutation(internal.monthlySettlements.markTransferState, {
+          transferId: p.transferId,
+          state: "failed",
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+      throw new ConvexError(error instanceof Error ? error.message : "Bulk transfer failed");
+    }
+    const total = prepared.reduce((s, p) => s + p.amountKobo, 0);
+    return {
+      success: true,
+      partnersCount: prepared.length,
+      totalAmountKobo: total,
+      message: `Bulk transfer submitted for ${prepared.length} partner(s), ₦${Math.round(total / 100).toLocaleString()} in total. Commissions are marked paid as Paystack confirms each transfer.`,
+    };
+  },
+});
+
+/**
+ * Paystack transfer webhooks (transfer.success / transfer.failed / transfer.reversed).
+ * The raw body and signature are verified here, inside Convex, so this public entry
+ * point cannot be used to mark payouts paid or reverse them.
+ */
+export const recordPaystackTransferWebhook = mutation({
+  args: { rawBody: v.string(), signature: v.string() },
+  handler: async (ctx, args) => {
+    if (!(await verifyPaystackSignature(args.rawBody, args.signature))) throw new Error("Invalid Paystack webhook signature");
+    let payload: { event?: string; data?: Record<string, any> };
+    try {
+      payload = JSON.parse(args.rawBody);
+    } catch {
+      throw new Error("Invalid webhook payload");
+    }
+    const event = payload.event ?? "";
+    const data = payload.data ?? {};
+    const reference = typeof data.reference === "string" ? data.reference : "";
+    if (!["transfer.success", "transfer.failed", "transfer.reversed"].includes(event) || !reference) {
+      return { handled: false };
+    }
+
+    const transfer = await ctx.db
+      .query("partnerPayoutTransfers")
+      .withIndex("by_reference", (q) => q.eq("transferReference", reference))
+      .first();
+    if (transfer) {
+      const outcome = event === "transfer.success" ? "success" : event === "transfer.reversed" ? "reversed" : "failed";
+      if (typeof data.transfer_code === "string" && !transfer.transferCode) await ctx.db.patch(transfer._id, { transferCode: data.transfer_code });
+      const changed = await settleTransfer(ctx, transfer, outcome, typeof data.reason === "string" ? data.reason : undefined);
+      return { handled: true, kind: "partner_payout", outcome, changed };
+    }
+
+    // Referring-doctor payouts made from the Paystack dashboard carry "referral:<id>".
+    if (event === "transfer.success") {
+      const metadataId = typeof data.metadata?.referralId === "string" ? data.metadata.referralId : null;
+      const match = metadataId ?? (`${reference} ${data.reason ?? ""}`.match(/(?:referral:|convex:)([a-z0-9]{20,40})/i)?.[1] ?? null);
+      const referralId = match ? ctx.db.normalizeId("inboundReferrals", match) : null;
+      const referral = referralId ? await ctx.db.get(referralId) : null;
+      if (referral) {
+        const events = await ctx.db
+          .query("referralEvents")
+          .withIndex("by_referral_id", (q) => q.eq("referralId", referral._id))
+          .collect();
+        if (events.some((e) => e.eventName === "referral.paid_out" && e.metadata?.transferReference === reference)) {
+          return { handled: true, kind: "doctor_payout", duplicate: true };
+        }
+        const amount = Number(data.amount) || 0;
+        await ctx.db.patch(referral._id, { commissionEarned: (referral.commissionEarned ?? 0) + amount, updatedAt: Date.now() });
+        await ctx.db.insert("referralEvents", {
+          referralId: referral._id,
+          eventName: "referral.paid_out",
+          occurredAt: Date.now(),
+          actorType: "system",
+          actorId: "paystack",
+          metadata: { transferReference: reference, amountKobo: amount },
+        });
+        return { handled: true, kind: "doctor_payout" };
+      }
+    }
+    return { handled: false };
+  },
+});

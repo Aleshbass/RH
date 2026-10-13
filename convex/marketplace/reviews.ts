@@ -4,7 +4,7 @@
  */
 
 import { v } from "convex/values";
-import { mutation, query } from "../_generated/server";
+import { mutation, query, internalMutation } from "../_generated/server";
 
 /**
  * Submit a review for a physiotherapist
@@ -183,7 +183,7 @@ export const respondToReview = mutation({
 /**
  * Mark review as helpful
  */
-export const markReviewHelpful = mutation({
+export const markReviewHelpful = internalMutation({
   args: {
     reviewId: v.id("marketplaceReviews"),
   },

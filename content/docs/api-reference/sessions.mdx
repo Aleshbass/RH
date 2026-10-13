@@ -1,67 +1,153 @@
 ---
-title: Sessions API
-description: Track scheduled appointments, session logs, and attendance.
+title: Sessions
+description: List the appointments booked for your referrals, including scheduled, completed, cancelled and missed sessions.
 ---
 
-# Sessions API
+A **session** is one appointment between a patient you referred and their physiotherapist. Use sessions to follow attendance in detail. For a summary, read the referral's `sessions` block or the [progress report](/docs/api-reference/clinical-reports).
 
-The Sessions API allows partners to monitor appointment scheduling, therapist arrival/check-ins, and session completion timestamps.
+Session notes are never returned. The API exposes scheduling and attendance only.
 
----
-
-## 1. List Patient Sessions
-
-`GET /api/v1/partners/sessions`
-
-### Query Parameters
-
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `referral_id` | `string` | Filter sessions for a specific referral |
-| `patient_phone` | `string` | Filter sessions by patient phone number |
-| `status` | `string` | `scheduled` \| `in_progress` \| `completed` \| `cancelled` |
-| `from_date` | `string` | ISO 8601 start date (e.g. `2026-08-01`) |
-| `to_date` | `string` | ISO 8601 end date (e.g. `2026-08-31`) |
-
-### Example Request
-
-```bash
-curl "https://api.physioaroundme.com/api/v1/partners/sessions?referral_id=ref_839210aa9" \
-  -H "Authorization: Bearer sk_live_99281..."
-```
-
-### Example Response (`200 OK`)
+## The session object
 
 ```json
 {
-  "total_sessions": 4,
-  "sessions": [
-    {
-      "session_id": "ses_001928a",
-      "session_number": 1,
-      "session_type": "Initial Comprehensive Assessment",
-      "scheduled_at": "2026-08-10T10:00:00.000Z",
-      "completed_at": "2026-08-10T11:15:00.000Z",
-      "status": "completed",
-      "provider_name": "Dr. Babatunde Fashola (PT)",
-      "modality": "home_visit",
-      "pain_score_before": 8,
-      "pain_score_after": 5,
-      "notes_summary": "Initial evaluation completed. Lumbar spine flexion limited to 45 deg. Commenced core stabilization."
-    },
-    {
-      "session_id": "ses_001928b",
-      "session_number": 2,
-      "session_type": "Therapeutic Exercise & Manual Mobilization",
-      "scheduled_at": "2026-08-14T14:30:00.000Z",
-      "completed_at": "2026-08-14T15:25:00.000Z",
-      "status": "completed",
-      "provider_name": "Dr. Babatunde Fashola (PT)",
-      "modality": "home_visit",
-      "pain_score_before": 5,
-      "pain_score_after": 3,
-      "notes_summary": "Significant improvement in gait stability. Patient tolerated gentle Grade II Maitland mobilizations."
-    }
-  ]
+  "object": "session",
+  "id": "k97d4m2x8q1w5e3r7t9y6u0i2o4p6a8s",
+  "referral_id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+  "tracking_code": "RHB-4829173655",
+  "partner_reference": "HMO-REF-2026-0091",
+  "sequence": 1,
+  "status": "completed",
+  "mode": "virtual",
+  "scheduled_start": "2026-10-15T10:00:00.000Z",
+  "scheduled_end": "2026-10-15T10:45:00.000Z",
+  "completed_at": "2026-10-15T10:45:00.000Z",
+  "provider": { "name": "Chiamaka Obi" },
+  "simulated": false
 }
 ```
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `object` | string | Always `session`. |
+| `id` | string | Session ID. |
+| `referral_id` | string | The `id` of the referral this session belongs to. |
+| `tracking_code` | string | The referral's tracking code. |
+| `partner_reference` | string or null | Your reference for the referral, if you sent one. |
+| `sequence` | integer | The session's position in the referral's care plan: `1` is the first session. |
+| `status` | string | `scheduled`, `completed`, `cancelled` or `no_show`. |
+| `mode` | string | `virtual` or `in_person`. |
+| `scheduled_start`, `scheduled_end` | string | ISO-8601 UTC. |
+| `completed_at` | string or null | When the session was completed. `null` unless `status` is `completed`. |
+| `provider` | object or null | `{ "name": "…" }` for the physiotherapist. |
+| `simulated` | boolean | `true` for sandbox sessions, which are simulated from the referral's sandbox status. |
+
+## List sessions
+
+```http
+GET /partners/sessions
+```
+
+Returns sessions for your referrals in the key's environment, newest first.
+
+### Query parameters
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `referral_id` | string | Only sessions for this referral. Accepts any referral identifier: `id`, `tracking_code` or your `partner_reference`. |
+| `status` | string | `scheduled`, `completed`, `cancelled` or `no_show`. |
+| `from` | string | ISO-8601 timestamp. Start of the time range, applied to `scheduled_start`. |
+| `to` | string | ISO-8601 timestamp. End of the time range, applied to `scheduled_start`. |
+| `limit` | integer | 1–100. Default `25`. |
+
+This endpoint doesn't use cursors: `next_cursor` is always `null`. If `has_more` is `true`, narrow the query with `referral_id`, `status` or a shorter `from`/`to` window.
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl "https://api.physioaroundme.com/v1/partners/sessions?referral_id=RHB-4829173655&status=completed" \
+  -H "Authorization: Bearer $REHABIFY_API_KEY"
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+ (save as list-sessions.mjs)
+const params = new URLSearchParams({ referral_id: "RHB-4829173655", status: "completed" });
+const res = await fetch(`https://api.physioaroundme.com/v1/partners/sessions?${params}`, {
+  headers: { Authorization: `Bearer ${process.env.REHABIFY_API_KEY}` },
+});
+const page = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${page.error.code}: ${page.error.message}`);
+for (const s of page.data) console.log(s.sequence, s.status, s.scheduled_start);
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+
+import requests
+
+resp = requests.get(
+    "https://api.physioaroundme.com/v1/partners/sessions",
+    params={"referral_id": "RHB-4829173655", "status": "completed"},
+    headers={"Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}"},
+    timeout=30,
+)
+resp.raise_for_status()
+for s in resp.json()["data"]:
+    print(s["sequence"], s["status"], s["scheduled_start"])
+```
+
+</Tab>
+</Tabs>
+
+```json title="200 OK"
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "session",
+      "id": "k97h2j4k6l8z0x1c3v5b7n9m2q4w6e8r",
+      "referral_id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "partner_reference": "HMO-REF-2026-0091",
+      "sequence": 2,
+      "status": "completed",
+      "mode": "in_person",
+      "scheduled_start": "2026-10-18T10:00:00.000Z",
+      "scheduled_end": "2026-10-18T10:45:00.000Z",
+      "completed_at": "2026-10-18T10:47:00.000Z",
+      "provider": { "name": "Chiamaka Obi" },
+      "simulated": false
+    },
+    {
+      "object": "session",
+      "id": "k97d4m2x8q1w5e3r7t9y6u0i2o4p6a8s",
+      "referral_id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "partner_reference": "HMO-REF-2026-0091",
+      "sequence": 1,
+      "status": "completed",
+      "mode": "virtual",
+      "scheduled_start": "2026-10-15T10:00:00.000Z",
+      "scheduled_end": "2026-10-15T10:45:00.000Z",
+      "completed_at": "2026-10-15T10:45:00.000Z",
+      "provider": { "name": "Chiamaka Obi" },
+      "simulated": false
+    }
+  ],
+  "has_more": false,
+  "next_cursor": null
+}
+```
+
+**Errors:** `400 invalid_parameter` for an invalid `status`, `from`, `to` or `limit`, plus the standard [authentication errors](/docs/getting-started/authentication#authentication-errors).
+
+## Sessions in sandbox
+
+Sandbox never books real appointments. Sessions are simulated from the referral's sandbox status, so a referral you've [advanced](/docs/sandbox/testing#advance-a-referral) to `booked` or `in_treatment` shows plausible sessions. Every simulated session has `"simulated": true`.

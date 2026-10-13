@@ -1,6 +1,6 @@
-import { mutation } from "./_generated/server";
+import { mutation, internalMutation } from "./_generated/server";
 
-export const purgeUnwantedUsers = mutation({
+export const purgeUnwantedUsers = internalMutation({
   args: {},
   handler: async (ctx) => {
     const allUsers = await ctx.db.query("users").collect();
@@ -44,7 +44,7 @@ export const purgeUnwantedUsers = mutation({
   },
 });
 
-export const fixStuckPhysios = mutation({
+export const fixStuckPhysios = internalMutation({
   args: {},
   handler: async (ctx) => {
     // Find all pending approvals

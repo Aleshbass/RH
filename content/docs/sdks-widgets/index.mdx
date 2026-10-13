@@ -1,26 +1,25 @@
 ---
-title: SDKs & Widgets Overview
-description: Drop-in UI widgets, React components, and smart deep-link generators.
+title: Widgets & deep links
+description: What you can use today without building a UI (WhatsApp deep links and no-code referral links), and which client-side tools are coming soon.
 ---
 
-# SDKs & Drop-in Widgets
+## Available now
 
-If you do not wish to build custom referral forms or booking user interfaces from scratch, Rehabify provides pre-built frontend solutions:
+| Tool | What it does | Engineering work |
+| :--- | :--- | :--- |
+| [WhatsApp deep links](/docs/sdks-widgets/whatsapp-deep-links) | One tap opens a WhatsApp chat with Joy that's already linked to a referral through its tracking code. | None. Use the link from the API response. |
+| [No-code referral links](/docs/guides/no-code-referral-links) | A co-branded landing page where patients refer themselves, with attribution and stats. | None |
+| [Public lead endpoint](/docs/api-reference/referral-links#public-lead-capture) | Post your own website form to a referral link. CORS-enabled, no API key. | A little front-end code |
+| [REST API](/docs/api-reference) | Full control from your backend. | Server-side integration |
 
----
+## Coming soon
 
-## Solutions Available
+These are on the roadmap and **not available yet**. There's no script, package or key to install today.
 
-| Solution | Technology | Best For | Setup Time |
-| :--- | :--- | :--- | :--- |
-| **[JavaScript Embed Widget](/docs/sdks-widgets/embed-widget)** | Pure HTML / `<script>` | Gyms, fitness blogs, WordPress, Webflow sites | 10 minutes |
-| **[React Component](/docs/sdks-widgets/react-component)** | React 18 / 19 / Next.js | Modern web applications, EHR web portals | 15 minutes |
-| **[WhatsApp Deep-Links](/docs/sdks-widgets/whatsapp-deep-links)** | Parameterized URLs | SMS campaigns, doctor prescription flyers, QR codes | 5 minutes |
+| Tool | Status |
+| :--- | :--- |
+| [Embeddable JavaScript widget](/docs/sdks-widgets/embed-widget) | Coming soon |
+| [React component package (`@rehabify/react`)](/docs/sdks-widgets/react-component) | Coming soon |
+| Publishable (client-side) `pk_` keys | Coming soon. All current keys are secret, server-side `sk_` keys. |
 
----
-
-## Key Benefits
-
-* **Zero Backend Code**: Embed our secure, high-conversion booking modal directly on your frontend.
-* **Branded & Themed**: Custom primary colors, typography, and partner logos.
-* **Automatic Revenue Tracking**: Every booking completed through your widget is tagged with your Partner ID for revenue attribution.
+Until they're available, use a referral link for patient-facing flows, or call the API from your own backend. Never put a secret key in a browser or mobile app.

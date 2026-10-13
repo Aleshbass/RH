@@ -1,15 +1,27 @@
 "use node";
 
-import { action } from "../../_generated/server";
+import { internalAction } from "../../_generated/server";
 import { v } from "convex/values";
 import { sendEmail } from "../../../lib/email/emailService";
 import { publicAppUrl } from "../../helpers/appUrl";
 
+/** Patient/partner-supplied text is escaped before it is placed into email HTML. */
+function esc(value: string | undefined | null): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+const result = v.object({ success: v.boolean(), messageId: v.optional(v.string()), error: v.optional(v.string()) });
+
 /**
- * Sends a professional referral confirmation email to the partner's contact,
- * including the tracking code, WhatsApp intake URL, and patient details.
+ * Confirmation to the partner's contact that a live referral was received.
+ * Internal only — scheduled by the referral core, never callable from clients.
  */
-export const sendPartnerReferralCreatedEmail = action({
+export const sendPartnerReferralCreatedEmail = internalAction({
   args: {
     partnerEmail: v.string(),
     partnerName: v.string(),
@@ -19,53 +31,39 @@ export const sendPartnerReferralCreatedEmail = action({
     trackingUrl: v.string(),
     whatsappIntakeUrl: v.string(),
     whatsappPhone: v.string(),
-    condition: v.string(),
+    condition: v.optional(v.string()),
     priority: v.string(),
     createdAt: v.number(),
   },
-  returns: v.object({
-    success: v.boolean(),
-    messageId: v.optional(v.string()),
-    error: v.optional(v.string()),
-  }),
+  returns: result,
   handler: async (_ctx, args) => {
     try {
-      const result = await sendEmail({
+      const sent = await sendEmail({
         to: args.partnerEmail,
         template: "PARTNER_REFERRAL_CREATED",
         data: {
-          partnerName: args.partnerName,
-          contactName: args.contactName,
-          patientName: args.patientName,
-          trackingCode: args.trackingCode,
-          trackingUrl: args.trackingUrl,
-          whatsappIntakeUrl: args.whatsappIntakeUrl,
-          whatsappPhone: args.whatsappPhone,
-          condition: args.condition,
-          priority: args.priority,
+          partnerName: esc(args.partnerName),
+          contactName: esc(args.contactName),
+          patientName: esc(args.patientName),
+          trackingCode: esc(args.trackingCode),
+          trackingUrl: encodeURI(args.trackingUrl),
+          whatsappIntakeUrl: encodeURI(args.whatsappIntakeUrl),
+          whatsappPhone: esc(args.whatsappPhone),
+          condition: esc(args.condition || "Not specified"),
+          priority: esc(args.priority),
           createdAt: args.createdAt,
-        },
+        } as any,
       });
-
-      if (!result.success) {
-        console.error("[REFERRAL EMAIL] Failed to send partner referral email:", result.error);
-        return { success: false, error: result.error };
-      }
-
-      return { success: true, messageId: result.messageId };
+      return sent.success ? { success: true, messageId: sent.messageId } : { success: false, error: sent.error };
     } catch (error) {
-      console.error("[REFERRAL EMAIL] Error in sendPartnerReferralCreatedEmail:", error);
+      console.error("sendPartnerReferralCreatedEmail failed:", error);
       return { success: false, error: String(error) };
     }
   },
 });
 
-/**
- * Sends an admin notification email when a new partner referral is created,
- * including the patient's phone number, WhatsApp link, and call button so
- * the admin (or Joy) can proactively reach out to the patient.
- */
-export const sendAdminReferralCreatedEmail = action({
+/** Operations alert for a new live referral (contact the patient). Internal only. */
+export const sendAdminReferralCreatedEmail = internalAction({
   args: {
     adminEmail: v.string(),
     partnerName: v.string(),
@@ -76,51 +74,40 @@ export const sendAdminReferralCreatedEmail = action({
     trackingUrl: v.string(),
     whatsappIntakeUrl: v.string(),
     whatsappPhone: v.string(),
-    condition: v.string(),
+    condition: v.optional(v.string()),
     priority: v.string(),
     city: v.optional(v.string()),
     recommendedSessions: v.optional(v.number()),
     createdAt: v.number(),
   },
-  returns: v.object({
-    success: v.boolean(),
-    messageId: v.optional(v.string()),
-    error: v.optional(v.string()),
-  }),
+  returns: result,
   handler: async (_ctx, args) => {
     try {
-      const siteUrl = publicAppUrl();
-      const adminDashboardLink = `${siteUrl}/dashboard/admin/referrals`;
-
-      const result = await sendEmail({
+      const patientWhatsApp = `https://wa.me/${args.patientPhone.replace(/\D/g, "")}`;
+      const sent = await sendEmail({
         to: args.adminEmail,
         template: "ADMIN_REFERRAL_CREATED",
         data: {
-          partnerName: args.partnerName,
-          patientName: args.patientName,
-          patientPhone: args.patientPhone,
-          patientEmail: args.patientEmail,
-          trackingCode: args.trackingCode,
-          trackingUrl: args.trackingUrl,
-          whatsappIntakeUrl: args.whatsappIntakeUrl,
-          whatsappPhone: args.whatsappPhone,
-          condition: args.condition,
-          priority: args.priority,
-          city: args.city,
+          partnerName: esc(args.partnerName),
+          patientName: esc(args.patientName),
+          patientPhone: esc(args.patientPhone),
+          patientEmail: args.patientEmail ? esc(args.patientEmail) : undefined,
+          trackingCode: esc(args.trackingCode),
+          trackingUrl: encodeURI(args.trackingUrl),
+          // The care team contacts the patient directly on WhatsApp.
+          whatsappIntakeUrl: patientWhatsApp,
+          whatsappPhone: esc(args.whatsappPhone),
+          condition: esc(args.condition || "Not specified"),
+          priority: esc(args.priority),
+          city: args.city ? esc(args.city) : undefined,
           recommendedSessions: args.recommendedSessions,
-          adminDashboardLink,
+          adminDashboardLink: `${publicAppUrl()}/dashboard/admin/referrals`,
           createdAt: args.createdAt,
         },
       });
-
-      if (!result.success) {
-        console.error("[REFERRAL EMAIL] Failed to send admin referral email:", result.error);
-        return { success: false, error: result.error };
-      }
-
-      return { success: true, messageId: result.messageId };
+      return sent.success ? { success: true, messageId: sent.messageId } : { success: false, error: sent.error };
     } catch (error) {
-      console.error("[REFERRAL EMAIL] Error in sendAdminReferralCreatedEmail:", error);
+      console.error("sendAdminReferralCreatedEmail failed:", error);
       return { success: false, error: String(error) };
     }
   },

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getConvexClient } from '@/lib/convex-client'
 import { api } from '@/convex/_generated/api'
-import { Id } from '@/convex/_generated/dataModel'
 
 /**
  * Payment verification endpoint — uses Paystack
@@ -64,20 +63,18 @@ export async function POST(request: NextRequest) {
     // Payment verified successfully
     const txData = verifyResult.data
 
-    // Handle verification badge purchase
+    // Verification badge purchases (VERIFICATION_ references). Convex re-verifies the
+    // transaction with Paystack itself, checks amount/currency and activates the badge
+    // (idempotent), so this route never marks anything paid on its own.
     if (reference.startsWith('VERIFICATION_')) {
       try {
-        const parts = reference.split('_')
-        const txId = parts.length >= 2 ? parts[1] : null
-
-        if (txId) {
-          // Add basic idempotent check here by checking if it's already completed if needed
-          // For now, allow completeVerificationPurchase to handle uniqueness/idempotency by throwing
-          const result = await getConvexClient().mutation(api.marketplace.verification.completeVerificationPurchase, {
-            transactionId: txId as Id<'marketplaceTransactions'>,
-            paymentReference: reference,
-          })
-          console.log('Verification badge activation result:', result)
+        const result = await getConvexClient().action(api.marketplace.verification.verifyVerificationPayment, { reference })
+        if (!result?.success) {
+          return NextResponse.json({
+            success: false,
+            message: `Payment was received but the verification badge could not be activated (${result?.status ?? 'unknown'}). Our team has been notified.`,
+            data: null,
+          }, { status: 409 })
         }
       } catch (e) {
         console.error('Verification activation error:', e)
@@ -89,17 +86,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Handle marketplace booking
-    if (reference.startsWith('MARKETPLACE_')) {
+    // Marketplace bookings (MKT_ references). Convex re-verifies the transaction with
+    // Paystack itself and checks the amount before completing the booking (idempotent).
+    if (reference.startsWith('MKT_')) {
       try {
-        const parts = reference.split('_')
-        const bookingId = parts.length >= 2 ? parts[1] : null
-
-        if (bookingId) {
-          await getConvexClient().mutation(api.marketplace.booking.completeMarketplaceBooking, {
-            bookingId: bookingId as Id<'marketplaceBookings'>,
-            paymentReference: reference,
-          })
+        const result = await getConvexClient().action(api.marketplace.booking.verifyMarketplacePayment, { reference })
+        if (!result?.success) {
+          return NextResponse.json({
+            success: false,
+            message: `Payment was received but the booking could not be confirmed (${result?.status ?? 'unknown'}). Our team has been notified.`,
+            data: null,
+          }, { status: 409 })
         }
       } catch (e) {
         console.error('Marketplace booking error:', e)

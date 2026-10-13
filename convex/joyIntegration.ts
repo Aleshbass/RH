@@ -4,6 +4,10 @@ import { api, internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { ensureUserRole } from "./auth";
 import { publicAppUrl } from "./helpers/appUrl";
+import { normalizePhone, normalizeTrackingCode, phonesMatch, referralEnv, toPublicStatus } from "./helpers/partnerShared";
+import { markProviderMatched, transitionReferral } from "./helpers/partnerEvents";
+import { attributeUserToLink, attributeUserToReferral, bumpLinkCounter } from "./helpers/partnerAttribution";
+import { recordPartnerCommission } from "./helpers/partnerLedger";
 
 const HOUR_MS = 60 * 60 * 1000;
 const BOOKING_HOLD_MS = 30 * 60 * 1000;
@@ -130,104 +134,51 @@ export function extractTrackingCode(text?: string): string | null {
  * Multi-strategy referral resolver by tracking code, external partner ID,
  * Convex ID, or code suffix.
  */
+/**
+ * Resolves a LIVE referral by its exact tracking code (case/spacing-insensitive).
+ * Sandbox referrals are never linked to real WhatsApp patients, and there is no
+ * fuzzy/suffix matching that could attach a patient to someone else's referral.
+ */
 async function findReferralByCode(ctx: any, code: string) {
-  const cleanCode = code.trim();
-  const upperCode = cleanCode.toUpperCase();
-
-  // 1. Try exact tracking code
-  let referral = await ctx.db
+  const normalized = normalizeTrackingCode(code);
+  if (!normalized) return null;
+  const matches = await ctx.db
     .query("inboundReferrals")
-    .withIndex("by_tracking_code", (q: any) => q.eq("trackingCode", cleanCode))
-    .first();
-
-  // 1b. Try uppercase tracking code
-  if (!referral && cleanCode !== upperCode) {
-    referral = await ctx.db
-      .query("inboundReferrals")
-      .withIndex("by_tracking_code", (q: any) => q.eq("trackingCode", upperCode))
-      .first();
-  }
-
-  // 2. Try partnerExternalId
-  if (!referral) {
-    referral = await ctx.db
-      .query("inboundReferrals")
-      .withIndex("by_partner_external_id", (q: any) => q.eq("partnerExternalId", cleanCode))
-      .first();
-  }
-
-  // 3. Try document ID
-  if (!referral) {
-    try {
-      const doc = await ctx.db.get(cleanCode);
-      if (doc && "patientFirstName" in doc) {
-        referral = doc;
-      }
-    } catch {
-      // Ignore invalid Convex document ID format
-    }
-  }
-
-  // 4. Try suffix match on ID
-  if (!referral) {
-    const suffix = upperCode.replace(/^RHB-?/i, "").toLowerCase();
-    if (suffix.length >= 4) {
-      const recent = await ctx.db.query("inboundReferrals").order("desc").take(100);
-      referral = recent.find((r: any) => {
-        const docIdLower = (r._id as string).toLowerCase();
-        const rCodeUpper = (r.trackingCode || "").toUpperCase();
-        return docIdLower.endsWith(suffix) || rCodeUpper === upperCode;
-      }) ?? null;
-    }
-  }
-
-  return referral;
+    .withIndex("by_tracking_code", (q: any) => q.eq("trackingCode", normalized))
+    .take(5);
+  return matches.find((r: any) => referralEnv(r) === "live") ?? null;
 }
 
-/**
- * Dispatch real-time outbound webhook to partner endpoint if configured.
- */
-async function dispatchIntakeStartedWebhook(ctx: any, referral: any) {
-  try {
-    if (!referral.partnerId) return;
-    const partner = await ctx.db
-      .query("partners")
-      .withIndex("by_code", (q: any) => q.eq("code", referral.partnerId))
-      .first();
-    const env = referral.environment || "live";
-    const targetUrl = referral.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
-    const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
+/** Recent live referral (last 30 days, not yet booked) whose patient phone matches. */
+async function findOpenReferralByPhone(ctx: any, phone: string) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const candidates = await ctx.db
+    .query("inboundReferrals")
+    .withIndex("by_phone_normalized", (q: any) => q.eq("patientPhoneNormalized", normalized))
+    .order("desc")
+    .take(10);
+  const legacy = candidates.length > 0 ? [] : await ctx.db.query("inboundReferrals").order("desc").take(50);
+  return (
+    [...candidates, ...legacy].find(
+      (r: any) =>
+        referralEnv(r) === "live" &&
+        r.createdAt >= cutoff &&
+        phonesMatch(r.patientPhone, normalized) &&
+        ["received", "contacted"].includes(toPublicStatus(r.status))
+    ) ?? null
+  );
+}
 
-    if (targetUrl && secret && secret !== "whsec_default") {
-      await ctx.scheduler.runAfter(100, (api as any)["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
-        partnerId: referral.partnerId,
-        environment: env,
-        eventType: "referral.contacted",
-        targetUrl,
-        secret,
-        trackingCode: referral.trackingCode,
-        patientName: `${referral.patientFirstName} ${referral.patientLastName}`,
-        payload: {
-          event: "referral.contacted",
-          environment: env,
-          created_at: Math.floor(Date.now() / 1000),
-          data: {
-            referral_id: referral._id,
-            tracking_code: referral.trackingCode,
-            partner_external_id: referral.partnerExternalId || null,
-            patient: {
-              first_name: referral.patientFirstName,
-              last_name: referral.patientLastName,
-              phone: referral.patientPhone,
-            },
-            status: "intake_started",
-          },
-        },
-      });
-    }
-  } catch (err) {
-    console.error("Failed to schedule partner webhook for intake started:", err);
-  }
+/** Joy reached the patient: move the referral to "contacted" (fires referral.contacted). */
+async function markReferralContacted(ctx: any, referral: any, metadata: Record<string, unknown>) {
+  if (toPublicStatus(referral.status) !== "received") return;
+  await transitionReferral(ctx, referral._id, "intake_started", {
+    actorType: "joy_ai",
+    actorId: "joy_ai",
+    metadata: { channel: "whatsapp", ...metadata },
+  });
 }
 
 async function linkTrackingCodeToWhatsAppInternalHandler(
@@ -247,6 +198,15 @@ async function linkTrackingCodeToWhatsAppInternalHandler(
 
   if (!matched) {
     return { success: false, reason: "REFERRAL_NOT_FOUND", trackingCode };
+  }
+
+  // A referral already linked to another patient cannot be claimed by a different
+  // WhatsApp number (prevents hijacking a referral with a guessed/forwarded code).
+  if (matched.patientId) {
+    const linkedPatient = await ctx.db.get(matched.patientId);
+    if (linkedPatient && !phonesMatch(linkedPatient.phoneNumber, phone)) {
+      return { success: false, reason: "REFERRAL_ALREADY_LINKED", trackingCode };
+    }
   }
 
   // Resolve or provision patient user
@@ -304,7 +264,7 @@ async function linkTrackingCodeToWhatsAppInternalHandler(
   }
 
   const previousStatus = matched.status;
-  const shouldAdvance = previousStatus === "received" || previousStatus === "pending";
+  const shouldAdvance = toPublicStatus(previousStatus) === "received";
   const nextStatus = shouldAdvance ? "intake_started" : previousStatus;
 
   await ctx.db.patch(matched._id, {
@@ -312,30 +272,19 @@ async function linkTrackingCodeToWhatsAppInternalHandler(
     whatsappPhone: phone,
     whatsappJoyPersonId: args.joyPersonId || matched.whatsappJoyPersonId,
     lastWhatsAppInteractionAt: Date.now(),
-    status: nextStatus,
     updatedAt: Date.now(),
   });
 
   await ctx.db.insert("referralEvents", {
     referralId: matched._id,
-    eventName: "patient.whatsapp_intake_started",
+    eventName: "patient.whatsapp_linked",
     occurredAt: Date.now(),
     actorType: "system",
     actorId: "joy_ai",
-    metadata: {
-      trackingCode: matched.trackingCode,
-      phone,
-      joyPersonId: args.joyPersonId,
-      previousStatus,
-      newStatus: nextStatus,
-      channel: "whatsapp",
-      message: args.message,
-    },
+    metadata: { channel: "whatsapp", joyPersonId: args.joyPersonId },
   });
-
-  if (shouldAdvance) {
-    await dispatchIntakeStartedWebhook(ctx, matched);
-  }
+  await markReferralContacted(ctx, matched, { strategy: "tracking_code" });
+  await attributeUserToReferral(ctx, resolvedPatientId, matched);
 
   // Lookup partner for personalized context
   let partnerInfo: any = null;
@@ -411,19 +360,9 @@ export const linkTrackingCodeToWhatsAppInternal = internalMutation({
   },
 });
 
-export const linkTrackingCodeToWhatsApp = mutation({
-  args: {
-    trackingCode: v.string(),
-    phone: v.string(),
-    joyPersonId: v.optional(v.string()),
-    name: v.optional(v.string()),
-    email: v.optional(v.string()),
-    message: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    return linkTrackingCodeToWhatsAppInternalHandler(ctx, args);
-  },
-});
+// The former public `linkTrackingCodeToWhatsApp` mutation was removed: linking a
+// referral to a WhatsApp number is reachable only through the HMAC-signed Joy
+// gateway (/joy-integration/link_referral → linkTrackingCodeToWhatsAppInternal).
 
 /**
  * Joy may provision a minimal patient record, but never a Clerk account. The
@@ -471,152 +410,60 @@ export const resolveOrCreatePatientByPhone = internalMutation({
       resultDisplayName = [firstName, ...remainingNames].filter(Boolean).join(" ") || undefined;
     }
 
-    // 1. Primary Strategy: Check tracking code if provided explicitly or in message
+    // Strategies (live referrals only): 1) tracking code in the message, 2) this WhatsApp
+    // number was linked before, 3) an open referral recorded with this phone number.
     const explicitCode = (args.trackingCode || "").trim();
     const extractedCode = extractTrackingCode(args.initialMessage);
     const trackingCode = explicitCode || extractedCode;
 
     let linkedReferral: any = null;
+    let strategy = "";
     if (trackingCode) {
       const matched = await findReferralByCode(ctx, trackingCode);
-      if (matched) {
+      const owner: Doc<"users"> | null = matched?.patientId ? await ctx.db.get(matched.patientId as Id<"users">) : null;
+      if (matched && (!owner || owner._id === resolvedPatientId || phonesMatch(owner.phoneNumber, phone))) {
         linkedReferral = matched;
-        const previousStatus = matched.status;
-        const shouldAdvance = previousStatus === "received" || previousStatus === "pending";
-        const nextStatus = shouldAdvance ? "intake_started" : previousStatus;
-
-        await ctx.db.patch(matched._id, {
-          patientId: resolvedPatientId,
-          whatsappPhone: phone,
-          whatsappJoyPersonId: args.joyPersonId,
-          lastWhatsAppInteractionAt: Date.now(),
-          status: nextStatus,
-          updatedAt: Date.now(),
-        });
-
-        await ctx.db.patch(resolvedPatientId, {
-          linkedReferralTrackingCode: matched.trackingCode,
-        });
-
-        await ctx.db.insert("referralEvents", {
-          referralId: matched._id,
-          eventName: "patient.whatsapp_intake_started",
-          occurredAt: Date.now(),
-          actorType: "system",
-          actorId: "joy_ai",
-          metadata: {
-            trackingCode: matched.trackingCode,
-            phone,
-            joyPersonId: args.joyPersonId,
-            previousStatus,
-            newStatus: nextStatus,
-            channel: "whatsapp",
-            initialMessage: args.initialMessage,
-          },
-        });
-
-        if (shouldAdvance) {
-          await dispatchIntakeStartedWebhook(ctx, matched);
-        }
+        strategy = "tracking_code";
       }
     }
-
-    // 2. Secondary Strategy: Check if this phone was previously linked to an active referral
     if (!linkedReferral) {
       const existingLinked = await ctx.db
         .query("inboundReferrals")
         .withIndex("by_whatsapp_phone", (q) => q.eq("whatsappPhone", phone))
         .order("desc")
         .first();
-
-      if (existingLinked) {
+      if (existingLinked && referralEnv(existingLinked) === "live") {
         linkedReferral = existingLinked;
-        const previousStatus = existingLinked.status;
-        const shouldAdvance = previousStatus === "received" || previousStatus === "pending";
-        const nextStatus = shouldAdvance ? "intake_started" : previousStatus;
-
-        await ctx.db.patch(existingLinked._id, {
-          patientId: resolvedPatientId,
-          whatsappJoyPersonId: args.joyPersonId,
-          lastWhatsAppInteractionAt: Date.now(),
-          status: nextStatus,
-          updatedAt: Date.now(),
-        });
-        await ctx.db.patch(resolvedPatientId, {
-          linkedReferralTrackingCode: existingLinked.trackingCode,
-        });
-
-        if (shouldAdvance) {
-          await ctx.db.insert("referralEvents", {
-            referralId: existingLinked._id,
-            eventName: "patient.whatsapp_intake_started",
-            occurredAt: Date.now(),
-            actorType: "system",
-            actorId: "joy_ai",
-            metadata: {
-              trackingCode: existingLinked.trackingCode,
-              phone,
-              joyPersonId: args.joyPersonId,
-              previousStatus,
-              newStatus: nextStatus,
-              channel: "whatsapp",
-              strategy: "phone_relink",
-            },
-          });
-          await dispatchIntakeStartedWebhook(ctx, existingLinked);
-        }
+        strategy = "phone_relink";
       }
     }
-    // 3. Fallback Strategy: Match pending referrals by patientPhone clean digits
     if (!linkedReferral) {
-      const cleanDigits = phone.replace(/\D/g, "");
-      if (cleanDigits.length >= 7) {
-        const recentReferrals = await ctx.db.query("inboundReferrals").order("desc").take(50);
-        const matched = recentReferrals.find((r) => {
-          const rDigits = (r.patientPhone || "").replace(/\D/g, "");
-          return rDigits && (rDigits.endsWith(cleanDigits.slice(-10)) || cleanDigits.endsWith(rDigits.slice(-10)));
-        });
-
-        if (matched) {
-          linkedReferral = matched;
-          const previousStatus = matched.status;
-          const shouldAdvance = previousStatus === "received" || previousStatus === "pending";
-          const nextStatus = shouldAdvance ? "intake_started" : previousStatus;
-
-          await ctx.db.patch(matched._id, {
-            patientId: resolvedPatientId,
-            whatsappPhone: phone,
-            whatsappJoyPersonId: args.joyPersonId,
-            lastWhatsAppInteractionAt: Date.now(),
-            status: nextStatus,
-            updatedAt: Date.now(),
-          });
-
-          await ctx.db.patch(resolvedPatientId, {
-            linkedReferralTrackingCode: matched.trackingCode,
-          });
-
-          await ctx.db.insert("referralEvents", {
-            referralId: matched._id,
-            eventName: "patient.whatsapp_intake_started",
-            occurredAt: Date.now(),
-            actorType: "system",
-            actorId: "joy_ai",
-            metadata: {
-              trackingCode: matched.trackingCode,
-              phone,
-              joyPersonId: args.joyPersonId,
-              previousStatus,
-              newStatus: nextStatus,
-              channel: "whatsapp",
-            },
-          });
-
-          if (shouldAdvance) {
-            await dispatchIntakeStartedWebhook(ctx, matched);
-          }
-        }
+      const byPhone = await findOpenReferralByPhone(ctx, phone);
+      if (byPhone && (!byPhone.patientId || byPhone.patientId === resolvedPatientId)) {
+        linkedReferral = byPhone;
+        strategy = "phone_match";
       }
+    }
+
+    if (linkedReferral) {
+      await ctx.db.patch(linkedReferral._id, {
+        patientId: resolvedPatientId,
+        whatsappPhone: phone,
+        whatsappJoyPersonId: args.joyPersonId,
+        lastWhatsAppInteractionAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert("referralEvents", {
+        referralId: linkedReferral._id,
+        eventName: "patient.whatsapp_linked",
+        occurredAt: Date.now(),
+        actorType: "system",
+        actorId: "joy_ai",
+        metadata: { channel: "whatsapp", strategy, joyPersonId: args.joyPersonId },
+      });
+      await markReferralContacted(ctx, linkedReferral, { strategy });
+      await attributeUserToReferral(ctx, resolvedPatientId, linkedReferral);
+      linkedReferral = await ctx.db.get(linkedReferral._id);
     }
 
     // Synchronize patient profile & user names with referral details
@@ -736,10 +583,7 @@ export const resolveOrCreatePatientByPhone = internalMutation({
 export const resolveReferralContextForJoy = internalMutation({
   args: { phone: v.string(), trackingCode: v.string(), joyPersonId: v.string(), patientId: v.id("users") },
   handler: async (ctx, args) => {
-    const trackingCode = args.trackingCode.trim().toUpperCase();
-    const referral = await ctx.db.query("inboundReferrals")
-      .withIndex("by_tracking_code", (q) => q.eq("trackingCode", trackingCode))
-      .first();
+    const referral = await findReferralByCode(ctx, args.trackingCode);
     // Do not disclose whether a code exists when it does not belong to the
     // verified sender.
     if (!referral || !samePhone(referral.patientPhone, args.phone)) return { resolution: "MISMATCH" as const };
@@ -747,8 +591,7 @@ export const resolveReferralContextForJoy = internalMutation({
 
     const now = Date.now();
     if (!referral.patientId) {
-      const nextStatus = (referral.status === "received" || referral.status === "pending") ? "intake_started" : referral.status;
-      await ctx.db.patch(referral._id, { patientId: args.patientId, status: nextStatus, updatedAt: now });
+      await ctx.db.patch(referral._id, { patientId: args.patientId, updatedAt: now });
       await ctx.db.insert("referralEvents", {
         referralId: referral._id,
         eventName: "patient.whatsapp_referral_verified",
@@ -757,7 +600,9 @@ export const resolveReferralContextForJoy = internalMutation({
         actorId: "joy_ai",
         metadata: { joyPersonId: args.joyPersonId, channel: "whatsapp" },
       });
+      await markReferralContacted(ctx, referral, { strategy: "verified_sender" });
     }
+    await attributeUserToReferral(ctx, args.patientId, referral);
 
     return {
       resolution: "MATCH" as const,
@@ -954,27 +799,31 @@ export const createPendingJoyBooking = internalMutation({
     const conflictingHold = activeHolds.some((booking) => booking.bookingStatus === "pending_payment" && (booking.holdExpiresAt ?? 0) > Date.now() && (booking.sessionDate ?? 0) < slotEnd && ((booking.sessionDate ?? 0) + booking.sessionDuration * 60_000) > args.slotStart);
     if (conflictingHold) throw new Error("Selected slot is temporarily held");
 
-    // Resolve linked partner referral if available
+    // Resolve the patient's LIVE partner referral (validated: must belong to this patient).
     let linkedReferral: any = null;
-    if (args.referralId) {
-      try {
-        linkedReferral = await ctx.db.get(args.referralId as any);
-      } catch {}
-    }
-    if (!linkedReferral) {
-      const code = args.trackingCode || (patient as any).linkedReferralTrackingCode;
-      if (code) {
-        linkedReferral = await findReferralByCode(ctx, code);
+    const referralIdArg = args.referralId ? ctx.db.normalizeId("inboundReferrals", args.referralId) : null;
+    if (referralIdArg) {
+      const candidate = await ctx.db.get(referralIdArg);
+      if (candidate && referralEnv(candidate) === "live" && (!candidate.patientId || candidate.patientId === args.patientId)) {
+        linkedReferral = candidate;
       }
     }
-    if (!linkedReferral && patient.phoneNumber) {
-      const cleanDigits = patient.phoneNumber.replace(/\D/g, "");
-      const recent = await ctx.db.query("inboundReferrals").order("desc").take(30);
-      linkedReferral = recent.find((r: any) => {
-        const rDigits = (r.patientPhone || "").replace(/\D/g, "");
-        return rDigits && (rDigits.endsWith(cleanDigits.slice(-10)) || cleanDigits.endsWith(rDigits.slice(-10)));
-      }) ?? null;
+    if (!linkedReferral && patient.linkedReferralId) {
+      const candidate = await ctx.db.get(patient.linkedReferralId);
+      if (candidate && referralEnv(candidate) === "live") linkedReferral = candidate;
     }
+    if (!linkedReferral) {
+      const code = args.trackingCode || patient.linkedReferralTrackingCode;
+      const candidate = code ? await findReferralByCode(ctx, code) : null;
+      if (candidate && (!candidate.patientId || candidate.patientId === args.patientId)) linkedReferral = candidate;
+    }
+    if (!linkedReferral && patient.phoneNumber) {
+      const candidate = await findOpenReferralByPhone(ctx, patient.phoneNumber);
+      if (candidate && (!candidate.patientId || candidate.patientId === args.patientId)) linkedReferral = candidate;
+    }
+    // Partner attribution: the referral's partner, else the patient's (validated) link attribution.
+    const partnerId = linkedReferral?.partnerId ?? patient.referredByPartnerCode;
+    const referralLinkId = linkedReferral?.linkId ?? patient.referralLinkId;
 
     const fees = calculateMarketplaceFees(authoritativeRate);
     const now = Date.now();
@@ -990,83 +839,21 @@ export const createPendingJoyBooking = internalMutation({
       originIdempotencyKey: args.idempotencyKey, originatedAt: now, holdExpiresAt: now + BOOKING_HOLD_MS,
       providerResponse: "pending", replacementStatus: "not_needed",
       referralId: linkedReferral?._id,
-      partnerId: linkedReferral?.partnerId,
+      partnerId,
+      referralLinkId,
       createdAt: now, updatedAt: now,
     });
+    await bumpLinkCounter(ctx, referralLinkId, "bookings");
 
-    // Advance referral milestone to booked (Step 3: Physio Matched)
+    // A physiotherapist was matched. The referral becomes "booked" only once payment
+    // is verified (recordJoyPaymentWebhook).
     if (linkedReferral) {
-      await ctx.db.patch(linkedReferral._id, {
-        status: "booked",
-        assignedPhysiotherapistId: profile.userId,
-        bookingId,
-        updatedAt: now,
-      });
-
-      const physioUser: any = await ctx.db.get(profile.userId);
-      const physioName = displayName(physioUser);
-
-      await ctx.db.insert("referralEvents", {
-        referralId: linkedReferral._id,
-        eventName: "provider.matched",
-        occurredAt: now,
+      await ctx.db.patch(linkedReferral._id, { bookingId, patientId: args.patientId, updatedAt: now });
+      await markProviderMatched(ctx, linkedReferral._id, profile.userId, {
         actorType: "joy_ai",
         actorId: "joy_ai",
-        metadata: {
-          physiotherapistId: profile.userId,
-          physiotherapistName: physioName,
-          licenseNumber: profile.licenseNumber || "MRTBN/PT/VERIFIED",
-          bookingId,
-          slotStart: args.slotStart,
-          serviceMode: args.serviceMode,
-          sessionType: args.sessionType,
-        },
+        metadata: { bookingId, slotStart: args.slotStart, serviceMode: args.serviceMode },
       });
-
-      // Dispatch real-time outbound webhook to partner
-      if (linkedReferral.partnerId) {
-        try {
-          const partner = await ctx.db
-            .query("partners")
-            .withIndex("by_code", (q: any) => q.eq("code", linkedReferral.partnerId))
-            .first();
-          const env = linkedReferral.environment || "live";
-          const targetUrl = linkedReferral.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
-          const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
-          if (targetUrl && secret && secret !== "whsec_default") {
-            await ctx.scheduler.runAfter(100, (api as any)["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
-              partnerId: linkedReferral.partnerId,
-              environment: env,
-              eventType: "provider.matched",
-              targetUrl,
-              secret,
-              trackingCode: linkedReferral.trackingCode,
-              patientName: `${linkedReferral.patientFirstName} ${linkedReferral.patientLastName}`,
-              payload: {
-                event: "provider.matched",
-                environment: env,
-                created_at: Math.floor(now / 1000),
-                data: {
-                  referral_id: linkedReferral._id,
-                  tracking_code: linkedReferral.trackingCode,
-                  partner_external_id: linkedReferral.partnerExternalId || null,
-                  booking_id: bookingId,
-                  session_start: args.slotStart,
-                  service_mode: args.serviceMode,
-                  physiotherapist: {
-                    id: profile.userId,
-                    name: physioName,
-                    license_number: profile.licenseNumber || "MRTBN/PT/VERIFIED",
-                    specialization: profile.specializations?.[0] || "Orthopedic Rehabilitation",
-                  },
-                },
-              },
-            });
-          }
-        } catch (webhookErr) {
-          console.error("Failed to schedule partner webhook for provider matched:", webhookErr);
-        }
-      }
     }
 
     return { booking_id: bookingId, booking_status: "pending_payment", payment_status: "pending", amount_kobo: fees.totalAmount, hold_expires_at: now + BOOKING_HOLD_MS };
@@ -1099,7 +886,8 @@ export const createAdminScheduledJoyVirtualBooking = internalMutation({
     const patient = await ctx.db.get(args.patientId);
     if (!patient || patient.role !== "patient") throw new Error("Patient not found");
     const partnerReferralCode = args.partnerReferralCode;
-    let partnerId: string | undefined;
+    let partnerId: string | undefined = patient.referredByPartnerCode;
+    let referralLinkId = patient.referralLinkId;
     if (partnerReferralCode) {
       const link = await ctx.db.query("partnerReferralLinks")
         .withIndex("by_public_code", (q) => q.eq("publicCode", partnerReferralCode))
@@ -1111,6 +899,12 @@ export const createAdminScheduledJoyVirtualBooking = internalMutation({
         throw new Error("Partner attribution does not belong to this patient");
       }
       partnerId = link.partnerId;
+      referralLinkId = link._id;
+    }
+    let referralId = patient.linkedReferralId;
+    if (referralId) {
+      const linked = await ctx.db.get(referralId);
+      if (!linked || linked.partnerId !== partnerId || referralEnv(linked) !== "live") referralId = undefined;
     }
     const now = Date.now();
     const bookingId = await ctx.db.insert("marketplaceBookings", {
@@ -1123,7 +917,7 @@ export const createAdminScheduledJoyVirtualBooking = internalMutation({
       physiotherapistEarnings: 0, rehabifyEarnings: args.amountKobo, paymentStatus: "pending", bookingStatus: "pending_payment",
       patientNotes: `Joy triage summary reference: ${args.triageSummaryReference}`,
       sourceSystem: "joy_ai", sourceChannel: "whatsapp", sourceEntryPoint: "virtual_consultation",
-      partnerId, joyPartnerReferralLinkCode: partnerReferralCode,
+      partnerId, joyPartnerReferralLinkCode: partnerReferralCode, referralLinkId, referralId,
       joyConversationId: args.conversationId, joyAssessmentId: args.assessmentId, joyAssessmentRevision: args.assessmentRevision,
       joyPolicyVersion: args.policyVersion, joyPolicyAcceptanceReference: args.policyAcceptanceReference,
       originRequestId: args.requestId, originIdempotencyKey: args.idempotencyKey, originatedAt: now,
@@ -1139,23 +933,20 @@ export const createAdminScheduledJoyVirtualBooking = internalMutation({
 export const resolvePartnerAttributionForJoy = internalMutation({
   args: { patientId: v.id("users"), publicCode: v.string() },
   handler: async (ctx, args) => {
-    const link = await ctx.db.query("partnerReferralLinks")
-      .withIndex("by_public_code", (q) => q.eq("publicCode", args.publicCode))
-      .first();
-    if (!link || link.status !== "active" || (link.expiresAt && link.expiresAt <= Date.now())) {
-      return { resolution: "NOT_FOUND" as const };
-    }
     const patient = await ctx.db.get(args.patientId);
     if (!patient || patient.role !== "patient") return { resolution: "NOT_FOUND" as const };
-    if (patient.referralPublicCode && patient.referralPublicCode !== link.publicCode) {
+    const link = await ctx.db.query("partnerReferralLinks")
+      .withIndex("by_public_code", (q) => q.eq("publicCode", args.publicCode.trim()))
+      .first();
+    if (!link) return { resolution: "NOT_FOUND" as const };
+    // First partner wins: an already-attributed patient keeps their partner.
+    if (patient.referredByPartnerCode && patient.referredByPartnerCode !== link.partnerId) {
       return { resolution: "CONFLICT" as const };
     }
-    if (!patient.referralPublicCode) {
-      await ctx.db.patch(patient._id, {
-        referredByPartnerCode: link.partnerId,
-        referralPublicCode: link.publicCode,
-      });
-      await ctx.db.patch(link._id, { joyStarts: (link.joyStarts || 0) + 1, updatedAt: Date.now() });
+    if (!patient.referredByPartnerCode) {
+      const result = await attributeUserToLink(ctx, patient, args.publicCode, "joy");
+      if (!result.attributed) return { resolution: "NOT_FOUND" as const };
+      await bumpLinkCounter(ctx, link._id, "joyStarts");
     }
     const partner = await ctx.db.query("partners")
       .withIndex("by_code", (q) => q.eq("code", link.partnerId)).first();
@@ -1231,6 +1022,64 @@ export const recordJoyPaymentInitialization = internalMutation({
   },
 });
 
+/**
+ * Verified Joy payment → partner side effects: the linked live referral becomes
+ * "booked" (fires referral.booked), the partner earns a commission through the
+ * unified ledger, and the referral link's payment counter increments.
+ */
+async function creditPartnerForJoyPayment(ctx: any, booking: Doc<"marketplaceBookings">, reference: string, now: number) {
+  let referral: any = booking.referralId ? await ctx.db.get(booking.referralId) : null;
+  if (referral && referralEnv(referral) !== "live") referral = null;
+  if (referral) {
+    await ctx.db.insert("referralEvents", {
+      referralId: referral._id,
+      eventName: "payment.verified",
+      occurredAt: now,
+      actorType: "system",
+      actorId: "paystack",
+      metadata: { bookingId: booking._id, reference },
+    });
+    const status = toPublicStatus(referral.status);
+    if (status === "received" || status === "contacted") {
+      await transitionReferral(ctx, referral._id, "booked", {
+        actorType: "system",
+        actorId: "paystack",
+        metadata: { bookingId: booking._id, reference },
+        extraPatch: { bookingId: booking._id },
+      });
+    }
+  }
+  const partnerCode = booking.partnerId ?? referral?.partnerId;
+  if (!partnerCode) return;
+  const physio: any = booking.physiotherapistId ? await ctx.db.get(booking.physiotherapistId) : null;
+  const patient: any = await ctx.db.get(booking.patientId);
+  try {
+    await recordPartnerCommission(ctx, {
+      partnerCode,
+      environment: "live",
+      idempotencyKey: `payment:${reference}`,
+      grossKobo: booking.serviceAmount,
+      paymentMethod: "paystack",
+      paymentReference: reference,
+      source: "joy",
+      referralId: referral?._id,
+      bookingId: booking._id,
+      linkId: booking.referralLinkId,
+      patientUserId: booking.patientId,
+      patientName: patient ? displayName(patient) : undefined,
+      trackingCode: referral?.trackingCode,
+      physiotherapistId: booking.physiotherapistId ?? undefined,
+      physiotherapistName: physio ? displayName(physio) : undefined,
+      careMode: booking.isOnline ? "virtual" : "in_person",
+      earnedAt: now,
+    });
+  } catch (error) {
+    // Never block payment recording; the ledger is idempotent and can be replayed.
+    console.error("partner_commission_failed", { reference, error: error instanceof Error ? error.message : String(error) });
+  }
+  await bumpLinkCounter(ctx, booking.referralLinkId, "payments");
+}
+
 /** Webhook-only payment evidence. It deliberately does not confirm an appointment. */
 export const recordJoyPaymentWebhook = internalMutation({
   args: { reference: v.string(), amountKobo: v.number(), currency: v.string(), paystackEventId: v.string() },
@@ -1250,10 +1099,12 @@ export const recordJoyPaymentWebhook = internalMutation({
         paymentStatus: "completed",
         paidAt: now,
         paymentReference: args.reference,
+        paidAmountKobo: args.amountKobo,
         bookingStatus: "awaiting_admin_schedule",
         adminSchedulingStatus: "awaiting_schedule",
         updatedAt: now,
       });
+      await creditPartnerForJoyPayment(ctx, booking, args.reference, now);
       return {
         handled: true,
         duplicate: false,
@@ -1263,126 +1114,8 @@ export const recordJoyPaymentWebhook = internalMutation({
         event_id: args.paystackEventId,
       };
     }
-    await ctx.db.patch(booking._id, { paymentStatus: "completed", paidAt: now, paymentReference: args.reference, updatedAt: now, providerResponse: "pending", providerResponseDueAt: now + 5 * HOUR_MS });
-
-    // Advance linked partner referral to in_treatment (Milestone Step 4: Care Sessions)
-    let linkedReferral: any = null;
-    if ((booking as any).referralId) {
-      linkedReferral = await ctx.db.get((booking as any).referralId);
-    }
-    if (!linkedReferral && booking.patientId) {
-      const patient: any = await ctx.db.get(booking.patientId);
-      if (patient?.linkedReferralTrackingCode) {
-        linkedReferral = await findReferralByCode(ctx, patient.linkedReferralTrackingCode);
-      }
-    }
-
-    if (linkedReferral) {
-      await ctx.db.patch(linkedReferral._id, {
-        status: "in_treatment",
-        updatedAt: now,
-      });
-
-      await ctx.db.insert("referralEvents", {
-        referralId: linkedReferral._id,
-        eventName: "payment.verified",
-        occurredAt: now,
-        actorType: "system",
-        actorId: "paystack",
-        metadata: {
-          bookingId: booking._id,
-          reference: args.reference,
-          amountKobo: args.amountKobo,
-          currency: args.currency,
-          paystackEventId: args.paystackEventId,
-        },
-      });
-
-      // Transparent 3-way revenue split (80% Physio / 10% Rehabify / 10% Partner)
-      if (linkedReferral.partnerId) {
-        try {
-          const partnerRate = 10; // 10% partner revenue share
-          const commissionAmount = Math.round(args.amountKobo * 0.10);
-          const physioAmount = Math.round(args.amountKobo * 0.80);
-          const rehabifyAmount = args.amountKobo - commissionAmount - physioAmount;
-          const billingPeriod = new Date(now).toISOString().slice(0, 7); // "YYYY-MM"
-
-          const physiotherapistId = booking.physiotherapistId;
-          if (!physiotherapistId) {
-            throw new Error("Provider-selected Joy booking is missing its physiotherapist");
-          }
-          const physioUser: any = await ctx.db.get(physiotherapistId);
-
-          await ctx.db.insert("partnerCommissions", {
-            partnerId: linkedReferral.partnerId,
-            referralId: linkedReferral._id,
-            trackingCode: linkedReferral.trackingCode,
-            patientName: `${linkedReferral.patientFirstName} ${linkedReferral.patientLastName}`.trim(),
-            eventType: "booking_confirmed",
-            grossTransactionAmount: args.amountKobo,
-            commissionRate: partnerRate,
-            commissionAmount,
-            netPayable: commissionAmount,
-            physiotherapistId,
-            physiotherapistName: displayName(physioUser),
-            careMode: booking.isOnline ? "virtual" : "in_person",
-            physiotherapistAmount: physioAmount,
-            rehabifyAmount,
-            partnerAmount: commissionAmount,
-            physioPercent: 80,
-            rehabifyPercent: 10,
-            partnerPercent: 10,
-            paymentMethod: "paystack",
-            paymentReference: args.reference,
-            billingPeriod,
-            bulkPayoutStatus: "accrued",
-            status: "approved",
-            earnedAt: now,
-          });
-        } catch (commErr) {
-          console.error("Failed to record partner commission:", commErr);
-        }
-
-        // Dispatch real-time outbound webhook: session.scheduled / payment.verified
-        try {
-          const partner = await ctx.db
-            .query("partners")
-            .withIndex("by_code", (q: any) => q.eq("code", linkedReferral.partnerId))
-            .first();
-          const env = linkedReferral.environment || "live";
-          const targetUrl = linkedReferral.callbackUrl || (env === "sandbox" ? partner?.testWebhookUrl : partner?.liveWebhookUrl) || partner?.webhookUrl;
-          const secret = (env === "sandbox" ? partner?.testWebhookSecret : partner?.liveWebhookSecret) || partner?.webhookSecret;
-          if (targetUrl && secret && secret !== "whsec_default") {
-            await ctx.scheduler.runAfter(100, (api as any)["actions/partners/dispatchWebhook"].dispatchWebhookEvent, {
-              partnerId: linkedReferral.partnerId,
-              environment: env,
-              eventType: "session.scheduled",
-              targetUrl,
-              secret,
-              trackingCode: linkedReferral.trackingCode,
-              patientName: `${linkedReferral.patientFirstName} ${linkedReferral.patientLastName}`,
-              payload: {
-                event: "session.scheduled",
-                environment: env,
-                created_at: Math.floor(now / 1000),
-                data: {
-                  referral_id: linkedReferral._id,
-                  tracking_code: linkedReferral.trackingCode,
-                  partner_external_id: linkedReferral.partnerExternalId || null,
-                  booking_id: booking._id,
-                  payment_status: "completed",
-                  payment_reference: args.reference,
-                  amount_kobo: args.amountKobo,
-                  status: "in_treatment",
-                },
-              },
-            });
-          }
-        } catch (webhookErr) {
-          console.error("Failed to schedule partner webhook for session scheduled:", webhookErr);
-        }
-      }
-    }
+    await ctx.db.patch(booking._id, { paymentStatus: "completed", paidAt: now, paymentReference: args.reference, paidAmountKobo: args.amountKobo, updatedAt: now, providerResponse: "pending", providerResponseDueAt: now + 5 * HOUR_MS });
+    await creditPartnerForJoyPayment(ctx, booking, args.reference, now);
 
     return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: now + 5 * HOUR_MS, event_id: args.paystackEventId };
   },

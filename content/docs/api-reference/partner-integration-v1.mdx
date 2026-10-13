@@ -1,283 +1,76 @@
 ---
-title: Partner API Reference v1.0
-description: Official Version 1.0 Partner Integration Reference for patient referrals, non-clinical progress updates, webhooks, and commercial reconciliation.
+title: Go-live checklist
+description: What to verify in sandbox before you request production access, and how to switch to live safely.
 ---
 
-# Rehabify Partner API Documentation
-**Version 1.0 Partner Integration Reference**
+Work through this checklist in sandbox before you choose **Request production access** in the [Partner Portal](https://partners.physioaroundme.com). Rehabify reviews your request against the same points.
 
-## Purpose
-This document defines the version 1 contract for partners sending patient referrals to Rehabify and receiving non-clinical progress updates. It is intended for partner engineering and product teams.
+## Before you request production access
 
-## Recommended Integration
-* **Use the hosted referral link** when no engineering work is required.
-* **Use the API** when the partner wants to create referrals inside its own product, reconcile status, or receive automated webhook updates.
+### Keys and security
 
----
+- API keys are loaded from environment variables or a secret manager, never hard-coded, and are never sent to browsers, mobile apps or URLs.
+- Logs never contain API keys, webhook signing secrets, `Authorization` headers or `clinical.notes`. Log the `X-Request-Id` response header instead.
+- You know how to [rotate and revoke keys](/docs/getting-started/authentication#rotating-and-revoking-keys) without downtime.
 
-## Integration Options
+### Creating referrals
 
-| Option | Best for | Partner work |
-| :--- | :--- | :--- |
-| **Hosted referral link** | Fast launch and campaign tracking | Share the link issued by Rehabify. No API integration. |
-| **Direct referral API** | Embedded referral from the partner product | Authenticate, create referrals, store Rehabify referral IDs, and process responses. |
-| **Webhooks** | Real-time referral and commercial updates | Expose an HTTPS endpoint and verify signed events. |
+- You capture the patient's consent before referring and send `consent.granted: true`, ideally with `method`, `captured_at` and `privacy_notice_version`.
+- Every `POST /partners/referrals` carries an `Idempotency-Key`. You retry network errors, `429`, `500` and `503` with the **same** key, and use a new key when the body changes.
+- You send your own `partner_reference`, and handle `409 duplicate_partner_reference` by fetching `error.existing` instead of creating a new referral.
+- You handle `422 validation_error` (use `param` to show which field is wrong) and `422 consent_required`.
+- You handle a rejected referral (test it with the magic number `+2348000000004`, which returns `422 patient_ineligible`).
+- You store the referral's `id` and `tracking_code`, and give the patient `links.whatsapp_intake_url`.
 
----
+### Reading data
 
-## Environment and Format
-* The environment-specific base URL and credentials are issued during onboarding.
-* Examples use `https://{environment-host}/v1` (e.g. `https://api.physioaroundme.com/v1`). Replace `{environment-host}` with the supplied host.
-* Requests and responses use **UTF-8 JSON over HTTPS**. Timestamps use **ISO 8601 UTC**.
-* Currency values are **integer minor units**. For example, NGN 20,000 is sent as `2000000` kobo.
+- You can fetch a referral by `id`, `tracking_code` and `partner_reference`.
+- List calls follow `next_cursor` until `has_more` is `false`.
+- Your code treats every unknown or optional value as possibly `null`.
 
-## Data Boundary (NDPR Compliance)
-The partner API carries **referral, contact, appointment and commercial status only**. Clinical notes, Joy conversations, assessment findings, and treatment plans are never returned to partners.
+### Webhooks
 
----
+- Your endpoint uses `https://`, is publicly reachable, and answers `2xx` within 10 seconds. Slow work is done asynchronously.
+- You [verify `X-Rehabify-Signature`](/docs/webhooks/signature-verification) against the raw body, with a 300-second tolerance and a constant-time comparison.
+- You deduplicate on the event `id`, because delivery is at-least-once.
+- You use `data.sequence` (or `referral.updated_at`) to ignore stale or out-of-order events.
+- You handle all nine `referral.*` event types and `ping`, and ignore types you don't recognise.
+- You fetch patient details with `GET /partners/referrals/{id}` when you need them. Webhooks never contain patient data.
 
-## Authentication
-Send the partner API key as a bearer token. Keys are environment-specific and must be stored server-side. **Never place an API key in a browser, mobile application, or referral URL.**
+### Rate limits and errors
 
-```http
-Authorization: Bearer <partner_api_key>
-Content-Type: application/json
-Idempotency-Key: <unique_value>
-X-Request-ID: <optional_trace_id>
-```
+- You respect `Retry-After` on `429 rate_limit_exceeded` and back off with jitter.
+- You branch on `error.code`, not on `error.message`.
 
-| Header | Required | Use |
-| :--- | :--- | :--- |
-| `Authorization` | Yes | Bearer API key issued by Rehabify (`sk_live_...` or `sk_test_...`) |
-| `Content-Type` | Yes | `application/json` |
-| `Idempotency-Key` | Yes for POST | Prevents duplicate referrals when a request is retried |
-| `X-Request-ID` | No | Partner-generated trace ID returned in response headers |
+### Scenarios to rehearse in sandbox
 
----
-
-## Create Referral
-
-`POST /api/v1/partners/referrals` (or `POST /v1/partner/referrals`)
-
-### Request Fields
-
-| Field | Required | Description |
-| :--- | :--- | :--- |
-| `external_ref` | Yes | Unique referral ID in the partner system (e.g. `WELLS-10482`) |
-| `patient.first_name` | Yes | Patient first name |
-| `patient.phone` or `email` | Yes | At least one valid contact method |
-| `patient.city` | Yes | Patient city or service location |
-| `reason` | Yes | Short description of rehabilitation need. Do not send full clinical notes. |
-| `care_mode` | Yes | `remote`, `face_to_face`, or `either` |
-| `preferred_contact` | Yes | `whatsapp`, `sms`, or `email` |
-| `route` | Yes | `contact` for human follow-up or `joy` to start Joy immediately |
-| `consent` | Yes | `accepted`, `accepted_at`, `version`, and `source` |
-| `metadata` | No | Campaign or internal tags. Do not place patient health data here. |
-
-### Create Referral Example
-
-```bash
-curl -X POST https://api.physioaroundme.com/api/v1/partners/referrals \
-  -H "Authorization: Bearer sk_test_rehabify_sandbox" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: 7b83f5e1-88f2-4917-8a4b-220011bb91ab" \
-  -d '{
-    "external_ref": "WELLS-10482",
-    "patient": {
-      "first_name": "Tolu",
-      "phone": "+2348012345678",
-      "email": "tolu@example.com",
-      "city": "Lagos"
-    },
-    "reason": "Ongoing lower back pain and difficulty walking",
-    "care_mode": "either",
-    "preferred_contact": "whatsapp",
-    "route": "joy",
-    "consent": {
-      "accepted": true,
-      "accepted_at": "2026-09-10T14:20:00Z",
-      "version": "partner-referral-v1",
-      "source": "wells_health_app"
-    },
-    "metadata": {"campaign": "launch_2026"}
-  }'
-```
-
-### Successful Response (`HTTP 201 Created`)
-
-```json
-{
-  "status": "success",
-  "environment": "sandbox",
-  "referral_id": "yh79bn15g5amsqd60tn52tdt5d8ekz8r",
-  "tracking_code": "RHB-17297",
-  "external_ref": "WELLS-10482",
-  "partner_reference": "WELLS-10482",
-  "tracking_url": "https://physioaroundme.com/track/RHB-17297",
-  "whatsapp_intake_url": "https://wa.me/2348061525811?text=REHAB_REF_RHB-17297",
-  "whatsapp_phone": "+2348061525811",
-  "intake_status": "pending_whatsapp_response",
-  "next_action": "start_joy",
-  "patient": {
-    "name": "Tolu Adebayo",
-    "phone": "+2348012345678"
-  },
-  "created_at": 1789050002000,
-  "request_id": "req_01K4R7G9T4",
-  "trace_id": "trc_88bf2a"
-}
-```
-
-> [!IMPORTANT]
-> Store `referral_id`, `tracking_code`, and `external_ref` in your internal records. The `whatsapp_intake_url` and `tracking_url` can be shared directly with the patient for self-tracking or launching the automated Joy triage flow.
-
----
-
-## Retrieve Referrals
-
-```http
-GET /api/v1/partners/referrals/{referral_id}
-GET /api/v1/partners/referrals?external_ref=WELLS-10482
-GET /api/v1/partners/referrals?status=booked&created_from=2026-09-01T00:00:00Z
-```
-
-List responses are paginated using `limit` and `cursor`. The response may include appointment status, paid amount, and partner commission where the commercial agreement permits it. It never includes clinical records.
-
-### Referral Statuses
-
-| Status | Meaning |
+| Scenario | How |
 | :--- | :--- |
-| `received` | Referral accepted by Rehabify |
-| `contact_pending` | Human follow-up requested or queued |
-| `joy_started` | Patient started the Joy flow |
-| `booked` | Consultation booked |
-| `attended` | Consultation marked attended |
-| `paid` | Qualifying payment completed |
-| `closed` or `cancelled` | Referral journey ended without further action |
+| Full journey | Refer `+2348000000003`. Expect `referral.created`, `referral.contacted`, `referral.provider_matched`, `referral.booked`, `referral.in_treatment` and `referral.completed`. |
+| Contacted only | Refer `+2348000000001`. |
+| Matched and booked | Refer `+2348000000002`. |
+| Rejected | Refer `+2348000000004`. Expect `422 patient_ineligible`, and no referral is created. |
+| Not suitable | Refer `+2348000000005`. |
+| Cancelled | Refer `+2348000000006`. |
+| `closed` and other transitions | Refer any other number, then call [`POST /sandbox/referrals/{id}/advance`](/docs/sandbox/testing#advance-a-referral). |
+| Webhook retries | Return `500` from your endpoint, watch `X-Rehabify-Delivery-Attempt` increase, then return `200`. |
+| Duplicate delivery | Resend an event from the portal and confirm you process it only once. |
+| Idempotent retry | Send the same `POST` twice with the same `Idempotency-Key` and confirm you get `Idempotent-Replayed: true`. |
 
----
+## Switching to live
 
-## Hosted Referral Links
-Rehabify issues a unique trackable link for each partner or campaign:
+Once Rehabify approves production access:
 
-`https://physioaroundme.com/r/{public_code}`
+1. Create a `sk_live_` key in **Developers → API keys**. You can't create one before approval.
+2. Set your **live** webhook endpoint in **Developers → Webhooks**, and store the live signing secret. It's different from the sandbox secret.
+3. Deploy the live key and secret to production. The base URL, `https://api.physioaroundme.com/v1`, doesn't change.
+4. Check that responses carry `X-Rehabify-Environment: live`.
+5. Remove any magic phone numbers or test data from your production flows. In live, Rehabify contacts every referred patient.
 
-* The public code is non-guessable and contains no patient information.
-* Inactive or expired links show a safe error page and do not accept submissions.
-* A link click is not commission-eligible by itself. Eligibility follows the signed commercial agreement.
+Keep your sandbox keys for staging and regression testing. Sandbox and live data never mix.
 
----
+## After go-live
 
-## Webhook Delivery
-Rehabify sends signed POST requests to the partner webhook URL. Return any `2xx` response after successful validation and processing. Delivery may be repeated, so event handling must be idempotent using `event_id`.
-
-| Event | When sent |
-| :--- | :--- |
-| `referral.created` | A referral is accepted |
-| `contact.requested` | A preferred-channel outreach task is created |
-| `joy.started` | The patient starts Joy |
-| `appointment.booked` | An appointment is confirmed |
-| `appointment.attended` | The appointment is marked attended |
-| `payment.completed` | A qualifying payment completes |
-| `referral.closed` | The referral is closed or cancelled |
-
-### Webhook Headers & Verification
-
-```http
-X-Rehabify-Event-ID: evt_01K4R9
-X-Rehabify-Timestamp: 1789050120
-X-Rehabify-Signature: t=1789050120,v1=<hex_hmac_sha256>
-```
-
-Calculate HMAC SHA-256 over `timestamp + '.' + exact_raw_request_body` using the webhook secret. Reject invalid signatures and timestamps older than five minutes. Compare signatures using a constant-time function.
-
-### Webhook Example Payload
-
-```json
-{
-  "event_id": "evt_01K4R9",
-  "type": "payment.completed",
-  "occurred_at": "2026-09-12T10:42:11Z",
-  "data": {
-    "referral_id": "ref_01K4R7G9T4",
-    "external_ref": "WELLS-10482",
-    "status": "paid",
-    "care_mode": "remote",
-    "payment": {
-      "currency": "NGN",
-      "amount_minor": 2000000,
-      "partner_commission_minor": 200000,
-      "commission_status": "pending_settlement"
-    }
-  }
-}
-```
-
-**Retry policy:** Non-2xx responses are retried with exponential backoff for up to 24 hours. Partners must tolerate duplicate and out-of-order delivery.
-
----
-
-## Error Handling
-
-```json
-{
-  "error": {
-    "code": "validation_error",
-    "message": "One or more fields are invalid",
-    "fields": {
-      "patient.phone": "Use E.164 format"
-    },
-    "request_id": "req_01K4RA"
-  }
-}
-```
-
-| HTTP Status | Meaning | Partner Action |
-| :--- | :--- | :--- |
-| **400** | Malformed request | Correct the JSON or headers |
-| **401 / 403** | Invalid credentials or permission | Check environment and API key |
-| **404** | Referral or link not found | Confirm the identifier |
-| **409** | Duplicate `external_ref` or conflict | Retrieve the existing referral |
-| **422** | Field validation failed | Correct the fields returned in `error.fields` |
-| **429** | Rate limit exceeded | Retry after the `Retry-After` seconds |
-| **500 / 503** | Temporary Rehabify error | Retry safely with the same `Idempotency-Key` |
-
----
-
-## Rate Limiting
-
-The Rehabify Partner API enforces tier-based rate limiting to maintain service stability and prevent abuse. All API responses return standard rate limit headers:
-
-| Header | Description |
-| :--- | :--- |
-| `X-RateLimit-Limit` | Maximum allowable requests per sliding window |
-| `X-RateLimit-Remaining` | Remaining requests permitted in the current window |
-| `X-RateLimit-Reset` | Unix timestamp (in seconds) when the rate limit window resets |
-| `Retry-After` | Provided on `429 Too Many Requests`, specifying seconds to wait before retrying |
-
-### Quota Tiers
-
-| Tier | Window | Steady State | Burst Capacity |
-| :--- | :--- | :--- | :--- |
-| **Sandbox (`sk_test_*`)** | 1 second | 5 requests/sec | 10 requests |
-| **Standard / Professional** | 1 second | 10 requests/sec | 20 requests |
-| **Enterprise** | 1 second | 50 requests/sec | 100 requests |
-
-When testing in sandbox, we recommend verifying that your integration gracefully handles `429 Too Many Requests` responses and respects the `Retry-After` header.
-
----
-
-## Sandbox Acceptance Checklist
-
-Before production credentials are issued, partners should verify each item:
-
-1. [x] **Create valid contact referral**: `201 Created` response and stable `referral_id`
-2. [x] **Create valid Joy referral**: `201 Created` response and short-lived `joy_session_url`
-3. [x] **Retry same POST**: No duplicate referral; original referral returned
-4. [x] **Send invalid phone number**: `422 Unprocessable Entity` with field-level error
-5. [x] **Retrieve by `referral_id` and `external_ref`**: Both resolve to identical referral record
-6. [x] **Receive and verify webhooks**: Valid HMAC SHA-256 signature and idempotent processing
-7. [x] **Complete paid referral**: Payment and commission match the commercial agreement
-8. [x] **Review logs**: No API keys, patient health notes, or session URLs in logs
-9. [x] **Rate limit resilience**: Back off gracefully when receiving HTTP 429 and respect the `Retry-After` header
-
+- Watch for failed webhook deliveries in the portal, and resend them once your endpoint is healthy. Resent events keep the same event `id`.
+- Reconcile commissions monthly with [`GET /partners/commissions`](/docs/api-reference/commercial-and-commissions#list-commissions).
+- If production access is suspended, live calls return `403 production_access_required`. Contact [partners@physioaroundme.com](mailto:partners@physioaroundme.com).

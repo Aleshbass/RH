@@ -79,6 +79,48 @@ export function Callout({
   );
 }
 
+// Blockquote with support for GitHub-style alerts ("> [!NOTE]", "> [!TIP]", "> [!IMPORTANT]",
+// "> [!WARNING]", "> [!CAUTION]"), which would otherwise render the marker literally.
+const ALERT_MARKER = /^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i;
+const ALERT_TYPES: Record<string, "info" | "tip" | "important" | "warning" | "error"> = {
+  NOTE: "info",
+  TIP: "tip",
+  IMPORTANT: "important",
+  WARNING: "warning",
+  CAUTION: "error",
+};
+
+export function Blockquote({ children, className, ...props }: React.HTMLAttributes<HTMLQuoteElement>) {
+  const items = React.Children.toArray(children);
+  const firstIndex = items.findIndex((child) => React.isValidElement(child));
+  const first = firstIndex >= 0 ? (items[firstIndex] as React.ReactElement<{ children?: React.ReactNode }>) : null;
+  const firstChildren = first ? React.Children.toArray(first.props.children) : [];
+  const lead = firstChildren[0];
+
+  if (first && typeof lead === "string") {
+    const match = lead.match(ALERT_MARKER);
+    if (match) {
+      const kind = match[1].toUpperCase();
+      const rest = lead.slice(match[0].length);
+      const strippedFirst = React.cloneElement(first, undefined, ...(rest ? [rest] : []), ...firstChildren.slice(1));
+      return (
+        <Callout type={ALERT_TYPES[kind]}>
+          {[...items.slice(0, firstIndex), strippedFirst, ...items.slice(firstIndex + 1)]}
+        </Callout>
+      );
+    }
+  }
+
+  return (
+    <blockquote
+      className={`border-l-4 border-[#005b57] pl-4 italic text-[#4a6866] my-4 bg-white/40 py-2 rounded-r-xl ${className || ""}`}
+      {...props}
+    >
+      {children}
+    </blockquote>
+  );
+}
+
 // Steps & Step
 export function Steps({ children }: { children: React.ReactNode }) {
   return <div className="space-y-6 my-6 border-l-2 border-[#005b57]/20 ml-3 pl-6">{children}</div>;
@@ -150,10 +192,15 @@ function extractText(node: any): string {
 export function PreCode({
   children,
   className,
-  ...props
+  title,
+  ...rest
 }: React.HTMLAttributes<HTMLPreElement>) {
   const [copied, setCopied] = useState(false);
   const textContent = extractText(children);
+
+  // fumadocs' rehype-code passes an `icon` SVG string through to <pre>; it is not a valid DOM attribute.
+  const props: Record<string, unknown> = { ...rest };
+  delete props.icon;
 
   const dataLang = (props as any)["data-language"];
   let detectedLang = dataLang;
@@ -167,7 +214,8 @@ export function PreCode({
       childProps["data-language"] ||
       (childProps.className && childProps.className.match(/language-(\w+)/)?.[1]);
   }
-  const displayLang = detectedLang ? detectedLang.toUpperCase() : "CODE";
+  // Prefer an explicit ```lang title="..." label; fall back to the language when it is known.
+  const displayLabel = title || (detectedLang ? String(detectedLang).toUpperCase() : "");
 
   const handleCopy = () => {
     if (navigator.clipboard) {
@@ -180,7 +228,7 @@ export function PreCode({
   return (
     <div className="relative group my-5 rounded-2xl overflow-hidden border border-[#002e2c]/15 bg-[#12141A] text-zinc-100 shadow-md">
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-950/80 border-b border-white/5 text-[11px] font-mono text-zinc-400">
-        <span className="font-semibold text-teal-400 tracking-wider text-[10px]">{displayLang}</span>
+        <span className="font-semibold text-teal-400 tracking-wider text-[10px] truncate pr-2">{displayLabel}</span>
         <button
           type="button"
           onClick={handleCopy}
@@ -190,7 +238,10 @@ export function PreCode({
           <span>{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
-      <pre className={`p-4 overflow-x-auto text-xs font-mono leading-relaxed shiki ${className || ""}`} {...props}>
+      <pre
+        className={`p-4 overflow-x-auto text-xs font-mono leading-relaxed shiki ${className || ""}`}
+        {...(props as React.HTMLAttributes<HTMLPreElement>)}
+      >
         {children}
       </pre>
     </div>

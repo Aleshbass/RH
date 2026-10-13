@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -84,7 +86,7 @@ const partnerTypes = [
     icon: Dumbbell,
     title: "Gyms & Sports Clubs",
     description: "Embed recovery services for your members. QR codes, booking widgets, and member discount packages.",
-    features: ["Embed Widget", "QR Codes", "Member Discounts"],
+    features: ["Referral Links", "QR Codes", "Member Discounts"],
     color: "from-orange-500/10 to-amber-500/10",
     borderColor: "border-orange-200",
     iconBg: "bg-orange-500/10 text-orange-600",
@@ -112,7 +114,7 @@ const integrationChannels = [
   {
     icon: Laptop,
     name: "JavaScript SDK",
-    description: "Drop-in booking widget — one <script> tag on your website",
+    description: "Drop-in booking widget (coming soon) — use no-code referral links today",
     setupTime: "30 minutes",
     badge: "Fastest",
   },
@@ -171,7 +173,7 @@ const pricingTiers = [
     features: [
       "500 API calls/month",
       "5 webhook endpoints",
-      "JavaScript embed widget",
+      "No-code referral links",
       "Priority email + chat support",
       "Usage analytics dashboard",
     ],
@@ -204,65 +206,56 @@ function CodeSample() {
   const [activeTab, setActiveTab] = useState<"referral" | "widget" | "webhook">("referral");
 
   const codeSnippets = {
-    referral: `// Create a patient referral
+    referral: `// Create a patient referral (server-side, secret key)
 const response = await fetch(
-  'https://api.physioaroundme.com/v1/referrals',
+  'https://api.physioaroundme.com/v1/partners/referrals',
   {
     method: 'POST',
     headers: {
-      'Authorization': 'Bearer rh_live_sk_...',
+      'Authorization': \`Bearer \${process.env.REHABIFY_API_KEY}\`, // sk_test_… / sk_live_…
       'Content-Type': 'application/json',
+      'Idempotency-Key': 'HMO-REF-2026-0091',
     },
     body: JSON.stringify({
-      patient: {
-        name: 'Adaeze Nwosu',
-        phone: '+2348012345678',
-        condition: 'Post-ACL Reconstruction'
-      },
-      urgency: 'routine',
-      preferred_location: 'Lagos, Lekki'
-    })
+      partner_reference: 'HMO-REF-2026-0091',
+      patient: { first_name: 'Adaeze', last_name: 'Nwosu', phone: '+2348012345678' },
+      clinical: { condition: 'Post-ACL reconstruction', recommended_sessions: 8 },
+      consent: { granted: true },
+    }),
   }
 );
 
 const referral = await response.json();
-// { id: "ref_abc123", status: "matched", 
-//   therapist: "Dr. Emeka Obi", ... }`,
-    widget: `<!-- Drop-in Booking Widget -->
-<script 
-  src="https://cdn.physioaroundme.com/widget.js"
-  data-partner-id="partner_xyz"
-  data-theme="light"
-  data-accent="#005b57"
-></script>
+// { object: "referral", tracking_code: "RHB-4829173655",
+//   status: "received", links: { whatsapp_intake_url: "…" }, … }`,
+    widget: `<!-- No-code referral link (create it in the Partner Portal) -->
+<a href="https://physioaroundme.com/r/yourco-7KQ2X9MD">
+  Book physiotherapy with Rehabify
+</a>
 
-<!-- Or use the container element -->
-<div 
-  id="rehabify-booking" 
-  data-service="physiotherapy"
-  data-location="Lagos"
-></div>
-
-<!-- That's it! Patients can book directly 
-     from your website. -->`,
-    webhook: `// Webhook: Session Completed Event
+<!-- Patients land on a co-branded page, give consent,
+     and are contacted by the Rehabify care team.
+     Sign-ups and paid bookings are attributed to you
+     for 30 days (first partner wins). -->`,
+    webhook: `// Webhook: referral.booked (signed: X-Rehabify-Signature)
 {
-  "event": "session.completed",
+  "id": "evt_01JA4T7Q9Y2V3W4X5Z6A7B8C9D",
+  "object": "event",
+  "type": "referral.booked",
+  "api_version": "2026-10-01",
+  "created_at": "2026-10-13T09:35:12.000Z",
+  "environment": "live",
   "data": {
-    "session_id": "sess_def456",
-    "patient": "Adaeze Nwosu",
-    "therapist": "Dr. Emeka Obi",
-    "diagnosis": "Post-ACL Reconstruction",
-    "outcome_score": 8.5,
-    "next_appointment": "2025-02-15T10:00:00Z",
-    "discharge_summary": {
-      "progress": "Excellent",
-      "rom_improvement": "+25°",
-      "recommendations": [...]
+    "previous_status": "contacted",
+    "sequence": 3,
+    "referral": {
+      "id": "jd7f3k2m9x1q8w4e5r6t7y8u9i0o1p2a",
+      "tracking_code": "RHB-4829173655",
+      "partner_reference": "HMO-REF-2026-0091",
+      "status": "booked",
+      "provider": { "name": "Chiamaka Obi", "license_number": "MRTBN/PT/12345" }
     }
-  },
-  "timestamp": "2025-02-08T14:30:00Z",
-  "signature": "sha256=a1b2c3d4..."
+  }
 }`,
   };
 
@@ -287,7 +280,7 @@ const referral = await response.json();
                   : "text-gray-500 hover:text-gray-300"
               }`}
             >
-              {tab === "referral" ? "Create Referral" : tab === "widget" ? "Embed Widget" : "Webhook Event"}
+              {tab === "referral" ? "Create Referral" : tab === "widget" ? "Referral Link" : "Webhook Event"}
             </button>
           ))}
         </div>
@@ -322,8 +315,18 @@ function PartnerInquiryForm() {
     message: "",
   });
 
+  const submitInquiry = useMutation(api.public.submitPartnershipInquiry);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Record the inquiry for the partnerships team (admin → Partnerships → Inquiries)
+    // without delaying the WhatsApp hand-off (popup blockers need the click's tick).
+    submitInquiry({
+      name: formData.contactName.trim(),
+      email: formData.email.trim(),
+      organization: formData.companyName.trim(),
+      message: `[${formData.partnerType || "Unspecified"}] ${formData.message.trim()}`.slice(0, 4000),
+    }).catch((error) => console.error("Failed to record partnership inquiry", error));
     // Build WhatsApp message with form data
     const waMessage = `Hi! 👋🏾 I'm interested in partnering with RehabifyHealth.\n\nCompany: ${formData.companyName}\nContact: ${formData.contactName}\nEmail: ${formData.email}\nPartner Type: ${formData.partnerType}\n\n${formData.message}`;
     window.open(

@@ -86,27 +86,28 @@ export default function DocsHeader({
               <Search className="w-4 h-4" />
             </button>
 
-            <Link
-              href="/partners/portal"
+            {/* Absolute URLs: on docs.physioaroundme.com every relative path is rewritten to /docs/<path>. */}
+            <a
+              href="https://partners.physioaroundme.com"
               className="hidden md:flex items-center gap-1.5 text-xs font-semibold text-[#002e2c] hover:text-[#005b57] px-3.5 py-1.5 rounded-full hover:bg-white/60 transition"
             >
               <span>Partner Portal</span>
               <ArrowUpRight className="w-3 h-3 text-[#52706e]" />
-            </Link>
+            </a>
 
-            <Link
-              href="/partnerships"
+            <a
+              href="https://physioaroundme.com/openapi.json"
               className="hidden lg:flex items-center gap-1 text-xs font-semibold text-[#002e2c] hover:text-[#005b57] px-3.5 py-1.5 rounded-full hover:bg-white/60 transition"
             >
-              <span>Partnerships</span>
-            </Link>
+              <span>OpenAPI</span>
+            </a>
 
-            <Link
-              href="/"
+            <a
+              href="https://physioaroundme.com"
               className="bg-[#005b57] hover:bg-[#00443e] text-white text-xs font-medium px-4 py-1.5 rounded-full transition shadow-xs"
             >
               Main Platform
-            </Link>
+            </a>
           </div>
         </div>
       </header>

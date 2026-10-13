@@ -1,9 +1,9 @@
 {
-  "title": "SDKs & Widgets",
+  "title": "Widgets & Deep Links",
   "pages": [
     "index",
+    "whatsapp-deep-links",
     "embed-widget",
-    "react-component",
-    "whatsapp-deep-links"
+    "react-component"
   ]
 }

@@ -1,7 +1,7 @@
 "use node"
 
 import { v } from "convex/values";
-import { action } from "../../_generated/server";
+import { action, internalAction } from "../../_generated/server";
 import { api, internal } from "../../_generated/api";
 import { formatAccountDeclinedNotification } from "../../../lib/notifications/notificationService";
 import type { ActionCtx } from "../../_generated/server";
@@ -13,7 +13,7 @@ import type { Doc, Id } from "../../_generated/dataModel";
  * Decline a user account and send notification
  * This action is called by an admin to decline a user account application with reason and required documents
  */
-export const declineAccount = action({
+export const declineAccount = internalAction({
   args: {
     statusId: v.id("accountApprovalStatus"),
     adminUserId: v.id("users"),

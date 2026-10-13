@@ -18,11 +18,9 @@ export default function ExerciseLibraryPage() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');
   
-  const exercises = useQuery(api.exercises.getExercises);
+  const rawExercises = useQuery(api.exercises.listExercises, {});
 
-  const categories = [
-    'all', 'stretching', 'strength', 'mobility', 'balance', 'cardio', 'rehabilitation'
-  ];
+  const knownCategories = ['stretching', 'strength', 'mobility', 'balance', 'cardio', 'rehabilitation'];
 
   const difficulties = ['all', 'beginner', 'intermediate', 'advanced'];
 
@@ -36,6 +34,29 @@ export default function ExerciseLibraryPage() {
     sets?: number;
     reps?: number;
   };
+
+  // The exercises table has no `category` field: use a matching tag if there is one,
+  // otherwise the first body part. Duration is stored in seconds.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const exercises: ExerciseListItem[] | undefined = rawExercises?.map((ex: any) => {
+    const tags: string[] = ex.tags || [];
+    const bodyParts: string[] = ex.bodyParts || [];
+    const seconds: number | undefined = ex.defaultDuration;
+    return {
+      _id: ex._id,
+      name: ex.name || '',
+      description: ex.description || '',
+      category: tags.find((t) => knownCategories.includes(t)) || bodyParts[0] || 'general',
+      difficulty: ex.difficultyLevel || 'beginner',
+      duration: seconds
+        ? seconds >= 60 ? `${Math.round(seconds / 60)} min` : `${seconds} sec`
+        : undefined,
+      sets: ex.defaultSets,
+      reps: ex.defaultReps,
+    };
+  });
+
+  const categories = ['all', ...Array.from(new Set((exercises || []).map((ex) => ex.category))).sort()];
 
   const filteredExercises = exercises?.filter((exercise: ExerciseListItem) => {
     const matchesSearch = exercise.name.toLowerCase().includes(searchTerm.toLowerCase()) ||

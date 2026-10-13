@@ -259,7 +259,7 @@ function AdminReferralsContent() {
                                     <th className="px-6 py-3 font-semibold">Contact & Location</th>
                                     <th className="px-6 py-3 font-semibold">Partner / Referrer</th>
                                     <th className="px-6 py-3 font-semibold">Date</th>
-                                    <th className="px-6 py-3 font-semibold">Status / Kickback</th>
+                                    <th className="px-6 py-3 font-semibold">Status / Commission</th>
                                     <th className="px-6 py-3 font-semibold text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -343,7 +343,7 @@ function AdminReferralsContent() {
                                             })}
                                         </td>
 
-                                        {/* Status & Kickback */}
+                                        {/* Status & commission */}
                                         <td className="px-6 py-4">
                                             <Badge variant={
                                                 referral.status === 'completed' || referral.status === 'paid_out' ? 'default' :
@@ -402,7 +402,7 @@ function AdminReferralsContent() {
                     <DialogHeader>
                         <DialogTitle>Update Referral</DialogTitle>
                         <DialogDescription>
-                            Change lifecycle status or manage kickbacks for {selectedReferral?.patientFirstName} {selectedReferral?.patientLastName}.
+                            Change the lifecycle status or record the referral commission for {selectedReferral?.patientFirstName} {selectedReferral?.patientLastName}.
                         </DialogDescription>
                     </DialogHeader>
 

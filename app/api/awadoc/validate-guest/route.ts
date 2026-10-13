@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { api } from "@/convex/_generated/api";
 import { getConvexClient } from "@/lib/convex-client";
+import { convexServerSecret } from "@/lib/convex-server-secret";
 
 export async function POST(request: NextRequest) {
     const convex = getConvexClient();
@@ -30,9 +31,11 @@ export async function POST(request: NextRequest) {
 
     try {
         // Validate the guest token against Convex
+        const serverSecret = convexServerSecret();
         const result = await convex.query(api.awadoc.validateGuestToken, {
             therapyId,
             guestToken,
+            serverSecret,
         });
 
         if (!result.valid) {
@@ -49,6 +52,7 @@ export async function POST(request: NextRequest) {
         const streamResult = await convex.action(api.stream.getGuestStreamToken, {
             guestUserId,
             guestUserName,
+            serverSecret,
         });
 
         return NextResponse.json({

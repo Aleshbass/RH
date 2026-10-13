@@ -4,6 +4,7 @@
  */
 
 import { query } from "../_generated/server";
+import { ensureUserRole } from "../auth";
 
 /**
  * Get all physiotherapist profiles with their marketplace status
@@ -11,6 +12,8 @@ import { query } from "../_generated/server";
  */
 export const debugMarketplaceProfiles = query({
   handler: async (ctx) => {
+    // Lists every physiotherapist's name and email: admins only.
+    await ensureUserRole(ctx, ["admin"]);
     const allProfiles = await ctx.db
       .query("physiotherapistProfiles")
       .collect();

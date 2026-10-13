@@ -1,4 +1,6 @@
-import { query, mutation } from "./_generated/server";
+// Debug and repair helpers. Everything in this file is internal: run with
+// `npx convex run debug:<name>` or from the Convex dashboard, never from a browser.
+import { internalQuery as query, internalMutation as mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 

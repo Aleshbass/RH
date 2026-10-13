@@ -4,10 +4,20 @@
  * Handles booking creation, payment processing, and commission splits
  */
 
-import { v } from "convex/values";
-import { mutation, action, internalMutation, query } from "../_generated/server";
+import { v, ConvexError } from "convex/values";
+import { mutation, action, internalMutation, internalQuery, query } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { publicAppUrl } from "../helpers/appUrl";
+import { attributionForBooking, bumpLinkCounter } from "../helpers/partnerAttribution";
+import { recordPartnerCommission, reverseCommissionsForPayment } from "../helpers/partnerLedger";
+import { markProviderMatched, transitionReferral } from "../helpers/partnerEvents";
+import { referralEnv, toPublicStatus } from "../helpers/partnerShared";
+import { verifyPaystackSignature } from "../helpers/paystackSignature";
+import { resolveServiceAmountKobo } from "../helpers/marketplacePricing";
+
+async function latestRevenueSettings(ctx: any) {
+    return await ctx.db.query("platformRevenueSettings").order("desc").first();
+}
 
 /**
  * Calculate fees for marketplace booking
@@ -57,6 +67,7 @@ export const createMarketplaceBooking = mutation({
         conditionLabel: v.optional(v.string()),
         conditionLevel: v.optional(v.string()),
         patientAddress: v.optional(v.string()), // For in-person sessions
+        referralPublicCode: v.optional(v.string()), // Partner referral-link code from the attribution cookie
     },
 
     handler: async (ctx, args) => {
@@ -88,15 +99,13 @@ export const createMarketplaceBooking = mutation({
             throw new Error("Physiotherapist not available for booking");
         }
 
-        // Determine rate base on booking type: virtual (₦6k default) vs in-person (physiotherapist rate on dashboard / ₦10k default)
-        let effectiveServiceAmount = args.serviceAmount;
-        if (!effectiveServiceAmount || effectiveServiceAmount <= 0) {
-            if (args.isOnline) {
-                effectiveServiceAmount = physioProfile.virtualConsultationRate || 600000; // ₦6,000 default virtual rate
-            } else {
-                effectiveServiceAmount = physioProfile.inPersonConsultationRate || 1000000; // ₦10,000 or custom in-person rate
-            }
-        }
+        // The amount is never taken on trust: it must be a price the booking page can show
+        // for this physio and package (physios without a rate get the ₦6k / ₦10k default).
+        const effectiveServiceAmount = resolveServiceAmountKobo(
+            physioProfile,
+            { serviceAmountKobo: args.serviceAmount, packageSessions: args.packageSessions, isOnline: args.isOnline },
+            await latestRevenueSettings(ctx)
+        );
 
         // Calculate fees & 80/10/10 split
         const fees = calculateMarketplaceFees(effectiveServiceAmount);
@@ -105,6 +114,9 @@ export const createMarketplaceBooking = mutation({
         // Determine effective session type
         const effectiveSessionType =
             args.packageSessions && args.packageSessions > 1 ? "package" : args.sessionType;
+
+        // Partner attribution is resolved server-side (validated link / linked referral).
+        const attribution = await attributionForBooking(ctx, patient, args.referralPublicCode);
 
         // Create booking
         const bookingId = await ctx.db.insert("marketplaceBookings", {
@@ -123,7 +135,10 @@ export const createMarketplaceBooking = mutation({
             physiotherapistEarnings: fees.physiotherapistEarnings,
             rehabifyEarnings: fees.platformFee,
             partnerEarnings: fees.partnerEarnings,
-            partnerId: patient.referredByPartnerCode,
+            partnerId: attribution.partnerId,
+            referralId: attribution.referralId,
+            referralLinkId: attribution.referralLinkId,
+            sourceSystem: "rh_marketplace_web",
             paymentStatus: "pending",
             bookingStatus: "pending_payment",
             patientNotes: args.patientNotes,
@@ -136,6 +151,7 @@ export const createMarketplaceBooking = mutation({
             createdAt: Date.now(),
             updatedAt: Date.now(),
         });
+        await bumpLinkCounter(ctx, attribution.referralLinkId, "bookings");
 
         return {
             bookingId,
@@ -168,6 +184,7 @@ export const guestCreateMarketplaceBooking = mutation({
         guestEmail: v.string(),
         guestPhone: v.optional(v.string()),
         guestName: v.optional(v.string()),
+        referralPublicCode: v.optional(v.string()), // Partner referral-link code from the attribution cookie
     },
 
     handler: async (ctx, args) => {
@@ -191,7 +208,11 @@ export const guestCreateMarketplaceBooking = mutation({
             .first();
 
         if (existingGuestUser) {
-            // Reuse the existing record (signed-up or guest)
+            // Only reuse earlier guest records. A registered account must sign in, otherwise
+            // anyone could attach bookings to someone else's account by typing their email.
+            if (!String(existingGuestUser.clerkId ?? "").startsWith("guest-")) {
+                throw new ConvexError("An account already exists for this email. Please sign in to book.");
+            }
             guestUserId = existingGuestUser._id;
         } else {
             // Create a minimal guest user record
@@ -208,13 +229,30 @@ export const guestCreateMarketplaceBooking = mutation({
             });
         }
 
-        const fees = calculateMarketplaceFees(args.serviceAmount);
+        const fees = calculateMarketplaceFees(
+            resolveServiceAmountKobo(
+                physioProfile,
+                { serviceAmountKobo: args.serviceAmount, packageSessions: args.packageSessions, isOnline: args.isOnline },
+                await latestRevenueSettings(ctx)
+            )
+        );
         const effectiveSessionType =
             args.packageSessions && args.packageSessions > 1 ? "package" : args.sessionType;
+
+        // Guest checkouts carry partner attribution too (validated link code).
+        const guestUser = await ctx.db.get(guestUserId);
+        const attribution = guestUser ? await attributionForBooking(ctx, guestUser, args.referralPublicCode) : {};
 
         const bookingId = await ctx.db.insert("marketplaceBookings", {
             physiotherapistId: args.physiotherapistId,
             patientId: guestUserId,        // ← real FK, not a placeholder
+            partnerId: attribution.partnerId,
+            referralId: attribution.referralId,
+            referralLinkId: attribution.referralLinkId,
+            sourceSystem: "rh_marketplace_web",
+            careMode: args.isOnline ? "virtual" : "in_person",
+            rehabifyEarnings: fees.platformFee,
+            partnerEarnings: fees.partnerEarnings,
             sessionType: effectiveSessionType,
             sessionDate: args.sessionDate,
             sessionDuration: args.sessionDuration,
@@ -240,6 +278,7 @@ export const guestCreateMarketplaceBooking = mutation({
             createdAt: Date.now(),
             updatedAt: Date.now(),
         } as any);
+        await bumpLinkCounter(ctx, attribution.referralLinkId, "bookings");
 
         return { bookingId, fees };
     },
@@ -247,9 +286,9 @@ export const guestCreateMarketplaceBooking = mutation({
 
 
 /**
- * Get marketplace booking by ID (for server-side use by payment API)
+ * Full booking record — internal only (it contains guest contact details).
  */
-export const getMarketplaceBooking = query({
+export const getMarketplaceBooking = internalQuery({
     args: { bookingId: v.id("marketplaceBookings") },
     handler: async (ctx, args) => {
         return await ctx.db.get(args.bookingId);
@@ -257,27 +296,74 @@ export const getMarketplaceBooking = query({
 });
 
 /**
- * Complete marketplace booking after payment
- * Called by Paystack webhook or payment confirmation
+ * Non-sensitive payment quote used by the payment-initialisation route, so Paystack is
+ * always initialised with the booking's own amount (never a browser-supplied one).
  */
-export const completeMarketplaceBooking = mutation({
-    args: {
-        bookingId: v.id("marketplaceBookings"),
-        paymentReference: v.string(),
-    },
-
+export const getMarketplacePaymentQuote = query({
+    args: { bookingId: v.id("marketplaceBookings") },
     handler: async (ctx, args) => {
+        const booking = await ctx.db.get(args.bookingId);
+        if (!booking || booking.sourceSystem === "joy_ai") return null;
+        return {
+            amountKobo: booking.serviceAmount,
+            paymentStatus: booking.paymentStatus,
+            bookingStatus: booking.bookingStatus,
+            physiotherapistId: booking.physiotherapistId ?? null,
+        };
+    },
+});
+
+type CompletionOptions = {
+    paymentReference: string;
+    paymentMethod: "paystack" | "bank_transfer" | "free";
+    paidAmountKobo: number;
+};
+
+/**
+ * Completes a marketplace booking from VERIFIED payment evidence only (Paystack webhook,
+ * server-side Paystack verification, admin bank-transfer confirmation, or a genuinely
+ * free session). Idempotent: a booking is completed at most once.
+ */
+export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, options: CompletionOptions) {
+        const args = { bookingId, paymentReference: options.paymentReference };
         const booking = await ctx.db.get(args.bookingId);
         if (!booking) {
             throw new Error("Booking not found");
+        }
+        if (booking.paymentStatus === "completed") {
+            return { success: true, alreadyCompleted: true, appointmentId: booking.appointmentId };
+        }
+        if (!booking.physiotherapistId) {
+            throw new Error("Booking has no physiotherapist assigned");
+        }
+        if (options.paymentMethod !== "free" && options.paidAmountKobo < booking.serviceAmount) {
+            console.error("marketplace_payment_amount_mismatch", {
+                bookingId: String(bookingId),
+                expected: booking.serviceAmount,
+                paid: options.paidAmountKobo,
+                reference: options.paymentReference,
+            });
+            return { success: false, reason: "amount_mismatch" as const };
+        }
+        if (booking.bookingStatus === "cancelled") {
+            // Money arrived for a cancelled booking: record it for the refund workflow.
+            await ctx.db.patch(args.bookingId, {
+                paymentStatus: "completed",
+                paymentReference: args.paymentReference,
+                paidAmountKobo: options.paidAmountKobo,
+                paidAt: Date.now(),
+                updatedAt: Date.now(),
+            });
+            return { success: true, cancelled: true };
         }
 
         // Update booking
         await ctx.db.patch(args.bookingId, {
             paymentStatus: "completed",
-            paymentMethod: "paystack",
+            paymentMethod: options.paymentMethod === "bank_transfer" ? "bank_transfer" : "paystack",
             bookingStatus: "confirmed",
             paymentReference: args.paymentReference,
+            paidAmountKobo: options.paidAmountKobo,
             careMode: booking.isOnline ? "virtual" : "in_person",
             paidAt: Date.now(),
             updatedAt: Date.now(),
@@ -411,41 +497,47 @@ export const completeMarketplaceBooking = mutation({
             const patientName = booking.guestName || (patientUserRecord ? `${patientUserRecord.firstName || ""} ${patientUserRecord.lastName || ""}`.trim() : "Patient");
             const careMode: "virtual" | "in_person" = booking.isOnline ? "virtual" : "in_person";
 
-            const referral = await ctx.db
-                .query("inboundReferrals")
-                .withIndex("by_partner_id", (q) => q.eq("partnerId", referringPartnerCode))
-                .filter((q) => q.eq(q.field("trackingCode"), patientUserRecord?.referralPublicCode || ""))
-                .first();
+            // The booking's stored attribution was validated when it was created; a
+            // linked referral is used only if it belongs to the same partner.
+            let referral = booking.referralId ? await ctx.db.get(booking.referralId) : null;
+            if (referral && referral.partnerId !== referringPartnerCode) referral = null;
+            const environment = referral ? referralEnv(referral) : "live";
 
-            const trackingCode = referral?.trackingCode || patientUserRecord?.referralPublicCode || `RHB-${Math.floor(10000 + Math.random() * 90000)}`;
-
-            await ctx.db.insert("partnerCommissions", {
-                partnerId: referringPartnerCode,
-                referralId: referral?._id || (booking._id as any),
-                trackingCode,
+            await recordPartnerCommission(ctx, {
+                partnerCode: referringPartnerCode,
+                environment,
+                idempotencyKey: `payment:${args.paymentReference}`,
+                grossKobo: options.paymentMethod === "free" ? 0 : booking.serviceAmount,
+                paymentMethod: options.paymentMethod === "bank_transfer" ? "bank_transfer" : "paystack",
+                paymentReference: args.paymentReference,
+                source: options.paymentMethod === "bank_transfer" ? "bank_transfer" : "marketplace",
+                referralId: referral?._id,
+                bookingId: booking._id,
+                linkId: booking.referralLinkId ?? patientUserRecord?.referralLinkId,
+                patientUserId: booking.patientId,
                 patientName,
-                eventType: "booking_confirmed",
-                grossTransactionAmount: booking.serviceAmount,
-                commissionRate: 10,
-                commissionAmount: booking.partnerEarnings || Math.round(booking.serviceAmount * 0.10),
-                netPayable: booking.partnerEarnings || Math.round(booking.serviceAmount * 0.10),
+                trackingCode: referral?.trackingCode,
                 physiotherapistId: booking.physiotherapistId,
                 physiotherapistName: physioName,
                 careMode,
-                physiotherapistAmount: booking.physiotherapistEarnings,
-                rehabifyAmount: booking.platformFee,
-                partnerAmount: booking.partnerEarnings || Math.round(booking.serviceAmount * 0.10),
-                physioPercent: 80,
-                rehabifyPercent: 10,
-                partnerPercent: 10,
-                paymentMethod: "paystack",
-                paymentReference: args.paymentReference,
-                billingPeriod,
-                bulkPayoutStatus: "accrued",
-                status: "approved",
-                notes: `Paid via Paystack online gateway. 80/10/10 platform split applied.`,
                 earnedAt: now,
             });
+            await bumpLinkCounter(ctx, booking.referralLinkId ?? patientUserRecord?.referralLinkId, "payments");
+
+            if (referral && environment === "live") {
+                if (!referral.assignedPhysiotherapistId) {
+                    await markProviderMatched(ctx, referral._id, booking.physiotherapistId, { actorType: "system", actorId: "marketplace_payment" });
+                }
+                const publicStatus = toPublicStatus(referral.status);
+                if (publicStatus === "received" || publicStatus === "contacted") {
+                    await transitionReferral(ctx, referral._id, "booked", {
+                        actorType: "system",
+                        actorId: "marketplace_payment",
+                        metadata: { bookingId: booking._id, paymentReference: args.paymentReference },
+                        extraPatch: { bookingId: booking._id },
+                    });
+                }
+            }
         }
 
         // Auto-onboard patient if necessary (ensure dashboard access)
@@ -754,6 +846,169 @@ export const completeMarketplaceBooking = mutation({
             appointmentId,
             relationshipId,
         };
+}
+
+async function paystackVerify(reference: string) {
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) throw new Error("Payment service not configured");
+    const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+        headers: { Authorization: `Bearer ${secret}` },
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.status || !data.data) return null;
+    return data.data as { status: string; amount: number; currency: string; reference: string; metadata?: any };
+}
+
+/** Applies verified Paystack evidence to a marketplace booking (internal). */
+export const completeVerifiedMarketplacePayment = internalMutation({
+    args: { bookingId: v.id("marketplaceBookings"), reference: v.string(), amountKobo: v.number(), currency: v.string() },
+    handler: async (ctx, args) => {
+        if (args.currency !== "NGN") return { success: false, reason: "currency_mismatch" };
+        const booking = await ctx.db.get(args.bookingId);
+        if (!booking || booking.sourceSystem === "joy_ai") return { success: false, reason: "not_a_marketplace_booking" };
+        return completeMarketplaceBookingCore(ctx, args.bookingId, {
+            paymentReference: args.reference,
+            paymentMethod: "paystack",
+            paidAmountKobo: args.amountKobo,
+        });
+    },
+});
+
+/**
+ * Called by the payment callback page: re-verifies the transaction with Paystack
+ * server-side and completes the booking it belongs to. Safe to call repeatedly.
+ */
+export const verifyMarketplacePayment = action({
+    args: { reference: v.string() },
+    handler: async (ctx, args): Promise<any> => {
+        const reference = args.reference.trim();
+        if (!/^MKT_[A-Za-z0-9_]+$/.test(reference)) return { success: false, status: "invalid_reference" };
+        const tx = await paystackVerify(reference);
+        if (!tx) return { success: false, status: "not_found" };
+        if (tx.status !== "success") return { success: false, status: tx.status };
+        const bookingId = tx.metadata?.bookingId;
+        if (typeof bookingId !== "string") return { success: false, status: "missing_booking" };
+        const normalized = await ctx.runQuery(internal.marketplace.booking.normalizeBookingId, { bookingId });
+        if (!normalized) return { success: false, status: "missing_booking" };
+        const result: any = await ctx.runMutation(internal.marketplace.booking.completeVerifiedMarketplacePayment, {
+            bookingId: normalized,
+            reference,
+            amountKobo: tx.amount,
+            currency: tx.currency,
+        });
+        return { success: Boolean(result?.success), status: result?.success ? "success" : result?.reason ?? "failed", bookingId: normalized };
+    },
+});
+
+export const normalizeBookingId = internalQuery({
+    args: { bookingId: v.string() },
+    handler: async (ctx, args) => ctx.db.normalizeId("marketplaceBookings", args.bookingId),
+});
+
+/**
+ * Paystack charge webhook for marketplace bookings (MKT_ references). The signature is
+ * verified here, inside Convex, so this public entry point cannot fake a payment.
+ */
+export const recordMarketplacePaystackWebhook = mutation({
+    args: { rawBody: v.string(), signature: v.string() },
+    handler: async (ctx, args) => {
+        if (!(await verifyPaystackSignature(args.rawBody, args.signature))) throw new Error("Invalid Paystack webhook signature");
+        let payload: any;
+        try {
+            payload = JSON.parse(args.rawBody);
+        } catch {
+            throw new Error("Invalid webhook payload");
+        }
+        const data = payload?.data ?? {};
+        const reference = typeof data.reference === "string" ? data.reference : "";
+        if (!reference.startsWith("MKT_")) return { handled: false };
+
+        if (payload.event === "charge.success") {
+            const bookingId = typeof data.metadata?.bookingId === "string" ? ctx.db.normalizeId("marketplaceBookings", data.metadata.bookingId) : null;
+            if (!bookingId) return { handled: true, success: false, reason: "missing_booking" };
+            if (data.currency !== "NGN") return { handled: true, success: false, reason: "currency_mismatch" };
+            const booking = await ctx.db.get(bookingId);
+            if (!booking || booking.sourceSystem === "joy_ai") return { handled: true, success: false, reason: "not_a_marketplace_booking" };
+            const result = await completeMarketplaceBookingCore(ctx, bookingId, {
+                paymentReference: reference,
+                paymentMethod: "paystack",
+                paidAmountKobo: Number(data.amount) || 0,
+            });
+            return { handled: true, ...result };
+        }
+        return { handled: false };
+    },
+});
+
+/**
+ * Paystack refund webhook (refund.processed): marks the booking refunded and reverses the
+ * partner commission earned on that payment. Signature verified inside Convex.
+ */
+export const recordPaystackRefundWebhook = mutation({
+    args: { rawBody: v.string(), signature: v.string() },
+    handler: async (ctx, args) => {
+        if (!(await verifyPaystackSignature(args.rawBody, args.signature))) throw new Error("Invalid Paystack webhook signature");
+        let payload: any;
+        try {
+            payload = JSON.parse(args.rawBody);
+        } catch {
+            throw new Error("Invalid webhook payload");
+        }
+        if (payload?.event !== "refund.processed") return { handled: false };
+        const data = payload.data ?? {};
+        const reference: string =
+            (typeof data.transaction_reference === "string" && data.transaction_reference) ||
+            (typeof data.transaction?.reference === "string" && data.transaction.reference) ||
+            "";
+        if (!reference) return { handled: false };
+        const booking = await ctx.db
+            .query("marketplaceBookings")
+            .withIndex("by_payment_reference", (q) => q.eq("paymentReference", reference))
+            .first();
+        if (booking && booking.paymentStatus !== "refunded") {
+            await ctx.db.patch(booking._id, { paymentStatus: "refunded", updatedAt: Date.now() });
+            if (booking.referralId) {
+                const referral = await ctx.db.get(booking.referralId);
+                if (referral && toPublicStatus(referral.status) !== "completed" && toPublicStatus(referral.status) !== "cancelled") {
+                    await transitionReferral(ctx, referral._id, "refunded", { actorType: "system", actorId: "paystack_refund", metadata: { reference } });
+                }
+            }
+        }
+        const reversal = await reverseCommissionsForPayment(ctx, reference, "Patient payment refunded");
+        return { handled: true, bookingFound: Boolean(booking), ...reversal };
+    },
+});
+
+/**
+ * Confirms a genuinely free session (the physiotherapist charges nothing). Paid bookings
+ * can only be completed from verified Paystack evidence.
+ */
+export const confirmFreeMarketplaceBooking = mutation({
+    args: { bookingId: v.id("marketplaceBookings") },
+    handler: async (ctx, args) => {
+        const booking = await ctx.db.get(args.bookingId);
+        if (!booking || booking.sourceSystem === "joy_ai") throw new ConvexError("Booking not found.");
+        if (booking.paymentStatus === "completed") return { success: true, alreadyCompleted: true };
+        if (booking.serviceAmount !== 0 || !booking.physiotherapistId) throw new ConvexError("This booking requires payment.");
+        const identity = await ctx.auth.getUserIdentity();
+        if (!booking.isGuestBooking) {
+            const user = identity
+                ? await ctx.db.query("users").withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject)).unique()
+                : null;
+            if (!user || user._id !== booking.patientId) throw new ConvexError("Only the patient can confirm this booking.");
+        }
+        const profile = await ctx.db
+            .query("physiotherapistProfiles")
+            .withIndex("by_user_id", (q) => q.eq("userId", booking.physiotherapistId))
+            .first();
+        const charges = [profile?.initialConsultRate, profile?.hourlyRate, profile?.virtualConsultationRate, profile?.inPersonConsultationRate]
+            .some((rate) => typeof rate === "number" && rate > 0);
+        if (charges) throw new ConvexError("This physiotherapist charges for sessions — please complete payment.");
+        return completeMarketplaceBookingCore(ctx, args.bookingId, {
+            paymentReference: `FREE_${args.bookingId}`,
+            paymentMethod: "free",
+            paidAmountKobo: 0,
+        });
     },
 });
 
@@ -979,7 +1234,7 @@ export const getRecentBookings = query({
         // Get bookings for this physiotherapist, most recent first
         const bookings = await ctx.db
             .query("marketplaceBookings")
-            .withIndex("by_physiotherapist_id", (q) => q.eq("physiotherapistId", user._id))
+            .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", user._id))
             .order("desc")
             .take(args.limit || 5);
 

@@ -1,26 +1,122 @@
 ---
-title: Gyms & Sports Recovery Guide
-description: Offer on-demand sports physiotherapy and injury recovery to gym members and athletes.
+title: Gyms and fitness recovery
+description: Give members fast access to sports physiotherapy through reception QR codes, member-app links and trainer referrals, and earn commission on paid bookings.
 ---
 
-# Gyms & Sports Recovery Guide
+Gyms, sports clubs and fitness studios can connect injured members with licensed sports physiotherapists. Members get care quickly, and you earn commission on the bookings you generate.
 
-Partner gyms, sports clubs, and crossfit boxes use Rehabify to offer professional injury prevention and recovery services to their members.
+## Option 1: Reception QR code (no code)
 
----
+Create a [referral link](/docs/guides/no-code-referral-links) and print its URL as a QR code at reception, in changing rooms or on class schedules:
 
-## How Gyms Earn with Rehabify
+```text
+https://physioaroundme.com/r/<public_code>
+```
 
-1. **Reception QR Codes**: Standee banners at gym reception desks allowing members with sprains, joint pain, or delayed-onset muscle soreness (DOMS) to book instant physio sessions.
-2. **Embedded Booking in Member App**: Place our drop-in JavaScript widget inside your gym's mobile or web portal.
-3. **Revenue Share**: Earn a percentage commission on every session booked by gym members.
+A member with a sprain, joint pain or a training injury scans the code, submits a short form with consent, and chats with Joy on WhatsApp. Create one link per location to compare branches using link stats.
 
----
-
-## Sample Gym Reception QR Code
-
-Place a banner at the front desk:
+Sample poster copy:
 
 > **Injured during a workout?**
-> Scan this QR code to get an MRTBN-verified sports physiotherapist at your home or at the gym within 2 hours.
+> Scan to get matched with a licensed physiotherapist, in person or by video.
 > *Powered by Rehabify Health.*
+
+## Option 2: A button in your member app
+
+Add a "Book physiotherapy" button that opens your referral link in the browser. Opening the link sets a 30-day attribution cookie, so a member who signs up or books on physioaroundme.com within 30 days is attributed to you permanently. The first partner to attribute a member keeps them.
+
+## Option 3: Trainer referrals by API
+
+If your trainers log injuries in your own system, refer members directly from your backend:
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/referrals \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a" \
+  -d '{
+    "partner_reference": "GYM-IKJ-INJ-0193",
+    "patient": { "first_name": "Adaora", "last_name": "Eze", "phone": "08031234567", "city": "Lagos", "area": "Ikeja" },
+    "clinical": { "condition": "Hamstring strain", "recommended_sessions": 4, "referring_clinician": "Coach Femi" },
+    "care": { "preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp" },
+    "billing_mode": "patient_self_pay",
+    "consent": { "granted": true, "method": "member_app_checkbox", "captured_at": "2026-10-13T07:30:00.000Z" },
+    "metadata": { "branch": "Ikeja" }
+  }'
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+ (save as refer-member.mjs)
+import { randomUUID } from "node:crypto";
+
+const res = await fetch("https://api.physioaroundme.com/v1/partners/referrals", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.REHABIFY_API_KEY}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": randomUUID(),
+  },
+  body: JSON.stringify({
+    partner_reference: "GYM-IKJ-INJ-0193",
+    patient: { first_name: "Adaora", last_name: "Eze", phone: "08031234567", city: "Lagos", area: "Ikeja" },
+    clinical: { condition: "Hamstring strain", recommended_sessions: 4, referring_clinician: "Coach Femi" },
+    care: { preferred_mode: "patient_choice", preferred_contact_channel: "whatsapp" },
+    billing_mode: "patient_self_pay",
+    consent: { granted: true, method: "member_app_checkbox", captured_at: "2026-10-13T07:30:00.000Z" },
+    metadata: { branch: "Ikeja" },
+  }),
+});
+const referral = await res.json();
+if (!res.ok) throw new Error(`${res.status} ${referral.error.code}: ${referral.error.message}`);
+console.log("Send this to the member:", referral.links.whatsapp_intake_url);
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+import uuid
+
+import requests
+
+resp = requests.post(
+    "https://api.physioaroundme.com/v1/partners/referrals",
+    headers={
+        "Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}",
+        "Idempotency-Key": str(uuid.uuid4()),
+    },
+    json={
+        "partner_reference": "GYM-IKJ-INJ-0193",
+        "patient": {"first_name": "Adaora", "last_name": "Eze", "phone": "08031234567", "city": "Lagos", "area": "Ikeja"},
+        "clinical": {"condition": "Hamstring strain", "recommended_sessions": 4, "referring_clinician": "Coach Femi"},
+        "care": {"preferred_mode": "patient_choice", "preferred_contact_channel": "whatsapp"},
+        "billing_mode": "patient_self_pay",
+        "consent": {"granted": True, "method": "member_app_checkbox", "captured_at": "2026-10-13T07:30:00.000Z"},
+        "metadata": {"branch": "Ikeja"},
+    },
+    timeout=30,
+)
+referral = resp.json()
+if not resp.ok:
+    raise SystemExit(f"{resp.status_code} {referral['error']['code']}: {referral['error']['message']}")
+print("Send this to the member:", referral["links"]["whatsapp_intake_url"])
+```
+
+</Tab>
+</Tabs>
+
+## How you earn
+
+You earn commission on **verified paid bookings** by members attributed to you, through the API, your referral link or a WhatsApp referral code. Clicks and sign-ups alone don't earn. Commissions are paid monthly to your verified bank account. Track them with [`GET /partners/commissions`](/docs/api-reference/commercial-and-commissions#list-commissions).
+
+## Coming soon
+
+An embeddable booking widget for gym websites and apps is on the roadmap, but **isn't available yet**. Until it launches, use a referral link or the API. See [Embed widget](/docs/sdks-widgets/embed-widget).

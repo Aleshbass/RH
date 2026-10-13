@@ -1,13 +1,31 @@
 import { v } from "convex/values";
-import { mutation, query } from "../_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import { getUserByIdOrThrow } from "../users";
+
+/**
+ * The signed-in user, who must be `ownerId` (when given) or an admin. Used by the
+ * notification functions the dashboard calls directly.
+ */
+async function requireNotificationOwner(ctx: any, ownerId?: Id<"users">) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Not authenticated");
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", identity.subject))
+    .first();
+  if (!user) throw new Error("User not found");
+  if (ownerId && user._id !== ownerId && user.role !== "admin") {
+    throw new Error("You can only access your own notifications");
+  }
+  return user;
+}
 import { NotificationType, NotificationPriority, NotificationPayload } from "../../types/notifications";
 
 /**
  * Create a notification with deduplication
  */
-export const createNotificationWithDeduplication = mutation({
+export const createNotificationWithDeduplication = internalMutation({
   args: {
     userId: v.id("users"),
     type: v.string(), // NotificationType
@@ -72,7 +90,7 @@ export const createNotificationWithDeduplication = mutation({
 /**
  * Get notifications for a user
  */
-export const getByUserId = query({
+export const getByUserId = internalQuery({
   args: {
     userId: v.id("users"),
     limit: v.optional(v.number()),
@@ -116,8 +134,7 @@ export const getUnreadCount = query({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    // Verify user exists
-    await getUserByIdOrThrow(ctx, args.userId);
+    await requireNotificationOwner(ctx, args.userId);
 
     const unreadNotifications = await ctx.db
       .query("notifications")
@@ -143,6 +160,7 @@ export const markAsRead = mutation({
       throw new Error(`Notification with ID ${args.notificationId} not found`);
     }
 
+    await requireNotificationOwner(ctx, notification.userId);
     await ctx.db.patch(args.notificationId, {
       readAt: Date.now(),
     });
@@ -159,8 +177,7 @@ export const markAllAsRead = mutation({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    // Verify user exists
-    await getUserByIdOrThrow(ctx, args.userId);
+    await requireNotificationOwner(ctx, args.userId);
 
     const unreadNotifications = await ctx.db
       .query("notifications")
@@ -182,7 +199,7 @@ export const markAllAsRead = mutation({
 /**
  * Get notification by ID (Internal Query)
  */
-export const getNotificationById = query({
+export const getNotificationById = internalQuery({
   args: {
     notificationId: v.id("notifications"),
   },
@@ -194,7 +211,7 @@ export const getNotificationById = query({
 /**
  * Update notification status (Internal Mutation)
  */
-export const updateNotificationStatus = mutation({
+export const updateNotificationStatus = internalMutation({
   args: {
     notificationId: v.id("notifications"),
     status: v.union(
@@ -226,7 +243,7 @@ export const updateNotificationStatus = mutation({
 /**
  * Create payment notification
  */
-export const createPaymentNotification = mutation({
+export const createPaymentNotification = internalMutation({
   args: {
     invoiceId: v.id("invoices"),
     type: v.union(v.literal("payment_success"), v.literal("payment_failed")),
@@ -299,6 +316,7 @@ export const deleteNotification = mutation({
       throw new Error(`Notification with ID ${args.notificationId} not found`);
     }
 
+    await requireNotificationOwner(ctx, notification.userId);
     await ctx.db.delete(args.notificationId);
 
     return true;

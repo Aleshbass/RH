@@ -1,0 +1,82 @@
+---
+title: No-code referral links
+description: Send patients to Rehabify with a co-branded link or QR code. Covers the landing page, consent, 30-day attribution, stats and sandbox links.
+---
+
+A referral link lets you refer patients without writing any code. You share one URL. Patients open a co-branded landing page and refer themselves through a short form. Every referral appears in your dashboard and the API, fires your webhooks, and is attributed to you for commission.
+
+```text
+https://physioaroundme.com/r/<public_code>
+```
+
+## How it works
+
+1. **You create a link** in the Partner Portal under **Referral Links**, or with [`POST /partners/referral-links`](/docs/api-reference/referral-links#create-a-referral-link). Each link gets a non-guessable `public_code`, for example `wellah-7KQ2X9MD`.
+2. **You share it** by email, SMS, WhatsApp, as a QR code on posters or discharge sheets, or on your intranet or website.
+3. **The patient opens the landing page.** It's co-branded with your logo and Rehabify's.
+4. **The patient submits a short form** with their name, a phone number or email, and what they need help with. They must tick an explicit consent checkbox, which is **unticked by default**.
+5. **A referral is created.** It appears in your dashboard and in `GET /partners/referrals`, and fires `referral.created`.
+6. **The patient gets a tracking code** and a one-tap **Chat with Joy on WhatsApp** button. Joy starts intake straight away, and Rehabify's care team follows up.
+
+From there, the referral follows the normal journey (`contacted` → `booked` → `in_treatment` → `completed`), with a [webhook](/docs/webhooks) at every step.
+
+## Create a link
+
+**In the Partner Portal:** open **Referral Links**, create a link, and copy its URL. To print it, encode the full URL in a QR code with any QR generator.
+
+**With the API:**
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/referral-links \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "campaign_name": "Staff wellness Q4",
+    "service_scope": "all_rehabilitation",
+    "default_care_mode": "patient_choice",
+    "expires_at": "2027-01-31T23:59:59.000Z"
+  }'
+```
+
+The response includes the `url` to share. Create one link per campaign, location or channel, so you can compare their stats.
+
+## Consent
+
+The landing page asks the patient directly for permission to be contacted by Rehabify. The checkbox is unticked by default, and no referral is created without it. If you build your own form on top of the [public lead endpoint](/docs/api-reference/referral-links#public-lead-capture), you must do the same: show an explicit, unticked consent checkbox, and send `consent.granted: true` only when the patient ticks it.
+
+## Attribution
+
+- Opening your link sets a **30-day first-party cookie** for physioaroundme.com and its subdomains.
+- If the visitor **signs up or books** on physioaroundme.com within those 30 days, they're attributed to you.
+- Attribution is **permanent, and the first partner wins.** Once a patient is attributed to you, a later link from another partner doesn't move them.
+- Patients who start a conversation with Joy on WhatsApp using your link's code are attributed to you too.
+- Inactive or expired links show an "unavailable" page and don't attribute anyone.
+
+## Commissions
+
+You earn commission on **verified paid bookings** by patients attributed to you, at the rate in your contract (or the platform default share, currently 10%, if you don't have one). Only live links earn commission. See [Commercial terms & commissions](/docs/api-reference/commercial-and-commissions).
+
+## Stats
+
+Each link reports five counters, in the portal and in the `stats` object of the API:
+
+| Stat | Counts |
+| :--- | :--- |
+| `clicks` | Unique visitors. A visitor is counted at most once per 30 minutes, and bots are excluded. |
+| `leads` | Landing-page forms submitted. |
+| `signups` | Patient accounts attributed to the link. |
+| `bookings` | Bookings created by attributed patients. |
+| `payments` | Paid bookings. |
+
+## Tracking page
+
+Every referral has a public tracking page at `https://physioaroundme.com/track/<tracking_code>`. It shows only the status timeline, with no personal or clinical data, so patients can safely share it.
+
+## Turning a link off
+
+Deactivate a link in the portal, or with `PATCH /partners/referral-links/{id}` and `{ "status": "inactive" }`. Links also stop working after their `expires_at`. An inactive or expired link shows patients an "unavailable" page, accepts no new leads (the public lead endpoint returns `410 link_inactive`), and doesn't attribute anyone. You can reactivate a link by setting `"status": "active"`.
+
+## Sandbox links
+
+Links you create with a sandbox key, or in sandbox mode in the portal, are sandbox links. Their leads create sandbox referrals that fire your sandbox webhooks. Sandbox links never contact patients and never attribute real patients, so they're safe for testing your forms and webhook handling.

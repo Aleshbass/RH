@@ -1,39 +1,179 @@
 ---
-title: Hospital & Clinic Referral Guide
-description: How secondary hospitals, private clinics, and orthopedic practices refer patients in 30 seconds.
+title: Hospitals and clinics
+description: Refer patients to Rehabify from your EHR, a referral link, a discharge-sheet QR code or the Partner Portal, and keep the referring doctor informed.
 ---
 
-# Hospital & Clinic Referral Guide
+Hospitals and clinics without in-house physiotherapy, or with more demand than they can meet, can refer patients to Rehabify's network of MRTBN-licensed physiotherapists. They can then follow each patient's progress back to discharge.
 
-Hospitals and private clinics without in-house physiotherapy departments can use Rehabify as their **outsourced physical rehabilitation department**.
+## Choose how to refer
 
----
+| Option | Engineering work | Best for |
+| :--- | :--- | :--- |
+| **Partner Portal** | None | Occasional referrals entered by clinic staff |
+| **Referral link and QR code** | None | Discharge sheets, consulting rooms and waiting areas: patients refer themselves |
+| **API from your EHR** | Some | High volumes, and referrals created automatically from your clinical workflow |
 
-## Benefits for Referring Doctors & Hospitals
+All three create the same kind of referral. Each one appears in your dashboard and the API, and fires your webhooks.
 
-* **30-Second Hand-off**: Refer via WhatsApp link, Partner Portal, or API.
-* **Automated Discharge Summaries**: Receive comprehensive medical progress reports back upon patient discharge.
-* **Doctor Incentive Bonus**: Earn ₦500–₦2,000 partner incentive per completed treatment plan.
-* **Zero Overhead**: No physiotherapy equipment or full-time therapist staffing required.
+### Option 1: Partner Portal
 
----
+Staff sign in at https://partners.physioaroundme.com and create the referral there. Make sure the patient has agreed to be contacted by Rehabify first.
 
-## Option 1: 1-Click Partner Portal Form
+### Option 2: Referral link and QR code
 
-Doctor or hospital reception logs in at `partners.physioaroundme.com` and fills out the 4-field referral form:
-1. Patient Full Name
-2. Patient Phone Number
-3. Clinical Diagnosis (e.g. *Post-Stroke Left Hemiplegia*)
-4. Modality Preference (Home Visit or Clinic Visit)
-
-Rehabify handles everything from that point onwards.
-
----
-
-## Option 2: Doctor Prescription QR Code
-
-Print your clinic's customized QR code on patient discharge sheets. When scanned with a smartphone camera, WhatsApp opens with your doctor ID embedded:
+Create a [referral link](/docs/guides/no-code-referral-links), for example one per department, and print its URL as a QR code on discharge sheets and posters:
 
 ```text
-https://wa.me/2348061525811?text=REHAB_REF_CLINIC_DOC_0091
+https://physioaroundme.com/r/<public_code>
 ```
+
+Patients scan the code, give consent and submit a short form. Each referral is attributed to your organisation for 30 days, and permanently once the patient signs up or books. Link stats show how many patients each department sends.
+
+### Option 3: API from your EHR
+
+Create the referral when the doctor orders physiotherapy. Include the clinical context in `clinical.notes`. It's write-only: Rehabify's clinicians see it, but the API and webhooks never return it.
+
+<Tabs items={["cURL", "Node.js", "Python"]}>
+<Tab>
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/referrals \
+  -X POST \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d" \
+  -d '{
+    "partner_reference": "CLINIC-ORTHO-000781",
+    "patient": {
+      "first_name": "Chioma",
+      "last_name": "Okeke",
+      "phone": "+2348029988776",
+      "city": "Lagos",
+      "state": "Lagos",
+      "area": "Surulere",
+      "preferred_language": "en"
+    },
+    "clinical": {
+      "condition": "Left hemiparesis after stroke",
+      "notes": "Ischaemic stroke 6 weeks ago. Medically stable. Needs gait and upper-limb rehabilitation.",
+      "priority": "urgent",
+      "recommended_sessions": 12,
+      "referring_clinician": "Dr. A. Balogun, Neurology"
+    },
+    "care": { "preferred_mode": "in_person", "preferred_contact_channel": "phone" },
+    "billing_mode": "patient_self_pay",
+    "consent": { "granted": true, "method": "signed_form", "captured_at": "2026-10-13T11:20:00.000Z" }
+  }'
+```
+
+</Tab>
+<Tab>
+
+```js
+// Node.js 18+. Call from your EHR integration service.
+import { randomUUID } from "node:crypto";
+
+export async function referToRehabify(order) {
+  const res = await fetch("https://api.physioaroundme.com/v1/partners/referrals", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.REHABIFY_API_KEY}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": order.idempotencyKey ?? randomUUID(), // persist it with the order
+    },
+    body: JSON.stringify({
+      partner_reference: order.id, // e.g. "CLINIC-ORTHO-000781"
+      patient: {
+        first_name: order.patient.firstName,
+        last_name: order.patient.lastName,
+        phone: order.patient.phone,
+        city: order.patient.city,
+        state: order.patient.state,
+      },
+      clinical: {
+        condition: order.condition,
+        notes: order.clinicalSummary,
+        priority: order.urgent ? "urgent" : "standard",
+        recommended_sessions: order.sessions,
+        referring_clinician: order.clinicianName,
+      },
+      care: { preferred_mode: "in_person", preferred_contact_channel: "phone" },
+      billing_mode: "patient_self_pay",
+      consent: { granted: true, method: "signed_form", captured_at: order.consentCapturedAt },
+    }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(`${res.status} ${body.error.code}: ${body.error.message}`);
+  return body; // store body.id and body.tracking_code against the order
+}
+```
+
+</Tab>
+<Tab>
+
+```python
+import os
+import uuid
+
+import requests
+
+
+def refer_to_rehabify(order):
+    """Call from your EHR integration service."""
+    resp = requests.post(
+        "https://api.physioaroundme.com/v1/partners/referrals",
+        headers={
+            "Authorization": f"Bearer {os.environ['REHABIFY_API_KEY']}",
+            "Idempotency-Key": order.get("idempotency_key") or str(uuid.uuid4()),  # persist it
+        },
+        json={
+            "partner_reference": order["id"],  # e.g. "CLINIC-ORTHO-000781"
+            "patient": {
+                "first_name": order["patient"]["first_name"],
+                "last_name": order["patient"]["last_name"],
+                "phone": order["patient"]["phone"],
+                "city": order["patient"]["city"],
+                "state": order["patient"]["state"],
+            },
+            "clinical": {
+                "condition": order["condition"],
+                "notes": order["clinical_summary"],
+                "priority": "urgent" if order["urgent"] else "standard",
+                "recommended_sessions": order["sessions"],
+                "referring_clinician": order["clinician_name"],
+            },
+            "care": {"preferred_mode": "in_person", "preferred_contact_channel": "phone"},
+            "billing_mode": "patient_self_pay",
+            "consent": {"granted": True, "method": "signed_form", "captured_at": order["consent_captured_at"]},
+        },
+        timeout=30,
+    )
+    body = resp.json()
+    if not resp.ok:
+        raise RuntimeError(f"{resp.status_code} {body['error']['code']}: {body['error']['message']}")
+    return body  # store body["id"] and body["tracking_code"] against the order
+```
+
+</Tab>
+</Tabs>
+
+Print or text `links.whatsapp_intake_url` for the patient so they can start with Joy before they leave the clinic.
+
+## Keep the referring doctor informed
+
+- **Webhooks** tell your EHR when the patient is contacted, booked, in treatment and discharged. See the [event catalog](/docs/webhooks/event-catalog).
+- **Progress reports** show sessions attended and milestones. On `referral.completed`, download the PDF and file it in the patient record:
+
+```bash
+curl https://api.physioaroundme.com/v1/partners/reports/CLINIC-ORTHO-000781/pdf \
+  -H "Authorization: Bearer $REHABIFY_API_KEY" \
+  -o CLINIC-ORTHO-000781-progress.pdf
+```
+
+- **The public tracking page** (`links.tracking_url`) shows the status timeline only, so patients and their families can follow progress without seeing personal or clinical data.
+
+Reports never include clinical notes. They summarise attendance and milestones. See [Progress reports](/docs/api-reference/clinical-reports).
+
+## Commissions
+
+Patients you refer by API, referral link or WhatsApp referral code are attributed to your organisation. Your organisation earns commission on their verified paid bookings, under your commercial terms. See [Commercial terms & commissions](/docs/api-reference/commercial-and-commissions).
