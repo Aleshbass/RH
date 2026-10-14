@@ -1,200 +1,205 @@
 'use client';
 
-import { useQuery, useMutation } from 'convex/react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useQuery } from 'convex/react';
+import { ChevronLeft, MessageSquare, Plus } from 'lucide-react';
 import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import RealtimeChat from '@/components/chat/RealtimeChat';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessageSquare, Users, Plus } from 'lucide-react';
-import { useState, useMemo } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Id } from '@/convex/_generated/dataModel';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/physio/ui';
+import { cn } from '@/lib/utils';
 
-type ConversationWithParticipant = {
-  _id: Id<"conversations">;
-  otherParticipant: {
-    _id: Id<"users">;
-    firstName?: string;
-    lastName?: string;
-  };
-  lastMessage?: {
-    content: string;
-  };
+type Conversation = {
+  _id: Id<'conversations'>;
+  otherParticipant: { _id: Id<'users'>; firstName?: string; lastName?: string };
+  lastMessage?: { content: string };
   unreadCount: number;
 };
 
+type PatientLite = { _id: Id<'users'>; firstName?: string; lastName?: string; email?: string };
+
+const fullName = (p?: { firstName?: string; lastName?: string }) =>
+  [p?.firstName, p?.lastName].filter(Boolean).join(' ') || 'Unknown';
+const initials = (p?: { firstName?: string; lastName?: string }) =>
+  `${p?.firstName?.[0] ?? ''}${p?.lastName?.[0] ?? ''}`.toUpperCase() || '?';
+
 export default function PhysiotherapistMessagesPage() {
-  const [selectedConversationId, setSelectedConversationId] = useState<Id<"conversations">>();
-  const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
-  const [newConversationPatientId, setNewConversationPatientId] = useState<Id<"users"> | null>(null);
-  
-  // Get current user
-  const currentUser = useQuery(api.users.getMyUser);
-  
-  // Get conversations for the current user
-  const conversations = useQuery(
-    api.chat.getMyConversations,
-    currentUser ? {} : 'skip'
-  ) as ConversationWithParticipant[] | undefined;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const conversations = useQuery(api.chat.getMyConversations, {}) as Conversation[] | undefined;
+  const patients = useQuery(api.patients.getMyPatients, { limit: 200 }) as PatientLite[] | undefined;
 
-  // Fetch patients list for starting new conversations
-  const patients = useQuery(api.patients.getMyPatients, {});
+  // Who we're chatting with. Tracked directly so a brand-new conversation opens straight away.
+  const [recipientId, setRecipientId] = useState<Id<'users'> | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState('');
 
-  const getOrCreateConversation = useMutation(api.chat.getOrCreateConversation);
+  // ?with=<userId> opens that conversation (used by "Message" on a patient's page)
+  useEffect(() => {
+    const target = searchParams.get('with');
+    if (target) setRecipientId(target as Id<'users'>);
+  }, [searchParams]);
 
-  // Get the selected recipient's ID
-  const selectedRecipientId = useMemo(() => {
-    if (!selectedConversationId || !conversations) return null;
-    const conversation = conversations.find(c => c._id === selectedConversationId);
-    return conversation?.otherParticipant._id;
-  }, [selectedConversationId, conversations]);
+  const recipient = useMemo(() => {
+    if (!recipientId) return undefined;
+    return (
+      conversations?.find((c) => c.otherParticipant._id === recipientId)?.otherParticipant ??
+      patients?.find((p) => p._id === recipientId)
+    );
+  }, [recipientId, conversations, patients]);
 
-  if (!currentUser) {
-    return <div>Loading...</div>;
-  }
+  const pickerResults = useMemo(() => {
+    const term = pickerSearch.trim().toLowerCase();
+    return (patients ?? []).filter((p) => !term || `${fullName(p)} ${p.email ?? ''}`.toLowerCase().includes(term));
+  }, [patients, pickerSearch]);
+
+  const select = (id: Id<'users'>) => {
+    setRecipientId(id);
+    if (searchParams.get('with')) router.replace('/dashboard/physiotherapist/messages');
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Messages</h1>
-          <p className="text-muted-foreground">
-            Communicate with your patients securely
-          </p>
+    // Fills the screen under the top bar; on phones the list and the chat take turns
+    <div className="mx-auto flex h-[calc(100dvh-9.5rem)] w-full max-w-6xl min-h-[28rem] overflow-hidden rounded-2xl border border-black/[0.04] bg-white shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none lg:h-[calc(100dvh-10rem)]">
+      <aside
+        className={cn(
+          'flex w-full flex-col border-r border-neutral-200 dark:border-white/[0.07] md:w-80 md:shrink-0',
+          recipientId ? 'hidden md:flex' : 'flex'
+        )}
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 px-4 dark:border-white/[0.07]">
+          <h1 className="text-base font-semibold text-neutral-900 dark:text-white">Messages</h1>
+          <Button size="sm" variant="outline" onClick={() => setPickerOpen(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            New
+          </Button>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-200px)]">
-        {/* Conversation List */}
-        <Card className="lg:col-span-1">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Conversations
-            </CardTitle>
-            {/* New Conversation Button */}
-            <Dialog open={isNewConversationOpen} onOpenChange={setIsNewConversationOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline" className="ml-auto">
-                  <Plus className="h-4 w-4 mr-1" /> New
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[400px]">
-                <DialogHeader>
-                  <DialogTitle>Start New Conversation</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <Select 
-                    onValueChange={(value) => {
-                      const id = value as Id<"users">;
-                      setNewConversationPatientId(id);
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select a patient" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {patients?.filter((patient: { _id: string; firstName?: string; lastName?: string } | null): patient is NonNullable<typeof patient> => patient !== null).map((patient: { _id: string; firstName?: string; lastName?: string }) => (
-                        <SelectItem key={patient._id} value={patient._id}>
-                          {patient.firstName || 'Unknown'} {patient.lastName || ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  disabled={!newConversationPatientId}
-                  onClick={async () => {
-                    if (!newConversationPatientId) return;
-                    try {
-                      const result = await getOrCreateConversation({ participantId: newConversationPatientId })
-                      setSelectedConversationId(result.conversationId)
-                      toast.success('Conversation started')
-                      setIsNewConversationOpen(false)
-                      setNewConversationPatientId(null)
-                    } catch (error) {
-                      toast.error('Failed to start conversation')
-                      console.error('Start conversation error:', error)
-                    }
-                  }}
-                  className="w-full"
-                >
-                  Start Chat
-                </Button>
-              </DialogContent>
-            </Dialog>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="space-y-2">
-              {conversations?.map((conversation) => {
-                const otherParticipant = conversation.otherParticipant;
+        <div className="flex-1 overflow-y-auto">
+          {conversations === undefined ? (
+            <div className="space-y-2 p-3">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-14 rounded-lg" />
+              ))}
+            </div>
+          ) : conversations.length === 0 ? (
+            <EmptyState
+              icon={<MessageSquare className="h-8 w-8" />}
+              title="No conversations yet"
+              description="Message a patient to share exercises, check in between sessions or answer questions."
+            />
+          ) : (
+            <ul>
+              {conversations.map((conversation) => {
+                const person = conversation.otherParticipant;
+                const active = person._id === recipientId;
                 return (
-                  <div
-                    key={conversation._id}
-                    onClick={() => setSelectedConversationId(conversation._id)}
-                    className={`p-3 cursor-pointer hover:bg-gray-50 border-b ${
-                      selectedConversationId === conversation._id ? 'bg-blue-50' : ''
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="flex-shrink-0">
-                        <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                          {otherParticipant?.firstName?.[0] || 'U'}
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {otherParticipant?.firstName || 'Unknown'} {otherParticipant?.lastName || ''}
-                        </p>
-                        {conversation.lastMessage && (
-                          <p className="text-sm text-gray-500 truncate">
-                            {conversation.lastMessage.content}
-                          </p>
-                        )}
-                      </div>
-                      {conversation.unreadCount > 0 && (
-                        <div className="bg-blue-500 text-white text-xs rounded-full px-2 py-1 min-w-5 text-center">
-                          {conversation.unreadCount}
-                        </div>
+                  <li key={conversation._id}>
+                    <button
+                      type="button"
+                      onClick={() => select(person._id)}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors',
+                        active ? 'bg-neutral-100 dark:bg-neutral-800' : 'hover:bg-neutral-50 dark:hover:bg-neutral-800/50'
                       )}
-                    </div>
-                  </div>
+                    >
+                      <Avatar className="h-9 w-9 shrink-0">
+                        <AvatarFallback className="bg-neutral-100 text-xs font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                          {initials(person)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="min-w-0 flex-1">
+                        <span className={cn('block truncate text-sm text-neutral-900 dark:text-white', conversation.unreadCount > 0 && 'font-semibold')}>
+                          {fullName(person)}
+                        </span>
+                        {conversation.lastMessage && (
+                          <span className="block truncate text-xs text-neutral-500 dark:text-neutral-400">{conversation.lastMessage.content}</span>
+                        )}
+                      </span>
+                      {conversation.unreadCount > 0 && (
+                        <span className="min-w-5 rounded-full bg-[#005b57] px-1.5 text-center text-[11px] font-medium leading-5 text-white dark:bg-[#2dd4bf] dark:text-neutral-950">
+                          {conversation.unreadCount}
+                        </span>
+                      )}
+                    </button>
+                  </li>
                 );
               })}
-              {(!conversations || conversations.length === 0) && (
-                <div className="p-6 text-center text-gray-500">
-                  <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>No conversations yet</p>
-                  <p className="text-sm">Start messaging your patients</p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+            </ul>
+          )}
+        </div>
+      </aside>
 
-        {/* Chat Area */}
-        <Card className="lg:col-span-3">
-          <CardContent className="p-0 h-full">
-            {selectedRecipientId ? (
-              <RealtimeChat
-                recipientId={selectedRecipientId}
-                className="h-full"
-              />
+      <section className={cn('min-w-0 flex-1 flex-col', recipientId ? 'flex' : 'hidden md:flex')}>
+        {recipientId ? (
+          <>
+            <div className="flex h-14 shrink-0 items-center gap-2 border-b border-neutral-200 px-2 dark:border-white/[0.07] md:px-4">
+              <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setRecipientId(null)} aria-label="Back to conversations">
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+              <p className="truncate text-sm font-semibold text-neutral-900 dark:text-white">{fullName(recipient)}</p>
+            </div>
+            <div className="min-h-0 flex-1">
+              <RealtimeChat key={recipientId} recipientId={recipientId} embedded />
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-1 items-center justify-center">
+            <EmptyState title="Choose a conversation" description="Or start a new one with a patient." />
+          </div>
+        )}
+      </section>
+
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="gap-0 p-0 sm:max-w-md">
+          <DialogHeader className="border-b border-neutral-200 p-4 dark:border-white/[0.07]">
+            <DialogTitle>New message</DialogTitle>
+          </DialogHeader>
+          <div className="p-3">
+            <Input
+              autoFocus
+              placeholder="Search your patients"
+              value={pickerSearch}
+              onChange={(e) => setPickerSearch(e.target.value)}
+              aria-label="Search your patients"
+            />
+          </div>
+          <ul className="max-h-80 overflow-y-auto pb-2">
+            {patients === undefined ? (
+              <li className="px-4 py-3 text-sm text-neutral-500">Loading…</li>
+            ) : pickerResults.length === 0 ? (
+              <li className="px-4 py-3 text-sm text-neutral-500">No patients found.</li>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">
-                <div className="text-center">
-                  <MessageSquare className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                  <p className="text-lg font-medium">Select a conversation</p>
-                  <p className="text-sm">Choose a conversation from the list to start messaging</p>
-                </div>
-              </div>
+              pickerResults.map((patient) => (
+                <li key={patient._id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      select(patient._id);
+                      setPickerOpen(false);
+                      setPickerSearch('');
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+                  >
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="bg-neutral-100 text-xs dark:bg-neutral-800">{initials(patient)}</AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm text-neutral-900 dark:text-white">{fullName(patient)}</span>
+                      {patient.email && <span className="block truncate text-xs text-neutral-500">{patient.email}</span>}
+                    </span>
+                  </button>
+                </li>
+              ))
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </ul>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-} 
+}

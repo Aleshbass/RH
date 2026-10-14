@@ -1,302 +1,180 @@
 'use client'
 
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
+import { useAction } from 'convex/react'
+import { Loader2, Mail } from 'lucide-react'
+import { toast } from 'sonner'
+import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, UserPlus, Mail, User } from 'lucide-react'
-import { toast } from 'sonner'
-import { useActionUntyped } from '@/lib/convexUntyped'
-import { api } from '@/convex/_generated/api'
+import { primaryButtonClass } from '@/components/physio/ui'
+import { cn } from '@/lib/utils'
+import { playSound } from '@/lib/sounds'
 
-// Simple schema to avoid deep type instantiation
-const patientSchema = z.object({
-  firstName: z.string().min(1, 'First name is required'),
-  lastName: z.string().min(1, 'Last name is required'),
-  email: z.string().email('Valid email is required'),
-  phoneNumber: z.string().optional(),
-  dateOfBirth: z.string().optional(),
-  gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).optional(),
-  medicalHistory: z.string().optional(),
-  emergencyContact: z.string().optional(),
-  addMethod: z.enum(['direct', 'invite']),
-})
+type Source = 'referred' | 'existing_patient'
 
-type PatientFormData = z.infer<typeof patientSchema>
+const SOURCES: { value: Source; title: string; hint: string }[] = [
+  { value: 'referred', title: 'Referred to me', hint: 'By a doctor, hospital or another clinician' },
+  { value: 'existing_patient', title: 'My existing patient', hint: 'Someone I already treat' },
+]
 
 interface AddPatientDirectFormProps {
   onSuccess?: () => void
   onCancel?: () => void
 }
 
+/**
+ * Invite a patient by email. They join Rehabify with the link and appear in the physio's
+ * patients once they accept. The physio says where the patient came from, which is kept on
+ * the patient's record and care episode.
+ */
 export default function AddPatientDirectForm({ onSuccess, onCancel }: AddPatientDirectFormProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const createInvitation = useAction(api.actions.patients.invitePatient.createPatientInvitationWithNotification)
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [email, setEmail] = useState('')
+  const [source, setSource] = useState<Source | null>(null)
+  const [referredBy, setReferredBy] = useState('')
+  const [note, setNote] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // Use untyped action to avoid deep type instantiation
-  const createPatientInvitation = useActionUntyped(
-    ((api as unknown) as Record<string, Record<string, Record<string, Record<string, unknown>>>>)?.actions?.patients?.invitePatient?.createPatientInvitationWithNotification
-  )
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    const next: Record<string, string> = {}
+    if (!firstName.trim()) next.firstName = 'Enter their first name'
+    if (!lastName.trim()) next.lastName = 'Enter their last name'
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) next.email = 'Enter a valid email address'
+    if (!source) next.source = 'Choose where this patient came from'
+    setErrors(next)
+    if (Object.keys(next).length > 0) return
 
-  const {
-    register,
-    handleSubmit,
-    watch,
-    setValue,
-    formState: { errors }
-  } = useForm<PatientFormData>({
-    resolver: zodResolver(patientSchema),
-    defaultValues: {
-      addMethod: 'invite'
-    }
-  })
-
-  const addMethod = watch('addMethod')
-
-  const onSubmit = async (data: PatientFormData) => {
-    setIsSubmitting(true)
-    setError(null)
-
+    setSubmitting(true)
     try {
-      if (data.addMethod === 'invite') {
-        // Send invitation
-        const result = await createPatientInvitation({
-          patientEmail: data.email,
-          patientName: `${data.firstName} ${data.lastName}`,
-          notes: data.medicalHistory || undefined,
-          sendEmail: true,
-        })
-
-        if (result?.success) {
-          toast.success('Patient invitation sent successfully!')
-          onSuccess?.()
-        } else {
-          throw new Error(result?.message || 'Failed to send invitation')
-        }
-      } else {
-        // For direct addition, we would need a separate action
-        // For now, we'll use the invitation method as fallback
-        toast.info('Direct patient addition will be available soon. Sending invitation instead.')
-        
-        const result = await createPatientInvitation({
-          patientEmail: data.email,
-          patientName: `${data.firstName} ${data.lastName}`,
-          notes: data.medicalHistory || undefined,
-          sendEmail: true,
-        })
-
-        if (result?.success) {
-          toast.success('Patient invitation sent successfully!')
-          onSuccess?.()
-        } else {
-          throw new Error(result?.message || 'Failed to send invitation')
-        }
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred'
-      setError(errorMessage)
-      toast.error(errorMessage)
+      const result = await createInvitation({
+        patientEmail: email.trim().toLowerCase(),
+        patientName: `${firstName.trim()} ${lastName.trim()}`,
+        notes: note.trim() || undefined,
+        sendEmail: true,
+        source: source!,
+        referredBy: source === 'referred' ? referredBy.trim() || undefined : undefined,
+      })
+      if (!result?.success) throw new Error(result?.message || 'We couldn’t send the invitation.')
+      playSound('success')
+      toast.success(`Invitation sent to ${firstName.trim()}`, {
+        description: 'They’ll appear in your patients once they accept.',
+      })
+      onSuccess?.()
+    } catch (error) {
+      toast.error((error as Error).message || 'We couldn’t send the invitation. Try again.')
     } finally {
-      setIsSubmitting(false)
+      setSubmitting(false)
     }
   }
 
+  const fieldError = (key: string) =>
+    errors[key] ? <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors[key]}</p> : null
+
   return (
-    <Card className="w-full max-w-2xl mx-auto">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <UserPlus className="h-5 w-5" />
-          Add New Patient
-        </CardTitle>
-        <CardDescription>
-          Add a patient to your care by sending an invitation or creating their profile directly.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          {/* Add Method Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="addMethod">How would you like to add this patient?</Label>
-            <Select 
-              value={addMethod} 
-              onValueChange={(value: 'direct' | 'invite') => setValue('addMethod', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select method" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="invite">
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4" />
-                    Send Invitation Email
-                  </div>
-                </SelectItem>
-                <SelectItem value="direct">
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4" />
-                    Create Profile Directly
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+    <form onSubmit={submit} className="space-y-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="ap-first">First name</Label>
+          <Input id="ap-first" className="mt-1.5" value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="off" />
+          {fieldError('firstName')}
+        </div>
+        <div>
+          <Label htmlFor="ap-last">Last name</Label>
+          <Input id="ap-last" className="mt-1.5" value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="off" />
+          {fieldError('lastName')}
+        </div>
+      </div>
 
-          {/* Basic Information */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="firstName">First Name *</Label>
-              <Input
-                id="firstName"
-                {...register('firstName')}
-                placeholder="Enter first name"
-              />
-              {errors.firstName && (
-                <p className="text-sm text-red-600">{errors.firstName.message}</p>
-              )}
-            </div>
+      <div>
+        <Label htmlFor="ap-email">Email</Label>
+        <Input
+          id="ap-email"
+          className="mt-1.5"
+          type="email"
+          inputMode="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="patient@example.com"
+          autoComplete="off"
+        />
+        {fieldError('email')}
+      </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="lastName">Last Name *</Label>
-              <Input
-                id="lastName"
-                {...register('lastName')}
-                placeholder="Enter last name"
-              />
-              {errors.lastName && (
-                <p className="text-sm text-red-600">{errors.lastName.message}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Contact Information */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address *</Label>
-              <Input
-                id="email"
-                type="email"
-                {...register('email')}
-                placeholder="patient@example.com"
-              />
-              {errors.email && (
-                <p className="text-sm text-red-600">{errors.email.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="phoneNumber">Phone Number</Label>
-              <Input
-                id="phoneNumber"
-                {...register('phoneNumber')}
-                placeholder="+234 xxx xxx xxxx"
-              />
-            </div>
-          </div>
-
-          {/* Additional Information */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="dateOfBirth">Date of Birth</Label>
-              <Input
-                id="dateOfBirth"
-                type="date"
-                {...register('dateOfBirth')}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="gender">Gender</Label>
-              <Select onValueChange={(value) => setValue('gender', value as 'male' | 'female' | 'other' | 'prefer_not_to_say')}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select gender" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="male">Male</SelectItem>
-                  <SelectItem value="female">Female</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                  <SelectItem value="prefer_not_to_say">Prefer not to say</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Medical History */}
-          <div className="space-y-2">
-            <Label htmlFor="medicalHistory">Medical History / Notes</Label>
-            <Textarea
-              id="medicalHistory"
-              {...register('medicalHistory')}
-              placeholder="Enter any relevant medical history or notes..."
-              rows={3}
-            />
-          </div>
-
-          {/* Emergency Contact */}
-          <div className="space-y-2">
-            <Label htmlFor="emergencyContact">Emergency Contact</Label>
-            <Input
-              id="emergencyContact"
-              {...register('emergencyContact')}
-              placeholder="Name and phone number of emergency contact"
-            />
-          </div>
-
-          {/* Error Display */}
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {/* Action Buttons */}
-          <div className="flex gap-3 pt-4">
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {addMethod === 'invite' ? 'Sending Invitation...' : 'Creating Patient...'}
-                </>
-              ) : (
-                <>
-                  {addMethod === 'invite' ? (
-                    <>
-                      <Mail className="mr-2 h-4 w-4" />
-                      Send Invitation
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="mr-2 h-4 w-4" />
-                      Add Patient
-                    </>
-                  )}
-                </>
-              )}
-            </Button>
-            
-            {onCancel && (
-              <Button
+      <div>
+        <Label>Where did this patient come from?</Label>
+        <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup">
+          {SOURCES.map((option) => {
+            const selected = source === option.value
+            return (
+              <button
+                key={option.value}
                 type="button"
-                variant="outline"
-                onClick={onCancel}
-                disabled={isSubmitting}
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setSource(option.value)}
+                className={cn(
+                  'rounded-2xl border p-3 text-left transition-all active:scale-[0.98]',
+                  selected
+                    ? 'border-rh-teal bg-rh-mist ring-1 ring-rh-teal dark:border-rh-aqua dark:bg-rh-aqua/10 dark:ring-rh-aqua'
+                    : 'border-black/[0.08] hover:border-rh-teal/40 hover:bg-rh-canvas dark:border-white/10 dark:hover:bg-white/[0.04]'
+                )}
               >
-                Cancel
-              </Button>
-            )}
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+                <span className="block text-sm font-semibold text-rh-night dark:text-white">{option.title}</span>
+                <span className="block text-xs text-neutral-500 dark:text-neutral-400">{option.hint}</span>
+              </button>
+            )
+          })}
+        </div>
+        {fieldError('source')}
+      </div>
+
+      {source === 'referred' && (
+        <div>
+          <Label htmlFor="ap-ref">Referred by (optional)</Label>
+          <Input
+            id="ap-ref"
+            className="mt-1.5"
+            value={referredBy}
+            onChange={(e) => setReferredBy(e.target.value)}
+            placeholder="e.g. Dr Okafor, LUTH Orthopaedics"
+          />
+        </div>
+      )}
+
+      <div>
+        <Label htmlFor="ap-note">Note (optional)</Label>
+        <Textarea
+          id="ap-note"
+          className="mt-1.5 resize-none"
+          rows={2}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Anything to remember, e.g. what they're coming in for"
+        />
+      </div>
+
+      <p className="rounded-xl bg-rh-canvas px-3 py-2 text-xs text-neutral-600 dark:bg-white/[0.04] dark:text-neutral-400">
+        We’ll email {firstName.trim() || 'them'} an invitation to join Rehabify. They appear in your patients once they accept.
+      </p>
+
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        {onCancel && (
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
+            Cancel
+          </Button>
+        )}
+        <Button type="submit" disabled={submitting} className={primaryButtonClass}>
+          {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+          Send invitation
+        </Button>
+      </div>
+    </form>
   )
 }

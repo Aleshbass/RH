@@ -1,311 +1,247 @@
 'use client';
 
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useQuery } from 'convex/react';
+import { format, formatDistanceToNow } from 'date-fns';
+import { ChevronRight, Search, Star, UserPlus, Users } from 'lucide-react';
 import { api } from '@/convex/_generated/api';
-import { useAuth } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState, useMemo } from 'react';
-import { Loader2, Users, Search, Plus, Calendar, FileText, Phone, Mail } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import EnhancedPatientInviteModal from '@/components/dashboard/shared/EnhancedPatientInviteModal';
+import { Skeleton } from '@/components/ui/skeleton';
 import AddPatientModal from '@/components/dashboard/physiotherapist/AddPatientModal';
-import { format } from 'date-fns';
-import { TourGuide } from '@/components/shared/TourGuide';
+import { EmptyState, PageContainer, PageHeader, Panel, StatusBadge, primaryButtonClass } from '@/components/physio/ui';
+import { OUTCOME_LABELS, type Outcome } from '@/components/physio/workspace/shared';
+import { cn } from '@/lib/utils';
 
-// Lightweight user type to avoid deep Convex type instantiation
-type CurrentUserLite = {
+type ActivePatient = {
   _id: string;
-  role?: 'physiotherapist' | 'patient' | 'clinic_owner' | 'admin' | string;
-} | null;
-
-interface PatientWithDetails {
-  _id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
   imageUrl?: string;
   phoneNumber?: string;
-  relationship: {
-    _id: string;
-    patientId: string;
-    physiotherapistId: string;
-    clinicId: string;
-    status: 'active' | 'inactive' | 'archived';
-    isPrimaryPhysiotherapist: boolean;
-    startDate: number;
-    endDate?: number;
-    notes?: string;
-  };
-  patientProfile?: {
-    dateOfBirth?: string;
-    gender?: string;
-    emergencyContact?: {
-      name: string;
-      phone: string;
-      relationship: string;
-    };
-    medicalHistory?: string[];
-    currentMedications?: string[];
-    allergies?: string[];
-  };
-  appointmentCount: number;
-  latestSession?: {
-    _id: string;
-    sessionDate: number;
-    treatmentAdministered?: string;
-  };
-}
+  relationship: { status: string; startDate: number; source?: string; referredBy?: string };
+  stats?: { appointmentCount?: number; lastSessionDate?: number };
+};
+
+type CompletedPatient = {
+  episodeId: string;
+  patientId: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  imageUrl?: string;
+  completedAt?: number;
+  outcome?: Outcome;
+  followUpRating?: number;
+};
+
+const SOURCE_BADGE: Record<string, string> = {
+  referred: 'Referred',
+  rehabify_referral: 'Referred',
+  existing_patient: 'Existing patient',
+  marketplace: 'Marketplace',
+  booking_link: 'Booking link',
+  invite: 'Invited',
+  clinic_direct: 'Clinic',
+};
+
+const BASE = '/dashboard/physiotherapist/patients';
+const initials = (p: { firstName?: string; lastName?: string }) =>
+  `${p.firstName?.[0] ?? ''}${p.lastName?.[0] ?? ''}`.toUpperCase() || 'P';
+const nameOf = (p: { firstName?: string; lastName?: string }) => [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Unnamed patient';
+
+// Avatar tints cycle through the brand's soft colours so the list feels friendly
+const AVATAR_TINTS = [
+  'bg-rh-mint text-rh-teal',
+  'bg-rh-peach text-[#b4690e]',
+  'bg-rh-blush text-[#be3a5f]',
+  'bg-rh-mist text-rh-teal',
+];
+const tintFor = (id: string) => AVATAR_TINTS[id.charCodeAt(id.length - 1) % AVATAR_TINTS.length];
 
 export default function PatientsPage() {
-  const router = useRouter();
-  const { isLoaded, isSignedIn } = useAuth();
+  const active = useQuery(api.patients.getMyPatients, { limit: 200 }) as ActivePatient[] | undefined;
+  const completed = useQuery(api.physioCare.getCompletedCare, {}) as CompletedPatient[] | undefined;
+  const [view, setView] = useState<'active' | 'completed'>('active');
   const [searchTerm, setSearchTerm] = useState('');
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
-  // Get current user (narrowed via unknown-cast to avoid deep TS instantiation)
-  const currentUser = useQuery(api.users.getMyUser) as unknown as CurrentUserLite | undefined;
+  const term = searchTerm.trim().toLowerCase();
+  const filteredActive = useMemo(
+    () =>
+      (active ?? []).filter((p) =>
+        !term ? true : [p.firstName, p.lastName, p.email, p.phoneNumber].filter(Boolean).join(' ').toLowerCase().includes(term)
+      ),
+    [active, term]
+  );
+  const filteredCompleted = useMemo(
+    () =>
+      (completed ?? []).filter((p) => (!term ? true : [p.firstName, p.lastName, p.email].filter(Boolean).join(' ').toLowerCase().includes(term))),
+    [completed, term]
+  );
 
-  // Memoize query params to keep reference stable and lighten TS inference
-  const patientParams = useMemo(() => ({
-    limit: 50,
-    searchTerm: searchTerm || undefined,
-  }), [searchTerm]);
-
-  // Get patients
-  const patients = useQuery(api.patients.getMyPatients, patientParams) as PatientWithDetails[] | undefined;
-
-  // Invitation actions are handled inside EnhancedPatientInviteModal
-
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (isLoaded && !isSignedIn) {
-      router.push('/sign-in');
-    }
-  }, [isLoaded, isSignedIn, router]);
-
-  // Redirect if not physiotherapist
-  useEffect(() => {
-    if (currentUser && currentUser.role !== 'physiotherapist') {
-      router.push('/dashboard');
-    }
-  }, [currentUser, router]);
-
-  // Loading state
-  if (!isLoaded || currentUser === undefined || patients === undefined) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-600">Loading patients...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const handlePatientClick = (patientId: string): void => {
-    router.push(`/dashboard/physiotherapist/patients/${patientId}`);
-  };
-
-  const getInitials = (firstName?: string, lastName?: string): string => {
-    if (!firstName || !lastName) return '??';
-    return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-  };
+  const tabs = [
+    { id: 'active' as const, label: 'In treatment', count: active?.length },
+    { id: 'completed' as const, label: 'Care completed', count: completed?.length },
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 id="patients-page-header" className="text-2xl font-bold text-gray-900">My Patients</h1>
-          <p className="text-gray-600">Manage your patient relationships and care</p>
+    <PageContainer>
+      <PageHeader
+        title="Patients"
+        description="Everyone you’re treating, and everyone you’ve finished with."
+        actions={
+          <AddPatientModal
+            trigger={
+              <Button className={primaryButtonClass}>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add patient
+              </Button>
+            }
+          />
+        }
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex rounded-2xl bg-white p-1 shadow-soft dark:bg-rh-ink-2" role="tablist">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={view === t.id}
+              onClick={() => setView(t.id)}
+              className={cn(
+                'rounded-xl px-4 py-2 text-sm transition-all active:scale-[0.97]',
+                view === t.id
+                  ? 'bg-rh-teal font-semibold text-white shadow-sm dark:bg-rh-aqua dark:text-rh-night'
+                  : 'text-neutral-600 hover:text-rh-night dark:text-neutral-400 dark:hover:text-white'
+              )}
+            >
+              {t.label}
+              {t.count !== undefined && <span className={cn('ml-1.5 tabular-nums', view === t.id ? 'opacity-80' : 'text-neutral-400')}>{t.count}</span>}
+            </button>
+          ))}
         </div>
-        <AddPatientModal
-          onSuccess={() => {
-            // Refresh the patients list
-            window.location.reload();
-          }}
-        />
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <Input
+            placeholder="Search by name, email or phone"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="h-10 rounded-xl border-0 bg-white pl-9 shadow-soft dark:bg-rh-ink-2"
+            aria-label="Search patients"
+          />
+        </div>
       </div>
 
-      {/* Stats Card with Integrated Search */}
-      <Card id="patient-stats-overview">
-        <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row md:items-center gap-4">
-            <div className="flex items-center gap-3 md:border-r md:pr-6">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Users className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Patients</p>
-                <p className="text-2xl font-bold text-gray-900">{patients.length}</p>
-              </div>
+      {view === 'active' ? (
+        <Panel>
+          {active === undefined ? (
+            <div className="space-y-3 p-5">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-14 rounded-2xl" />
+              ))}
             </div>
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="Search patients by name or email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-                id="patient-search-bar"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Patients List */}
-      <div className="space-y-4">
-        {patients.length === 0 ? (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center py-8">
-                <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No patients found</h3>
-                <p className="text-gray-600 mb-4">
-                  {searchTerm
-                    ? 'Try adjusting your search terms'
-                    : 'Invite your first patient to get started'
-                  }
-                </p>
-                <Button onClick={() => setIsInviteModalOpen(true)}>
-                  Invite Patient
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          patients.map((patient) => (
-            <Card key={patient._id} className="hover:shadow-md transition-shadow cursor-pointer">
-              <CardContent className="pt-6">
-                <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                  <div className="flex items-start gap-4 flex-1">
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src={patient.imageUrl} alt={`${patient.firstName} ${patient.lastName}`} />
-                      <AvatarFallback>
-                        {getInitials(patient.firstName, patient.lastName)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {patient.firstName} {patient.lastName}
-                        </h3>
-                        {patient.relationship.isPrimaryPhysiotherapist && (
-                          <Badge variant="secondary">Primary Therapist</Badge>
-                        )}
-                        <Badge className="bg-green-100 text-green-800">
-                          {patient.relationship.status}
-                        </Badge>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-600">
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4" />
-                          <span>{patient.email}</span>
+          ) : filteredActive.length === 0 ? (
+            <EmptyState
+              icon={<Users />}
+              title={term ? 'No patients match that search' : 'No patients yet'}
+              description={term ? 'Check the spelling, or search by email or phone.' : 'Invite a patient, or share your booking link so they can book you.'}
+            />
+          ) : (
+            <ul className="p-2">
+              {filteredActive.map((patient) => {
+                const count = patient.stats?.appointmentCount ?? 0;
+                const lastSeen = patient.stats?.lastSessionDate;
+                const source = patient.relationship.source ? SOURCE_BADGE[patient.relationship.source] : undefined;
+                return (
+                  <li key={patient._id}>
+                    <Link
+                      href={`${BASE}/${patient._id}`}
+                      className="group flex items-center gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-rh-canvas dark:hover:bg-white/[0.03]"
+                    >
+                      <Avatar className="h-11 w-11 shrink-0">
+                        <AvatarImage src={patient.imageUrl} alt="" />
+                        <AvatarFallback className={cn('text-sm font-semibold', tintFor(patient._id))}>{initials(patient)}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{nameOf(patient)}</p>
+                          {source && (
+                            <StatusBadge tone="teal" className="hidden sm:inline-flex">
+                              {source}
+                              {patient.relationship.referredBy ? ` · ${patient.relationship.referredBy}` : ''}
+                            </StatusBadge>
+                          )}
                         </div>
-                        {patient.phoneNumber && (
-                          <div className="flex items-center gap-2">
-                            <Phone className="h-4 w-4" />
-                            <span>{patient.phoneNumber}</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4" />
-                          <span>{patient.appointmentCount} appointments</span>
-                        </div>
-                        {patient.latestSession && (
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-4 w-4" />
-                            <span>
-                              Last session: {format(new Date(patient.latestSession.sessionDate), 'MMM dd, yyyy')}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-3 text-sm text-gray-600">
-                        <p>
-                          <strong>Patient since:</strong> {format(new Date(patient.relationship.startDate), 'MMM dd, yyyy')}
+                        <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                          {[patient.email, patient.phoneNumber].filter(Boolean).join(' · ') || 'No contact details'}
                         </p>
-                        {patient.patientProfile?.medicalHistory && patient.patientProfile.medicalHistory.length > 0 && (
-                          <p className="mt-1">
-                            <strong>Conditions:</strong> {patient.patientProfile.medicalHistory.slice(0, 2).join(', ')}
-                            {patient.patientProfile.medicalHistory.length > 2 && ' ...'}
-                          </p>
-                        )}
                       </div>
+                      <div className="hidden shrink-0 text-right text-xs text-neutral-500 dark:text-neutral-400 md:block">
+                        <p className="tabular-nums">
+                          {count} {count === 1 ? 'session' : 'sessions'}
+                        </p>
+                        <p>{lastSeen ? `Seen ${formatDistanceToNow(lastSeen, { addSuffix: true })}` : `Since ${format(patient.relationship.startDate, 'MMM yyyy')}`}</p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-neutral-300 transition-transform group-hover:translate-x-0.5 dark:text-neutral-600" />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Panel>
+      ) : (
+        <Panel>
+          {completed === undefined ? (
+            <div className="space-y-3 p-5">
+              {[0, 1].map((i) => (
+                <Skeleton key={i} className="h-14 rounded-2xl" />
+              ))}
+            </div>
+          ) : filteredCompleted.length === 0 ? (
+            <EmptyState
+              icon={<Users />}
+              title={term ? 'No patients match that search' : 'No completed care yet'}
+              description="When you complete a patient’s care from their workspace, they move here with their outcome and feedback."
+            />
+          ) : (
+            <ul className="p-2">
+              {filteredCompleted.map((patient) => (
+                <li key={patient.episodeId}>
+                  <Link
+                    href={`${BASE}/${patient.patientId}`}
+                    className="group flex items-center gap-3 rounded-2xl px-3 py-3 transition-colors hover:bg-rh-canvas dark:hover:bg-white/[0.03]"
+                  >
+                    <Avatar className="h-11 w-11 shrink-0">
+                      <AvatarImage src={patient.imageUrl} alt="" />
+                      <AvatarFallback className={cn('text-sm font-semibold', tintFor(patient.patientId))}>{initials(patient)}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{nameOf(patient)}</p>
+                      <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                        {patient.completedAt ? `Completed ${format(patient.completedAt, 'd MMM yyyy')}` : 'Completed'}
+                      </p>
                     </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/dashboard/physiotherapist/appointments?patient=${patient._id}`);
-                      }}
-                    >
-                      <Calendar className="h-4 w-4 mr-2" />
-                      Schedule
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePatientClick(patient._id);
-                      }}
-                    >
-                      View Details
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
-
-      {/* Patient Invite Modal - enhanced multi-method */}
-      <EnhancedPatientInviteModal
-        isOpen={isInviteModalOpen}
-        onClose={() => setIsInviteModalOpen(false)}
-      />
-
-      <TourGuide
-        tourId="patient-list-tour"
-        steps={[
-          {
-            target: "#patients-page-header",
-            title: "Patient Management",
-            content: "This is your central hub for managing all your patients. View their status, history, and details.",
-            position: "bottom",
-          },
-          {
-            target: "#add-new-patient-btn",
-            title: "Add New Patients",
-            content: "Click here to invite new patients or manually add them to your practice.",
-            position: "left",
-          },
-          {
-            target: "#patient-search-bar",
-            title: "Search Patients",
-            content: "Quickly find patients by name or email using this search bar.",
-            position: "bottom",
-          },
-          {
-            target: "#patient-stats-overview",
-            title: "Quick Stats",
-            content: "See an overview of your total patient count at a glance.",
-            position: "top",
-          },
-        ]}
-      />
-    </div>
+                    {patient.outcome && <StatusBadge tone={patient.outcome === 'goals_met' ? 'green' : 'neutral'}>{OUTCOME_LABELS[patient.outcome]}</StatusBadge>}
+                    {patient.followUpRating && (
+                      <span className="hidden shrink-0 items-center gap-0.5 text-xs font-semibold text-rh-night dark:text-white sm:inline-flex">
+                        <Star className="h-3.5 w-3.5 fill-rh-amber text-rh-amber" />
+                        {patient.followUpRating}
+                      </span>
+                    )}
+                    <ChevronRight className="h-4 w-4 shrink-0 text-neutral-300 dark:text-neutral-600" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      )}
+    </PageContainer>
   );
-} 
+}

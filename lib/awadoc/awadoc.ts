@@ -21,10 +21,33 @@ function parseEnvironment(value: string | undefined): AwadocEnvironment {
     return "test";
 }
 
+/**
+ * AWADOC_SECRET_KEY may hold several comma-separated secrets so a key rotation can
+ * overlap: inbound requests verify against any of them, outbound uses the first.
+ * Values are trimmed — a pasted trailing newline would otherwise break every HMAC.
+ */
+function parseSecretKeys(value: string | undefined): string[] {
+    return (value ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+}
+
+/**
+ * Non-reversible fingerprint of a secret, safe to log so both sides can confirm
+ * they hold the same key without sharing it.
+ */
+export function secretFingerprint(secret: string): string {
+    const fp = crypto.createHash("sha256").update(secret).digest("hex").slice(0, 8);
+    return `fp ${fp}, len ${secret.length}`;
+}
+
 export function getAwadocConfig() {
+    const secretKeys = parseSecretKeys(process.env.AWADOC_SECRET_KEY);
     return {
         apiKey: process.env.AWADOC_API_KEY ?? "",
-        secretKey: process.env.AWADOC_SECRET_KEY ?? "",
+        secretKey: secretKeys[0] ?? "",
+        secretKeys,
         partnerId: process.env.AWADOC_PARTNER_ID ?? "69764afe2c6108f861514a29",
         baseUrl: process.env.AWADOC_BASE_URL ?? "https://partners-staging.awadoc.com",
         environment: parseEnvironment(process.env.AWADOC_ENVIRONMENT),
@@ -129,18 +152,26 @@ export function verifyInboundSignature(
         return { valid: false, debug: { ...debug, error: "timestamp skew too large" } };
     }
 
-    const expected = buildSignatureFromRaw(rawBody, timestamp, config.secretKey);
-
-    // Timing-safe comparison
-    try {
-        const match = crypto.timingSafeEqual(
-            Buffer.from(expected, "hex"),
-            Buffer.from(signature, "hex")
-        );
-        return { valid: match, debug };
-    } catch (err) {
-        return { valid: false, debug: { ...debug, error: err instanceof Error ? err.message : String(err) } };
+    // Tolerate an optional "sha256=" prefix and upper-case hex
+    const received = signature.trim().toLowerCase().replace(/^sha256=/, "");
+    if (!/^[0-9a-f]{64}$/.test(received)) {
+        return {
+            valid: false,
+            debug: { ...debug, error: `malformed signature header (length ${signature.length})` },
+        };
     }
+    const receivedBuf = Buffer.from(received, "hex");
+
+    // Timing-safe comparison against each configured secret (supports key rotation)
+    for (const secret of config.secretKeys) {
+        const expected = Buffer.from(buildSignatureFromRaw(rawBody, timestamp, secret), "hex");
+        if (crypto.timingSafeEqual(expected, receivedBuf)) {
+            return { valid: true, debug };
+        }
+    }
+
+    const keys = config.secretKeys.map(secretFingerprint).join("; ");
+    return { valid: false, debug: { ...debug, error: `signature mismatch (our key: ${keys})` } };
 }
 
 /**

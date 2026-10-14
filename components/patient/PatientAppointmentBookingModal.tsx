@@ -12,6 +12,7 @@ import { Id } from '@/convex/_generated/dataModel'
 import { format, addDays, setHours, setMinutes, isBefore, startOfToday } from 'date-fns'
 import { ChevronLeft, X, Check, Video, Calendar as CalendarIcon, Clock, User, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { playSound } from '@/lib/sounds'
 
 interface PatientAppointmentBookingModalProps {
     isOpen: boolean
@@ -132,6 +133,7 @@ export function PatientAppointmentBookingModal({
                 status: 'scheduled',
             })
 
+            playSound('booked')
             setStep('success')
             onAppointmentBooked?.()
         } catch (error) {

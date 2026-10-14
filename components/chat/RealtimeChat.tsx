@@ -47,13 +47,16 @@ import { useFileUpload } from '@/lib/hooks/useFileUpload'
 import MessageContent from './MessageContent'
 import MessageStatus from './MessageStatus'
 import { useMutationUntyped, useQueryUntyped } from '@/lib/convexUntyped'
+import { playSound } from '@/lib/sounds'
 
 type ChatProps = {
   recipientId: Id<"users">;
   className?: string;
+  /** Fill the parent (e.g. the Messages page pane) with no card or header of its own */
+  embedded?: boolean;
 };
 
-const RealtimeChat = ({ recipientId, className }: ChatProps) => {
+const RealtimeChat = ({ recipientId, className, embedded = false }: ChatProps) => {
   // Access Convex API modules via unknown-indexers to avoid deep generic instantiation
   const apiUntyped = api as unknown as Record<string, unknown>
   const usersModule = apiUntyped['users'] as Record<string, unknown>
@@ -116,6 +119,17 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
     chatModule['getMessages'],
     conversationId ? { conversationId, limit: 50 } : 'skip'
   );
+
+  // Soft sound when a new message arrives from the other person (not on first load)
+  const newestSeenId = useRef<string | null>(null)
+  useEffect(() => {
+    const newest = (messages?.items as ChatMessage[] | undefined)?.[0]
+    if (!newest) return
+    if (newestSeenId.current && newest._id !== newestSeenId.current && newest.senderId !== currentUser?._id) {
+      playSound('receive')
+    }
+    newestSeenId.current = newest._id
+  }, [messages?.items, currentUser?._id])
 
   // Auto-mark messages as read when conversation is loaded and visible
   useEffect(() => {
@@ -282,6 +296,7 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
         contentType: "text",
         replyToMessageId: replyingTo?._id,
       });
+      playSound('send');
       setNewMessage('');
       setReplyingTo(null);
       
@@ -486,7 +501,19 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
   }
 
   return (
-    <Card className={cn("w-full h-[600px] flex flex-col", className)}>
+    <Card
+      className={cn(
+        embedded ? "flex h-full w-full flex-col rounded-none border-0 bg-transparent shadow-none" : "w-full h-[600px] flex flex-col",
+        className
+      )}
+    >
+      {embedded ? (
+        <div className="flex justify-end px-3 pt-2">
+          <Button variant="ghost" size="sm" onClick={() => setStarredOpen(true)} className="h-8 rounded-lg text-neutral-500">
+            <Star className="h-4 w-4 mr-1" /> Starred
+          </Button>
+        </div>
+      ) : (
       <CardHeader className="pb-4">
         <div className="flex items-center gap-2 justify-between">
           <MessageSquare className="h-5 w-5" />
@@ -498,14 +525,15 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-4 p-4">
-        <div className="relative flex-1">
+      )}
+      <CardContent className={cn("flex-1 flex flex-col gap-4", embedded ? "min-h-0 p-3 pt-1" : "p-4")}>
+        <div className={cn("relative flex-1", embedded && "min-h-0")}>
           <ScrollArea 
             ref={scrollAreaRef} 
-            className="h-[400px] w-full rounded-md border bg-background/50"
+            className={cn("w-full", embedded ? "h-full" : "h-[400px] rounded-md border bg-background/50")}
             onScrollCapture={handleScroll}
           >
-            <div className="space-y-2 p-4 min-h-[400px]">
+            <div className={cn("space-y-2 p-4", !embedded && "min-h-[400px]")}>
             {paginatedMessages.items.map((message: ChatMessage) => {
               const isOwnMessage = message.senderId === currentUser?._id;
               const senderUser = isOwnMessage ? currentUser : recipientUser;
@@ -568,8 +596,8 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
                       className={cn(
                         "relative rounded-2xl px-4 py-2 cursor-pointer transition-all duration-200",
                         isOwnMessage
-                          ? "bg-primary text-primary-foreground rounded-br-md"
-                          : "bg-muted rounded-bl-md",
+                          ? "bg-rh-teal text-white rounded-br-md dark:bg-rh-aqua dark:text-rh-night"
+                          : "bg-rh-canvas text-rh-night rounded-bl-md dark:bg-white/[0.06] dark:text-neutral-100",
                         isSelected && "ring-2 ring-primary/50 shadow-lg scale-[1.02]",
                         "hover:shadow-md"
                       )}
@@ -730,7 +758,7 @@ const RealtimeChat = ({ recipientId, className }: ChatProps) => {
           <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10">
             <Button
               onClick={scrollToBottom}
-              className="bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-200 rounded-full px-4 py-2 text-sm"
+              className="bg-rh-teal text-white shadow-lg hover:shadow-xl transition-all duration-200 rounded-full px-4 py-2 text-sm"
               size="sm"
             >
               ↓ New messages

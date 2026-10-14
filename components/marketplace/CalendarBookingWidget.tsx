@@ -220,7 +220,7 @@ export default function CalendarBookingWidget({
     };
 
     return (
-        <div className="bg-[#00403c] text-white rounded-xl overflow-hidden shadow-2xl">
+        <div className="bg-[#00443e] text-white rounded-xl overflow-hidden shadow-2xl">
             <div className="flex flex-col lg:flex-row">
                 {/* Left Sidebar - Profile Info */}
                 <div className="w-full lg:w-64 p-6 border-b lg:border-b-0 lg:border-r border-white/10">

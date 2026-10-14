@@ -40,6 +40,7 @@ const patientNavItems = [
   { title: 'Appointments', href: '/dashboard/patient/appointments', icon: Calendar, roles: ['patient'] },
   { title: 'My Physiotherapist', href: '/dashboard/patient/my-physiotherapist', icon: Stethoscope, roles: ['patient'] },
   { title: 'Insights', href: '/dashboard/patient/insights', icon: TrendingUp, roles: ['patient'] },
+  { title: 'Invoices', href: '/dashboard/patient/invoices', icon: Receipt, roles: ['patient'] },
   { title: 'Settings', href: '/dashboard/patient/settings', icon: Settings, roles: ['patient'] },
 ]
 

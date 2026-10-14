@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { Id } from "../_generated/dataModel";
+import { Doc, Id } from "../_generated/dataModel";
 import { action, mutation, query, internalMutation, internalQuery, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 
@@ -317,7 +317,8 @@ export const retryFailedNotifications = internalMutation({
     if (args.notificationIds) {
       // Retry specific notifications
       notificationsToRetry = await Promise.all(
-        args.notificationIds.map(id => ctx.db.get(id))
+        // Explicit element type: inferring it here trips TypeScript's instantiation depth limit
+        args.notificationIds.map((id): Promise<Doc<"notifications"> | null> => ctx.db.get(id))
       ).then(results => results.filter(Boolean));
     } else {
       // Retry failed notifications older than specified minutes

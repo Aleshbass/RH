@@ -84,6 +84,14 @@ crons.interval(
   {}
 );
 
+// Ask patients how they are doing ~2 weeks after a physio completes their care, 09:30 WAT
+crons.daily(
+  "send-care-follow-ups",
+  { hourUTC: 8, minuteUTC: 30 },
+  internal.physioCare.sendDueFollowUps,
+  {}
+);
+
 crons.interval("expire-joy-provider-responses", { minutes: 5 }, internal.joyIntegration.dispatchExpiredJoyProviderResponses, {});
 crons.interval("retry-joy-event-outbox", { minutes: 1 }, internal.joyIntegration.retryJoyEvents, {});
 

@@ -1,68 +1,259 @@
 'use client';
 
-import { useAuth } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-import { useQuery } from 'convex/react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useAction, useMutation, useQuery } from 'convex/react';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
-import { Loader2, DollarSign } from 'lucide-react';
-import { PayoutSettings } from '@/components/dashboard/physiotherapist/settings/PayoutSettings';
+import type { Id } from '@/convex/_generated/dataModel';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { primaryButtonClass, StatusBadge } from '@/components/physio/ui';
+import { SettingsPageHeader, SettingsSection, fieldHintClass, fieldLabelClass } from '@/components/physio/SettingsUI';
 
-export default function PayoutSettingsPage() {
-    const router = useRouter();
-    const { isLoaded, isSignedIn } = useAuth();
+type BankAccount = {
+    _id: Id<'physiotherapistBankAccounts'>;
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+    isVerified: boolean;
+};
 
-    const currentUser = useQuery(api.users.getMyUser);
+function maskAccount(number: string) {
+    return number.length > 4 ? `•••• ${number.slice(-4)}` : number;
+}
+
+/** Bank + account number → Paystack name check → confirm. */
+function BankAccountForm({ onDone, onCancel }: { onDone: () => void; onCancel?: () => void }) {
+    const user = useQuery(api.users.getMyUser);
+    const getBankList = useAction(api.paystack.getBankList);
+    const verifyBankAccount = useAction(api.paystack.verifyBankAccount);
+    const createSubaccount = useAction(api.paystack.createPhysiotherapistSubaccount);
+
+    const [banks, setBanks] = useState<{ name: string; code: string }[] | null>(null);
+    const [bankCode, setBankCode] = useState('');
+    const [accountNumber, setAccountNumber] = useState('');
+    const [resolvedName, setResolvedName] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
 
     useEffect(() => {
-        if (isLoaded && !isSignedIn) {
-            router.push('/sign-in');
-        }
-    }, [isLoaded, isSignedIn, router]);
+        getBankList({})
+            .then((list) => setBanks(list as { name: string; code: string }[]))
+            .catch(() => {
+                setBanks([]);
+                toast.error('Couldn’t load the list of banks. Refresh to try again.');
+            });
+    }, [getBankList]);
 
-    useEffect(() => {
-        if (currentUser && currentUser.role !== 'physiotherapist') {
-            router.push('/dashboard');
-        }
-    }, [currentUser, router]);
+    // Paystack can list a bank twice; keep the first of each code
+    const bankOptions = useMemo(() => {
+        const seen = new Set<string>();
+        return (banks ?? []).filter((bank) => (seen.has(bank.code) ? false : (seen.add(bank.code), true)));
+    }, [banks]);
+    const bankName = bankOptions.find((bank) => bank.code === bankCode)?.name;
 
-    // Show loading while auth or user data is loading
-    // Check for both undefined (loading) and null (no record) to avoid passing null to PayoutSettings
-    if (!isLoaded || !currentUser) {
-        // If currentUser is null (not undefined), show not found message
-        if (currentUser === null) {
-            return (
-                <div className="flex items-center justify-center min-h-[400px]">
-                    <div className="text-center">
-                        <p className="text-gray-400">User profile not found</p>
-                    </div>
-                </div>
-            );
+    const verify = async () => {
+        setBusy(true);
+        try {
+            const result = await verifyBankAccount({ bankCode, accountNumber });
+            if (result.success && result.accountName) setResolvedName(result.accountName);
+            else toast.error(result.message || 'We couldn’t find that account. Check the number and bank.');
+        } catch {
+            toast.error('We couldn’t check that account right now. Try again shortly.');
+        } finally {
+            setBusy(false);
         }
+    };
 
+    const confirm = async () => {
+        if (!user || !resolvedName) return;
+        setBusy(true);
+        try {
+            const result = await createSubaccount({
+                physiotherapistId: user._id,
+                businessName: [user.firstName, user.lastName].filter(Boolean).join(' ') || resolvedName,
+                accountName: resolvedName,
+                bankCode,
+                accountNumber,
+                percentageCharge: 0,
+            });
+            if (!result.success) throw new Error(result.message);
+            toast.success('Payout account saved');
+            onDone();
+        } catch (error) {
+            toast.error((error as Error).message || 'Couldn’t save this account');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    if (resolvedName) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-                    <p className="text-gray-400">Loading payout settings...</p>
+            <div className="space-y-4">
+                <div className="rounded-lg border border-neutral-200 p-4 dark:border-white/[0.07]">
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">Account holder</p>
+                    <p className="mt-0.5 text-base font-semibold text-neutral-900 dark:text-white">{resolvedName}</p>
+                    <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+                        {bankName} · {accountNumber}
+                    </p>
+                </div>
+                <p className={fieldHintClass}>Is this your account? Payouts can only go to an account in your name.</p>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <Button variant="ghost" onClick={() => setResolvedName(null)} disabled={busy}>
+                        Back
+                    </Button>
+                    <Button onClick={confirm} disabled={busy} className={primaryButtonClass}>
+                        {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Yes, use this account
+                    </Button>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="space-y-6">
-            {/* Page Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-                    <DollarSign className="h-6 w-6" />
-                    Payout
-                </h1>
-                <p className="text-gray-400 mt-1">Manage your payout methods and banking details</p>
+        <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                    <Label className={fieldLabelClass}>Bank</Label>
+                    <Select value={bankCode} onValueChange={setBankCode} disabled={banks === null}>
+                        <SelectTrigger>
+                            <SelectValue placeholder={banks === null ? 'Loading banks…' : 'Choose your bank'} />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-72">
+                            {bankOptions.map((bank) => (
+                                <SelectItem key={bank.code} value={bank.code}>
+                                    {bank.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="space-y-1.5">
+                    <Label htmlFor="accountNumber" className={fieldLabelClass}>Account number</Label>
+                    <Input
+                        id="accountNumber"
+                        inputMode="numeric"
+                        maxLength={10}
+                        value={accountNumber}
+                        onChange={(e) => setAccountNumber(e.target.value.replace(/[^\d]/g, ''))}
+                        placeholder="10 digits"
+                        className="tabular-nums"
+                    />
+                </div>
             </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                {onCancel && (
+                    <Button variant="ghost" onClick={onCancel} disabled={busy}>
+                        Cancel
+                    </Button>
+                )}
+                <Button
+                    onClick={verify}
+                    disabled={busy || !bankCode || accountNumber.length !== 10}
+                    className={primaryButtonClass}
+                >
+                    {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Continue
+                </Button>
+            </div>
+        </div>
+    );
+}
 
-            {/* Payout Settings */}
-            <PayoutSettings currentUser={currentUser} />
+export default function PayoutSettingsPage() {
+    const accounts = useQuery(api.paystack.getMyBankAccounts) as BankAccount[] | undefined;
+    const deleteBankAccount = useMutation(api.paystack.deleteBankAccount);
+    const [editing, setEditing] = useState(false);
+    const [confirmRemove, setConfirmRemove] = useState(false);
+
+    const account = accounts?.[0];
+
+    const remove = async () => {
+        if (!account) return;
+        try {
+            await deleteBankAccount({ accountId: account._id });
+            toast.success('Payout account removed');
+        } catch {
+            toast.error('Couldn’t remove this account');
+        } finally {
+            setConfirmRemove(false);
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+            <SettingsPageHeader title="Payouts" description="Where we send your earnings from sessions." />
+
+            <SettingsSection title="Payout account">
+                {accounts === undefined ? (
+                    <Skeleton className="h-20 rounded-lg" />
+                ) : account && !editing ? (
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                                <p className="truncate text-sm font-semibold text-neutral-900 dark:text-white">{account.bankName}</p>
+                                {account.isVerified && <StatusBadge tone="green">Verified</StatusBadge>}
+                            </div>
+                            <p className="mt-0.5 truncate text-sm text-neutral-500 dark:text-neutral-400">
+                                {account.accountName} · <span className="tabular-nums">{maskAccount(account.accountNumber)}</span>
+                            </p>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                            <Button variant="ghost" size="sm" className="text-neutral-500" onClick={() => setConfirmRemove(true)}>
+                                Remove
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                                Change account
+                            </Button>
+                        </div>
+                    </div>
+                ) : (
+                    <BankAccountForm
+                        onDone={() => setEditing(false)}
+                        onCancel={account ? () => setEditing(false) : undefined}
+                    />
+                )}
+            </SettingsSection>
+
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                You keep 80% of each session. When and how payouts are sent is set out in the{' '}
+                <Link href="/payout-policy" className="underline hover:text-neutral-900 dark:hover:text-white">
+                    payout policy
+                </Link>
+                .
+            </p>
+
+            <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Remove your payout account?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Patients can’t book you until you add another account.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Keep it</AlertDialogCancel>
+                        <AlertDialogAction onClick={remove} className="bg-red-600 text-white hover:bg-red-700">
+                            Remove
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

@@ -56,25 +56,20 @@ export default function CreateTreatmentTemplatePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="container mx-auto px-4 sm:px-6 max-w-3xl">
-          <div className="flex items-center justify-between h-14 sm:h-16">
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/dashboard/physiotherapist/treatment-templates">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back
-              </Link>
-            </Button>
-            <h1 className="text-base sm:text-lg font-semibold text-gray-900">New Template</h1>
-            <div className="w-16"></div> {/* Spacer for alignment */}
-          </div>
-        </div>
+    <div>
+      <div className="mx-auto max-w-3xl">
+        <Link
+          href="/dashboard/physiotherapist/treatment-templates"
+          className="inline-flex items-center text-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+        >
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          Treatment templates
+        </Link>
+        <h1 className="mt-3 text-xl font-semibold tracking-tight text-neutral-900 dark:text-white sm:text-2xl">New template</h1>
       </div>
 
       {/* Form */}
-      <div className="container mx-auto px-4 sm:px-6 max-w-3xl py-6 sm:py-8">
+      <div className="mx-auto max-w-3xl py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Info Section */}
           <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 space-y-5">

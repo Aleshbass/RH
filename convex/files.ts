@@ -540,23 +540,28 @@ export const getPatientDocumentsForPhysio = query({
     const user = await getAuthenticatedUser(ctx);
     if (user.role !== "physiotherapist") throw new Error("Access denied");
 
-    // Check active relationship
+    // Any relationship with this patient, current or past (records stay readable after care ends)
     const rel = await ctx.db
       .query("patientPhysiotherapistRelationships")
       .withIndex("by_patient_and_physiotherapist", (q) =>
         q.eq("patientId", args.patientUserId).eq("physiotherapistId", user._id))
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .unique();
+      .first();
 
-    if (!rel) throw new Error("No access to this patient");
+    if (!rel) return [];
 
-    // Get patient profile
+    // Patient profile: the user's link, or looked up by user (profiles created by staff)
     const patient = await ctx.db.get(args.patientUserId);
-    if (!patient?.patientProfileId) return [];
+    const profileId =
+      patient?.patientProfileId ??
+      (await ctx.db
+        .query("patientProfiles")
+        .withIndex("by_user_id", (q) => q.eq("userId", args.patientUserId))
+        .first())?._id;
+    if (!profileId) return [];
 
     const docs = await ctx.db
       .query("patientDocuments")
-      .withIndex("by_patient_profile_id", (q) => q.eq("patientProfileId", patient.patientProfileId!))
+      .withIndex("by_patient_profile_id", (q) => q.eq("patientProfileId", profileId))
       .filter((q) => q.or(
         q.eq(q.field("sharedWithPhysiotherapist"), true),
         q.eq(q.field("sharedWithPhysiotherapist"), undefined) // Backwards compatibility

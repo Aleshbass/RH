@@ -6,6 +6,7 @@
 
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "../_generated/server";
+import { isPhysioBookable } from "../physioSetup";
 
 /**
  * Search and filter physiotherapists in the marketplace
@@ -53,13 +54,8 @@ export const searchPhysiotherapists = query({
         const user = await ctx.db.get(profile.userId);
         if (!user) return null;
 
-        // Check if user is approved
-        const approvalStatus = await ctx.db
-          .query("accountApprovalStatus")
-          .withIndex("by_user_id", (q) => q.eq("userId", profile.userId))
-          .first();
-
-        if (!approvalStatus || approvalStatus.status !== "approved") {
+        // Approved, listed, and required setup finished
+        if (!(await isPhysioBookable(ctx, profile.userId))) {
           return null;
         }
 
@@ -264,13 +260,8 @@ export const getPhysiotherapistProfile = query({
       return null;
     }
 
-    // Check approval status
-    const approvalStatus = await ctx.db
-      .query("accountApprovalStatus")
-      .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistId))
-      .first();
-
-    if (!approvalStatus || approvalStatus.status !== "approved") {
+    // Approved, listed, and required setup finished
+    if (!(await isPhysioBookable(ctx, args.physiotherapistId))) {
       return null;
     }
 

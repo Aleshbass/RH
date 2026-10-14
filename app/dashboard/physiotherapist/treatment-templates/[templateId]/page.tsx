@@ -71,8 +71,8 @@ export default function TreatmentTemplateDetailPage() {
   );
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="mx-auto w-full max-w-5xl">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
         <Button variant="ghost" asChild>
           <Link href="/dashboard/physiotherapist/treatment-templates">
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -95,10 +95,10 @@ export default function TreatmentTemplateDetailPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-start justify-between">
-            <div>
-              <CardTitle className="text-2xl mb-2">{template.title}</CardTitle>
-              <div className="flex gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <CardTitle className="text-xl mb-2 break-words">{template.title}</CardTitle>
+              <div className="flex flex-wrap gap-2">
                 <Badge variant="outline">{template.category || "General"}</Badge>
                 <Badge className={difficultyColor(template.difficulty || "Beginner")}>
                   {template.difficulty || "Beginner"}
@@ -106,7 +106,7 @@ export default function TreatmentTemplateDetailPage() {
                 <Badge variant="secondary">{template.duration || "Flexible"}</Badge>
               </div>
             </div>
-            <div className="text-right text-sm text-muted-foreground">
+            <div className="text-sm text-muted-foreground sm:text-right">
               <div>Usage: {template.usageCount || 0}</div>
               <div>
                 Updated: {new Date(template.updatedAt).toLocaleDateString()}

@@ -472,6 +472,29 @@ export const getInvoiceForPatient = query({
 /**
  * Process payment for an invoice
  */
+/**
+ * Who may mark an invoice paid without a card payment (cash, transfer): an admin, the
+ * physiotherapist who issued it, or the owner/team of the clinic it belongs to.
+ */
+async function assertCanRecordManualPayment(ctx: any, user: Doc<"users">, invoice: Doc<"invoices">) {
+  if (invoice.status === "void") {
+    throw new ConvexError("This invoice was voided and can't be paid.");
+  }
+  if (user.role === "admin") return;
+  if (invoice.physiotherapistId && invoice.physiotherapistId === user._id) return;
+  if (invoice.clinicId) {
+    const clinic = await ctx.db.get(invoice.clinicId);
+    if (clinic && clinic.ownerId === user._id) return;
+    if (
+      user.clinicId === invoice.clinicId &&
+      (user.role === "physiotherapist" || user.role === "clinic_staff")
+    ) {
+      return;
+    }
+  }
+  throw new ConvexError("Only the clinic or physiotherapist who issued this invoice can record a payment.");
+}
+
 export const processPayment = mutation({
   args: {
     invoiceId: v.id("invoices"),
@@ -509,10 +532,9 @@ export const processPayment = mutation({
       throw new Error("User not found");
     }
 
-    // Verify user can pay this invoice
-    if (user.role === "patient" && user._id !== invoice.patientId) {
-      throw new Error("Access denied");
-    }
+    // Recording a payment by hand is for staff only. Patients pay through Paystack, which
+    // verifies the money arrived before the invoice is marked paid.
+    await assertCanRecordManualPayment(ctx, user, invoice);
 
     // Update invoice with payment details
     await ctx.db.patch(args.invoiceId, {
@@ -547,6 +569,20 @@ export const processPayment = mutation({
 /**
  * Get invoices for a physiotherapist
  */
+/** Invoices a physiotherapist can see: their clinic's, or their own when independent. */
+async function myInvoiceScope(ctx: any, physiotherapistId: Id<"users">, clinicId?: Id<"clinics">): Promise<Doc<"invoices">[]> {
+  if (clinicId) {
+    return await ctx.db
+      .query("invoices")
+      .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinicId))
+      .collect();
+  }
+  return await ctx.db
+    .query("invoices")
+    .withIndex("by_physiotherapist_id", (q: any) => q.eq("physiotherapistId", physiotherapistId))
+    .collect();
+}
+
 export const getMyInvoices = query({
   args: {
     status: v.optional(v.union(
@@ -561,6 +597,7 @@ export const getMyInvoices = query({
   returns: v.array(v.object({
     _id: v.id("invoices"),
     invoiceNumber: v.string(),
+    patientId: v.id("users"),
     patientName: v.string(),
     patientEmail: v.optional(v.string()),
     patientPhone: v.optional(v.string()),
@@ -593,31 +630,18 @@ export const getMyInvoices = query({
       .withIndex("by_user_id", (q: any) => q.eq("userId", physiotherapist._id))
       .unique();
 
-    if (!physiotherapistProfile?.clinicId) {
-      return [];
-    }
-
-    let query = ctx.db
-      .query("invoices")
-      .withIndex("by_clinic_id_and_status", (q: any) => q.eq("clinicId", physiotherapistProfile.clinicId));
-
-    if (args.status) {
-      if (args.status === "overdue") {
-        query = ctx.db
-          .query("invoices")
-          .filter((q: any) => 
-            q.and(
-              q.eq(q.field("clinicId"), physiotherapistProfile.clinicId),
-              q.neq(q.field("status"), "paid"),
-              q.lt(q.field("dueDate"), Date.now())
-            )
-          );
-      } else {
-        query = query.filter((q: any) => q.eq(q.field("status"), args.status));
-      }
-    }
-
-    const invoices = await query.collect();
+    // Clinic physios see their clinic's invoices; independent physios own theirs directly
+    // (they have no clinicId, so a clinic-only lookup returned nothing for them)
+    const scoped = await myInvoiceScope(ctx, physiotherapist._id, physiotherapistProfile?.clinicId);
+    const now = Date.now();
+    const invoices = scoped
+      .filter((invoice) => {
+        if (!args.status) return true;
+        if (args.status === "overdue") return invoice.status !== "paid" && invoice.dueDate < now;
+        return invoice.status === args.status;
+      })
+      .sort((a, b) => b.issueDate - a.issueDate)
+      .slice(0, args.limit || 50);
 
     const invoicesWithDetails = await Promise.all(
       invoices.map(async (invoice) => {
@@ -628,6 +652,7 @@ export const getMyInvoices = query({
         return {
           _id: invoice._id,
           invoiceNumber: invoice.invoiceNumber,
+          patientId: invoice.patientId,
           patientName: `${patientUser?.firstName || "Unknown"} ${patientUser?.lastName || "Patient"}`,
           patientEmail: patientUser?.email,
           patientPhone: patientUser?.phoneNumber,
@@ -642,7 +667,7 @@ export const getMyInvoices = query({
       })
     );
 
-    return invoicesWithDetails.slice(0, args.limit || 50);
+    return invoicesWithDetails;
   },
 });
 
@@ -806,15 +831,7 @@ export const getBillingStats = query({
       .query("physiotherapistProfiles")
       .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
       .unique();
-    const clinicId = profile?.clinicId;
-    if (!clinicId) {
-      return { totalRevenue: 0, pendingPayments: 0, overdueInvoices: 0, paidInvoices: 0, monthlyRevenue: 0 };
-    }
-
-    const allInvoices = await ctx.db
-      .query("invoices")
-      .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinicId))
-      .collect();
+    const allInvoices = await myInvoiceScope(ctx, user._id, profile?.clinicId);
 
     const now = Date.now();
     const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
@@ -944,10 +961,9 @@ export const processPatientPayment = mutation({
       throw new Error("User not found");
     }
 
-    // Verify user can pay this invoice
-    if (user.role === "patient" && user._id !== invoice.patientId) {
-      throw new Error("Access denied");
-    }
+    // Recording a payment by hand is for staff only. Patients pay through Paystack, which
+    // verifies the money arrived before the invoice is marked paid.
+    await assertCanRecordManualPayment(ctx, user, invoice);
 
     const paymentAmount = args.paymentAmount || invoice.totalAmount;
     const isFullPayment = paymentAmount >= invoice.totalAmount;

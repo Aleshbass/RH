@@ -16,12 +16,14 @@ interface SchedulingWizardProps {
     onClose: () => void;
     onComplete: () => void;
     physiotherapistId?: string; // Optional now
+    /** Skip the patient step when scheduling for a known patient */
+    initialPatient?: { id: string; name: string; email?: string } | null;
 }
 
 import { WizardData } from './types';
 export type { WizardData } from './types';
 
-export function SchedulingWizard({ isOpen, onClose, onComplete, physiotherapistId }: SchedulingWizardProps) {
+export function SchedulingWizard({ isOpen, onClose, onComplete, physiotherapistId, initialPatient }: SchedulingWizardProps) {
     // If physiotherapistId is provided, start at step 1 (Patient), else step 0 (Physio)
     const initialStep = physiotherapistId ? 1 : 0;
     const [step, setStep] = useState<number>(initialStep);
@@ -36,10 +38,21 @@ export function SchedulingWizard({ isOpen, onClose, onComplete, physiotherapistI
     // Reset step when opening
     React.useEffect(() => {
         if (isOpen) {
+            if (initialPatient && physiotherapistId) {
+                setStep(2);
+                setData(prev => ({
+                    ...prev,
+                    physiotherapistId,
+                    patientId: initialPatient.id,
+                    patientName: initialPatient.name,
+                    patientEmail: initialPatient.email,
+                }));
+                return;
+            }
             setStep(physiotherapistId ? 1 : 0);
             setData(prev => ({ ...prev, physiotherapistId: physiotherapistId }));
         }
-    }, [isOpen, physiotherapistId]);
+    }, [isOpen, physiotherapistId, initialPatient]);
 
     const handleNext = () => setStep((s) => Math.min(s + 1, 4));
     const handleBack = () => setStep((s) => Math.max(s - 1, physiotherapistId ? 1 : 0));
@@ -84,7 +97,7 @@ export function SchedulingWizard({ isOpen, onClose, onComplete, physiotherapistI
                 {/* Progress Bar */}
                 <div className="h-1 bg-gray-100 w-full">
                     <div
-                        className="h-full bg-blue-600 transition-all duration-300 ease-in-out"
+                        className="h-full bg-[#005b57] transition-all duration-300 ease-in-out dark:bg-[#2dd4bf]"
                         style={{ width: `${((step + (physiotherapistId ? 0 : 1)) / 5) * 100}%` }}
                     />
                 </div>

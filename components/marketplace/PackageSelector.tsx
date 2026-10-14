@@ -109,8 +109,8 @@ export default function PackageSelector({
                                 className={`w-full cursor-pointer text-left rounded-xl border-2 transition-all duration-200 ${isSelected
                                     ? "border-teal-300 bg-white/[0.08]"
                                     : popular
-                                        ? "border-amber-400/40 bg-[#00403c] hover:border-amber-500/50"
-                                        : "border-white/15 bg-[#00403c] hover:border-gray-500"
+                                        ? "border-amber-400/40 bg-[#00443e] hover:border-amber-500/50"
+                                        : "border-white/15 bg-[#00443e] hover:border-gray-500"
                                     }`}
                             >
                                 <div className="p-4">

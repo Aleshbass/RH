@@ -1,18 +1,16 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { ExerciseLibrary } from '@/components/dashboard/physiotherapist/treatment/ExerciseLibrary';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, CheckCircle2, Info } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import type { Exercise as AssessmentExercise } from '@/types/assessments';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Loader2, X } from 'lucide-react';
 
 export default function ExerciseLibraryPage() {
@@ -28,7 +26,7 @@ export default function ExerciseLibraryPage() {
   // Load the active plan for the selected patient (if any)
   const activePlans = useQuery(
     api.treatmentPlans.getPatientTreatmentPlans,
-    selectedPatientId ? ({ patientId: selectedPatientId as any, status: 'active' }) : undefined
+    selectedPatientId ? ({ patientId: selectedPatientId as any, status: 'active' }) : 'skip'
   );
   const activePlan = activePlans?.[0] || null;
 
@@ -139,30 +137,15 @@ export default function ExerciseLibraryPage() {
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="mb-2">
-        <Button variant="ghost" asChild>
-          <Link href="/dashboard/physiotherapist">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Dashboard
-          </Link>
-        </Button>
-      </div>
-
+    <div className="mx-auto w-full max-w-6xl space-y-6">
       <div>
-        <h1 className="text-3xl font-bold mb-2">Exercise Library</h1>
-        <p className="text-muted-foreground">
-          Pick a patient, select exercises, then assign to an existing plan or create a new plan.
+        <h1 className="text-xl font-semibold tracking-tight text-neutral-900 dark:text-white sm:text-2xl">Exercise library</h1>
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+          Choose a patient, pick exercises, then add them to their active plan or start a new one.
         </p>
-        <div className="mt-4">
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertTitle>Physiotherapy exercise library – coming soon</AlertTitle>
-            <AlertDescription>
-              We’re building a physiotherapy-specific exercise library. In the meantime, add custom exercises and attach before/after images per exercise from the patient’s Treatment Plan.
-            </AlertDescription>
-          </Alert>
-        </div>
+        <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+          More physiotherapy exercises are on the way. Until then, add your own from a patient’s treatment plan, with before and after photos.
+        </p>
       </div>
 
       <Card>
@@ -193,7 +176,7 @@ export default function ExerciseLibraryPage() {
               <div className="text-sm">
                 {activePlan ? (
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <CheckCircle2 className="h-4 w-4 text-[#005b57] dark:text-[#2dd4bf]" />
                     <span>{activePlan.title}</span>
                     <Badge variant="secondary">Active</Badge>
                   </div>

@@ -46,20 +46,7 @@ export function useFileUpload(options?: UseFileUploadOptions) {
       });
 
       try {
-        // Step 1: Get the upload URL from Convex
-        const uploadUrl = await convex.mutation(api.files.generateUploadUrl, {
-          fileType: file.type,
-          fileName: file.name,
-        });
-
-        if (!uploadUrl) {
-          throw new Error('Failed to generate upload URL');
-        }
-
-        // Step 2: Upload the file to the generated URL
-        const xhr = new XMLHttpRequest();
-        
-        // Determine a safe Content-Type: use browser-provided type or derive from file extension
+        // Determine a safe Content-Type first (some browsers report no type, e.g. HEIC on Windows): use browser-provided type or derive from file extension
         const ext = (file.name.split(".").pop() || "").toLowerCase();
         const fallbackTypeMap: Record<string, string> = {
           pdf: "application/pdf",
@@ -74,6 +61,19 @@ export function useFileUpload(options?: UseFileUploadOptions) {
         const safeContentType = (file.type && file.type.trim().length > 0)
           ? file.type
           : (derivedType || "application/octet-stream");
+        
+        // Step 1: Get the upload URL from Convex
+        const uploadUrl = await convex.mutation(api.files.generateUploadUrl, {
+          fileType: safeContentType,
+          fileName: file.name,
+        });
+
+        if (!uploadUrl) {
+          throw new Error('Failed to generate upload URL');
+        }
+
+        // Step 2: Upload the file to the generated URL
+        const xhr = new XMLHttpRequest();
         
         // Set up progress tracking
         xhr.upload.addEventListener('progress', (event) => {

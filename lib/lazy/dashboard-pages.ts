@@ -80,7 +80,7 @@ export const LazyPhysiotherapistPages = {
   ),
 
   PhysiotherapistSettings: createLazyPage(
-    () => import('@/app/dashboard/physiotherapist/settings/page'),
+    () => import('@/app/dashboard/physiotherapist/settings/profile/page'),
     'PhysiotherapistSettings'
   ),
   PhysiotherapistMessages: createLazyPage(

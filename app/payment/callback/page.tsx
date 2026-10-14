@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { playSound } from '@/lib/sounds'
 
 function PaymentCallbackContent() {
   const searchParams = useSearchParams()
@@ -60,6 +61,7 @@ function PaymentCallbackContent() {
           if (result?.success) {
             setStatus('success')
             setMessage('Payment confirmed — your booking is confirmed.')
+            playSound('paid')
             toast.success('Payment successful!')
           } else if (result?.status === 'abandoned' || result?.status === 'failed') {
             setStatus('failed')
@@ -90,6 +92,7 @@ function PaymentCallbackContent() {
             setInvoiceId(result.metadata.invoiceId)
           }
 
+          playSound('paid')
           toast.success('Payment successful!')
         } else {
           setStatus('failed')

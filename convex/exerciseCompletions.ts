@@ -226,13 +226,24 @@ export const getWeeklyProgress = query({
             return { completions: [], totalExercises: 0, completionRate: 0 };
         }
 
+        // The patient, their physiotherapist, the plan's clinic owner or an admin may look
+        let allowed = user._id === treatmentPlan.patientId || user._id === treatmentPlan.physiotherapistId || user.role === "admin";
+        if (!allowed && treatmentPlan.clinicId) {
+            const clinic = await ctx.db.get(treatmentPlan.clinicId);
+            allowed = clinic?.ownerId === user._id;
+        }
+        if (!allowed) {
+            return { completions: [], totalExercises: 0, completionRate: 0 };
+        }
+
         // Get start of week (7 days ago)
         const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
+        // Always the plan's patient, so the physio sees the patient's activity, not their own
         const completions = await ctx.db
             .query("exerciseCompletions")
             .withIndex("by_patient_and_plan", (q) =>
-                q.eq("patientId", user._id).eq("treatmentPlanId", args.treatmentPlanId)
+                q.eq("patientId", treatmentPlan.patientId).eq("treatmentPlanId", args.treatmentPlanId)
             )
             .filter((q) => q.gte(q.field("completedAt"), weekAgo))
             .collect();

@@ -332,6 +332,9 @@ export const getMyAppointments = query({
         );
       }
 
+      // Record-only entries just anchor clinical notes; they aren't visits
+      appointmentsQuery = appointmentsQuery.filter((q) => q.neq(q.field("isRecordOnly"), true));
+
       const appointments = await appointmentsQuery.order("desc").take(limit);
 
       // Get patient details for each appointment

@@ -8,6 +8,14 @@ import { usePathname } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { initMonitoring, analytics } from "@/lib/monitoring";
 import NextTopLoader from 'nextjs-toploader';
+import { Toaster } from "sonner";
+
+/**
+ * Routes that mount their own toaster (dashboards and call screens). Everywhere else
+ * (marketing, onboarding, the Physio Register, booking) uses the global one below, so
+ * toast messages are never silently dropped.
+ */
+const OWN_TOASTER_PREFIXES = ["/dashboard", "/v/", "/video-call/"];
 
 
 export default function Providers({ children }: { children: ReactNode }) {
@@ -68,6 +76,9 @@ export default function Providers({ children }: { children: ReactNode }) {
         shadow="0 0 10px #00cd0f, 0 0 5px #00cd0f"
       />
       {children}
+      {!OWN_TOASTER_PREFIXES.some((prefix) => (pathname ?? "").startsWith(prefix)) && (
+        <Toaster position="top-center" richColors closeButton />
+      )}
       {process.env.NODE_ENV === 'development' && (
         <ReactQueryDevtools initialIsOpen={false} />
       )}

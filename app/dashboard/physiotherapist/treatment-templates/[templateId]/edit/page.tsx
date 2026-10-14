@@ -60,7 +60,7 @@ export default function EditTreatmentTemplatePage() {
 
   if (template === undefined) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="mx-auto w-full">
         <Skeleton className="h-8 w-64 mb-4" />
         <Skeleton className="h-4 w-96 mb-6" />
         <Skeleton className="h-40" />
@@ -70,7 +70,7 @@ export default function EditTreatmentTemplatePage() {
 
   if (!template) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="mx-auto w-full">
         <div className="mb-6">
           <Button variant="ghost" asChild>
             <Link href="/dashboard/physiotherapist/treatment-templates">
@@ -89,7 +89,7 @@ export default function EditTreatmentTemplatePage() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-3xl">
+    <div className="mx-auto w-full max-w-3xl">
       <div className="mb-6">
         <Button variant="ghost" asChild>
           <Link href={`/dashboard/physiotherapist/treatment-templates/${templateId}`}>

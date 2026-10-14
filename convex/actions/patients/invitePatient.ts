@@ -25,6 +25,8 @@ export const createPatientInvitationWithNotification = action({
     notes: v.optional(v.string()),
     expirationDays: v.optional(v.number()),
     sendEmail: v.optional(v.boolean()),
+    source: v.optional(v.union(v.literal("referred"), v.literal("existing_patient"))),
+    referredBy: v.optional(v.string()),
   },
   returns: v.object({
     success: v.boolean(),
@@ -40,6 +42,8 @@ export const createPatientInvitationWithNotification = action({
         patientName: args.patientName,
         notes: args.notes,
         expirationDays: args.expirationDays,
+        source: args.source,
+        referredBy: args.referredBy,
       });
       
       if (!result.success || !result.invitationCode) {

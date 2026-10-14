@@ -79,7 +79,7 @@ export default function PendingApprovalPage({
                 While you wait
               </h3>
 
-              <a href="/payouts-policy" target="_blank" className="flex items-center p-3 bg-white rounded-lg border border-gray-100 hover:border-teal-200 transition-colors group">
+              <a href="/payout-policy" target="_blank" className="flex items-center p-3 bg-white rounded-lg border border-gray-100 hover:border-teal-200 transition-colors group">
                 <div className="h-8 w-8 bg-blue-50 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors">
                   <CreditCard className="h-4 w-4 text-blue-600" />
                 </div>
@@ -126,7 +126,7 @@ export default function PendingApprovalPage({
           {/* Contact Support (Declined only) */}
           {isDeclined && (
             <p className="mt-6 text-xs text-gray-400">
-              Believe this is an error? <a href="mailto:support@rehabify.com" className="text-teal-600 hover:underline">Contact Support</a>
+              Believe this is an error? <a href="mailto:support@rehabify.ng" className="text-teal-600 hover:underline">Contact Support</a>
             </p>
           )}
         </div>
@@ -136,7 +136,7 @@ export default function PendingApprovalPage({
     {/* Platform guide video — shown to physios waiting for approval */}
     {isPending && userRole === 'physiotherapist' && showVideoGuide && (
       <PhysioGuideVideoModal
-        title="🎬 Your Rehabify Platform Guide"
+        title="Your Rehabify platform guide"
         subtitle="While you wait for approval, get familiar with everything Rehabify has to offer."
         onClose={() => setShowVideoGuide(false)}
       />

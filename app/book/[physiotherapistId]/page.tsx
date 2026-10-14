@@ -314,7 +314,7 @@ export default function PhysioBookingPage() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#002e2c] flex items-center justify-center">
+            <div className="min-h-screen bg-[#005b57] flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-teal-300" />
             </div>
         );
@@ -322,9 +322,9 @@ export default function PhysioBookingPage() {
 
     if (!profile) {
         return (
-            <div className="min-h-screen bg-[#002e2c] flex items-center justify-center p-4">
+            <div className="min-h-screen bg-[#005b57] flex items-center justify-center p-4">
                 <div className="w-full max-w-md">
-                    <div className="bg-[#00403c] rounded-xl border border-white/10 p-8 text-center">
+                    <div className="bg-[#00443e] rounded-xl border border-white/10 p-8 text-center">
                         <div className="w-16 h-16 rounded-full bg-white/[0.07] flex items-center justify-center mx-auto mb-6">
                             <svg className="w-8 h-8 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -358,10 +358,10 @@ export default function PhysioBookingPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#002e2c] flex items-center justify-center p-4">
+        <div className="min-h-screen bg-[#005b57] flex items-center justify-center p-4">
             <div className="w-full max-w-md">
                 {/* Profile Card */}
-                <div className="bg-[#00403c] rounded-xl border border-white/10 p-6 mb-6">
+                <div className="bg-[#00443e] rounded-xl border border-white/10 p-6 mb-6">
                     <div className="flex items-center gap-4 mb-2">
                         {profile.imageUrl ? (
                             <Image
@@ -391,7 +391,7 @@ export default function PhysioBookingPage() {
                         <button
                             key={session.id}
                             onClick={() => handleSessionSelect(session.duration)}
-                            className="w-full bg-[#00403c] border border-white/10 rounded-xl p-5 text-left hover:border-white/15 hover:bg-[#004a45] transition-all group"
+                            className="w-full bg-[#00443e] border border-white/10 rounded-xl p-5 text-left hover:border-white/15 hover:bg-[#003d38] transition-all group"
                         >
                             <div className="flex items-center justify-between">
                                 <div>

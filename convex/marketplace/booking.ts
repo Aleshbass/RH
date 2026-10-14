@@ -10,6 +10,7 @@ import { api, internal } from "../_generated/api";
 import { publicAppUrl } from "../helpers/appUrl";
 import { attributionForBooking, bumpLinkCounter } from "../helpers/partnerAttribution";
 import { recordPartnerCommission, reverseCommissionsForPayment } from "../helpers/partnerLedger";
+import { isPhysioBookable } from "../physioSetup";
 import { markProviderMatched, transitionReferral } from "../helpers/partnerEvents";
 import { referralEnv, toPublicStatus } from "../helpers/partnerShared";
 import { verifyPaystackSignature } from "../helpers/paystackSignature";
@@ -92,11 +93,9 @@ export const createMarketplaceBooking = mutation({
             .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistId))
             .first();
 
-        if (
-            !physioProfile ||
-            !physioProfile.isAvailableOnMarketplace
-        ) {
-            throw new Error("Physiotherapist not available for booking");
+        // Approved by Rehabify, listed, and setup finished (hours, payout, documents)
+        if (!physioProfile || !(await isPhysioBookable(ctx, args.physiotherapistId))) {
+            throw new ConvexError("This physiotherapist isn't taking bookings right now.");
         }
 
         // The amount is never taken on trust: it must be a price the booking page can show
@@ -194,8 +193,8 @@ export const guestCreateMarketplaceBooking = mutation({
             .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistId))
             .first();
 
-        if (!physioProfile || !physioProfile.isAvailableOnMarketplace) {
-            throw new Error("Physiotherapist not available for booking");
+        if (!physioProfile || !(await isPhysioBookable(ctx, args.physiotherapistId))) {
+            throw new ConvexError("This physiotherapist isn't taking bookings right now.");
         }
 
         // ── Create (or reuse) a guest user record so patientId is a real FK ──
@@ -409,6 +408,7 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
                     isPrimaryPhysiotherapist: true,
                     startDate: Date.now(),
                     notes: "Relationship created through marketplace booking",
+                    source: "marketplace",
                 }
             );
 

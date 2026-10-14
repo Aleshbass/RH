@@ -31,6 +31,7 @@ import { usePatientDocuments, PatientDocument } from '@/lib/hooks/usePatientDocu
 import FileUpload from '@/components/ui/FileUpload'
 import { TourGuide } from '@/components/shared/TourGuide'
 import { InsightsSidebar } from '@/components/dashboard/shared/InsightsSidebar'
+import { PatientCheckInCard, PatientFollowUpBanner } from '@/components/patient/PatientCheckInCard'
 
 interface PatientDashboardProps {
   initialUser?: any;
@@ -106,6 +107,10 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
             Track your recovery journey and stay connected with your physiotherapist
           </p>
         </div>
+
+        {/* After-care follow-up, then today's check-in for the physio */}
+        <PatientFollowUpBanner />
+        <PatientCheckInCard />
 
         {/* Next Appointment Hero Card */}
         {nextAppointment && (

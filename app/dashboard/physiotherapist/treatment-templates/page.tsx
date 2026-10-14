@@ -24,7 +24,7 @@ export default function TreatmentTemplatesPage() {
 
   if (!isLoaded) {
     return (
-      <div className="container mx-auto p-4 sm:p-6">
+      <div className="mx-auto w-full">
         <Skeleton className="h-8 w-64 mb-4" />
         <Skeleton className="h-4 w-96 mb-6" />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -37,7 +37,7 @@ export default function TreatmentTemplatesPage() {
   }
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
+    <div className="mx-auto w-full max-w-7xl">
       {/* Back Button */}
       <div className="mb-4">
         <Button variant="ghost" size="sm" asChild>

@@ -13,7 +13,7 @@ export default function TreatmentPlanPage() {
   const patientId = params.patientId as string;
 
   return (
-    <div className="container mx-auto p-6">
+    <div className="mx-auto w-full">
       <div className="mb-6">
         <Button variant="ghost" asChild>
           <Link href={`/dashboard/physiotherapist/patients/${patientId}`}>

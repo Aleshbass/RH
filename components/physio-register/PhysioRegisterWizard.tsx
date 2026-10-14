@@ -6,7 +6,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ChevronLeft, Check, Plus, X, Loader2, Upload, ShieldCheck, Share2, Copy, UserPlus, ArrowRight, Award } from 'lucide-react';
-import { useMutation } from 'convex/react';
+import { useMutation, useConvexAuth } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { toast } from 'sonner';
 import { Id } from '@/convex/_generated/dataModel';
@@ -90,6 +90,18 @@ const REGULATORY_BODIES = [
     "Other",
 ];
 
+/** Turns a Convex/network error into a sentence a person can act on. */
+function readableError(error: unknown, fallback: string) {
+    const raw = (error as { data?: unknown; message?: string })?.data ?? (error as Error)?.message;
+    if (typeof raw !== "string" || !raw) return fallback;
+    const cleaned = raw
+        .replace(/^\[CONVEX[^\]]*\]\s*/, "")
+        .replace(/^.*?Uncaught (Convex)?Error:\s*/, "")
+        .split("\n")[0]
+        .trim();
+    return cleaned && !/server error/i.test(cleaned) ? cleaned : fallback;
+}
+
 export default function PhysioRegisterWizard() {
     const searchParams = useSearchParams();
     const referredByLicense = searchParams?.get('ref') || undefined;
@@ -113,7 +125,9 @@ export default function PhysioRegisterWizard() {
     const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
 
     // Clerk
-    const { user: clerkUser, isLoaded: isClerkLoaded } = useUser();
+    const { user: clerkUser } = useUser();
+    // Convex only sees the user once Clerk's token reaches it; link only after that
+    const { isAuthenticated: isConvexAuthed } = useConvexAuth();
 
     // Convex
     const submitRegistration = useMutation(api.physioRegistry.submitRegistration);
@@ -144,9 +158,9 @@ export default function PhysioRegisterWizard() {
         }
     });
 
-    // Auto-link Clerk user to registry entry after signup
+    // Auto-link the new account to the registry entry after sign-up
     useEffect(() => {
-        if (isClerkLoaded && clerkUser && registryEntryId && showSignupStep) {
+        if (isConvexAuthed && clerkUser && registryEntryId && showSignupStep) {
             linkClerkUser({
                 registryEntryId,
                 clerkUserId: clerkUser.id,
@@ -155,10 +169,10 @@ export default function PhysioRegisterWizard() {
                 setIsSubmitted(true);
                 toast.success('Account linked! Your profile is ready.');
             }).catch((err) => {
-                console.error('Failed to link Clerk user:', err);
+                toast.error(readableError(err, 'We saved your registration but couldn’t link it to your account.'));
             });
         }
-    }, [isClerkLoaded, clerkUser, registryEntryId, showSignupStep, linkClerkUser]);
+    }, [isConvexAuthed, clerkUser, registryEntryId, showSignupStep, linkClerkUser]);
 
     const nextStep = async () => {
         let fieldsToValidate: any[] = [];
@@ -221,7 +235,35 @@ export default function PhysioRegisterWizard() {
         }
     };
 
+    // After the registration is saved: link it to the signed-in account (never blocking), or ask them to sign up
+    const finishAfterSave = async (entryId: Id<"physioRegistry">) => {
+        if (isConvexAuthed && clerkUser) {
+            try {
+                await linkClerkUser({ registryEntryId: entryId, clerkUserId: clerkUser.id });
+                toast.success("Registration submitted successfully!");
+            } catch (linkErr) {
+                toast.warning(readableError(linkErr, "You're on the register, but it isn't linked to this account yet."));
+            }
+            setIsSubmitted(true);
+        } else {
+            setShowSignupStep(true);
+            setDirection(1);
+            setCurrentStep(4);
+            toast.success("Saved! Create an account to manage your profile.");
+        }
+    };
+
     const handleFinalSubmit = async () => {
+        // A previous attempt already saved the registration: don't upload or insert again
+        if (registryEntryId) {
+            setIsSubmitting(true);
+            try {
+                await finishAfterSave(registryEntryId as Id<"physioRegistry">);
+            } finally {
+                setIsSubmitting(false);
+            }
+            return;
+        }
         setIsSubmitting(true);
         try {
             if (!licenseCertFile || !photoIdFile) {
@@ -266,26 +308,10 @@ export default function PhysioRegisterWizard() {
             if (result.success) {
                 setRegistryEntryId(result.id);
                 setRegistrySlug(result.slug);
-
-                // If already signed in, link immediately
-                if (isClerkLoaded && clerkUser) {
-                    await linkClerkUser({
-                        registryEntryId: result.id,
-                        clerkUserId: clerkUser.id,
-                    });
-                    setIsSubmitted(true);
-                    toast.success("Registration submitted successfully!");
-                } else {
-                    // Show signup step
-                    setShowSignupStep(true);
-                    setDirection(1);
-                    setCurrentStep(4);
-                    toast.success("Data saved! Create an account to manage your profile.");
-                }
+                await finishAfterSave(result.id as Id<"physioRegistry">);
             }
-        } catch (error: any) {
-            console.error("Registration error:", error);
-            toast.error(error.message || "Failed to submit registration");
+        } catch (error: unknown) {
+            toast.error(readableError(error, "We couldn't submit your registration. Please try again."));
         } finally {
             setIsSubmitting(false);
         }
@@ -472,7 +498,7 @@ export default function PhysioRegisterWizard() {
                                     <div className="space-y-2">
                                         <Label>Years of Experience <span className="text-red-500">*</span></Label>
                                         <Input
-                                            {...control.register('yearsOfExperience', { valueAsNumber: true })}
+                                            {...control.register('yearsOfExperience', { setValueAs: (value) => (value === '' || value === null ? 0 : Number(value)) })}
                                             type="number"
                                             min={0}
                                             placeholder="Years"

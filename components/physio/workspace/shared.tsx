@@ -1,0 +1,171 @@
+'use client'
+
+import type { ReactNode } from 'react'
+import type { Id } from '@/convex/_generated/dataModel'
+import { cn } from '@/lib/utils'
+
+export type EpisodeSource =
+  | 'referred'
+  | 'existing_patient'
+  | 'marketplace'
+  | 'booking_link'
+  | 'clinic'
+  | 'invite'
+  | 'other'
+
+export type Outcome = 'goals_met' | 'partially_met' | 'not_met' | 'referred_on' | 'stopped_attending'
+
+export type Goal = { description: string; targetValue: string; timeline: string; measurable: boolean; achieved?: boolean }
+
+export type CheckIn = {
+  _id: Id<'patientCheckIns'>
+  painScore: number
+  functionScore?: number
+  mood?: 'great' | 'good' | 'okay' | 'low'
+  exercisesDone: 'all' | 'some' | 'none'
+  note?: string
+  flagged: boolean
+  flagReason?: string
+  reviewedAt?: number
+  createdAt: number
+}
+
+/** Shape returned by api.physioCare.getPatientWorkspace. */
+export type Workspace = {
+  patient: { _id: Id<'users'>; firstName?: string; lastName?: string; email?: string; phoneNumber?: string; imageUrl?: string }
+  profile: {
+    dateOfBirth?: string
+    gender?: string
+    medicalHistory: string[]
+    medications: string[]
+    allergies: string[]
+    emergencyContact?: unknown
+  } | null
+  relationship: { status: string; startDate: number; endDate?: number; source?: string; referredBy?: string }
+  episode: {
+    _id?: Id<'careEpisodes'>
+    status: 'active' | 'completed' | 'cancelled'
+    source: EpisodeSource
+    referredBy?: string
+    condition?: string
+    startedAt: number
+    completedAt?: number
+    plannedSessions?: number
+    outcome?: Outcome
+    dischargeSummary?: string
+    homeAdvice?: string
+    synthetic: boolean
+  }
+  pastEpisodes: { _id: Id<'careEpisodes'>; startedAt: number; completedAt?: number; outcome?: Outcome; condition?: string }[]
+  plan: {
+    _id: Id<'treatmentPlans'>
+    title: string
+    description?: string
+    status: string
+    goals: Goal[]
+    sessionFrequency?: string
+    plannedSessions?: number
+    reviewDate?: number
+    precautions?: string
+    changeReason?: string
+    version: number
+    updatedAt: number
+    totalExercises: number
+    goalsAchieved: number
+  } | null
+  sessions: { completed: number; planned: number | null; last: { startTime: number; serviceType: string } | null }
+  nextAppointment: {
+    _id: Id<'appointments'>
+    startTime: number
+    endTime: number
+    serviceType: string
+    status: string
+    isOnline?: boolean
+  } | null
+  adherence: { completed: number; expected: number; rate: number } | null
+  checkIns: CheckIn[]
+  notesCount: number
+  lastNoteAt: number | null
+  payments: { unpaidCount: number; unpaidKobo: number; paidKobo: number }
+  followUp: {
+    status: string
+    dueAt?: number
+    rating?: number
+    recovery?: string
+    comment?: string
+    respondedAt?: number
+  } | null
+}
+
+export const SOURCE_LABELS: Record<EpisodeSource, string> = {
+  referred: 'Referred',
+  existing_patient: 'Existing patient',
+  marketplace: 'Marketplace',
+  booking_link: 'Booking link',
+  clinic: 'Clinic',
+  invite: 'Invited',
+  other: 'Other',
+}
+
+export const OUTCOME_LABELS: Record<Outcome, string> = {
+  goals_met: 'Goals met',
+  partially_met: 'Goals partly met',
+  not_met: 'Goals not met',
+  referred_on: 'Referred on',
+  stopped_attending: 'Stopped attending',
+}
+
+export const RECOVERY_LABELS: Record<string, string> = {
+  fully_recovered: 'Fully recovered',
+  much_better: 'Much better',
+  a_little_better: 'A little better',
+  no_change: 'No change',
+  worse: 'Worse',
+}
+
+export const MOOD_LABELS = { great: 'Great', good: 'Good', okay: 'Okay', low: 'Low' } as const
+export const EXERCISES_LABELS = { all: 'Did all exercises', some: 'Did some exercises', none: 'Skipped exercises' } as const
+
+export function fullName(person?: { firstName?: string; lastName?: string } | null) {
+  return [person?.firstName, person?.lastName].filter(Boolean).join(' ') || 'Patient'
+}
+
+/** Pain scores coloured from calm teal to warm rose. */
+export function painTone(score: number) {
+  if (score >= 7) return 'bg-rh-blush text-[#be123c] dark:bg-rose-400/10 dark:text-rose-300'
+  if (score >= 4) return 'bg-rh-peach text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300'
+  return 'bg-rh-mint text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300'
+}
+
+export function PainPill({ score, className }: { score: number; className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums', painTone(score), className)}>
+      Pain {score}/10
+    </span>
+  )
+}
+
+export function Meter({ value, max, className, tone = 'teal' }: { value: number; max: number; className?: string; tone?: 'teal' | 'amber' }) {
+  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0
+  return (
+    <div className={cn('h-2 w-full overflow-hidden rounded-full bg-rh-mist dark:bg-white/[0.06]', className)} role="progressbar" aria-valuenow={value} aria-valuemax={max}>
+      <div
+        className={cn(
+          'h-full rounded-full transition-[width] duration-700 ease-out',
+          tone === 'amber' ? 'bg-rh-amber' : 'bg-rh-teal dark:bg-rh-aqua'
+        )}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  )
+}
+
+/** Label + value pair used across workspace cards. */
+export function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">{label}</dt>
+      <dd className="mt-0.5 break-words text-sm text-rh-night dark:text-neutral-100">{children}</dd>
+    </div>
+  )
+}

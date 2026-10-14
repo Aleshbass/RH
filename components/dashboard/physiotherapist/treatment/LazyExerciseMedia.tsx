@@ -49,7 +49,7 @@ export function LazyExerciseMedia({ exerciseDetail, exerciseId }: LazyExerciseMe
     <div ref={mediaRef} className="relative w-full h-48 bg-gray-100">
       {!isVisible ? (
         // Placeholder while not in viewport
-        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+        <div className="w-full h-full flex items-center justify-center bg-neutral-100 dark:bg-neutral-800">
           <div className="text-center">
             <Play className="h-8 w-8 mx-auto text-gray-300 mb-2" />
           </div>
@@ -70,7 +70,7 @@ export function LazyExerciseMedia({ exerciseDetail, exerciseId }: LazyExerciseMe
             }}
           />
           {!imageLoaded && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+            <div className="absolute inset-0 flex items-center justify-center bg-neutral-100 dark:bg-neutral-800">
               <div className="text-center">
                 <Play className="h-8 w-8 mx-auto text-gray-300 mb-2 animate-pulse" />
               </div>
@@ -84,7 +84,7 @@ export function LazyExerciseMedia({ exerciseDetail, exerciseId }: LazyExerciseMe
         </div>
       ) : (
         // Fallback placeholder
-        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="w-full h-full flex items-center justify-center bg-neutral-100 dark:bg-neutral-800">
           <div className="text-center">
             <Play className="h-12 w-12 mx-auto text-gray-400 mb-2" />
             <p className="text-sm text-gray-500">{exerciseDetail?.name || exerciseId}</p>

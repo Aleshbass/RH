@@ -35,6 +35,7 @@ import type * as actions_emails_sendInvitationEmail from "../actions/emails/send
 import type * as actions_emails_sendOnboardingNotificationEmail from "../actions/emails/sendOnboardingNotificationEmail.js";
 import type * as actions_emails_sendPartnerApplicationEmails from "../actions/emails/sendPartnerApplicationEmails.js";
 import type * as actions_emails_sendPartnershipInquiryEmail from "../actions/emails/sendPartnershipInquiryEmail.js";
+import type * as actions_emails_sendPatientCareEmail from "../actions/emails/sendPatientCareEmail.js";
 import type * as actions_emails_sendPatientOnboardedProviderEmail from "../actions/emails/sendPatientOnboardedProviderEmail.js";
 import type * as actions_emails_sendPatientOnboardingCompleteEmail from "../actions/emails/sendPatientOnboardingCompleteEmail.js";
 import type * as actions_emails_sendPaymentReceiptEmail from "../actions/emails/sendPaymentReceiptEmail.js";
@@ -152,7 +153,10 @@ import type * as payments from "../payments.js";
 import type * as payouts from "../payouts.js";
 import type * as paystack from "../paystack.js";
 import type * as paystackDoctor from "../paystackDoctor.js";
+import type * as physioBilling from "../physioBilling.js";
+import type * as physioCare from "../physioCare.js";
 import type * as physioRegistry from "../physioRegistry.js";
+import type * as physioSetup from "../physioSetup.js";
 import type * as physiotherapistProfiles from "../physiotherapistProfiles.js";
 import type * as physiotherapists from "../physiotherapists.js";
 import type * as platformSettings from "../platformSettings.js";
@@ -218,6 +222,7 @@ declare const fullApi: ApiFromModules<{
   "actions/emails/sendOnboardingNotificationEmail": typeof actions_emails_sendOnboardingNotificationEmail;
   "actions/emails/sendPartnerApplicationEmails": typeof actions_emails_sendPartnerApplicationEmails;
   "actions/emails/sendPartnershipInquiryEmail": typeof actions_emails_sendPartnershipInquiryEmail;
+  "actions/emails/sendPatientCareEmail": typeof actions_emails_sendPatientCareEmail;
   "actions/emails/sendPatientOnboardedProviderEmail": typeof actions_emails_sendPatientOnboardedProviderEmail;
   "actions/emails/sendPatientOnboardingCompleteEmail": typeof actions_emails_sendPatientOnboardingCompleteEmail;
   "actions/emails/sendPaymentReceiptEmail": typeof actions_emails_sendPaymentReceiptEmail;
@@ -335,7 +340,10 @@ declare const fullApi: ApiFromModules<{
   payouts: typeof payouts;
   paystack: typeof paystack;
   paystackDoctor: typeof paystackDoctor;
+  physioBilling: typeof physioBilling;
+  physioCare: typeof physioCare;
   physioRegistry: typeof physioRegistry;
+  physioSetup: typeof physioSetup;
   physiotherapistProfiles: typeof physiotherapistProfiles;
   physiotherapists: typeof physiotherapists;
   platformSettings: typeof platformSettings;

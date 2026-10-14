@@ -1,99 +1,312 @@
 'use client';
 
-import { useAuth } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-import { useQuery } from 'convex/react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useMutation, useQuery } from 'convex/react';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
-import { Loader2, Store, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import MarketplaceSettingsForm from '@/components/marketplace/MarketplaceSettingsForm';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { formatNaira, primaryButtonClass, StatusBadge } from '@/components/physio/ui';
+import { SettingsPageHeader, SettingsSection, fieldHintClass, fieldLabelClass } from '@/components/physio/SettingsUI';
+import { cn } from '@/lib/utils';
 
-export default function MarketplaceSettingsPage() {
-    const router = useRouter();
-    const { isLoaded, isSignedIn } = useAuth();
+/** Physios keep 80% of the session price; see the payout policy. */
+const PHYSIO_SHARE = 0.8;
+const MIN_PRICE = 2000;
+const MAX_PRICE = 500000;
+const DISCOUNTS = [5, 7, 10, 15];
 
-    const currentUser = useQuery(api.users.getMyUser);
-    const marketplaceSettings = useQuery(api.marketplace.settings.getMyMarketplaceSettings);
+type MarketplaceSettings = {
+    isAvailableOnMarketplace: boolean;
+    virtualConsultationRate: number;
+    inPersonConsultationRate: number;
+    packageDiscountPercent: number;
+    offersOnlineSessions: boolean;
+    offersInPersonSessions: boolean;
+    isApproved?: boolean;
+};
+
+function PriceField({
+    id,
+    label,
+    hint,
+    value,
+    onChange,
+    disabled,
+}: {
+    id: string;
+    label: string;
+    hint: string;
+    value: string;
+    onChange: (value: string) => void;
+    disabled?: boolean;
+}) {
+    const amount = Number(value);
+    return (
+        <div className="space-y-1.5">
+            <Label htmlFor={id} className={fieldLabelClass}>{label}</Label>
+            <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-neutral-500">₦</span>
+                <Input
+                    id={id}
+                    inputMode="numeric"
+                    value={value}
+                    disabled={disabled}
+                    onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, ''))}
+                    className="pl-7 tabular-nums"
+                />
+            </div>
+            <p className={fieldHintClass}>
+                {amount > 0 ? `You receive ${formatNaira(amount * PHYSIO_SHARE)} per session. ` : ''}
+                {hint}
+            </p>
+        </div>
+    );
+}
+
+export default function PricesAndListingPage() {
+    const settings = useQuery(api.marketplace.settings.getMyMarketplaceSettings) as MarketplaceSettings | null | undefined;
+    const setup = useQuery(api.physioSetup.getMySetupStatus);
+    const updateSettings = useMutation(api.marketplace.settings.updateMarketplaceSettings);
+
+    const [loaded, setLoaded] = useState(false);
+    const [virtualRate, setVirtualRate] = useState('');
+    const [inPersonRate, setInPersonRate] = useState('');
+    const [discount, setDiscount] = useState(7);
+    const [online, setOnline] = useState(true);
+    const [inPerson, setInPerson] = useState(true);
+    const [listed, setListed] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isToggling, setIsToggling] = useState(false);
 
     useEffect(() => {
-        if (isLoaded && !isSignedIn) {
-            router.push('/sign-in');
-        }
-    }, [isLoaded, isSignedIn, router]);
+        if (loaded || !settings || !setup) return;
+        setVirtualRate(String(Math.round(settings.virtualConsultationRate || 6000)));
+        setInPersonRate(String(Math.round(settings.inPersonConsultationRate || 10000)));
+        setDiscount(settings.packageDiscountPercent || 7);
+        setOnline(settings.offersOnlineSessions);
+        setInPerson(settings.offersInPersonSessions);
+        // Marketplace search treats "never set" as listed, so this page does too
+        setListed(setup.isListed);
+        setLoaded(true);
+    }, [settings, setup, loaded]);
 
-    useEffect(() => {
-        // Handle null (no Convex record) or wrong role
-        if (!currentUser || currentUser.role !== 'physiotherapist') {
-            if (currentUser !== undefined) {
-                router.push('/dashboard');
-            }
-        }
-    }, [currentUser, router]);
-
-    // Show loading while auth or user data is loading
-    if (!isLoaded || currentUser === undefined) {
+    if (settings === undefined || setup === undefined || (settings && !loaded)) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-                    <p className="text-gray-400">Loading marketplace settings...</p>
-                </div>
+            <div className="space-y-4">
+                <Skeleton className="h-7 w-48" />
+                <Skeleton className="h-28 rounded-xl" />
+                <Skeleton className="h-64 rounded-xl" />
             </div>
         );
     }
 
-    // Handle null currentUser (no Convex record) or incorrect role
-    if (currentUser === null || (currentUser && currentUser.role !== 'physiotherapist')) {
+    if (settings === null || setup === null) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    <p className="text-gray-400">User profile not found</p>
-                </div>
+            <div className="space-y-6">
+                <SettingsPageHeader title="Prices & listing" />
+                <SettingsSection>
+                    <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                        Finish your application first. Your prices and listing appear here once your profile exists.
+                    </p>
+                </SettingsSection>
             </div>
         );
+    }
+
+    const approved = setup.approvalStatus === 'approved';
+
+    const toggleListing = async (checked: boolean) => {
+        setListed(checked);
+        setIsToggling(true);
+        try {
+            await updateSettings({ isAvailableOnMarketplace: checked });
+            toast.success(checked ? 'You’re listed on the marketplace' : 'You’re hidden from the marketplace');
+        } catch (error) {
+            setListed(!checked);
+            toast.error((error as Error).message || 'Couldn’t change your listing');
+        } finally {
+            setIsToggling(false);
+        }
+    };
+
+    const save = async () => {
+        const virtual = Number(virtualRate);
+        const face = Number(inPersonRate);
+        if (!online && !inPerson) {
+            toast.error('Offer at least one type of session.');
+            return;
+        }
+        for (const [label, amount, enabled] of [
+            ['video', virtual, online],
+            ['in-person', face, inPerson],
+        ] as const) {
+            if (enabled && (!amount || amount < MIN_PRICE || amount > MAX_PRICE)) {
+                toast.error(`Set a ${label} price between ${formatNaira(MIN_PRICE)} and ${formatNaira(MAX_PRICE)}.`);
+                return;
+            }
+        }
+        setIsSaving(true);
+        try {
+            await updateSettings({
+                offersOnlineSessions: online,
+                offersInPersonSessions: inPerson,
+                virtualConsultationRate: virtual > 0 ? Math.round(virtual * 100) : undefined,
+                inPersonConsultationRate: face > 0 ? Math.round(face * 100) : undefined,
+                packageDiscountPercent: discount,
+            });
+            toast.success('Prices saved');
+        } catch (error) {
+            toast.error((error as Error).message || 'Couldn’t save your prices');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    let listingStatus: { tone: 'green' | 'amber' | 'neutral'; label: string; detail: string };
+    if (!approved) {
+        listingStatus = { tone: 'amber', label: 'Under review', detail: 'You can go live once we’ve approved your application.' };
+    } else if (!listed) {
+        listingStatus = { tone: 'neutral', label: 'Hidden', detail: 'Patients won’t find you in search. Existing patients can still book.' };
+    } else if (!setup.isComplete) {
+        listingStatus = {
+            tone: 'amber',
+            label: 'Not live yet',
+            detail: `Finish ${setup.requiredRemaining} more setup ${setup.requiredRemaining === 1 ? 'step' : 'steps'} to appear in search.`,
+        };
+    } else {
+        listingStatus = { tone: 'green', label: 'Live', detail: 'Patients can find and book you.' };
     }
 
     return (
         <div className="space-y-6">
-            {/* Page Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-                    <Store className="h-6 w-6" />
-                    Marketplace
-                </h1>
-                <p className="text-gray-400 mt-1">Manage your marketplace profile and visibility settings</p>
-            </div>
+            <SettingsPageHeader title="Prices & listing" description="How patients find you and what they pay." />
 
-            {/* Marketplace Card - Light mode wrapper for form component */}
-            <div className="bg-white rounded-xl p-6 shadow-sm">
-                {/* Loading state - marketplaceSettings is undefined */}
-                {marketplaceSettings === undefined && (
-                    <div className="flex justify-center py-8">
-                        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                    </div>
-                )}
-
-                {/* Empty state - marketplaceSettings is null (no settings exist yet) */}
-                {marketplaceSettings === null && (
-                    <div className="py-8 text-center">
-                        <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">
-                            No marketplace settings found
-                        </h3>
-                        <p className="text-gray-500 mb-6 max-w-md mx-auto">
-                            Set up your marketplace profile to start receiving bookings from patients.
+            <SettingsSection>
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <Label htmlFor="listed" className="text-sm font-medium text-neutral-900 dark:text-white">
+                                Show me on the marketplace
+                            </Label>
+                            <StatusBadge tone={listingStatus.tone}>{listingStatus.label}</StatusBadge>
+                        </div>
+                        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                            {listingStatus.detail}{' '}
+                            {approved && listed && !setup.isComplete && (
+                                <Link href="/dashboard/physiotherapist" className="font-medium text-[#005b57] hover:underline dark:text-[#2dd4bf]">
+                                    See what’s left
+                                </Link>
+                            )}
                         </p>
-                        <MarketplaceSettingsForm settings={null} />
                     </div>
-                )}
+                    <Switch
+                        id="listed"
+                        checked={listed}
+                        onCheckedChange={toggleListing}
+                        disabled={!approved || isToggling}
+                        aria-label="Show me on the marketplace"
+                    />
+                </div>
+            </SettingsSection>
 
-                {/* Settings exist - render form with settings */}
-                {marketplaceSettings && (
-                    <MarketplaceSettingsForm settings={marketplaceSettings} />
-                )}
-            </div>
+            <SettingsSection
+                title="Sessions and prices"
+                description="Prices are per session. Patients see these on your profile and booking link."
+                footer={
+                    <Button onClick={save} disabled={isSaving || !approved} className={primaryButtonClass}>
+                        {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save prices
+                    </Button>
+                }
+            >
+                <div className="space-y-6">
+                    {!approved && (
+                        <p className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-600 dark:bg-rh-ink dark:text-neutral-400">
+                            You can set prices once you’re approved. Until then, standard Rehabify prices apply.
+                        </p>
+                    )}
+
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-4">
+                            <Label htmlFor="online" className={fieldLabelClass}>Video sessions</Label>
+                            <Switch id="online" checked={online} onCheckedChange={setOnline} disabled={!approved} />
+                        </div>
+                        {online && (
+                            <PriceField
+                                id="virtualRate"
+                                label="Price per video session"
+                                hint="Standard price is ₦6,000."
+                                value={virtualRate}
+                                onChange={setVirtualRate}
+                                disabled={!approved}
+                            />
+                        )}
+                    </div>
+
+                    <div className="space-y-4 border-t border-neutral-100 pt-6 dark:border-white/[0.07]">
+                        <div className="flex items-center justify-between gap-4">
+                            <Label htmlFor="inPerson" className={fieldLabelClass}>In-person sessions</Label>
+                            <Switch id="inPerson" checked={inPerson} onCheckedChange={setInPerson} disabled={!approved} />
+                        </div>
+                        {inPerson && (
+                            <PriceField
+                                id="inPersonRate"
+                                label="Price per in-person session"
+                                hint="At your practice or a home visit. Standard price is ₦10,000."
+                                value={inPersonRate}
+                                onChange={setInPersonRate}
+                                disabled={!approved}
+                            />
+                        )}
+                    </div>
+
+                    <div className="space-y-2 border-t border-neutral-100 pt-6 dark:border-white/[0.07]">
+                        <p className={fieldLabelClass}>Package discount</p>
+                        <p className={cn(fieldHintClass, 'mt-0')}>
+                            Patients who book 4, 8 or 12 sessions up front get this much off each session.
+                        </p>
+                        <div className="inline-flex rounded-lg border border-neutral-200 p-0.5 dark:border-white/[0.07]" role="radiogroup" aria-label="Package discount">
+                            {DISCOUNTS.map((value) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={discount === value}
+                                    disabled={!approved}
+                                    onClick={() => setDiscount(value)}
+                                    className={cn(
+                                        'rounded-md px-3.5 py-1.5 text-sm tabular-nums transition-colors disabled:opacity-50',
+                                        discount === value
+                                            ? 'bg-neutral-900 font-medium text-white dark:bg-white dark:text-neutral-950'
+                                            : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
+                                    )}
+                                >
+                                    {value}%
+                                </button>
+                            ))}
+                        </div>
+                        {online && Number(virtualRate) > 0 && (
+                            <p className={fieldHintClass}>
+                                An 8-session video package would cost{' '}
+                                {formatNaira((Number(virtualRate) - Math.round(Number(virtualRate) * (discount / 100))) * 8)}.
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </SettingsSection>
+
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                You keep 80% of each session. The rest covers payments, the platform and referring partners.{' '}
+                <Link href="/payout-policy" className="underline hover:text-neutral-900 dark:hover:text-white">
+                    Payout policy
+                </Link>
+            </p>
         </div>
     );
 }

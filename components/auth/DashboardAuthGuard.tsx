@@ -78,6 +78,14 @@ export default function DashboardAuthGuard({ children }: DashboardAuthGuardProps
       return
     }
 
+    // Physiotherapists who have applied belong in their own portal, which shows the
+    // under-review, declined and finish-setup states itself
+    if (currentUser.role === 'physiotherapist' && (currentUser.onboarded || currentUser.onboardingSkipped)) {
+      setIsRedirecting(true)
+      router.replace('/dashboard/physiotherapist')
+      return
+    }
+
     // If user hasn't completed onboarding AND hasn't skipped, redirect to appropriate onboarding flow
     if (!currentUser.onboarded && !currentUser.onboardingSkipped) {
       setIsRedirecting(true)

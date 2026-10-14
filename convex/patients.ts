@@ -174,6 +174,8 @@ export const getMyPatients = query({
             isPrimary: relationship.isPrimaryPhysiotherapist,
             startDate: relationship.startDate,
             status: relationship.status,
+            source: relationship.source,
+            referredBy: relationship.referredBy,
           },
           profile: patientProfile,
           stats: {
@@ -219,14 +221,16 @@ export const getPatientDetails = query({
       .filter((q) => q.eq(q.field("status"), "active"))
       .unique();
 
+    // Not this physio's (active) patient, or no such patient: the page shows "not found"
+    // instead of crashing on a thrown query error
     if (!relationship) {
-      throw new Error("Access denied. Patient not assigned to you.");
+      return null;
     }
 
     // Get patient details
     const patient = await ctx.db.get(args.patientId);
     if (!patient) {
-      throw new Error("Patient not found");
+      return null;
     }
 
     // Get patient profile (basic demographics)
@@ -522,7 +526,7 @@ export const getDashboardStats = query({
       .withIndex("by_physiotherapist_id_and_time", (q) =>
         q.eq("physiotherapistId", physiotherapist._id).gte("startTime", startOfDay)
       )
-      .filter((q) => q.lte(q.field("startTime"), endOfDay))
+      .filter((q) => q.and(q.lte(q.field("startTime"), endOfDay), q.neq(q.field("isRecordOnly"), true)))
       .collect();
 
     // Get this week's completed sessions (completed appointments)
@@ -537,7 +541,8 @@ export const getDashboardStats = query({
       .filter((q) =>
         q.and(
           q.lte(q.field("startTime"), endOfWeek),
-          q.eq(q.field("status"), "completed")
+          q.eq(q.field("status"), "completed"),
+          q.neq(q.field("isRecordOnly"), true)
         )
       )
       .collect();

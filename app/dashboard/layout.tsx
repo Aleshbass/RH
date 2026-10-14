@@ -2,11 +2,7 @@ import { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { auth } from '@clerk/nextjs/server'
 import { headers } from 'next/headers'
-import { DashboardHeader } from '@/components/dashboard/shared/DashboardHeader'
-import { Toaster } from "sonner"
-import NotificationToaster from '@/components/dashboard/shared/NotificationToaster'
-import { DashboardSidebarWrapper } from '../../components/dashboard/shared/DashboardSidebarWrapper'
-import DashboardAuthGuard from '@/components/auth/DashboardAuthGuard'
+import { DashboardChrome } from '@/components/dashboard/shared/DashboardChrome'
 
 export default async function DashboardLayout({
   children,
@@ -27,27 +23,6 @@ export default async function DashboardLayout({
     redirect('/sign-in')
   }
 
-  return (
-    <DashboardAuthGuard>
-      <div className="min-h-screen bg-[#F5F5DC]"> {/* 60% - Bone background */}
-        {/* Dashboard Header */}
-        <DashboardHeader />
-
-        <div className="flex">
-          {/* Sidebar */}
-          <DashboardSidebarWrapper />
-
-          {/* Main Content */}
-          <main className="flex-1 overflow-hidden">
-            <div className="h-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-              {children}
-            </div>
-          </main>
-        </div>
-
-        <NotificationToaster />
-        <Toaster position="top-right" />
-      </div>
-    </DashboardAuthGuard>
-  )
+  // The clinic and physiotherapist portals bring their own shell; everyone else gets the shared one
+  return <DashboardChrome>{children}</DashboardChrome>
 }

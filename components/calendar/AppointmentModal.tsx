@@ -19,6 +19,7 @@ import { Id } from '@/convex/_generated/dataModel'
 import { format } from 'date-fns'
 import { PatientProfileMiniCard } from '@/components/dashboard/physiotherapist/PatientProfileMiniCard'
 import { useQueryUntyped, useMutationUntyped } from '@/lib/convexUntyped'
+import { playSound } from '@/lib/sounds'
 
 
 
@@ -192,6 +193,7 @@ export function AppointmentModal({
           manualMeetingLink: formData.manualMeetingLink || undefined,
         })
 
+        playSound('booked')
         toast.success('Appointment created successfully')
       }
 
@@ -383,9 +385,9 @@ export function AppointmentModal({
 
           {/* Appointment Summary */}
           {formData.patientId && formData.date && formData.startTime && formData.endTime && (
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <h4 className="font-medium text-blue-900 mb-2">Appointment Summary</h4>
-              <div className="text-sm text-blue-800 space-y-1">
+            <div className="p-4 bg-[#005b57]/5 rounded-lg">
+              <h4 className="font-medium text-[#00443e] mb-2">Appointment Summary</h4>
+              <div className="text-sm text-[#00443e] space-y-1">
                                  <p>
                    <strong>Patient:</strong>{' '}
                    {(() => {

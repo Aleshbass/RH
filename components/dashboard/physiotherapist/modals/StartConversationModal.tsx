@@ -32,13 +32,10 @@ export function StartConversationModal({ isOpen, onClose, preselectedPatientId }
     const handleStartChat = async () => {
         if (!newConversationPatientId) return;
         try {
-            const result = await getOrCreateConversation({ participantId: newConversationPatientId as Id<"users"> });
-            toast.success('Conversation started');
+            await getOrCreateConversation({ participantId: newConversationPatientId as Id<"users"> });
             onClose();
-            // Navigate to messages page with the conversation selected? 
-            // Ideally we should redirect to /dashboard/physiotherapist/messages?conversationId=...
-            // But for now let's just close the modal and maybe redirect to messages page
-            router.push('/dashboard/physiotherapist/messages');
+            // Open Messages with this patient's conversation selected
+            router.push(`/dashboard/physiotherapist/messages?with=${newConversationPatientId}`);
         } catch (error) {
             toast.error('Failed to start conversation');
             console.error('Start conversation error:', error);

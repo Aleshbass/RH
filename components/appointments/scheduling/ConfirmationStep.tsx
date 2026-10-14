@@ -13,6 +13,7 @@ import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
 import { toast } from 'sonner';
 import { GoogleCalendarRequiredModal } from '@/components/modals/GoogleCalendarRequiredModal';
+import { playSound } from '@/lib/sounds';
 
 interface ConfirmationStepProps {
     data: WizardData;
@@ -67,6 +68,7 @@ export function ConfirmationStep({ data, onUpdate, onSuccess }: ConfirmationStep
             console.log('Appointment creation result:', result);
 
             if (result.success) {
+                playSound('booked');
                 toast.success('Appointment scheduled successfully!');
                 if (result.googleMeetLink) setGoogleMeetLink(result.googleMeetLink);
                 if (result.googleCalendarLink) setGoogleCalendarLink(result.googleCalendarLink);
@@ -126,7 +128,7 @@ export function ConfirmationStep({ data, onUpdate, onSuccess }: ConfirmationStep
                                         href={googleMeetLink}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                                        className="inline-flex items-center gap-2 text-[#005b57] hover:text-[#00443e] hover:underline font-medium"
                                     >
                                         <Video className="w-4 h-4" />
                                         <span>Join Google Meet</span>
@@ -148,7 +150,7 @@ export function ConfirmationStep({ data, onUpdate, onSuccess }: ConfirmationStep
                                     href={googleCalendarLink}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1"
+                                    className="text-sm text-[#005b57] hover:underline inline-flex items-center gap-1"
                                 >
                                     <Calendar className="w-3 h-3" />
                                     View in Google Calendar
@@ -173,21 +175,21 @@ export function ConfirmationStep({ data, onUpdate, onSuccess }: ConfirmationStep
 
     return (
         <div className="space-y-6 h-full flex flex-col">
-            <div className="bg-blue-50 p-4 rounded-lg space-y-3">
-                <h3 className="font-semibold text-blue-900 flex items-center gap-2">
+            <div className="bg-[#005b57]/5 p-4 rounded-lg space-y-3">
+                <h3 className="font-semibold text-[#00443e] flex items-center gap-2">
                     <CheckCircle2 className="h-5 w-5" />
                     Confirm Details
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                    <div className="flex items-center gap-2 text-blue-800">
+                    <div className="flex items-center gap-2 text-[#00443e]">
                         <User className="h-4 w-4 opacity-70" />
                         <span>{data.patientName}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-blue-800">
+                    <div className="flex items-center gap-2 text-[#00443e]">
                         <Calendar className="h-4 w-4 opacity-70" />
                         <span>{data.date && format(data.date, 'MMMM d, yyyy')}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-blue-800">
+                    <div className="flex items-center gap-2 text-[#00443e]">
                         <Clock className="h-4 w-4 opacity-70" />
                         <span>{data.time && format(new Date(`2000-01-01T${data.time}`), 'h:mm a')} ({data.duration} min)</span>
                     </div>
@@ -220,11 +222,11 @@ export function ConfirmationStep({ data, onUpdate, onSuccess }: ConfirmationStep
                     </Label>
                     <div className="grid grid-cols-2 gap-3">
                         <div
-                            className={`cursor-pointer border rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${!data.manualMeetingLink ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600' : 'border-gray-200 hover:border-gray-300'}`}
+                            className={`cursor-pointer border rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${!data.manualMeetingLink ? 'border-[#005b57] bg-[#005b57]/5 ring-1 ring-[#005b57]' : 'border-gray-200 hover:border-gray-300'}`}
                             onClick={() => onUpdate({ manualMeetingLink: '' })}
                         >
                             <div className="bg-white p-1.5 rounded-full shadow-sm">
-                                <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <svg className="w-5 h-5 text-[#005b57]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                 </svg>
                             </div>
@@ -232,7 +234,7 @@ export function ConfirmationStep({ data, onUpdate, onSuccess }: ConfirmationStep
                         </div>
 
                         <div
-                            className={`cursor-pointer border rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${data.manualMeetingLink === 'google_meet' ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600' : 'border-gray-200 hover:border-gray-300'}`}
+                            className={`cursor-pointer border rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${data.manualMeetingLink === 'google_meet' ? 'border-[#005b57] bg-[#005b57]/5 ring-1 ring-[#005b57]' : 'border-gray-200 hover:border-gray-300'}`}
                             onClick={() => onUpdate({ manualMeetingLink: 'google_meet' })}
                         >
                             <div className="bg-white p-1.5 rounded-full shadow-sm">
@@ -260,7 +262,7 @@ export function ConfirmationStep({ data, onUpdate, onSuccess }: ConfirmationStep
             </div>
 
             <Button
-                className="w-full bg-blue-600 hover:bg-blue-700 text-lg py-6"
+                className="w-full bg-[#005b57] hover:bg-[#00443e] text-lg py-6"
                 onClick={handleConfirm}
                 disabled={isSubmitting || !data.serviceType}
             >

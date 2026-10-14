@@ -15,8 +15,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Loader2, FileText, Mic, Paperclip } from 'lucide-react'
+import { Loader2, FileText } from 'lucide-react'
+import { toast as sonner } from 'sonner'
 import { Badge } from '@/components/ui/badge'
+import { NoteMediaControls, useNoteMedia } from '@/components/physio/NoteMedia'
+import { playSound } from '@/lib/sounds'
 import { format } from 'date-fns'
 import { TemplateSelector } from './TemplateSelector'
 // import { useToast } from '@/components/ui/use-toast'
@@ -42,6 +45,8 @@ interface SessionLogModalProps {
     objectiveAssessment?: string
     treatmentAdministered?: string
     planForNextSession?: string
+    voiceNoteUrl?: string
+    attachments?: Id<'_storage'>[]
   }
   onSuccess?: () => void
 }
@@ -54,11 +59,12 @@ export function SessionLogModal({
   existingSessionLog,
   onSuccess,
 }: SessionLogModalProps) {
-  // Simple toast replacement - can be enhanced later
-  const toast = ({ title, description, variant }: { title: string; description: string; variant?: string }) => {
-    console.log(`${variant === 'destructive' ? 'ERROR' : 'SUCCESS'}: ${title} - ${description}`)
-    alert(`${title}: ${description}`)
+  const toast = ({ description, variant }: { title: string; description: string; variant?: string }) => {
+    if (variant === 'destructive') sonner.error(description)
+    else sonner.success(description)
   }
+  const media = useNoteMedia()
+  const resetMedia = media.reset
   const [formData, setFormData] = useState({
     subjectiveAssessment: '',
     objectiveAssessment: '',
@@ -88,7 +94,8 @@ export function SessionLogModal({
         planForNextSession: '',
       })
     }
-  }, [existingSessionLog, isOpen])
+    resetMedia()
+  }, [existingSessionLog, isOpen, resetMedia])
 
   const handleInputChange = (field: keyof typeof formData, value: string) => {
     setFormData(prev => ({
@@ -101,11 +108,11 @@ export function SessionLogModal({
     if (!appointmentId) return
 
     // Validate that at least one field is filled
-    const hasContent = Object.values(formData).some(value => value.trim().length > 0)
+    const hasContent = Object.values(formData).some(value => value.trim().length > 0) || media.hasMedia
     if (!hasContent) {
       toast({
         title: "Error",
-        description: "Please fill in at least one assessment field.",
+        description: "Fill in at least one section, record a voice note or attach a file.",
         variant: "destructive",
       })
       return
@@ -116,9 +123,12 @@ export function SessionLogModal({
     try {
       if (existingSessionLog) {
         // Update existing session log
+        // The update replaces these fields, so keep what was already saved.
         await updateSessionLog({
           sessionLogId: existingSessionLog._id,
           ...formData,
+          voiceNoteUrl: media.voiceStorageId ?? existingSessionLog.voiceNoteUrl,
+          attachments: [...(existingSessionLog.attachments ?? []), ...media.attachmentIds],
         })
         toast({
           title: "Success",
@@ -129,6 +139,8 @@ export function SessionLogModal({
         await createSessionLog({
           appointmentId,
           ...formData,
+          voiceNoteUrl: media.voiceStorageId,
+          attachments: media.attachmentIds.length ? media.attachmentIds : undefined,
         })
         toast({
           title: "Success",
@@ -136,6 +148,7 @@ export function SessionLogModal({
         })
       }
 
+      playSound('success')
       onSuccess?.()
       onClose()
     } catch (error) {
@@ -301,31 +314,22 @@ export function SessionLogModal({
             </div>
           </div>
 
-          {/* Future Features - Voice Notes & Attachments */}
           <div className="border-t pt-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium text-muted-foreground">Additional Options</h4>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled className="opacity-50">
-                  <Mic className="h-4 w-4 mr-2" />
-                  Voice Note
-                  <Badge variant="secondary" className="ml-2 text-xs">Soon</Badge>
-                </Button>
-                <Button variant="outline" size="sm" disabled className="opacity-50">
-                  <Paperclip className="h-4 w-4 mr-2" />
-                  Attachments
-                  <Badge variant="secondary" className="ml-2 text-xs">Soon</Badge>
-                </Button>
-              </div>
-            </div>
+            <h4 className="mb-3 text-sm font-medium text-muted-foreground">Voice note and attachments</h4>
+            {existingSessionLog && (existingSessionLog.voiceNoteUrl || existingSessionLog.attachments?.length) ? (
+              <p className="mb-3 text-xs text-muted-foreground">
+                Already saved: {[existingSessionLog.voiceNoteUrl && 'a voice note', existingSessionLog.attachments?.length && `${existingSessionLog.attachments.length} file(s)`].filter(Boolean).join(' and ')}. Anything you add here is kept alongside.
+              </p>
+            ) : null}
+            <NoteMediaControls media={media} />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
+          <Button variant="outline" onClick={onClose} disabled={isSubmitting || media.recording}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
+          <Button onClick={handleSubmit} disabled={isSubmitting || media.busy}>
             {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             {isEditing ? 'Update Session Log' : 'Create Session Log'}
           </Button>

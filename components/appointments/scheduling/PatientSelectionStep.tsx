@@ -54,12 +54,12 @@ export function PatientSelectionStep({ onSelect }: PatientSelectionStepProps) {
                         >
                             <Avatar className="h-10 w-10 border border-gray-200">
                                 <AvatarImage src={patient.imageUrl} />
-                                <AvatarFallback className="bg-blue-50 text-blue-600">
+                                <AvatarFallback className="bg-[#005b57]/5 text-[#005b57]">
                                     {patient.firstName?.[0]}{patient.lastName?.[0]}
                                 </AvatarFallback>
                             </Avatar>
                             <div>
-                                <p className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+                                <p className="font-medium text-gray-900 group-hover:text-[#005b57] transition-colors">
                                     {patient.firstName} {patient.lastName}
                                 </p>
                                 <p className="text-sm text-gray-500">{patient.email}</p>

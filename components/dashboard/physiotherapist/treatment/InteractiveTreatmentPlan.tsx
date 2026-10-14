@@ -6,6 +6,7 @@ import { api } from '@/convex/_generated/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -20,9 +21,12 @@ import { UploadDropzone } from '@/components/ui/UploadDropzone';
 interface InteractiveTreatmentPlanProps {
   patientId: string;
   plan?: TreatmentPlanType;
+  /** 'exercises' shows only the home exercise programme (the workspace has its own plan editor). */
+  variant?: 'full' | 'exercises';
 }
 
-export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatmentPlanProps) {
+export function InteractiveTreatmentPlan({ patientId, plan, variant = 'full' }: InteractiveTreatmentPlanProps) {
+  const exercisesOnly = variant === 'exercises';
   const [showExerciseLibrary, setShowExerciseLibrary] = useState(false);
   const [showGoalsSection, setShowGoalsSection] = useState(true);
   const [newGoal, setNewGoal] = useState({ description: '', targetValue: '' });
@@ -283,18 +287,26 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
 
   const totalExercises = currentPlan?.phases?.reduce((acc: number, phase: any) => acc + phase.exercises.length, 0) || 0;
 
+  if (!currentPlan && exercisesOnly) {
+    return (
+      <div className="rounded-2xl border border-dashed border-black/10 px-6 py-10 text-center dark:border-white/10">
+        <Dumbbell className="mx-auto h-7 w-7 text-neutral-300 dark:text-neutral-600" />
+        <p className="mt-2 text-sm font-semibold text-rh-night dark:text-white">Set up the care plan first</p>
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Once there's a plan, you can add home exercises to it here.</p>
+      </div>
+    );
+  }
+
   if (!currentPlan) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 px-4">
-        <div className="text-center max-w-md space-y-4">
-          <div className="w-20 h-20 mx-auto bg-green-100 rounded-full flex items-center justify-center">
-            <Dumbbell className="h-10 w-10 text-green-600" />
-          </div>
-          <h3 className="text-2xl font-semibold text-gray-900">No Active Treatment Plan</h3>
-          <p className="text-gray-600">Create a comprehensive treatment plan to help your patient recover faster.</p>
-          <Button onClick={handleCreatePlan} className="bg-green-600 hover:bg-green-700 mt-4">
-            <Plus className="h-4 w-4 mr-2" />
-            Create Treatment Plan
+      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-neutral-300 px-6 py-14 dark:border-neutral-700">
+        <div className="max-w-sm space-y-2 text-center">
+          <Dumbbell className="mx-auto h-8 w-8 text-neutral-300 dark:text-neutral-600" />
+          <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">No treatment plan yet</h3>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">Set out the exercises and goals for this patient’s recovery.</p>
+          <Button onClick={handleCreatePlan} size="sm" className="mt-2 bg-[#005b57] text-white hover:bg-[#00443e] dark:bg-[#2dd4bf] dark:text-neutral-950 dark:hover:bg-[#5eead4]">
+            <Plus className="mr-1.5 h-4 w-4" />
+            Create a plan
           </Button>
         </div>
       </div>
@@ -302,158 +314,101 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
   }
 
   return (
-    <div className="space-y-8">
-      {/* Header Section with Gradient Background */}
-      <div className="relative bg-gradient-to-br from-emerald-50 via-white to-teal-50 rounded-3xl p-8 border border-emerald-100 shadow-lg overflow-hidden">
-        {/* Decorative Background Elements */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-emerald-100/30 to-transparent rounded-full blur-3xl -z-0"></div>
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-teal-100/30 to-transparent rounded-full blur-3xl -z-0"></div>
-
-        <div className="relative z-10">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <h2 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-700 to-teal-600 bg-clip-text text-transparent">
-                  {currentPlan.title}
-                </h2>
-                <Badge
-                  variant="secondary"
-                  className={`text-sm px-4 py-1.5 font-medium ${currentPlan.status === 'active'
-                    ? 'bg-emerald-500 text-white border-emerald-600 shadow-md'
-                    : 'bg-gray-100 text-gray-700'
-                    }`}
-                >
-                  {currentPlan.status}
-                </Badge>
-              </div>
-              <p className="text-gray-600 text-lg">{currentPlan.description || 'Personalized treatment plan'}</p>
+    <div className="space-y-6">
+      {/* Plan summary */}
+      {!exercisesOnly && (
+      <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white">{currentPlan.title}</h2>
+              <Badge
+                variant="secondary"
+                className={
+                  currentPlan.status === 'active'
+                    ? 'bg-[#005b57]/10 text-[#005b57] dark:bg-[#2dd4bf]/10 dark:text-[#2dd4bf]'
+                    : 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300'
+                }
+              >
+                {currentPlan.status === 'active' ? 'Active' : currentPlan.status}
+              </Badge>
             </div>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setDeletePlanDialogOpen(true)}
-              className="bg-red-600 hover:bg-red-700 text-white shadow-md"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Plan
-            </Button>
+            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{currentPlan.description || 'Personalised treatment plan'}</p>
           </div>
-
-          {/* Stats Cards with Gradient Accents */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6">
-            <div className="group relative bg-white/90 backdrop-blur-sm rounded-2xl p-5 border border-emerald-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <div className="relative flex items-center gap-4">
-                <div className="flex-shrink-0 w-14 h-14 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <Dumbbell className="h-7 w-7 text-white" />
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-gray-900">{totalExercises}</div>
-                  <div className="text-sm text-gray-600 font-medium">Exercises</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="group relative bg-white/90 backdrop-blur-sm rounded-2xl p-5 border border-teal-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-              <div className="absolute inset-0 bg-gradient-to-br from-teal-500/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <div className="relative flex items-center gap-4">
-                <div className="flex-shrink-0 w-14 h-14 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <Target className="h-7 w-7 text-white" />
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-gray-900">{currentPlan.goals?.length || 0}</div>
-                  <div className="text-sm text-gray-600 font-medium">Goals</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="group relative bg-white/90 backdrop-blur-sm rounded-2xl p-5 border border-blue-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <div className="relative flex items-center gap-4">
-                <div className="flex-shrink-0 w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <TrendingUp className="h-7 w-7 text-white" />
-                </div>
-                <div>
-                  <div className="text-3xl font-bold text-gray-900">{Math.round(weeklyProgress?.completionRate || 0)}%</div>
-                  <div className="text-sm text-gray-600 font-medium">Adherence</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Enhanced Adherence Summary */}
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-emerald-200/50 shadow-md">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                <span className="text-base font-semibold text-gray-800">Plan Adherence</span>
-              </div>
-              <span className="text-lg font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                {Math.round(weeklyProgress?.completionRate || 0)}%
-              </span>
-            </div>
-            <div className="relative">
-              <Progress
-                value={weeklyProgress?.completionRate || 0}
-                className="h-4 bg-gray-100 rounded-full overflow-hidden shadow-inner"
-              />
-              <div className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-transparent rounded-full pointer-events-none"></div>
-            </div>
-            <div className="flex items-center justify-between mt-3 text-xs text-gray-600">
-              <span className="flex items-center gap-1.5 font-medium">
-                <Calendar className="h-3.5 w-3.5 text-emerald-600" />
-                Started {currentPlan.startDate ? format(new Date(currentPlan.startDate), 'MMM d, yyyy') : 'Recently'}
-              </span>
-              <span className="font-medium">
-                Target: {currentPlan.endDate ? format(new Date(currentPlan.endDate), 'MMM d, yyyy') : 'Ongoing'}
-              </span>
-            </div>
-          </div>
-
-          {/* Enhanced Recent Activity */}
-          {weeklyProgress?.completions && weeklyProgress.completions.length > 0 && (
-            <div className="mt-6 bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-emerald-200/50 shadow-md">
-              <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <div className="w-1 h-5 bg-gradient-to-b from-emerald-500 to-teal-500 rounded-full"></div>
-                Recent Activity
-              </h4>
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-emerald-200 scrollbar-track-transparent">
-                {weeklyProgress.completions.slice(0, 5).map((completion: any) => (
-                  <div key={completion._id} className="flex-shrink-0 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-200/50 shadow-sm hover:shadow-md transition-shadow w-44">
-                    <div className="text-xs text-emerald-700 font-semibold mb-2">
-                      {format(new Date(completion.completedAt), 'MMM d, h:mm a')}
-                    </div>
-                    <div className="text-sm font-bold text-gray-900 truncate mb-1">
-                      {exerciseDetails[completion.exerciseId]?.name || 'Exercise'}
-                    </div>
-                    <div className="text-xs text-gray-600 font-medium">
-                      {completion.setsCompleted} sets × {completion.repsCompleted} reps
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDeletePlanDialogOpen(true)}
+            className="shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-500/10"
+          >
+            <Trash2 className="mr-1.5 h-4 w-4" />
+            Delete plan
+          </Button>
         </div>
-      </div>
 
-      {/* Exercises Section with Enhanced Design */}
-      <div className="space-y-5">
-        <div className="flex items-center justify-between">
-          <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <div className="w-1.5 h-8 bg-gradient-to-b from-emerald-500 to-teal-500 rounded-full"></div>
-            Exercises
-          </h3>
+        <dl className="mt-5 grid grid-cols-3 gap-3">
+          {[
+            ['Exercises', totalExercises],
+            ['Goals', currentPlan.goals?.length || 0],
+            ['Done this week', `${Math.round(weeklyProgress?.completionRate || 0)}%`],
+          ].map(([label, value]) => (
+            <div key={label as string} className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+              <dt className="text-xs text-neutral-500 dark:text-neutral-400">{label}</dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums text-neutral-900 dark:text-white">{value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <div className="mt-5">
+          <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
+            <span>
+              Started {currentPlan.startDate ? format(new Date(currentPlan.startDate), 'd MMM yyyy') : 'recently'}
+            </span>
+            <span>Target: {currentPlan.endDate ? format(new Date(currentPlan.endDate), 'd MMM yyyy') : 'ongoing'}</span>
+          </div>
+          <Progress value={weeklyProgress?.completionRate || 0} className="mt-2 h-1.5" />
+        </div>
+
+        {weeklyProgress?.completions && weeklyProgress.completions.length > 0 && (
+          <div className="mt-5 border-t border-neutral-100 pt-4 dark:border-neutral-800">
+            <h4 className="text-sm font-semibold text-neutral-900 dark:text-white">Recent activity</h4>
+            <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
+              {weeklyProgress.completions.slice(0, 5).map((completion: any) => (
+                <div
+                  key={completion._id}
+                  className="w-44 shrink-0 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800"
+                >
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {format(new Date(completion.completedAt), 'd MMM, h:mm a')}
+                  </div>
+                  <div className="mt-1 truncate text-sm font-medium text-neutral-900 dark:text-white">
+                    {exerciseDetails[completion.exerciseId]?.name || 'Exercise'}
+                  </div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {completion.setsCompleted} sets × {completion.repsCompleted} reps
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+      )}
+
+      {/* Exercises */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-white">Exercises</h3>
           <Dialog open={showExerciseLibrary} onOpenChange={setShowExerciseLibrary}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-lg hover:shadow-xl transition-all duration-300">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Exercise
+              <Button size="sm" className="bg-[#005b57] text-white hover:bg-[#00443e] dark:bg-[#2dd4bf] dark:text-neutral-950 dark:hover:bg-[#5eead4]">
+                <Plus className="mr-1.5 h-4 w-4" />
+                Add exercise
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
+            <DialogContent className="max-h-[80vh] max-w-6xl overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Exercise Library</DialogTitle>
+                <DialogTitle>Exercise library</DialogTitle>
               </DialogHeader>
               <ExerciseLibrary onExerciseSelect={addExerciseToPlan} />
             </DialogContent>
@@ -461,261 +416,187 @@ export function InteractiveTreatmentPlan({ patientId, plan }: InteractiveTreatme
         </div>
 
         {currentPlan.phases && (currentPlan.phases as any[]).length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {(currentPlan.phases as any[]).map((phase: any) =>
               phase.exercises.map((exercise: any, exIdx: number) => {
                 const exerciseDetail = exerciseDetails[exercise.exerciseId];
                 return (
-                  <Card key={`${phase.order}-${exIdx}`} className="group hover:shadow-xl transition-all duration-300 border-2 border-gray-100 hover:border-emerald-200 overflow-hidden bg-white rounded-2xl hover:-translate-y-1">
-                    <CardContent className="p-0 flex flex-col">
-                      {/* Exercise Header with Image */}
-                      <div className="relative bg-gradient-to-br from-gray-50 to-emerald-50/30 p-6 border-b-2 border-gray-100">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeleteExerciseDialog({ open: true, phaseOrder: phase.order, exerciseId: exercise.exerciseId })}
-                          className="absolute top-2 right-2 text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <div className="flex items-start gap-4">
-                          {exerciseDetail ? (
-                            <div className="flex-shrink-0 w-28 h-28 rounded-xl overflow-hidden bg-white border-2 border-gray-100 shadow-md group-hover:shadow-lg transition-shadow">
-                              <LazyExerciseMedia
-                                exerciseDetail={exerciseDetail}
-                                exerciseId={exercise.exerciseId}
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex-shrink-0 w-28 h-28 rounded-xl bg-gray-100 flex items-center justify-center border-2 border-gray-200">
-                              <Dumbbell className="w-10 h-10 text-gray-400" />
+                  <div
+                    key={`${phase.order}-${exIdx}`}
+                    className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+                  >
+                    <div className="relative flex items-start gap-4 p-4">
+                      {exerciseDetail ? (
+                        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-neutral-800">
+                          <LazyExerciseMedia exerciseDetail={exerciseDetail} exerciseId={exercise.exerciseId} />
+                        </div>
+                      ) : (
+                        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800">
+                          <Dumbbell className="h-8 w-8 text-neutral-400" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1 pr-8">
+                        <h4 className="line-clamp-2 text-sm font-semibold text-neutral-900 dark:text-white">
+                          {exerciseDetail?.name || 'Unknown exercise'}
+                        </h4>
+                        {exerciseDetail?.targetMuscles && (
+                          <p className="mt-1 truncate text-xs text-neutral-500 dark:text-neutral-400">
+                            {exerciseDetail.targetMuscles.slice(0, 3).join(' · ')}
+                          </p>
+                        )}
+                        <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                          <div className="flex gap-1">
+                            <dt className="text-neutral-500 dark:text-neutral-400">Sets</dt>
+                            <dd className="font-medium tabular-nums text-neutral-900 dark:text-white">{exercise.sets || '–'}</dd>
+                          </div>
+                          <div className="flex gap-1">
+                            <dt className="text-neutral-500 dark:text-neutral-400">Reps</dt>
+                            <dd className="font-medium tabular-nums text-neutral-900 dark:text-white">{exercise.reps || '–'}</dd>
+                          </div>
+                          {exercise.frequency && (
+                            <div className="flex min-w-0 gap-1">
+                              <dt className="text-neutral-500 dark:text-neutral-400">How often</dt>
+                              <dd className="truncate font-medium text-neutral-900 dark:text-white">{exercise.frequency}</dd>
                             </div>
                           )}
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-bold text-lg text-gray-900 mb-2 line-clamp-2">
-                              {exerciseDetail?.name || 'Unknown Exercise'}
-                            </h4>
-                            {exerciseDetail?.targetMuscles && (
-                              <div className="flex flex-wrap gap-1.5">
-                                {exerciseDetail.targetMuscles.slice(0, 3).map((muscle: string) => (
-                                  <Badge key={muscle} variant="outline" className="text-xs px-2.5 py-0.5 bg-white text-emerald-700 border-emerald-200 font-medium">
-                                    {muscle}
-                                  </Badge>
-                                ))}
+                        </dl>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDeleteExerciseDialog({ open: true, phaseOrder: phase.order, exerciseId: exercise.exerciseId })}
+                        className="absolute right-2 top-2 h-8 w-8 text-neutral-400 hover:text-red-600"
+                        aria-label="Remove exercise"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Photos the patient uploads to show progress */}
+                    <div className="border-t border-neutral-100 p-4 dark:border-neutral-800">
+                      <p className="mb-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">Progress photos from the patient</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {(
+                          [
+                            ['Before', exercise.beforeImageStorageId],
+                            ['After', exercise.afterImageStorageId],
+                          ] as const
+                        ).map(([label, storageId]) => (
+                          <div key={label}>
+                            {storageId ? (
+                              <div className="relative aspect-[4/3] overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
+                                <StorageImage storageId={storageId} />
+                                <span className="absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[11px] font-medium text-white">
+                                  {label}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex aspect-[4/3] flex-col items-center justify-center rounded-lg border border-dashed border-neutral-200 text-center dark:border-neutral-700">
+                                <span className="text-xs text-neutral-500 dark:text-neutral-400">No photo yet</span>
+                                <span className="text-[11px] text-neutral-400 dark:text-neutral-500">{label}</span>
                               </div>
                             )}
                           </div>
-                        </div>
+                        ))}
                       </div>
-
-                      {/* Exercise Prescription */}
-                      <div className="p-6">
-                        <div className="grid grid-cols-3 gap-3 mb-6">
-                          <div className="relative overflow-hidden text-center p-4 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-2 border-emerald-200/50 group-hover:border-emerald-300 transition-colors">
-                            <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-400/10 rounded-full -mr-8 -mt-8"></div>
-                            <div className="relative">
-                              <div className="text-2xl font-bold text-emerald-700">{exercise.sets || '-'}</div>
-                              <div className="text-[11px] uppercase tracking-wider text-emerald-600 font-semibold mt-1">Sets</div>
-                            </div>
-                          </div>
-                          <div className="relative overflow-hidden text-center p-4 rounded-xl bg-gradient-to-br from-teal-50 to-teal-100/50 border-2 border-teal-200/50 group-hover:border-teal-300 transition-colors">
-                            <div className="absolute top-0 right-0 w-16 h-16 bg-teal-400/10 rounded-full -mr-8 -mt-8"></div>
-                            <div className="relative">
-                              <div className="text-2xl font-bold text-teal-700">{exercise.reps || '-'}</div>
-                              <div className="text-[11px] uppercase tracking-wider text-teal-600 font-semibold mt-1">Reps</div>
-                            </div>
-                          </div>
-                          <div className="relative overflow-hidden text-center p-4 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100/50 border-2 border-blue-200/50 group-hover:border-blue-300 transition-colors">
-                            <div className="absolute top-0 right-0 w-16 h-16 bg-blue-400/10 rounded-full -mr-8 -mt-8"></div>
-                            <div className="relative">
-                              <div className="text-base font-bold text-blue-700 truncate pt-1">{exercise.frequency}</div>
-                              <div className="text-[11px] uppercase tracking-wider text-blue-600 font-semibold mt-1">Freq</div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Enhanced Progress Photos Section */}
-                        <div className="pt-5 border-t-2 border-gray-100">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                              <h5 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                                <Target className="w-4 h-4 text-emerald-600" />
-                                Progress Photos
-                              </h5>
-                              <div className="group/info relative">
-                                <Info className="w-4 h-4 text-gray-400 cursor-help hover:text-emerald-600 transition-colors" />
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-2xl opacity-0 group-hover/info:opacity-100 transition-opacity pointer-events-none z-10 text-center">
-                                  These photos are uploaded by the patient to track their progress over time.
-                                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
-                                </div>
-                              </div>
-                            </div>
-                            <Badge variant="outline" className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 border-emerald-200">
-                              Patient Uploads
-                            </Badge>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-4">
-                            {/* Before Photo */}
-                            <div className="relative group/upload">
-                              {exercise.beforeImageStorageId ? (
-                                <div className="relative rounded-xl overflow-hidden border-2 border-gray-200 aspect-[4/3] shadow-md hover:shadow-lg transition-shadow">
-                                  <StorageImage storageId={exercise.beforeImageStorageId} />
-                                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white text-xs py-2 text-center font-semibold backdrop-blur-sm">
-                                    Before
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-gray-50 to-gray-100/50 aspect-[4/3] hover:border-emerald-300 transition-colors">
-                                  <div className="text-center">
-                                    <div className="text-xs text-gray-500 font-medium">No photo yet</div>
-                                    <div className="text-[10px] text-gray-400 mt-1">Before</div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* After Photo */}
-                            <div className="relative group/upload">
-                              {exercise.afterImageStorageId ? (
-                                <div className="relative rounded-xl overflow-hidden border-2 border-gray-200 aspect-[4/3] shadow-md hover:shadow-lg transition-shadow">
-                                  <StorageImage storageId={exercise.afterImageStorageId} />
-                                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white text-xs py-2 text-center font-semibold backdrop-blur-sm">
-                                    After
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-gray-50 to-gray-100/50 aspect-[4/3] hover:border-emerald-300 transition-colors">
-                                  <div className="text-center">
-                                    <div className="text-xs text-gray-500 font-medium">No photo yet</div>
-                                    <div className="text-[10px] text-gray-400 mt-1">After</div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 );
               })
             )}
           </div>
         ) : (
-          <Card className="border-2 border-dashed border-gray-300 rounded-2xl overflow-hidden">
-            <CardContent className="text-center py-20">
-              <div className="w-20 h-20 mx-auto bg-gradient-to-br from-emerald-100 to-teal-100 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
-                <Dumbbell className="h-10 w-10 text-emerald-600" />
-              </div>
-              <p className="text-gray-600 text-lg mb-6 font-medium">No exercises added yet</p>
-              <Button
-                onClick={() => setShowExerciseLibrary(true)}
-                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-lg hover:shadow-xl transition-all duration-300"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Your First Exercise
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* Enhanced Goals Section */}
-      <div className="space-y-5">
-        <button
-          onClick={() => setShowGoalsSection(!showGoalsSection)}
-          className="flex items-center justify-between w-full text-left group"
-        >
-          <h3 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-3">
-            <div className="w-1.5 h-8 bg-gradient-to-b from-emerald-500 to-teal-500 rounded-full"></div>
-            Treatment Goals
-          </h3>
-          <div className="p-2 rounded-lg bg-gray-100 group-hover:bg-emerald-100 transition-colors">
-            {showGoalsSection ? (
-              <ChevronUp className="h-5 w-5 text-gray-600 group-hover:text-emerald-600 transition-colors" />
-            ) : (
-              <ChevronDown className="h-5 w-5 text-gray-600 group-hover:text-emerald-600 transition-colors" />
-            )}
+          <div className="rounded-xl border border-dashed border-neutral-300 px-6 py-12 text-center dark:border-neutral-700">
+            <Dumbbell className="mx-auto h-8 w-8 text-neutral-300 dark:text-neutral-600" />
+            <p className="mt-3 text-sm font-medium text-neutral-900 dark:text-white">No exercises yet</p>
+            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Add exercises from the library for this patient to do at home.</p>
+            <Button onClick={() => setShowExerciseLibrary(true)} variant="outline" size="sm" className="mt-4">
+              <Plus className="mr-1.5 h-4 w-4" />
+              Add the first exercise
+            </Button>
           </div>
+        )}
+      </section>
+
+      {/* Goals */}
+      {!exercisesOnly && (
+      <section className="space-y-3">
+        <button
+          type="button"
+          onClick={() => setShowGoalsSection(!showGoalsSection)}
+          className="flex w-full items-center justify-between text-left"
+          aria-expanded={showGoalsSection}
+        >
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-white">Goals</h3>
+          {showGoalsSection ? (
+            <ChevronUp className="h-4 w-4 text-neutral-400" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-neutral-400" />
+          )}
         </button>
 
         {showGoalsSection && (
-          <Card className="border-2 border-gray-100 rounded-2xl overflow-hidden shadow-lg">
-            <CardContent className="p-8 space-y-6">
-              {currentPlan.goals && currentPlan.goals.length > 0 ? (
-                <div className="space-y-4">
-                  {currentPlan.goals.map((goal: any, index: number) => (
-                    <div key={index} className="group flex items-start gap-4 p-5 bg-gradient-to-br from-emerald-50/50 to-teal-50/30 rounded-xl border-2 border-emerald-200/50 hover:border-emerald-300 hover:shadow-md transition-all duration-300">
-                      <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-shadow">
-                        <Target className="h-6 w-6 text-white" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-semibold text-gray-900 text-base mb-2">{goal.description}</div>
-                        <div className="text-sm text-gray-600 flex items-center gap-2">
-                          <span className="font-medium text-emerald-700">Target: {goal.targetValue}</span>
-                          {goal.timeline && (
-                            <>
-                              <span className="text-gray-400">•</span>
-                              <span className="text-gray-600">{goal.timeline}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
+          <div className="rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+            {currentPlan.goals && currentPlan.goals.length > 0 ? (
+              <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                {currentPlan.goals.map((goal: any, index: number) => (
+                  <li key={index} className="flex items-start gap-3 px-4 py-3">
+                    <Target className="mt-0.5 h-4 w-4 shrink-0 text-[#005b57] dark:text-[#2dd4bf]" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-neutral-900 dark:text-white">{goal.description}</p>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                        Target: {goal.targetValue}
+                        {goal.timeline ? ` · ${goal.timeline}` : ''}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <div className="w-16 h-16 mx-auto bg-gradient-to-br from-emerald-100 to-teal-100 rounded-2xl flex items-center justify-center mb-4">
-                    <Target className="h-8 w-8 text-emerald-600" />
-                  </div>
-                  <p className="text-gray-500 font-medium">No goals set yet.</p>
-                  <p className="text-sm text-gray-400 mt-1">Add your first treatment goal below</p>
-                </div>
-              )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-4 py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">No goals yet. Add the first one below.</p>
+            )}
 
-              {/* Enhanced Add Goal Form */}
-              <div className="border-t-2 border-gray-100 pt-6 mt-6">
-                <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Plus className="h-5 w-5 text-emerald-600" />
-                  Add New Goal
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Goal Description</label>
-                    <input
-                      type="text"
-                      value={newGoal.description}
-                      onChange={(e) => setNewGoal({ ...newGoal, description: e.target.value })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all"
-                      placeholder="e.g., Reduce pain to 3/10"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Target Value</label>
-                    <input
-                      type="text"
-                      value={newGoal.targetValue}
-                      onChange={(e) => setNewGoal({ ...newGoal, targetValue: e.target.value })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all"
-                      placeholder="e.g., 3/10 pain level"
-                    />
-                  </div>
+            <div className="border-t border-neutral-100 p-4 dark:border-neutral-800">
+              <p className="text-sm font-medium text-neutral-900 dark:text-white">Add a goal</p>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label htmlFor="goal-description" className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                    Goal
+                  </label>
+                  <Input
+                    id="goal-description"
+                    value={newGoal.description}
+                    onChange={(e) => setNewGoal({ ...newGoal, description: e.target.value })}
+                    placeholder="e.g. Walk without a stick"
+                  />
                 </div>
-                <Button
-                  onClick={addGoal}
-                  className="mt-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-lg hover:shadow-xl transition-all duration-300"
-                  disabled={!newGoal.description || !newGoal.targetValue}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Goal
-                </Button>
+                <div className="space-y-1.5">
+                  <label htmlFor="goal-target" className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                    Target
+                  </label>
+                  <Input
+                    id="goal-target"
+                    value={newGoal.targetValue}
+                    onChange={(e) => setNewGoal({ ...newGoal, targetValue: e.target.value })}
+                    placeholder="e.g. Pain 3/10 or less"
+                  />
+                </div>
               </div>
-            </CardContent>
-          </Card>
+              <Button
+                onClick={addGoal}
+                size="sm"
+                variant="outline"
+                className="mt-3"
+                disabled={!newGoal.description || !newGoal.targetValue}
+              >
+                <Plus className="mr-1.5 h-4 w-4" />
+                Add goal
+              </Button>
+            </div>
+          </div>
         )}
-      </div>
+      </section>
+      )}
 
       {/* Delete Plan Confirmation Dialog */}
       <AlertDialog open={deletePlanDialogOpen} onOpenChange={setDeletePlanDialogOpen}>

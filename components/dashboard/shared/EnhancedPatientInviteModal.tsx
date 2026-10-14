@@ -166,7 +166,7 @@ export default function EnhancedPatientInviteModal({ isOpen, onClose, onSubmit }
   }
 
   const PrimaryAction = () => {
-    const baseClass = 'w-full h-11 bg-gradient-to-r from-[#002e2c] to-[#005b57] text-white hover:opacity-95 disabled:opacity-50 rounded-md flex items-center justify-center'
+    const baseClass = 'w-full h-11 bg-[#005b57] text-white hover:bg-[#00443e] disabled:opacity-50 rounded-md flex items-center justify-center'
     if (method === 'email') {
       return (
         <Button className={baseClass} disabled={isSubmitting} onClick={submitEmail}>

@@ -168,16 +168,16 @@ export default function VerificationBadgeWidget({
 
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="flex items-center justify-between p-4 bg-[#005b57]/5 border border-[#005b57]/20 rounded-lg">
           <div className="flex items-center gap-3">
-            <div className="bg-blue-500 p-2 rounded-full">
+            <div className="bg-[#005b57] p-2 rounded-full">
               <BadgeCheck className="h-5 w-5 text-white" />
             </div>
             <div>
-              <p className="font-semibold text-blue-900">
+              <p className="font-semibold text-[#00443e]">
                 Verified Badge Active
               </p>
-              <p className="text-sm text-blue-700">
+              <p className="text-sm text-[#005b57]">
                 {currentStatus.tier === "monthly" && "Monthly Plan"}
                 {currentStatus.tier === "12_month" && "12-Month Plan"}
                 {currentStatus.tier === "yearly" && "Yearly Plan"}

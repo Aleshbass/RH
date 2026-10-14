@@ -205,7 +205,7 @@ export function CreateInvoiceModal({ isOpen, onClose, preselectedPatientId }: Cr
                     </div>
 
                     {/* Calculation Summary */}
-                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border border-green-200 space-y-3">
+                    <div className="bg-neutral-50 rounded-xl p-5 border border-neutral-200 dark:bg-neutral-950 dark:border-neutral-800 space-y-3">
                         <div className="flex justify-between items-center text-base">
                             <span className="text-gray-700">Subtotal</span>
                             <span className="font-medium text-gray-900">₦{subtotal.toLocaleString()}</span>

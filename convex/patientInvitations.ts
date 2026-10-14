@@ -252,6 +252,8 @@ export const acceptInvitation = mutation({
       isPrimaryPhysiotherapist: true,
       status: "active",
       startDate: Date.now(),
+      source: invitation.source ?? "invite",
+      referredBy: invitation.referredBy,
     });
 
     // Update invitation status
@@ -405,6 +407,8 @@ export const completePatientOnboarding = mutation({
       isPrimaryPhysiotherapist: true,
       status: "active",
       startDate: Date.now(),
+      source: invitation.source ?? "invite",
+      referredBy: invitation.referredBy,
     });
 
     // Update invitation status
@@ -506,6 +510,8 @@ export const createPatientInvitation = mutation({
     patientName: v.optional(v.string()),
     notes: v.optional(v.string()),
     expirationDays: v.optional(v.number()),
+    source: v.optional(v.union(v.literal("referred"), v.literal("existing_patient"))),
+    referredBy: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -563,6 +569,8 @@ export const createPatientInvitation = mutation({
       expiresAt,
       notes: args.notes,
       patientUserId: undefined,
+      source: args.source,
+      referredBy: args.source === "referred" ? args.referredBy?.trim() || undefined : undefined,
     });
 
     return {

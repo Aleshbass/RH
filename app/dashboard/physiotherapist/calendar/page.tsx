@@ -1,516 +1,315 @@
 'use client';
 
-import { useMyUser, useMyAppointments } from '@/hooks/useDashboardData';
-import { useAuth } from '@clerk/nextjs';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, useMemo } from 'react';
-import { Loader2, Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { useMutation, useQuery } from 'convex/react';
+import { addDays, addWeeks, endOfDay, endOfWeek, format, startOfDay, startOfWeek } from 'date-fns';
+import { ChevronLeft, ChevronRight, List, Plus } from 'lucide-react';
+import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AppointmentCalendar } from '@/components/calendar/AppointmentCalendar';
-import { AppointmentData } from '@/lib/calendar/dayPilotAdapter';
+import type { AppointmentData } from '@/lib/calendar/dayPilotAdapter';
 import { AppointmentModal } from '@/components/calendar/AppointmentModal';
 import { SessionLogModal } from '@/components/dashboard/physiotherapist/SessionLogModal';
-import { TimeConflictModal } from '@/components/appointments/TimeConflictModal';
-import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, startOfDay, endOfDay } from 'date-fns';
-import { useMutation } from 'convex/react'
-import { api } from '@/convex/_generated/api'
-import { Id } from '@/convex/_generated/dataModel';
-import { toast } from 'sonner';
+import { PageContainer, primaryButtonClass, StatusBadge } from '@/components/physio/ui';
+import { cn } from '@/lib/utils';
 
 type AppointmentStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled_by_patient' | 'cancelled_by_therapist' | 'no_show';
 
-interface AppointmentWithPatient {
+type RawAppointment = {
   _id: string;
-  patientId: string;
-  physiotherapistId: string;
-  clinicId?: string;
+  patientId?: string;
+  physiotherapistId?: string;
   startTime: number;
   endTime: number;
-  serviceType: string;
-  status: AppointmentStatus;
-  notesForPatient?: string;
-  notesForTherapist?: string;
-  cancellationReason?: string;
-  patient: {
-    _id: string;
-    firstName?: string;
-    lastName?: string;
-    email?: string;
-    imageUrl?: string;
-    phoneNumber?: string;
-  } | null;
-}
-
-const getStatusColor = (status: AppointmentStatus): string => {
-  switch (status) {
-    case 'scheduled':
-      return 'bg-blue-100 text-blue-800 border-blue-200';
-    case 'confirmed':
-      return 'bg-green-100 text-green-800 border-green-200';
-    case 'completed':
-      return 'bg-gray-100 text-gray-800 border-gray-200';
-    case 'cancelled_by_patient':
-    case 'cancelled_by_therapist':
-      return 'bg-red-100 text-red-800 border-red-200';
-    case 'no_show':
-      return 'bg-orange-100 text-orange-800 border-orange-200';
-    default:
-      return 'bg-gray-100 text-gray-800 border-gray-200';
-  }
+  serviceType?: string;
+  status: string;
+  patient?: { _id: string; firstName?: string; lastName?: string; imageUrl?: string } | null;
 };
 
+const STATUS_FILTERS: { value: AppointmentStatus | 'all'; label: string }[] = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled_by_patient', label: 'Cancelled by patient' },
+  { value: 'cancelled_by_therapist', label: 'Cancelled by you' },
+  { value: 'no_show', label: 'No-show' },
+];
+
+function statusBadge(status: string) {
+  if (status === 'confirmed') return <StatusBadge tone="teal">Confirmed</StatusBadge>;
+  if (status === 'completed') return <StatusBadge tone="green">Completed</StatusBadge>;
+  if (status === 'no_show') return <StatusBadge tone="amber">No-show</StatusBadge>;
+  if (status.startsWith('cancelled')) return <StatusBadge tone="red">Cancelled</StatusBadge>;
+  return <StatusBadge>Scheduled</StatusBadge>;
+}
+
 export default function CalendarPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const { isLoaded, isSignedIn } = useAuth();
-  const [currentWeek, setCurrentWeek] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
-  const [selectedAppointment, setSelectedAppointment] = useState<AppointmentData | null>(null);
-  const [isSessionLogModalOpen, setIsSessionLogModalOpen] = useState(false);
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+  // Phones start in day view; after that the choice is the user's
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
+  useEffect(() => {
+    if (window.innerWidth < 1024) setViewMode('day');
+  }, []);
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'all'>('all');
 
-  // Auto-switch to day view on mobile
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 1024) {
-        setViewMode('day');
-      } else {
-        setViewMode('week');
-      }
-    };
+  // Modal state: creating (no id) or editing an existing appointment
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalDate, setModalDate] = useState<Date>(new Date());
+  const [editingId, setEditingId] = useState<string | undefined>(undefined);
+  const [sessionLogFor, setSessionLogFor] = useState<AppointmentData | null>(null);
 
-    // Initial check
-    handleResize();
+  const currentUser = useQuery(api.users.getMyUser);
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-  // Removed unused refreshKey state
-  const [openedFromQuery, setOpenedFromQuery] = useState(false);
+  const rangeStart = viewMode === 'week' ? startOfWeek(currentDate, { weekStartsOn: 1 }) : startOfDay(currentDate);
+  const rangeEnd = viewMode === 'week' ? endOfWeek(currentDate, { weekStartsOn: 1 }) : endOfDay(currentDate);
 
-
-  // Get current user
-  const { data: currentUser, isLoading: userLoading } = useMyUser();
-
-  // Calculate date range based on view mode
-  const startDate = viewMode === 'week'
-    ? startOfWeek(currentWeek, { weekStartsOn: 1 }).getTime()
-    : startOfDay(currentWeek).getTime();
-  const endDate = viewMode === 'week'
-    ? endOfWeek(currentWeek, { weekStartsOn: 1 }).getTime()
-    : endOfDay(currentWeek).getTime();
-
-  // Get appointments for the current view with expanded date range to catch edge cases
-  const expandedStartDate = startDate - (24 * 60 * 60 * 1000); // 1 day before
-  const expandedEndDate = endDate + (24 * 60 * 60 * 1000); // 1 day after
-
-  const { data: appointments, isLoading: appointmentsLoading } = useMyAppointments({
-    startDate: expandedStartDate,
-    endDate: expandedEndDate,
+  const appointmentsResult = useQuery(api.appointments.getMyAppointments, {
+    startDate: rangeStart.getTime(),
+    endDate: rangeEnd.getTime(),
     status: statusFilter === 'all' ? undefined : statusFilter,
-    limit: 200, // Increased limit to ensure we don't miss appointments
-    // refreshKey removed - not supported by query parameters
-  });
+    limit: 200,
+  }) as RawAppointment[] | undefined;
 
-  // Map appointments to match AppointmentData type for calendar
-  const currentUserId = (currentUser as { _id?: string } | null | undefined)?._id;
-  const calendarAppointments = useMemo(() => {
-    if (!appointments) return [];
+  // Keep showing the previous range while the next one loads, instead of blanking the page
+  const lastAppointments = useRef<RawAppointment[]>([]);
+  if (appointmentsResult) lastAppointments.current = appointmentsResult;
+  const appointments = appointmentsResult ?? lastAppointments.current;
 
-    return (appointments as Array<{
-      _id: string;
-      patientId?: string;
-      physiotherapistId?: string;
-      startTime: number;
-      endTime: number;
-      serviceType?: string;
-      status: string;
-      patient?: {
-        _id: string;
-        firstName?: string;
-        lastName?: string;
-        email?: string;
-        imageUrl?: string;
-        phoneNumber?: string;
-      };
-    }>).map((a) => ({
-      _id: a._id as Id<'appointments'>,
-      patientId: (a.patientId || a.patient?._id || '') as Id<'users'>,
-      physiotherapistId: (a.physiotherapistId || (currentUserId as string) || '') as Id<'users'>,
-      startTime: a.startTime,
-      endTime: a.endTime,
-      serviceType: a.serviceType || 'General Consultation',
-      status: a.status as AppointmentStatus,
-      patient: a.patient
-        ? {
-          firstName: a.patient.firstName || 'Unknown',
-          lastName: a.patient.lastName || 'Patient',
-          imageUrl: a.patient.imageUrl,
-        }
-        : undefined,
-    } as AppointmentData));
-  }, [appointments, currentUserId]);
-
-  // Get today's schedule for the sidebar - memoize date to prevent infinite re-renders
-  const today = useMemo(() => new Date(), []);
-  const { data: todaysSchedule, isLoading: todaysScheduleLoading } = useMyAppointments({
-    startDate: startOfDay(today).getTime(),
-    endDate: endOfDay(today).getTime(),
+  const [today] = useState(() => ({ start: startOfDay(new Date()).getTime(), end: endOfDay(new Date()).getTime() }));
+  const todaysSchedule = useQuery(api.appointments.getMyAppointments, {
+    startDate: today.start,
+    endDate: today.end,
     limit: 50,
-  });
+  }) as RawAppointment[] | undefined;
 
-  // Mutation for rescheduling (preserves emails and notifications)
-  const rescheduleAppointment = useMutation(api.appointments.rescheduleAppointment)
+  const rescheduleAppointment = useMutation(api.appointments.rescheduleAppointment);
 
-  const handleAppointmentReschedule = async (appointmentId: string, newStartTime: number, newEndTime: number) => {
-    try {
-      await rescheduleAppointment({
-        appointmentId: appointmentId as Id<"appointments">,
-        newStartTime,
-        newEndTime,
-      });
-    } catch (error) {
-      console.error('Failed to reschedule appointment:', error);
-      throw error; // Re-throw to let DayPilot handler show error toast
-    }
-  }
+  const calendarAppointments = useMemo(
+    () =>
+      appointments.map(
+        (a) =>
+          ({
+            _id: a._id as Id<'appointments'>,
+            patientId: (a.patientId || a.patient?._id || '') as Id<'users'>,
+            physiotherapistId: (a.physiotherapistId || currentUser?._id || '') as Id<'users'>,
+            startTime: a.startTime,
+            endTime: a.endTime,
+            serviceType: a.serviceType || 'Consultation',
+            status: a.status as AppointmentStatus,
+            patient: a.patient
+              ? { firstName: a.patient.firstName || 'Unknown', lastName: a.patient.lastName || '', imageUrl: a.patient.imageUrl }
+              : undefined,
+          }) as AppointmentData
+      ),
+    [appointments, currentUser?._id]
+  );
 
-  const handleCreateFromSlot = (startTime: number, endTime: number) => {
-    const date = new Date(startTime);
-    setSelectedDate(date);
-    setIsAppointmentModalOpen(true);
-  }
-
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (isLoaded && !isSignedIn) {
-      router.push('/sign-in');
-    }
-  }, [isLoaded, isSignedIn, router]);
-
-  // If arriving with ?new=1, auto-open the new appointment modal once
-  useEffect(() => {
-    const shouldOpen = searchParams.get('new') === '1';
-    if (isLoaded && shouldOpen && !openedFromQuery) {
-      setSelectedDate(new Date());
-      setIsAppointmentModalOpen(true);
-      setOpenedFromQuery(true);
-    }
-  }, [searchParams, isLoaded, openedFromQuery]);
-
-  // Redirect if not physiotherapist
-  useEffect(() => {
-    if (currentUser && (currentUser as { role: string }).role !== 'physiotherapist') {
-      router.push('/dashboard');
-    }
-  }, [currentUser, router]);
-
-  // Loading state
-  if (!isLoaded || userLoading || appointmentsLoading || todaysScheduleLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-600">Loading calendar...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const handlePreviousWeek = (): void => {
-    if (viewMode === 'week') {
-      setCurrentWeek(subWeeks(currentWeek, 1));
-    } else {
-      setCurrentWeek(new Date(currentWeek.getTime() - 24 * 60 * 60 * 1000));
-    }
+  const openNew = (date?: Date) => {
+    setEditingId(undefined);
+    setModalDate(date ?? new Date());
+    setModalOpen(true);
   };
 
-  const handleNextWeek = (): void => {
-    if (viewMode === 'week') {
-      setCurrentWeek(addWeeks(currentWeek, 1));
-    } else {
-      setCurrentWeek(new Date(currentWeek.getTime() + 24 * 60 * 60 * 1000));
+  // ?new=1 (from Home and the patient page) opens a new appointment once
+  const openedFromQuery = useRef(false);
+  useEffect(() => {
+    if (!openedFromQuery.current && searchParams.get('new') === '1') {
+      openedFromQuery.current = true;
+      openNew();
     }
-  };
+  }, [searchParams]);
 
-  const handleCreateAppointment = (date?: Date): void => {
-    setSelectedDate(date || new Date());
-    setIsAppointmentModalOpen(true);
-  };
-
-  const handleAppointmentClick = (appointment: AppointmentData): void => {
-    setSelectedAppointment(appointment);
-    // If appointment is confirmed, allow creating session log
+  const handleAppointmentClick = (appointment: AppointmentData) => {
+    // Confirmed and completed sessions get notes; anything else opens for editing
     if (appointment.status === 'confirmed' || appointment.status === 'completed') {
-      setIsSessionLogModalOpen(true);
+      setSessionLogFor(appointment);
     } else {
-      // Navigate to appointment details for other statuses
-      router.push(`/dashboard/physiotherapist/appointments/${appointment._id}`);
+      setEditingId(appointment._id);
+      setModalDate(new Date(appointment.startTime));
+      setModalOpen(true);
     }
   };
+
+  const step = (direction: 1 | -1) =>
+    setCurrentDate((date) => (viewMode === 'week' ? addWeeks(date, direction) : addDays(date, direction)));
+
+  const counts = useMemo(
+    () => ({
+      total: appointments.length,
+      confirmed: appointments.filter((a) => a.status === 'confirmed').length,
+      completed: appointments.filter((a) => a.status === 'completed').length,
+      pending: appointments.filter((a) => a.status === 'scheduled').length,
+    }),
+    [appointments]
+  );
+
+  const rangeLabel =
+    viewMode === 'week'
+      ? `${format(rangeStart, 'd MMM')} – ${format(rangeEnd, 'd MMM yyyy')}`
+      : format(currentDate, 'EEEE, d MMMM yyyy');
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
-      {/* Main Calendar Area */}
-      <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-hidden">
-        <div className="flex-1 flex flex-col min-h-0 order-1">
-          {/* Header */}
-          <div className="bg-white border-b border-gray-200 p-6 flex-shrink-0">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Calendar</h1>
-                <p className="text-gray-600">Manage your appointments and schedule</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 mt-4 sm:mt-0">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as AppointmentStatus | 'all')}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">All Status</option>
-                  <option value="scheduled">Scheduled</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled_by_patient">Cancelled by Patient</option>
-                  <option value="cancelled_by_therapist">Cancelled by Therapist</option>
-                  <option value="no_show">No Show</option>
-                </select>
-                <div className="flex rounded-md border border-gray-300">
-                  <button
-                    onClick={() => setViewMode('week')}
-                    className={`px-3 py-2 text-sm font-medium ${viewMode === 'week'
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                  >
-                    Week
-                  </button>
-                  <button
-                    onClick={() => setViewMode('day')}
-                    className={`px-3 py-2 text-sm font-medium border-l border-gray-300 ${viewMode === 'day'
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                  >
-                    Day
-                  </button>
-                </div>
-                <Button onClick={() => handleCreateAppointment()} className="flex items-center gap-2">
-                  <Plus className="h-4 w-4" />
-                  New Appointment
-                </Button>
-              </div>
-            </div>
-          </div>
+    <PageContainer className="max-w-7xl">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-neutral-900 dark:text-white sm:text-2xl">Calendar</h1>
+          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Drag a session to move it. Click an empty slot to book.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/dashboard/physiotherapist/appointments">
+              <List className="mr-2 h-4 w-4" />
+              List
+            </Link>
+          </Button>
+          <Button onClick={() => openNew()} className={primaryButtonClass}>
+            <Plus className="mr-2 h-4 w-4" />
+            New appointment
+          </Button>
+        </div>
+      </div>
 
-          {/* Calendar Navigation */}
-          <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={handlePreviousWeek}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleNextWeek}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  {viewMode === 'week'
-                    ? `${format(startOfWeek(currentWeek, { weekStartsOn: 1 }), 'MMM dd')} - ${format(endOfWeek(currentWeek, { weekStartsOn: 1 }), 'MMM dd, yyyy')}`
-                    : format(currentWeek, 'EEEE, MMMM dd, yyyy')
-                  }
-                </h2>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentWeek(new Date())}
-              >
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_18rem]">
+        <section className="min-w-0 overflow-hidden rounded-2xl border border-black/[0.04] bg-white shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none">
+          <div className="flex flex-col gap-3 border-b border-neutral-200 px-4 py-3 dark:border-white/[0.07] sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => step(-1)} aria-label="Previous">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => step(1)} aria-label="Next">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-8" onClick={() => setCurrentDate(new Date())}>
                 Today
               </Button>
+              <p className="ml-1 truncate text-sm font-semibold text-neutral-900 dark:text-white">{rangeLabel}</p>
             </div>
-          </div>
-
-          {/* Calendar Content */}
-          <div className="flex-1 p-2 sm:p-6 min-h-0 flex flex-col">
-            {/* Date Header */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-4 flex-shrink-0">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="bg-blue-600 text-white rounded-lg p-2">
-                    <CalendarIcon className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900">
-                      {viewMode === 'week'
-                        ? `Week of ${format(startOfWeek(currentWeek, { weekStartsOn: 1 }), 'MMMM d, yyyy')}`
-                        : format(currentWeek, 'EEEE, MMMM d, yyyy')}
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      Week {format(currentWeek, 'w')} of {format(currentWeek, 'yyyy')} • {viewMode === 'week' ? 'Weekly' : 'Daily'} View
-                    </p>
-                  </div>
-                </div>
-                <div className="hidden sm:flex items-center gap-2 text-sm">
-                  <div className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
-                    {calendarAppointments.length} appointments
-                  </div>
-                  <div className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full font-medium">
-                    8 AM - 9 PM
-                  </div>
-                </div>
+            <div className="flex items-center gap-2">
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as AppointmentStatus | 'all')}>
+                <SelectTrigger className="h-8 w-[10.5rem] text-sm" aria-label="Filter by status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_FILTERS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="inline-flex rounded-lg border border-neutral-200 p-0.5 dark:border-white/[0.07]" role="radiogroup" aria-label="View">
+                {(['day', 'week'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={viewMode === mode}
+                    onClick={() => setViewMode(mode)}
+                    className={cn(
+                      'rounded-md px-3 py-1 text-sm capitalize transition-colors',
+                      viewMode === mode
+                        ? 'bg-neutral-900 font-medium text-white dark:bg-white dark:text-neutral-950'
+                        : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
+                    )}
+                  >
+                    {mode}
+                  </button>
+                ))}
               </div>
             </div>
-
-            <div className="flex-1 bg-white rounded-lg border shadow-sm min-h-0">
-              <AppointmentCalendar
-                appointments={calendarAppointments}
-                viewMode={viewMode}
-                currentDate={currentWeek}
-                onCreateAppointment={handleCreateFromSlot}
-                onAppointmentClick={handleAppointmentClick}
-                onAppointmentReschedule={handleAppointmentReschedule}
-                businessHoursStart={8}
-                businessHoursEnd={21}
-                cellDuration={30}
-                loading={appointmentsLoading}
-              />
-            </div>
           </div>
-        </div>
-      </div>
+          <div className="h-[calc(100dvh-16rem)] min-h-[28rem] sm:h-[calc(100dvh-15rem)]">
+            <AppointmentCalendar
+              appointments={calendarAppointments}
+              viewMode={viewMode}
+              currentDate={currentDate}
+              onCreateAppointment={(startTime) => openNew(new Date(startTime))}
+              onAppointmentClick={handleAppointmentClick}
+              onAppointmentReschedule={async (appointmentId, newStartTime, newEndTime) => {
+                await rescheduleAppointment({
+                  appointmentId: appointmentId as Id<'appointments'>,
+                  newStartTime,
+                  newEndTime,
+                });
+              }}
+              businessHoursStart={7}
+              businessHoursEnd={21}
+              cellDuration={30}
+              loading={appointmentsResult === undefined}
+            />
+          </div>
+        </section>
 
-      {/* Sidebar */}
-      <div className="w-full lg:w-80 bg-white border-t lg:border-t-0 lg:border-l border-gray-200 flex flex-col flex-shrink-0 order-2 overflow-y-auto lg:overflow-visible h-1/3 lg:h-auto">
-        {/* Today's Schedule */}
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Today&apos;s Schedule</h3>
-          <div className="space-y-3">
-            {!todaysSchedule || (todaysSchedule as { _id: string; patient?: { firstName?: string; lastName?: string }; startTime: number; endTime: number; serviceType?: string; status: string }[])?.length === 0 ? (
-              <div className="text-center py-8">
-                <CalendarIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-500">No appointments today</p>
-              </div>
+        <aside className="space-y-6">
+          <section className="rounded-2xl border border-black/[0.04] bg-white shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2 dark:shadow-none">
+            <h2 className="border-b border-neutral-200 px-4 py-3 text-sm font-semibold text-neutral-900 dark:border-white/[0.07] dark:text-white">
+              Today
+            </h2>
+            {todaysSchedule === undefined ? (
+              <div className="p-4 text-sm text-neutral-500">Loading…</div>
+            ) : todaysSchedule.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">Nothing booked today.</p>
             ) : (
-              (todaysSchedule as Array<{
-                _id: string;
-                patient?: { _id?: string; firstName?: string; lastName?: string };
-                patientId?: string;
-                physiotherapistId?: string;
-                startTime: number;
-                endTime: number;
-                serviceType?: string;
-                status: string;
-              }>).map((appointment) => (
-                <div key={appointment._id} className="p-3 bg-gray-50 rounded-lg">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        {appointment.patient?.firstName} {appointment.patient?.lastName || 'Unknown Patient'}
-                      </p>
-                      <p className="text-xs text-gray-600">{appointment.serviceType}</p>
-                    </div>
-                    <Badge className={getStatusColor(appointment.status as AppointmentStatus)}>
-                      {appointment.status}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    {format(new Date(appointment.startTime), 'h:mm a')} - {format(new Date(appointment.endTime), 'h:mm a')}
-                  </p>
-                </div>
-              ))
+              <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                {todaysSchedule
+                  .slice()
+                  .sort((a, b) => a.startTime - b.startTime)
+                  .map((appointment) => (
+                    <li key={appointment._id} className="flex items-start justify-between gap-2 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">
+                          {[appointment.patient?.firstName, appointment.patient?.lastName].filter(Boolean).join(' ') || 'Patient'}
+                        </p>
+                        <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+                          {format(appointment.startTime, 'h:mm a')} – {format(appointment.endTime, 'h:mm a')}
+                        </p>
+                      </div>
+                      {statusBadge(appointment.status)}
+                    </li>
+                  ))}
+              </ul>
             )}
-          </div>
-        </div>
+          </section>
 
-        {/* Quick Stats */}
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">This Week</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Total Appointments</span>
-              <span className="font-medium text-gray-900">{(appointments as Array<{ _id: string; status: string }>)?.length || 0}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Confirmed</span>
-              <span className="font-medium text-green-600">
-                {(appointments as { status: string }[])?.filter((a: { status: string }) => a.status === 'confirmed').length || 0}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Completed</span>
-              <span className="font-medium text-gray-600">
-                {(appointments as { status: string }[])?.filter((a: { status: string }) => a.status === 'completed').length || 0}
-              </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Pending</span>
-              <span className="font-medium text-blue-600">
-                {(appointments as { status: string }[])?.filter((a: { status: string }) => a.status === 'scheduled').length || 0}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="p-6 flex-1">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-          <div className="space-y-2">
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => handleCreateAppointment()}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              New Appointment
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => router.push('/dashboard/physiotherapist/patients')}
-            >
-              <CalendarIcon className="h-4 w-4 mr-2" />
-              View Patients
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => router.push('/dashboard/physiotherapist/reports')}
-            >
-              <Filter className="h-4 w-4 mr-2" />
-              View Reports
-            </Button>
-          </div>
-        </div>
+          <section className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-white/[0.07] dark:bg-rh-ink-2">
+            <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">{viewMode === 'week' ? 'This week' : 'This day'}</h2>
+            <dl className="mt-3 space-y-2 text-sm">
+              {[
+                ['Appointments', counts.total],
+                ['Confirmed', counts.confirmed],
+                ['Completed', counts.completed],
+                ['Awaiting confirmation', counts.pending],
+              ].map(([label, value]) => (
+                <div key={label as string} className="flex justify-between">
+                  <dt className="text-neutral-500 dark:text-neutral-400">{label}</dt>
+                  <dd className="font-medium tabular-nums text-neutral-900 dark:text-white">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        </aside>
       </div>
 
-      {/* Appointment Modal */}
       <AppointmentModal
-        isOpen={isAppointmentModalOpen}
-        onClose={() => setIsAppointmentModalOpen(false)}
-        selectedDate={selectedDate || new Date()}
-        onAppointmentCreated={() => {
-          setIsAppointmentModalOpen(false);
-        }}
-        appointmentId={selectedAppointment?._id}
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        selectedDate={modalDate}
+        onAppointmentCreated={() => setModalOpen(false)}
+        appointmentId={editingId}
       />
 
-      {/* Session Log Modal */}
       <SessionLogModal
-        isOpen={isSessionLogModalOpen}
-        onClose={() => {
-          setIsSessionLogModalOpen(false);
-          setSelectedAppointment(null);
-        }}
-        appointmentId={selectedAppointment?._id as Id<"appointments">}
-        patientId={undefined}
+        isOpen={sessionLogFor !== null}
+        onClose={() => setSessionLogFor(null)}
+        appointmentId={sessionLogFor?._id as Id<'appointments'> | undefined}
+        patientId={sessionLogFor?.patientId}
       />
-    </div>
+    </PageContainer>
   );
-} 
+}

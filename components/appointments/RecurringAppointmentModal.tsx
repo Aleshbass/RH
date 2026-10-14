@@ -15,6 +15,7 @@ import { Id } from '@/convex/_generated/dataModel'
 // Local lightweight type to avoid deep type instantiation and export resolution issues
 import type { DayOfWeek } from '@/lib/types/recurring-appointments'
 import { PatientProfileMiniCard } from '@/components/dashboard/physiotherapist/PatientProfileMiniCard'
+import { playSound } from '@/lib/sounds'
 type CreateSeriesParams = {
   // Series metadata
   name: string
@@ -193,6 +194,7 @@ export function RecurringAppointmentModal({
       }
 
       await createRecurringSeries(submitData)
+      playSound('booked')
       onClose()
       
       // Reset form

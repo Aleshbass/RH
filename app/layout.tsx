@@ -137,7 +137,9 @@ export default async function RootLayout({
   let isClinicPortal = false;
   try {
     const headersList = await headers();
-    isClinicPortal = (headersList.get("x-pathname") || "").startsWith("/dashboard/clinic");
+    const pathname = headersList.get("x-pathname") || "";
+    isClinicPortal =
+      pathname.startsWith("/dashboard/clinic") || pathname.startsWith("/dashboard/physiotherapist");
     const host = (headersList.get("host") || "").toLowerCase();
     const isSubdomainHeader = headersList.get("x-is-b2b-subdomain") === "true";
     isSubdomainHost =
@@ -150,7 +152,7 @@ export default async function RootLayout({
   }
 
   return (
-    // The clinic portal sets the `dark` class on <html> before hydration.
+    // The clinic and physiotherapist portals set the `dark` class on <html> before hydration.
     <html lang="en" suppressHydrationWarning>
       {isClinicPortal && (
         <head>

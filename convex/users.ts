@@ -651,6 +651,9 @@ export const completeUserProfile = mutation({
         .withIndex("by_user_id", (q) => q.eq("userId", user._id))
         .unique();
 
+      // Only a new application (or a resubmission after a decline) notifies anyone. Re-running the
+      // final step, e.g. a page reload, must not spam the applicant and every admin again.
+      let isNewSubmission = false;
       if (!existingApproval) {
         await ctx.db.insert("accountApprovalStatus", {
           userId: user._id,
@@ -660,9 +663,17 @@ export const completeUserProfile = mutation({
             ? ["Professional License", "Certification Documents"]
             : ["Business License", "Tax Registration", "Owner Identification"]
         });
+        isNewSubmission = true;
         console.log("[completeUserProfile] Approval request created for user:", user._id);
+      } else if (existingApproval.status === "declined") {
+        await ctx.db.patch(existingApproval._id, {
+          status: "pending_review",
+          submittedAt: Date.now(),
+        });
+        isNewSubmission = true;
       }
 
+      if (isNewSubmission) {
       // Create notification for user about pending review
       await ctx.db.insert("notifications", {
         userId: user._id,
@@ -745,6 +756,7 @@ export const completeUserProfile = mutation({
             stack: notifyError.stack,
           });
         }
+      }
       }
     }
 

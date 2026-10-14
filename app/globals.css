@@ -2,6 +2,7 @@
 @import "mapbox-gl/dist/mapbox-gl.css";
 @import "stream-chat-react/dist/css/v2/index.css";
 @import "react-day-picker/dist/style.css";
+@import "./portal-dark.css";
 /* @import "fumadocs-ui/css/neutral.css"; */
 /* @import "fumadocs-ui/css/preset.css"; */
 
@@ -110,6 +111,30 @@ pre.shiki .line.highlighted {
 
 body {
   font-family: var(--font-matter), sans-serif;
+}
+
+/* Rehabify brand tokens (see .interface-design/system.md). Used as bg-rh-teal, text-rh-night, etc. */
+@theme {
+  --color-rh-teal: #005b57;
+  --color-rh-teal-deep: #00443e;
+  --color-rh-night: #002e2c;
+  --color-rh-teal-soft: #007d77;
+  --color-rh-aqua: #2dd4bf;
+  --color-rh-mint: #d4fae8;
+  --color-rh-mist: #e6f0ef;
+  --color-rh-cream: #faf6e7;
+  --color-rh-sand: #efeae2;
+  --color-rh-canvas: #f7f5ef;
+  --color-rh-amber: #e8a54f;
+  --color-rh-peach: #fdf0dc;
+  --color-rh-rose: #ffcfdc;
+  --color-rh-blush: #fff0f4;
+  --color-rh-lime: #00cd0f;
+  --color-rh-ink: #0b1312;
+  --color-rh-ink-2: #121c1b;
+  --color-rh-ink-3: #1b2827;
+  --shadow-soft: 0 1px 2px rgb(0 46 44 / 0.05), 0 10px 30px -14px rgb(0 46 44 / 0.18);
+  --shadow-lift: 0 2px 4px rgb(0 46 44 / 0.06), 0 18px 40px -16px rgb(0 46 44 / 0.28);
 }
 
 @theme inline {

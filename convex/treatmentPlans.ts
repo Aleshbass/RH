@@ -230,6 +230,7 @@ export const updateTreatmentPlan = mutation({
       targetValue: v.string(),
       timeline: v.string(),
       measurable: v.boolean(),
+      achieved: v.optional(v.boolean()),
     }))),
     phases: v.optional(v.array(v.object({
       name: v.string(),
@@ -238,6 +239,9 @@ export const updateTreatmentPlan = mutation({
       order: v.number(),
       exercises: v.array(v.object({
         exerciseId: v.string(),
+        // Must accept every field the schema stores, since the UI sends whole phases back
+        name: v.optional(v.string()),
+        instructions: v.optional(v.string()),
         sets: v.number(),
         reps: v.number(),
         duration: v.optional(v.string()),
@@ -657,12 +661,15 @@ export const getPatientActivePlan = query({
 });
 
 // ==== Mutation: Log exercise completion by patient ====
+// Writes to exerciseCompletions, which the physio's progress views and adherence read.
 export const logExerciseCompletion = mutation({
   args: {
     treatmentPlanId: v.id("treatmentPlans"),
     exerciseId: v.string(),
     phaseOrder: v.number(),
     notes: v.optional(v.string()),
+    painLevel: v.optional(v.number()), // 0-10
+    difficultyRating: v.optional(v.number()), // 1-5
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);
@@ -673,40 +680,48 @@ export const logExerciseCompletion = mutation({
     if (!plan || plan.patientId !== user._id) throw new Error("Plan not found");
     if (plan.status !== "active") throw new Error("Plan is not active");
 
-    // Record progress entry
-    await ctx.db.insert("treatmentProgress", {
+    const exercise = plan.phases
+      .find((phase) => phase.order === args.phaseOrder)
+      ?.exercises.find((e) => e.exerciseId === args.exerciseId);
+    if (!exercise) throw new Error("Exercise not found in this plan");
+
+    const clamp = (value: number | undefined, min: number, max: number) =>
+      value === undefined || Number.isNaN(value) ? undefined : Math.max(min, Math.min(max, Math.round(value)));
+
+    await ctx.db.insert("exerciseCompletions", {
       treatmentPlanId: args.treatmentPlanId,
       patientId: user._id,
       physiotherapistId: plan.physiotherapistId,
-      entryDate: Date.now(),
-      progressType: "exercise_completion",
-      notes: args.notes,
-      recordedBy: user._id,
-      metadata: {
-        exerciseId: args.exerciseId,
-        phaseOrder: args.phaseOrder,
-      },
-    } as any);
-
-    // Notify physiotherapist about exercise completion
-    await ctx.db.insert("notifications", {
-      userId: plan.physiotherapistId,
-      type: "exercise_completed" as any,
-      priority: "low",
-      status: "pending",
-      payload: {
-        title: "Patient Completed Exercise",
-        body: `${user.firstName} ${user.lastName} completed an exercise in ${plan.title}`,
-        data: {
-          entityId: String(args.treatmentPlanId),
-          entityType: "treatmentPlan",
-          exerciseId: args.exerciseId,
-          phaseOrder: args.phaseOrder,
-        },
-        link: `/dashboard/physiotherapist/patients/${plan.patientId}/treatment-plan`,
-      },
-      createdAt: Date.now(),
+      phaseOrder: args.phaseOrder,
+      exerciseId: args.exerciseId,
+      completedAt: Date.now(),
+      setsCompleted: exercise.sets,
+      repsCompleted: exercise.reps,
+      painLevel: clamp(args.painLevel, 0, 10),
+      difficultyRating: clamp(args.difficultyRating, 1, 5),
+      notes: args.notes?.trim() || undefined,
+      completionSource: "web",
     });
+
+    // A high pain score is worth the physio's attention; routine completions stay quiet
+    if ((args.painLevel ?? 0) >= 7) {
+      await ctx.db.insert("notifications", {
+        userId: plan.physiotherapistId,
+        type: "exercise_completed" as any,
+        priority: "high",
+        status: "pending",
+        payload: {
+          title: "High pain reported",
+          body: `${user.firstName ?? "Your patient"} ${user.lastName ?? ""} reported pain ${args.painLevel}/10 doing an exercise in ${plan.title}`.replace(/\s+/g, " "),
+          data: {
+            entityId: String(args.treatmentPlanId),
+            entityType: "treatmentPlan",
+            actionUrl: `/dashboard/physiotherapist/patients/${plan.patientId}`,
+          },
+        },
+        createdAt: Date.now(),
+      });
+    }
 
     return { success: true };
   },
@@ -771,19 +786,19 @@ export const getExerciseCompletionMap = query({
     const user = await getAuthenticatedUser(ctx);
     if (user.role !== "patient") throw new Error("Access denied");
 
+    // A home programme is done daily, so ticks reset each day (Lagos time is UTC+1)
+    const now = Date.now();
+    const lagosOffset = 60 * 60 * 1000;
+    const startOfDay = Math.floor((now + lagosOffset) / 86_400_000) * 86_400_000 - lagosOffset;
+
     const entries = await ctx.db
-      .query("treatmentProgress")
-      .withIndex("by_treatment_plan", (q) => q.eq("treatmentPlanId", args.treatmentPlanId))
-      .filter((q) => q.eq(q.field("patientId"), user._id))
-      .filter((q) => q.eq(q.field("progressType"), "exercise_completion"))
+      .query("exerciseCompletions")
+      .withIndex("by_patient_and_plan", (q) => q.eq("patientId", user._id).eq("treatmentPlanId", args.treatmentPlanId))
+      .filter((q) => q.gte(q.field("completedAt"), startOfDay))
       .collect();
 
     const map: Record<string, boolean> = {};
-    for (const e of entries) {
-      const meta = (e as any).metadata || {};
-      const key = `${meta.phaseOrder}-${meta.exerciseId}`;
-      map[key] = true;
-    }
+    for (const e of entries) map[`${e.phaseOrder}-${e.exerciseId}`] = true;
     return map;
   },
 });

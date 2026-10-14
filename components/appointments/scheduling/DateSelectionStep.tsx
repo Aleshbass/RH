@@ -73,16 +73,16 @@ export function DateSelectionStep({ selectedDate, onSelect }: DateSelectionStepP
                                 disabled={isPast}
                                 className={cn(
                                     "h-10 w-10 rounded-full flex items-center justify-center text-sm transition-all relative",
-                                    !isPast && "hover:bg-blue-50 hover:text-blue-600",
-                                    isSelected && "bg-blue-600 text-white hover:bg-blue-700 hover:text-white shadow-md",
-                                    isToday(date) && !isSelected && "text-blue-600 font-bold",
+                                    !isPast && "hover:bg-[#005b57]/5 hover:text-[#005b57]",
+                                    isSelected && "bg-[#005b57] text-white hover:bg-[#00443e] hover:text-white shadow-md",
+                                    isToday(date) && !isSelected && "text-[#005b57] font-bold",
                                     isPast && "text-gray-300 cursor-not-allowed",
                                     !isCurrentMonth && "invisible"
                                 )}
                             >
                                 {format(date, 'd')}
                                 {isToday(date) && !isSelected && (
-                                    <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full" />
+                                    <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#005b57] rounded-full" />
                                 )}
                             </button>
                         );

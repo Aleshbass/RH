@@ -56,6 +56,7 @@ import {
   WalletCards,
   Stethoscope,
   Handshake,
+  HeartPulse,
 } from 'lucide-react'
 import { TooltipContent } from '@/components/ui/tooltip'
 import Link from 'next/link'
@@ -122,6 +123,13 @@ const navigationGroups = [
         icon: UserPlus,
         roles: ['admin'],
         description: 'Process referring doctor & partner patient intake queue',
+      },
+      {
+        title: 'Care Follow-ups',
+        href: '/dashboard/admin/care-follow-ups',
+        icon: HeartPulse,
+        roles: ['admin'],
+        description: 'Check in with patients after their physiotherapy ends',
       },
       {
         title: 'MediLoan Applications',

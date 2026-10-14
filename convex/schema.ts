@@ -299,6 +299,9 @@ export default defineSchema({
     expiresAt: v.number(), // Timestamp when invitation expires
     notes: v.optional(v.string()), // Optional notes from physiotherapist
     lastReminderSentAt: v.optional(v.number()), // Timestamp of last reminder email sent (prevents duplicate reminders)
+    // Where the patient came from, chosen by the physio; copied to the relationship on accept
+    source: v.optional(v.union(v.literal("referred"), v.literal("existing_patient"))),
+    referredBy: v.optional(v.string()),
   })
     .index("by_code", ["code"])
     .index("by_patient_email", ["patientEmail"])
@@ -352,8 +355,18 @@ export default defineSchema({
     startDate: v.number(), // When the relationship started
     endDate: v.optional(v.number()), // When the relationship ended (if applicable)
     notes: v.optional(v.string()), // Clinical notes about the relationship
-    // How the patient arrived: added directly by the clinic or referred by Rehabify
-    source: v.optional(v.union(v.literal("clinic_direct"), v.literal("rehabify_referral"))),
+    // How the patient arrived. Clinic values: clinic_direct / rehabify_referral. Physio values
+    // are chosen when the physio adds the patient, or set by the booking/invite flow.
+    source: v.optional(v.union(
+      v.literal("clinic_direct"),
+      v.literal("rehabify_referral"),
+      v.literal("referred"),          // referred by a doctor, hospital or another clinician
+      v.literal("existing_patient"),  // the physio's own patient before Rehabify
+      v.literal("marketplace"),
+      v.literal("booking_link"),
+      v.literal("invite")
+    )),
+    referredBy: v.optional(v.string()), // Who referred them, when source is "referred"
     // Follow-up task: when the clinic should next check in with this patient
     nextCheckInAt: v.optional(v.number()),
   })
@@ -855,6 +868,86 @@ export default defineSchema({
     .index("by_clinic", ["clinicId"]),
 
   // Treatment Plans for patients
+  // One course of treatment between a patient and a physiotherapist: from first contact to
+  // discharge. A patient can have several over time; the history is never overwritten.
+  careEpisodes: defineTable({
+    patientId: v.id("users"),
+    physiotherapistId: v.id("users"),
+    clinicId: v.optional(v.id("clinics")),
+    status: v.union(v.literal("active"), v.literal("completed"), v.literal("cancelled")),
+    source: v.union(
+      v.literal("referred"),
+      v.literal("existing_patient"),
+      v.literal("marketplace"),
+      v.literal("booking_link"),
+      v.literal("clinic"),
+      v.literal("invite"),
+      v.literal("other")
+    ),
+    referredBy: v.optional(v.string()),
+    condition: v.optional(v.string()), // Presenting complaint, in the physio's words
+    startedAt: v.number(),
+    plannedSessions: v.optional(v.number()),
+    // Discharge
+    completedAt: v.optional(v.number()),
+    outcome: v.optional(v.union(
+      v.literal("goals_met"),
+      v.literal("partially_met"),
+      v.literal("not_met"),
+      v.literal("referred_on"),
+      v.literal("stopped_attending")
+    )),
+    dischargeSummary: v.optional(v.string()),
+    homeAdvice: v.optional(v.string()), // What the patient should keep doing
+    // Rehabify's after-care follow-up with the patient
+    followUpDueAt: v.optional(v.number()),
+    followUpStatus: v.optional(v.union(
+      v.literal("scheduled"), // waiting until followUpDueAt
+      v.literal("sent"), // patient asked how it went
+      v.literal("responded"), // patient answered
+      v.literal("closed") // Rehabify team finished with it
+    )),
+    followUpSentAt: v.optional(v.number()),
+    followUpRating: v.optional(v.number()), // 1-5, how happy with their care
+    followUpRecovery: v.optional(v.union(
+      v.literal("fully_recovered"),
+      v.literal("much_better"),
+      v.literal("a_little_better"),
+      v.literal("no_change"),
+      v.literal("worse")
+    )),
+    followUpComment: v.optional(v.string()),
+    followUpWantsCall: v.optional(v.boolean()),
+    followUpRespondedAt: v.optional(v.number()),
+    followUpNotes: v.optional(v.string()), // Internal notes by the Rehabify team
+    followUpHandledBy: v.optional(v.id("users")),
+    followUpClosedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_patient", ["patientId"])
+    .index("by_patient_and_physiotherapist", ["patientId", "physiotherapistId"])
+    .index("by_physiotherapist_and_status", ["physiotherapistId", "status"])
+    .index("by_follow_up", ["followUpStatus", "followUpDueAt"]),
+
+  // How a patient is doing between sessions, in their own words
+  patientCheckIns: defineTable({
+    patientId: v.id("users"),
+    physiotherapistId: v.optional(v.id("users")),
+    episodeId: v.optional(v.id("careEpisodes")),
+    painScore: v.number(), // 0-10
+    functionScore: v.optional(v.number()), // 0-10, how well they manage daily activities
+    mood: v.optional(v.union(v.literal("great"), v.literal("good"), v.literal("okay"), v.literal("low"))),
+    exercisesDone: v.union(v.literal("all"), v.literal("some"), v.literal("none")),
+    note: v.optional(v.string()),
+    flagged: v.boolean(), // Needs the physio's attention (high or rising pain, low mood)
+    flagReason: v.optional(v.string()),
+    reviewedAt: v.optional(v.number()), // Physio has seen it
+    createdAt: v.number(),
+  })
+    .index("by_patient", ["patientId", "createdAt"])
+    .index("by_physiotherapist", ["physiotherapistId", "createdAt"]),
+
   treatmentPlans: defineTable({
     patientId: v.id("users"),
     physiotherapistId: v.id("users"),
@@ -876,6 +969,7 @@ export default defineSchema({
       targetValue: v.string(),
       timeline: v.string(),
       measurable: v.boolean(),
+      achieved: v.optional(v.boolean()), // Ticked off by the physio
     })),
     phases: v.array(v.object({
       name: v.string(),
@@ -899,6 +993,13 @@ export default defineSchema({
     })),
     reviewInterval: v.number(), // days
     notes: v.optional(v.string()),
+    // Care plan details shown in the physio's patient workspace
+    episodeId: v.optional(v.id("careEpisodes")),
+    sessionFrequency: v.optional(v.string()), // e.g. "2 sessions a week"
+    plannedSessions: v.optional(v.number()),
+    reviewDate: v.optional(v.number()), // Next planned review of the plan
+    precautions: v.optional(v.string()), // Precautions and safety guidance
+    changeReason: v.optional(v.string()), // Why this version of the plan exists
     version: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -2311,7 +2412,8 @@ export default defineSchema({
       v.literal("goal_updated"),
       v.literal("assessment_added"),
       v.literal("status_changed"),
-      v.literal("phase_updated")
+      v.literal("phase_updated"),
+      v.literal("plan_revised") // Care plan details changed, with a reason
     ),
     changedBy: v.id("users"),
     changeDescription: v.string(),

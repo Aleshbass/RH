@@ -1,326 +1,129 @@
 'use client';
 
-import { useAuth, SignOutButton, useClerk } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { useQuery, useMutation } from 'convex/react';
-import { api } from '@/convex/_generated/api';
-import { Loader2, Shield, Key, LogOut, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { useClerk, useUser } from '@clerk/nextjs';
+import { ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { Separator } from '@/components/ui/separator';
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { toast } from 'sonner';
+import { playSound, setSoundsEnabled, soundsEnabled } from '@/lib/sounds';
+import { SettingsPageHeader, SettingsSection } from '@/components/physio/SettingsUI';
 
-export default function PrivacySettingsPage() {
-    const router = useRouter();
-    const { isLoaded, isSignedIn } = useAuth();
-    const { openUserProfile } = useClerk();
+const SUPPORT_EMAIL = 'support@rehabify.ng';
 
-    const currentUser = useQuery(api.queries.getCurrentUser);
-    const updateProfileMutation = useMutation(api.users.updatePhysiotherapistProfile);
-
-    // Controlled state for profile visibility
-    const [profileVisible, setProfileVisible] = useState(true);
-    const [isSavingVisibility, setIsSavingVisibility] = useState(false);
-
-    // Dialog states
-    const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
-    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-
-    // Initialize profile visibility from user settings
-    useEffect(() => {
-        // @ts-ignore - profileData types from getCurrentUser return value
-        if (currentUser?.profileData?.isAvailableOnMarketplace !== undefined) {
-            // @ts-ignore
-            setProfileVisible(currentUser.profileData.isAvailableOnMarketplace);
-        }
-    }, [currentUser]);
-
-    useEffect(() => {
-        if (isLoaded && !isSignedIn) {
-            router.push('/sign-in');
-        }
-    }, [isLoaded, isSignedIn, router]);
-
-    useEffect(() => {
-        // Only redirect if user exists but has the wrong role
-        if (currentUser && currentUser.role !== 'physiotherapist') {
-            router.push('/dashboard');
-        }
-    }, [currentUser, router]);
-
-    const handleVisibilityChange = async (checked: boolean) => {
-        const previousValue = profileVisible;
-        setProfileVisible(checked);
-        setIsSavingVisibility(true);
-
-        try {
-            await updateProfileMutation({ isAvailableOnMarketplace: checked });
-            toast.success(checked ? 'Profile is now visible' : 'Profile is now hidden');
-        } catch (error) {
-            console.error('Error updating visibility:', error);
-            // Rollback on failure
-            setProfileVisible(previousValue);
-            toast.error('Failed to update profile visibility');
-        } finally {
-            setIsSavingVisibility(false);
-        }
-    };
-
-    const handleDeactivate = async () => {
-        try {
-            // TODO: Implement actual deactivation when backend is ready
-            toast.info('Account deactivation is not yet implemented');
-            setShowDeactivateDialog(false);
-        } catch (error) {
-            console.error('Error deactivating account:', error);
-            toast.error('Failed to deactivate account');
-        }
-    };
-
-    const handleDeleteAccount = async () => {
-        try {
-            // TODO: Implement actual deletion when backend is ready
-            toast.info('Account deletion is not yet implemented');
-            setShowDeleteDialog(false);
-        } catch (error) {
-            console.error('Error deleting account:', error);
-            toast.error('Failed to delete account');
-        }
-    };
-
-    if (!isLoaded || currentUser === undefined) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-                    <p className="text-gray-400">Loading privacy settings...</p>
-                </div>
+function Row({
+    title,
+    description,
+    action,
+}: {
+    title: string;
+    description: string;
+    action: React.ReactNode;
+}) {
+    return (
+        <div className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+                <p className="text-sm font-medium text-neutral-900 dark:text-white">{title}</p>
+                <p className="mt-0.5 text-sm text-neutral-500 dark:text-neutral-400">{description}</p>
             </div>
-        );
-    }
+            <div className="shrink-0">{action}</div>
+        </div>
+    );
+}
 
-    // Handle null currentUser (no Convex record)
-    if (currentUser === null) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    <p className="text-gray-400">User profile not found</p>
-                </div>
-            </div>
-        );
-    }
+function LinkRow({ href, label }: { href: string; label: string }) {
+    return (
+        <Link
+            href={href}
+            className="flex items-center justify-between py-3 text-sm text-neutral-700 first:pt-0 last:pb-0 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
+        >
+            {label}
+            <ChevronRight className="h-4 w-4 text-neutral-300 dark:text-neutral-600" />
+        </Link>
+    );
+}
+
+function SoundsSetting() {
+    const [enabled, setEnabled] = useState(true);
+    useEffect(() => setEnabled(soundsEnabled()), []);
+    return (
+        <Row
+            title="Sounds"
+            description="A soft chime when you send a message, a booking comes in or a payment arrives."
+            action={
+                <Switch
+                    checked={enabled}
+                    aria-label="Sounds"
+                    onCheckedChange={(next) => {
+                        setEnabled(next);
+                        setSoundsEnabled(next);
+                        if (next) playSound('success');
+                    }}
+                />
+            }
+        />
+    );
+}
+
+export default function AccountPrivacyPage() {
+    const { openUserProfile, signOut } = useClerk();
+    const { user } = useUser();
+    const email = user?.primaryEmailAddress?.emailAddress;
+
+    const deletionMail = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Delete my Rehabify account')}&body=${encodeURIComponent(
+        `Please delete my physiotherapist account${email ? ` (${email})` : ''}.`
+    )}`;
 
     return (
-        <TooltipProvider>
-            <div className="space-y-6">
-                {/* Page Header */}
-                <div>
-                    <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <Shield className="h-6 w-6" />
-                        Privacy & Security
-                    </h1>
-                    <p className="text-gray-400 mt-1">Manage your account security and privacy settings</p>
+        <div className="space-y-6">
+            <SettingsPageHeader title="Account & privacy" description="Sign-in, security, sounds and your data." />
+
+            <SettingsSection title="Sign-in and security">
+                <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                    <Row
+                        title="Email, password and two-step verification"
+                        description={email ? `Signed in as ${email}` : 'Manage how you sign in.'}
+                        action={
+                            <Button variant="outline" size="sm" onClick={() => openUserProfile()}>
+                                Manage
+                            </Button>
+                        }
+                    />
+                    <Row
+                        title="Sign out"
+                        description="Sign out of Rehabify on this device."
+                        action={
+                            <Button variant="outline" size="sm" onClick={() => signOut({ redirectUrl: '/' })}>
+                                Sign out
+                            </Button>
+                        }
+                    />
                 </div>
+            </SettingsSection>
 
-                {/* Privacy Card */}
-                <Card className="bg-[#1a1a1a] border-white/10">
-                    <CardContent className="p-6 space-y-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h4 className="font-medium text-white">Profile Visibility</h4>
-                                <p className="text-sm text-gray-400">Allow other healthcare providers to see your profile</p>
-                            </div>
-                            <Switch
-                                checked={profileVisible}
-                                onCheckedChange={handleVisibilityChange}
-                                disabled={isSavingVisibility}
-                                className="data-[state=checked]:bg-[#005b57]"
-                            />
-                        </div>
+            <SettingsSection title="Sounds">
+                <SoundsSetting />
+            </SettingsSection>
 
-                        <Separator className="bg-white/10" />
+            <SettingsSection title="Your data">
+                <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                    <LinkRow href="/privacy-policy" label="Privacy policy" />
+                    <LinkRow href="/terms-and-conditions" label="Terms and conditions" />
+                    <LinkRow href="/payout-policy" label="Payout policy" />
+                </div>
+            </SettingsSection>
 
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h4 className="font-medium text-white">Two-Factor Authentication</h4>
-                                <p className="text-sm text-gray-400">Add an extra layer of security to your account</p>
-                            </div>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openUserProfile()}
-                                className="bg-transparent border-white/20 text-white hover:bg-white/10"
-                            >
-                                <Key className="h-4 w-4 mr-2" />
-                                Configure
-                            </Button>
-                        </div>
-
-                        <Separator className="bg-white/10" />
-
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h4 className="font-medium text-white">Change Password</h4>
-                                <p className="text-sm text-gray-400">Update your account password</p>
-                            </div>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openUserProfile()}
-                                className="bg-transparent border-white/20 text-white hover:bg-white/10"
-                            >
-                                <Key className="h-4 w-4 mr-2" />
-                                Change Password
-                            </Button>
-                        </div>
-
-                        <Separator className="bg-white/10" />
-
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h4 className="font-medium text-white">Sign Out</h4>
-                                <p className="text-sm text-gray-400">Sign out of your account on this device</p>
-                            </div>
-                            <SignOutButton>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="bg-transparent border-white/20 text-white hover:bg-white/10"
-                                >
-                                    <LogOut className="h-4 w-4 mr-2" />
-                                    Sign Out
-                                </Button>
-                            </SignOutButton>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Danger Zone */}
-                <Card className="bg-[#1a1a1a] border-red-500/30">
-                    <CardContent className="p-6 space-y-4">
-                        <div>
-                            <h3 className="text-lg font-semibold text-red-400">Danger zone</h3>
-                            <p className="text-sm text-gray-400">Be careful. Account deletion cannot be undone.</p>
-                        </div>
-
-                        <Separator className="bg-white/10" />
-
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h4 className="font-medium text-white">Deactivate Account</h4>
-                                <p className="text-sm text-gray-400">Temporarily disable your account. You can reactivate it later.</p>
-                            </div>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="bg-transparent border-red-500/30 text-red-400 hover:bg-red-500/10"
-                                        onClick={() => setShowDeactivateDialog(true)}
-                                    >
-                                        Deactivate
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>Temporarily disable your account</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </div>
-
-                        <Separator className="bg-white/10" />
-
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h4 className="font-medium text-white">Delete Account</h4>
-                                <p className="text-sm text-gray-400">Permanently delete your account and all associated data.</p>
-                            </div>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        variant="destructive"
-                                        size="sm"
-                                        className="bg-red-600 hover:bg-red-700"
-                                        onClick={() => setShowDeleteDialog(true)}
-                                    >
-                                        <Trash2 className="h-4 w-4 mr-2" />
-                                        Delete account
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    <p>This action cannot be undone</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Deactivate Confirmation Dialog */}
-                <AlertDialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
-                    <AlertDialogContent className="bg-[#1a1a1a] border-white/10">
-                        <AlertDialogHeader>
-                            <AlertDialogTitle className="text-white">Deactivate Account?</AlertDialogTitle>
-                            <AlertDialogDescription className="text-gray-400">
-                                Your account will be temporarily disabled. You can reactivate it by signing in again.
-                                Your data will be preserved.
-                            </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                            <AlertDialogCancel className="bg-transparent border-white/20 text-white hover:bg-white/10">
-                                Cancel
-                            </AlertDialogCancel>
-                            <AlertDialogAction
-                                onClick={handleDeactivate}
-                                className="bg-red-600 hover:bg-red-700 text-white"
-                            >
-                                Deactivate
-                            </AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-
-                {/* Delete Confirmation Dialog */}
-                <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-                    <AlertDialogContent className="bg-[#1a1a1a] border-white/10">
-                        <AlertDialogHeader>
-                            <AlertDialogTitle className="text-white">Delete Account Permanently?</AlertDialogTitle>
-                            <AlertDialogDescription className="text-gray-400">
-                                This action cannot be undone. All your data, including patient records,
-                                appointments, and settings will be permanently deleted.
-                            </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                            <AlertDialogCancel className="bg-transparent border-white/20 text-white hover:bg-white/10">
-                                Cancel
-                            </AlertDialogCancel>
-                            <AlertDialogAction
-                                onClick={handleDeleteAccount}
-                                className="bg-red-600 hover:bg-red-700 text-white"
-                            >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete Permanently
-                            </AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-            </div>
-        </TooltipProvider>
+            <SettingsSection title="Delete account">
+                <Row
+                    title="Close your account"
+                    description="Email our team to close your account. We’ll confirm with you before anything is deleted."
+                    action={
+                        <Button asChild variant="outline" size="sm" className="text-red-600 hover:text-red-700 dark:text-red-400">
+                            <a href={deletionMail}>Request deletion</a>
+                        </Button>
+                    }
+                />
+            </SettingsSection>
+        </div>
     );
 }

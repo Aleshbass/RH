@@ -549,9 +549,10 @@ export const setDateOverride = mutation({
             throw new Error("Physiotherapist profile not found");
         }
 
-        const currentSchedule: AvailabilitySchedule =
-            (physioProfile.availabilitySchedule as AvailabilitySchedule) ||
-            DEFAULT_AVAILABILITY_SCHEDULE;
+        // Onboarding stored hours by day name; convert first or the override is lost on read
+        const currentSchedule: AvailabilitySchedule = normalizeAvailabilitySchedule(
+            physioProfile.availabilitySchedule
+        );
 
         // Remove existing override for this date if any
         const existingOverrides = currentSchedule.dateOverrides || [];
@@ -604,9 +605,10 @@ export const removeDateOverride = mutation({
             throw new Error("Physiotherapist profile not found");
         }
 
-        const currentSchedule: AvailabilitySchedule =
-            (physioProfile.availabilitySchedule as AvailabilitySchedule) ||
-            DEFAULT_AVAILABILITY_SCHEDULE;
+        // Onboarding stored hours by day name; convert first or the override is lost on read
+        const currentSchedule: AvailabilitySchedule = normalizeAvailabilitySchedule(
+            physioProfile.availabilitySchedule
+        );
 
         const updatedOverrides = (currentSchedule.dateOverrides || []).filter(
             (o) => o.date !== args.date

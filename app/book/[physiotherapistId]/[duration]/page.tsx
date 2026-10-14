@@ -256,7 +256,7 @@ export default function BookingPage() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#002e2c] flex items-center justify-center">
+            <div className="min-h-screen bg-[#005b57] flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-teal-300" />
             </div>
         );
@@ -264,7 +264,7 @@ export default function BookingPage() {
 
     if (!profile) {
         return (
-            <div className="min-h-screen bg-[#002e2c] flex items-center justify-center">
+            <div className="min-h-screen bg-[#005b57] flex items-center justify-center">
                 <div className="text-center">
                     <p className="text-white/65 mb-4">Physiotherapist not found</p>
                     <Button
@@ -481,7 +481,7 @@ export default function BookingPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#002e2c] flex flex-col">
+        <div className="min-h-screen bg-[#005b57] flex flex-col">
             <main className="flex-1 flex items-center justify-center px-4 py-8">
                 {/* Step: Select Time */}
                 {step === "select-time" && (
@@ -516,7 +516,7 @@ export default function BookingPage() {
                 {/* Step: Select Package */}
                 {step === "select-package" && selectedSlot && (
                     <div className="max-w-lg mx-auto w-full">
-                        <div className="bg-[#00403c] rounded-xl p-5 sm:p-6 border border-white/10">
+                        <div className="bg-[#00443e] rounded-xl p-5 sm:p-6 border border-white/10">
                             {/* Physio header mini */}
                             <div className="flex items-center gap-3 mb-5 pb-4 border-b border-white/10">
                                 {profile.imageUrl && (
@@ -571,7 +571,7 @@ export default function BookingPage() {
                 {/* Step: Details */}
                 {step === "details" && selectedSlot && (
                     <div className="max-w-lg mx-auto w-full">
-                        <div className="bg-[#00403c] rounded-xl p-5 sm:p-6 border border-white/10">
+                        <div className="bg-[#00443e] rounded-xl p-5 sm:p-6 border border-white/10">
                             <h2 className="text-xl font-semibold text-white mb-6">
                                 Booking Details
                             </h2>
@@ -741,7 +741,7 @@ export default function BookingPage() {
 
                             {/* Guest checkout form */}
                             {showGuestForm && !isSignedIn && (
-                                <div className="bg-[#003633] border border-teal-300/40 rounded-xl p-5 mb-5 space-y-4">
+                                <div className="bg-[#003d38] border border-teal-300/40 rounded-xl p-5 mb-5 space-y-4">
                                     <p className="text-teal-300 text-sm font-semibold">Quick Checkout — No Account Needed</p>
                                     <div>
                                         <Label htmlFor="guestName" className="text-white/80 mb-1 block text-xs">Full Name (Optional)</Label>
@@ -840,7 +840,7 @@ export default function BookingPage() {
                 {/* Step: Confirmation */}
                 {step === "confirm" && (
                     <div className="max-w-lg mx-auto text-center">
-                        <div className="bg-[#00403c] rounded-xl p-8 border border-white/10">
+                        <div className="bg-[#00443e] rounded-xl p-8 border border-white/10">
                             <div className="w-16 h-16 bg-[#005b57] rounded-full flex items-center justify-center mx-auto mb-6">
                                 <CheckCircle2 className="w-8 h-8 text-white" />
                             </div>

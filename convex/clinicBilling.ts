@@ -34,7 +34,7 @@ export function mainAccountChargeKobo(invoice: Doc<"invoices">): number {
 }
 
 
-async function paystackRequest(path: string, init: RequestInit = {}) {
+export async function paystackRequest(path: string, init: RequestInit = {}) {
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) {
     throw new ConvexError("Payments are not configured yet. Please contact Rehabify support.");

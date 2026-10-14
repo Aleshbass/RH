@@ -14,6 +14,7 @@ export const createPhysiotherapistSubaccount = action({
         bankCode: v.string(),
         accountNumber: v.string(),
         percentageCharge: v.optional(v.number()), // Percentage for the platform, Defaults to 0 since we use flat fees
+        accountName: v.optional(v.string()), // Holder name as resolved by verifyBankAccount
     },
     returns: v.object({
         success: v.boolean(),
@@ -78,7 +79,7 @@ export const createPhysiotherapistSubaccount = action({
                     bankCode: args.bankCode,
                     accountNumber: args.accountNumber,
                     bankName: data.data.settlement_bank || "",
-                    accountName: args.businessName, // We can use business name for account name
+                    accountName: args.accountName || args.businessName,
                 });
 
                 return {

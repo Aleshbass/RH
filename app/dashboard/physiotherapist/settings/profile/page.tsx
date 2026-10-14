@@ -1,416 +1,288 @@
 'use client';
 
-import { useAuth } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState, useRef } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { useEffect, useRef, useState } from 'react';
+import { useMutation, useQuery } from 'convex/react';
+import { Camera, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
-import { Loader2, User, Camera } from 'lucide-react';
+import type { Id } from '@/convex/_generated/dataModel';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { Separator } from '@/components/ui/separator';
-import { toast } from 'sonner';
+import { primaryButtonClass } from '@/components/physio/ui';
+import {
+    SettingsPageHeader,
+    SettingsSection,
+    SpecialisationPicker,
+    fieldHintClass,
+    fieldLabelClass,
+} from '@/components/physio/SettingsUI';
 import { useFileUpload } from '@/lib/hooks/useFileUpload';
-import { useMutationUntyped } from '@/lib/convexUntyped';
+
+/** Matches the "photo and short bio" item on the setup checklist (convex/physioSetup.ts). */
+const MIN_BIO_LENGTH = 40;
 
 // Convert an image File to WebP on the client for faster loading
 async function convertImageToWebp(file: File, quality = 0.85): Promise<File> {
     return new Promise<File>((resolve, reject) => {
-        let objectUrl: string | null = null;
-        try {
-            const img = new Image();
-            objectUrl = URL.createObjectURL(file);
-
-            img.onload = () => {
-                try {
-                    const canvas = document.createElement("canvas");
-                    canvas.width = img.naturalWidth;
-                    canvas.height = img.naturalHeight;
-                    const ctx = canvas.getContext("2d");
-                    if (!ctx) {
-                        if (objectUrl) URL.revokeObjectURL(objectUrl);
-                        return reject(new Error("Canvas not supported"));
-                    }
-                    ctx.drawImage(img, 0, 0);
-                    canvas.toBlob(
-                        (blob) => {
-                            // Revoke the object URL after we're done with it
-                            if (objectUrl) URL.revokeObjectURL(objectUrl);
-
-                            if (!blob) return reject(new Error("Failed to create WebP blob"));
-                            const webpFile = new File([blob], file.name.replace(/\.[^.]+$/, ".webp"), {
-                                type: "image/webp",
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) throw new Error('Canvas not supported');
+                ctx.drawImage(img, 0, 0);
+                canvas.toBlob(
+                    (blob) => {
+                        URL.revokeObjectURL(objectUrl);
+                        if (!blob) return reject(new Error('Could not convert image'));
+                        resolve(
+                            new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), {
+                                type: 'image/webp',
                                 lastModified: Date.now(),
-                            });
-                            resolve(webpFile);
-                        },
-                        "image/webp",
-                        quality
-                    );
-                } catch (e) {
-                    if (objectUrl) URL.revokeObjectURL(objectUrl);
-                    reject(e as Error);
-                }
-            };
-
-            img.onerror = () => {
-                if (objectUrl) URL.revokeObjectURL(objectUrl);
-                reject(new Error("Failed to load image for conversion"));
-            };
-
-            img.src = objectUrl;
-        } catch (e) {
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-            reject(e as Error);
-        }
+                            })
+                        );
+                    },
+                    'image/webp',
+                    quality
+                );
+            } catch (e) {
+                URL.revokeObjectURL(objectUrl);
+                reject(e as Error);
+            }
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('Could not read image'));
+        };
+        img.src = objectUrl;
     });
 }
 
 export default function ProfileSettingsPage() {
-    const router = useRouter();
-    const { isLoaded, isSignedIn } = useAuth();
-    const [isSaving, setIsSaving] = useState(false);
-    const [isRemovingPhoto, setIsRemovingPhoto] = useState(false);
-    const [isRedirecting, setIsRedirecting] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    // Form state (controlled inputs)
-    const [firstName, setFirstName] = useState('');
-    const [lastName, setLastName] = useState('');
-    const [email, setEmail] = useState('');
-    const [phone, setPhone] = useState('');
-    const [bio, setBio] = useState('');
-    const [specializations, setSpecializations] = useState('');
-
     const currentUser = useQuery(api.users.getMyUser);
     const currentUserProfile = useQuery(api.queries.getCurrentUser);
-    const updateProfileMutation = useMutation(api.users.updatePhysiotherapistProfile);
-
+    const updateProfile = useMutation(api.users.updatePhysiotherapistProfile);
+    const updateProfileImage = useMutation(api.users.updateProfileImageFromStorage);
+    const removeProfileImage = useMutation(api.users.removeProfileImage);
     const { uploadFile, isUploading, progress } = useFileUpload();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const apiAny = api as unknown as Record<string, any>;
-    const updateProfileImage = useMutationUntyped(
-        apiAny["users"]["updateProfileImageFromStorage"]
-    ) as (args: { storageId: string }) => Promise<{ imageUrl: string }>;
-    const removeProfileImage = useMutationUntyped(
-        apiAny["users"]["removeProfileImage"]
-    ) as () => Promise<{ success: boolean }>;
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Initialize form state from fetched user data
-    useEffect(() => {
-        if (currentUser) {
-            setFirstName(currentUser.firstName || '');
-            setLastName(currentUser.lastName || '');
-            setEmail(currentUser.email || '');
-            setPhone(currentUser.phoneNumber || '');
-        }
-    }, [currentUser]);
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
+    const [phone, setPhone] = useState('');
+    const [bio, setBio] = useState('');
+    const [specializations, setSpecializations] = useState<string[]>([]);
+    const [yearsOfExperience, setYearsOfExperience] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
+    const [isRemovingPhoto, setIsRemovingPhoto] = useState(false);
+    const [loaded, setLoaded] = useState(false);
 
+    // Fill the form once, so live updates don't overwrite what the user is typing
     useEffect(() => {
-        if (currentUserProfile?.profileData) {
-            setBio(currentUserProfile.profileData.bio || '');
-            setSpecializations(currentUserProfile.profileData.specializations?.join(', ') || '');
-        }
-    }, [currentUserProfile]);
-
-    useEffect(() => {
-        if (isLoaded && !isSignedIn) {
-            router.push('/sign-in');
-        }
-    }, [isLoaded, isSignedIn, router]);
-
-    useEffect(() => {
-        if (currentUser === null || (currentUser && currentUser.role !== 'physiotherapist')) {
-            setIsRedirecting(true);
-            router.push('/dashboard');
-        }
-    }, [currentUser, router]);
+        if (loaded || !currentUser || currentUserProfile === undefined) return;
+        setFirstName(currentUser.firstName || '');
+        setLastName(currentUser.lastName || '');
+        setPhone(currentUser.phoneNumber || '');
+        const profile = currentUserProfile?.profileData as
+            | { bio?: string; specializations?: string[]; yearsOfExperience?: number }
+            | undefined;
+        setBio(profile?.bio || '');
+        setSpecializations(profile?.specializations || []);
+        setYearsOfExperience(profile?.yearsOfExperience !== undefined ? String(profile.yearsOfExperience) : '');
+        setLoaded(true);
+    }, [currentUser, currentUserProfile, loaded]);
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        if (fileInputRef.current) fileInputRef.current.value = '';
         if (!file) return;
-
-        try {
-            let toUpload = file;
-            // Convert to WebP for faster loading
-            if (file.type.startsWith("image/")) {
-                try {
-                    toUpload = await convertImageToWebp(file, 0.85);
-                } catch {
-                    toUpload = file;
-                }
-            }
-
-            const res = await uploadFile(toUpload);
-            if (!res?.storageId) throw new Error("Upload failed. No storageId returned.");
-
-            await updateProfileImage({ storageId: res.storageId as unknown as string });
-            toast.success("Profile photo updated");
-        } catch (error) {
-            const err = error as Error;
-            console.error('Error uploading profile photo:', err);
-            toast.error(err.message || "Failed to upload profile photo");
-        }
-
-        // Reset file input
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
-    };
-
-    const triggerFileUpload = () => {
-        fileInputRef.current?.click();
-    };
-
-    const handleRemoveProfilePicture = async () => {
-        if (!currentUser?.imageUrl) {
-            toast.error('No profile picture to remove');
+        if (!file.type.startsWith('image/')) {
+            toast.error('Choose a photo (JPG, PNG or WebP).');
             return;
         }
+        try {
+            let toUpload = file;
+            try {
+                toUpload = await convertImageToWebp(file);
+            } catch {
+                toUpload = file;
+            }
+            const res = await uploadFile(toUpload);
+            if (!res?.storageId) throw new Error('Upload failed');
+            await updateProfileImage({ storageId: res.storageId as Id<'_storage'> });
+            toast.success('Photo updated');
+        } catch (error) {
+            toast.error((error as Error).message || 'Couldn’t upload your photo');
+        }
+    };
 
+    const handleRemovePhoto = async () => {
         setIsRemovingPhoto(true);
         try {
-            await removeProfileImage();
-            toast.success('Profile picture removed');
+            await removeProfileImage({});
+            toast.success('Photo removed');
         } catch (error) {
-            const err = error as Error;
-            console.error('Error removing profile photo:', err);
-            toast.error(err.message || 'Failed to remove profile picture');
+            toast.error((error as Error).message || 'Couldn’t remove your photo');
         } finally {
             setIsRemovingPhoto(false);
         }
     };
 
-    if (!isLoaded || currentUser === undefined || currentUserProfile === undefined) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-                    <p className="text-gray-400">Loading profile...</p>
-                </div>
-            </div>
-        );
-    }
-
-    // Handle null currentUser (no Convex record)
-    if (currentUser === null || isRedirecting) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                    {/* Show spinner if redirecting, otherwise standard not found message */}
-                    {isRedirecting ? (
-                        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-                    ) : (
-                        <p className="text-gray-400">User profile not found</p>
-                    )}
-                </div>
-            </div>
-        );
-    }
-
-    const handleSaveProfile = async () => {
+    const handleSave = async () => {
+        if (!firstName.trim() || !lastName.trim()) {
+            toast.error('Enter your first and last name.');
+            return;
+        }
+        const years = yearsOfExperience.trim() === '' ? undefined : Number(yearsOfExperience);
+        if (years !== undefined && (!Number.isFinite(years) || years < 0 || years > 70)) {
+            toast.error('Enter your years of experience as a number.');
+            return;
+        }
         setIsSaving(true);
         try {
-            // Parse specializations from comma-separated string to array
-            const specializationsArray = specializations
-                .split(',')
-                .map(s => s.trim())
-                .filter(s => s.length > 0);
-
-            await updateProfileMutation({
+            await updateProfile({
                 firstName: firstName.trim(),
                 lastName: lastName.trim(),
                 phoneNumber: phone.trim(),
                 bio: bio.trim(),
-                specializations: specializationsArray,
+                specializations,
+                yearsOfExperience: years,
             });
-
-            toast.success('Profile settings saved successfully!');
+            toast.success('Profile saved');
         } catch (error) {
-            console.error('Error saving profile:', error);
-            toast.error('Failed to save profile settings. Please try again.');
+            toast.error((error as Error).message || 'Couldn’t save your profile. Try again.');
         } finally {
             setIsSaving(false);
         }
     };
 
+    if (!loaded || !currentUser) {
+        return (
+            <div className="space-y-4">
+                <Skeleton className="h-7 w-40" />
+                <Skeleton className="h-28 rounded-xl" />
+                <Skeleton className="h-72 rounded-xl" />
+            </div>
+        );
+    }
+
+    const bioLength = bio.trim().length;
+    const initials = `${currentUser.firstName?.[0] ?? ''}${currentUser.lastName?.[0] ?? ''}`.toUpperCase();
+
     return (
         <div className="space-y-6">
-            {/* Hidden file input */}
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileSelect}
-            />
+            <SettingsPageHeader title="Profile" description="What patients see on your marketplace page and booking link." />
 
-            {/* Page Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-                    <User className="h-6 w-6" />
-                    Profile
-                </h1>
-                <p className="text-gray-400 mt-1">Manage settings for your Rehabify profile</p>
-            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
 
-            {/* Profile Card */}
-            <Card className="bg-[#1a1a1a] border-white/10">
-                <CardContent className="p-6 space-y-6">
-                    {/* Profile Picture */}
-                    <div className="flex items-center gap-4">
-                        <div className="relative">
-                            <div className="h-20 w-20 rounded-full bg-[#005b57] overflow-hidden">
-                                {currentUser?.imageUrl ? (
-                                    <img src={currentUser.imageUrl} alt="Profile" className="h-full w-full object-cover" />
-                                ) : (
-                                    <div className="h-full w-full flex items-center justify-center text-2xl font-semibold text-white">
-                                        {currentUser?.firstName?.[0]}{currentUser?.lastName?.[0]}
-                                    </div>
-                                )}
-                            </div>
+            <SettingsSection title="Photo" description="A clear, friendly headshot. Patients are more likely to book physios they can picture.">
+                <div className="flex items-center gap-4">
+                    <div className="relative">
+                        <Avatar className="h-20 w-20">
+                            <AvatarImage src={currentUser.imageUrl} alt="" className="object-cover" />
+                            <AvatarFallback className="bg-neutral-100 text-xl font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                                {initials || '?'}
+                            </AvatarFallback>
+                        </Avatar>
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploading}
+                            aria-label="Change photo"
+                            className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-700 shadow-sm hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+                        >
+                            {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                        </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+                            {isUploading ? (progress ? `Uploading ${progress}%` : 'Uploading…') : currentUser.imageUrl ? 'Change photo' : 'Upload photo'}
+                        </Button>
+                        {currentUser.imageUrl && (
                             <Button
+                                variant="ghost"
                                 size="sm"
-                                variant="outline"
-                                className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full p-0 bg-white hover:bg-gray-100"
-                                onClick={triggerFileUpload}
-                                disabled={isUploading}
+                                onClick={handleRemovePhoto}
+                                disabled={isRemovingPhoto}
+                                className="text-neutral-500"
                             >
-                                {isUploading ? (
-                                    <Loader2 className="h-4 w-4 text-gray-700 animate-spin" />
-                                ) : (
-                                    <Camera className="h-4 w-4 text-gray-700" />
-                                )}
+                                {isRemovingPhoto ? 'Removing…' : 'Remove'}
                             </Button>
-                        </div>
-                        <div>
-                            <h4 className="font-medium text-white">Profile picture</h4>
-                            <div className="flex gap-2 mt-2">
-                                <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    onClick={triggerFileUpload}
-                                    disabled={isUploading}
-                                >
-                                    {isUploading ? (
-                                        <>
-                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                            {progress ? `${progress}%` : 'Uploading...'}
-                                        </>
-                                    ) : (
-                                        'Upload avatar'
-                                    )}
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="text-gray-400 hover:text-white"
-                                    onClick={handleRemoveProfilePicture}
-                                    disabled={isRemovingPhoto || !currentUser?.imageUrl}
-                                >
-                                    {isRemovingPhoto ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                        'Remove'
-                                    )}
-                                </Button>
-                            </div>
-                        </div>
+                        )}
                     </div>
+                </div>
+            </SettingsSection>
 
-                    <Separator className="bg-white/10" />
-
-                    {/* Form Fields - Now controlled */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <Label htmlFor="firstName" className="text-gray-300">First Name</Label>
-                            <Input
-                                id="firstName"
-                                value={firstName}
-                                onChange={(e) => setFirstName(e.target.value)}
-                                placeholder="Enter your first name"
-                                className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500"
-                            />
+            <SettingsSection
+                title="Details"
+                footer={
+                    <Button onClick={handleSave} disabled={isSaving} className={primaryButtonClass}>
+                        {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save changes
+                    </Button>
+                }
+            >
+                <div className="space-y-5">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                            <Label htmlFor="firstName" className={fieldLabelClass}>First name</Label>
+                            <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" />
                         </div>
-                        <div>
-                            <Label htmlFor="lastName" className="text-gray-300">Last Name</Label>
-                            <Input
-                                id="lastName"
-                                value={lastName}
-                                onChange={(e) => setLastName(e.target.value)}
-                                placeholder="Enter your last name"
-                                className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500"
-                            />
+                        <div className="space-y-1.5">
+                            <Label htmlFor="lastName" className={fieldLabelClass}>Last name</Label>
+                            <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" />
                         </div>
-                        <div>
-                            <Label htmlFor="email" className="text-gray-300">Email</Label>
-                            <Input
-                                id="email"
-                                type="email"
-                                value={email}
-                                disabled
-                                placeholder="Enter your email"
-                                className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500 opacity-60"
-                            />
-                            <p className="text-xs text-gray-500 mt-1">Email cannot be changed here</p>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="email" className={fieldLabelClass}>Email</Label>
+                            <Input id="email" type="email" value={currentUser.email || ''} disabled />
+                            <p className={fieldHintClass}>Change it under Login &amp; security in your account menu.</p>
                         </div>
-                        <div>
-                            <Label htmlFor="phone" className="text-gray-300">Phone Number</Label>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="phone" className={fieldLabelClass}>Phone</Label>
+                            <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" placeholder="0803 123 4567" />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="years" className={fieldLabelClass}>Years of experience</Label>
                             <Input
-                                id="phone"
-                                value={phone}
-                                onChange={(e) => setPhone(e.target.value)}
-                                placeholder="Enter your phone number"
-                                className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500"
+                                id="years"
+                                inputMode="numeric"
+                                value={yearsOfExperience}
+                                onChange={(e) => setYearsOfExperience(e.target.value.replace(/[^\d]/g, ''))}
+                                placeholder="5"
                             />
                         </div>
                     </div>
 
-                    <div>
-                        <Label htmlFor="bio" className="text-gray-300">About</Label>
+                    <div className="space-y-1.5">
+                        <Label htmlFor="bio" className={fieldLabelClass}>About you</Label>
                         <Textarea
                             id="bio"
                             value={bio}
                             onChange={(e) => setBio(e.target.value)}
-                            placeholder="Tell us about your professional background..."
-                            rows={4}
-                            className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500 resize-none"
+                            rows={5}
+                            className="resize-y"
+                            placeholder="How you work, who you help most, and what a first session with you looks like."
                         />
+                        <p className={fieldHintClass}>
+                            {bioLength < MIN_BIO_LENGTH
+                                ? `At least ${MIN_BIO_LENGTH} characters (${bioLength} so far).`
+                                : `${bioLength} characters`}
+                        </p>
                     </div>
 
-                    <div>
-                        <Label htmlFor="specializations" className="text-gray-300">Specializations</Label>
-                        <Input
-                            id="specializations"
-                            value={specializations}
-                            onChange={(e) => setSpecializations(e.target.value)}
-                            placeholder="e.g., Sports Therapy, Neurological Rehabilitation"
-                            className="mt-1.5 bg-[#0a0a0a] border-white/10 text-white placeholder:text-gray-500"
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Separate multiple specializations with commas</p>
+                    <div className="space-y-2">
+                        <Label className={fieldLabelClass}>Specialisations</Label>
+                        <SpecialisationPicker value={specializations} onChange={setSpecializations} />
                     </div>
-
-                    <div className="flex justify-end">
-                        <Button
-                            onClick={handleSaveProfile}
-                            disabled={isSaving}
-                            className="bg-[#005b57] hover:bg-[#00443e] text-white"
-                        >
-                            {isSaving ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Saving...
-                                </>
-                            ) : (
-                                'Update'
-                            )}
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
+                </div>
+            </SettingsSection>
         </div>
     );
 }

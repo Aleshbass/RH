@@ -40,40 +40,10 @@ export default function OnboardingCompletePage() {
             break;
 
           case 'physiotherapist':
-            // Physiotherapist completion flow
-            if (!data.physiotherapistData) {
-              throw new Error("Physiotherapist data not found");
-            }
-
-            // Complete the physiotherapist profile with final step flag
-            await completeUserProfile({
-              role: "physiotherapist",
-              profileData: {
-                specializations: data.physiotherapistData.specializations || [],
-                licenseNumber: data.physiotherapistData.licenseNumber || "",
-                yearsOfExperience: data.physiotherapistData.yearsOfExperience || 0,
-                bio: data.physiotherapistData.bio || "",
-                certificationBoard: data.physiotherapistData.certificationBoard || "",
-                certificationYear: data.physiotherapistData.certificationYear || new Date().getFullYear(),
-                licenseExpiryDate: data.physiotherapistData.licenseExpiryDate || "",
-                referralSource: data.physiotherapistData.referralSource || "",
-                location: data.physiotherapistData.location || "",
-                dateOfBirth: data.physiotherapistData.dateOfBirth || "",
-                gender: data.physiotherapistData.gender,
-                offersInPersonSessions: true,
-                offersOnlineSessions: true,
-                isAvailableOnMarketplace: true,
-              },
-              firstName: data.physiotherapistData.firstName,
-              lastName: data.physiotherapistData.lastName,
-              finalStep: true, // This is the final step!
-            });
-
-            setStatus("success");
-            setMessage("Physiotherapist application submitted! Your account is pending admin approval.");
-            setShowModal(true);
-            setShowVideoGuide(true);
-            break;
+            // The physiotherapist wizard submits the application itself. Re-submitting from the
+            // persisted store here would overwrite saved licence details with stale or empty values.
+            router.replace('/dashboard/physiotherapist');
+            return;
 
           case 'clinic_owner':
             // Clinic owner completion flow

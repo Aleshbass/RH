@@ -103,12 +103,12 @@ export function PatientTreatmentPlanView() {
     if (!selectedExercise) return;
     setSaving(true);
     try {
-      const notes = [painLevel > 0 ? `Pain ${painLevel}/10` : '', completionNotes.trim()].filter(Boolean).join('. ');
       await logExerciseCompletion({
         treatmentPlanId: plan._id as Id<'treatmentPlans'>,
         exerciseId: selectedExercise.exerciseId,
         phaseOrder: selectedExercise.phaseOrder,
-        notes: notes || undefined,
+        notes: completionNotes.trim() || undefined,
+        painLevel,
       });
       toast.success('Exercise marked as done');
       setIsCompletionModalOpen(false);

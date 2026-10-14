@@ -1,718 +1,452 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import * as React from 'react';
-import { useQuery, useMutation, useAction } from 'convex/react';
-import { api } from '@/convex/_generated/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
-import { Video, Calendar, Clock, Plus, Copy, X } from 'lucide-react';
-import { format } from 'date-fns';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation, useQuery } from 'convex/react';
+import { format, isToday, isTomorrow } from 'date-fns';
+import { Copy, Loader2, Plus, Video } from 'lucide-react';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+import { playSound } from '@/lib/sounds';
+import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Id } from '@/convex/_generated/dataModel';
-import StreamVideoCallManager from '@/components/video/StreamVideoCallManager';
-import { PatientProfileMiniCard } from '@/components/dashboard/physiotherapist/PatientProfileMiniCard';
-// Removed deprecated InferQueryOutput import
-
-// Simple type definition to avoid complex inference
-type Patient = {
-  _id: Id<"users">;
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-};
+import { Textarea } from '@/components/ui/textarea';
+import { EmptyState, PageContainer, PageHeader, Panel, StatusBadge, primaryButtonClass } from '@/components/physio/ui';
+import { cn } from '@/lib/utils';
 
 type VideoCall = {
-  _id: Id<"videoCalls">;
+  _id: Id<'videoCalls'>;
   roomId: string;
   title?: string;
-  patientId?: Id<"users">;
-  physiotherapistId?: Id<"users">;
+  status: 'scheduled' | 'active' | 'ended' | 'cancelled' | 'missed';
   scheduledAt?: number;
-  status: "scheduled" | "active" | "completed" | "cancelled";
   startTime?: number;
-  duration?: number;
-  recordingUrl?: string;
-  meetingLink: string;
-  platform: string;
-  notes?: string;
-  patient?: Patient;
-  streamCallId?: string;
+  plannedDuration?: number;
+  meetingLink?: string;
+  platform?: string;
+  patient?: { _id: string; firstName?: string; lastName?: string; email?: string };
 };
 
-// Friendly status labels for UI
-const statusLabel = (status: string) => {
-  switch (status) {
-    case 'active': return 'Active (In Progress)';
-    case 'scheduled': return 'Scheduled';
+type PatientLite = { _id: Id<'users'>; firstName?: string; lastName?: string; email?: string };
+
+/** Join opens this long before the start time. */
+const JOIN_EARLY_MS = 10 * 60 * 1000;
+
+const fullName = (p?: { firstName?: string; lastName?: string }) =>
+  [p?.firstName, p?.lastName].filter(Boolean).join(' ') || 'Patient';
+
+function localDateTimeValue(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function whenLabel(time: number) {
+  if (isToday(time)) return `Today, ${format(time, 'h:mm a')}`;
+  if (isTomorrow(time)) return `Tomorrow, ${format(time, 'h:mm a')}`;
+  return format(time, 'EEE d MMM, h:mm a');
+}
+
+function callStatus(call: VideoCall) {
+  switch (call.status) {
+    case 'active':
+      return <StatusBadge tone="green">In progress</StatusBadge>;
     case 'ended':
-    case 'completed': return 'Completed';
-    case 'cancelled': return 'Cancelled';
-    case 'missed': return 'Missed';
-    default: return status;
+      return <StatusBadge>Ended</StatusBadge>;
+    case 'cancelled':
+      return <StatusBadge tone="red">Cancelled</StatusBadge>;
+    case 'missed':
+      return <StatusBadge tone="amber">Missed</StatusBadge>;
+    default:
+      return <StatusBadge tone="teal">Scheduled</StatusBadge>;
   }
-};
+}
 
-// Determine if we're within the pre-join window (default 10 minutes before scheduled time)
-const isWithinJoinWindow = (scheduledAt?: number, minutes = 10) => {
-  if (!scheduledAt) return false;
-  const now = Date.now();
-  const windowMs = minutes * 60 * 1000;
-  return now >= (scheduledAt - windowMs);
-};
+/** In-app link for built-in calls (relative, so it works on any domain); external link otherwise. */
+function callHref(call: VideoCall) {
+  const link = call.meetingLink ?? '';
+  if (link.includes('/video-call/')) return `/video-call/${link.split('/video-call/')[1]}`;
+  if (link && !link.includes('daily.co')) return link;
+  return `/video-call/${call.roomId}`;
+}
 
-// CTA label based on whether we are close to the scheduled time
-const joinCtaLabel = (scheduledAt?: number) => {
-  if (!scheduledAt) return 'Starts at TBD';
-  return isWithinJoinWindow(scheduledAt) ? 'Join Now' : `Starts at ${format(new Date(scheduledAt), 'p')}`;
-};
+function ScheduleDialog({
+  open,
+  onOpenChange,
+  patients,
+  defaultPlatform,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  patients: PatientLite[];
+  defaultPlatform: 'stream' | 'google_meet';
+}) {
+  const scheduleVideoCall = useMutation(api.videoCalls.scheduleVideoCall);
+  const [patientId, setPatientId] = useState('');
+  const [title, setTitle] = useState('Video session');
+  const [when, setWhen] = useState('');
+  const [duration, setDuration] = useState('45');
+  const [platform, setPlatform] = useState<'stream' | 'google_meet'>(defaultPlatform);
+  const [meetLink, setMeetLink] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [conflict, setConflict] = useState(false);
 
-export default function VideoCallsPage() {
-  const router = useRouter();
-  const [showNewCall, setShowNewCall] = useState(false);
-  const [selectedPatient, setSelectedPatient] = useState<Id<'users'> | ''>('');
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [title, setTitle] = useState('');
-  const [selectedPlatform, setSelectedPlatform] = useState<'stream' | 'google_meet'>('stream');
-  const [manualLink, setManualLink] = useState('');
-  const [activeCall, setActiveCall] = useState<VideoCall | null>(null);
-  const [invitePreviewOpen, setInvitePreviewOpen] = useState(false);
-  const [inviteDraft, setInviteDraft] = useState({
-    patientEmail: '',
-    patientName: '',
-    physiotherapistName: '',
-    callLink: '',
-    callTitle: '',
-    scheduledAt: '',
-    message: ''
-  });
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [confirmData, setConfirmData] = useState<{
-    patientName: string;
-    patientEmail: string;
-    scheduledTime: string;
-    title: string;
-    platform: string;
-  } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    // Next half hour, so the default is always in the future
+    const next = new Date(Date.now() + 30 * 60 * 1000);
+    next.setMinutes(next.getMinutes() < 30 ? 30 : 60, 0, 0);
+    setWhen(localDateTimeValue(next));
+    setPlatform(defaultPlatform);
+    setConflict(false);
+  }, [open, defaultPlatform]);
 
-  const videoCalls = useQuery(api.videoCalls.getMyVideoCalls, {}) as VideoCall[] | undefined;
-  const patients = useQuery(api.patients.getMyPatients, {}) as Patient[] | undefined;
-  const currentUser = useQuery(api.users.getMyUser);
-  const videoPlatformPreference = useQuery(api.physiotherapistProfiles.getVideoPlatformPreference);
+  const patient = patients.find((p) => p._id === patientId);
 
-  const createVideoCall = useAction(api.videoCalls.createVideoCall);
-  const sendVideoCallInvitation = useAction(api["actions/emails/sendVideoCallInvitation"].sendVideoCallInvitation)
-  const me = useQuery(api.users.getMyUser)
-  const startVideoCall = useMutation(api.videoCalls.startVideoCall);
-  const cancelVideoCall = useMutation(api.videoCalls.cancelVideoCall);
-
-  // Set default platform based on user preference
-  React.useEffect(() => {
-    if (videoPlatformPreference) {
-      setSelectedPlatform(videoPlatformPreference as 'stream' | 'google_meet');
+  const submit = async (force = false) => {
+    const scheduledAt = new Date(when).getTime();
+    if (!patientId) return toast.error('Choose a patient.');
+    if (!when || Number.isNaN(scheduledAt)) return toast.error('Choose a date and time.');
+    if (scheduledAt < Date.now() - 5 * 60 * 1000) return toast.error('Choose a time in the future.');
+    if (platform === 'google_meet' && !/^https:\/\/meet\.google\.com\//.test(meetLink.trim())) {
+      return toast.error('Paste a Google Meet link (https://meet.google.com/…).');
     }
-  }, [videoPlatformPreference]);
-
-  if (!videoCalls || !patients) {
-    return (
-      <div className="p-6">
-        <div className="space-y-6">
-          <Skeleton className="h-12 w-[250px]" />
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            <Skeleton className="h-[180px]" />
-            <Skeleton className="h-[180px]" />
-            <Skeleton className="h-[180px]" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const handleScheduleCall = async () => {
-    if (!selectedPatient || !scheduledAt || !title) {
-      toast.error('Please fill all required fields');
-      return;
-    }
-
-    if (selectedPlatform === 'google_meet' && !manualLink) {
-      toast.error('Please enter a Google Meet link');
-      return;
-    }
-
-    // Show confirmation dialog before creating call
-    const patient = (patients || []).find(p => String(p._id) === String(selectedPatient));
-    setConfirmData({
-      patientName: `${patient?.firstName || ''} ${patient?.lastName || ''}`.trim(),
-      patientEmail: patient?.email || 'No email on file',
-      scheduledTime: format(new Date(scheduledAt), 'PPP p'),
-      title,
-      platform: selectedPlatform === 'stream' ? 'Rehabify Video (Built-in)' : 'Google Meet'
-    });
-    setShowConfirmDialog(true);
-  };
-
-  const confirmScheduleCall = async () => {
-    if (!selectedPatient || !scheduledAt || !title) {
-      return;
-    }
-
-    setShowConfirmDialog(false);
-
+    setSaving(true);
     try {
-      let result;
-      let callLink;
-
-      if (selectedPlatform === 'stream') {
-        // Create the video call with Stream
-        result = await createVideoCall({
-          participants: [selectedPatient as Id<'users'>],
-          callType: 'appointment',
-          title,
-          settings: {
-            recordingEnabled: false,
-            chatEnabled: true,
-            maxParticipants: 10,
-            waitingRoomEnabled: false,
-            screenShareEnabled: true,
-            durationMinutes: 60
-          }
-        });
-
-        // Compose meeting link for invitations
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://physioaroundme.com')
-        callLink = `${baseUrl}/video-call/${result?.streamCallId || result?.roomId}`;
-      } else {
-        // Google Meet - use the manual link
-        callLink = manualLink;
-
-        // You could create a simpler video call record or skip Stream creation
-        // We use the manual link as the roomId equivalent for uniqueness if possible, or just a random one
-        const meetingId = `meet-${Date.now()}`;
-        result = { roomId: meetingId, streamCallId: meetingId };
-        // toast.info('Google Meet link saved.');
-      }
-
-      // Compose meeting link for invitations (legacy code below, now set above)
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://physioaroundme.com')
-      const legacyCallLink = `${baseUrl}/video-call/${result?.streamCallId || result?.roomId}`;
-
-      // Auto-send the invitation email (restores previous behavior)
-      try {
-        const patient = (patients || []).find(p => String(p._id) === String(selectedPatient))
-        if (patient?.email) {
-          await sendVideoCallInvitation({
-            patientEmail: patient.email,
-            patientName: `${patient?.firstName || ''} ${patient?.lastName || ''}`.trim() || undefined,
-            physiotherapistName: `${me?.firstName || ''} ${me?.lastName || ''}`.trim() || 'Your physiotherapist',
-            callLink,
-            callTitle: title,
-            scheduledAt: scheduledAt ? new Date(scheduledAt).getTime() : undefined,
-            message: undefined,
-          } as {
-            patientEmail: string;
-            patientName?: string;
-            physiotherapistName: string;
-            callLink: string;
-            callTitle?: string;
-            scheduledAt?: number;
-            message?: string;
-          })
-          toast.success('Invitation email sent')
-        } else {
-          toast.warning('Patient has no email on file. Please add an email or send manually.')
-        }
-      } catch (e) {
-        console.error(e)
-        toast.error('Failed to send invitation email')
-      }
-
-      // Open preview modal to confirm email before sending
-      const patient = (patients || []).find(p => String(p._id) === selectedPatient)
-      setInviteDraft({
-        patientEmail: patient?.email || '',
-        patientName: `${patient?.firstName || ''} ${patient?.lastName || ''}`.trim(),
-        physiotherapistName: `${me?.firstName || ''} ${me?.lastName || ''}`.trim() || 'Your physiotherapist',
-        callLink,
-        callTitle: title,
+      await scheduleVideoCall({
+        patientId: patientId as Id<'users'>,
         scheduledAt,
-        message: ''
-      })
-      setInvitePreviewOpen(true)
-
-      setShowNewCall(false);
-      setSelectedPatient('');
-      setTitle('');
-      setScheduledAt('');
-      // Reset to user's preference or default
-      setSelectedPlatform(videoPlatformPreference as 'stream' | 'google_meet' || 'stream');
-      toast.success('Video call scheduled successfully');
+        title: title.trim() || 'Video session',
+        notes: notes.trim() || undefined,
+        platform,
+        duration: Number(duration),
+        meetingLink: platform === 'google_meet' ? meetLink.trim() : undefined,
+        force: force || undefined,
+      });
+      playSound('booked');
+      toast.success(
+        patient?.email ? `Scheduled. ${patient.firstName ?? 'Your patient'} will get the link by email.` : 'Scheduled. Share the link with your patient.'
+      );
+      onOpenChange(false);
+      setPatientId('');
+      setNotes('');
+      setMeetLink('');
     } catch (error) {
-      console.error(error);
-      toast.error('Failed to schedule video call');
+      const message = String((error as Error)?.message ?? '');
+      if (message.includes('already exists close to this time')) setConflict(true);
+      else toast.error('Couldn’t schedule the session. Try again.');
+    } finally {
+      setSaving(false);
     }
   };
-
-  const handleStartCall = async (call: VideoCall) => {
-    try {
-      await startVideoCall({ callId: call._id });
-
-      // Route straight into the Stream call page (ignore any legacy Daily links)
-      const sanitizedLink = (call.meetingLink && !call.meetingLink.includes('daily.co'))
-        ? call.meetingLink
-        : `/video-call/${call.streamCallId || call.roomId}`;
-      router.push(sanitizedLink);
-
-      toast.success('Video call started');
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to start video call');
-    }
-  };
-
-  const handleCancelCall = async (callId: Id<"videoCalls">) => {
-    const reason = prompt("Please provide a reason for cancellation:");
-    if (!reason) {
-      toast.info("Cancellation aborted.");
-      return;
-    }
-    try {
-      await cancelVideoCall({ callId, reason });
-      toast.success('Video call cancelled');
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to cancel video call');
-    }
-  };
-
-  const handleEndCall = () => {
-    setActiveCall(null);
-    toast.success('Video call ended');
-  };
-
-  const handleInvite = async (call: VideoCall) => {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://physioaroundme.com')
-    const callLink = (call.meetingLink && !call.meetingLink.includes('daily.co'))
-      ? call.meetingLink
-      : `${baseUrl}/video-call/${call.streamCallId || call.roomId}`
-
-    const patient = call.patient || (patients || []).find(p => String(p._id) === String(call.patientId))
-    setInviteDraft({
-      patientEmail: patient?.email || '',
-      patientName: `${patient?.firstName || ''} ${patient?.lastName || ''}`.trim(),
-      physiotherapistName: `${me?.firstName || ''} ${me?.lastName || ''}`.trim() || 'Your physiotherapist',
-      callLink,
-      callTitle: call?.title || 'Telehealth Session',
-      scheduledAt: call.scheduledAt ? new Date(call.scheduledAt).toISOString().slice(0, 16) : '',
-      message: ''
-    })
-    setInvitePreviewOpen(true)
-  }
-
-  // If there's an active call, show the StreamVideoCallManager
-  if (activeCall) {
-    return (
-      <StreamVideoCallManager
-        appointmentId={undefined}
-        defaultParticipants={activeCall.patientId ? [activeCall.patientId] : []}
-        onCallEnd={handleEndCall}
-      />
-    );
-  }
-
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Video Calls</h1>
-          <p className="text-gray-500">Manage your telehealth sessions</p>
-        </div>
-        <Button onClick={() => setShowNewCall(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          New Call
-        </Button>
-      </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Schedule a video session</DialogTitle>
+          <DialogDescription>Your patient gets an email with the link to join.</DialogDescription>
+        </DialogHeader>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {videoCalls.map((call: VideoCall) => (
-          <Card key={call._id}>
-            <CardHeader>
-              <div className="flex items-center justify-between mb-2">
-                <Badge variant={call.status === 'scheduled' ? 'default' : 'secondary'}>
-                  {statusLabel(call.status)}
-                </Badge>
-                <Badge variant="outline" className={call.platform === 'google_meet' || (call.meetingLink && !call.meetingLink.includes('daily.co') && !call.streamCallId) ? "bg-purple-50 text-purple-700 border-purple-200" : ""}>
-                  {call.platform === 'google_meet' || (call.meetingLink && !call.meetingLink.includes('daily.co') && !call.streamCallId) ? 'Google Meet' : 'Stream'}
-                </Badge>
-              </div>
-
-              {/* Thumbnail / Visual Header */}
-              <div className={`h-32 w-full rounded-md mb-4 flex items-center justify-center ${call.platform === 'google_meet' || (call.meetingLink && !call.meetingLink.includes('daily.co') && !call.streamCallId)
-                ? 'bg-gradient-to-br from-purple-100 to-blue-50 border-2 border-dashed border-purple-200'
-                : 'bg-slate-100'
-                }`}>
-                {call.platform === 'google_meet' || (call.meetingLink && !call.meetingLink.includes('daily.co') && !call.streamCallId) ? (
-                  <div className="text-center">
-                    <div className="bg-white p-3 rounded-full shadow-sm inline-flex mb-2">
-                      <Video className="h-8 w-8 text-purple-600" />
-                    </div>
-                    <p className="text-xs font-medium text-purple-900">Google Meet</p>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <div className="bg-white p-3 rounded-full shadow-sm inline-flex mb-2">
-                      <Video className="h-8 w-8 text-blue-600" />
-                    </div>
-                    <p className="text-xs font-medium text-blue-900">Rehabify Video</p>
-                  </div>
-                )}
-              </div>
-
-              <CardTitle className="text-lg">{call.patient?.firstName} {call.patient?.lastName}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex items-center text-sm text-gray-500">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  {call.scheduledAt
-                    ? format(new Date(call.scheduledAt), 'PPP')
-                    : call.startTime
-                      ? format(new Date(call.startTime), 'PPP')
-                      : 'No date scheduled'
-                  }
-                </div>
-                <div className="flex items-center text-sm text-gray-500">
-                  <Clock className="h-4 w-4 mr-2" />
-                  {call.scheduledAt
-                    ? format(new Date(call.scheduledAt), 'p')
-                    : call.startTime
-                      ? format(new Date(call.startTime), 'p')
-                      : 'No time scheduled'
-                  }
-                </div>
-                {call.notes && (
-                  <p className="text-sm text-gray-500 mt-2">{call.notes}</p>
-                )}
-                <div className="flex space-x-2 mt-4">
-                  <Button
-                    className="flex-1"
-                    onClick={() => handleStartCall(call)}
-                    disabled={!isWithinJoinWindow(call.scheduledAt, 10)}
-                  >
-                    <Video className="h-4 w-4 mr-2" />
-                    {joinCtaLabel(call.scheduledAt)}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleInvite(call)}
-                  >
-                    Invite
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      // Copy a Stream meeting link (fallback to Stream route if legacy Daily link is present)
-                      const computed = (call.meetingLink && !call.meetingLink.includes('daily.co'))
-                        ? call.meetingLink
-                        : `${window.location.origin}/video-call/${call.streamCallId || call.roomId}`
-                      try {
-                        if (navigator.clipboard?.writeText) {
-                          await navigator.clipboard.writeText(computed)
-                          toast.success('Meeting link copied')
-                        } else {
-                          const textArea = document.createElement('textarea')
-                          textArea.value = computed
-                          document.body.appendChild(textArea)
-                          textArea.select()
-                          const successful = document.execCommand('copy')
-                          document.body.removeChild(textArea)
-                          if (successful) {
-                            toast.success('Meeting link copied')
-                          } else {
-                            throw new Error('Fallback copy failed')
-                          }
-                        }
-                      } catch {
-                        toast.error('Unable to copy to clipboard. Please copy the link manually.')
-                      }
-                    }}
-                  >
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copy Link
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="icon"
-                    onClick={() => handleCancelCall(call._id)}
-                    disabled={call.status !== 'scheduled'}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* New Call Modal */}
-      <Dialog open={showNewCall} onOpenChange={setShowNewCall}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Schedule a New Video Call</DialogTitle>
-            <DialogDescription>
-              Select a patient and time; after creating the call, we’ll email them a unique join link. They join from their own device.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="title">Call Title</Label>
-              <Textarea id="title" placeholder="e.g., Follow-up session for John Doe" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label>Patient</Label>
+            <Select value={patientId} onValueChange={setPatientId}>
+              <SelectTrigger>
+                <SelectValue placeholder={patients.length ? 'Choose a patient' : 'No patients yet'} />
+              </SelectTrigger>
+              <SelectContent>
+                {patients.map((p) => (
+                  <SelectItem key={p._id} value={p._id}>
+                    {fullName(p)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {patient && !patient.email && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">This patient has no email on file. You’ll need to send the link yourself.</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="call-title">Title</Label>
+            <Input id="call-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_8rem]">
+            <div className="space-y-1.5">
+              <Label htmlFor="call-when">Date and time</Label>
+              <Input id="call-when" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
             </div>
-            <div>
-              <Label htmlFor="patient">Patient</Label>
-              <Select onValueChange={(v) => setSelectedPatient(v as unknown as Id<'users'>)} value={(selectedPatient as unknown as string) || ''}>
+            <div className="space-y-1.5">
+              <Label>Length</Label>
+              <Select value={duration} onValueChange={setDuration}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a patient" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(patients ?? []).map((patient: Patient) => (
-                    <SelectItem key={patient!._id} value={patient!._id as unknown as string}>
-                      {patient!.firstName} {patient!.lastName}
+                  {['30', '45', '60', '90'].map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m} min
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {selectedPatient && (
-                <div className="mt-3">
-                  <PatientProfileMiniCard patientId={selectedPatient as Id<'users'>} />
-                </div>
-              )}
             </div>
-            <div>
-              <Label htmlFor="scheduledAt">Date and Time</Label>
-              <input type="datetime-local" id="scheduledAt" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className="w-full p-2 border rounded-md" />
-            </div>
-
-            {/* Video Platform Selection */}
-            <div>
-              <Label htmlFor="platform">Video Platform</Label>
-              <Select onValueChange={(v) => setSelectedPlatform(v as 'stream' | 'google_meet')} value={selectedPlatform}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select video platform" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="stream">
-                    <div className="flex items-center gap-2">
-                      <Video className="h-4 w-4 text-blue-600" />
-                      <span>Rehabify Video (Built-in)</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="google_meet">
-                    <div className="flex items-center gap-2">
-                      <Video className="h-4 w-4 text-purple-600" />
-                      <span>Google Meet</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-
-              {selectedPlatform === 'google_meet' && (
-                <div className="mt-3 space-y-3">
-                  <div>
-                    <Label htmlFor="meetingLink">Google Meet Link</Label>
-                    <Input
-                      id="meetingLink"
-                      placeholder="https://meet.google.com/..."
-                      value={manualLink}
-                      onChange={(e) => setManualLink(e.target.value)}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Create a meeting in Google Calendar and paste the link here.
-                    </p>
-                  </div>
-
-                  {/* Thumbnail Preview */}
-                  {manualLink && (
-                    <div className="h-24 w-full rounded-md bg-gradient-to-br from-purple-100 to-blue-50 border-2 border-dashed border-purple-200 flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="bg-white p-2 rounded-full shadow-sm inline-flex mb-1">
-                          <Video className="h-5 w-5 text-purple-600" />
-                        </div>
-                        <p className="text-xs font-medium text-purple-900">Google Meet Preview</p>
-                      </div>
-                    </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Where</Label>
+            <div className="grid grid-cols-2 rounded-lg border border-neutral-200 p-0.5 dark:border-white/[0.07]" role="radiogroup">
+              {(
+                [
+                  ['stream', 'Rehabify video'],
+                  ['google_meet', 'Google Meet'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={platform === value}
+                  onClick={() => setPlatform(value)}
+                  className={cn(
+                    'rounded-md py-1.5 text-sm transition-colors',
+                    platform === value
+                      ? 'bg-neutral-900 font-medium text-white dark:bg-white dark:text-neutral-950'
+                      : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white'
                   )}
-                </div>
-              )}
-
-              <p className="text-xs text-gray-500 mt-1">
-                {selectedPlatform === 'stream'
-                  ? '✓ Professional video with recording and screen sharing'
-                  : '✓ Familiar Google interface with calendar integration'}
-              </p>
+                >
+                  {label}
+                </button>
+              ))}
             </div>
+            {platform === 'google_meet' && (
+              <Input
+                className="mt-2"
+                value={meetLink}
+                onChange={(e) => setMeetLink(e.target.value)}
+                placeholder="https://meet.google.com/abc-defg-hij"
+                aria-label="Google Meet link"
+              />
+            )}
           </div>
-          <Button onClick={handleScheduleCall} className="w-full">
-            Schedule Call
+          <div className="space-y-1.5">
+            <Label htmlFor="call-notes">Note for your patient (optional)</Label>
+            <Textarea id="call-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Wear loose clothing and have a chair nearby." />
+          </div>
+          {conflict && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              This patient already has a session close to this time.
+              <button type="button" className="ml-1 font-medium underline" onClick={() => submit(true)}>
+                Schedule anyway
+              </button>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
           </Button>
-        </DialogContent>
-      </Dialog>
+          <Button onClick={() => submit(false)} disabled={saving} className={primaryButtonClass}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Schedule
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-      {/* Confirmation Dialog */}
-      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Video Call</DialogTitle>
-            <DialogDescription>
-              Please review the call details before scheduling.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
-              <div className="flex justify-between">
-                <span className="font-medium text-gray-700">Patient:</span>
-                <span className="text-gray-900">{confirmData?.patientName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium text-gray-700">Email:</span>
-                <span className="text-gray-900">{confirmData?.patientEmail}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium text-gray-700">Time:</span>
-                <span className="text-gray-900">{confirmData?.scheduledTime}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium text-gray-700">Title:</span>
-                <span className="text-gray-900">{confirmData?.title}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-medium text-gray-700">Platform:</span>
-                <span className="text-gray-900">{confirmData?.platform}</span>
-              </div>
-            </div>
-            <p className="text-sm text-gray-600">
-              An email invitation with the join link will be automatically sent to the patient.
-            </p>
+export default function VideoCallsPage() {
+  const router = useRouter();
+  const calls = useQuery(api.videoCalls.getMyVideoCalls, {}) as VideoCall[] | undefined;
+  const patients = useQuery(api.patients.getMyPatients, { limit: 200 }) as PatientLite[] | undefined;
+  const platformPreference = useQuery(api.physiotherapistProfiles.getVideoPlatformPreference) as string | null | undefined;
+  const startVideoCall = useMutation(api.videoCalls.startVideoCall);
+  const cancelVideoCall = useMutation(api.videoCalls.cancelVideoCall);
+
+  const [scheduling, setScheduling] = useState(false);
+  const [cancelling, setCancelling] = useState<VideoCall | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [now, setNow] = useState(() => Date.now());
+
+  // Re-check join windows every 30 seconds
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const { upcoming, past } = useMemo(() => {
+    const list = calls ?? [];
+    const isOpen = (call: VideoCall) => {
+      if (call.status === 'active') return true;
+      if (call.status !== 'scheduled') return false;
+      const start = call.scheduledAt ?? call.startTime ?? 0;
+      return start + (call.plannedDuration ?? 60) * 60 * 1000 > now;
+    };
+    return {
+      upcoming: list.filter(isOpen).sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0)),
+      past: list.filter((call) => !isOpen(call)).slice(0, 20),
+    };
+  }, [calls, now]);
+
+  const canJoin = (call: VideoCall) => {
+    if (call.status === 'active') return true;
+    if (call.status !== 'scheduled') return false;
+    const start = call.scheduledAt ?? 0;
+    return start - JOIN_EARLY_MS <= now && now <= start + (call.plannedDuration ?? 60) * 60 * 1000;
+  };
+
+  const join = async (call: VideoCall) => {
+    try {
+      await startVideoCall({ callId: call._id });
+    } catch {
+      // Starting only records the start time; joining still works
+    }
+    const href = callHref(call);
+    if (href.startsWith('/')) router.push(href);
+    else window.open(href, '_blank', 'noopener');
+  };
+
+  const copyLink = async (call: VideoCall) => {
+    const href = callHref(call);
+    const absolute = href.startsWith('/') ? `${window.location.origin}${href}` : href;
+    try {
+      await navigator.clipboard.writeText(absolute);
+      toast.success('Link copied');
+    } catch {
+      toast.error('Couldn’t copy the link');
+    }
+  };
+
+  const confirmCancel = async () => {
+    if (!cancelling) return;
+    try {
+      await cancelVideoCall({ callId: cancelling._id, reason: cancelReason.trim() || undefined });
+      toast.success('Session cancelled');
+    } catch {
+      toast.error('Couldn’t cancel the session');
+    } finally {
+      setCancelling(null);
+      setCancelReason('');
+    }
+  };
+
+  const row = (call: VideoCall, isUpcoming: boolean) => {
+    const start = call.scheduledAt ?? call.startTime;
+    return (
+      <li key={call._id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{fullName(call.patient)}</p>
+            {callStatus(call)}
+            {call.platform === 'google_meet' && <StatusBadge>Google Meet</StatusBadge>}
           </div>
-          <div className="flex gap-2">
-            <Button className="flex-1" onClick={confirmScheduleCall}>
-              Confirm & Schedule
-            </Button>
-            <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+          <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+            {start ? whenLabel(start) : 'No time set'}
+            {call.plannedDuration ? ` · ${call.plannedDuration} min` : ''}
+            {call.title ? ` · ${call.title}` : ''}
+          </p>
+        </div>
+        {isUpcoming && (
+          <div className="flex shrink-0 items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setCancelling(call)} className="text-neutral-500">
               Cancel
             </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Invite Preview Modal */}
-      <Dialog open={invitePreviewOpen} onOpenChange={setInvitePreviewOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Send Video Call Invitation</DialogTitle>
-            <DialogDescription>Review and confirm before sending the email invite.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Email</Label>
-                <Input
-                  value={inviteDraft.patientEmail}
-                  onChange={(e) => setInviteDraft({ ...inviteDraft, patientEmail: e.target.value })}
-                  placeholder="patient@example.com"
-                />
-              </div>
-              <div>
-                <Label>Patient Name</Label>
-                <Input
-                  value={inviteDraft.patientName}
-                  onChange={(e) => setInviteDraft({ ...inviteDraft, patientName: e.target.value })}
-                  placeholder="Patient name"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Call Title</Label>
-                <Input
-                  value={inviteDraft.callTitle}
-                  onChange={(e) => setInviteDraft({ ...inviteDraft, callTitle: e.target.value })}
-                  placeholder="Telehealth Session"
-                />
-              </div>
-              <div>
-                <Label>Scheduled At</Label>
-                <Input
-                  type="datetime-local"
-                  value={inviteDraft.scheduledAt}
-                  onChange={(e) => setInviteDraft({ ...inviteDraft, scheduledAt: e.target.value })}
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Join Link</Label>
-              <Input value={inviteDraft.callLink} readOnly />
-            </div>
-            <div>
-              <Label>Message (optional)</Label>
-              <Textarea
-                placeholder="Add a short personal message"
-                value={inviteDraft.message}
-                onChange={(e) => setInviteDraft({ ...inviteDraft, message: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              className="flex-1"
-              onClick={async () => {
-                if (!inviteDraft.patientEmail) {
-                  toast.error('Patient email is required')
-                  return
-                }
-                try {
-                  await sendVideoCallInvitation({
-                    patientEmail: inviteDraft.patientEmail,
-                    patientName: inviteDraft.patientName || undefined,
-                    physiotherapistName: `${me?.firstName || ''} ${me?.lastName || ''}`.trim() || 'Your physiotherapist',
-                    callLink: inviteDraft.callLink,
-                    callTitle: inviteDraft.callTitle || undefined,
-                    scheduledAt: inviteDraft.scheduledAt || undefined,
-                    message: inviteDraft.message || undefined,
-                  } as {
-                    patientEmail: string;
-                    patientName?: string;
-                    physiotherapistName: string;
-                    callLink: string;
-                    callTitle?: string;
-                    scheduledAt?: number;
-                    message?: string;
-                  })
-                  setInvitePreviewOpen(false)
-                  toast.success('Invitation email sent')
-                } catch (e) {
-                  console.error(e)
-                  toast.error('Failed to send invitation email')
-                }
-              }}
-            >
-              Send Invitation
+            <Button variant="outline" size="sm" onClick={() => copyLink(call)}>
+              <Copy className="mr-1.5 h-3.5 w-3.5" />
+              Link
             </Button>
-            <Button variant="outline" onClick={() => setInvitePreviewOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => join(call)} disabled={!canJoin(call)} className={primaryButtonClass}>
+              {canJoin(call) ? 'Join' : start ? `Opens ${format(start - JOIN_EARLY_MS, 'h:mm a')}` : 'Join'}
+            </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+        )}
+      </li>
+    );
+  };
+
+  return (
+    <PageContainer>
+      <PageHeader
+        title="Video sessions"
+        description="Online sessions with your patients. Join opens 10 minutes before the start."
+        actions={
+          <Button onClick={() => setScheduling(true)} className={primaryButtonClass} disabled={!patients}>
+            <Plus className="mr-2 h-4 w-4" />
+            Schedule a session
+          </Button>
+        }
+      />
+
+      <Panel title="Upcoming">
+        {calls === undefined ? (
+          <div className="space-y-3 p-4">
+            {[0, 1].map((i) => (
+              <Skeleton key={i} className="h-14 rounded-lg" />
+            ))}
+          </div>
+        ) : upcoming.length === 0 ? (
+          <EmptyState
+            icon={<Video className="h-8 w-8" />}
+            title="No video sessions coming up"
+            description="Schedule one here, or book an online appointment from the calendar."
+          />
+        ) : (
+          <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">{upcoming.map((call) => row(call, true))}</ul>
+        )}
+      </Panel>
+
+      {past.length > 0 && (
+        <Panel title="Past">
+          <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">{past.map((call) => row(call, false))}</ul>
+        </Panel>
+      )}
+
+      <ScheduleDialog
+        open={scheduling}
+        onOpenChange={setScheduling}
+        patients={patients ?? []}
+        defaultPlatform={platformPreference === 'google_meet' ? 'google_meet' : 'stream'}
+      />
+
+      <AlertDialog open={cancelling !== null} onOpenChange={(open) => !open && setCancelling(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel this session?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cancelling ? `Let ${fullName(cancelling.patient)} know, so they don’t wait for you.` : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            rows={2}
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            placeholder="Reason (optional)"
+            aria-label="Reason for cancelling"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmCancel} className="bg-red-600 text-white hover:bg-red-700">
+              Cancel session
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </PageContainer>
   );
 }

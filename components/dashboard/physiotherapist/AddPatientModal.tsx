@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import { UserPlus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import AddPatientDirectForm from './AddPatientDirectForm'
 
 interface AddPatientModalProps {
@@ -14,32 +14,27 @@ interface AddPatientModalProps {
 export default function AddPatientModal({ trigger, onSuccess }: AddPatientModalProps) {
   const [isOpen, setIsOpen] = useState(false)
 
-  const handleSuccess = () => {
-    setIsOpen(false)
-    onSuccess?.()
-  }
-
-  const handleCancel = () => {
-    setIsOpen(false)
-  }
-
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         {trigger || (
           <Button>
             <UserPlus className="mr-2 h-4 w-4" />
-            Add Patient
+            Add patient
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Add New Patient</DialogTitle>
+      <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border-0 p-6 sm:max-w-lg dark:bg-rh-ink-2">
+        <DialogHeader className="text-left">
+          <DialogTitle className="text-xl font-semibold tracking-tight text-rh-night dark:text-white">Add a patient</DialogTitle>
+          <DialogDescription>Invite them to Rehabify so you can share plans, messages and bookings.</DialogDescription>
         </DialogHeader>
         <AddPatientDirectForm
-          onSuccess={handleSuccess}
-          onCancel={handleCancel}
+          onSuccess={() => {
+            setIsOpen(false)
+            onSuccess?.()
+          }}
+          onCancel={() => setIsOpen(false)}
         />
       </DialogContent>
     </Dialog>

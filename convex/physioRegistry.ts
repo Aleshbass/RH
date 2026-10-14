@@ -7,7 +7,7 @@
  */
 
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { ensureUserRole } from "./auth";
 
 // ── Helper: Generate URL slug from license number ───────
@@ -60,6 +60,9 @@ export const submitRegistration = mutation({
     referredByLicense: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Stray spaces from copy-paste must not create a second listing for the same licence
+    args.licenseNumber = args.licenseNumber.trim();
+
     // Check for duplicate license number
     const existing = await ctx.db
       .query("physioRegistry")
@@ -90,7 +93,7 @@ export const submitRegistration = mutation({
 
         return { success: true, id: existing._id, slug: generateSlug(args.licenseNumber), resubmission: true };
       }
-      throw new Error("A registration with this license number already exists.");
+      throw new ConvexError("This licence number is already on the register. Sign in to manage that profile, or contact support@rehabify.ng if it isn't yours.");
     }
 
     const slug = generateSlug(args.licenseNumber);

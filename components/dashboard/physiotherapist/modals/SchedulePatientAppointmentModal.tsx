@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import CalendarBookingWidget from "@/components/marketplace/CalendarBookingWidget";
 import { toast } from "sonner";
+import { playSound } from '@/lib/sounds';
 import {
     Loader2,
     ArrowLeft,
@@ -147,6 +148,7 @@ export default function SchedulePatientAppointmentModal({
                 notesForTherapist: notes || undefined,
             });
 
+            playSound('booked');
             toast.success("Appointment scheduled!", {
                 description: `Appointment with ${patientName} has been confirmed.`,
             });

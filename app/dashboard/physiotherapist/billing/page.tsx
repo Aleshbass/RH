@@ -1,480 +1,342 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useMutation, useQuery } from 'convex/react';
+import { format } from 'date-fns';
+import { Download, Plus, Receipt, Search } from 'lucide-react';
+import { toast } from 'sonner';
+import { playSound } from '@/lib/sounds';
 import { api } from '@/convex/_generated/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { Id } from '@/convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import {
-  Receipt,
-  DollarSign,
-  Download,
-  Search,
-  AlertTriangle,
-  FileText,
-  Eye,
-  Send,
-  CreditCard,
-  Building2,
-  WalletCards
-} from 'lucide-react';
-import { format } from 'date-fns';
-import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useRouter } from 'next/navigation';
-
-import { Id } from '@/convex/_generated/dataModel';
-import { Patient } from '@/app/types';
-
-// Simple type definition to avoid complex inference
-
-// Import billing components
+import { Skeleton } from '@/components/ui/skeleton';
 import { SimpleInvoiceModal } from '@/components/billing/SimpleInvoiceModal';
-import { BankAccountConnection } from '@/components/billing/BankAccountConnection';
-
-// Type definitions
-
-
-interface BillingStats {
-  totalRevenue: number;
-  invoicesSent: number;
-  outstandingAmount: number;
-  overdueInvoices: number;
-}
+import { CreateInvoiceModal } from '@/components/dashboard/physiotherapist/modals/CreateInvoiceModal';
+import { EmptyState, PageContainer, PageHeader, Panel, StatTile, StatusBadge, primaryButtonClass } from '@/components/physio/ui';
 
 type InvoiceFromQuery = {
-  _id: Id<"invoices">;
+  _id: Id<'invoices'>;
   invoiceNumber: string;
   patientName: string;
-  totalAmount: number;
+  patientEmail?: string;
+  patientPhone?: string;
+  totalAmount: number; // kobo
   currency: string;
-  status: "draft" | "pending" | "sent" | "paid" | "overdue" | "void" | "partial_payment";
+  status: string;
   issueDate: number;
   dueDate: number;
   paymentDate?: number;
   isOverdue: boolean;
 };
 
-// Type definitions
-// Type definitions
+type BillingStats = {
+  totalRevenue: number;
+  pendingPayments: number;
+  overdueInvoices: number; // a count, not an amount
+  paidInvoices: number;
+  monthlyRevenue: number;
+};
 
-// Custom hook for data fetching - optimizations have resolved deep instantiation issues
-function useBillingData() {
-  const patients = useQuery(api.patients.getMyPatients, { limit: 100 });
-  const invoices = useQuery(api.billing.getMyInvoices, {});
-  const billingStats = useQuery(api.billing.getBillingStats, {});
+const STATUS_OPTIONS = [
+  ['all', 'All invoices'],
+  ['draft', 'Draft'],
+  ['sent', 'Sent'],
+  ['partial_payment', 'Part paid'],
+  ['overdue', 'Overdue'],
+  ['paid', 'Paid'],
+  ['void', 'Void'],
+] as const;
 
-  return { patients, invoices, billingStats };
+function formatKobo(amount: number, currency = 'NGN') {
+  return (amount / 100).toLocaleString('en-NG', { style: 'currency', currency, maximumFractionDigits: 0 });
 }
 
-interface BankAccount { isDefault?: boolean; accountName?: string }
+function invoiceStatus(invoice: InvoiceFromQuery) {
+  if (invoice.isOverdue && invoice.status !== 'paid' && invoice.status !== 'void') return <StatusBadge tone="red">Overdue</StatusBadge>;
+  switch (invoice.status) {
+    case 'paid':
+      return <StatusBadge tone="green">Paid</StatusBadge>;
+    case 'partial_payment':
+      return <StatusBadge tone="amber">Part paid</StatusBadge>;
+    case 'sent':
+    case 'pending':
+      return <StatusBadge tone="teal">Sent</StatusBadge>;
+    case 'void':
+      return <StatusBadge>Void</StatusBadge>;
+    default:
+      return <StatusBadge>Draft</StatusBadge>;
+  }
+}
 
 export default function BillingPage() {
-  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceFromQuery | null>(null);
-  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const router = useRouter();
+  const invoices = useQuery(api.billing.getMyInvoices, { limit: 200 }) as InvoiceFromQuery[] | undefined;
+  const stats = useQuery(api.billing.getBillingStats, {}) as BillingStats | undefined;
+  const patients = useQuery(api.patients.getMyPatients, { limit: 200 }) as
+    | { _id: string; firstName?: string; lastName?: string; email?: string; phoneNumber?: string }[]
+    | undefined;
+  const bankAccounts = useQuery(api.paystack.getMyBankAccounts) as { accountName?: string; bankName?: string }[] | undefined;
 
-  const { patients, invoices, billingStats } = useBillingData() as {
-    patients: Patient[] | undefined;
-    invoices: InvoiceFromQuery[] | undefined;
-    billingStats: BillingStats | undefined;
-  };
-  // Connected payout account status
-  const bankAccounts = useQuery(api.paystack.getMyBankAccounts as never);
-  const accounts: BankAccount[] = Array.isArray(bankAccounts) ? (bankAccounts as unknown as BankAccount[]) : [];
-  const defaultAccount: BankAccount | undefined = accounts.find((a) => a?.isDefault) || accounts[0];
-
-  // Mutations
   const sendInvoice = useMutation(api.billing.sendInvoice);
   const recordPayment = useMutation(api.billing.recordPayment);
   const generateInvoicePDF = useMutation(api.billing.generateInvoicePDF);
 
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selected, setSelected] = useState<InvoiceFromQuery | null>(null);
+  const [creating, setCreating] = useState(false);
   const [isInitiatingLoan, setIsInitiatingLoan] = useState(false);
 
-  const filteredInvoices = useMemo(() => {
-    return invoices?.filter((invoice: InvoiceFromQuery) => {
-      const patientName = invoice.patientName.toLowerCase();
-
+  const filtered = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return (invoices ?? []).filter((invoice) => {
       const matchesSearch =
-        invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        patientName.includes(searchTerm.toLowerCase());
-
-      const matchesStatus = statusFilter === 'all' || invoice.status === statusFilter;
-
+        !term || invoice.invoiceNumber.toLowerCase().includes(term) || invoice.patientName.toLowerCase().includes(term);
+      const matchesStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'overdue' ? invoice.isOverdue && invoice.status !== 'paid' : invoice.status === statusFilter);
       return matchesSearch && matchesStatus;
     });
   }, [invoices, searchTerm, statusFilter]);
 
-
-  const handleSendInvoice = useCallback(async (invoiceId: Id<"invoices">) => {
-    try {
-      await sendInvoice({ invoiceId: invoiceId });
-      toast.success('Invoice sent successfully');
-    } catch (error) {
-      toast.error('Failed to send invoice');
-      console.error('Send invoice error:', error);
-    }
-  }, [sendInvoice]);
-
-  const handleRecordPayment = useCallback(async (invoiceId: Id<"invoices">, amount: number, method: string) => {
-    try {
-      await recordPayment({
-        invoiceId: invoiceId,
-        paymentAmount: Math.round(amount * 100), // Convert to kobo
-        paymentMethod: method,
-        paymentReference: `PAY-${Date.now()}`,
-        notes: 'Payment recorded via dashboard'
-      });
-      toast.success('Payment recorded successfully');
-    } catch (error) {
-      toast.error('Failed to record payment');
-      console.error('Record payment error:', error);
-    }
-  }, [recordPayment]);
-
-  const handleDownloadPDF = useCallback(async (invoiceId: Id<"invoices">) => {
-    try {
-      const result = await generateInvoicePDF({ invoiceId });
-      if (result.pdfUrl) {
-        window.open(result.pdfUrl, '_blank');
-      } else {
-        toast.error('PDF URL not found in response.');
+  const handleSend = useCallback(
+    async (invoiceId: Id<'invoices'>) => {
+      try {
+        await sendInvoice({ invoiceId });
+        toast.success('Invoice sent');
+      } catch {
+        toast.error('Couldn’t send the invoice');
       }
-    } catch (error) {
-      toast.error('Failed to download invoice PDF');
-      console.error('Download PDF error:', error);
-    }
-  }, [generateInvoicePDF]);
+    },
+    [sendInvoice]
+  );
 
-  const handleInitiateMediLoan = useCallback(async (invoice: InvoiceFromQuery) => {
-    setIsInitiatingLoan(true);
-    try {
-      // Match patient by ID first, then fall back to normalized name comparison
-      const activePatient = patients?.find(p => {
-        if ((invoice as any).patientId && p._id === (invoice as any).patientId) return true;
-        const pName = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim().toLowerCase();
-        const iName = (invoice.patientName ?? '').trim().toLowerCase();
-        return pName.length > 0 && pName === iName;
-      });
+  const handleRecordPayment = useCallback(
+    async (invoiceId: Id<'invoices'>, amount: number, method: string) => {
+      try {
+        await recordPayment({
+          invoiceId,
+          paymentAmount: Math.round(amount * 100),
+          paymentMethod: method,
+          paymentReference: `MANUAL-${Date.now()}`,
+          notes: 'Recorded from the dashboard',
+        });
+        playSound('paid');
+        toast.success('Payment recorded');
+      } catch {
+        toast.error('Couldn’t record the payment');
+      }
+    },
+    [recordPayment]
+  );
 
-      // Validate phone number before calling external API
-      const phoneNumber = (invoice as any).patientPhone || (activePatient as any)?.phone || (activePatient as any)?.phoneNumber || '';
-      if (!phoneNumber) {
-        toast.error('Patient phone number is required to initiate MediLoan. Please update the patient profile.');
+  const handleDownload = useCallback(
+    async (invoiceId: Id<'invoices'>) => {
+      try {
+        const result = await generateInvoicePDF({ invoiceId });
+        if (result.pdfUrl) window.open(result.pdfUrl, '_blank', 'noopener');
+        else toast.error('The PDF isn’t ready yet. Try again in a moment.');
+      } catch {
+        toast.error('Couldn’t create the PDF');
+      }
+    },
+    [generateInvoicePDF]
+  );
+
+  // MediLoan lets a patient spread the cost of an invoice; started from the invoice dialog
+  const handleInitiateMediLoan = useCallback(
+    async (invoice: InvoiceFromQuery) => {
+      setIsInitiatingLoan(true);
+      try {
+        const patient = patients?.find((p) => {
+          const full = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim().toLowerCase();
+          return full.length > 0 && full === invoice.patientName.trim().toLowerCase();
+        });
+        const phoneNumber = invoice.patientPhone || patient?.phoneNumber || '';
+        if (!phoneNumber) {
+          toast.error('Add the patient’s phone number first. MediLoan sends them a text to continue.');
+          return;
+        }
+        const response = await fetch('/api/myitura/initiate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patientId: patient?._id,
+            firstName: patient?.firstName || invoice.patientName.split(' ')[0],
+            lastName: patient?.lastName || invoice.patientName.split(' ').slice(1).join(' ') || 'Patient',
+            email: invoice.patientEmail || patient?.email,
+            phoneNumber,
+            treatment: `Invoice ${invoice.invoiceNumber}`,
+            treatmentAmount: invoice.totalAmount,
+            invoiceReference: invoice.invoiceNumber,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'MediLoan request failed');
+        toast.success('MediLoan started. We’ve texted the patient the next steps.', { duration: 6000 });
+      } catch (error) {
+        toast.error((error as Error).message || 'Couldn’t start MediLoan');
+      } finally {
         setIsInitiatingLoan(false);
-        return;
       }
+    },
+    [patients]
+  );
 
-      const response = await fetch('/api/myitura/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patientId: activePatient?._id || undefined,
-          firstName: activePatient?.firstName || invoice.patientName.split(' ')[0],
-          lastName: activePatient?.lastName || invoice.patientName.split(' ').slice(1).join(' ') || 'Patient',
-          email: (invoice as any).patientEmail || activePatient?.email || undefined,
-          phoneNumber,
-          treatment: invoice.invoiceNumber ? `Invoice ${invoice.invoiceNumber}` : 'General Physiotherapy',
-          treatmentAmount: invoice.totalAmount, // Already in kobo
-          invoiceReference: invoice.invoiceNumber || undefined,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to initiate MediLoan');
-      }
-
-      toast.success(
-        `MediLoan initiated! SMS sent to patient. Ref: ${data.data.sdkReference}`,
-        { duration: 6000 }
-      );
-    } catch (error: any) {
-      toast.error("Failed to initiate loan: " + error.message);
-    } finally {
-      setIsInitiatingLoan(false);
-    }
-  }, [patients]);
-
-
-
-  const getStatusBadge = useCallback((status: string, isOverdue?: boolean) => {
-    if (isOverdue && status !== 'paid') {
-      return <Badge variant="destructive">Overdue</Badge>;
-    }
-    switch (status) {
-      case 'paid': return <Badge variant="default" className="bg-green-500 text-white">Paid</Badge>;
-      case 'pending': return <Badge variant="secondary" className="bg-blue-500 text-white">Pending</Badge>;
-      case 'sent': return <Badge variant="secondary">Sent</Badge>;
-      case 'partial_payment': return <Badge variant="secondary" className="bg-yellow-500 text-white">Partial</Badge>;
-      case 'overdue': return <Badge variant="destructive">Overdue</Badge>;
-      case 'draft': return <Badge variant="outline">Draft</Badge>;
-      default: return <Badge variant="outline">{status}</Badge>;
-    }
-  }, []);
-
-  const formatCurrency = useCallback((amount: number, currency = 'NGN') => {
-    return (amount / 100).toLocaleString('en-NG', { style: 'currency', currency });
-  }, []);
-
-  if (!patients || !invoices || !billingStats) {
-    return <div>Loading...</div>; // Or a skeleton loader
-  }
-
-  const handleRowClick = (invoice: InvoiceFromQuery) => {
-    const fullInvoiceDetails = {
-      ...invoice,
-      // We don't have this from the list view, so we'll pass what we have
-      patient: {
-        firstName: invoice.patientName.split(' ')[0],
-        lastName: invoice.patientName.split(' ').slice(1).join(' '),
-      },
-      patientEmail: (invoice as InvoiceFromQuery & { patientEmail?: string }).patientEmail,
-      patientPhone: (invoice as InvoiceFromQuery & { patientPhone?: string }).patientPhone,
-    };
-    setSelectedInvoice(fullInvoiceDetails);
-    setIsInvoiceModalOpen(true);
-  };
+  const payout = bankAccounts?.[0];
+  const statValue = (value: number | undefined, asMoney = true) =>
+    stats === undefined ? '–' : asMoney ? formatKobo(value ?? 0) : String(value ?? 0);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Billing & Invoices</h1>
-          <p className="text-muted-foreground">
-            Manage invoices, track payments, and handle billing
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Building2 className="mr-2 h-4 w-4" />
-                {defaultAccount ? (
-                  <span className="flex items-center gap-2">
-                    <span className="inline-flex h-2 w-2 rounded-full bg-green-500" />
-                    {defaultAccount?.accountName || 'Account Connected'}
-                  </span>
-                ) : (
-                  'Bank Account'
-                )}
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Connect Bank Account</DialogTitle>
-                <DialogDescription>
-                  Connect or update your payout account to receive funds from patient payments. You can remove or replace your account anytime.
-                </DialogDescription>
-              </DialogHeader>
-              <BankAccountConnection />
-            </DialogContent>
-          </Dialog>
-          <Button
-            variant="outline"
-            className="border-green-600 text-green-700 hover:bg-green-50"
-            onClick={() => router.push('/dashboard/physiotherapist/mediloan')}
-          >
-            <WalletCards className="mr-2 h-4 w-4" />
-            MediLoan
+    <PageContainer>
+      <PageHeader
+        title="Billing"
+        description="Invoices you’ve sent and payments you’ve received."
+        actions={
+          <Button onClick={() => setCreating(true)} className={primaryButtonClass}>
+            <Plus className="mr-2 h-4 w-4" />
+            New invoice
           </Button>
+        }
+      />
+
+      {bankAccounts !== undefined && !payout && (
+        <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-500/30 dark:bg-amber-500/10 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-amber-900 dark:text-amber-200">Add a payout account so patient payments can reach you.</p>
+          <Link href="/dashboard/physiotherapist/settings/payout" className="shrink-0 font-medium text-amber-900 underline dark:text-amber-200">
+            Add account
+          </Link>
         </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatTile label="Received this month" value={statValue(stats?.monthlyRevenue)} />
+        <StatTile label="Received in total" value={statValue(stats?.totalRevenue)} hint={stats ? `${stats.paidInvoices} paid invoices` : undefined} />
+        <StatTile label="Waiting for payment" value={statValue(stats?.pendingPayments)} />
+        <StatTile
+          label="Overdue"
+          value={statValue(stats?.overdueInvoices, false)}
+          hint="invoices past their due date"
+          tone={stats && stats.overdueInvoices > 0 ? 'attention' : 'default'}
+        />
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {billingStats ? formatCurrency(billingStats.totalRevenue || 0) : '₦0'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              This month
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Outstanding</CardTitle>
-            <Receipt className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {billingStats ? formatCurrency(billingStats.outstandingAmount || 0) : '₦0'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Unpaid invoices
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Overdue</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {billingStats ? formatCurrency(billingStats.overdueInvoices || 0) : '₦0'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Past due date
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Invoices</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {invoices?.length || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Total invoices
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Invoice Management</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search invoices by number or patient name..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-            <div className="sm:w-48">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="sent">Sent</SelectItem>
-                  <SelectItem value="paid">Paid</SelectItem>
-                  <SelectItem value="overdue">Overdue</SelectItem>
-                  <SelectItem value="void">Void</SelectItem>
-                  <SelectItem value="partial_payment">Partial Payment</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+      <Panel
+        title="Invoices"
+        description={payout ? `Payouts go to ${payout.bankName ?? 'your bank'} · ${payout.accountName ?? ''}` : undefined}
+      >
+        <div className="flex flex-col gap-2 border-b border-neutral-100 p-4 dark:border-white/[0.07] sm:flex-row sm:px-5">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <Input
+              placeholder="Search by invoice number or patient"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+              aria-label="Search invoices"
+            />
           </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="sm:w-44" aria-label="Filter by status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-          {/* Invoices List */}
-          <div className="space-y-3">
-            {filteredInvoices && filteredInvoices.length > 0 ? (
-              filteredInvoices.map((invoice: InvoiceFromQuery) => (
-                <div key={invoice._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
-                  <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
-                      <Receipt className="h-5 w-5 text-green-600" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">#{invoice.invoiceNumber}</p>
-                        {getStatusBadge(invoice.status, invoice.isOverdue)}
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {invoice.patientName || 'Unknown Patient'}
-                      </p>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>Issued: {format(new Date(invoice.issueDate), 'MMM d, yyyy, h:mm a')}</span>
-                        <span>Due: {format(new Date(invoice.dueDate), 'MMM d, yyyy, h:mm a')}</span>
-                        <span className="font-medium">{formatCurrency(invoice.totalAmount, invoice.currency)}</span>
-                      </div>
-                    </div>
+        {invoices === undefined ? (
+          <div className="space-y-3 p-4">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-14 rounded-lg" />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={<Receipt className="h-8 w-8" />}
+            title={invoices.length === 0 ? 'No invoices yet' : 'No invoices match'}
+            description={
+              invoices.length === 0
+                ? 'Use invoices for sessions that weren’t paid when they were booked.'
+                : 'Try a different search or status.'
+            }
+            action={
+              invoices.length === 0 && (
+                <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
+                  Create an invoice
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+            {filtered.map((invoice) => (
+              <li key={invoice._id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                <button
+                  type="button"
+                  onClick={() => setSelected(invoice)}
+                  className="min-w-0 flex-1 text-left"
+                  aria-label={`Open invoice ${invoice.invoiceNumber}`}
+                >
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                    <p className="truncate text-sm font-medium text-neutral-900 dark:text-white">{invoice.patientName}</p>
+                    {invoiceStatus(invoice)}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleRowClick(invoice)}
-                    >
-                      <Eye className="h-3 w-3" />
+                  <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                    #{invoice.invoiceNumber} · Issued {format(invoice.issueDate, 'd MMM yyyy')} · Due {format(invoice.dueDate, 'd MMM')}
+                  </p>
+                </button>
+                <p className="shrink-0 text-sm font-semibold tabular-nums text-neutral-900 dark:text-white">
+                  {formatKobo(invoice.totalAmount, invoice.currency)}
+                </p>
+                <div className="flex shrink-0 items-center gap-1">
+                  {invoice.status === 'draft' && (
+                    <Button size="sm" variant="outline" onClick={() => handleSend(invoice._id)} className="hidden sm:inline-flex">
+                      Send
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleDownloadPDF(invoice._id)}
-                    >
-                      <Download className="h-3 w-3" />
-                    </Button>
-                    {invoice.status === 'draft' && (
-                      <Button
-                        size="sm"
-                        onClick={() => handleSendInvoice(invoice._id)}
-                      >
-                        <Send className="h-3 w-3 mr-1" />
-                        Send
-                      </Button>
-                    )}
-                    {(invoice.status === 'pending' || invoice.status === 'sent' || invoice.status === 'overdue') && (
-                      <Button
-                        size="sm"
-                        onClick={() => handleRecordPayment(invoice._id, invoice.totalAmount / 100, 'bank_transfer')}
-                      >
-                        <CreditCard className="h-3 w-3 mr-1" />
-                        Record Payment
-                      </Button>
-                    )}
-                  </div>
+                  )}
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => handleDownload(invoice._id)}
+                    aria-label={`Download invoice ${invoice.invoiceNumber}`}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
                 </div>
-              ))
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Receipt className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No invoices found</p>
-                <p className="text-sm">Create your first invoice to get started</p>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
 
-      {/* Invoice Detail Modal */}
-      {selectedInvoice && (
+      <CreateInvoiceModal isOpen={creating} onClose={() => setCreating(false)} />
+
+      {selected && (
         <SimpleInvoiceModal
-          isOpen={isInvoiceModalOpen && selectedInvoice !== null}
-          selectedInvoice={selectedInvoice}
-          onClose={() => {
-            setIsInvoiceModalOpen(false);
-            setSelectedInvoice(null);
-          }}
-          onSend={async () => handleSendInvoice(selectedInvoice._id)}
-          onRecordPayment={async (amount: number, method: string) => handleRecordPayment(selectedInvoice._id, amount, method)}
-          onDownload={async () => handleDownloadPDF(selectedInvoice._id)}
-          onInitiateMediLoan={handleInitiateMediLoan as any}
+          isOpen
+          selectedInvoice={{
+            ...selected,
+            patient: {
+              firstName: selected.patientName.split(' ')[0],
+              lastName: selected.patientName.split(' ').slice(1).join(' '),
+            },
+          } as never}
+          onClose={() => setSelected(null)}
+          onSend={() => handleSend(selected._id)}
+          onRecordPayment={(amount: number, method: string) => handleRecordPayment(selected._id, amount, method)}
+          onDownload={() => handleDownload(selected._id)}
+          onInitiateMediLoan={handleInitiateMediLoan as never}
           isInitiatingLoan={isInitiatingLoan}
         />
       )}
-    </div>
+    </PageContainer>
   );
-} 
+}

@@ -461,26 +461,22 @@ export const getPhysiotherapistStats = query({
     // Fetch invoices
     const invoices = await ctx.db
       .query("invoices")
-      .filter((q) => q.eq(q.field("physiotherapistId"), user._id))
+      .withIndex("by_physiotherapist_id", (q) => q.eq("physiotherapistId", user._id))
       .collect();
 
-    // Calculate Earnings
-    let totalEarnings = 0;
-    let pendingEarnings = 0;
+    // Earnings are money actually received; drafts and voided invoices count for nothing,
+    // and invoices that were sent but not paid are "pending". Amounts are stored in kobo.
     let paidEarnings = 0;
-
-    invoices.forEach((invoice) => {
-      // Amounts are in kobo/cents
-      const amount = invoice.totalAmount / 100;
-      totalEarnings += amount;
-      // Assuming invoice has a status field, though schema showed status in verificationBadge?
-      // Let's use a safe access or just assume it's there for now.
-      if ((invoice as any).status === 'paid') {
-        paidEarnings += amount;
-      } else {
-        pendingEarnings += amount;
+    let pendingEarnings = 0;
+    const paidInvoices = invoices.filter((invoice) => invoice.status === "paid");
+    for (const invoice of invoices) {
+      if (invoice.status === "paid") {
+        paidEarnings += (invoice.paidAmount ?? invoice.totalAmount) / 100;
+      } else if (invoice.status !== "draft" && invoice.status !== "void") {
+        pendingEarnings += (invoice.totalAmount - (invoice.paidAmount ?? 0)) / 100;
       }
-    });
+    }
+    const totalEarnings = paidEarnings;
 
     // Calculate Appointment Stats
     const totalAppointments = appointments.length;
@@ -490,10 +486,10 @@ export const getPhysiotherapistStats = query({
 
     // Calculate Monthly Earnings (Simple aggregation for chart)
     const monthlyEarnings: Record<string, number> = {};
-    invoices.forEach((invoice) => {
-      const date = new Date(invoice.issueDate);
+    paidInvoices.forEach((invoice) => {
+      const date = new Date(invoice.paymentDate ?? invoice.issueDate);
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      monthlyEarnings[key] = (monthlyEarnings[key] || 0) + (invoice.totalAmount / 100);
+      monthlyEarnings[key] = (monthlyEarnings[key] || 0) + ((invoice.paidAmount ?? invoice.totalAmount) / 100);
     });
 
     const earningsChartData = Object.entries(monthlyEarnings)
