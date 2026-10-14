@@ -174,6 +174,125 @@ export function verifyInboundSignature(
     return { valid: false, debug: { ...debug, error: `signature mismatch (our key: ${keys})` } };
 }
 
+// ── TEMPORARY: signature diagnostics ────────────────────
+// Remove once AwaDoc signatures verify in production (Oct 2026).
+
+const sha256Hex = (input: string) => crypto.createHash("sha256").update(input).digest("hex");
+
+/** Headers that must never be stored, even in a diagnostic log. */
+const UNLOGGED_HEADERS = new Set(["cookie", "authorization", "proxy-authorization"]);
+
+export interface SignatureDiagnostics {
+    receivedAt: string;
+    serverUnixSeconds: number;
+    timestampHeader: string | null;
+    timestampSkewSeconds: number | null;
+    receivedSignature: string;
+    headers: Array<{ name: string; value: string }>;
+    rawBodyLength: number;
+    rawBody: string;
+    rawBodyTruncated: boolean;
+    bodySha256: string;
+    /** sha256 of the body re-serialised as compact JSON, to spot formatting differences */
+    compactJsonSha256: string | null;
+    prettyJsonSha256: string | null;
+    keys: Array<{ label: string; fingerprint: string }>;
+    /** Which (canonical string, key, encoding) combinations reproduce the received signature */
+    matchingVariants: string[];
+    variantsTried: number;
+}
+
+/**
+ * Explain why an inbound signature failed, for the admin AwaDoc dashboard.
+ * Never records the secret or any signature we computed: only whether a
+ * candidate scheme reproduces the one AwaDoc sent.
+ */
+export function diagnoseInboundSignature(
+    rawBody: string,
+    timestampHeader: string | null,
+    signature: string,
+    headers: Headers
+): SignatureDiagnostics {
+    const config = getAwadocConfig();
+    const now = Math.floor(Date.now() / 1000);
+    const ts = timestampHeader ?? "";
+    const tsNum = Number(timestampHeader);
+
+    let compact: string | null = null;
+    let pretty: string | null = null;
+    try {
+        const parsed = JSON.parse(rawBody);
+        compact = JSON.stringify(parsed);
+        pretty = JSON.stringify(parsed, null, 2);
+    } catch {
+        // Not JSON — leave the re-serialised hashes empty
+    }
+
+    const bodyHash = sha256Hex(rawBody);
+    const compactHash = compact === null ? null : sha256Hex(compact);
+
+    const canonicals: Array<[string, string]> = [
+        ["sha256(body)+\\n+ts (ours)", `${bodyHash}\n${ts}`],
+        ["sha256(body)+ts", `${bodyHash}${ts}`],
+        ["sha256(body)+.+ts", `${bodyHash}.${ts}`],
+        ["ts+\\n+sha256(body)", `${ts}\n${bodyHash}`],
+        ["ts+.+sha256(body)", `${ts}.${bodyHash}`],
+        ["sha256(body)", bodyHash],
+        ["body", rawBody],
+        ["ts+.+body", `${ts}.${rawBody}`],
+        ["ts+body", `${ts}${rawBody}`],
+        ["body+ts", `${rawBody}${ts}`],
+        ["ts+\\n+body", `${ts}\n${rawBody}`],
+    ];
+    if (compact !== null && compactHash !== null && compact !== rawBody) {
+        canonicals.push(
+            ["sha256(compactJson)+\\n+ts", `${compactHash}\n${ts}`],
+            ["compactJson", compact],
+            ["ts+.+compactJson", `${ts}.${compact}`]
+        );
+    }
+
+    const keys: Array<{ label: string; value: string }> = config.secretKeys.map((value, i) => ({
+        label: `AWADOC_SECRET_KEY[${i}]`,
+        value,
+    }));
+    if (config.apiKey) keys.push({ label: "AWADOC_API_KEY", value: config.apiKey });
+
+    const received = signature.trim().replace(/^sha256=/i, "");
+    const matchingVariants: string[] = [];
+    for (const [name, canonical] of canonicals) {
+        for (const key of keys) {
+            const mac = crypto.createHmac("sha256", key.value).update(canonical).digest();
+            if (received.toLowerCase() === mac.toString("hex")) matchingVariants.push(`${name} | ${key.label} | hex`);
+            if (received === mac.toString("base64")) matchingVariants.push(`${name} | ${key.label} | base64`);
+        }
+    }
+
+    const headerList: Array<{ name: string; value: string }> = [];
+    headers.forEach((value, name) => {
+        if (!UNLOGGED_HEADERS.has(name.toLowerCase())) headerList.push({ name, value });
+    });
+
+    const MAX_BODY = 20_000;
+    return {
+        receivedAt: new Date().toISOString(),
+        serverUnixSeconds: now,
+        timestampHeader,
+        timestampSkewSeconds: Number.isFinite(tsNum) && timestampHeader ? now - tsNum : null,
+        receivedSignature: signature,
+        headers: headerList,
+        rawBodyLength: rawBody.length,
+        rawBody: rawBody.slice(0, MAX_BODY),
+        rawBodyTruncated: rawBody.length > MAX_BODY,
+        bodySha256: bodyHash,
+        compactJsonSha256: compactHash,
+        prettyJsonSha256: pretty === null ? null : sha256Hex(pretty),
+        keys: keys.map((k) => ({ label: k.label, fingerprint: secretFingerprint(k.value) })),
+        matchingVariants,
+        variantsTried: canonicals.length * keys.length,
+    };
+}
+
 /**
  * Sign an outbound payload before sending to AwaDoc's callback endpoint.
  */

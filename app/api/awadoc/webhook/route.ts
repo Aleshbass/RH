@@ -18,6 +18,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import crypto from "crypto";
 import {
     verifyInboundSignature,
+    diagnoseInboundSignature,
     sendCallbackEvent,
     AWADOC_SPECIALIST_TYPE,
     AWADOC_SPECIALIST_TYPES,
@@ -62,13 +63,20 @@ export async function POST(request: NextRequest) {
         if (!verification.valid) {
             // Never echo verification details to the caller: they would let anyone forge a signature.
             console.warn("[AwaDoc] Invalid signature for event:", eventId, verification.debug);
-            // Record the rejection without storing the unverified body. Prefixed id so an
-            // unverified request cannot overwrite the log entry of a genuine event.
+            // TEMPORARY (Oct 2026): store headers + raw body so admins can compare with AwaDoc
+            // on /dashboard/admin/awadoc. Remove once signatures verify in production.
+            let diagnostics: unknown = null;
+            try {
+                diagnostics = diagnoseInboundSignature(rawBody, timestampHeader, signature, request.headers);
+            } catch (diagErr) {
+                diagnostics = { error: diagErr instanceof Error ? diagErr.message : String(diagErr) };
+            }
+            // Prefixed id so an unverified request cannot overwrite the log entry of a genuine event.
             await logEvent(
                 `rejected:${eventId.slice(0, 120)}`,
                 String(body?.event_type ?? "unknown").slice(0, 120),
                 "inbound",
-                { rejected: "invalid signature", bodyLength: rawBody.length },
+                { rejected: "invalid signature", bodyLength: rawBody.length, diagnostics },
                 null,
                 "error",
                 verification.debug?.error ?? "Signature verification failed"
