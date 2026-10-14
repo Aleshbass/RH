@@ -11,7 +11,8 @@ import { getConvexClient } from "@/lib/convex-client";
 import { convexServerSecret } from "@/lib/convex-server-secret";
 
 export async function POST(request: NextRequest) {
-    const convex = getConvexClient();
+    // Untyped client: the full generated api type is too deep for tsc to instantiate here
+    const convex = getConvexClient() as any;
     let body: { therapyId: string; guestToken: string };
 
     try {
