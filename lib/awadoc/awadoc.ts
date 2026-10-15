@@ -179,8 +179,25 @@ export function verifyInboundSignature(
 
 const sha256Hex = (input: string) => crypto.createHash("sha256").update(input).digest("hex");
 
-/** Headers that must never be stored, even in a diagnostic log. */
-const UNLOGGED_HEADERS = new Set(["cookie", "authorization", "proxy-authorization"]);
+/**
+ * Only these headers are stored. An allowlist, because the platform adds its own
+ * request headers (e.g. x-vercel-oidc-token) that carry short-lived credentials.
+ */
+const LOGGED_HEADERS = new Set([
+    "content-type",
+    "content-length",
+    "content-encoding",
+    "user-agent",
+    "date",
+    "x-event-id",
+    "x-signature",
+    "x-timestamp",
+]);
+const isLoggedHeader = (name: string) => {
+    const n = name.toLowerCase();
+    if (n.startsWith("x-vercel") || n.startsWith("x-clerk")) return false;
+    return LOGGED_HEADERS.has(n) || n.includes("awadoc") || n.includes("signature") || n.includes("timestamp");
+};
 
 export interface SignatureDiagnostics {
     receivedAt: string;
@@ -270,7 +287,7 @@ export function diagnoseInboundSignature(
 
     const headerList: Array<{ name: string; value: string }> = [];
     headers.forEach((value, name) => {
-        if (!UNLOGGED_HEADERS.has(name.toLowerCase())) headerList.push({ name, value });
+        if (isLoggedHeader(name)) headerList.push({ name, value });
     });
 
     const MAX_BODY = 20_000;
