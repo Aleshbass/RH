@@ -45,14 +45,15 @@ def format_duration(duration_minutes: int) -> str:
 
 def appointment_confirmation_text(
     *, provider_name: str, session_start: datetime, duration_minutes: int, service_mode: str,
-    booking_code: str, meeting_url: str | None = None,
+    booking_code: str | None, meeting_url: str | None = None,
 ) -> str:
     mode = "online " if service_mode == "online" else ""
     lines = [
         f"Your {mode}appointment with {provider_name} is on "
         f"{format_lagos_appointment_time(session_start)} and will last {format_duration(duration_minutes)}.",
-        f"Your booking code is: {booking_code}.",
     ]
+    if booking_code:
+        lines.append(f"Your booking code is: {booking_code}.")
     if meeting_url:
         lines.append(f"Join securely here: {meeting_url}")
     lines.extend([
@@ -67,27 +68,33 @@ def appointment_reminder_text(reminder: AppointmentReminder) -> str:
     attendance_instruction = "Please join now." if reminder.service_mode == "online" else "Please arrive now."
     early_instruction = "Please join a few minutes early." if reminder.service_mode == "online" else "Please arrive a few minutes early."
     if reminder.reminder_kind == AT_APPOINTMENT_START:
-        return (
+        text = (
             f"Your {mode}appointment with {reminder.provider_name} starts now. "
-            f"Your booking code is {reminder.rh_booking_id}. "
             f"{attendance_instruction}"
         )
-    return (
+    else:
+        text = (
         f"Reminder: your {mode}appointment with {reminder.provider_name} starts in 30 minutes "
         f"at {format_lagos_appointment_time(reminder.session_start)}. "
-        f"Your booking code is {reminder.rh_booking_id}. "
         f"{early_instruction}"
-    )
+        )
+    if reminder.booking_code:
+        text += f" Your booking code is {reminder.booking_code}."
+    if reminder.service_mode == "online" and reminder.meeting_url:
+        text += f" Join here: {reminder.meeting_url}"
+    return text
 
 
 def appointment_rescheduled_text(
-    *, provider_name: str, session_start: datetime, duration_minutes: int, service_mode: str, booking_code: str,
+    *, provider_name: str, session_start: datetime, duration_minutes: int, service_mode: str, booking_code: str | None,
+    meeting_url: str | None = None,
 ) -> str:
     mode = "online " if service_mode == "online" else ""
     return (
         f"Your {mode}appointment with {provider_name} has been rescheduled to "
         f"{format_lagos_appointment_time(session_start)} and will last {format_duration(duration_minutes)}. "
-        f"Your booking code is: {booking_code}. Your secure joining link remains the same."
+        + (f" Your booking code is: {booking_code}." if booking_code else "")
+        + (f" Join securely here: {meeting_url}" if service_mode == "online" and meeting_url else " Your secure joining link remains the same.")
     )
 
 
@@ -101,6 +108,8 @@ def schedule_appointment_reminder(
     service_mode: str,
     session_start: datetime,
     duration_minutes: int,
+    booking_code: str | None = None,
+    meeting_url: str | None = None,
 ) -> list[AppointmentReminder]:
     """Create/update the 30-minute and appointment-start reminders for an RH booking.
 
@@ -134,6 +143,8 @@ def schedule_appointment_reminder(
                 session_start=session_start,
                 reminder_at=reminder_at,
                 duration_minutes=duration_minutes,
+                booking_code=booking_code,
+                meeting_url=meeting_url,
                 status="skipped" if kind == THIRTY_MINUTES_BEFORE and reminder_at <= now else "pending",
             )
             session.add(reminder)
@@ -145,6 +156,8 @@ def schedule_appointment_reminder(
             reminder.session_start = session_start
             reminder.reminder_at = reminder_at
             reminder.duration_minutes = duration_minutes
+            reminder.booking_code = booking_code
+            reminder.meeting_url = meeting_url
         elif reminder.session_start != session_start:
             # A moved appointment needs fresh notifications at its new times;
             # the previous delivery remains visible in the audit log.
@@ -155,6 +168,8 @@ def schedule_appointment_reminder(
             reminder.session_start = session_start
             reminder.reminder_at = reminder_at
             reminder.duration_minutes = duration_minutes
+            reminder.booking_code = booking_code
+            reminder.meeting_url = meeting_url
             reminder.status = "skipped" if kind == THIRTY_MINUTES_BEFORE and reminder_at <= now else "pending"
             reminder.whatsapp_sent_at = None
             reminder.email_sent_at = None

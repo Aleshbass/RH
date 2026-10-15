@@ -19,7 +19,7 @@ def test_confirmation_text_has_provider_lagos_time_duration_and_link():
         session_start=start,
         duration_minutes=60,
         service_mode="online",
-        booking_code="w97a9h3h9yp13q18pbezxjb3ss8fdspj",
+        booking_code="K7P3XQ9M",
         meeting_url="https://rehabifyhealth.com/video-call/joy-123",
     )
 
@@ -27,7 +27,7 @@ def test_confirmation_text_has_provider_lagos_time_duration_and_link():
     assert "Test Chidi Nwosu" in text
     assert "1st Oct at 12pm WAT" in text
     assert "1 hour" in text
-    assert "w97a9h3h9yp13q18pbezxjb3ss8fdspj" in text
+    assert "K7P3XQ9M" in text
     assert "https://rehabifyhealth.com/video-call/joy-123" in text
     assert "not refundable" in text
 
@@ -49,13 +49,16 @@ def test_start_time_reminder_says_the_appointment_starts_now():
         service_mode="online",
         provider_name="Test Ada Okafor",
         rh_booking_id="JOY-TEST-123",
+        booking_code="K7P3XQ9M",
+        meeting_url="https://physioaroundme.com/v/K7P3XQ9M",
     )
 
     text = appointment_reminder_text(reminder)
 
     assert "starts now" in text
     assert "Test Ada Okafor" in text
-    assert "JOY-TEST-123" in text
+    assert "K7P3XQ9M" in text
+    assert "https://physioaroundme.com/v/K7P3XQ9M" in text
 
 
 def test_rescheduled_message_has_the_new_appointment_details():
@@ -65,8 +68,10 @@ def test_rescheduled_message_has_the_new_appointment_details():
         duration_minutes=20,
         service_mode="online",
         booking_code="JOY-TEST-123",
+        meeting_url="https://physioaroundme.com/v/JOY-TEST-123",
     )
 
     assert "rescheduled" in text
     assert "1st Oct at 12pm WAT" in text
     assert "20 minutes" in text
+    assert "https://physioaroundme.com/v/JOY-TEST-123" in text

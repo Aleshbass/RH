@@ -59,7 +59,7 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
         if patient:
             booking_id = str(data.get("booking_id") or "")
             _mark_rh_booking_confirmed(session, patient, booking_id)
-            details = _appointment_details(booking_id, rh_patient_id)
+            details = _event_appointment_details(_appointment_details(booking_id, rh_patient_id), data)
             email = _appointment_email(session, patient)
             _schedule_reminder_from_details(session, booking_id, patient, details, email=email)
             conversation = _patient_conversation(session, patient)
@@ -67,7 +67,7 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
             # In that case it has already supplied the complete confirmation.
             if not data.get("defer_patient_notification") and not _has_notified_meeting_link(conversation, booking_id):
                 text = (
-                    appointment_confirmation_text(**details, booking_code=booking_id)
+                    appointment_confirmation_text(**details)
                     if details is not None
                     else "Your appointment is confirmed. I’ll send your appointment details here."
                 )
@@ -130,11 +130,11 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
         patient = session.get(Patient, mapping.joy_person_id) if mapping else None
         if patient and meeting_url.startswith("https://"):
             booking_id = str(data.get("booking_id") or "")
-            details = _appointment_details(
+            details = _event_appointment_details(_appointment_details(
                 booking_id,
                 rh_patient_id,
                 fallback_start_ms=data.get("start_time"),
-            )
+            ), data)
             email = _appointment_email(session, patient)
             _schedule_reminder_from_details(session, booking_id, patient, details, email=email)
             enqueue_booking_confirmed(
@@ -142,7 +142,7 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
                 booking_id,
                 (
                     appointment_confirmation_text(
-                        **details, booking_code=booking_id, meeting_url=meeting_url
+                        **details
                     )
                     if details is not None
                     else f"Your online appointment is ready. Join securely here: {meeting_url}"
@@ -159,11 +159,13 @@ async def receive_event(request: Request, settings: Settings = Depends(get_setti
         patient = session.get(Patient, mapping.joy_person_id) if mapping else None
         if patient:
             booking_id = str(data.get("booking_id") or "")
-            details = _appointment_details(booking_id, rh_patient_id, fallback_start_ms=data.get("start_time"))
+            details = _event_appointment_details(
+                _appointment_details(booking_id, rh_patient_id, fallback_start_ms=data.get("start_time")), data
+            )
             email = _appointment_email(session, patient)
             _schedule_reminder_from_details(session, booking_id, patient, details, email=email)
             text = (
-                appointment_rescheduled_text(**details, booking_code=booking_id)
+                appointment_rescheduled_text(**details)
                 if details is not None
                 else "Your appointment has been rescheduled. I’ll send the updated details here shortly."
             )
@@ -276,6 +278,8 @@ def _appointment_details(
         "session_start": appointment_start_from_ms(start_ms),
         "duration_minutes": int(duration) if isinstance(duration, (int, float)) and duration > 0 else 60,
         "service_mode": str(status.get("service_mode") or "online"),
+        "booking_code": _short_booking_code(status.get("booking_code")),
+        "meeting_url": _safe_meeting_url(status.get("meeting_url")),
     }
 
 
@@ -296,6 +300,31 @@ def _schedule_reminder_from_details(
            payload={"event": "appointment_reminders_scheduled", "booking_id": booking_id,
                     "reminder_at": (details["session_start"] - timedelta(minutes=30)).isoformat(),
                     "start_reminder_at": details["session_start"].isoformat()})
+
+
+def _short_booking_code(value: object) -> str | None:
+    """Use only RH's patient-facing booking code; never disclose aggregate IDs."""
+    code = str(value or "").strip()
+    return code if 1 <= len(code) <= 32 else None
+
+
+def _safe_meeting_url(value: object) -> str | None:
+    url = str(value or "").strip()
+    return url if url.startswith("https://") else None
+
+
+def _event_appointment_details(details: dict | None, data: dict) -> dict | None:
+    """Prefer signed RH event values when they accompany an appointment lookup."""
+    if details is None:
+        return None
+    resolved = dict(details)
+    event_code = _short_booking_code(data.get("booking_code"))
+    event_url = _safe_meeting_url(data.get("meeting_url"))
+    if event_code:
+        resolved["booking_code"] = event_code
+    if event_url:
+        resolved["meeting_url"] = event_url
+    return resolved
 
 
 def _prepare_replacement(session: Session, data: dict) -> None:

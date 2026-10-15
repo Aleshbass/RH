@@ -18,6 +18,10 @@ class AppointmentReminder(Base):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     rh_booking_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    # RH's aggregate ID remains internal. Patient messages use this short,
+    # stable code and public meeting URL instead.
+    booking_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    meeting_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     reminder_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="thirty_minutes_before")
     patient_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("patients.id"), nullable=False, index=True
