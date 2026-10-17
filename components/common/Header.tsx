@@ -11,6 +11,7 @@ import {
   NavbarButton,
   MobileNavToggle,
 } from "@/components/ui/resizable-navbar";
+import { LearnAnnouncementBar } from "@/components/learn/LearnAnnouncementBar";
 import {
   ChevronDown,
   ChevronRight,
@@ -53,7 +54,7 @@ interface DropdownItem {
   name: string;
   href: string;
   subtitle?: string;
-  icon?: React.ElementType;
+  icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   badge?: string;
 }
 
@@ -62,7 +63,7 @@ interface NavItem {
   name: string;
   href?: string;
   type: "link" | "dropdown";
-  icon?: React.ElementType;
+  icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   badge?: string;
   items?: DropdownItem[];
 }
@@ -321,6 +322,13 @@ const navLinks: NavItem[] = [
     badge: "Learn",
     items: [
       {
+        name: "MSK Specialist Program",
+        href: "/learn",
+        subtitle: "Live online cohort with certificate",
+        icon: Award,
+        badge: "New",
+      },
+      {
         name: "Courses",
         href: "https://www.rehabifylearn.com",
         subtitle: "Continuing professional development",
@@ -473,6 +481,9 @@ export default function Header() {
 
   return (
     <div ref={scrollRef} className="fixed inset-x-0 top-0 z-50 w-full h-16">
+      {/* MSK Specialist Program announcement (only while an admin has a cohort live) */}
+      <LearnAnnouncementBar collapsed={visible} />
+
       {/* Desktop Navigation */}
       <motion.div
         animate={{

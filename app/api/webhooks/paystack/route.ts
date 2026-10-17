@@ -4,6 +4,8 @@ import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'
 import { callJoyConvexGateway } from '@/lib/joy-integration/convex-gateway'
 import { deliverJoyEvent } from '@/lib/joy-integration/events'
+import { convexServerSecret } from '@/lib/convex-server-secret'
+import { SERVER_SECRET_HEADER } from '@/app/api/emails/_auth'
 
 /**
  * Paystack Webhook Handler
@@ -215,6 +217,21 @@ async function handlePaymentSuccess(data: {
             return
         }
 
+        // Rehabify Learn registrations (LEARN_ references): Convex re-verifies the signature,
+        // takes the registration from the reference, checks the amount and emails the
+        // confirmation (idempotent with the browser's own verify call).
+        if (String(data.reference || '').startsWith('LEARN_')) {
+            const result = await convex.mutation(api.learn.recordLearnPaystackWebhook, {
+                rawBody,
+                signature,
+            })
+            log.info('Learn registration payment processed', {
+                action: 'paystack_learn_payment',
+                metadata: { reference: data.reference, result },
+            })
+            return
+        }
+
         // 2. Regular Invoice Payments
         log.info('Processing regular invoice payment', { action: 'regular_payment_path' });
 
@@ -239,7 +256,7 @@ async function handlePaymentSuccess(data: {
             action: 'paystack_success_handler_error',
             extra: { reference: data.reference }
         })
-        if (String(data.reference || '').startsWith('JOY_') || String(data.reference || '').startsWith('MKT_') || String(data.reference || '').startsWith('VERIFICATION_')) throw error
+        if (String(data.reference || '').startsWith('JOY_') || String(data.reference || '').startsWith('MKT_') || String(data.reference || '').startsWith('VERIFICATION_') || String(data.reference || '').startsWith('LEARN_')) throw error
     }
 }
 
@@ -285,6 +302,10 @@ async function handlePaymentFailed(data: {
             // would lose the patient's retry guidance. Ask Paystack to retry.
             if (String(data.reference || '').startsWith('JOY_')) throw joyError;
         }
+
+        // A failed Learn checkout leaves the registration pending, so the person can simply
+        // pay again; it is not an invoice and gets no invoice emails.
+        if (String(data.reference || '').startsWith('LEARN_')) return
 
         const { ConvexHttpClient } = await import('convex/browser')
         const { api } = await import('@/convex/_generated/api') as any
@@ -362,7 +383,8 @@ async function sendPaymentEmails(params: {
 
         await fetch(`${baseUrl}${endpoint}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            // The email routes only accept our own server (or a signed-in admin)
+            headers: { 'Content-Type': 'application/json', [SERVER_SECRET_HEADER]: convexServerSecret() },
             body: JSON.stringify({
                 reference: params.reference,
                 amount: params.amount,

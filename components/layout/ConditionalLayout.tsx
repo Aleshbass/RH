@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Header from "@/components/common/Header"
 import Footer from '@/components/landing/Footer'
+import { LearnAnnouncementSpacer } from '@/components/learn/LearnAnnouncementBar'
 
 import { useState, useEffect } from 'react'
 
@@ -92,6 +93,7 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
     <>
       {showHeader && <Header />}
       <main className={isDashboardRoute || isStandaloneRoute ? "min-h-screen" : "flex-grow"}>
+        {showHeader && <LearnAnnouncementSpacer />}
         {children}
       </main>
       {showFooter && <Footer />}

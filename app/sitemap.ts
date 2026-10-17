@@ -35,6 +35,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily',
       priority: 0.8, // Important for SEO content
     },
+    {
+      url: `${baseUrl}/learn`,
+      lastModified: currentDate,
+      changeFrequency: 'weekly',
+      priority: 0.8, // MSK Specialist Program (cohort dates change per intake)
+    },
     // Legal pages - HTML format for better SEO and accessibility
     {
       url: `${baseUrl}/terms-and-conditions`,

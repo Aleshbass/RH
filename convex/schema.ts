@@ -3712,4 +3712,78 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_licence", ["licenceId"]),
 
+  // Rehabify Learn — MSK Specialist Program. One row per cohort: admins edit the dates,
+  // live sessions and prices here, and the live cohort drives /learn, the landing-page
+  // section and the top banner. Dates are calendar dates ("2026-11-02", Lagos).
+  learnCohorts: defineTable({
+    program: v.string(), // "msk-specialist"
+    cohortLabel: v.string(), // "November 2026 cohort"
+    startDate: v.string(),
+    endDate: v.string(),
+    liveSessions: v.string(), // "Sundays, 5:00–7:00 PM"
+    duration: v.string(), // "5 weeks"
+    format: v.string(), // "Online + live clinical demonstrations"
+    registrationDeadline: v.optional(v.string()), // last day to register; open until closed when unset
+    rehabifyPriceKobo: v.number(),
+    externalPriceKobo: v.number(),
+    capacity: v.optional(v.number()), // paid seats; unlimited when unset
+    status: v.union(v.literal("draft"), v.literal("live"), v.literal("closed")),
+    showOnLanding: v.boolean(),
+    showBanner: v.boolean(),
+    bannerText: v.optional(v.string()),
+    communityLink: v.optional(v.string()), // e.g. the cohort WhatsApp group, sent after payment
+    welcomeNote: v.optional(v.string()), // extra line in the confirmation email
+    imageStorageId: v.optional(v.id("_storage")), // optional photo for the landing section and program hero
+    imageAlt: v.optional(v.string()),
+    publishedAt: v.optional(v.number()),
+    createdBy: v.id("users"),
+    updatedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_status", ["status"]),
+
+  learnRegistrations: defineTable({
+    cohortId: v.id("learnCohorts"),
+    track: v.union(v.literal("rehabify"), v.literal("external")),
+    userId: v.optional(v.id("users")), // signed-in account; required for the Rehabify rate
+    firstName: v.string(),
+    lastName: v.string(),
+    email: v.string(), // lower-cased
+    phone: v.string(),
+    licenseNumber: v.optional(v.string()),
+    workplace: v.optional(v.string()),
+    city: v.optional(v.string()),
+    yearsOfPractice: v.optional(v.string()),
+    amountKobo: v.number(), // price when the checkout was started
+    currency: v.string(),
+    status: v.union(v.literal("pending"), v.literal("paid"), v.literal("cancelled"), v.literal("refunded")),
+    paymentReference: v.optional(v.string()), // latest checkout started
+    paymentAttempts: v.optional(v.number()),
+    lastAttemptAt: v.optional(v.number()),
+    paidReference: v.optional(v.string()),
+    paidAmountKobo: v.optional(v.number()),
+    paymentChannel: v.optional(v.string()),
+    paidAt: v.optional(v.number()),
+    // Successful charges that did not buy the seat (a second payment, or less than the price): refund or reconcile
+    extraPayments: v.optional(v.array(v.object({ reference: v.string(), amountKobo: v.number(), at: v.number() }))),
+    confirmationEmailSentAt: v.optional(v.number()),
+    adminNotes: v.optional(v.string()),
+    contactedAt: v.optional(v.number()), // an admin followed up on an unfinished payment
+    contactedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_cohort", ["cohortId"])
+    .index("by_cohort_status", ["cohortId", "status"])
+    .index("by_cohort_email", ["cohortId", "email"])
+    .index("by_user", ["userId"]),
+
+  // People who asked to hear about the next cohort while registration was closed.
+  learnInterest: defineTable({
+    program: v.string(),
+    email: v.string(),
+    name: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_program_email", ["program", "email"]),
+
 });

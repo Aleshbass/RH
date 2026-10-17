@@ -13,6 +13,7 @@ import { ClinicOnboardingSection } from "@/components/landing/ClinicOnboardingSe
 import { SpeakToAPhysio } from "@/components/landing/SpeakToAPhysio";
 import { ForInstitutionsSection } from "@/components/landing/ForInstitutionsSection";
 import { MediloanBanner } from "@/components/landing/MediloanBanner";
+import { MskProgramSection } from "@/components/landing/MskProgramSection";
 
 const RoleBasedFeatures = dynamicImport(() => import("@/components/landing/RoleBasedFeatures"));
 const ConnectedCareSection = dynamicImport(() => import("@/components/landing/ConnectedCareSection"));
@@ -23,6 +24,8 @@ export const dynamic = 'force-static';
 const PageContent = () => (
   <div className="-mt-12 sm:-mt-16 w-full">
     <LandingHero />
+    {/* Only shows while an admin has an MSK Specialist cohort live (Admin › Learn) */}
+    <MskProgramSection />
     <SpeakToAPhysio />
     <MediloanBanner />
     <HowItWorks />
