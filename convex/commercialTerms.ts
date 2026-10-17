@@ -6,7 +6,7 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireAdmin, requirePartnerAccess } from "./helpers/partnerAccess";
+import { adminDisplayName, requireAdmin, requirePartnerAccess } from "./helpers/partnerAccess";
 import { publicCommissionStatus } from "./helpers/partnerLedger";
 import { DEFAULT_REVENUE_SETTINGS } from "./platformSettings";
 
@@ -123,6 +123,95 @@ export const upsertPartnerContract = mutation({
       }
     }
     return { contractId, status: "active" as const };
+  },
+});
+
+/**
+ * Ends a partner's active contract now. From this moment new commissions use the platform
+ * default share (helpers/partnerLedger.ts only reads active contracts); commissions already
+ * earned are untouched. The reason is kept on the contract's notes for the record.
+ */
+export const terminatePartnerContract = mutation({
+  args: { contractId: v.id("partnerContracts"), reason: v.string() },
+  handler: async (ctx, args) => {
+    const admin = await requireAdmin(ctx);
+    const reason = args.reason.trim();
+    if (reason.length < 3) throw new ConvexError("Give a short reason for ending the contract.");
+    if (reason.length > 500) throw new ConvexError("Keep the reason under 500 characters.");
+    const contract = await ctx.db.get(args.contractId);
+    if (!contract) throw new ConvexError("Contract not found.");
+    if (contract.status !== "active") throw new ConvexError("Only an active contract can be ended.");
+
+    const now = Date.now();
+    const stamp = `Ended ${new Date(now).toISOString().slice(0, 10)} by ${adminDisplayName(admin.user)}: ${reason}`;
+    await ctx.db.patch(contract._id, {
+      status: "terminated",
+      effectiveTo: now,
+      notes: contract.notes ? `${contract.notes}\n\n${stamp}` : stamp,
+      updatedAt: now,
+    });
+    return { contractId: contract._id, status: "terminated" as const };
+  },
+});
+
+/**
+ * Admin: every partner contract (newest first) with the partner's name and its volume
+ * tiers, plus the platform default share used for partners with no active contract.
+ * Contracts are admin-curated, so the table stays small; reads are still capped.
+ */
+export const adminListPartnerContracts = query({
+  args: { partnerId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const partnerFilter = args.partnerId?.trim();
+    const contracts = partnerFilter
+      ? await ctx.db
+          .query("partnerContracts")
+          .withIndex("by_partner_id", (q) => q.eq("partnerId", partnerFilter))
+          .order("desc")
+          .take(200)
+      : await ctx.db.query("partnerContracts").order("desc").take(500);
+
+    const partners = new Map<string, Doc<"partners"> | null>();
+    for (const code of new Set(contracts.map((c) => c.partnerId))) {
+      partners.set(
+        code,
+        await ctx.db
+          .query("partners")
+          .withIndex("by_code", (q) => q.eq("code", code))
+          .first()
+      );
+    }
+
+    const rows = await Promise.all(
+      contracts.map(async (c) => {
+        const partner = partners.get(c.partnerId) ?? null;
+        const tiers = await ctx.db
+          .query("partnerCommissionTiers")
+          .withIndex("by_contract_id", (q) => q.eq("contractId", c._id))
+          .take(50);
+        return {
+          ...c,
+          partnerName: partner?.name ?? c.partnerId,
+          partnerType: partner?.type ?? null,
+          partnerActive: partner?.isActive ?? false,
+          tiers: tiers
+            .sort((a, b) => a.minReferrals - b.minReferrals)
+            .map((t) => ({
+              _id: t._id,
+              tierName: t.tierName,
+              minReferrals: t.minReferrals,
+              maxReferrals: t.maxReferrals,
+              feePerReferral: t.feePerReferral,
+              revenueSharePercent: t.revenueSharePercent,
+              bonusAmount: t.bonusAmount,
+            })),
+        };
+      })
+    );
+
+    const settings = (await ctx.db.query("platformRevenueSettings").order("desc").first()) ?? DEFAULT_REVENUE_SETTINGS;
+    return { contracts: rows, defaultPartnerPercent: settings.partnerPercent };
   },
 });
 

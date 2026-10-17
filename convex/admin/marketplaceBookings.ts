@@ -1,165 +1,275 @@
 // @ts-nocheck
 /**
  * Admin Marketplace Bookings
- * - List all bookings with full guest/patient info
+ * - Page through bookings (newest first) with full guest/patient info
+ * - Search recent bookings by patient, clinician, email, phone or reference
+ * - Headline counts for the bookings screen
  * - Reassign a specific patient's booking to a different physiotherapist
  * - List all approved physios for reassignment dropdown
+ *
+ * Every read here is bounded: lists use `.paginate()` and enrich only the page, and the
+ * search and stats queries scan a capped window of the most recent bookings.
  */
 
 import { v } from "convex/values";
-import { query, mutation } from "../_generated/server";
+import { paginationOptsValidator } from "convex/server";
+import { query, mutation, type QueryCtx } from "../_generated/server";
+import type { Doc, Id } from "../_generated/dataModel";
 import { ensureUserRole } from "../auth";
 
+const BOOKING_STATUSES = new Set([
+  "pending_payment",
+  "awaiting_admin_schedule",
+  "confirmed",
+  "completed",
+  "cancelled",
+  "no_show",
+]);
+
+/** Most recent bookings the search scans. Older bookings are reached by paging the list. */
+const SEARCH_SCAN_LIMIT = 1000;
+const SEARCH_RESULT_LIMIT = 50;
+/** Most recent bookings the headline counts are computed from. */
+const STATS_SCAN_LIMIT = 2000;
+const MAX_PAGE_SIZE = 100;
+
 /**
- * Get all marketplace bookings for the admin view.
+ * The bookings query for a status filter, using an index so pagination stays cheap.
+ * `payment_failed` is a payment state rather than a booking state; anything unknown means all.
+ */
+function bookingsForStatus(ctx: QueryCtx, status?: string) {
+  if (status === "payment_failed") {
+    return ctx.db
+      .query("marketplaceBookings")
+      .withIndex("by_payment_status", (q) => q.eq("paymentStatus", "failed"));
+  }
+  if (status && BOOKING_STATUSES.has(status)) {
+    return ctx.db
+      .query("marketplaceBookings")
+      .withIndex("by_booking_status", (q) => q.eq("bookingStatus", status));
+  }
+  return ctx.db.query("marketplaceBookings");
+}
+
+function fullName(user: Doc<"users"> | null | undefined) {
+  if (!user) return "";
+  return `${user.firstName || ""} ${user.lastName || ""}`.trim();
+}
+
+/**
+ * Older Joy virtual bookings were created before their 100% Rehabify allocation was
+ * recorded. Derive it so reporting is historically accurate while new bookings persist it.
+ */
+function rehabifyShare(booking: Doc<"marketplaceBookings">) {
+  return booking.rehabifyEarnings ?? (
+    booking.joyBookingRoute === "admin_scheduled_virtual" ? booking.totalAmount : booking.platformFee
+  );
+}
+
+/** Resolve patient (or guest) and physio details for one booking. */
+async function enrichBooking(ctx: QueryCtx, booking: Doc<"marketplaceBookings">) {
+  // ── Patient Info ──
+  let patientName = "Guest";
+  let patientEmail = booking.guestEmail || "";
+  let patientPhone = booking.guestPhone || "";
+  let isGuest = Boolean(booking.isGuestBooking);
+
+  if (!booking.isGuestBooking) {
+    const patient = await ctx.db.get(booking.patientId);
+    if (patient) {
+      patientName = fullName(patient) || patient.email || "Patient";
+      patientEmail = patient.email || "";
+      patientPhone = patient.phoneNumber || "";
+    }
+  } else {
+    // Guest: use stored guest fields
+    patientName = booking.guestName || booking.guestEmail || "Guest";
+    isGuest = true;
+  }
+
+  // ── Physio Info ──
+  const physio = booking.physiotherapistId ? await ctx.db.get(booking.physiotherapistId) : null;
+  let physioName = booking.adminSchedulingStatus === "awaiting_schedule" ? "Awaiting admin assignment" : "Unassigned";
+  let physioEmail = "";
+  let physioLocation = "";
+  let physioOffersOnline = false;
+  let physioOffersInPerson = false;
+
+  if (physio) {
+    physioName = fullName(physio) || "Physiotherapist";
+    physioEmail = physio.email || "";
+
+    const physioProfile = await ctx.db
+      .query("physiotherapistProfiles")
+      .withIndex("by_user_id", (q) => q.eq("userId", booking.physiotherapistId))
+      .first();
+
+    if (physioProfile) {
+      physioLocation = physioProfile.location || "";
+      physioOffersOnline = physioProfile.offersOnlineSessions ?? false;
+      physioOffersInPerson = physioProfile.offersInPersonSessions ?? false;
+    }
+  }
+
+  return {
+    _id: booking._id,
+    createdAt: booking.createdAt,
+    paidAt: booking.paidAt,
+    sessionDate: booking.sessionDate,
+    sessionType: booking.sessionType,
+    sessionDuration: booking.sessionDuration,
+    isOnline: booking.isOnline,
+    packageSessions: booking.packageSessions,
+    conditionLabel: booking.conditionLabel,
+
+    // Status
+    bookingStatus: booking.bookingStatus,
+    paymentStatus: booking.paymentStatus,
+    paymentReference: booking.paymentReference,
+    bookingCode: booking.bookingCode,
+
+    // Amounts (in kobo — client divides by 100)
+    totalAmount: booking.totalAmount,
+    platformFee: booking.platformFee,
+    physiotherapistEarnings: booking.physiotherapistEarnings,
+    rehabifyEarnings: rehabifyShare(booking),
+
+    // Patient
+    patientId: booking.patientId,
+    patientName,
+    patientEmail,
+    patientPhone,
+    isGuest,
+
+    // Physio
+    physiotherapistId: booking.physiotherapistId,
+    physioName,
+    physioEmail,
+    physioLocation,
+    physioOffersOnline,
+    physioOffersInPerson,
+
+    // Linked records
+    appointmentId: booking.appointmentId,
+    joyBookingRoute: booking.joyBookingRoute,
+    joyConsultationType: booking.joyConsultationType,
+    adminSchedulingStatus: booking.adminSchedulingStatus,
+    patientPhysioRelationshipId: booking.patientPhysioRelationshipId,
+    treatmentPlanId: booking.treatmentPlanId,
+  };
+}
+
+/**
+ * Marketplace bookings for the admin view, newest first, one page at a time.
  * Properly resolves guest info (name/email/phone) even for non-authed bookings.
+ * Use with `usePaginatedQuery`; search goes through `adminSearchMarketplaceBookings`.
  */
 export const adminGetAllMarketplaceBookings = query({
   args: {
-    status: v.optional(v.string()),   // "all" | "confirmed" | "pending_payment" | "cancelled"
-    search: v.optional(v.string()),   // patient name or email search
-    limit: v.optional(v.number()),
-    offset: v.optional(v.number()),
+    paginationOpts: paginationOptsValidator,
+    // "all" | booking status | "payment_failed"
+    status: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ensureUserRole(ctx, ["admin"]);
 
-    let bookingsQuery = ctx.db.query("marketplaceBookings").order("desc");
+    const numItems = Math.min(Math.max(args.paginationOpts.numItems, 1), MAX_PAGE_SIZE);
+    const result = await bookingsForStatus(ctx, args.status)
+      .order("desc")
+      .paginate({ ...args.paginationOpts, numItems });
 
-    const allBookings = await bookingsQuery.collect();
+    return {
+      ...result,
+      page: await Promise.all(result.page.map((booking) => enrichBooking(ctx, booking))),
+    };
+  },
+});
 
-    // Enrich bookings with patient and physio details
-    const enriched = await Promise.all(
-      allBookings.map(async (booking) => {
-        // ── Patient Info ──
-        let patientName = "Guest";
-        let patientEmail = booking.guestEmail || "";
-        let patientPhone = booking.guestPhone || "";
-        let isGuest = Boolean(booking.isGuestBooking);
+/**
+ * Search the most recent bookings by patient or guest name, email, phone, clinician name,
+ * payment reference or booking code. Only matches are enriched.
+ */
+export const adminSearchMarketplaceBookings = query({
+  args: {
+    search: v.string(),
+    status: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
 
-        if (!booking.isGuestBooking) {
-          const patient = await ctx.db.get(booking.patientId);
-          if (patient) {
-            patientName =
-              `${patient.firstName || ""} ${patient.lastName || ""}`.trim() ||
-              patient.email ||
-              "Patient";
-            patientEmail = patient.email || "";
-            patientPhone = patient.phoneNumber || "";
-          }
-        } else {
-          // Guest: use stored guest fields
-          patientName = booking.guestName || booking.guestEmail || "Guest";
-          isGuest = true;
-        }
+    const needle = args.search.trim().toLowerCase();
+    if (needle.length < 2) return { bookings: [], scanned: 0, capped: false };
 
-        // ── Physio Info ──
-        const physio = booking.physiotherapistId ? await ctx.db.get(booking.physiotherapistId) : null;
-        let physioName = booking.adminSchedulingStatus === "awaiting_schedule" ? "Awaiting admin assignment" : "Unassigned";
-        let physioEmail = "";
-        let physioLocation = "";
-        let physioOffersOnline = false;
-        let physioOffersInPerson = false;
+    const recent = await bookingsForStatus(ctx, args.status).order("desc").take(SEARCH_SCAN_LIMIT + 1);
+    const capped = recent.length > SEARCH_SCAN_LIMIT;
+    const scan = capped ? recent.slice(0, SEARCH_SCAN_LIMIT) : recent;
 
-        if (physio) {
-          physioName =
-            `${physio.firstName || ""} ${physio.lastName || ""}`.trim() ||
-            "Physiotherapist";
-          physioEmail = physio.email || "";
+    // Load each patient and clinician once, however many bookings they have.
+    const userIds = new Set<Id<"users">>();
+    for (const b of scan) {
+      if (!b.isGuestBooking && b.patientId) userIds.add(b.patientId);
+      if (b.physiotherapistId) userIds.add(b.physiotherapistId);
+    }
+    const users = new Map<Id<"users">, Doc<"users"> | null>();
+    await Promise.all([...userIds].map(async (id) => users.set(id, await ctx.db.get(id))));
 
-          const physioProfile = await ctx.db
-            .query("physiotherapistProfiles")
-            .withIndex("by_user_id", (q) => q.eq("userId", booking.physiotherapistId))
-            .first();
-
-          if (physioProfile) {
-            physioLocation = physioProfile.location || "";
-            physioOffersOnline = physioProfile.offersOnlineSessions ?? false;
-            physioOffersInPerson = physioProfile.offersInPersonSessions ?? false;
-          }
-        }
-
-        return {
-          _id: booking._id,
-          createdAt: booking.createdAt,
-          paidAt: booking.paidAt,
-          sessionDate: booking.sessionDate,
-          sessionType: booking.sessionType,
-          sessionDuration: booking.sessionDuration,
-          isOnline: booking.isOnline,
-          packageSessions: booking.packageSessions,
-          conditionLabel: booking.conditionLabel,
-
-          // Status
-          bookingStatus: booking.bookingStatus,
-          paymentStatus: booking.paymentStatus,
-          paymentReference: booking.paymentReference,
-
-          // Amounts (in kobo — client divides by 100)
-          totalAmount: booking.totalAmount,
-          platformFee: booking.platformFee,
-          physiotherapistEarnings: booking.physiotherapistEarnings,
-          // Older Joy virtual bookings were created before their 100%
-          // Rehabify allocation was recorded. Derive it here so reporting is
-          // historically accurate while new bookings persist the value.
-          rehabifyEarnings: booking.rehabifyEarnings ?? (
-            booking.joyBookingRoute === "admin_scheduled_virtual" ? booking.totalAmount : booking.platformFee
-          ),
-
-          // Patient
-          patientId: booking.patientId,
-          patientName,
-          patientEmail,
-          patientPhone,
-          isGuest,
-
-          // Physio
-          physiotherapistId: booking.physiotherapistId,
-          physioName,
-          physioEmail,
-          physioLocation,
-          physioOffersOnline,
-          physioOffersInPerson,
-
-          // Linked records
-          appointmentId: booking.appointmentId,
-          joyBookingRoute: booking.joyBookingRoute,
-          joyConsultationType: booking.joyConsultationType,
-          adminSchedulingStatus: booking.adminSchedulingStatus,
-          patientPhysioRelationshipId: booking.patientPhysioRelationshipId,
-          treatmentPlanId: booking.treatmentPlanId,
-        };
-      })
-    );
-
-    // Apply status filter
-    let filtered = enriched;
-    if (args.status && args.status !== "all") {
-      filtered = filtered.filter((b) => (
-        args.status === "payment_failed"
-          ? b.paymentStatus === "failed"
-          : b.bookingStatus === args.status
-      ));
+    const matches: Doc<"marketplaceBookings">[] = [];
+    for (const b of scan) {
+      if (matches.length >= SEARCH_RESULT_LIMIT) break;
+      const haystack: (string | undefined)[] = [b.guestName, b.guestEmail, b.guestPhone, b.paymentReference, b.bookingCode];
+      if (!b.isGuestBooking) {
+        const patient = users.get(b.patientId);
+        haystack.push(fullName(patient), patient?.email, patient?.phoneNumber);
+      }
+      if (b.physiotherapistId) haystack.push(fullName(users.get(b.physiotherapistId)));
+      if (haystack.some((value) => value && value.toLowerCase().includes(needle))) matches.push(b);
     }
 
-    // Apply search filter (patient name or email)
-    if (args.search && args.search.trim()) {
-      const q = args.search.toLowerCase();
-      filtered = filtered.filter(
-        (b) =>
-          b.patientName.toLowerCase().includes(q) ||
-          b.patientEmail.toLowerCase().includes(q) ||
-          b.physioName.toLowerCase().includes(q) ||
-          b.paymentReference?.toLowerCase().includes(q)
-      );
+    return {
+      bookings: await Promise.all(matches.map((booking) => enrichBooking(ctx, booking))),
+      scanned: scan.length,
+      capped,
+    };
+  },
+});
+
+/**
+ * Headline counts for the bookings screen, computed from the most recent bookings.
+ * `capped` is true when there are more bookings than were counted.
+ */
+export const adminGetMarketplaceBookingStats = query({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"]);
+
+    const recent = await ctx.db.query("marketplaceBookings").order("desc").take(STATS_SCAN_LIMIT + 1);
+    const capped = recent.length > STATS_SCAN_LIMIT;
+    const rows = capped ? recent.slice(0, STATS_SCAN_LIMIT) : recent;
+
+    const statusCounts: Record<string, number> = {};
+    let paymentFailed = 0;
+    let guest = 0;
+    let awaitingSchedule = 0;
+    let rehabifyRevenue = 0;
+
+    for (const b of rows) {
+      statusCounts[b.bookingStatus] = (statusCounts[b.bookingStatus] ?? 0) + 1;
+      if (b.paymentStatus === "failed") paymentFailed += 1;
+      if (b.isGuestBooking) guest += 1;
+      if (b.adminSchedulingStatus === "awaiting_schedule") awaitingSchedule += 1;
+      if (b.paymentStatus === "completed") rehabifyRevenue += rehabifyShare(b) || 0;
     }
 
-    const total = filtered.length;
-    const offset = args.offset ?? 0;
-    const limit = args.limit ?? 50;
-    const page = filtered.slice(offset, offset + limit);
-
-    return { bookings: page, total };
+    return {
+      total: rows.length,
+      capped,
+      statusCounts,
+      paymentFailed,
+      guest,
+      awaitingSchedule,
+      // kobo
+      rehabifyRevenue,
+    };
   },
 });
 
@@ -176,7 +286,7 @@ export const adminGetAllPhysiosForSelect = query({
     const approvedStatuses = await ctx.db
       .query("accountApprovalStatus")
       .withIndex("by_status", (q) => q.eq("status", "approved"))
-      .collect();
+      .take(1000);
 
     const physioUsers = await Promise.all(
       approvedStatuses.map(async (s) => {
@@ -190,7 +300,7 @@ export const adminGetAllPhysiosForSelect = query({
 
         return {
           id: user._id,
-          name: `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Physiotherapist",
+          name: fullName(user) || user.email || "Physiotherapist",
           email: user.email || "",
           location: profile?.location || "",
           offersOnline: profile?.offersOnlineSessions ?? false,
@@ -282,10 +392,12 @@ export const adminReassignBookingPhysio = mutation({
 
     // 5. Update physio earnings stats (deduct from old, add to new)
     if (booking.paymentStatus === "completed") {
-      const oldProfile = await ctx.db
-        .query("physiotherapistProfiles")
-        .withIndex("by_user_id", (q) => q.eq("userId", oldPhysioId))
-        .first();
+      const oldProfile = oldPhysioId
+        ? await ctx.db
+            .query("physiotherapistProfiles")
+            .withIndex("by_user_id", (q) => q.eq("userId", oldPhysioId))
+            .first()
+        : null;
       const newProfile = await ctx.db
         .query("physiotherapistProfiles")
         .withIndex("by_user_id", (q) => q.eq("userId", newPhysioId))

@@ -562,29 +562,19 @@ export const updateAppointmentStatus = mutation({
           .first();
 
         if (!existingPayout) {
-          // Calculate split based on invoice fee breakdown or defaults
-          const platformFee = invoice.feeBreakdown?.platformFee || (invoice.platformFeeAmount || 0);
+          // The physio's share of the invoice. Rehabify's fee stays with the platform, so it
+          // is not a payout to anyone.
           const physiotherapistEarning = invoice.feeBreakdown?.physiotherapistEarnings || (invoice.physiotherapistShare || 0);
 
-          // 1. Create Platform Fee Payout
-          if (platformFee > 0) {
-            await ctx.db.insert("payouts", {
-              invoiceId: invoice._id,
-              paymentId: null as any, // Linked later if needed
-              amount: platformFee,
-              status: "pending",
-              type: "platform_fee",
-              userId: (invoice as any).userId, // Technically platform user, using invoice creator for now or system
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            });
-          }
-
-          // 2. Create Physiotherapist Earning Payout
           if (physiotherapistEarning > 0 && appointment.physiotherapistId) {
+            const payment = await ctx.db
+              .query("payments")
+              .withIndex("by_invoice_id", (q) => q.eq("invoiceId", invoice._id))
+              .filter((q) => q.eq(q.field("status"), "completed"))
+              .first();
             await ctx.db.insert("payouts", {
               invoiceId: invoice._id,
-              paymentId: null as any,
+              ...(payment ? { paymentId: payment._id } : {}),
               amount: physiotherapistEarning,
               status: "pending",
               type: "physiotherapist_earning",
@@ -593,8 +583,6 @@ export const updateAppointmentStatus = mutation({
               updatedAt: Date.now(),
             });
           }
-
-          console.log(`Generated payouts for appointment ${args.appointmentId} and invoice ${invoice._id}`);
         }
       }
 

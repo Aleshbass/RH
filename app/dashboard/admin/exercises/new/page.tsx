@@ -1,11 +1,12 @@
 'use client';
 
 import { ExerciseForm } from '@/components/admin/exercises/ExerciseForm';
+import { AdminPage } from '@/components/admin/ui';
 
 export default function NewExercisePage() {
     return (
-        <div className="p-8">
+        <AdminPage className="max-w-5xl">
             <ExerciseForm />
-        </div>
+        </AdminPage>
     );
 }

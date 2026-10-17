@@ -1,11 +1,14 @@
 // @ts-nocheck
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { internalMutation, mutation, query, action, QueryCtx, MutationCtx, internalQuery } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import { getAuthenticatedUser, ensureUserRole } from "./auth";
 import { publicAppUrl } from "./helpers/appUrl";
 import { attributeUserToLink } from "./helpers/partnerAttribution";
+import { assertSignupAllowed } from "./platformSettings";
+import { logSecurityEvent } from "./helpers/securityLog";
 
 // ==== QUERIES ====
 
@@ -798,10 +801,21 @@ export const updateUserRole = mutation({
       throw new Error("User record not found. Please try signing out and in again.");
     }
 
+    // Admin Settings can pause new registrations per role (convex/platformSettings.ts)
+    if (user.role !== args.role) {
+      await assertSignupAllowed(ctx, args.role);
+    }
+
     // Update the user's role
     await ctx.db.patch(user._id, {
       role: args.role,
     });
+    if (user.role !== args.role) {
+      await logSecurityEvent(ctx, "role_changed", {
+        userId: user._id,
+        details: { from: user.role ?? null, to: args.role, by: "self" },
+      });
+    }
 
     return { success: true, message: `Role updated to ${args.role} successfully.` };
   },
@@ -854,28 +868,27 @@ export const setUserRole = mutation({
   },
   handler: async (ctx, args) => {
     // Verify the user making the change is an admin
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const adminUser = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
-
-    if (!adminUser || adminUser.role !== "admin") {
-      throw new Error("Access denied. Admin privileges required.");
-    }
+    const adminUser = await ensureUserRole(ctx, ["admin"]);
 
     // Get the user to update
     const userToUpdate = await getUserByIdOrThrow(ctx, args.userId);
+
+    // An admin removing their own admin role would lock themselves out of the console
+    if (userToUpdate._id === adminUser._id && args.role !== "admin") {
+      throw new Error("You cannot remove your own admin role.");
+    }
 
     // Update their role
     await ctx.db.patch(args.userId, {
       role: args.role,
       onboarded: true,
     });
+    if (userToUpdate.role !== args.role) {
+      await logSecurityEvent(ctx, "role_changed", {
+        userId: args.userId,
+        details: { from: userToUpdate.role ?? null, to: args.role, by: adminUser._id },
+      });
+    }
 
     // Create notification for role change
     const roleNames = {
@@ -919,52 +932,168 @@ export const getAllAdmins = internalQuery({
 });
 
 /**
- * Get all users (admin only)
+ * Most recent users (admin only).
+ * @deprecated Admin pages use the paginated `adminListUsers` instead. Kept (bounded) for
+ * any older caller; it never returns more than the newest 500 accounts.
  */
 export const getAllUsers = query({
   args: {},
   handler: async (ctx) => {
-    // Verify the user is an admin
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
+    await ensureUserRole(ctx, ["admin"]);
+    return await ctx.db.query("users").order("desc").take(500);
+  },
+});
+
+const ADMIN_LISTABLE_ROLES = [
+  "physiotherapist",
+  "clinic_owner",
+  "patient",
+  "family_member",
+  "doctor",
+  "admin",
+  "partner",
+  "clinic_staff",
+] as const;
+
+const adminRoleFilterValidator = v.union(
+  ...ADMIN_LISTABLE_ROLES.map((role) => v.literal(role)),
+  // Accounts that never finished onboarding have no role yet
+  v.literal("none")
+);
+
+function looksLikeEmail(term: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(term);
+}
+
+/**
+ * Admin users list, newest first, paginated (use with usePaginatedQuery).
+ *
+ * - `role` reads through the by_role index ("none" = accounts with no role yet).
+ * - `search` that looks like a full email address is an exact by_email lookup (one page).
+ * - Any other `search` matches name/email/phone *within each page* only: a page can come
+ *   back with fewer rows (or none) while `isDone` is still false, and the caller keeps
+ *   loading more to scan further back. There is no search index on users, so this keeps
+ *   reads bounded at the cost of not being a global search.
+ */
+export const adminListUsers = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+    role: v.optional(adminRoleFilterValidator),
+    search: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
+
+    const term = (args.search ?? "").trim();
+    const roleMatches = (u: Doc<"users">) =>
+      !args.role || (args.role === "none" ? !u.role : u.role === args.role);
+
+    const withApproval = async (users: Doc<"users">[]) =>
+      Promise.all(
+        users.map(async (u) => {
+          const approval = await ctx.db
+            .query("accountApprovalStatus")
+            .withIndex("by_user_id", (q) => q.eq("userId", u._id))
+            .first();
+          return {
+            _id: u._id,
+            _creationTime: u._creationTime,
+            firstName: u.firstName,
+            lastName: u.lastName,
+            email: u.email,
+            imageUrl: u.imageUrl,
+            phoneNumber: u.phoneNumber,
+            role: u.role,
+            onboarded: u.onboarded,
+            status: u.status,
+            lastLoginAt: u.lastLoginAt,
+            approvalStatus: approval?.status ?? null,
+          };
+        })
+      );
+
+    if (term && looksLikeEmail(term)) {
+      const variants = Array.from(new Set([term, term.toLowerCase()]));
+      const found = new Map<string, Doc<"users">>();
+      for (const email of variants) {
+        const rows = await ctx.db
+          .query("users")
+          .withIndex("by_email", (q) => q.eq("email", email))
+          .take(10);
+        rows.forEach((u) => found.set(u._id, u));
+      }
+      const page = await withApproval(Array.from(found.values()).filter(roleMatches));
+      return { page, isDone: true, continueCursor: "" };
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .unique();
+    const base = args.role
+      ? ctx.db
+          .query("users")
+          .withIndex("by_role", (q) => q.eq("role", args.role === "none" ? undefined : args.role))
+      : ctx.db.query("users");
 
-    if (!user || user.role !== "admin") {
-      throw new Error("Access denied. Admin privileges required.");
+    const result = await base.order("desc").paginate(args.paginationOpts);
+
+    let rows = result.page;
+    if (term) {
+      const needle = term.toLowerCase();
+      rows = rows.filter((u) => {
+        const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.toLowerCase();
+        return (
+          name.includes(needle) ||
+          (u.email ?? "").toLowerCase().includes(needle) ||
+          (u.phoneNumber ?? "").includes(needle)
+        );
+      });
     }
 
-    const users = await ctx.db
-      .query("users")
-      .order("desc")
-      .collect();
+    return { ...result, page: await withApproval(rows) };
+  },
+});
 
-    return users;
+const ROLE_COUNT_CAP = 500;
+
+/**
+ * Account counts per role for the Users & roles page. Each count reads at most
+ * ROLE_COUNT_CAP rows through the by_role index; `capped` lists roles that hit the cap
+ * (show those as "500+").
+ */
+export const adminUserRoleCounts = query({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const roles = [...ADMIN_LISTABLE_ROLES, "none"] as const;
+    const counts: Record<string, number> = {};
+    const capped: string[] = [];
+    await Promise.all(
+      roles.map(async (role) => {
+        const rows = await ctx.db
+          .query("users")
+          .withIndex("by_role", (q) => q.eq("role", role === "none" ? undefined : role))
+          .take(ROLE_COUNT_CAP);
+        counts[role] = rows.length;
+        if (rows.length >= ROLE_COUNT_CAP) capped.push(role);
+      })
+    );
+    return { counts, capped, cap: ROLE_COUNT_CAP };
   },
 });
 
 /**
- * Create a new admin user (for initial setup)
+ * Create (or promote) an admin user for initial setup.
+ *
+ * Internal only: run it from the Convex dashboard or CLI, e.g.
+ *   npx convex run users:createAdminUser '{"clerkId":"user_...","email":"...","firstName":"...","lastName":"..."}'
+ * Only people with deploy access can call internal functions, so no shared secret is needed.
  */
-export const createAdminUser = mutation({
+export const createAdminUser = internalMutation({
   args: {
     clerkId: v.string(),
     email: v.string(),
     firstName: v.string(),
     lastName: v.string(),
-    bootstrapSecret: v.string(),
   },
   handler: async (ctx, args) => {
-    const configuredSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
-    if (!configuredSecret || args.bootstrapSecret !== configuredSecret) {
-      throw new Error("Unauthorized admin bootstrap request");
-    }
-
     // Check if user already exists
     const existingUser = await ctx.db
       .query("users")
@@ -1129,55 +1258,68 @@ export const completeOnboarding = mutation({
 // ==== ADMIN APPROVAL WORKFLOW ====
 
 /**
- * Test notification system for email sending
- * Sends a test email to verify Resend configuration
+ * Send a real test of the account-approval email (same Resend template and sender the
+ * approval workflow uses) so admins can check email delivery end to end.
+ * Defaults to the calling admin's own address. Returns the provider's actual result.
  */
 export const testNotificationEmail = action({
   args: {
-    testEmail: v.optional(v.string()), // Email to send to, defaults to registered Resend email
+    testEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Sends real email: admins only.
     await ctx.runQuery(internal.monthlySettlements.assertAdminForAction, {});
-    // For testing, we'll use the Resend registered email or the provided test email
-    const testEmail = args.testEmail || "onboarding@resend.dev";
 
-    // Create a test user ID for the notification (or use a real admin user)
     const adminUser = await ctx.runQuery(api.users.getMyUser);
-
     if (!adminUser) {
       throw new Error("No authenticated user found");
     }
 
-    // Placeholder for email sending functionality
-    // Email function not yet implemented
-    console.log(`Test email would be sent to: ${testEmail}`);
+    const testEmail = (args.testEmail ?? "").trim() || adminUser.email;
+    if (!testEmail || !looksLikeEmail(testEmail)) {
+      throw new Error("Enter a valid email address to send the test to.");
+    }
+
+    const adminName = `${adminUser.firstName ?? ""} ${adminUser.lastName ?? ""}`.trim() || "Admin";
+    const result = await ctx.runAction(internal.actions.emails.sendApprovalEmail.sendApprovalEmail, {
+      userEmail: testEmail,
+      userName: `${adminName} (test)`,
+      userRole: "Test recipient",
+      dashboardLink: `${publicAppUrl()}/dashboard/admin`,
+    });
 
     return {
-      success: true,
+      success: result.success,
       testEmail,
-      message: `Test notification sent to ${testEmail}. Check the email and Convex logs for delivery status.`,
+      messageId: result.messageId,
+      error: result.error,
+      message: result.success
+        ? `Test approval email accepted by the provider for ${testEmail}${result.messageId ? ` (id ${result.messageId})` : ""}.`
+        : `Sending to ${testEmail} failed: ${result.error ?? "unknown error"}`,
     };
   },
 });
 
 /**
- * Clean up orphaned approval records (where user no longer exists)
+ * Clean up orphaned approval records (where user no longer exists).
+ * Scans one batch of approval records per call; pass back `continueCursor` until `isDone`.
  */
 export const cleanupOrphanedApprovals = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args) => {
     // Verify admin access
     await ensureUserRole(ctx, ["admin"]);
 
-    const allApprovals = await ctx.db
+    const batch = await ctx.db
       .query("accountApprovalStatus")
-      .collect();
+      .paginate({ numItems: 200, cursor: args.cursor ?? null });
 
     let deletedCount = 0;
     const orphanedRecords = [];
 
-    for (const approval of allApprovals) {
+    for (const approval of batch.page) {
       const user = await ctx.db.get(approval.userId);
       if (!user) {
         // User no longer exists, delete the approval record
@@ -1196,12 +1338,16 @@ export const cleanupOrphanedApprovals = mutation({
       success: true,
       deletedCount,
       orphanedRecords,
+      scanned: batch.page.length,
+      isDone: batch.isDone,
+      continueCursor: batch.continueCursor,
     };
   },
 });
 
 /**
- * Debug query to see all approval status records
+ * Debug query: the most recent approval status records (max 300) with their users.
+ * Used by the dev-only /dashboard/admin/approvals/debug page.
  */
 export const debugApprovalStatus = query({
   args: {},
@@ -1211,7 +1357,8 @@ export const debugApprovalStatus = query({
 
     const allApprovals = await ctx.db
       .query("accountApprovalStatus")
-      .collect();
+      .order("desc")
+      .take(300);
 
     const approvalWithUserData = await Promise.all(
       allApprovals.map(async (approval) => {
@@ -1256,10 +1403,12 @@ export const getPendingApprovals = query({
     // Verify admin access
     await ensureUserRole(ctx, ["admin"]);
 
+    // Bounded: the review queue is small in practice, and the dashboard only needs the
+    // oldest 500 waiting applications.
     const pendingApprovals = await ctx.db
       .query("accountApprovalStatus")
       .withIndex("by_status", (q) => q.eq("status", "pending_review"))
-      .collect();
+      .take(500);
 
     const approvalWithUserData = await Promise.all(
       pendingApprovals.map(async (approval) => {
@@ -1304,10 +1453,12 @@ export const getDeclinedApprovals = query({
     // Verify admin access
     await ensureUserRole(ctx, ["admin"]);
 
+    // Bounded: the newest 300 declined records (declines only accumulate over time).
     const declinedApprovals = await ctx.db
       .query("accountApprovalStatus")
       .withIndex("by_status", (q) => q.eq("status", "declined"))
-      .collect();
+      .order("desc")
+      .take(300);
 
     const approvalWithUserData = await Promise.all(
       declinedApprovals.map(async (approval) => {

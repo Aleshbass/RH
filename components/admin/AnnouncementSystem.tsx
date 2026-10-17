@@ -1,404 +1,296 @@
 'use client'
 
 import { useState } from 'react'
-import { useMutation } from 'convex/react'
-import { api } from '@/convex/_generated/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { 
-  Megaphone, 
-  Send, 
-  Users, 
-  UserCheck, 
-  Building2, 
-  Stethoscope,
-  AlertTriangle,
-  CheckCircle,
-  Clock
-} from 'lucide-react'
+import { useMutation, useQuery } from 'convex/react'
+import { formatDistanceToNow } from 'date-fns'
+import { Check, Loader2, Megaphone, Send } from 'lucide-react'
 import { toast } from 'sonner'
+import { api } from '@/convex/_generated/api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  AdminPage,
+  ConfirmDialog,
+  EmptyState,
+  FilterChips,
+  PageHeader,
+  Panel,
+  StatusBadge,
+  inputClass,
+  primaryButtonClass,
+  softButtonClass,
+} from '@/components/admin/ui'
+import { formatCount, roleLabel, type RoleCountsResult } from '@/components/admin/activityMeta'
+import { playSound } from '@/lib/sounds'
+import { cn } from '@/lib/utils'
 
-interface AnnouncementFormData {
+type Priority = 'low' | 'medium' | 'high'
+
+/** A platformAnnouncements row (convex/schema.ts), as returned by api.admin.getAnnouncements. */
+type AnnouncementRow = {
+  _id: string
   title: string
   message: string
+  priority: Priority
   targetRoles: string[]
-  priority: 'low' | 'medium' | 'high'
+  status: 'sending' | 'sent' | 'failed'
+  recipientCount: number
+  createdByName: string
+  createdAt: number
+}
+
+const AUDIENCES = ['patient', 'physiotherapist', 'clinic_owner', 'clinic_staff', 'doctor', 'partner', 'admin'] as const
+type Audience = (typeof AUDIENCES)[number]
+
+const AUDIENCE_LABEL: Record<string, string> = {
+  patient: 'Patients',
+  physiotherapist: 'Physiotherapists',
+  clinic_owner: 'Clinic owners',
+  clinic_staff: 'Clinic staff',
+  doctor: 'Doctors',
+  partner: 'Partners',
+  admin: 'Admins',
+}
+const audienceLabel = (role: string) => AUDIENCE_LABEL[role] ?? roleLabel(role)
+
+const MAX_TITLE = 120
+const MAX_MESSAGE = 1000
+
+const PRIORITY_TONE = { low: 'neutral', medium: 'teal', high: 'amber' } as const
+
+function errorMessage(error: unknown) {
+  if (error && typeof error === 'object' && 'data' in error && typeof (error as { data: unknown }).data === 'string') {
+    return (error as { data: string }).data
+  }
+  return error instanceof Error ? error.message : 'Something went wrong'
 }
 
 export function AnnouncementSystem() {
-  const [formData, setFormData] = useState<AnnouncementFormData>({
-    title: '',
-    message: '',
-    targetRoles: [],
-    priority: 'medium'
-  })
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [lastResult, setLastResult] = useState<{ announcementId: string; recipientCount: number } | null>(null)
+  const [title, setTitle] = useState('')
+  const [message, setMessage] = useState('')
+  const [audience, setAudience] = useState<Audience[]>([])
+  const [priority, setPriority] = useState<Priority>('medium')
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
-  const broadcastAnnouncement = useMutation(api.admin.broadcastAnnouncement)
+  const broadcast = useMutation(api.admin.broadcastAnnouncement)
+  const history = useQuery(api.admin.getAnnouncements, { limit: 20 }) as { items: AnnouncementRow[]; hasMore: boolean } | undefined
+  const roles = useQuery(api.admin.getUserRoleCounts) as RoleCountsResult | undefined
 
-  const roleOptions = [
-    { value: 'physiotherapist', label: 'Physiotherapists', icon: Stethoscope, color: 'bg-blue-100 text-blue-800' },
-    { value: 'clinic_owner', label: 'Clinic Owners', icon: Building2, color: 'bg-green-100 text-green-800' },
-    { value: 'patient', label: 'Patients', icon: Users, color: 'bg-purple-100 text-purple-800' },
-    { value: 'admin', label: 'Administrators', icon: UserCheck, color: 'bg-red-100 text-red-800' },
-  ]
+  const toggle = (role: Audience) =>
+    setAudience((current) => (current.includes(role) ? current.filter((r) => r !== role) : [...current, role]))
 
-  const priorityOptions = [
-    { value: 'low', label: 'Low Priority', color: 'bg-gray-100 text-gray-800' },
-    { value: 'medium', label: 'Medium Priority', color: 'bg-yellow-100 text-yellow-800' },
-    { value: 'high', label: 'High Priority', color: 'bg-red-100 text-red-800' },
-  ]
+  const reach = roles
+    ? audience.reduce(
+        (acc, role) => {
+          const c = roles.byRole[role]
+          return { count: acc.count + (c?.count ?? 0), capped: acc.capped || !!c?.capped }
+        },
+        { count: 0, capped: false }
+      )
+    : undefined
 
-  const handleRoleToggle = (roleValue: string, checked: boolean) => {
-    setFormData(prev => ({
-      ...prev,
-      targetRoles: checked 
-        ? [...prev.targetRoles, roleValue]
-        : prev.targetRoles.filter(role => role !== roleValue)
-    }))
+  const titleTooLong = title.trim().length > MAX_TITLE
+  const messageTooLong = message.trim().length > MAX_MESSAGE
+  const canSend = title.trim() && message.trim() && audience.length > 0 && !titleTooLong && !messageTooLong
+
+  const reset = () => {
+    setTitle('')
+    setMessage('')
+    setAudience([])
+    setPriority('medium')
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!formData.title.trim() || !formData.message.trim()) {
-      toast.error('Please fill in all required fields')
-      return
-    }
-
-    if (formData.targetRoles.length === 0) {
-      toast.error('Please select at least one target audience')
-      return
-    }
-
-    setIsSubmitting(true)
-    
+  const send = async () => {
     try {
-      const result = await broadcastAnnouncement({
-        title: formData.title,
-        message: formData.message,
-        targetRoles: formData.targetRoles,
-        priority: formData.priority
+      await broadcast({ title: title.trim(), message: message.trim(), targetRoles: audience, priority })
+      playSound('success')
+      toast.success('Announcement on its way', {
+        description: 'It’s being delivered in the background. Progress shows under Sent.',
       })
-
-      setLastResult(result)
-      
-      toast.success('Announcement sent successfully!', {
-        description: `Delivered to ${result.recipientCount} users`,
-        duration: 5000,
-      })
-
-      // Reset form
-      setFormData({
-        title: '',
-        message: '',
-        targetRoles: [],
-        priority: 'medium'
-      })
+      reset()
     } catch (error) {
-      console.error('Failed to send announcement:', error)
-      toast.error('Failed to send announcement', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
-        duration: 5000,
-      })
-    } finally {
-      setIsSubmitting(false)
+      playSound('error')
+      toast.error('Could not send the announcement', { description: errorMessage(error) })
     }
   }
-
-  const selectedRoles = roleOptions.filter(role => formData.targetRoles.includes(role.value))
-  const selectedPriority = priorityOptions.find(p => p.value === formData.priority)
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Platform Announcements</h1>
-          <p className="text-muted-foreground">
-            Broadcast important notifications to platform users
-          </p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Badge variant="secondary" className="flex items-center gap-1">
-            <Megaphone className="h-3 w-3" />
-            Broadcast System
-          </Badge>
-        </div>
+    <AdminPage>
+      <PageHeader
+        eyebrow="Platform"
+        title="Announcements"
+        description="Send an in-app notification to groups of users. No email or push is sent."
+      />
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Panel title="New announcement" className="lg:col-span-2" bodyClassName="space-y-5 px-5 pb-5 pt-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="announcement-title" className="text-sm font-medium text-rh-night dark:text-white">
+              Title
+            </Label>
+            <Input
+              id="announcement-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. New booking hours over the holidays"
+              className={cn(inputClass, titleTooLong && 'border-rose-400 dark:border-rose-400')}
+            />
+            <p className={cn('text-xs', titleTooLong ? 'text-rose-600 dark:text-rose-300' : 'text-neutral-500 dark:text-neutral-400')}>
+              {title.trim().length}/{MAX_TITLE}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="announcement-message" className="text-sm font-medium text-rh-night dark:text-white">
+              Message
+            </Label>
+            <Textarea
+              id="announcement-message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="What do people need to know?"
+              rows={5}
+              className={cn(inputClass, messageTooLong && 'border-rose-400 dark:border-rose-400')}
+            />
+            <p className={cn('text-xs', messageTooLong ? 'text-rose-600 dark:text-rose-300' : 'text-neutral-500 dark:text-neutral-400')}>
+              {message.trim().length}/{MAX_MESSAGE}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-rh-night dark:text-white">Who should get it</p>
+            <div className="flex flex-wrap gap-2">
+              {AUDIENCES.map((role) => {
+                const active = audience.includes(role)
+                const c = roles?.byRole[role]
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => toggle(role)}
+                    aria-pressed={active}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition',
+                      active
+                        ? 'border-rh-teal bg-rh-mist text-rh-teal dark:border-rh-aqua dark:bg-rh-aqua/10 dark:text-rh-aqua'
+                        : 'border-black/10 bg-white text-neutral-600 hover:border-rh-teal/40 dark:border-white/10 dark:bg-rh-ink-3 dark:text-neutral-300'
+                    )}
+                  >
+                    {active && <Check className="h-3.5 w-3.5" />}
+                    {audienceLabel(role)}
+                    {c && <span className="text-xs tabular-nums opacity-60">{formatCount(c)}</span>}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-rh-night dark:text-white">Priority</p>
+            <FilterChips<Priority>
+              value={priority}
+              onChange={setPriority}
+              options={[
+                { value: 'low', label: 'Low' },
+                { value: 'medium', label: 'Normal' },
+                { value: 'high', label: 'High' },
+              ]}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-black/[0.04] pt-4 dark:border-white/[0.06]">
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {audience.length === 0
+                ? 'Choose at least one group.'
+                : reach
+                  ? `Reaches about ${formatCount(reach)} account${reach.count === 1 ? '' : 's'} (suspended staff are skipped).`
+                  : 'Counting recipients…'}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" className={softButtonClass} onClick={reset} disabled={!title && !message && audience.length === 0}>
+                Clear
+              </Button>
+              <Button size="sm" className={primaryButtonClass} onClick={() => setConfirmOpen(true)} disabled={!canSend}>
+                <Send className="mr-1.5 h-4 w-4" /> Send announcement
+              </Button>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel title="Preview" description="How it appears in the notification centre" bodyClassName="px-5 pb-5 pt-3">
+          {title || message ? (
+            <div className="rounded-xl border border-black/[0.06] bg-rh-canvas p-4 dark:border-white/[0.06] dark:bg-rh-ink-3">
+              <div className="flex items-start justify-between gap-2">
+                <p className="break-words text-sm font-semibold text-rh-night dark:text-white">{title || 'Announcement title'}</p>
+                <StatusBadge tone={PRIORITY_TONE[priority]}>{priority === 'medium' ? 'normal' : priority}</StatusBadge>
+              </div>
+              <p className="mt-1 whitespace-pre-line break-words text-sm text-neutral-600 dark:text-neutral-300">
+                {message || 'Your message will appear here.'}
+              </p>
+              <p className="mt-3 text-xs text-neutral-400">Just now · Announcement</p>
+            </div>
+          ) : (
+            <EmptyState icon={<Megaphone />} title="Nothing to preview yet" description="Start writing and the preview appears here." />
+          )}
+        </Panel>
       </div>
 
-      {/* Success Message */}
-      {lastResult && (
-        <Alert className="border-green-200 bg-green-50">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertDescription className="text-green-800">
-            Last announcement successfully sent to <strong>{lastResult.recipientCount} users</strong>
-            {' '}(ID: {lastResult.announcementId})
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Announcement Form */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Megaphone className="mr-2 h-5 w-5" />
-              Create Announcement
-            </CardTitle>
-            <CardDescription>
-              Compose and send announcements to specific user groups
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Title */}
-              <div className="space-y-2">
-                <Label htmlFor="title">Announcement Title *</Label>
-                <Input
-                  id="title"
-                  placeholder="Enter announcement title..."
-                  value={formData.title}
-                  onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                  required
-                />
-              </div>
-
-              {/* Message */}
-              <div className="space-y-2">
-                <Label htmlFor="message">Message *</Label>
-                <Textarea
-                  id="message"
-                  placeholder="Enter your announcement message..."
-                  value={formData.message}
-                  onChange={(e) => setFormData(prev => ({ ...prev, message: e.target.value }))}
-                  rows={4}
-                  required
-                />
-                <p className="text-sm text-muted-foreground">
-                  {formData.message.length}/500 characters
-                </p>
-              </div>
-
-              {/* Priority */}
-              <div className="space-y-2">
-                <Label>Priority Level</Label>
-                <Select
-                  value={formData.priority}
-                  onValueChange={(value) => setFormData(prev => ({ 
-                    ...prev, 
-                    priority: value as 'low' | 'medium' | 'high' 
-                  }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {priorityOptions.map((priority) => (
-                      <SelectItem key={priority.value} value={priority.value}>
-                        <div className="flex items-center space-x-2">
-                          <Badge variant="secondary" className={priority.color}>
-                            {priority.label}
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Target Roles */}
-              <div className="space-y-3">
-                <Label>Target Audience *</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  {roleOptions.map((role) => {
-                    const Icon = role.icon
-                    const isChecked = formData.targetRoles.includes(role.value)
-                    
-                    return (
-                      <div
-                        key={role.value}
-                        className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                          isChecked ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
-                        }`}
-                        onClick={() => handleRoleToggle(role.value, !isChecked)}
-                      >
-                        <Checkbox
-                          checked={isChecked}
-                          onCheckedChange={(checked) => handleRoleToggle(role.value, checked === true)}
-                        />
-                        <Icon className="h-4 w-4" />
-                        <span className="text-sm font-medium">{role.label}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-                {formData.targetRoles.length === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    Select at least one user group to send the announcement to
-                  </p>
-                )}
-              </div>
-
-              {/* Submit Button */}
-              <div className="flex justify-end space-x-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setFormData({
-                    title: '',
-                    message: '',
-                    targetRoles: [],
-                    priority: 'medium'
-                  })}
-                  disabled={isSubmitting}
-                >
-                  Clear
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isSubmitting || formData.targetRoles.length === 0}
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Clock className="mr-2 h-4 w-4 animate-spin" />
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="mr-2 h-4 w-4" />
-                      Send Announcement
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* Preview & Summary */}
-        <div className="space-y-6">
-          {/* Preview */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Preview</CardTitle>
-              <CardDescription>
-                How your announcement will appear to users
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {formData.title || formData.message ? (
-                <div className="p-4 border rounded-lg bg-muted/30">
-                  <div className="flex items-start justify-between mb-2">
-                    <h4 className="font-semibold">
-                      {formData.title || 'Announcement Title'}
-                    </h4>
-                    {selectedPriority && (
-                      <Badge variant="secondary" className={selectedPriority.color}>
-                        {selectedPriority.label}
-                      </Badge>
+      <Panel title="Sent" description="The 20 most recent announcements" bodyClassName="pb-2 pt-1">
+        {!history ? (
+          <div className="space-y-2 px-5 py-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-16 w-full rounded-xl" />
+            ))}
+          </div>
+        ) : history.items.length === 0 ? (
+          <EmptyState icon={<Megaphone />} title="No announcements yet" description="Announcements you send appear here with their delivery progress." />
+        ) : (
+          <ul className="divide-y divide-black/[0.04] dark:divide-white/[0.06]">
+            {history.items.map((a) => (
+              <li key={a._id} className="px-5 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold text-rh-night dark:text-white">{a.title}</p>
+                    <p className="mt-0.5 line-clamp-2 break-words text-sm text-neutral-600 dark:text-neutral-300">{a.message}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <StatusBadge tone={PRIORITY_TONE[a.priority]}>{a.priority === 'medium' ? 'normal' : a.priority}</StatusBadge>
+                    {a.status === 'sending' ? (
+                      <StatusBadge tone="amber">
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" /> Sending · {a.recipientCount.toLocaleString()}
+                      </StatusBadge>
+                    ) : a.status === 'sent' ? (
+                      <StatusBadge tone="green">Sent to {a.recipientCount.toLocaleString()}</StatusBadge>
+                    ) : (
+                      <StatusBadge tone="red">Failed</StatusBadge>
                     )}
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    {formData.message || 'Your announcement message will appear here...'}
-                  </p>
-                  <div className="flex items-center mt-3 text-xs text-muted-foreground">
-                    <Clock className="mr-1 h-3 w-3" />
-                    Just now • Platform Announcement
-                  </div>
                 </div>
-              ) : (
-                <div className="p-4 border rounded-lg bg-muted/30 text-center text-muted-foreground">
-                  <Megaphone className="mx-auto h-8 w-8 mb-2" />
-                  <p className="text-sm">Preview will appear here</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                  {a.targetRoles.map(audienceLabel).join(', ')} · by {a.createdByName} ·{' '}
+                  {formatDistanceToNow(a.createdAt, { addSuffix: true })}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
 
-          {/* Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Summary</CardTitle>
-              <CardDescription>
-                Announcement details overview
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Priority:</span>
-                  <Badge variant="secondary" className={selectedPriority?.color}>
-                    {selectedPriority?.label}
-                  </Badge>
-                </div>
-                
-                <div className="flex justify-between text-sm">
-                  <span>Target Groups:</span>
-                  <span className="font-medium">
-                    {selectedRoles.length > 0 ? selectedRoles.length : 'None selected'}
-                  </span>
-                </div>
-
-                <div className="flex justify-between text-sm">
-                  <span>Message Length:</span>
-                  <span className="font-medium">{formData.message.length} chars</span>
-                </div>
-              </div>
-
-              {selectedRoles.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-sm">Selected Audiences:</Label>
-                  <div className="space-y-1">
-                    {selectedRoles.map((role) => {
-                      const Icon = role.icon
-                      return (
-                        <div key={role.value} className="flex items-center space-x-2 text-sm">
-                          <Icon className="h-3 w-3" />
-                          <span>{role.label}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Guidelines */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Guidelines</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <div className="flex items-start space-x-2">
-                <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                <span>Keep messages clear and concise</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                <span>Use high priority sparingly for urgent matters</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                <span>Target specific user groups when possible</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
-                <span>All users will receive email notifications</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Send this announcement?"
+        description={
+          reach
+            ? `It goes to ${audience.map((r) => audienceLabel(r).toLowerCase()).join(', ')}: about ${formatCount(reach)} people. It can’t be recalled once sent.`
+            : 'It can’t be recalled once sent.'
+        }
+        confirmLabel="Send now"
+        onConfirm={send}
+      />
+    </AdminPage>
   )
-} 
+}

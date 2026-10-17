@@ -934,6 +934,10 @@ export const checkStatus = query({
 
 // ── Admin: List all registrations ───────────────────────
 
+const ADMIN_REGISTRY_DEFAULT_LIMIT = 200;
+const ADMIN_REGISTRY_MAX_LIMIT = 500;
+
+/** Newest registrations first, at most `limit` rows (default 200, max 500). */
 export const adminListRegistrations = query({
   args: {
     status: v.optional(
@@ -944,9 +948,14 @@ export const adminListRegistrations = query({
         v.literal("listed")
       )
     ),
+    limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await ensureUserRole(ctx, ["admin"]);
+    const limit = Math.max(
+      1,
+      Math.min(Math.floor(args.limit ?? ADMIN_REGISTRY_DEFAULT_LIMIT), ADMIN_REGISTRY_MAX_LIMIT)
+    );
     if (args.status) {
       return await ctx.db
         .query("physioRegistry")
@@ -954,9 +963,33 @@ export const adminListRegistrations = query({
           q.eq("verificationStatus", args.status!)
         )
         .order("desc")
-        .collect();
+        .take(limit);
     }
-    return await ctx.db.query("physioRegistry").order("desc").collect();
+    return await ctx.db.query("physioRegistry").order("desc").take(limit);
+  },
+});
+
+const ADMIN_REGISTRY_COUNT_CAP = 500;
+
+/** Per-status counts for the registry filter chips (each capped; `capped` lists the ones that hit it). */
+export const adminRegistrationCounts = query({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const statuses = ["pending", "verified", "rejected", "listed"] as const;
+    const counts: Record<string, number> = {};
+    const capped: string[] = [];
+    await Promise.all(
+      statuses.map(async (status) => {
+        const rows = await ctx.db
+          .query("physioRegistry")
+          .withIndex("by_verification_status", (q) => q.eq("verificationStatus", status))
+          .take(ADMIN_REGISTRY_COUNT_CAP);
+        counts[status] = rows.length;
+        if (rows.length >= ADMIN_REGISTRY_COUNT_CAP) capped.push(status);
+      })
+    );
+    return { counts, capped, cap: ADMIN_REGISTRY_COUNT_CAP };
   },
 });
 

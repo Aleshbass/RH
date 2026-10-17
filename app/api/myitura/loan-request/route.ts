@@ -6,7 +6,7 @@
  * What this does:
  *  1. Validates the patient's form fields
  *  2. Saves the request to Convex `loanRequests` table (status: "pending")
- *  3. Sends an email to the Rehabify admin (PLATFORM_ADMIN_EMAIL) via Resend
+ *  3. Sends an email to the Rehabify admin inboxes (lib/email/adminRecipients) via Resend
  *     notifying them that a patient is interested in a MediLoan
  *  4. Returns success — the patient sees a confirmation message
  *
@@ -17,6 +17,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { platformAdminEmails } from "@/lib/email/adminRecipients";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import {
@@ -28,7 +29,7 @@ import {
 const resend = new Resend(process.env.RESEND_API_KEY);
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
-const ADMIN_EMAIL = process.env.PLATFORM_ADMIN_EMAIL || "admin@physioaroundme.com";
+const ADMIN_EMAILS = platformAdminEmails();
 const FROM_EMAIL  = process.env.FROM_EMAIL || "noreply@physioaroundme.com";
 const APP_URL     = process.env.NEXT_PUBLIC_APP_URL || "https://rehabifyhealth.com";
 
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
 
         await resend.emails.send({
             from: `Rehabify Health Notifications <${FROM_EMAIL}>`,
-            to: ADMIN_EMAIL,
+            to: ADMIN_EMAILS,
             subject: `🏦 New MediLoan Request — ${firstName} ${lastName}`,
             html: `
 <!DOCTYPE html>

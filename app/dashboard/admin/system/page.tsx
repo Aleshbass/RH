@@ -1,428 +1,344 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useSystemHealth, useSystemMetrics } from "@/hooks/useDashboardData";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
-import { 
-  Settings, 
-  Server, 
-  Database, 
-  Shield, 
-  Bell, 
-  Mail,
-  Clock,
-  HardDrive,
-  Cpu,
-  Save,
-  RefreshCw,
-  AlertTriangle,
-  CheckCircle
-} from "lucide-react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { useMutation, useQuery } from 'convex/react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { formatDistanceToNow } from 'date-fns'
+import { Loader2, Mail, Store, UserPlus, Wrench } from 'lucide-react'
+import { toast } from 'sonner'
+import { api } from '@/convex/_generated/api'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  AdminPage,
+  ConfirmDialog,
+  IconChip,
+  PageHeader,
+  Panel,
+  StatusBadge,
+  inputClass,
+  primaryButtonClass,
+  softButtonClass,
+} from '@/components/admin/ui'
+import { playSound } from '@/lib/sounds'
+import { cn } from '@/lib/utils'
 
-// Define the shape of system metrics locally (should ideally be shared type)
-interface SystemMetrics {
-  database: {
-    totalDocuments: number;
-    storageUsed: number;
-    queryPerformance: number;
-    indexEfficiency: number;
-  };
-  api: {
-    averageResponseTime: number;
-    requestsPerMinute: number;
-    errorRate: number;
-  };
-  notifications: {
-    queueSize: number;
-    deliveryRate: number;
-    failureRate: number;
-  };
+type Controls = {
+  maintenanceMode: boolean
+  maintenanceMessage: string
+  allowPatientSignups: boolean
+  allowPhysioSignups: boolean
+  allowClinicSignups: boolean
+  marketplaceEnabled: boolean
+  supportEmail: string
 }
 
-export default function AdminSystemPage() {
-  const systemHealth = useSystemHealth();
-  const systemMetricsQuery = useSystemMetrics();
-  const metrics: SystemMetrics | undefined = systemMetricsQuery?.data as SystemMetrics | undefined;
-  
-  const [settings, setSettings] = useState({
-    maintenance: false,
-    registrationOpen: true,
-    emailNotifications: true,
-    backupEnabled: true,
-    autoUpdates: false,
-    debugMode: false,
-    maxUsers: 10000,
-    sessionTimeout: 30,
-    uploadLimit: 50,
-  });
+const FIELDS: (keyof Controls)[] = [
+  'maintenanceMode',
+  'maintenanceMessage',
+  'allowPatientSignups',
+  'allowPhysioSignups',
+  'allowClinicSignups',
+  'marketplaceEnabled',
+  'supportEmail',
+]
 
-  const handleSettingChange = (key: string, value: boolean | number) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
-  };
+const MAX_MESSAGE = 500
 
-  const handleSave = () => {
-    // Implementation would save settings to backend
-    console.log("Saving settings:", settings);
-  };
+function pick(source: Controls): Controls {
+  return Object.fromEntries(FIELDS.map((k) => [k, source[k]])) as Controls
+}
+
+function errorMessage(error: unknown) {
+  if (error && typeof error === 'object' && 'data' in error && typeof (error as { data: unknown }).data === 'string') {
+    return (error as { data: string }).data
+  }
+  return error instanceof Error ? error.message : 'Something went wrong'
+}
+
+export default function AdminSettingsPage() {
+  const saved = useQuery(api.platformSettings.getPlatformControls)
+  const update = useMutation(api.platformSettings.updatePlatformControls)
+  const reduceMotion = useReducedMotion()
+
+  const [draft, setDraft] = useState<Controls | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [confirmMaintenance, setConfirmMaintenance] = useState(false)
+
+  const savedControls = useMemo(() => (saved ? pick(saved) : null), [saved])
+  const dirty = !!draft && !!savedControls && FIELDS.some((k) => draft[k] !== savedControls[k])
+
+  // Load the saved values, and follow changes made elsewhere while nothing is being edited
+  useEffect(() => {
+    if (savedControls && !dirty) setDraft(savedControls)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedControls])
+
+  const set = <K extends keyof Controls>(key: K, value: Controls[K]) => setDraft((d) => (d ? { ...d, [key]: value } : d))
+
+  const emailInvalid = !!draft?.supportEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.supportEmail.trim())
+  const messageTooLong = (draft?.maintenanceMessage.length ?? 0) > MAX_MESSAGE
+
+  const save = async () => {
+    if (!draft) return
+    setSaving(true)
+    try {
+      const result = await update(draft)
+      playSound('success')
+      toast.success(result.changed ? 'Settings saved' : 'Nothing to change')
+    } catch (error) {
+      playSound('error')
+      toast.error('Could not save settings', { description: errorMessage(error) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const requestSave = () => {
+    if (!draft || emailInvalid || messageTooLong) return
+    if (draft.maintenanceMode && !savedControls?.maintenanceMode) setConfirmMaintenance(true)
+    else void save()
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">System Settings</h1>
-          <p className="text-muted-foreground">
-            Configure platform settings and system parameters
-          </p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Button variant="outline" size="sm">
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-          <Button size="sm" onClick={handleSave}>
-            <Save className="mr-2 h-4 w-4" />
-            Save Changes
-          </Button>
-        </div>
-      </div>
+    <AdminPage className="pb-24">
+      <PageHeader
+        eyebrow="Platform"
+        title="Settings"
+        description="Switches that change what visitors and new users can do. Changes apply as soon as you save."
+        actions={
+          saved?.updatedAt ? (
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">
+              Last changed {formatDistanceToNow(saved.updatedAt, { addSuffix: true })}
+              {saved.updatedByName ? ` by ${saved.updatedByName}` : ''}
+            </span>
+          ) : undefined
+        }
+      />
 
-      {/* System Status Overview */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">System Health</CardTitle>
-            <Server className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center space-x-2">
-              {(systemHealth?.data as { status: string; overall: number })?.status === 'excellent' ? (
-                <CheckCircle className="h-5 w-5 text-green-500" />
-              ) : (
-                <AlertTriangle className="h-5 w-5 text-yellow-500" />
-              )}
-              <div className="text-2xl font-bold">{(systemHealth?.data as { status: string; overall: number })?.overall || 0}%</div>
+      {!draft ? (
+        <div className="space-y-4">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-40 w-full rounded-2xl" />
+          ))}
+        </div>
+      ) : (
+        <>
+          {draft.maintenanceMode && savedControls?.maintenanceMode && (
+            <div className="flex items-start gap-3 rounded-2xl bg-rh-peach px-4 py-3 text-sm text-[#8a5208] dark:bg-amber-400/10 dark:text-amber-200">
+              <Wrench className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                <span className="font-semibold">Maintenance mode is on.</span> Visitors and signed-in users who aren&apos;t
+                admins see the maintenance screen.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground capitalize">
-              {(systemHealth?.data as { status: string; overall: number })?.status || 'Loading...'}
+          )}
+
+          <SettingsGroup
+            icon={Wrench}
+            title="Maintenance"
+            description="Cover the site with a maintenance screen while you work on something."
+          >
+            <SwitchRow
+              label="Maintenance mode"
+              description="Every page shows the maintenance screen, except sign-in and the admin console. Admins are never blocked. This is a screen in the browser; background jobs and webhooks keep running."
+              checked={draft.maintenanceMode}
+              onChange={(v) => set('maintenanceMode', v)}
+              tone="warning"
+            />
+            <div className="space-y-1.5 px-5 py-4">
+              <Label htmlFor="maintenance-message" className="text-sm font-medium text-rh-night dark:text-white">
+                Message for visitors
+              </Label>
+              <Textarea
+                id="maintenance-message"
+                value={draft.maintenanceMessage}
+                onChange={(e) => set('maintenanceMessage', e.target.value)}
+                placeholder="We're making some improvements and will be back shortly."
+                rows={3}
+                className={cn(inputClass, messageTooLong && 'border-rose-400 dark:border-rose-400')}
+              />
+              <p className={cn('text-xs', messageTooLong ? 'text-rose-600 dark:text-rose-300' : 'text-neutral-500 dark:text-neutral-400')}>
+                {draft.maintenanceMessage.length}/{MAX_MESSAGE} characters. Leave empty to use the default message.
+              </p>
+            </div>
+          </SettingsGroup>
+
+          <SettingsGroup
+            icon={UserPlus}
+            title="New registrations"
+            description="Pause self sign-up for an account type. Existing accounts are not affected."
+          >
+            <SwitchRow
+              label="Patients can sign up"
+              description="Controls the Patient choice on the role-selection page."
+              checked={draft.allowPatientSignups}
+              onChange={(v) => set('allowPatientSignups', v)}
+            />
+            <SwitchRow
+              label="Physiotherapists can sign up"
+              description="Controls the Physiotherapist choice on the role-selection page."
+              checked={draft.allowPhysioSignups}
+              onChange={(v) => set('allowPhysioSignups', v)}
+            />
+            <SwitchRow
+              label="Clinics can sign up"
+              description="Controls the Clinic owner choice on the role-selection page."
+              checked={draft.allowClinicSignups}
+              onChange={(v) => set('allowClinicSignups', v)}
+            />
+            <p className="px-5 pb-4 pt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              A paused choice is greyed out and the server refuses it too. Patient invites, guest bookings and Joy referrals
+              still create patient accounts.
             </p>
-          </CardContent>
-        </Card>
+          </SettingsGroup>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Database</CardTitle>
-            <Database className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics?.database?.totalDocuments ?? 0}</div>
-            <p className="text-xs text-muted-foreground">Total documents</p>
-          </CardContent>
-        </Card>
+          <SettingsGroup icon={Store} title="Marketplace" description="Public physiotherapist search and online booking.">
+            <SwitchRow
+              label="Marketplace bookings"
+              description="When off, Find a physio, Find my physio and the booking pages show a “booking is paused” screen to everyone except admins. Booking confirmations for paid bookings stay reachable."
+              checked={draft.marketplaceEnabled}
+              onChange={(v) => set('marketplaceEnabled', v)}
+            />
+          </SettingsGroup>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">API Performance</CardTitle>
-            <Cpu className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics?.api?.averageResponseTime ?? 0}ms</div>
-            <p className="text-xs text-muted-foreground">Response time</p>
-          </CardContent>
-        </Card>
+          <SettingsGroup icon={Mail} title="Support" description="Where the team can be reached.">
+            <div className="space-y-1.5 px-5 py-4">
+              <Label htmlFor="support-email" className="text-sm font-medium text-rh-night dark:text-white">
+                Support email
+              </Label>
+              <Input
+                id="support-email"
+                type="email"
+                value={draft.supportEmail}
+                onChange={(e) => set('supportEmail', e.target.value)}
+                placeholder="support@example.com"
+                className={cn(inputClass, 'max-w-md', emailInvalid && 'border-rose-400 dark:border-rose-400')}
+              />
+              <p className={cn('text-xs', emailInvalid ? 'text-rose-600 dark:text-rose-300' : 'text-neutral-500 dark:text-neutral-400')}>
+                {emailInvalid ? 'Enter a valid email address.' : 'Saved for the team’s reference. It isn’t shown to users yet.'}
+              </p>
+            </div>
+          </SettingsGroup>
+        </>
+      )}
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Storage</CardTitle>
-            <HardDrive className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics?.database?.storageUsed ?? 0}GB</div>
-            <p className="text-xs text-muted-foreground">Used storage</p>
-          </CardContent>
-        </Card>
+      <AnimatePresence>
+        {dirty && (
+          <motion.div
+            key="save-bar"
+            initial={reduceMotion ? false : { y: 24, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { y: 24, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="sticky bottom-4 z-30"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-rh-night px-4 py-3 text-white shadow-lift dark:bg-rh-ink-3 dark:ring-1 dark:ring-white/10">
+              <p className="text-sm">
+                You have unsaved changes
+                {(emailInvalid || messageTooLong) && <span className="ml-2 text-amber-300">Fix the highlighted fields first.</span>}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-xl text-white hover:bg-white/10 hover:text-white"
+                  onClick={() => savedControls && setDraft(savedControls)}
+                  disabled={saving}
+                >
+                  Discard
+                </Button>
+                <Button
+                  size="sm"
+                  className={cn(primaryButtonClass, 'bg-rh-aqua text-rh-night hover:bg-[#5eead4]')}
+                  onClick={requestSave}
+                  disabled={saving || emailInvalid || messageTooLong}
+                >
+                  {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                  Save changes
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <ConfirmDialog
+        open={confirmMaintenance}
+        onOpenChange={setConfirmMaintenance}
+        title="Turn on maintenance mode?"
+        description="Everyone except admins will see the maintenance screen right away, including patients and physiotherapists in the middle of using the app."
+        confirmLabel="Turn on and save"
+        destructive
+        onConfirm={save}
+      />
+    </AdminPage>
+  )
+}
+
+function SettingsGroup({
+  icon,
+  title,
+  description,
+  children,
+}: {
+  icon: typeof Wrench
+  title: string
+  description: string
+  children: ReactNode
+}) {
+  return (
+    <Panel
+      title={
+        <span className="flex items-center gap-2.5">
+          <IconChip icon={icon} className="h-8 w-8 rounded-lg" />
+          {title}
+        </span>
+      }
+      description={<span className="mt-1 block">{description}</span>}
+      bodyClassName="mt-2 divide-y divide-black/[0.04] border-t border-black/[0.04] dark:divide-white/[0.06] dark:border-white/[0.06]"
+    >
+      {children}
+    </Panel>
+  )
+}
+
+function SwitchRow({
+  label,
+  description,
+  checked,
+  onChange,
+  tone,
+}: {
+  label: string
+  description: string
+  checked: boolean
+  onChange: (value: boolean) => void
+  tone?: 'warning'
+}) {
+  const id = useId()
+  return (
+    <div className="flex items-start justify-between gap-4 px-5 py-4">
+      <div className="min-w-0">
+        <label htmlFor={id} className="flex cursor-pointer items-center gap-2 text-sm font-medium text-rh-night dark:text-white">
+          {label}
+          {tone === 'warning' && checked && <StatusBadge tone="amber">On</StatusBadge>}
+        </label>
+        <p className="mt-0.5 max-w-2xl text-xs text-neutral-500 dark:text-neutral-400">{description}</p>
       </div>
-
-      {/* Settings Tabs */}
-      <Tabs defaultValue="general" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="performance">Performance</TabsTrigger>
-          <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="general" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Settings className="mr-2 h-5 w-5" />
-                General Settings
-              </CardTitle>
-              <CardDescription>
-                Basic platform configuration and user settings
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>User Registration</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Allow new users to register on the platform
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.registrationOpen}
-                  onCheckedChange={(checked) => handleSettingChange('registrationOpen', checked)}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="maxUsers">Maximum Users</Label>
-                  <Input
-                    id="maxUsers"
-                    type="number"
-                    value={settings.maxUsers}
-                    onChange={(e) => handleSettingChange('maxUsers', parseInt(e.target.value))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="sessionTimeout">Session Timeout (minutes)</Label>
-                  <Input
-                    id="sessionTimeout"
-                    type="number"
-                    value={settings.sessionTimeout}
-                    onChange={(e) => handleSettingChange('sessionTimeout', parseInt(e.target.value))}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="security" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Shield className="mr-2 h-5 w-5" />
-                Security Settings
-              </CardTitle>
-              <CardDescription>
-                Configure security policies and access controls
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Debug Mode</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Enable detailed logging for troubleshooting
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.debugMode}
-                  onCheckedChange={(checked) => handleSettingChange('debugMode', checked)}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="uploadLimit">Upload Limit (MB)</Label>
-                    <Input
-                      id="uploadLimit"
-                      type="number"
-                      value={settings.uploadLimit}
-                      onChange={(e) => handleSettingChange('uploadLimit', parseInt(e.target.value))}
-                    />
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="notifications" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Bell className="mr-2 h-5 w-5" />
-                Notification Settings
-              </CardTitle>
-              <CardDescription>
-                Configure email and system notifications
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Email Notifications</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Send email notifications to users
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.emailNotifications}
-                  onCheckedChange={(checked) => handleSettingChange('emailNotifications', checked)}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium">Notification Queue Status</h4>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="flex items-center space-x-2">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">Queue Size:</span>
-                    <Badge variant="secondary">
-                      {metrics?.notifications?.queueSize ?? 0}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span className="text-sm">Delivery Rate:</span>
-                    <Badge variant="secondary">
-                      {metrics?.notifications?.deliveryRate ?? 0}%
-                    </Badge>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                    <span className="text-sm">Failure Rate:</span>
-                    <Badge variant="secondary">
-                      {metrics?.notifications?.failureRate ?? 0}%
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="performance" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Cpu className="mr-2 h-5 w-5" />
-                Performance Settings
-              </CardTitle>
-              <CardDescription>
-                Monitor and configure system performance
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-4">
-                  <h4 className="text-sm font-medium">Database Performance</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">Query Performance</span>
-                      <span className="text-sm font-medium">
-                        {metrics?.database?.queryPerformance ?? 0}%
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm">Index Efficiency</span>
-                      <span className="text-sm font-medium">
-                        {metrics?.database?.indexEfficiency ?? 0}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h4 className="text-sm font-medium">API Performance</h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm">Requests/min</span>
-                      <span className="text-sm font-medium">
-                        {metrics?.api?.requestsPerMinute ?? 0}/min
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm">Error Rate</span>
-                      <span className="text-sm font-medium">
-                        {metrics?.api?.errorRate ?? 0}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="maintenance" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Clock className="mr-2 h-5 w-5" />
-                Maintenance Settings
-              </CardTitle>
-              <CardDescription>
-                Configure maintenance mode and system updates
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Maintenance Mode</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Put the platform in maintenance mode
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.maintenance}
-                  onCheckedChange={(checked) => handleSettingChange('maintenance', checked)}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Automatic Backups</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Enable automatic daily backups
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.backupEnabled}
-                  onCheckedChange={(checked) => handleSettingChange('backupEnabled', checked)}
-                />
-              </div>
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Automatic Updates</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Automatically apply security updates
-                  </p>
-                </div>
-                <Switch
-                  checked={settings.autoUpdates}
-                  onCheckedChange={(checked) => handleSettingChange('autoUpdates', checked)}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <Switch
+        id={id}
+        checked={checked}
+        onCheckedChange={onChange}
+        className={cn(
+          'mt-0.5 data-[state=checked]:bg-rh-teal data-[state=unchecked]:bg-neutral-200 dark:data-[state=checked]:bg-rh-aqua dark:data-[state=unchecked]:bg-white/15',
+          tone === 'warning' && 'data-[state=checked]:bg-amber-500 dark:data-[state=checked]:bg-amber-400'
+        )}
+      />
     </div>
-  );
-} 
+  )
+}

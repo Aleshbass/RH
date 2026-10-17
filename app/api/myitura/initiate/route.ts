@@ -20,6 +20,11 @@ import { auth } from "@clerk/nextjs/server";
 import { api } from "@/convex/_generated/api";
 import { getConvexClient } from "@/lib/convex-client";
 import { initiateMediLoan } from "@/lib/myitura/myitura";
+import { getServerViewer } from "@/lib/auth/serverViewer";
+import { convexServerSecret } from "@/lib/convex-server-secret";
+
+// Callers: the admin loans page and the physiotherapist billing page.
+const ALLOWED_ROLES = ["admin", "physiotherapist"];
 
 export async function POST(request: NextRequest) {
     try {
@@ -29,6 +34,10 @@ export async function POST(request: NextRequest) {
         const { userId } = await auth();
         if (!userId) {
             return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+        }
+        const viewer = await getServerViewer();
+        if (!viewer?.role || !ALLOWED_ROLES.includes(viewer.role)) {
+            return NextResponse.json({ error: "Only Rehabify admins and physiotherapists can start a MediLoan." }, { status: 403 });
         }
 
         // 2. Parse & validate body
@@ -121,6 +130,7 @@ export async function POST(request: NextRequest) {
                 patientEmail: email || undefined,
                 applicationUrl: myituraData.data.applicationUrl,
                 expiresAt: myituraData.data.expiresAt ?? "",
+                serverSecret: convexServerSecret(),
             });
         } catch (convexError: any) {
             console.error("[MyItura Initiate] Convex mutation failed:", convexError.message);

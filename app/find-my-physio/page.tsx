@@ -201,7 +201,7 @@ function TierSection({
     defaultExpanded = true,
     accentColor = "#005b57",
 }: {
-    icon: React.ElementType;
+    icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
     title: string;
     subtitle: string;
     physios: any[];

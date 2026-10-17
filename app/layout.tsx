@@ -5,6 +5,7 @@ import "./globals.css";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 import { ClerkProvider } from "@clerk/nextjs";
 import SyncUserWithConvex from "@/components/auth/SyncUserWithConvex";
+import PlatformStatusGate from "@/components/platform/PlatformStatusGate";
 import Providers from "./providers";
 import '@fortawesome/fontawesome-svg-core/styles.css';
 import ConditionalLayout from '@/components/layout/ConditionalLayout';
@@ -139,7 +140,9 @@ export default async function RootLayout({
     const headersList = await headers();
     const pathname = headersList.get("x-pathname") || "";
     isClinicPortal =
-      pathname.startsWith("/dashboard/clinic") || pathname.startsWith("/dashboard/physiotherapist");
+      pathname.startsWith("/dashboard/clinic") ||
+      pathname.startsWith("/dashboard/physiotherapist") ||
+      pathname.startsWith("/dashboard/admin");
     const host = (headersList.get("host") || "").toLowerCase();
     const isSubdomainHeader = headersList.get("x-is-b2b-subdomain") === "true";
     isSubdomainHost =
@@ -167,6 +170,7 @@ export default async function RootLayout({
           <Providers>
             <ConvexClientProvider>
               <SyncUserWithConvex />
+              <PlatformStatusGate />
 
               <ConditionalLayout isSubdomainHost={isSubdomainHost}>
                 {children}

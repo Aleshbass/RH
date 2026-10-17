@@ -28,6 +28,7 @@ import {
 } from "./partnerShared";
 import { emitReferralEvent, markProviderMatched, transitionReferral } from "./partnerEvents";
 import { bumpLinkCounter } from "./partnerAttribution";
+import { platformAdminEmails } from "./adminRecipients";
 
 export type CoreError = { ok: false; status: number; code: string; message: string; param?: string; existing?: Record<string, unknown> };
 const fail = (status: number, code: string, message: string, extra: Partial<CoreError> = {}): CoreError => ({ ok: false, status, code, message, ...extra });
@@ -241,7 +242,7 @@ export async function createReferralCore(
         contactName: partner.contactName || partner.name,
       });
     }
-    const adminEmails = process.env.ADMIN_EMAIL ? [process.env.ADMIN_EMAIL] : ["info@physioaroundme.com"];
+    const adminEmails = platformAdminEmails();
     for (const adminEmail of adminEmails) {
       await ctx.scheduler.runAfter(0, internal.actions.emails.sendReferralCreatedEmails.sendAdminReferralCreatedEmail, {
         ...shared,

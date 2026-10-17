@@ -2,16 +2,50 @@
 
 import Link from 'next/link'
 import { useClinicPreview } from './ClinicPreviewContext'
-import { Clock, Eye, AlertCircle } from 'lucide-react'
+import { Clock, Eye, AlertCircle, ShieldOff } from 'lucide-react'
 
 /**
  * One calm line explaining why live actions are disabled, with a single next step.
  */
 export default function ClinicPreviewBanner() {
-  const { isPreviewMode, isPendingApproval, isOnboardingIncomplete, isDeclined, isStaff, isSuspended, isLoaded } =
-    useClinicPreview()
+  const {
+    isPreviewMode,
+    isPendingApproval,
+    isOnboardingIncomplete,
+    isDeclined,
+    isStaff,
+    isSuspended,
+    isClinicSuspended,
+    clinicSuspendedReason,
+    isLoaded,
+  } = useClinicPreview()
 
-  if (!isLoaded || (!isPreviewMode && !isDeclined)) {
+  if (!isLoaded) return null
+
+  // Rehabify suspended the whole clinic: the most important thing to say, so it wins
+  if (isClinicSuspended) {
+    return (
+      <div className="border-b border-rose-200 bg-rose-50 px-4 py-2.5 dark:border-rose-900/50 dark:bg-rose-950/30 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-start gap-3">
+          <ShieldOff className="mt-0.5 h-4 w-4 shrink-0 text-rose-700 dark:text-rose-400" />
+          <p className="min-w-0 flex-1 text-sm text-rose-900 dark:text-rose-200">
+            <span className="font-medium">Rehabify has suspended this clinic.</span> You can still view your records, but
+            changes, bookings and payouts are turned off.
+            {clinicSuspendedReason && <span className="mt-0.5 block text-rose-800/90 dark:text-rose-300/90">Reason: {clinicSuspendedReason}</span>}
+            <span className="mt-0.5 block">
+              Contact{' '}
+              <a href="mailto:support@rehabify.ng" className="font-medium underline underline-offset-2">
+                support@rehabify.ng
+              </a>{' '}
+              to restore access.
+            </span>
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!isPreviewMode && !isDeclined) {
     return null
   }
 

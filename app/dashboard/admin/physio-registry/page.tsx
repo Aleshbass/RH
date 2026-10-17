@@ -1,447 +1,544 @@
-'use client';
+'use client'
 
-import React, { useState } from 'react';
-import { useQuery, useMutation } from 'convex/react';
-import { api } from '@/convex/_generated/api';
-import { Id } from '@/convex/_generated/dataModel';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useMemo, useState, type ReactNode } from 'react'
+import Image from 'next/image'
+import { useMutation, useQuery } from 'convex/react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { format } from 'date-fns'
+import { toast } from 'sonner'
 import {
-    ShieldCheck, ShieldAlert, Clock, Search, Check, X, ChevronDown,
-    FileText, Eye, Loader2, ArrowLeft, ExternalLink, User
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
-import Link from 'next/link';
+  ArrowLeft,
+  Check,
+  Clock,
+  Download,
+  ExternalLink,
+  Eye,
+  FileText,
+  Globe,
+  Loader2,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  User,
+  X,
+} from 'lucide-react'
 
-type RegistrationStatus = 'pending' | 'verified' | 'rejected';
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  AdminPage,
+  ConfirmDialog,
+  EmptyState,
+  FilterChips,
+  IconChip,
+  PageHeader,
+  Panel,
+  StatusBadge,
+  cardClass,
+  downloadCsv,
+  inputClass,
+  primaryButtonClass,
+  softButtonClass,
+  tableWrapClass,
+} from '@/components/admin/ui'
+import { playSound } from '@/lib/sounds'
+import { cn } from '@/lib/utils'
+
+type RegistrationStatus = 'pending' | 'verified' | 'rejected' | 'listed'
+type StatusFilter = RegistrationStatus | 'all'
 
 interface RegistryEntry {
-    _id: Id<"physioRegistry">;
-    fullName: string;
-    email: string;
-    phone: string;
-    practiceName?: string;
-    practiceAddress?: string;
-    yearsOfExperience: number;
-    licenseNumber: string;
-    regulatoryBody: string;
-    licenseCountry: string;
-    licenseExpiryDate: string;
-    specialties: string[];
-    languages: string[];
-    bio?: string;
-    websiteUrl?: string;
-    verificationStatus: string;
-    rejectionReason?: string;
-    verifiedAt?: number;
-    submittedAt: number;
+  _id: Id<'physioRegistry'>
+  fullName: string
+  email: string
+  phone: string
+  practiceName?: string
+  practiceAddress?: string
+  yearsOfExperience: number
+  licenseNumber: string
+  regulatoryBody: string
+  licenseCountry: string
+  licenseExpiryDate: string
+  specialties: string[]
+  languages: string[]
+  bio?: string
+  websiteUrl?: string
+  verificationStatus: string
+  rejectionReason?: string
+  verifiedAt?: number
+  submittedAt: number
 }
 
+type RegistryDetail = RegistryEntry & {
+  licenseCertUrl: string | null
+  photoIdUrl: string | null
+  insuranceUrl: string | null
+  profilePhotoUrl: string | null
+}
+
+type RegistryCounts = { counts: Record<string, number>; capped: string[]; cap: number }
+
+const LIST_LIMIT = 200
+
+const STATUS_META: Record<RegistrationStatus, { label: string; tone: 'amber' | 'green' | 'red' | 'teal'; icon: typeof Clock }> = {
+  pending: { label: 'Pending', tone: 'amber', icon: Clock },
+  verified: { label: 'Verified', tone: 'green', icon: ShieldCheck },
+  rejected: { label: 'Rejected', tone: 'red', icon: ShieldAlert },
+  listed: { label: 'Listed', tone: 'teal', icon: Globe },
+}
+
+function RegistryStatusBadge({ status }: { status: string }) {
+  const meta = STATUS_META[status as RegistrationStatus] ?? { label: status, tone: 'teal' as const, icon: Globe }
+  const Icon = meta.icon
+  return (
+    <StatusBadge tone={meta.tone} className="gap-1">
+      <Icon className="h-3 w-3" />
+      {meta.label}
+    </StatusBadge>
+  )
+}
+
+function InfoLine({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap gap-x-2 text-sm">
+      <span className="text-neutral-500 dark:text-neutral-400">{label}</span>
+      <span className="font-medium text-rh-night dark:text-white">{children}</span>
+    </div>
+  )
+}
+
+const registryApi = api.physioRegistry
+
 export default function PhysioRegistryAdminPage() {
-    const [statusFilter, setStatusFilter] = useState<RegistrationStatus | undefined>('pending');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [selectedId, setSelectedId] = useState<Id<"physioRegistry"> | null>(null);
-    const [rejectionReason, setRejectionReason] = useState('');
-    const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const reduceMotion = useReducedMotion()
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedId, setSelectedId] = useState<Id<'physioRegistry'> | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<{ id: Id<'physioRegistry'>; name: string } | null>(null)
+  const [rejectionReason, setRejectionReason] = useState('')
+  const [approvingId, setApprovingId] = useState<string | null>(null)
 
-    const registrations = useQuery(api.physioRegistry.adminListRegistrations, {
-        status: statusFilter,
-    });
+  const registrations = useQuery(api.physioRegistry.adminListRegistrations, {
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    limit: LIST_LIMIT,
+  }) as RegistryEntry[] | undefined
+  const counts = (useQuery as any)(registryApi.adminRegistrationCounts) as RegistryCounts | undefined
+  const selectedEntry = useQuery(api.physioRegistry.adminGetRegistration, selectedId ? { id: selectedId } : 'skip') as
+    | RegistryDetail
+    | null
+    | undefined
 
-    const selectedEntry = useQuery(
-        api.physioRegistry.adminGetRegistration,
-        selectedId ? { id: selectedId } : 'skip'
-    );
+  const approve = useMutation(api.physioRegistry.adminApprove)
+  const reject = useMutation(api.physioRegistry.adminReject)
 
-    const approve = useMutation(api.physioRegistry.adminApprove);
-    const reject = useMutation(api.physioRegistry.adminReject);
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return registrations ?? []
+    return (registrations ?? []).filter(
+      (r) => r.fullName.toLowerCase().includes(q) || r.licenseNumber.toLowerCase().includes(q) || r.email.toLowerCase().includes(q)
+    )
+  }, [registrations, searchQuery])
 
-    const [isActioning, setIsActioning] = useState(false);
+  const countFor = (status: RegistrationStatus) => counts?.counts[status]
+  const totalCount = counts ? Object.values(counts.counts).reduce((s, n) => s + n, 0) : undefined
 
-    const handleApprove = async (id: Id<"physioRegistry">) => {
-        setIsActioning(true);
-        try {
-            await approve({ id });
-            toast.success("Registration approved!");
-            setSelectedId(null);
-        } catch (e: any) {
-            toast.error(e.message || "Failed to approve");
-        } finally {
-            setIsActioning(false);
+  const handleApprove = async (id: Id<'physioRegistry'>, name: string) => {
+    setApprovingId(id)
+    try {
+      await approve({ id })
+      playSound('approve')
+      toast.success(`${name} verified`)
+    } catch (e) {
+      playSound('error')
+      toast.error('Could not verify this registration', { description: e instanceof Error ? e.message : 'Please try again.' })
+    } finally {
+      setApprovingId(null)
+    }
+  }
+
+  const confirmReject = async () => {
+    if (!rejectTarget) return
+    const reason = rejectionReason.trim()
+    if (!reason) {
+      toast.error('Add a rejection reason first')
+      throw new Error('Rejection reason required')
+    }
+    try {
+      await reject({ id: rejectTarget.id, reason })
+      playSound('reject')
+      toast.success(`${rejectTarget.name} rejected`)
+      setRejectTarget(null)
+      setRejectionReason('')
+    } catch (e) {
+      toast.error('Could not reject this registration', { description: e instanceof Error ? e.message : 'Please try again.' })
+      throw e
+    }
+  }
+
+  const exportCsv = () =>
+    downloadCsv(
+      `physio-registry-${statusFilter}-${format(new Date(), 'yyyy-MM-dd')}`,
+      filtered.map((r) => ({
+        name: r.fullName,
+        email: r.email,
+        phone: r.phone,
+        licenseNumber: r.licenseNumber,
+        regulatoryBody: r.regulatoryBody,
+        country: r.licenseCountry,
+        licenseExpiry: r.licenseExpiryDate,
+        status: r.verificationStatus,
+        submitted: new Date(r.submittedAt).toISOString(),
+      }))
+    )
+
+  const rejectDialog = (
+    <ConfirmDialog
+      open={!!rejectTarget}
+      onOpenChange={(o) => {
+        if (!o) {
+          setRejectTarget(null)
+          setRejectionReason('')
         }
-    };
+      }}
+      title={`Reject ${rejectTarget?.name ?? 'registration'}?`}
+      description="The reason is stored on the registration so the team can see why it was turned down."
+      confirmLabel="Reject registration"
+      destructive
+      onConfirm={confirmReject}
+    >
+      <Textarea
+        autoFocus
+        rows={3}
+        value={rejectionReason}
+        onChange={(e) => setRejectionReason(e.target.value)}
+        placeholder="For example: licence number does not match the MRTB register."
+        className={inputClass}
+        aria-label="Rejection reason"
+      />
+    </ConfirmDialog>
+  )
 
-    const handleReject = async (id: Id<"physioRegistry">) => {
-        if (!rejectionReason.trim()) {
-            toast.error("Please provide a rejection reason");
-            return;
-        }
-        setIsActioning(true);
-        try {
-            await reject({ id, reason: rejectionReason });
-            toast.success("Registration rejected");
-            setSelectedId(null);
-            setShowRejectDialog(false);
-            setRejectionReason('');
-        } catch (e: any) {
-            toast.error(e.message || "Failed to reject");
-        } finally {
-            setIsActioning(false);
-        }
-    };
+  // ── Detail view ──────────────────────────────────────────────────────────
+  if (selectedId) {
+    const back = (
+      <Button onClick={() => setSelectedId(null)} className={softButtonClass} size="sm">
+        <ArrowLeft className="mr-1.5 h-4 w-4" />
+        Back to registry
+      </Button>
+    )
 
-    const filteredRegistrations = registrations?.filter((r: RegistryEntry) => {
-        if (!searchQuery.trim()) return true;
-        const q = searchQuery.toLowerCase();
-        return r.fullName.toLowerCase().includes(q) ||
-            r.licenseNumber.toLowerCase().includes(q) ||
-            r.email.toLowerCase().includes(q);
-    });
-
-    const statusCounts = {
-        pending: registrations?.filter((r: RegistryEntry) => r.verificationStatus === 'pending').length || 0,
-        verified: registrations?.filter((r: RegistryEntry) => r.verificationStatus === 'verified').length || 0,
-        rejected: registrations?.filter((r: RegistryEntry) => r.verificationStatus === 'rejected').length || 0,
-    };
-
-    const statusBadge = (status: RegistrationStatus) => {
-        const styles = {
-            pending: 'bg-amber-100 text-amber-700',
-            verified: 'bg-green-100 text-green-700',
-            rejected: 'bg-red-100 text-red-700',
-        };
-        const icons = {
-            pending: <Clock className="w-3 h-3" />,
-            verified: <ShieldCheck className="w-3 h-3" />,
-            rejected: <ShieldAlert className="w-3 h-3" />,
-        };
-        return (
-            <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", styles[status])}>
-                {icons[status]} {status.charAt(0).toUpperCase() + status.slice(1)}
-            </span>
-        );
-    };
-
-    // Detail view
-    if (selectedId) {
-        if (selectedEntry === undefined) {
-            return (
-                <div className="p-6 max-w-4xl flex items-center justify-center min-h-[400px]">
-                    <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
-                </div>
-            );
-        }
-
-        if (selectedEntry === null) {
-            return (
-                <div className="p-6 max-w-4xl flex flex-col items-center justify-center min-h-[400px] text-center gap-4">
-                    <ShieldAlert className="w-12 h-12 text-gray-300" />
-                    <div>
-                        <p className="font-semibold text-gray-700">Registration Not Found</p>
-                        <p className="text-sm text-gray-500">This registration may have been deleted.</p>
-                    </div>
-                    <Button variant="outline" onClick={() => setSelectedId(null)}>
-                        Back to list
-                    </Button>
-                </div>
-            );
-        }
-
-        return (
-            <div className="p-6 max-w-4xl">
-                <button
-                    onClick={() => { setSelectedId(null); setShowRejectDialog(false); setRejectionReason(''); }}
-                    className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-4"
-                >
-                    <ArrowLeft className="w-4 h-4" /> Back to list
-                </button>
-
-                <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-                    <div className="flex items-start justify-between mb-6">
-                        <div className="flex items-start gap-4">
-                            {selectedEntry.profilePhotoUrl ? (
-                                <img src={selectedEntry.profilePhotoUrl} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-gray-100" />
-                            ) : (
-                                <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center">
-                                    <User className="w-7 h-7 text-gray-400" />
-                                </div>
-                            )}
-                            <div>
-                                <h2 className="text-xl font-bold text-[#002e2c]">{selectedEntry.fullName}</h2>
-                                <p className="text-sm text-gray-500">{selectedEntry.email} · {selectedEntry.phone}</p>
-                                <div className="mt-1">{statusBadge(selectedEntry.verificationStatus as RegistrationStatus)}</div>
-                            </div>
-                        </div>
-
-                        {selectedEntry.verificationStatus === 'pending' && (
-                            <div className="flex gap-2">
-                                <Button
-                                    onClick={() => handleApprove(selectedEntry._id)}
-                                    disabled={isActioning}
-                                    className="bg-green-600 hover:bg-green-700 text-white"
-                                >
-                                    {isActioning ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4 mr-1" /> Approve</>}
-                                </Button>
-                                <Button
-                                    onClick={() => setShowRejectDialog(true)}
-                                    variant="outline"
-                                    className="border-red-200 text-red-600 hover:bg-red-50"
-                                >
-                                    <X className="w-4 h-4 mr-1" /> Reject
-                                </Button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Rejection dialog */}
-                    {showRejectDialog && (
-                        <div className="mb-6 p-4 bg-red-50 rounded-xl border border-red-200">
-                            <h4 className="text-sm font-semibold text-red-700 mb-2">Rejection Reason</h4>
-                            <Textarea
-                                value={rejectionReason}
-                                onChange={(e) => setRejectionReason(e.target.value)}
-                                placeholder="Explain why this registration is being rejected..."
-                                className="mb-3"
-                            />
-                            <div className="flex gap-2">
-                                <Button
-                                    onClick={() => handleReject(selectedEntry._id)}
-                                    disabled={isActioning}
-                                    className="bg-red-600 hover:bg-red-700 text-white"
-                                >
-                                    {isActioning ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm Rejection'}
-                                </Button>
-                                <Button variant="ghost" onClick={() => { setShowRejectDialog(false); setRejectionReason(''); }}>
-                                    Cancel
-                                </Button>
-                            </div>
-                        </div>
-                    )}
-
-                    {selectedEntry.rejectionReason && (
-                        <div className="mb-6 p-4 bg-red-50 rounded-xl border border-red-200">
-                            <h4 className="text-sm font-semibold text-red-700 mb-1">Rejection Reason</h4>
-                            <p className="text-sm text-red-600">{selectedEntry.rejectionReason}</p>
-                        </div>
-                    )}
-
-                    {/* Info grid */}
-                    <div className="grid grid-cols-2 gap-6 mb-6">
-                        <div className="space-y-4">
-                            <h3 className="text-sm font-semibold text-[#005b57] uppercase tracking-wider">Personal Info</h3>
-                            <div className="space-y-2 text-sm">
-                                <div><span className="text-gray-400">Full Name:</span> <strong>{selectedEntry.fullName}</strong></div>
-                                <div><span className="text-gray-400">Email:</span> <strong>{selectedEntry.email}</strong></div>
-                                <div><span className="text-gray-400">Phone:</span> <strong>{selectedEntry.phone}</strong></div>
-                                {selectedEntry.practiceName && <div><span className="text-gray-400">Practice:</span> <strong>{selectedEntry.practiceName}</strong></div>}
-                                {selectedEntry.practiceAddress && <div><span className="text-gray-400">Address:</span> <strong>{selectedEntry.practiceAddress}</strong></div>}
-                                <div><span className="text-gray-400">Experience:</span> <strong>{selectedEntry.yearsOfExperience} years</strong></div>
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <h3 className="text-sm font-semibold text-[#005b57] uppercase tracking-wider">License Details</h3>
-                            <div className="space-y-2 text-sm">
-                                <div><span className="text-gray-400">License #:</span> <strong>{selectedEntry.licenseNumber}</strong></div>
-                                <div><span className="text-gray-400">Regulatory Body:</span> <strong>{selectedEntry.regulatoryBody}</strong></div>
-                                <div><span className="text-gray-400">Country:</span> <strong>{selectedEntry.licenseCountry}</strong></div>
-                                <div><span className="text-gray-400">Expiry:</span> <strong>{selectedEntry.licenseExpiryDate}</strong></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Specialties & Languages */}
-                    {(selectedEntry.specialties.length > 0 || selectedEntry.languages.length > 0) && (
-                        <div className="mb-6">
-                            {selectedEntry.specialties.length > 0 && (
-                                <div className="mb-3">
-                                    <h3 className="text-sm font-semibold text-[#005b57] uppercase tracking-wider mb-2">Specialties</h3>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {selectedEntry.specialties.map((s: string) => (
-                                            <span key={s} className="bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full text-xs border border-teal-100">{s}</span>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                            {selectedEntry.languages.length > 0 && (
-                                <div>
-                                    <h3 className="text-sm font-semibold text-[#005b57] uppercase tracking-wider mb-2">Languages</h3>
-                                    <p className="text-sm text-gray-600">{selectedEntry.languages.join(', ')}</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {selectedEntry.bio && (
-                        <div className="mb-6">
-                            <h3 className="text-sm font-semibold text-[#005b57] uppercase tracking-wider mb-2">Bio</h3>
-                            <p className="text-sm text-gray-600">{selectedEntry.bio}</p>
-                        </div>
-                    )}
-
-                    {/* Uploaded documents */}
-                    <div className="space-y-3">
-                        <h3 className="text-sm font-semibold text-[#005b57] uppercase tracking-wider">Uploaded Documents</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {selectedEntry.licenseCertUrl && (
-                                <a
-                                    href={selectedEntry.licenseCertUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:bg-teal-50 hover:border-teal-200 transition-colors"
-                                >
-                                    <FileText className="w-5 h-5 text-[#005b57]" />
-                                    <div className="flex-1">
-                                        <p className="text-sm font-medium text-gray-800">License Certificate</p>
-                                        <p className="text-xs text-gray-400">Click to view</p>
-                                    </div>
-                                    <ExternalLink className="w-4 h-4 text-gray-400" />
-                                </a>
-                            )}
-                            {selectedEntry.photoIdUrl && (
-                                <a
-                                    href={selectedEntry.photoIdUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:bg-teal-50 hover:border-teal-200 transition-colors"
-                                >
-                                    <FileText className="w-5 h-5 text-[#005b57]" />
-                                    <div className="flex-1">
-                                        <p className="text-sm font-medium text-gray-800">Government Photo ID</p>
-                                        <p className="text-xs text-gray-400">Click to view</p>
-                                    </div>
-                                    <ExternalLink className="w-4 h-4 text-gray-400" />
-                                </a>
-                            )}
-                            {selectedEntry.insuranceUrl && (
-                                <a
-                                    href={selectedEntry.insuranceUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 hover:bg-teal-50 hover:border-teal-200 transition-colors"
-                                >
-                                    <FileText className="w-5 h-5 text-[#005b57]" />
-                                    <div className="flex-1">
-                                        <p className="text-sm font-medium text-gray-800">Proof of Insurance</p>
-                                        <p className="text-xs text-gray-400">Click to view</p>
-                                    </div>
-                                    <ExternalLink className="w-4 h-4 text-gray-400" />
-                                </a>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="mt-6 pt-4 border-t border-gray-100 text-xs text-gray-400">
-                        Submitted on {new Date(selectedEntry.submittedAt).toLocaleString()}
-                        {selectedEntry.verifiedAt && ` · Verified on ${new Date(selectedEntry.verifiedAt).toLocaleString()}`}
-                    </div>
-                </div>
-            </div>
-        );
+    if (selectedEntry === undefined) {
+      return (
+        <AdminPage className="max-w-4xl">
+          {back}
+          <Skeleton className="h-[420px] w-full rounded-2xl dark:bg-white/[0.06]" />
+        </AdminPage>
+      )
     }
 
-    // List view
+    if (selectedEntry === null) {
+      return (
+        <AdminPage className="max-w-4xl">
+          {back}
+          <Panel>
+            <EmptyState icon={<ShieldAlert />} title="Registration not found" description="It may have been deleted." />
+          </Panel>
+        </AdminPage>
+      )
+    }
+
+    const docs = [
+      { label: 'Licence certificate', url: selectedEntry.licenseCertUrl },
+      { label: 'Government photo ID', url: selectedEntry.photoIdUrl },
+      { label: 'Proof of insurance', url: selectedEntry.insuranceUrl },
+    ].filter((d): d is { label: string; url: string } => !!d.url)
+    const canReview = selectedEntry.verificationStatus === 'pending' || selectedEntry.verificationStatus === 'listed'
+
     return (
-        <div className="p-6">
-            <div className="flex items-center justify-between mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-[#002e2c]">Physio Registry</h1>
-                    <p className="text-sm text-gray-500">Review and verify physiotherapist registrations</p>
-                </div>
-            </div>
+      <AdminPage className="max-w-4xl">
+        {back}
 
-            {/* Status tabs */}
-            <div className="flex gap-2 mb-4">
-                {(['pending', 'verified', 'rejected'] as RegistrationStatus[]).map(status => (
-                    <button
-                        key={status}
-                        onClick={() => setStatusFilter(statusFilter === status ? undefined : status as any)}
-                        className={cn(
-                            "px-4 py-2 rounded-xl text-sm font-medium transition-all",
-                            statusFilter === status
-                                ? status === 'pending' ? 'bg-amber-100 text-amber-700'
-                                    : status === 'verified' ? 'bg-green-100 text-green-700'
-                                        : 'bg-red-100 text-red-700'
-                                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                        )}
-                    >
-                        {status.charAt(0).toUpperCase() + status.slice(1)}
-                    </button>
-                ))}
-                <button
-                    onClick={() => setStatusFilter(undefined)}
-                    className={cn(
-                        "px-4 py-2 rounded-xl text-sm font-medium transition-all",
-                        !statusFilter ? 'bg-[#005b57] text-white' : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    )}
-                >
-                    All
-                </button>
-            </div>
-
-            {/* Search */}
-            <div className="mb-6">
-                <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by name, license number, or email..."
-                    className="h-11 max-w-md"
+        <section className={cn(cardClass, 'p-5 sm:p-6')}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-4">
+              {selectedEntry.profilePhotoUrl ? (
+                <Image
+                  src={selectedEntry.profilePhotoUrl}
+                  alt=""
+                  width={64}
+                  height={64}
+                  unoptimized
+                  className="h-16 w-16 rounded-full object-cover ring-2 ring-rh-mist dark:ring-white/10"
                 />
+              ) : (
+                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-rh-mist text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+                  <User className="h-7 w-7" />
+                </span>
+              )}
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold tracking-tight text-rh-night dark:text-white">{selectedEntry.fullName}</h1>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  {selectedEntry.email} · {selectedEntry.phone}
+                </p>
+                <div className="mt-1.5">
+                  <RegistryStatusBadge status={selectedEntry.verificationStatus} />
+                </div>
+              </div>
             </div>
 
-            {/* Table */}
-            {!registrations ? (
-                <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-                </div>
-            ) : filteredRegistrations && filteredRegistrations.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                    <ShieldAlert className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-                    <p>No registrations found</p>
-                </div>
-            ) : (
-                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b border-gray-100 bg-gray-50/50">
-                                <th className="text-left py-3 px-4 font-medium text-gray-500">Name</th>
-                                <th className="text-left py-3 px-4 font-medium text-gray-500">License #</th>
-                                <th className="text-left py-3 px-4 font-medium text-gray-500">Body</th>
-                                <th className="text-left py-3 px-4 font-medium text-gray-500">Status</th>
-                                <th className="text-left py-3 px-4 font-medium text-gray-500">Submitted</th>
-                                <th className="text-right py-3 px-4 font-medium text-gray-500">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredRegistrations?.map((reg: RegistryEntry) => (
-                                <tr
-                                    key={reg._id}
-                                    className="border-b border-gray-50 hover:bg-teal-50/30 transition-colors cursor-pointer"
-                                    onClick={() => setSelectedId(reg._id)}
-                                >
-                                    <td className="py-3 px-4">
-                                        <div className="font-medium text-[#002e2c]">{reg.fullName}</div>
-                                        <div className="text-xs text-gray-400">{reg.email}</div>
-                                    </td>
-                                    <td className="py-3 px-4 font-mono text-xs">{reg.licenseNumber}</td>
-                                    <td className="py-3 px-4 text-gray-600">{reg.regulatoryBody}</td>
-                                    <td className="py-3 px-4">{statusBadge(reg.verificationStatus as RegistrationStatus)}</td>
-                                    <td className="py-3 px-4 text-gray-500">
-                                        {new Date(reg.submittedAt).toLocaleDateString()}
-                                    </td>
-                                    <td className="py-3 px-4 text-right">
-                                        <Button variant="ghost" size="sm" className="text-[#005b57]">
-                                            <Eye className="w-4 h-4 mr-1" /> Review
-                                        </Button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+            {canReview && (
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  onClick={() => handleApprove(selectedEntry._id, selectedEntry.fullName)}
+                  disabled={approvingId === selectedEntry._id}
+                  className={primaryButtonClass}
+                >
+                  {approvingId === selectedEntry._id ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Check className="mr-1.5 h-4 w-4" />}
+                  Verify
+                </Button>
+                <Button
+                  onClick={() => setRejectTarget({ id: selectedEntry._id, name: selectedEntry.fullName })}
+                  className="rounded-xl bg-rh-blush text-[#be123c] hover:bg-rose-100 dark:bg-rose-400/10 dark:text-rose-300 dark:hover:bg-rose-400/20"
+                >
+                  <X className="mr-1.5 h-4 w-4" />
+                  Reject
+                </Button>
+              </div>
             )}
+          </div>
+
+          {selectedEntry.rejectionReason && (
+            <div className="mt-5 rounded-xl bg-rh-blush p-4 text-sm text-[#be123c] dark:bg-rose-400/10 dark:text-rose-300">
+              <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider opacity-80">Rejection reason</p>
+              <p className="whitespace-pre-wrap">{selectedEntry.rejectionReason}</p>
+            </div>
+          )}
+
+          <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Personal</p>
+              <InfoLine label="Full name">{selectedEntry.fullName}</InfoLine>
+              <InfoLine label="Email">{selectedEntry.email}</InfoLine>
+              <InfoLine label="Phone">{selectedEntry.phone}</InfoLine>
+              {selectedEntry.practiceName && <InfoLine label="Practice">{selectedEntry.practiceName}</InfoLine>}
+              {selectedEntry.practiceAddress && <InfoLine label="Address">{selectedEntry.practiceAddress}</InfoLine>}
+              <InfoLine label="Experience">{selectedEntry.yearsOfExperience} years</InfoLine>
+              {selectedEntry.websiteUrl && (
+                <InfoLine label="Website">
+                  <a href={selectedEntry.websiteUrl} target="_blank" rel="noopener noreferrer" className="text-rh-teal hover:underline dark:text-rh-aqua">
+                    {selectedEntry.websiteUrl}
+                  </a>
+                </InfoLine>
+              )}
+            </div>
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Licence</p>
+              <InfoLine label="Licence #">
+                <span className="font-mono">{selectedEntry.licenseNumber}</span>
+              </InfoLine>
+              <InfoLine label="Regulatory body">{selectedEntry.regulatoryBody}</InfoLine>
+              <InfoLine label="Country">{selectedEntry.licenseCountry}</InfoLine>
+              <InfoLine label="Expiry">{selectedEntry.licenseExpiryDate}</InfoLine>
+            </div>
+          </div>
+
+          {(selectedEntry.specialties.length > 0 || selectedEntry.languages.length > 0) && (
+            <div className="mt-6 space-y-3">
+              {selectedEntry.specialties.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Specialties</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedEntry.specialties.map((s) => (
+                      <StatusBadge key={s} tone="teal">
+                        {s}
+                      </StatusBadge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {selectedEntry.languages.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Languages</p>
+                  <p className="text-sm text-neutral-600 dark:text-neutral-300">{selectedEntry.languages.join(', ')}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {selectedEntry.bio && (
+            <div className="mt-6">
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Bio</p>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">{selectedEntry.bio}</p>
+            </div>
+          )}
+
+          <div className="mt-6">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-rh-teal dark:text-rh-aqua">Documents</p>
+            {docs.length === 0 ? (
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">No documents could be loaded.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {docs.map((d) => (
+                  <a
+                    key={d.label}
+                    href={d.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 rounded-xl bg-rh-canvas p-3 transition-colors hover:bg-rh-mist dark:bg-white/[0.04] dark:hover:bg-white/[0.07]"
+                  >
+                    <IconChip icon={FileText} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-rh-night dark:text-white">{d.label}</span>
+                      <span className="block text-xs text-neutral-500 dark:text-neutral-400">Opens in a new tab</span>
+                    </span>
+                    <ExternalLink className="h-4 w-4 text-neutral-400" />
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <p className="mt-6 border-t border-black/[0.05] pt-4 text-xs text-neutral-500 dark:border-white/[0.06] dark:text-neutral-400">
+            Submitted {format(selectedEntry.submittedAt, 'd MMM yyyy, HH:mm')}
+            {selectedEntry.verifiedAt && ` · Verified ${format(selectedEntry.verifiedAt, 'd MMM yyyy, HH:mm')}`}
+          </p>
+        </section>
+
+        {rejectDialog}
+      </AdminPage>
+    )
+  }
+
+  // ── List view ────────────────────────────────────────────────────────────
+  const capped = (registrations?.length ?? 0) >= LIST_LIMIT
+
+  return (
+    <AdminPage>
+      <PageHeader
+        eyebrow="Rehabify Physios"
+        title="Public registry"
+        description="Physiotherapists who signed up to the public register. Check their licence against the regulator before verifying."
+        actions={
+          <Button onClick={exportCsv} disabled={filtered.length === 0} className={softButtonClass}>
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
+        }
+      />
+
+      <Panel bodyClassName="pb-2">
+        <div className="space-y-2 px-5 pb-3 pt-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <FilterChips
+              value={statusFilter}
+              onChange={(v) => setStatusFilter(v)}
+              options={[
+                { value: 'pending', label: 'Pending', count: countFor('pending') },
+                { value: 'listed', label: 'Listed', count: countFor('listed') },
+                { value: 'verified', label: 'Verified', count: countFor('verified') },
+                { value: 'rejected', label: 'Rejected', count: countFor('rejected') },
+                { value: 'all', label: 'All', count: totalCount },
+              ]}
+            />
+            <div className="relative w-full lg:w-80">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search name, licence number or email"
+                className={cn(inputClass, 'h-10 pl-9')}
+                aria-label="Search registrations"
+              />
+            </div>
+          </div>
+          {(capped || (counts && counts.capped.length > 0)) && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              Showing the newest {LIST_LIMIT} registrations{statusFilter === 'all' ? '' : ' in this status'}; search covers those rows only.
+              {counts && counts.capped.length > 0 ? ` Counts above ${counts.cap} show as ${counts.cap}.` : ''}
+            </p>
+          )}
         </div>
-    );
+
+        {registrations === undefined ? (
+          <div className="space-y-2 px-5 pb-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-xl dark:bg-white/[0.06]" />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={<ShieldAlert />}
+            title={searchQuery ? 'No matching registrations' : 'No registrations here'}
+            description={searchQuery ? 'Try a different name or licence number.' : 'New registrations will appear here.'}
+          />
+        ) : (
+          <div className={tableWrapClass}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="px-5 py-2.5 text-left">Name</th>
+                  <th className="px-3 py-2.5 text-left">Licence #</th>
+                  <th className="hidden px-3 py-2.5 text-left md:table-cell">Body</th>
+                  <th className="px-3 py-2.5 text-left">Status</th>
+                  <th className="hidden px-3 py-2.5 text-left sm:table-cell">Submitted</th>
+                  <th className="px-5 py-2.5 text-right">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <AnimatePresence initial={false}>
+                  {filtered.map((reg) => (
+                    <motion.tr
+                      key={reg._id}
+                      layout={!reduceMotion}
+                      initial={reduceMotion ? false : { opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="cursor-pointer border-b transition-colors"
+                      onClick={() => setSelectedId(reg._id)}
+                    >
+                      <td className="px-5 py-3">
+                        <p className="font-medium text-rh-night dark:text-white">{reg.fullName}</p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400">{reg.email}</p>
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-neutral-700 dark:text-neutral-300">{reg.licenseNumber}</td>
+                      <td className="hidden px-3 py-3 text-neutral-600 dark:text-neutral-300 md:table-cell">{reg.regulatoryBody}</td>
+                      <td className="px-3 py-3">
+                        <RegistryStatusBadge status={reg.verificationStatus} />
+                      </td>
+                      <td className="hidden whitespace-nowrap px-3 py-3 text-neutral-500 dark:text-neutral-400 sm:table-cell">
+                        {format(reg.submittedAt, 'd MMM yyyy')}
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <Button
+                          size="sm"
+                          className={softButtonClass}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedId(reg._id)
+                          }}
+                        >
+                          <Eye className="mr-1.5 h-4 w-4" />
+                          Review
+                        </Button>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
+      {rejectDialog}
+    </AdminPage>
+  )
 }

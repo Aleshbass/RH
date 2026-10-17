@@ -10,12 +10,15 @@ export async function loadClinicFeeConfig(ctx: QueryCtx): Promise<ClinicFeeConfi
 }
 
 /**
- * Current clinic fee numbers. Public: clinics show them in their payment forms, and
- * they update live when an admin changes them.
+ * Current clinic fee numbers, for signed-in users: clinics show them in their payment forms,
+ * and they update live when an admin changes them. Signed-out visitors (the clinic dashboard
+ * preview) get null and the UI falls back to the defaults.
  */
 export const getClinicFeeSettings = query({
   args: {},
   handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
     const saved = await ctx.db.query("clinicFeeSettings").order("desc").first();
     return {
       ...normalizeClinicFeeConfig(saved),

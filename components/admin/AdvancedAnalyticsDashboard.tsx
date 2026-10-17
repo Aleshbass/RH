@@ -1,702 +1,506 @@
 'use client'
 
+import { useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import { useQuery } from 'convex/react'
-import { api } from '@/convex/_generated/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  TrendingUp,
-  Users,
-  Building2,
-  Calendar,
-  DollarSign,
-  Activity,
-  Server,
-  Bell,
-  AlertTriangle,
-  Database,
-  Zap,
-  Download,
-  RefreshCw
-} from 'lucide-react'
-import { ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, PieChart as RechartsPieChart, Pie, Cell, Area, AreaChart } from 'recharts'
 import { format } from 'date-fns'
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, type TooltipProps } from 'recharts'
+import { Download } from 'lucide-react'
+import { api } from '@/convex/_generated/api'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useClinicTheme } from '@/components/clinic/ClinicTheme'
+import {
+  AdminPage,
+  FilterChips,
+  PageHeader,
+  Panel,
+  StatTile,
+  Stagger,
+  StaggerItem,
+  downloadCsv,
+  formatNaira,
+  softButtonClass,
+  tableWrapClass,
+} from '@/components/admin/ui'
+import { formatCount, roleLabel, type RoleCountsResult } from '@/components/admin/activityMeta'
+import { cn } from '@/lib/utils'
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8']
-
-interface ActivityLog {
-  id: string;
-  userId: string;
-  action: string;
-  timestamp: number;
-  details: string;
+// Shapes returned by the analytics queries in convex/admin.ts (amounts in kobo)
+type MonthBase = { month: string; monthStart: number }
+type GrowthResult = {
+  months: number
+  capped: boolean
+  cap: number
+  signupsByMonth: (MonthBase & { patient: number; physiotherapist: number; clinic: number; other: number; total: number })[]
+  signupsByWeek: { weekStart: number; signups: number }[]
+}
+type AppointmentsResult = {
+  months: number
+  capped: boolean
+  cap: number
+  appointmentsByMonth: (MonthBase & { total: number; completed: number; cancelled: number; noShow: number; upcoming: number })[]
+}
+type RevenueResult = {
+  months: number
+  cap: number
+  invoicesCapped: boolean
+  bookingsCapped: boolean
+  revenueByMonth: (MonthBase & { grossKobo: number; platformFeeKobo: number; paidInvoices: number })[]
+  bookingsByMonth: (MonthBase & { created: number; paid: number; cancelled: number })[]
 }
 
-interface PendingActionsSummary {
-  pendingApprovals: number;
-  failedNotifications: number;
-  systemAlerts: number;
-  supportTickets: number;
+/**
+ * Platform analytics from real records only: sign-ups (users), appointments, paid invoices
+ * and marketplace bookings, bucketed by month (UTC). Convex queries are live, so there is
+ * no refresh button. Every series is bounded server-side; capped series say so.
+ */
+
+type Period = '3' | '6' | '12'
+
+/** Chart ink per theme. Categorical slots validated for CVD separation in both modes. */
+const INK = {
+  light: {
+    data: '#005b57',
+    series: ['#00907f', '#b97a1f', '#6d5bd0', '#d9577c'],
+    grid: '#ebe8e1',
+    axis: '#737373',
+    surface: '#ffffff',
+    border: '#e5e5e5',
+    text: '#171717',
+    muted: '#737373',
+  },
+  dark: {
+    data: '#2dd4bf',
+    series: ['#1fa898', '#b8832a', '#8b7be0', '#d9628a'],
+    grid: '#1f2b2a',
+    axis: '#a3a3a3',
+    surface: '#1b2827',
+    border: '#2a3837',
+    text: '#fafafa',
+    muted: '#a3a3a3',
+  },
 }
+
+function monthLabel(key: string, long = false) {
+  const [y, m] = key.split('-').map(Number)
+  return format(new Date(y, (m || 1) - 1, 1), long ? 'MMMM yyyy' : 'MMM yy')
+}
+
+const nairaFromKobo = (kobo: number) => formatNaira(kobo / 100)
 
 export function AdvancedAnalyticsDashboard() {
-  const platformAnalytics = useQuery(api.admin.getPlatformAnalytics)
-  const systemMetrics = useQuery(api.admin.getSystemMetrics)
-  const platformRevenue = useQuery(api.admin.getPlatformRevenue)
+  const [period, setPeriod] = useState<Period>('6')
+  const months = Number(period)
+  const { theme } = useClinicTheme()
+  const ink = INK[theme]
 
-  // Create time-series data for the revenue chart (deterministic, no randomness)
-  const revenueAnalytics: Array<{ date: number; amount: number }> = platformRevenue ? (() => {
-    const days = 30
-    const perDay = Math.floor((platformRevenue.monthlyRevenue || 0) / days)
-    return Array.from({ length: days }, (_, i) => {
-      const date = new Date()
-      date.setDate(date.getDate() - (29 - i))
+  const growth = useQuery(api.admin.getPlatformAnalytics, { months }) as GrowthResult | undefined
+  const appointments = useQuery(api.admin.getAppointmentAnalytics, { months }) as AppointmentsResult | undefined
+  const revenue = useQuery(api.admin.getRevenueAnalytics, { months }) as RevenueResult | undefined
+  const roles = useQuery(api.admin.getUserRoleCounts) as RoleCountsResult | undefined
+
+  const monthly = useMemo(() => {
+    if (!growth || !appointments || !revenue) return null
+    return growth.signupsByMonth.map((g, i) => {
+      const a = appointments.appointmentsByMonth[i]
+      const r = revenue.revenueByMonth[i]
+      const b = revenue.bookingsByMonth[i]
       return {
-        date: date.getTime(),
-        amount: perDay,
+        month: g.month,
+        label: monthLabel(g.month),
+        signupsPatient: g.patient,
+        signupsPhysio: g.physiotherapist,
+        signupsClinic: g.clinic,
+        signupsOther: g.other,
+        signups: g.total,
+        appointments: a?.total ?? 0,
+        completed: a?.completed ?? 0,
+        upcoming: a?.upcoming ?? 0,
+        cancelled: a?.cancelled ?? 0,
+        noShow: a?.noShow ?? 0,
+        grossKobo: r?.grossKobo ?? 0,
+        platformFeeKobo: r?.platformFeeKobo ?? 0,
+        paidInvoices: r?.paidInvoices ?? 0,
+        bookings: b?.created ?? 0,
+        bookingsPaid: b?.paid ?? 0,
+        bookingsCancelled: b?.cancelled ?? 0,
       }
     })
-  })() : []
-  const activityLogs = useQuery(api.admin.getUserActivityLogs, { limit: 10 }) as ActivityLog[] | undefined
-  const adminStats = useQuery(api.admin.getAdminDashboardStats)
-  const pendingActions: PendingActionsSummary | undefined = adminStats ? {
-    pendingApprovals: adminStats.pendingApprovals ?? 0,
-    failedNotifications: adminStats.unsentNotifications ?? 0,
-    systemAlerts: 0,
-    supportTickets: 0,
-  } : undefined
+  }, [growth, appointments, revenue])
 
-  if (!platformAnalytics || !systemMetrics || !platformRevenue || !activityLogs || !pendingActions) {
-    return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <Skeleton className="h-8 w-64" />
-            <Skeleton className="h-4 w-96" />
-          </div>
-          <div className="flex gap-2">
-            <Skeleton className="h-9 w-32" />
-            <Skeleton className="h-9 w-24" />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-32 rounded-xl" />
-          ))}
-        </div>
-      </div>
+  const totals = useMemo(() => {
+    if (!monthly) return null
+    const sum = (key: keyof (typeof monthly)[number]) => monthly.reduce((s, m) => s + (Number(m[key]) || 0), 0)
+    const finished = sum('completed') + sum('cancelled') + sum('noShow')
+    return {
+      signups: sum('signups'),
+      appointments: sum('appointments'),
+      completionRate: finished > 0 ? Math.round((sum('completed') / finished) * 100) : null,
+      grossKobo: sum('grossKobo'),
+      platformFeeKobo: sum('platformFeeKobo'),
+      bookings: sum('bookings'),
+    }
+  }, [monthly])
+
+  const weekly = useMemo(
+    () => growth?.signupsByWeek.map((w) => ({ ...w, label: format(new Date(w.weekStart), 'd MMM') })) ?? null,
+    [growth]
+  )
+
+  const cappedNotes = [
+    growth?.capped && 'sign-ups',
+    appointments?.capped && 'appointments',
+    revenue?.invoicesCapped && 'invoices',
+    revenue?.bookingsCapped && 'bookings',
+  ].filter(Boolean) as string[]
+
+  const exportCsv = () => {
+    if (!monthly) return
+    downloadCsv(
+      `rehabify-analytics-${months}m-${format(new Date(), 'yyyy-MM-dd')}`,
+      monthly.map((m) => ({
+        month: m.month,
+        signups_total: m.signups,
+        signups_patients: m.signupsPatient,
+        signups_physiotherapists: m.signupsPhysio,
+        signups_clinics: m.signupsClinic,
+        signups_other: m.signupsOther,
+        appointments_total: m.appointments,
+        appointments_completed: m.completed,
+        appointments_upcoming: m.upcoming,
+        appointments_cancelled: m.cancelled,
+        appointments_no_show: m.noShow,
+        paid_invoices: m.paidInvoices,
+        paid_volume_ngn: (m.grossKobo / 100).toFixed(2),
+        platform_fees_ngn: (m.platformFeeKobo / 100).toFixed(2),
+        marketplace_bookings: m.bookings,
+        marketplace_bookings_paid: m.bookingsPaid,
+        marketplace_bookings_cancelled: m.bookingsCancelled,
+      }))
     )
   }
 
-  const userRoleData = Object.entries(platformAnalytics.userStats.byRole).map(([role, count]) => ({
-    name: role.charAt(0).toUpperCase() + role.slice(1),
-    value: count,
-    color: COLORS[Object.keys(platformAnalytics.userStats.byRole).indexOf(role) % COLORS.length]
-  }))
+  const tooltipStyle = { background: ink.surface, border: `1px solid ${ink.border}`, borderRadius: 10, color: ink.text }
+  const axisProps = { stroke: ink.axis, fontSize: 12, tickLine: false, axisLine: false } as const
 
   return (
-    <div className="space-y-6 pb-20 md:pb-0">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
-            Platform Analytics
-          </h1>
-          <p className="text-sm md:text-base text-muted-foreground">
-            Real-time insights and performance metrics
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="flex-1 md:flex-none">
-            <Download className="mr-2 h-4 w-4" />
-            Export
-          </Button>
-          <Button size="sm" className="flex-1 md:flex-none shadow-lg shadow-primary/20">
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+    <AdminPage>
+      <PageHeader
+        eyebrow="Overview"
+        title="Analytics"
+        description="Growth, care activity and payments, from the platform's own records."
+        actions={
+          <>
+            <FilterChips<Period>
+              value={period}
+              onChange={setPeriod}
+              options={[
+                { value: '3', label: '3 months' },
+                { value: '6', label: '6 months' },
+                { value: '12', label: '12 months' },
+              ]}
+            />
+            <Button size="sm" className={cn(softButtonClass, 'h-9')} onClick={exportCsv} disabled={!monthly}>
+              <Download className="mr-1.5 h-4 w-4" /> Export CSV
+            </Button>
+          </>
+        }
+      />
 
-      {/* Key Metrics Overview */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Total Users"
-          value={platformAnalytics.overview.totalUsers.toLocaleString()}
-          change={`+${platformAnalytics.userStats.newUsersThisWeek}`}
-          changeLabel="this week"
-          icon={Users}
-          color="blue"
-        />
-        <MetricCard
-          title="Active Clinics"
-          value={platformAnalytics.overview.totalClinics.toLocaleString()}
-          change="+12%"
-          changeLabel="growth rate"
-          icon={Building2}
-          color="green"
-        />
-        <MetricCard
-          title="Total Appointments"
-          value={platformAnalytics.overview.totalAppointments.toLocaleString()}
-          change="+8.2%"
-          changeLabel="this month"
-          icon={Calendar}
-          color="purple"
-        />
-        <MetricCard
-          title="Revenue (₦)"
-          value={`₦${(platformAnalytics.overview.revenueThisMonth / 1000).toFixed(0)}K`}
-          change={`+${platformAnalytics.overview.growthRate}%`}
-          changeLabel="growth"
-          icon={DollarSign}
-          color="orange"
-        />
-      </div>
-
-      {/* Tour Analytics Row */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Tour Completions"
-          value={platformAnalytics.userStats.tourCompletions.toLocaleString()}
-          change={`${platformAnalytics.userStats.onboardingCompletionRate.toFixed(1)}%`}
-          changeLabel="completion rate"
-          icon={TrendingUp}
-          color="blue"
-        />
-      </div>
-
-      {/* Pending Actions Alert */}
-      {pendingActions && (pendingActions.pendingApprovals > 0 || pendingActions.failedNotifications > 0) && (
-        <Card className="border-amber-200 bg-amber-50/50 backdrop-blur-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-center">
-              <AlertTriangle className="h-5 w-5 text-amber-600 mr-2" />
-              <CardTitle className="text-amber-800">Action Required</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {pendingActions.pendingApprovals > 0 && (
-                <div className="flex items-center space-x-2 bg-white/50 p-2 rounded-lg">
-                  <Badge variant="destructive" className="h-6 w-6 flex items-center justify-center p-0">{pendingActions.pendingApprovals}</Badge>
-                  <span className="text-sm font-medium text-amber-900">Pending Approvals</span>
-                </div>
-              )}
-              {pendingActions.failedNotifications > 0 && (
-                <div className="flex items-center space-x-2 bg-white/50 p-2 rounded-lg">
-                  <Badge variant="destructive" className="h-6 w-6 flex items-center justify-center p-0">{pendingActions.failedNotifications}</Badge>
-                  <span className="text-sm font-medium text-amber-900">Failed Notifications</span>
-                </div>
-              )}
-              {pendingActions.systemAlerts > 0 && (
-                <div className="flex items-center space-x-2 bg-white/50 p-2 rounded-lg">
-                  <Badge variant="destructive" className="h-6 w-6 flex items-center justify-center p-0">{pendingActions.systemAlerts}</Badge>
-                  <span className="text-sm font-medium text-amber-900">System Alerts</span>
-                </div>
-              )}
-              {pendingActions.supportTickets > 0 && (
-                <div className="flex items-center space-x-2 bg-white/50 p-2 rounded-lg">
-                  <Badge variant="secondary" className="h-6 w-6 flex items-center justify-center p-0">{pendingActions.supportTickets}</Badge>
-                  <span className="text-sm font-medium text-amber-900">Support Tickets</span>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      {cappedNotes.length > 0 && (
+        <p className="rounded-xl bg-rh-peach px-4 py-2.5 text-xs text-[#8a5208] dark:bg-amber-400/10 dark:text-amber-200">
+          Large period: the oldest months may be incomplete for {cappedNotes.join(', ')} (each series reads at most{' '}
+          {growth?.cap?.toLocaleString() ?? '2,500'} recent records). Pick a shorter period for exact numbers.
+        </p>
       )}
 
-      <Tabs defaultValue="overview" className="space-y-6">
-        <div className="w-full overflow-x-auto pb-2">
-          <TabsList className="w-full justify-start inline-flex min-w-max">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="users">Users</TabsTrigger>
-            <TabsTrigger value="revenue">Revenue</TabsTrigger>
-            <TabsTrigger value="system">System</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-          </TabsList>
-        </div>
+      <Stagger className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+        <StaggerItem>
+          <StatTile label="New sign-ups" value={totals ? totals.signups.toLocaleString() : <TileSkeleton />} hint={`Last ${months} months`} />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile
+            label="Appointments"
+            value={totals ? totals.appointments.toLocaleString() : <TileSkeleton />}
+            hint={totals?.completionRate !== null && totals ? `${totals.completionRate}% of finished sessions completed` : 'By scheduled date'}
+            tone="mint"
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile label="Paid volume" value={totals ? nairaFromKobo(totals.grossKobo) : <TileSkeleton />} hint="Paid invoices" tone="peach" />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile label="Platform fees" value={totals ? nairaFromKobo(totals.platformFeeKobo) : <TileSkeleton />} hint="On paid invoices" tone="peach" />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile label="Marketplace bookings" value={totals ? totals.bookings.toLocaleString() : <TileSkeleton />} hint="Bookings made" />
+        </StaggerItem>
+      </Stagger>
 
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* User Engagement */}
-            <Card className="border-none shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Activity className="mr-2 h-5 w-5 text-primary" />
-                  User Engagement
-                </CardTitle>
-                <CardDescription>
-                  Daily, weekly, and monthly active users
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Daily Active Users</span>
-                    <span className="text-2xl font-bold">{platformAnalytics.engagement.dailyActiveUsers}</span>
-                  </div>
-                  <Progress value={platformAnalytics.engagement.dailyActiveUsers / platformAnalytics.engagement.monthlyActiveUsers * 100} className="h-2" />
-                </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ChartPanel title="Sign-ups per week" description="New accounts, last 12 weeks" loading={!weekly}>
+          <BarChart data={weekly ?? []} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke={ink.grid} />
+            <XAxis dataKey="label" {...axisProps} interval="preserveStartEnd" minTickGap={16} />
+            <YAxis {...axisProps} allowDecimals={false} width={44} />
+            <Tooltip contentStyle={tooltipStyle} cursor={{ fill: ink.grid, opacity: 0.6 }} formatter={(v: number) => [v, 'Sign-ups']} labelFormatter={(l) => `Week of ${l}`} />
+            <Bar dataKey="signups" fill={ink.data} radius={[4, 4, 0, 0]} maxBarSize={36} />
+          </BarChart>
+        </ChartPanel>
 
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Weekly Active Users</span>
-                    <span className="text-2xl font-bold">{platformAnalytics.engagement.weeklyActiveUsers}</span>
-                  </div>
-                  <Progress value={platformAnalytics.engagement.weeklyActiveUsers / platformAnalytics.engagement.monthlyActiveUsers * 100} className="h-2" />
-                </div>
+        <ChartPanel
+          title="Sign-ups by account type"
+          description="New accounts per month"
+          loading={!monthly}
+          legend={[
+            { label: 'Patients', color: ink.series[0] },
+            { label: 'Physiotherapists', color: ink.series[1] },
+            { label: 'Clinics', color: ink.series[2] },
+            { label: 'Other', color: ink.series[3] },
+          ]}
+        >
+          <BarChart data={monthly ?? []} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke={ink.grid} />
+            <XAxis dataKey="label" {...axisProps} />
+            <YAxis {...axisProps} allowDecimals={false} width={44} />
+            <Tooltip content={<StackTooltip ink={ink} />} cursor={{ fill: ink.grid, opacity: 0.6 }} />
+            <Bar dataKey="signupsPatient" name="Patients" stackId="s" fill={ink.series[0]} stroke={ink.surface} strokeWidth={1} maxBarSize={40} />
+            <Bar dataKey="signupsPhysio" name="Physiotherapists" stackId="s" fill={ink.series[1]} stroke={ink.surface} strokeWidth={1} maxBarSize={40} />
+            <Bar dataKey="signupsClinic" name="Clinics" stackId="s" fill={ink.series[2]} stroke={ink.surface} strokeWidth={1} maxBarSize={40} />
+            <Bar dataKey="signupsOther" name="Other" stackId="s" fill={ink.series[3]} stroke={ink.surface} strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={40} />
+          </BarChart>
+        </ChartPanel>
 
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Monthly Active Users</span>
-                    <span className="text-2xl font-bold">{platformAnalytics.engagement.monthlyActiveUsers}</span>
-                  </div>
-                  <Progress value={100} className="h-2" />
-                </div>
-              </CardContent>
-            </Card>
+        <ChartPanel
+          title="Appointments by month"
+          description="By scheduled date and outcome"
+          loading={!monthly}
+          legend={[
+            { label: 'Completed', color: ink.series[0] },
+            { label: 'No-show', color: ink.series[1] },
+            { label: 'Upcoming / open', color: ink.series[2] },
+            { label: 'Cancelled', color: ink.series[3] },
+          ]}
+        >
+          <BarChart data={monthly ?? []} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke={ink.grid} />
+            <XAxis dataKey="label" {...axisProps} />
+            <YAxis {...axisProps} allowDecimals={false} width={44} />
+            <Tooltip content={<StackTooltip ink={ink} />} cursor={{ fill: ink.grid, opacity: 0.6 }} />
+            <Bar dataKey="completed" name="Completed" stackId="a" fill={ink.series[0]} stroke={ink.surface} strokeWidth={1} maxBarSize={40} />
+            <Bar dataKey="noShow" name="No-show" stackId="a" fill={ink.series[1]} stroke={ink.surface} strokeWidth={1} maxBarSize={40} />
+            <Bar dataKey="upcoming" name="Upcoming / open" stackId="a" fill={ink.series[2]} stroke={ink.surface} strokeWidth={1} maxBarSize={40} />
+            <Bar dataKey="cancelled" name="Cancelled" stackId="a" fill={ink.series[3]} stroke={ink.surface} strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={40} />
+          </BarChart>
+        </ChartPanel>
 
-            {/* System Health */}
-            <Card className="border-none shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Server className="mr-2 h-5 w-5 text-primary" />
-                  System Health
-                </CardTitle>
-                <CardDescription>
-                  Real-time system performance metrics
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2 p-3 bg-muted/50 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Uptime</span>
-                      <Badge variant="default" className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-0">
-                        {platformAnalytics.systemHealth.uptime}%
-                      </Badge>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Latency</span>
-                      <span className="text-sm font-medium">{platformAnalytics.systemHealth.responseTime}ms</span>
-                    </div>
-                  </div>
-                  <div className="space-y-2 p-3 bg-muted/50 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Errors</span>
-                      <Badge variant="secondary" className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-0">
-                        {platformAnalytics.systemHealth.errorRate}%
-                      </Badge>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Delivery</span>
-                      <span className="text-sm font-medium">{platformAnalytics.systemHealth.notificationDeliveryRate}%</span>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+        <ChartPanel title="Paid volume by month" description="Paid invoices, by payment date (fees in the tooltip)" loading={!monthly}>
+          <BarChart data={monthly ?? []} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke={ink.grid} />
+            <XAxis dataKey="label" {...axisProps} />
+            <YAxis {...axisProps} width={64} tickFormatter={(v: number) => compactNaira(v / 100)} />
+            <Tooltip content={<RevenueTooltip ink={ink} />} cursor={{ fill: ink.grid, opacity: 0.6 }} />
+            <Bar dataKey="grossKobo" name="Paid volume" fill={ink.data} radius={[4, 4, 0, 0]} maxBarSize={40} />
+          </BarChart>
+        </ChartPanel>
+
+        <ChartPanel title="Marketplace bookings by month" description="Bookings made (paid and cancelled in the tooltip)" loading={!monthly}>
+          <BarChart data={monthly ?? []} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke={ink.grid} />
+            <XAxis dataKey="label" {...axisProps} />
+            <YAxis {...axisProps} allowDecimals={false} width={44} />
+            <Tooltip content={<BookingsTooltip ink={ink} />} cursor={{ fill: ink.grid, opacity: 0.6 }} />
+            <Bar dataKey="bookings" name="Bookings" fill={ink.data} radius={[4, 4, 0, 0]} maxBarSize={40} />
+          </BarChart>
+        </ChartPanel>
+
+        <UsersByRole roles={roles} />
+      </div>
+
+      <Panel title="Monthly table" description="The numbers behind the charts" bodyClassName="pb-2">
+        {!monthly ? (
+          <div className="px-5 py-4">
+            <Skeleton className="h-40 w-full rounded-xl" />
           </div>
-        </TabsContent>
-
-        <TabsContent value="users" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* User Distribution by Role */}
-            <Card className="border-none shadow-md">
-              <CardHeader>
-                <CardTitle>User Distribution by Role</CardTitle>
-                <CardDescription>
-                  Breakdown of users by their assigned roles
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RechartsPieChart>
-                      <Pie
-                        data={userRoleData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {userRoleData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      />
-                    </RechartsPieChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* User Growth Metrics */}
-            <Card className="border-none shadow-md">
-              <CardHeader>
-                <CardTitle>User Growth Metrics</CardTitle>
-                <CardDescription>
-                  Key user acquisition and retention metrics
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium">Onboarding Completion Rate</span>
-                    <span className="text-sm">{platformAnalytics.userStats.onboardingCompletionRate.toFixed(1)}%</span>
-                  </div>
-                  <Progress value={platformAnalytics.userStats.onboardingCompletionRate} className="h-2" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <div className="text-2xl font-bold">{platformAnalytics.userStats.newUsersThisWeek}</div>
-                    <div className="text-sm text-muted-foreground">New Users This Week</div>
-                  </div>
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <div className="text-2xl font-bold">{platformAnalytics.userStats.activeUsersToday}</div>
-                    <div className="text-sm text-muted-foreground">Active Today</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+        ) : (
+          <div className={tableWrapClass}>
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="px-5 py-2.5">Month</th>
+                  <th className="px-3 py-2.5 text-right">Sign-ups</th>
+                  <th className="px-3 py-2.5 text-right">Appointments</th>
+                  <th className="px-3 py-2.5 text-right">Completed</th>
+                  <th className="px-3 py-2.5 text-right">Paid invoices</th>
+                  <th className="px-3 py-2.5 text-right">Paid volume</th>
+                  <th className="px-3 py-2.5 text-right">Platform fees</th>
+                  <th className="px-5 py-2.5 text-right">Bookings</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...monthly].reverse().map((m) => (
+                  <tr key={m.month} className="border-b tabular-nums text-neutral-700 last:border-0 dark:text-neutral-200">
+                    <td className="px-5 py-2.5 font-medium text-rh-night dark:text-white">{monthLabel(m.month, true)}</td>
+                    <td className="px-3 py-2.5 text-right">{m.signups}</td>
+                    <td className="px-3 py-2.5 text-right">{m.appointments}</td>
+                    <td className="px-3 py-2.5 text-right">{m.completed}</td>
+                    <td className="px-3 py-2.5 text-right">{m.paidInvoices}</td>
+                    <td className="px-3 py-2.5 text-right">{nairaFromKobo(m.grossKobo)}</td>
+                    <td className="px-3 py-2.5 text-right">{nairaFromKobo(m.platformFeeKobo)}</td>
+                    <td className="px-5 py-2.5 text-right">{m.bookings}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </TabsContent>
+        )}
+      </Panel>
+    </AdminPage>
+  )
+}
 
-        <TabsContent value="revenue" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Revenue Chart */}
-            <Card className="lg:col-span-2 border-none shadow-md">
-              <CardHeader>
-                <CardTitle>Revenue Trend (30 Days)</CardTitle>
-                <CardDescription>
-                  Daily revenue performance over the last 30 days
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={revenueAnalytics}>
-                      <defs>
-                        <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#005b57" stopOpacity={0.1} />
-                          <stop offset="95%" stopColor="#005b57" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                      <XAxis
-                        dataKey="date"
-                        tickFormatter={(value) => format(new Date(value), 'MMM dd')}
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fontSize: 12, fill: '#6B7280' }}
-                      />
-                      <YAxis
-                        tickFormatter={(value) => `₦${(value / 1000).toFixed(0)}K`}
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fontSize: 12, fill: '#6B7280' }}
-                      />
-                      <Tooltip
-                        labelFormatter={(value) => format(new Date(value), 'MMM dd, yyyy')}
-                        formatter={(value: number) => [`₦${value.toLocaleString()}`, 'Revenue']}
-                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="amount"
-                        stroke="#005b57"
-                        strokeWidth={2}
-                        fillOpacity={1}
-                        fill="url(#colorRevenue)"
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
+// ---------------------------------------------------------------------------
 
-            {/* Revenue Metrics */}
-            <Card className="border-none shadow-md">
-              <CardHeader>
-                <CardTitle>Revenue Overview</CardTitle>
-                <CardDescription>
-                  Key financial metrics
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
-                    <span className="text-sm text-muted-foreground">Total Revenue</span>
-                    <span className="font-bold">₦{platformRevenue.totalRevenue.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
-                    <span className="text-sm text-muted-foreground">Monthly Revenue</span>
-                    <span className="font-bold">₦{platformRevenue.monthlyRevenue.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
-                    <span className="text-sm text-muted-foreground">Avg Revenue/User</span>
-                    <span className="font-bold">₦{platformRevenue.averageRevenuePerUser.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Growth Rate</span>
-                    <Badge variant="default" className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-0">
-                      +{platformAnalytics.overview.growthRate}%
-                    </Badge>
-                  </div>
-                </div>
+function TileSkeleton() {
+  return <Skeleton className="mt-1 h-7 w-20 rounded-lg" />
+}
 
-                <div className="pt-4 border-t">
-                  <h4 className="text-sm font-medium mb-3">Payment Methods</h4>
-                  <div className="space-y-2">
-                    {Object.entries(platformRevenue.breakdown).map(([method, amount]) => (
-                      <div key={method} className="flex justify-between text-sm">
-                        <span className="capitalize text-muted-foreground">{method}</span>
-                        <span className="font-medium">₦{(amount as number).toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
+function compactNaira(naira: number) {
+  if (naira >= 1_000_000) return `₦${(naira / 1_000_000).toFixed(naira >= 10_000_000 ? 0 : 1)}m`
+  if (naira >= 1_000) return `₦${Math.round(naira / 1_000)}k`
+  return `₦${Math.round(naira)}`
+}
 
-        <TabsContent value="system" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Database Metrics */}
-            <Card className="border-none shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Database className="mr-2 h-5 w-5 text-primary" />
-                  Database Performance
-                </CardTitle>
-                <CardDescription>
-                  Database health and performance metrics
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <div className="text-lg font-bold">{systemMetrics.activeConnections.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground">Active Connections</div>
-                  </div>
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <div className="text-lg font-bold">{systemMetrics.diskUsage.toFixed(1)} GB</div>
-                    <div className="text-xs text-muted-foreground">Disk Usage</div>
-                  </div>
-                </div>
+function ChartPanel({
+  title,
+  description,
+  loading,
+  legend,
+  children,
+}: {
+  title: string
+  description: string
+  loading: boolean
+  legend?: { label: string; color: string }[]
+  children: ReactElement
+}) {
+  return (
+    <Panel title={title} description={description} bodyClassName="px-3 pb-4 pt-2 sm:px-4">
+      {legend && (
+        <ul className="mb-2 flex flex-wrap gap-x-4 gap-y-1 px-2 text-xs text-neutral-600 dark:text-neutral-300">
+          {legend.map((item) => (
+            <li key={item.label} className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: item.color }} aria-hidden />
+              {item.label}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="h-64">
+        {loading ? (
+          <Skeleton className="h-full w-full rounded-xl" />
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            {children}
+          </ResponsiveContainer>
+        )}
+      </div>
+    </Panel>
+  )
+}
 
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm font-medium">CPU Usage</span>
-                      <span className="text-sm text-muted-foreground">{systemMetrics.cpuUsage.toFixed(1)}%</span>
-                    </div>
-                    <Progress value={systemMetrics.cpuUsage} className="h-2" />
-                  </div>
+type Ink = (typeof INK)['light']
 
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-sm font-medium">Memory Usage</span>
-                      <span className="text-sm text-muted-foreground">{systemMetrics.memoryUsage.toFixed(1)}%</span>
-                    </div>
-                    <Progress value={systemMetrics.memoryUsage} className="h-2" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* API Performance */}
-            <Card className="border-none shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Zap className="mr-2 h-5 w-5 text-primary" />
-                  API Performance
-                </CardTitle>
-                <CardDescription>
-                  Real-time API metrics and health
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <div className="text-lg font-bold">{systemMetrics.requestsPerSecond.toFixed(1)}</div>
-                    <div className="text-xs text-muted-foreground">Requests/sec</div>
-                  </div>
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <div className="text-lg font-bold">{systemMetrics.networkLatency.toFixed(0)}ms</div>
-                    <div className="text-xs text-muted-foreground">Network Latency</div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center p-2 rounded-lg bg-muted/30">
-                    <span className="text-sm">Error Rate</span>
-                    <Badge variant="secondary" className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-0">
-                      {systemMetrics.errorRate.toFixed(2)}%
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between items-center p-2 rounded-lg bg-muted/30">
-                    <span className="text-sm">Active Connections</span>
-                    <span className="text-sm font-medium">{systemMetrics.activeConnections}</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Notification System */}
-            <Card className="lg:col-span-2 border-none shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Bell className="mr-2 h-5 w-5 text-primary" />
-                  Notification System
-                </CardTitle>
-                <CardDescription>
-                  Notification delivery performance and queue status
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <div className="text-xl font-bold">{Math.floor(systemMetrics.uptime / 3600).toLocaleString()}</div>
-                    <div className="text-sm text-muted-foreground">Uptime Hours</div>
-                  </div>
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <div className="text-xl font-bold">{(100 - systemMetrics.errorRate).toFixed(1)}%</div>
-                    <div className="text-sm text-muted-foreground">Success Rate</div>
-                  </div>
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <div className="text-xl font-bold">{systemMetrics.errorRate.toFixed(2)}%</div>
-                    <div className="text-sm text-muted-foreground">Error Rate</div>
-                  </div>
-                  <div className="text-center p-4 bg-muted/50 rounded-lg">
-                    <div className="text-xl font-bold">{systemMetrics.requestsPerSecond.toFixed(0)}</div>
-                    <div className="text-sm text-muted-foreground">Requests/sec</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="activity" className="space-y-6">
-          <Card className="border-none shadow-md">
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Activity className="mr-2 h-5 w-5 text-primary" />
-                Recent User Activity
-              </CardTitle>
-              <CardDescription>
-                Latest user actions and system events
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {activityLogs ? (
-                <div className="space-y-4">
-                  {activityLogs.map((log) => (
-                    <div key={log.id} className="flex items-center space-x-4 p-4 rounded-lg bg-muted/30 border border-transparent hover:border-border transition-colors">
-                      <div className="flex-shrink-0">
-                        <div className="h-2 w-2 rounded-full bg-green-500 ring-4 ring-green-500/20" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                          <div>
-                            <p className="text-sm font-medium">{log.action}</p>
-                            <p className="text-sm text-muted-foreground truncate">{log.details}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs text-muted-foreground whitespace-nowrap">
-                              {format(new Date(log.timestamp), 'MMM dd, HH:mm')}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="flex items-center space-x-4 p-4">
-                      <Skeleton className="h-2 w-2 rounded-full" />
-                      <div className="flex-1 space-y-2">
-                        <Skeleton className="h-4 w-32" />
-                        <Skeleton className="h-3 w-48" />
-                      </div>
-                      <Skeleton className="h-4 w-16" />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+function TooltipBox({ ink, title, children }: { ink: Ink; title: ReactNode; children: ReactNode }) {
+  return (
+    <div className="rounded-xl px-3 py-2 text-xs shadow-lg" style={{ background: ink.surface, border: `1px solid ${ink.border}`, color: ink.text }}>
+      <p className="mb-1 font-semibold">{title}</p>
+      {children}
     </div>
   )
 }
 
-interface MetricCardProps {
-  title: string
-  value: string
-  change: string
-  changeLabel: string
-  icon: React.ElementType
-  color: 'blue' | 'green' | 'purple' | 'orange'
+function Row({ label, value, color, ink }: { label: string; value: ReactNode; color?: string; ink: Ink }) {
+  return (
+    <p className="flex items-center justify-between gap-4 tabular-nums">
+      <span className="flex items-center gap-1.5" style={{ color: ink.muted }}>
+        {color && <span className="h-2 w-2 rounded-sm" style={{ background: color }} />}
+        {label}
+      </span>
+      <span className="font-medium">{value}</span>
+    </p>
+  )
 }
 
-function MetricCard({ title, value, change, changeLabel, icon: Icon, color }: MetricCardProps) {
-  const colorStyles = {
-    blue: {
-      bg: 'bg-blue-50 dark:bg-blue-900/20',
-      text: 'text-blue-600 dark:text-blue-400',
-      iconBg: 'bg-blue-100 dark:bg-blue-900/40',
-    },
-    green: {
-      bg: 'bg-green-50 dark:bg-green-900/20',
-      text: 'text-green-600 dark:text-green-400',
-      iconBg: 'bg-green-100 dark:bg-green-900/40',
-    },
-    purple: {
-      bg: 'bg-purple-50 dark:bg-purple-900/20',
-      text: 'text-purple-600 dark:text-purple-400',
-      iconBg: 'bg-purple-100 dark:bg-purple-900/40',
-    },
-    orange: {
-      bg: 'bg-orange-50 dark:bg-orange-900/20',
-      text: 'text-orange-600 dark:text-orange-400',
-      iconBg: 'bg-orange-100 dark:bg-orange-900/40',
-    },
-  }
-
-  const style = colorStyles[color]
-
+function StackTooltip({ active, payload, label, ink }: TooltipProps<number, string> & { ink: Ink }) {
+  if (!active || !payload?.length) return null
+  const total = payload.reduce((s, p) => s + (Number(p.value) || 0), 0)
   return (
-    <Card className="border-none shadow-md bg-gradient-to-br from-white to-gray-50/50 dark:from-gray-900 dark:to-gray-900/50">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <div className={`rounded-full p-2 ${style.iconBg} ${style.text}`}>
-          <Icon className="h-4 w-4" />
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        <div className="flex items-center text-xs text-muted-foreground mt-1">
-          <TrendingUp className="mr-1 h-3 w-3 text-green-500" />
-          <span className="text-green-600 font-medium mr-1">{change}</span> {changeLabel}
-        </div>
-      </CardContent>
-    </Card>
+    <TooltipBox ink={ink} title={label}>
+      {[...payload].reverse().map((p) => (
+        <Row key={String(p.dataKey)} ink={ink} label={String(p.name)} value={Number(p.value) || 0} color={p.color} />
+      ))}
+      <div className="my-1 border-t" style={{ borderColor: ink.border }} />
+      <Row ink={ink} label="Total" value={total} />
+    </TooltipBox>
+  )
+}
+
+function RevenueTooltip({ active, payload, label, ink }: TooltipProps<number, string> & { ink: Ink }) {
+  if (!active || !payload?.length) return null
+  const row = payload[0].payload as { grossKobo: number; platformFeeKobo: number; paidInvoices: number }
+  return (
+    <TooltipBox ink={ink} title={label}>
+      <Row ink={ink} label="Paid volume" value={nairaFromKobo(row.grossKobo)} color={ink.data} />
+      <Row ink={ink} label="Platform fees" value={nairaFromKobo(row.platformFeeKobo)} />
+      <Row ink={ink} label="Paid invoices" value={row.paidInvoices} />
+    </TooltipBox>
+  )
+}
+
+function BookingsTooltip({ active, payload, label, ink }: TooltipProps<number, string> & { ink: Ink }) {
+  if (!active || !payload?.length) return null
+  const row = payload[0].payload as { bookings: number; bookingsPaid: number; bookingsCancelled: number }
+  return (
+    <TooltipBox ink={ink} title={label}>
+      <Row ink={ink} label="Bookings made" value={row.bookings} color={ink.data} />
+      <Row ink={ink} label="Paid" value={row.bookingsPaid} />
+      <Row ink={ink} label="Cancelled" value={row.bookingsCancelled} />
+    </TooltipBox>
+  )
+}
+
+type RoleCounts = { byRole: Record<string, { count: number; capped: boolean }>; total: { count: number; capped: boolean } }
+
+function UsersByRole({ roles }: { roles: RoleCounts | undefined }) {
+  const rows = roles
+    ? Object.entries(roles.byRole)
+        .map(([role, c]) => ({ role, ...c }))
+        .filter((r) => r.count > 0)
+        .sort((a, b) => b.count - a.count)
+    : []
+  const max = rows.reduce((m, r) => Math.max(m, r.count), 0)
+  return (
+    <Panel title="Users by role" description={roles ? `${formatCount(roles.total)} accounts in total` : 'All accounts today'} bodyClassName="px-5 pb-5 pt-3">
+      {!roles ? (
+        <Skeleton className="h-56 w-full rounded-xl" />
+      ) : rows.length === 0 ? (
+        <p className="py-10 text-center text-sm text-neutral-500 dark:text-neutral-400">No accounts yet.</p>
+      ) : (
+        <ul className="space-y-3">
+          {rows.map((r) => (
+            <li key={r.role}>
+              <div className="mb-1 flex items-baseline justify-between text-sm">
+                <span className="text-neutral-700 dark:text-neutral-200">{roleLabel(r.role)}</span>
+                <span className="font-medium tabular-nums text-rh-night dark:text-white">{formatCount(r)}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-rh-mist dark:bg-white/[0.06]">
+                <div className="h-full rounded-full bg-rh-teal dark:bg-rh-aqua" style={{ width: `${max ? Math.max(2, (r.count / max) * 100) : 0}%` }} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   )
 }

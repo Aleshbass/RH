@@ -1,5 +1,5 @@
-import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { query, mutation, type QueryCtx } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
 import { ensureUserRole } from "./auth";
 
 export const DEFAULT_REVENUE_SETTINGS = {
@@ -124,6 +124,151 @@ export const updatePlatformRevenueSettings = mutation({
       });
       return { success: true, id };
     }
+  },
+});
+
+// ==== PLATFORM CONTROLS (admin Settings page) ====
+// One row in `platformControls` (latest wins, same pattern as platformRevenueSettings).
+// Missing row = defaults, so a fresh deployment behaves exactly as before.
+
+export const DEFAULT_PLATFORM_CONTROLS = {
+  maintenanceMode: false,
+  maintenanceMessage: "",
+  allowPatientSignups: true,
+  allowPhysioSignups: true,
+  allowClinicSignups: true,
+  marketplaceEnabled: true,
+  supportEmail: "",
+};
+
+export type PlatformControls = typeof DEFAULT_PLATFORM_CONTROLS;
+
+const MAX_MAINTENANCE_MESSAGE = 500;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type ReaderCtx = { db: QueryCtx["db"] };
+
+/** The saved platform controls (or the defaults) plus the row they came from. */
+export async function loadPlatformControls(ctx: ReaderCtx) {
+  const row = await ctx.db.query("platformControls").order("desc").first();
+  const controls: PlatformControls = row
+    ? {
+        maintenanceMode: row.maintenanceMode,
+        maintenanceMessage: row.maintenanceMessage ?? "",
+        allowPatientSignups: row.allowPatientSignups,
+        allowPhysioSignups: row.allowPhysioSignups,
+        allowClinicSignups: row.allowClinicSignups,
+        marketplaceEnabled: row.marketplaceEnabled,
+        supportEmail: row.supportEmail ?? "",
+      }
+    : { ...DEFAULT_PLATFORM_CONTROLS };
+  return { controls, row };
+}
+
+/** Which registration switch governs a self-serve role choice. Other roles are never gated. */
+const SIGNUP_FLAG_BY_ROLE: Record<string, keyof PlatformControls> = {
+  patient: "allowPatientSignups",
+  physiotherapist: "allowPhysioSignups",
+  clinic_owner: "allowClinicSignups",
+};
+
+/**
+ * Throws when an admin has paused new registrations for this role. Call it from the
+ * mutation that assigns a self-serve role (users.updateUserRole).
+ */
+export async function assertSignupAllowed(ctx: ReaderCtx, role: string) {
+  const flag = SIGNUP_FLAG_BY_ROLE[role];
+  if (!flag) return;
+  const { controls } = await loadPlatformControls(ctx);
+  if (controls[flag] === false) {
+    throw new ConvexError("New registrations for this account type are paused right now. Please try again later.");
+  }
+}
+
+/** Admin: the current platform controls for the Settings page. */
+export const getPlatformControls = query({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const { controls, row } = await loadPlatformControls(ctx);
+    return {
+      ...controls,
+      isCustom: row !== null,
+      updatedAt: row?.updatedAt ?? null,
+      updatedByName: row?.updatedByName ?? null,
+    };
+  },
+});
+
+/** Admin: save the platform controls. Every change is written to the activity log. */
+export const updatePlatformControls = mutation({
+  args: {
+    maintenanceMode: v.boolean(),
+    maintenanceMessage: v.string(),
+    allowPatientSignups: v.boolean(),
+    allowPhysioSignups: v.boolean(),
+    allowClinicSignups: v.boolean(),
+    marketplaceEnabled: v.boolean(),
+    supportEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const admin = await ensureUserRole(ctx, ["admin"]);
+
+    const next: PlatformControls = {
+      ...args,
+      maintenanceMessage: args.maintenanceMessage.trim(),
+      supportEmail: args.supportEmail.trim(),
+    };
+    if (next.maintenanceMessage.length > MAX_MAINTENANCE_MESSAGE) {
+      throw new ConvexError(`The maintenance message can be at most ${MAX_MAINTENANCE_MESSAGE} characters.`);
+    }
+    if (next.supportEmail && !EMAIL_PATTERN.test(next.supportEmail)) {
+      throw new ConvexError("Enter a valid support email address, or leave it empty.");
+    }
+
+    const { controls: previous, row } = await loadPlatformControls(ctx);
+    const changes = (Object.keys(next) as (keyof PlatformControls)[])
+      .filter((key) => previous[key] !== next[key])
+      .map((key) => ({ field: key, from: previous[key], to: next[key] }));
+    if (changes.length === 0) return { changed: 0 };
+
+    const now = Date.now();
+    const adminName = `${admin.firstName || ""} ${admin.lastName || ""}`.trim() || admin.email || "Admin";
+    const record = { ...next, updatedAt: now, updatedBy: admin._id, updatedByName: adminName };
+    if (row) await ctx.db.patch(row._id, record);
+    else await ctx.db.insert("platformControls", record);
+
+    // Audit trail: shows up in /dashboard/admin/activity under "Admin"
+    await ctx.db.insert("analytics_events", {
+      type: "admin_settings_updated",
+      userId: admin._id,
+      timestamp: now,
+      metadata: {
+        status: "success",
+        details: { section: "platform_controls", changes },
+      },
+    });
+
+    return { changed: changes.length };
+  },
+});
+
+/**
+ * Public: the switches every visitor's browser needs (maintenance screen, registration and
+ * marketplace availability). Deliberately returns nothing else.
+ */
+export const getPublicPlatformStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const { controls } = await loadPlatformControls(ctx);
+    return {
+      maintenanceMode: controls.maintenanceMode,
+      maintenanceMessage: controls.maintenanceMessage,
+      allowPatientSignups: controls.allowPatientSignups,
+      allowPhysioSignups: controls.allowPhysioSignups,
+      allowClinicSignups: controls.allowClinicSignups,
+      marketplaceEnabled: controls.marketplaceEnabled,
+    };
   },
 });
 

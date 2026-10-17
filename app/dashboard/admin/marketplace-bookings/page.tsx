@@ -1,20 +1,13 @@
-// @ts-nocheck
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { useEffect, useMemo, useState } from 'react';
+import { usePaginatedQuery, useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { Id } from '@/convex/_generated/dataModel';
-
+import type { Id } from '@/convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -23,68 +16,165 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import {
-  Search,
-  MapPin,
+  ArrowRightLeft,
+  Banknote,
+  Building2,
+  Calendar,
+  CalendarClock,
+  CheckCircle2,
+  Download,
   Globe,
   Loader2,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  XCircle,
-  ArrowRightLeft,
-  Wifi,
-  Building2,
-  Phone,
   Mail,
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  Banknote,
+  MapPin,
+  Phone,
+  Search,
+  Wifi,
+  XCircle,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { formatCurrency, cn } from '@/lib/utils';
-
+import { cn } from '@/lib/utils';
+import { playSound } from '@/lib/sounds';
+import {
+  AdminPage,
+  EmptyState,
+  FilterChips,
+  PageHeader,
+  Panel,
+  StatTile,
+  StatusBadge,
+  Stagger,
+  StaggerItem,
+  cardClass,
+  downloadCsv,
+  formatNaira,
+  inputClass,
+  primaryButtonClass,
+  softButtonClass,
+  tableWrapClass,
+} from '@/components/admin/ui';
 
 const PAGE_SIZE = 25;
+
+/** One row as returned by the bookings list and search queries. Amounts are in kobo. */
+type BookingRow = {
+  _id: Id<'marketplaceBookings'>;
+  createdAt: number;
+  sessionDate?: number;
+  sessionType: string;
+  sessionDuration: number;
+  isOnline: boolean;
+  packageSessions?: number;
+  bookingStatus: string;
+  paymentStatus: string;
+  paymentReference?: string;
+  bookingCode?: string;
+  totalAmount: number;
+  platformFee: number;
+  rehabifyEarnings?: number;
+  patientName: string;
+  patientEmail: string;
+  patientPhone: string;
+  isGuest: boolean;
+  physiotherapistId?: Id<'users'>;
+  physioName: string;
+  physioEmail: string;
+  physioLocation: string;
+  physioOffersOnline: boolean;
+  physioOffersInPerson: boolean;
+  joyBookingRoute?: string;
+  adminSchedulingStatus?: string;
+};
+
+type PhysioOption = {
+  id: Id<'users'>;
+  name: string;
+  email: string;
+  location: string;
+  offersOnline: boolean;
+  offersInPerson: boolean;
+};
+
+type Stats = {
+  total: number;
+  capped: boolean;
+  statusCounts: Record<string, number>;
+  paymentFailed: number;
+  guest: number;
+  awaitingSchedule: number;
+  rehabifyRevenue: number;
+};
+
+type StatusFilter =
+  | 'all'
+  | 'awaiting_admin_schedule'
+  | 'confirmed'
+  | 'pending_payment'
+  | 'payment_failed'
+  | 'completed'
+  | 'cancelled';
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'awaiting_admin_schedule', label: 'Awaiting scheduling' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'pending_payment', label: 'Pending payment' },
+  { value: 'payment_failed', label: 'Payment failed' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
+type BadgeTone = 'neutral' | 'teal' | 'green' | 'amber' | 'red';
+const STATUS_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
+  confirmed: { label: 'Confirmed', tone: 'green' },
+  pending_payment: { label: 'Pending payment', tone: 'neutral' },
+  payment_failed: { label: 'Payment failed', tone: 'red' },
+  awaiting_admin_schedule: { label: 'Awaiting scheduling', tone: 'amber' },
+  completed: { label: 'Completed', tone: 'teal' },
+  cancelled: { label: 'Cancelled', tone: 'red' },
+  no_show: { label: 'No show', tone: 'neutral' },
+};
+
+const dialogClass = 'w-[calc(100vw-2rem)] max-w-lg rounded-2xl dark:border-white/10 dark:bg-rh-ink-2 sm:w-full';
+const selectContentClass = 'dark:border-white/10 dark:bg-rh-ink-2';
+const fieldLabelClass = 'mb-1.5 block text-xs font-semibold text-neutral-600 dark:text-neutral-300';
+
+/** Kobo to a ₦ string. */
+const naira = (kobo?: number) => formatNaira((kobo ?? 0) / 100);
 
 function localDateTimeValue(timestamp: number): string {
   const date = new Date(timestamp - new Date(timestamp).getTimezoneOffset() * 60_000);
   return date.toISOString().slice(0, 16);
 }
 
-const STATUS_OPTIONS = [
-  { value: 'all', label: 'All Statuses' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'pending_payment', label: 'Pending Payment' },
-  { value: 'payment_failed', label: 'Payment Failed' },
-  { value: 'awaiting_admin_schedule', label: 'Awaiting Scheduling' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
+function useDebounced<T>(value: T, delay = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
 
-type StatusConfig = { label: string; color: string; icon: LucideIcon };
-const STATUS_CONFIG: Record<string, StatusConfig> = {
-  confirmed:       { label: 'Confirmed',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
-  pending_payment: { label: 'Pending Payment', color: 'bg-amber-50 text-amber-700 border-amber-200',       icon: Clock },
-  payment_failed: { label: 'Payment Failed', color: 'bg-red-50 text-red-700 border-red-200', icon: XCircle },
-  awaiting_admin_schedule: { label: 'Awaiting Scheduling', color: 'bg-violet-50 text-violet-700 border-violet-200', icon: Calendar },
-  completed:       { label: 'Completed',        color: 'bg-blue-50 text-blue-700 border-blue-200',          icon: CheckCircle2 },
-  cancelled:       { label: 'Cancelled',        color: 'bg-red-50 text-red-700 border-red-200',             icon: XCircle },
-  no_show:         { label: 'No Show',          color: 'bg-gray-100 text-gray-600 border-gray-200',         icon: AlertCircle },
-};
+const errorMessage = (error: unknown, fallback: string) =>
+  (error as Error)?.message?.replace(/^.*(ConvexError|Uncaught Error): /, '').split('\n')[0] || fallback;
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
+/** The status a row shows: a failed payment wins over the booking state. */
+const displayStatus = (b: BookingRow) => (b.paymentStatus === 'failed' ? 'payment_failed' : b.bookingStatus);
+
+const formatDate = (ts: number) => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const formatTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+// ─── Small pieces ─────────────────────────────────────────────────────────────
+
+function BookingStatus({ booking }: { booking: BookingRow }) {
+  const status = displayStatus(booking);
+  const cfg = STATUS_BADGE[status] ?? { label: status.replace(/_/g, ' '), tone: 'neutral' as const };
+  return <StatusBadge tone={cfg.tone} className="whitespace-nowrap capitalize">{cfg.label}</StatusBadge>;
+}
 
 function PhysioLocationBadge({
   location,
@@ -97,64 +187,140 @@ function PhysioLocationBadge({
 }) {
   if (!location && !offersOnline && !offersInPerson) return null;
   return (
-    <div className="flex flex-wrap items-center gap-1 mt-0.5">
+    <div className="mt-1 flex flex-wrap items-center gap-1">
       {location && (
-        <span className="inline-flex items-center gap-0.5 text-[11px] text-gray-500">
-          <MapPin className="h-3 w-3 text-teal-500 shrink-0" />
+        <span className="inline-flex items-center gap-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+          <MapPin className="h-3 w-3 shrink-0 text-rh-teal dark:text-rh-aqua" />
           {location}
         </span>
       )}
       {offersOnline && (
-        <span className="inline-flex items-center gap-0.5 text-[10px] bg-blue-50 text-blue-600 border border-blue-100 rounded-full px-1.5 py-0.5">
+        <StatusBadge tone="teal" className="gap-0.5 text-[10px]">
           <Wifi className="h-2.5 w-2.5" /> Online
-        </span>
+        </StatusBadge>
       )}
       {offersInPerson && (
-        <span className="inline-flex items-center gap-0.5 text-[10px] bg-gray-50 text-gray-600 border border-gray-200 rounded-full px-1.5 py-0.5">
+        <StatusBadge tone="neutral" className="gap-0.5 text-[10px]">
           <Building2 className="h-2.5 w-2.5" /> In-person
-        </span>
+        </StatusBadge>
       )}
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const cfg: StatusConfig = STATUS_CONFIG[status] ?? {
-    label: status,
-    color: 'bg-gray-100 text-gray-600 border-gray-200',
-    icon: AlertCircle,
-  };
-  const Icon = cfg.icon;
+function PatientCell({ booking }: { booking: BookingRow }) {
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 text-xs font-medium border rounded-full px-2.5 py-1 whitespace-nowrap',
-        cfg.color
-      )}
-    >
-      <Icon className="h-3 w-3 shrink-0" />
-      {cfg.label}
-    </span>
+    <div className="flex min-w-0 items-start gap-2.5">
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rh-mist text-xs font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+        {booking.patientName?.[0]?.toUpperCase() || 'G'}
+      </span>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <p className="max-w-[180px] truncate text-sm font-semibold text-rh-night dark:text-white">{booking.patientName}</p>
+          {booking.isGuest && (
+            <StatusBadge tone="amber" className="gap-0.5 text-[10px]">
+              <Globe className="h-2.5 w-2.5" /> Guest
+            </StatusBadge>
+          )}
+        </div>
+        {booking.patientEmail && (
+          <p className="mt-0.5 flex max-w-[220px] items-center gap-1 truncate text-xs text-neutral-500 dark:text-neutral-400">
+            <Mail className="h-3 w-3 shrink-0" /> <span className="truncate">{booking.patientEmail}</span>
+          </p>
+        )}
+        {booking.patientPhone && (
+          <p className="flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+            <Phone className="h-3 w-3 shrink-0" /> {booking.patientPhone}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
-// ─── Reassign Modal ───────────────────────────────────────────────────────────
-
-interface ReassignModalProps {
-  booking: {
-    _id: Id<'marketplaceBookings'>;
-    patientName: string;
-    physioName: string;
-    physiotherapistId: Id<'users'>;
-  };
-  onClose: () => void;
+function SessionSummary({ booking }: { booking: BookingRow }) {
+  return (
+    <div>
+      <p className="text-sm capitalize text-rh-night dark:text-neutral-100">{booking.sessionType?.replace(/_/g, ' ')}</p>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">{booking.sessionDuration} min</p>
+      {booking.isOnline ? (
+        <span className="inline-flex items-center gap-0.5 text-[11px] text-rh-teal dark:text-rh-aqua">
+          <Wifi className="h-2.5 w-2.5" /> Online
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+          <Building2 className="h-2.5 w-2.5" /> In-person
+        </span>
+      )}
+      {(booking.packageSessions ?? 0) > 1 && (
+        <p className="text-[11px] font-medium text-rh-teal dark:text-rh-aqua">{booking.packageSessions}-session pack</p>
+      )}
+    </div>
+  );
 }
 
-function ReassignModal({ booking, onClose }: ReassignModalProps) {
-  const physios = useQuery((api as any).admin.marketplaceBookings.adminGetAllPhysiosForSelect);
-  const reassign = useMutation((api as any).admin.marketplaceBookings.adminReassignBookingPhysio);
+/**
+ * The one action a booking offers: schedule a paid Joy virtual consult, reschedule an upcoming
+ * one, show where a Joy consult stands, or reassign the clinician on any other booking.
+ */
+function BookingAction({
+  booking,
+  onReassign,
+  onSchedule,
+  block = false,
+}: {
+  booking: BookingRow;
+  onReassign: () => void;
+  onSchedule: () => void;
+  block?: boolean;
+}) {
+  const size = block ? 'h-9 w-full' : 'h-8';
+  if (booking.adminSchedulingStatus === 'awaiting_schedule') {
+    return (
+      <Button size="sm" onClick={onSchedule} className={cn(primaryButtonClass, size, 'whitespace-nowrap text-xs')}>
+        <Calendar className="mr-1.5 h-3.5 w-3.5" />
+        {block ? 'Schedule virtual consultation' : 'Schedule'}
+      </Button>
+    );
+  }
+  if (booking.joyBookingRoute === 'admin_scheduled_virtual') {
+    if (booking.bookingStatus === 'confirmed' && (booking.sessionDate ?? 0) > Date.now()) {
+      return (
+        <Button size="sm" onClick={onSchedule} className={cn(softButtonClass, size, 'whitespace-nowrap text-xs')}>
+          <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+          Reschedule
+        </Button>
+      );
+    }
+    const failed = booking.paymentStatus === 'failed';
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 text-xs font-medium',
+          block && 'w-full justify-center py-2',
+          failed ? 'text-rose-600 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'
+        )}
+      >
+        {failed ? <XCircle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+        {failed ? 'Payment failed' : booking.bookingStatus === 'confirmed' ? 'Scheduled' : 'Awaiting payment'}
+      </span>
+    );
+  }
+  return (
+    <Button size="sm" onClick={onReassign} className={cn(softButtonClass, size, 'whitespace-nowrap text-xs')}>
+      <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+      {block ? 'Reassign physiotherapist' : 'Reassign'}
+    </Button>
+  );
+}
 
-  const [selectedPhysioId, setSelectedPhysioId] = useState<string>('');
+// ─── Reassign dialog ──────────────────────────────────────────────────────────
+
+function ReassignDialog({ booking, onClose }: { booking: BookingRow; onClose: () => void }) {
+  const physios = useQuery(api.admin.marketplaceBookings.adminGetAllPhysiosForSelect) as PhysioOption[] | undefined;
+  const reassign = useMutation(api.admin.marketplaceBookings.adminReassignBookingPhysio);
+
+  const [selectedPhysioId, setSelectedPhysioId] = useState<Id<'users'> | ''>('');
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -162,7 +328,7 @@ function ReassignModal({ booking, onClose }: ReassignModalProps) {
   const filteredPhysios = useMemo(() => {
     if (!physios) return [];
     const q = search.toLowerCase();
-    return (physios as any[])
+    return physios
       .filter((p) => p.id !== booking.physiotherapistId)
       .filter(
         (p) =>
@@ -174,118 +340,120 @@ function ReassignModal({ booking, onClose }: ReassignModalProps) {
   }, [physios, search, booking.physiotherapistId]);
 
   const handleConfirm = async () => {
-    if (!selectedPhysioId) { toast.error('Please select a physiotherapist'); return; }
+    if (!selectedPhysioId) {
+      toast.error('Please select a physiotherapist');
+      return;
+    }
     setLoading(true);
     try {
       await reassign({
         bookingId: booking._id,
-        newPhysiotherapistId: selectedPhysioId as Id<'users'>,
+        newPhysiotherapistId: selectedPhysioId,
         reason: reason.trim() || undefined,
       });
+      playSound('success');
       toast.success('Booking reassigned successfully');
       onClose();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to reassign booking');
+    } catch (err) {
+      playSound('error');
+      toast.error(errorMessage(err, 'Failed to reassign booking'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-lg w-[calc(100vw-2rem)] sm:w-full">
+    <Dialog open onOpenChange={(open) => !open && !loading && onClose()}>
+      <DialogContent className={dialogClass}>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <ArrowRightLeft className="h-5 w-5 text-teal-600 shrink-0" />
-            Reassign Physiotherapist
+          <DialogTitle className="flex items-center gap-2 text-base dark:text-white">
+            <ArrowRightLeft className="h-5 w-5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+            Reassign physiotherapist
           </DialogTitle>
           <DialogDescription className="text-sm">
-            Transfer{' '}
-            <span className="font-semibold text-gray-800">{booking.patientName}</span>'s booking
-            from{' '}
-            <span className="font-semibold text-gray-800">{booking.physioName}</span> to another
-            physiotherapist. Their appointment, relationship, and treatment plan will all be updated.
+            Transfer <span className="font-semibold text-rh-night dark:text-white">{booking.patientName}</span>&apos;s booking
+            from <span className="font-semibold text-rh-night dark:text-white">{booking.physioName}</span> to another
+            physiotherapist. Their appointment, relationship and treatment plan will all be updated.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-1">
-          {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
             <Input
-              placeholder="Search by name or location…"
+              placeholder="Search by name, email or location…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+              className={cn(inputClass, 'pl-9')}
             />
           </div>
 
-          {/* Physio list */}
-          <div className="max-h-60 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
+          <div className="max-h-60 divide-y divide-black/[0.05] overflow-y-auto rounded-xl border border-black/[0.06] dark:divide-white/[0.06] dark:border-white/10">
             {!physios ? (
               <div className="flex items-center justify-center p-8">
-                <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+                <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
               </div>
             ) : filteredPhysios.length === 0 ? (
-              <div className="p-4 text-center text-sm text-gray-500">No physiotherapists found</div>
+              <p className="p-4 text-center text-sm text-neutral-500 dark:text-neutral-400">No physiotherapists found</p>
             ) : (
-              filteredPhysios.map((p: any) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setSelectedPhysioId(p.id)}
-                  className={cn(
-                    'w-full text-left px-4 py-3 transition-colors',
-                    selectedPhysioId === p.id
-                      ? 'bg-teal-50 border-l-[3px] border-l-teal-500'
-                      : 'hover:bg-gray-50 border-l-[3px] border-l-transparent'
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{p.name}</p>
-                      {p.email && <p className="text-xs text-gray-500 truncate">{p.email}</p>}
-                      <PhysioLocationBadge
-                        location={p.location}
-                        offersOnline={p.offersOnline}
-                        offersInPerson={p.offersInPerson}
-                      />
-                    </div>
-                    {selectedPhysioId === p.id && (
-                      <CheckCircle2 className="h-4 w-4 text-teal-600 shrink-0 mt-1" />
+              filteredPhysios.map((p) => {
+                const selected = selectedPhysioId === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedPhysioId(p.id)}
+                    aria-pressed={selected}
+                    className={cn(
+                      'w-full border-l-[3px] px-4 py-3 text-left transition-colors',
+                      selected
+                        ? 'border-l-rh-teal bg-rh-mist dark:border-l-rh-aqua dark:bg-rh-aqua/10'
+                        : 'border-l-transparent hover:bg-rh-canvas dark:hover:bg-white/[0.03]'
                     )}
-                  </div>
-                </button>
-              ))
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{p.name}</p>
+                        {p.email && <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{p.email}</p>}
+                        <PhysioLocationBadge location={p.location} offersOnline={p.offersOnline} offersInPerson={p.offersInPerson} />
+                      </div>
+                      {selected && <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-rh-teal dark:text-rh-aqua" />}
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
 
-          {/* Reason */}
           <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1.5 block">
-              Reason <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
+            <Label htmlFor="reassign-reason" className={fieldLabelClass}>
+              Reason <span className="font-normal text-neutral-400">(optional)</span>
+            </Label>
             <Input
-              placeholder="e.g. Patient requested different location…"
+              id="reassign-reason"
+              placeholder="e.g. Patient requested a different location…"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
+              className={inputClass}
             />
           </div>
         </div>
 
-        <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
-          <Button variant="outline" onClick={onClose} disabled={loading} className="w-full sm:w-auto">
+        <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+          <Button onClick={onClose} disabled={loading} className={cn(softButtonClass, 'w-full sm:w-auto')}>
             Cancel
           </Button>
-          <Button
-            onClick={handleConfirm}
-            disabled={loading || !selectedPhysioId}
-            className="w-full sm:w-auto bg-teal-600 hover:bg-teal-700 text-white"
-          >
+          <Button onClick={handleConfirm} disabled={loading || !selectedPhysioId} className={cn(primaryButtonClass, 'w-full sm:w-auto')}>
             {loading ? (
-              <><Loader2 className="h-4 w-4 animate-spin mr-2" />Reassigning…</>
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Reassigning…
+              </>
             ) : (
-              <><ArrowRightLeft className="h-4 w-4 mr-2" />Confirm Reassignment</>
+              <>
+                <ArrowRightLeft className="mr-2 h-4 w-4" />
+                Confirm reassignment
+              </>
             )}
           </Button>
         </DialogFooter>
@@ -294,21 +462,32 @@ function ReassignModal({ booking, onClose }: ReassignModalProps) {
   );
 }
 
-function ScheduleVirtualModal({ booking, onClose }: { booking: any; onClose: () => void }) {
-  const physios = useQuery((api as any).admin.marketplaceBookings.adminGetAllPhysiosForSelect);
-  const schedule = useMutation((api as any).joyIntegration.adminScheduleJoyVirtualBooking);
-  const reschedule = useMutation((api as any).joyIntegration.adminRescheduleJoyVirtualBooking);
+// ─── Joy virtual consult scheduling ───────────────────────────────────────────
+
+function ScheduleVirtualDialog({ booking, onClose }: { booking: BookingRow; onClose: () => void }) {
+  const physios = useQuery(api.admin.marketplaceBookings.adminGetAllPhysiosForSelect) as PhysioOption[] | undefined;
+  const schedule = useMutation(api.joyIntegration.adminScheduleJoyVirtualBooking);
+  const reschedule = useMutation(api.joyIntegration.adminRescheduleJoyVirtualBooking);
   const isReschedule = booking.adminSchedulingStatus === 'scheduled' && booking.bookingStatus === 'confirmed';
-  const [physiotherapistId, setPhysiotherapistId] = useState(() => booking.physiotherapistId || '');
+  const [physiotherapistId, setPhysiotherapistId] = useState<string>(() => booking.physiotherapistId || '');
   // Leave a small buffer above Convex's five-minute safety minimum so an
   // admin cannot accidentally select the current time and lose the form.
-  const [startLocal, setStartLocal] = useState(() => localDateTimeValue(isReschedule ? booking.sessionDate : Date.now() + 10 * 60_000));
+  const [startLocal, setStartLocal] = useState(() =>
+    localDateTimeValue(isReschedule && booking.sessionDate ? booking.sessionDate : Date.now() + 10 * 60_000)
+  );
   const [loading, setLoading] = useState(false);
-  const onlinePhysios = (physios as any[] | undefined)?.filter((p) => p.offersOnline) ?? [];
+  const onlinePhysios = physios?.filter((p) => p.offersOnline) ?? [];
+
   const confirm = async () => {
-    if (!physiotherapistId || !startLocal) { toast.error('Choose a clinician and appointment date/time'); return; }
+    if (!physiotherapistId || !startLocal) {
+      toast.error('Choose a clinician and appointment date/time');
+      return;
+    }
     const startTime = new Date(startLocal).getTime();
-    if (!Number.isFinite(startTime)) { toast.error('Enter a valid appointment date/time'); return; }
+    if (!Number.isFinite(startTime)) {
+      toast.error('Enter a valid appointment date/time');
+      return;
+    }
     if (startTime < Date.now() + 5 * 60_000) {
       toast.error('Choose an appointment time at least five minutes from now.');
       return;
@@ -322,97 +501,121 @@ function ScheduleVirtualModal({ booking, onClose }: { booking: any; onClose: () 
         await schedule({ bookingId: booking._id, physiotherapistId: physiotherapistId as Id<'users'>, startTime });
         toast.success('Virtual consultation scheduled. Joy will notify the patient.');
       }
+      playSound('booked');
       onClose();
-    } catch (error: any) {
-      toast.error(error?.message || 'Could not schedule this consultation');
-    } finally { setLoading(false); }
+    } catch (error) {
+      playSound('error');
+      toast.error(errorMessage(error, 'Could not schedule this consultation'));
+    } finally {
+      setLoading(false);
+    }
   };
-  return <Dialog open onOpenChange={onClose}>
-    <DialogContent className="max-w-lg">
-      <DialogHeader>
-        <DialogTitle>{isReschedule ? 'Reschedule virtual consultation' : 'Schedule virtual consultation'}</DialogTitle>
-        <DialogDescription>{isReschedule ? 'Choose a new future time. The existing clinician and secure meeting link remain unchanged; Joy will send updated details.' : 'Assign an online clinician and time. Saving confirms the paid booking and sends the patient’s appointment details through Joy.'}</DialogDescription>
-      </DialogHeader>
-      <div className="space-y-4 py-2">
-        <div><label className="text-xs font-semibold text-gray-600 mb-1.5 block">Clinician</label>
-          <Select value={physiotherapistId} onValueChange={setPhysiotherapistId}>
-            <SelectTrigger disabled={isReschedule}><SelectValue placeholder="Select an online clinician" /></SelectTrigger>
-            <SelectContent>{onlinePhysios.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-          </Select>
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !loading && onClose()}>
+      <DialogContent className={dialogClass}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base dark:text-white">
+            <CalendarClock className="h-5 w-5 shrink-0 text-rh-teal dark:text-rh-aqua" />
+            {isReschedule ? 'Reschedule virtual consultation' : 'Schedule virtual consultation'}
+          </DialogTitle>
+          <DialogDescription>
+            {isReschedule
+              ? 'Choose a new future time. The existing clinician and secure meeting link remain unchanged; Joy will send updated details.'
+              : 'Assign an online clinician and time. Saving confirms the paid booking and sends the patient’s appointment details through Joy.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-xl bg-rh-canvas px-4 py-3 text-sm dark:bg-white/[0.04]">
+          <p className="font-semibold text-rh-night dark:text-white">{booking.patientName}</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            {booking.sessionType?.replace(/_/g, ' ')} · {booking.sessionDuration} min · {naira(booking.totalAmount)}
+          </p>
         </div>
-        <div><label className="text-xs font-semibold text-gray-600 mb-1.5 block">Date and time</label>
-          <Input type="datetime-local" value={startLocal} min={localDateTimeValue(Date.now() + 5 * 60_000)} onChange={(e) => setStartLocal(e.target.value)} />
+
+        <div className="space-y-4 py-1">
+          <div>
+            <Label className={fieldLabelClass}>Clinician</Label>
+            <Select value={physiotherapistId} onValueChange={setPhysiotherapistId}>
+              <SelectTrigger disabled={isReschedule} className={cn(inputClass, 'w-full')}>
+                <SelectValue placeholder={physios === undefined ? 'Loading clinicians…' : 'Select an online clinician'} />
+              </SelectTrigger>
+              <SelectContent className={selectContentClass}>
+                {onlinePhysios.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="joy-start" className={fieldLabelClass}>
+              Date and time
+            </Label>
+            <Input
+              id="joy-start"
+              type="datetime-local"
+              value={startLocal}
+              min={localDateTimeValue(Date.now() + 5 * 60_000)}
+              onChange={(e) => setStartLocal(e.target.value)}
+              className={cn(inputClass, 'dark:[color-scheme:dark]')}
+            />
+          </div>
         </div>
-      </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
-        <Button onClick={confirm} disabled={loading || !physiotherapistId || !startLocal} className="bg-teal-600 hover:bg-teal-700 text-white">
-          {loading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</> : <><Calendar className="h-4 w-4 mr-2" />{isReschedule ? 'Reschedule and notify' : 'Schedule and notify'}</>}
-        </Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>;
+
+        <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+          <Button onClick={onClose} disabled={loading} className={cn(softButtonClass, 'w-full sm:w-auto')}>
+            Cancel
+          </Button>
+          <Button
+            onClick={confirm}
+            disabled={loading || !physiotherapistId || !startLocal}
+            className={cn(primaryButtonClass, 'w-full sm:w-auto')}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                <Calendar className="mr-2 h-4 w-4" />
+                {isReschedule ? 'Reschedule and notify' : 'Schedule and notify'}
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
-// ─── Booking Card (mobile) ────────────────────────────────────────────────────
+// ─── Booking card (mobile) ────────────────────────────────────────────────────
 
-function BookingCard({ booking, onReassign, onSchedule }: { booking: any; onReassign: () => void; onSchedule: () => void }) {
+function BookingCard({ booking, onReassign, onSchedule }: { booking: BookingRow; onReassign: () => void; onSchedule: () => void }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-3">
-      {/* Top row: date + status */}
+    <div className={cn(cardClass, 'space-y-3 p-4')}>
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-xs text-gray-400">
-            {new Date(booking.createdAt).toLocaleDateString('en-GB', {
-              day: 'numeric', month: 'short', year: 'numeric',
-            })}
-          </p>
-          {booking.paymentReference && (
-            <p className="text-[10px] text-gray-400 font-mono truncate max-w-[160px]">
-              {booking.paymentReference}
-            </p>
-          )}
-        </div>
-        <StatusBadge status={booking.bookingStatus} />
-      </div>
-
-      {/* Patient */}
-      <div className="flex items-start gap-2.5">
-        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shrink-0 text-white text-xs font-bold">
-          {booking.patientName?.[0]?.toUpperCase() || 'G'}
-        </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-sm font-semibold text-gray-900">{booking.patientName}</span>
-            {booking.isGuest && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] bg-purple-50 text-purple-600 border border-purple-200 rounded-full px-1.5 py-0.5 font-medium">
-                <Globe className="h-2.5 w-2.5" /> Guest
-              </span>
-            )}
-          </div>
-          {booking.patientEmail && (
-            <p className="text-xs text-gray-500 flex items-center gap-0.5 mt-0.5 truncate">
-              <Mail className="h-3 w-3 shrink-0" /> {booking.patientEmail}
-            </p>
-          )}
-          {booking.patientPhone && (
-            <p className="text-xs text-gray-500 flex items-center gap-0.5 truncate">
-              <Phone className="h-3 w-3 shrink-0" /> {booking.patientPhone}
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            {formatDate(booking.createdAt)} · {formatTime(booking.createdAt)}
+          </p>
+          {(booking.bookingCode || booking.paymentReference) && (
+            <p className="max-w-[180px] truncate font-mono text-[10px] text-neutral-400 dark:text-neutral-500">
+              {booking.bookingCode || booking.paymentReference}
             </p>
           )}
         </div>
+        <BookingStatus booking={booking} />
       </div>
 
-      {/* Divider */}
-      <div className="border-t border-gray-50" />
+      <PatientCell booking={booking} />
 
-      {/* Physio */}
-      <div>
-        <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Physiotherapist</p>
-        <p className="text-sm font-semibold text-gray-900">{booking.physioName}</p>
-        {booking.physioEmail && (
-          <p className="text-xs text-gray-500">{booking.physioEmail}</p>
-        )}
+      <div className="border-t border-black/[0.05] pt-3 dark:border-white/[0.06]">
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500">Physiotherapist</p>
+        <p className="text-sm font-semibold text-rh-night dark:text-white">{booking.physioName}</p>
+        {booking.physioEmail && <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{booking.physioEmail}</p>}
         <PhysioLocationBadge
           location={booking.physioLocation}
           offersOnline={booking.physioOffersOnline}
@@ -420,370 +623,263 @@ function BookingCard({ booking, onReassign, onSchedule }: { booking: any; onReas
         />
       </div>
 
-      {/* Session + Amount row */}
-      <div className="flex items-end justify-between gap-2 pt-1">
-        <div>
-          <p className="text-xs capitalize text-gray-700 font-medium">
-            {booking.sessionType?.replace(/_/g, ' ')} · {booking.sessionDuration}min
-          </p>
-          {booking.isOnline ? (
-            <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-600">
-              <Wifi className="h-2.5 w-2.5" /> Online
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-500">
-              <Building2 className="h-2.5 w-2.5" /> In-person
-            </span>
-          )}
-          {booking.packageSessions > 1 && (
-            <p className="text-[10px] text-teal-600 font-medium">{booking.packageSessions}-session pack</p>
-          )}
-        </div>
-        <div className="text-right shrink-0">
-          <p className="text-sm font-bold text-gray-900">
-            {formatCurrency(booking.totalAmount, 'NGN')}
-          </p>
-          <p className="text-[10px] text-gray-400">
-            Fee: {formatCurrency(booking.platformFee, 'NGN')}
-          </p>
+      <div className="flex items-end justify-between gap-2">
+        <SessionSummary booking={booking} />
+        <div className="shrink-0 text-right">
+          <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">{naira(booking.totalAmount)}</p>
+          <p className="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-400">Fee {naira(booking.platformFee)}</p>
         </div>
       </div>
 
-      {booking.adminSchedulingStatus === 'awaiting_schedule' ? <Button
-        size="sm" onClick={onSchedule}
-        className="w-full h-9 text-xs bg-teal-600 hover:bg-teal-700 text-white"
-      ><Calendar className="h-3.5 w-3.5 mr-1.5" />Schedule virtual consultation</Button> : booking.joyBookingRoute === 'admin_scheduled_virtual' ? <Button size="sm" variant="outline" disabled className="w-full h-9 text-xs">{booking.paymentStatus === 'failed' ? 'Payment failed' : booking.bookingStatus === 'confirmed' ? 'Scheduled' : 'Awaiting payment'}</Button> : <Button
-        size="sm"
-        variant="outline"
-        onClick={onReassign}
-        className="w-full h-9 text-xs border-gray-200 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50 transition-colors"
-      >
-        <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
-        Reassign Physiotherapist
-      </Button>}
+      <BookingAction booking={booking} onReassign={onReassign} onSchedule={onSchedule} block />
     </div>
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function AdminMarketplaceBookingsPage() {
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [page, setPage] = useState(0);
-  const [reassignBooking, setReassignBooking] = useState<any | null>(null);
-  const [scheduleBooking, setScheduleBooking] = useState<any | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const search = useDebounced(searchInput.trim());
+  const searching = search.length >= 2;
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [reassignBooking, setReassignBooking] = useState<BookingRow | null>(null);
+  const [scheduleBooking, setScheduleBooking] = useState<BookingRow | null>(null);
 
-  // Paginated + filtered result
-  const result = useQuery(
-    (api as any).admin.marketplaceBookings.adminGetAllMarketplaceBookings,
-    { status: statusFilter, search: search || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE }
+  const stats = useQuery(api.admin.marketplaceBookings.adminGetMarketplaceBookingStats) as Stats | undefined;
+
+  const paged = usePaginatedQuery(
+    api.admin.marketplaceBookings.adminGetAllMarketplaceBookings,
+    searching ? 'skip' : { status: statusFilter },
+    { initialNumItems: PAGE_SIZE }
   );
+  const searchResult = useQuery(
+    api.admin.marketplaceBookings.adminSearchMarketplaceBookings,
+    searching ? { search, status: statusFilter } : 'skip'
+  ) as { bookings: BookingRow[]; scanned: number; capped: boolean } | undefined;
 
-  // All bookings for stats (unfiltered)
-  const allResult = useQuery(
-    (api as any).admin.marketplaceBookings.adminGetAllMarketplaceBookings,
-    { limit: 9999 }
-  );
+  const bookings: BookingRow[] = searching ? searchResult?.bookings ?? [] : (paged.results as BookingRow[]);
+  const isLoading = searching ? searchResult === undefined : paged.status === 'LoadingFirstPage';
 
-  const bookings: any[] = result?.bookings ?? [];
-  const total: number = result?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const isLoading = result === undefined;
+  const filterOptions = STATUS_FILTERS.map((f) => ({
+    ...f,
+    count: !stats
+      ? undefined
+      : f.value === 'all'
+        ? stats.total
+        : f.value === 'payment_failed'
+          ? stats.paymentFailed
+          : stats.statusCounts[f.value] ?? 0,
+  }));
 
-  const allBookings: any[] = allResult?.bookings ?? [];
-  const confirmedCount = allBookings.filter((b) => b.bookingStatus === 'confirmed').length;
-  const guestCount = allBookings.filter((b) => b.isGuest).length;
-  const platformRevenue = allBookings
-    .filter((b) => b.paymentStatus === 'completed')
-    .reduce((sum, b) => sum + (b.rehabifyEarnings || 0), 0);
+  const confirmedCount = stats?.statusCounts.confirmed ?? 0;
+  const countHint = stats?.capped ? `latest ${stats.total.toLocaleString()} bookings` : undefined;
 
-  const stats = [
-    { label: 'Total Bookings',   value: allResult ? String(allResult.total) : '—',                            icon: Calendar,       color: 'text-blue-600 bg-blue-50' },
-    { label: 'Confirmed',         value: allResult ? String(confirmedCount) : '—',                             icon: CheckCircle2,   color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Guest Bookings',    value: allResult ? String(guestCount) : '—',                                 icon: Globe,          color: 'text-purple-600 bg-purple-50' },
-    { label: 'Rehabify Revenue',  value: allResult ? formatCurrency(platformRevenue, 'NGN') : '—',             icon: Banknote,       color: 'text-teal-600 bg-teal-50' },
-  ];
+  const exportRows = () => {
+    if (bookings.length === 0) return;
+    downloadCsv(
+      `marketplace-bookings-${new Date().toISOString().slice(0, 10)}`,
+      bookings.map((b) => ({
+        created: new Date(b.createdAt).toISOString(),
+        bookingCode: b.bookingCode ?? '',
+        paymentReference: b.paymentReference ?? '',
+        status: displayStatus(b),
+        patient: b.patientName,
+        patientEmail: b.patientEmail,
+        patientPhone: b.patientPhone,
+        guest: b.isGuest ? 'yes' : 'no',
+        physiotherapist: b.physioName,
+        physioEmail: b.physioEmail,
+        sessionType: b.sessionType,
+        durationMinutes: b.sessionDuration,
+        online: b.isOnline ? 'yes' : 'no',
+        packageSessions: b.packageSessions ?? 1,
+        totalNaira: (b.totalAmount ?? 0) / 100,
+        platformFeeNaira: (b.platformFee ?? 0) / 100,
+        rehabifyNaira: (b.rehabifyEarnings ?? 0) / 100,
+      }))
+    );
+  };
 
   return (
-    <div className="flex-1 space-y-5 p-4 md:p-8 pt-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Marketplace Bookings</h1>
-        <p className="text-muted-foreground mt-1">
-          Manage all patient bookings, view guest details, and reassign physiotherapists.
-        </p>
-      </div>
+    <AdminPage>
+      <PageHeader
+        eyebrow="Marketplace"
+        title="Bookings"
+        description="Every patient booking, including guests. Schedule Joy virtual consultations and reassign physiotherapists."
+        actions={
+          <Button onClick={exportRows} disabled={bookings.length === 0} className={softButtonClass}>
+            <Download className="mr-2 h-4 w-4" />
+            Export shown
+          </Button>
+        }
+      />
 
-      {/* ── Stats ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        {stats.map(({ label, value, icon: Icon, color }) => (
-          <Card key={label} className="border border-gray-100 shadow-sm">
-            <CardContent className="p-3 md:p-4 flex items-center gap-3">
-              <div className={cn('h-9 w-9 md:h-10 md:w-10 rounded-xl flex items-center justify-center shrink-0', color)}>
-                <Icon className="h-4 w-4 md:h-5 md:w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] md:text-xs text-gray-500 font-medium truncate">{label}</p>
-                <p className="text-lg md:text-xl font-bold text-gray-900 truncate">{value}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <Stagger className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StaggerItem>
+          <StatTile
+            label="Bookings"
+            icon={Calendar}
+            value={stats ? stats.total.toLocaleString() : '—'}
+            hint={stats ? countHint ?? `${stats.guest.toLocaleString()} from guests` : undefined}
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile
+            label="Awaiting scheduling"
+            icon={CalendarClock}
+            tone={stats && stats.awaitingSchedule > 0 ? 'attention' : 'peach'}
+            value={stats ? stats.awaitingSchedule.toLocaleString() : '—'}
+            hint="paid Joy virtual consults"
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile label="Confirmed" icon={CheckCircle2} tone="mint" value={stats ? confirmedCount.toLocaleString() : '—'} hint={countHint} />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile
+            label="Rehabify revenue"
+            icon={Banknote}
+            value={stats ? naira(stats.rehabifyRevenue) : '—'}
+            hint={stats?.capped ? countHint : 'from completed payments'}
+          />
+        </StaggerItem>
+      </Stagger>
 
-      {/* ── Filters ── */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+      <Panel bodyClassName="space-y-4 p-4 sm:p-5">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
           <Input
-            placeholder="Search patient name, email, or reference…"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-            className="pl-9 w-full"
+            placeholder="Search patient, clinician, email, phone or reference…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className={cn(inputClass, 'pl-9')}
+            aria-label="Search bookings"
           />
         </div>
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-full sm:w-48">
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+        <FilterChips value={statusFilter} onChange={setStatusFilter} options={filterOptions} />
+        {searching && searchResult && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            {searchResult.bookings.length} match{searchResult.bookings.length === 1 ? '' : 'es'} in the latest{' '}
+            {searchResult.scanned.toLocaleString()} bookings
+            {searchResult.capped ? '. Older bookings aren’t searched; clear the search and page through the list to reach them.' : '.'}
+          </p>
+        )}
+      </Panel>
 
-      {/* ── Loading ── */}
-      {isLoading && (
-        <div className="flex items-center justify-center h-48">
-          <Loader2 className="h-7 w-7 animate-spin text-teal-500" />
-        </div>
-      )}
-
-      {/* ── Empty ── */}
-      {!isLoading && bookings.length === 0 && (
-        <Card className="border border-gray-100">
-          <CardContent className="flex flex-col items-center justify-center h-48 text-center">
-            <Calendar className="h-10 w-10 text-gray-200 mb-3" />
-            <p className="text-gray-500 font-medium">No bookings found</p>
-            <p className="text-xs text-gray-400 mt-1">Try adjusting your search or filter</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Mobile: Cards ── */}
-      {!isLoading && bookings.length > 0 && (
-        <div className="grid gap-3 md:hidden">
-          {bookings.map((booking) => (
-            <BookingCard
-              key={booking._id}
-              booking={booking}
-              onReassign={() => setReassignBooking(booking)}
-              onSchedule={() => setScheduleBooking(booking)}
-            />
+      {isLoading ? (
+        <div className="space-y-3">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-20 rounded-2xl dark:bg-white/[0.06]" />
           ))}
         </div>
-      )}
-
-      {/* ── Desktop: Table ── */}
-      {!isLoading && bookings.length > 0 && (
-        <Card className="hidden md:block border border-gray-100 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50/80 hover:bg-gray-50">
-                  <TableHead className="whitespace-nowrap text-xs font-semibold text-gray-600 w-32">Date</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-600">Patient</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-600">Physiotherapist</TableHead>
-                  <TableHead className="whitespace-nowrap text-xs font-semibold text-gray-600">Session</TableHead>
-                  <TableHead className="whitespace-nowrap text-xs font-semibold text-gray-600">Amount</TableHead>
-                  <TableHead className="text-xs font-semibold text-gray-600 w-36">Status</TableHead>
-                  <TableHead className="text-right text-xs font-semibold text-gray-600 w-28">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {bookings.map((booking) => (
-                  <TableRow key={booking._id} className="hover:bg-gray-50/60 transition-colors">
-                    {/* Date */}
-                    <TableCell className="whitespace-nowrap align-top py-3">
-                      <p className="text-sm font-medium text-gray-900">
-                        {new Date(booking.createdAt).toLocaleDateString('en-GB', {
-                          day: 'numeric', month: 'short', year: 'numeric',
-                        })}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {new Date(booking.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </TableCell>
-
-                    {/* Patient */}
-                    <TableCell className="align-top py-3">
-                      <div className="flex items-start gap-2">
-                        <div className="h-7 w-7 rounded-full bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shrink-0 text-white text-xs font-bold mt-0.5">
-                          {booking.patientName?.[0]?.toUpperCase() || 'G'}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-sm font-semibold text-gray-900 truncate max-w-[140px]">{booking.patientName}</p>
-                            {booking.isGuest && (
-                              <span className="inline-flex items-center gap-0.5 text-[10px] bg-purple-50 text-purple-600 border border-purple-200 rounded-full px-1.5 py-0.5 font-medium whitespace-nowrap">
-                                <Globe className="h-2.5 w-2.5" /> Guest
-                              </span>
-                            )}
-                          </div>
-                          {booking.patientEmail && (
-                            <p className="text-xs text-gray-500 flex items-center gap-0.5 mt-0.5 truncate max-w-[200px]">
-                              <Mail className="h-2.5 w-2.5 shrink-0" /> {booking.patientEmail}
-                            </p>
-                          )}
-                          {booking.patientPhone && (
-                            <p className="text-xs text-gray-500 flex items-center gap-0.5">
-                              <Phone className="h-2.5 w-2.5 shrink-0" /> {booking.patientPhone}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-
-                    {/* Physiotherapist */}
-                    <TableCell className="align-top py-3">
-                      <p className="text-sm font-semibold text-gray-900">{booking.physioName}</p>
-                      {booking.physioEmail && (
-                        <p className="text-xs text-gray-500 truncate max-w-[180px]">{booking.physioEmail}</p>
-                      )}
-                      <PhysioLocationBadge
-                        location={booking.physioLocation}
-                        offersOnline={booking.physioOffersOnline}
-                        offersInPerson={booking.physioOffersInPerson}
-                      />
-                    </TableCell>
-
-                    {/* Session */}
-                    <TableCell className="align-top py-3 whitespace-nowrap">
-                      <p className="text-sm text-gray-800 capitalize">
-                        {booking.sessionType?.replace(/_/g, ' ')}
-                      </p>
-                      <p className="text-xs text-gray-500">{booking.sessionDuration} min</p>
-                      {booking.isOnline ? (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-600">
-                          <Wifi className="h-2.5 w-2.5" /> Online
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-500">
-                          <Building2 className="h-2.5 w-2.5" /> In-person
-                        </span>
-                      )}
-                      {booking.packageSessions > 1 && (
-                        <p className="text-[10px] text-teal-600 font-medium">{booking.packageSessions}-session pack</p>
-                      )}
-                    </TableCell>
-
-                    {/* Amount */}
-                    <TableCell className="align-top py-3 whitespace-nowrap">
-                      <p className="text-sm font-bold text-gray-900">
-                        {formatCurrency(booking.totalAmount, 'NGN')}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        Fee: {formatCurrency(booking.platformFee, 'NGN')}
-                      </p>
-                    </TableCell>
-
-                    {/* Status */}
-                    <TableCell className="align-top py-3">
-                      <StatusBadge status={booking.paymentStatus === 'failed' ? 'payment_failed' : booking.bookingStatus} />
-                    </TableCell>
-
-                    {/* Actions */}
-                    <TableCell className="align-top py-3 text-right">
-                      {booking.adminSchedulingStatus === 'awaiting_schedule' ? <Button
-                        size="sm"
-                        onClick={() => setScheduleBooking(booking)}
-                        className="h-8 text-xs bg-teal-600 hover:bg-teal-700 text-white whitespace-nowrap"
-                      ><Calendar className="h-3.5 w-3.5 mr-1" />Schedule</Button> : booking.joyBookingRoute === 'admin_scheduled_virtual' && booking.bookingStatus === 'confirmed' && booking.sessionDate > Date.now() ? <Button size="sm" variant="outline" onClick={() => setScheduleBooking(booking)} className="h-8 text-xs border-gray-200 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50 whitespace-nowrap"><Calendar className="h-3.5 w-3.5 mr-1" />Reschedule</Button> : booking.joyBookingRoute === 'admin_scheduled_virtual' ? <span className={`inline-flex items-center gap-1 text-xs ${booking.paymentStatus === 'failed' ? 'text-red-700' : 'text-emerald-700'}`}>{booking.paymentStatus === 'failed' ? <XCircle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}{booking.paymentStatus === 'failed' ? 'Payment failed' : booking.bookingStatus === 'confirmed' ? 'Scheduled' : 'Awaiting payment'}</span> : <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setReassignBooking(booking)}
-                        className="h-8 text-xs border-gray-200 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50 transition-colors whitespace-nowrap"
-                      >
-                        <ArrowRightLeft className="h-3.5 w-3.5 mr-1" />
-                        Reassign
-                      </Button>}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+      ) : bookings.length === 0 ? (
+        <Panel>
+          <EmptyState
+            icon={<Calendar />}
+            title="No bookings found"
+            description={searching || statusFilter !== 'all' ? 'Try a different search or status.' : 'Bookings appear here as soon as a patient books.'}
+          />
+        </Panel>
+      ) : (
+        <>
+          {/* Mobile: cards */}
+          <div className="grid gap-3 md:hidden">
+            {bookings.map((booking) => (
+              <BookingCard
+                key={booking._id}
+                booking={booking}
+                onReassign={() => setReassignBooking(booking)}
+                onSchedule={() => setScheduleBooking(booking)}
+              />
+            ))}
           </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3">
-              <p className="text-xs text-gray-500">
-                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total} bookings
-              </p>
-              <div className="flex items-center gap-2">
+          {/* Desktop: table */}
+          <Panel className="hidden md:block">
+            <div className={tableWrapClass}>
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-32 whitespace-nowrap pl-5">Date</TableHead>
+                    <TableHead>Patient</TableHead>
+                    <TableHead>Physiotherapist</TableHead>
+                    <TableHead className="whitespace-nowrap">Session</TableHead>
+                    <TableHead className="whitespace-nowrap">Amount</TableHead>
+                    <TableHead className="w-36">Status</TableHead>
+                    <TableHead className="w-28 pr-5 text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bookings.map((booking) => (
+                    <TableRow key={booking._id}>
+                      <TableCell className="whitespace-nowrap py-3 pl-5 align-top">
+                        <p className="text-sm font-medium text-rh-night dark:text-white">{formatDate(booking.createdAt)}</p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400">{formatTime(booking.createdAt)}</p>
+                        {booking.bookingCode && (
+                          <p className="font-mono text-[10px] text-neutral-400 dark:text-neutral-500">{booking.bookingCode}</p>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-3 align-top">
+                        <PatientCell booking={booking} />
+                      </TableCell>
+                      <TableCell className="py-3 align-top">
+                        <p className="text-sm font-semibold text-rh-night dark:text-white">{booking.physioName}</p>
+                        {booking.physioEmail && (
+                          <p className="max-w-[200px] truncate text-xs text-neutral-500 dark:text-neutral-400">{booking.physioEmail}</p>
+                        )}
+                        <PhysioLocationBadge
+                          location={booking.physioLocation}
+                          offersOnline={booking.physioOffersOnline}
+                          offersInPerson={booking.physioOffersInPerson}
+                        />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap py-3 align-top">
+                        <SessionSummary booking={booking} />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap py-3 align-top">
+                        <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">{naira(booking.totalAmount)}</p>
+                        <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">Fee {naira(booking.platformFee)}</p>
+                      </TableCell>
+                      <TableCell className="py-3 align-top">
+                        <BookingStatus booking={booking} />
+                      </TableCell>
+                      <TableCell className="py-3 pr-5 text-right align-top">
+                        <BookingAction
+                          booking={booking}
+                          onReassign={() => setReassignBooking(booking)}
+                          onSchedule={() => setScheduleBooking(booking)}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Panel>
+
+          {!searching && (
+            <div className="flex flex-col items-center gap-2 pb-2">
+              {paged.status === 'CanLoadMore' || paged.status === 'LoadingMore' ? (
                 <Button
-                  size="sm" variant="outline"
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  disabled={page === 0}
-                  className="h-8 w-8 p-0"
+                  onClick={() => paged.loadMore(PAGE_SIZE)}
+                  disabled={paged.status === 'LoadingMore'}
+                  className={cn(softButtonClass, 'min-w-40')}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  {paged.status === 'LoadingMore' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Load more
                 </Button>
-                <span className="text-xs text-gray-600 font-medium min-w-[60px] text-center">
-                  {page + 1} / {totalPages}
-                </span>
-                <Button
-                  size="sm" variant="outline"
-                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                  disabled={page >= totalPages - 1}
-                  className="h-8 w-8 p-0"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+              ) : (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">That&apos;s every booking.</p>
+              )}
+              <p className="text-xs tabular-nums text-neutral-400 dark:text-neutral-500">Showing {bookings.length.toLocaleString()}</p>
             </div>
           )}
-        </Card>
+        </>
       )}
 
-      {/* Mobile pagination */}
-      {!isLoading && bookings.length > 0 && totalPages > 1 && (
-        <div className="flex items-center justify-between md:hidden">
-          <p className="text-xs text-gray-500">
-            {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm" variant="outline"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="h-9 w-9 p-0"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-xs text-gray-600 font-medium">{page + 1}/{totalPages}</span>
-            <Button
-              size="sm" variant="outline"
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
-              className="h-9 w-9 p-0"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Reassign modal */}
-      {reassignBooking && (
-        <ReassignModal booking={reassignBooking} onClose={() => setReassignBooking(null)} />
-      )}
-      {scheduleBooking && (
-        <ScheduleVirtualModal booking={scheduleBooking} onClose={() => setScheduleBooking(null)} />
-      )}
-    </div>
+      {reassignBooking && <ReassignDialog booking={reassignBooking} onClose={() => setReassignBooking(null)} />}
+      {scheduleBooking && <ScheduleVirtualDialog booking={scheduleBooking} onClose={() => setScheduleBooking(null)} />}
+    </AdminPage>
   );
 }

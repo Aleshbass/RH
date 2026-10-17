@@ -73,7 +73,7 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const { isLoaded: authLoaded } = useAuth()
-  const { isLoaded, isPreviewMode, isDeclined, isOwner, canUse } = useClinicAccess()
+  const { isLoaded, isPreviewMode, isDeclined, isOwner, canUse, isClinicSuspended } = useClinicAccess()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   if (!authLoaded || !isLoaded) {
@@ -148,11 +148,15 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {isPreviewMode && (
+            {isClinicSuspended ? (
+              <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+                Suspended
+              </span>
+            ) : isPreviewMode ? (
               <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">
                 Preview
               </span>
-            )}
+            ) : null}
 
             <ClinicThemeToggle />
 

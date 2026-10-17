@@ -1,180 +1,238 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { useMutation, useQuery } from 'convex/react';
+import { Dumbbell, Edit, MoreVertical, Plus, Search, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Plus, Search, Filter, Dumbbell, MoreVertical, Trash2, Edit } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import Link from 'next/link';
-import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import { playSound } from '@/lib/sounds';
+import {
+  AdminPage,
+  ConfirmDialog,
+  EmptyState,
+  FilterChips,
+  PageHeader,
+  Panel,
+  StatusBadge,
+  Stagger,
+  StaggerItem,
+  cardClass,
+  inputClass,
+  primaryButtonClass,
+  softButtonClass,
+} from '@/components/admin/ui';
+
+type Difficulty = 'all' | 'beginner' | 'intermediate' | 'advanced';
+
+type ExerciseRow = {
+  _id: Id<'exercises'>;
+  name: string;
+  difficultyLevel: string;
+  bodyParts: string[] | string;
+  imageUrl?: string;
+  tags?: string[];
+};
+
+const DIFFICULTIES: { value: Difficulty; label: string }[] = [
+  { value: 'all', label: 'All levels' },
+  { value: 'beginner', label: 'Beginner' },
+  { value: 'intermediate', label: 'Intermediate' },
+  { value: 'advanced', label: 'Advanced' },
+];
+
+const BODY_PARTS = ['Legs', 'Arms', 'Back', 'Core', 'Shoulders'];
+
+const difficultyTone = (level: string) => (level === 'beginner' ? 'green' : level === 'intermediate' ? 'amber' : level === 'advanced' ? 'red' : 'neutral');
 
 export default function AdminExercisesPage() {
-    const [search, setSearch] = useState('');
-    const [difficulty, setDifficulty] = useState<string>('all');
-    const [bodyPart, setBodyPart] = useState<string>('all');
+  const [search, setSearch] = useState('');
+  const [difficulty, setDifficulty] = useState<Difficulty>('all');
+  const [bodyPart, setBodyPart] = useState<string>('all');
+  const [pendingDelete, setPendingDelete] = useState<ExerciseRow | null>(null);
 
-    const exercises = useQuery(api.exercises.listExercises, {
-        search: search || undefined,
-        difficulty: difficulty !== 'all' ? difficulty : undefined,
-        bodyPart: bodyPart !== 'all' ? bodyPart : undefined,
-    });
+  const exercises = useQuery(api.exercises.listExercises, {
+    search: search || undefined,
+    difficulty: difficulty !== 'all' ? difficulty : undefined,
+    bodyPart: bodyPart !== 'all' ? bodyPart : undefined,
+  }) as ExerciseRow[] | undefined;
 
-    const deleteExercise = useMutation(api.exercises.deleteExercise);
+  const deleteExercise = useMutation(api.exercises.deleteExercise);
 
-    const handleDelete = async (id: string) => {
-        if (confirm('Are you sure you want to delete this exercise?')) {
-            try {
-                await deleteExercise({ id: id as any });
-                toast.success('Exercise deleted');
-            } catch (error) {
-                toast.error('Failed to delete exercise');
-            }
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    try {
+      await deleteExercise({ id: pendingDelete._id });
+      playSound('reject');
+      toast.success(`“${pendingDelete.name}” deleted`);
+    } catch (error) {
+      toast.error('Failed to delete exercise');
+      throw error;
+    }
+  };
+
+  return (
+    <AdminPage>
+      <PageHeader
+        eyebrow="Exercise library"
+        title="Exercises"
+        description="The exercises physiotherapists can add to treatment plans."
+        actions={
+          <Button asChild className={primaryButtonClass}>
+            <Link href="/dashboard/admin/exercises/new">
+              <Plus className="mr-2 h-4 w-4" /> Add exercise
+            </Link>
+          </Button>
         }
-    };
+      />
 
-    return (
-        <div className="space-y-8 p-8">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-gray-900">Exercise Library</h1>
-                    <p className="text-muted-foreground mt-1">Manage the exercises available for treatment plans.</p>
-                </div>
-                <Link href="/dashboard/admin/exercises/new">
-                    <Button className="bg-green-600 hover:bg-green-700">
-                        <Plus className="w-4 h-4 mr-2" /> Add Exercise
-                    </Button>
-                </Link>
-            </div>
-
-            {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-4 bg-white p-4 rounded-xl border shadow-sm">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
-                        placeholder="Search exercises..."
-                        className="pl-9"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                    />
-                </div>
-                <Select value={difficulty} onValueChange={setDifficulty}>
-                    <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="Difficulty" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Levels</SelectItem>
-                        <SelectItem value="beginner">Beginner</SelectItem>
-                        <SelectItem value="intermediate">Intermediate</SelectItem>
-                        <SelectItem value="advanced">Advanced</SelectItem>
-                    </SelectContent>
-                </Select>
-                <Select value={bodyPart} onValueChange={setBodyPart}>
-                    <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="Body Part" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Body Parts</SelectItem>
-                        <SelectItem value="Legs">Legs</SelectItem>
-                        <SelectItem value="Arms">Arms</SelectItem>
-                        <SelectItem value="Back">Back</SelectItem>
-                        <SelectItem value="Core">Core</SelectItem>
-                        <SelectItem value="Shoulders">Shoulders</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
-
-            {/* Grid */}
-            {exercises === undefined ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {[1, 2, 3, 4].map((i) => (
-                        <Card key={i} className="animate-pulse">
-                            <div className="h-48 bg-gray-200 rounded-t-lg" />
-                            <CardContent className="p-4 space-y-3">
-                                <div className="h-6 bg-gray-200 rounded w-3/4" />
-                                <div className="h-4 bg-gray-200 rounded w-1/2" />
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
-            ) : exercises.length === 0 ? (
-                <div className="text-center py-20 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-                    <div className="w-16 h-16 mx-auto bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
-                        <Dumbbell className="w-8 h-8 text-gray-400" />
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900">No exercises found</h3>
-                    <p className="text-muted-foreground mt-1 mb-4">Try adjusting your search or filters, or add a new exercise.</p>
-                    <Link href="/dashboard/admin/exercises/new">
-                        <Button variant="outline">Add New Exercise</Button>
-                    </Link>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {exercises.map((exercise: any) => (
-                        <Card key={exercise._id} className="group overflow-hidden hover:shadow-lg transition-all duration-200 border-gray-200">
-                            <div className="relative aspect-video bg-gray-100 overflow-hidden">
-                                {exercise.imageUrl ? (
-                                    <img
-                                        src={exercise.imageUrl}
-                                        alt={exercise.name}
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                    />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center bg-gray-50">
-                                        <Dumbbell className="w-10 h-10 text-gray-300" />
-                                    </div>
-                                )}
-                                <div className="absolute top-2 right-2">
-                                    <Badge className={`
-                    ${exercise.difficultyLevel === 'beginner' ? 'bg-green-100 text-green-700 hover:bg-green-100' : ''}
-                    ${exercise.difficultyLevel === 'intermediate' ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100' : ''}
-                    ${exercise.difficultyLevel === 'advanced' ? 'bg-red-100 text-red-700 hover:bg-red-100' : ''}
-                  `}>
-                                        {exercise.difficultyLevel}
-                                    </Badge>
-                                </div>
-                            </div>
-                            <CardContent className="p-4">
-                                <div className="flex items-start justify-between mb-2">
-                                    <div>
-                                        <h3 className="font-semibold text-gray-900 line-clamp-1">{exercise.name}</h3>
-                                        <p className="text-sm text-muted-foreground line-clamp-1">{Array.isArray(exercise.bodyParts) ? exercise.bodyParts.join(', ') : exercise.bodyParts}</p>
-                                    </div>
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2">
-                                                <MoreVertical className="w-4 h-4 text-gray-500" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <Link href={`/dashboard/admin/exercises/${exercise._id}/edit`}>
-                                                <DropdownMenuItem>
-                                                    <Edit className="w-4 h-4 mr-2" /> Edit
-                                                </DropdownMenuItem>
-                                            </Link>
-                                            <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => handleDelete(exercise._id)}>
-                                                <Trash2 className="w-4 h-4 mr-2" /> Delete
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </div>
-
-                                <div className="flex flex-wrap gap-1 mt-3">
-                                    {(exercise.tags || []).slice(0, 3).map((tag: any) => (
-                                        <span key={tag} className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
-                                            {tag}
-                                        </span>
-                                    ))}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
-            )}
+      <Panel bodyClassName="flex flex-col gap-3 p-4 sm:p-5 lg:flex-row lg:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <Input
+            placeholder="Search exercises…"
+            className={cn(inputClass, 'pl-9')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search exercises"
+          />
         </div>
-    );
+        <div className="flex flex-wrap items-center gap-3">
+          <FilterChips value={difficulty} onChange={setDifficulty} options={DIFFICULTIES} />
+          <Select value={bodyPart} onValueChange={setBodyPart}>
+            <SelectTrigger className={cn(inputClass, 'h-9 w-[170px]')} aria-label="Body part">
+              <SelectValue placeholder="Body part" />
+            </SelectTrigger>
+            <SelectContent className="dark:border-white/10 dark:bg-rh-ink-2">
+              <SelectItem value="all">All body parts</SelectItem>
+              {BODY_PARTS.map((part) => (
+                <SelectItem key={part} value={part}>
+                  {part}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </Panel>
+
+      {exercises === undefined ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className={cn(cardClass, 'overflow-hidden')}>
+              <Skeleton className="aspect-video rounded-none dark:bg-white/[0.06]" />
+              <div className="space-y-2 p-4">
+                <Skeleton className="h-5 w-3/4 dark:bg-white/[0.06]" />
+                <Skeleton className="h-4 w-1/2 dark:bg-white/[0.06]" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : exercises.length === 0 ? (
+        <Panel>
+          <EmptyState
+            icon={<Dumbbell />}
+            title="No exercises found"
+            description="Try adjusting your search or filters, or add a new exercise."
+            action={
+              <Button asChild className={softButtonClass}>
+                <Link href="/dashboard/admin/exercises/new">Add new exercise</Link>
+              </Button>
+            }
+          />
+        </Panel>
+      ) : (
+        <Stagger className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {exercises.map((exercise) => (
+            <StaggerItem key={exercise._id}>
+              <div className={cn(cardClass, 'group h-full overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-lift')}>
+                <Link href={`/dashboard/admin/exercises/${exercise._id}/edit`} className="relative block aspect-video overflow-hidden bg-rh-canvas dark:bg-white/[0.04]">
+                  {exercise.imageUrl ? (
+                    <Image
+                      src={exercise.imageUrl}
+                      alt={exercise.name}
+                      fill
+                      unoptimized
+                      sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                      className="object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center">
+                      <Dumbbell className="h-10 w-10 text-neutral-300 dark:text-neutral-600" />
+                    </span>
+                  )}
+                  <span className="absolute right-2 top-2">
+                    <StatusBadge tone={difficultyTone(exercise.difficultyLevel)} className="capitalize shadow-sm">
+                      {exercise.difficultyLevel}
+                    </StatusBadge>
+                  </span>
+                </Link>
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="line-clamp-1 font-semibold text-rh-night dark:text-white">{exercise.name}</h3>
+                      <p className="line-clamp-1 text-sm text-neutral-500 dark:text-neutral-400">
+                        {Array.isArray(exercise.bodyParts) ? exercise.bodyParts.join(', ') : exercise.bodyParts}
+                      </p>
+                    </div>
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="-mr-2 h-8 w-8 shrink-0 rounded-lg dark:hover:bg-white/[0.06]" aria-label={`Actions for ${exercise.name}`}>
+                          <MoreVertical className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="rounded-xl dark:border-white/10 dark:bg-rh-ink-2">
+                        <DropdownMenuItem asChild>
+                          <Link href={`/dashboard/admin/exercises/${exercise._id}/edit`}>
+                            <Edit className="mr-2 h-4 w-4" /> Edit
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-rose-600 focus:text-rose-600 dark:text-rose-300 dark:focus:text-rose-300"
+                          onSelect={() => setPendingDelete(exercise)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  {(exercise.tags || []).length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {(exercise.tags || []).slice(0, 3).map((tag) => (
+                        <StatusBadge key={tag} className="capitalize">
+                          {tag}
+                        </StatusBadge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </StaggerItem>
+          ))}
+        </Stagger>
+      )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="Delete this exercise?"
+        description={
+          pendingDelete
+            ? `“${pendingDelete.name}” will be removed from the library for everyone. This can’t be undone.`
+            : undefined
+        }
+        confirmLabel="Delete exercise"
+        destructive
+        onConfirm={confirmDelete}
+      />
+    </AdminPage>
+  );
 }

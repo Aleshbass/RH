@@ -41,6 +41,9 @@ interface ClinicPreviewContextType {
   isStaff: boolean
   /** Team member whose access was suspended by the owner */
   isSuspended: boolean
+  /** The whole clinic was suspended by Rehabify: records stay readable, changes are refused */
+  isClinicSuspended: boolean
+  clinicSuspendedReason: string | null
   /** Whether the signed-in owner/member can use a page. Preview visitors can look at everything. */
   canUse: (area: ClinicArea) => boolean
   clinicName: string | null
@@ -78,6 +81,9 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
     member && member.ownerOnboarded && member.approvalStatus !== 'approved' && !isDeclined
   )
   const isSuspended = Boolean(member?.suspended)
+  // Not part of preview mode: a suspended clinic still sees its real records
+  const isClinicSuspended = Boolean(member?.clinicSuspended)
+  const clinicSuspendedReason = member?.clinicSuspendedReason ?? null
 
   const isPreviewMode = !member || isOnboardingIncomplete || isPendingApproval || isDeclined || isSuspended
 
@@ -92,7 +98,7 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
   }
 
   const requireFullAccess = (actionName = 'This action', callback?: () => void): boolean => {
-    if (isPreviewMode) {
+    if (isPreviewMode || isClinicSuspended) {
       setAttemptedAction(actionName)
       setIsModalOpen(true)
       return false
@@ -105,7 +111,7 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
   }
 
   // Team members can't finish the owner's setup, so they only get an explanation
-  const canFinishSetup = !isPendingApproval && !isStaff
+  const canFinishSetup = !isPendingApproval && !isStaff && !isClinicSuspended
 
   return (
     <ClinicPreviewContext.Provider
@@ -117,6 +123,8 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
         isOwner,
         isStaff,
         isSuspended,
+        isClinicSuspended,
+        clinicSuspendedReason,
         canUse,
         clinicName: member?.clinicName ?? null,
         logoUrl: member?.logoUrl ?? null,
@@ -134,7 +142,9 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
           <DialogHeader className="text-left">
             <DialogTitle className="flex items-center gap-2">
               {isPendingApproval ? <Clock className="h-4 w-4 text-amber-600" /> : <Lock className="h-4 w-4 text-neutral-400" />}
-              {isPendingApproval
+              {isClinicSuspended
+                ? 'Clinic suspended'
+                : isPendingApproval
                 ? 'Waiting for approval'
                 : isSuspended
                   ? 'Access paused'
@@ -143,7 +153,9 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
                     : 'Finish setting up your clinic'}
             </DialogTitle>
             <DialogDescription>
-              {isPendingApproval
+              {isClinicSuspended
+                ? `Rehabify has suspended this clinic, so "${attemptedAction}" is turned off. Contact support@rehabify.ng to restore access.`
+                : isPendingApproval
                 ? `"${attemptedAction}" will work once Rehabify has verified the clinic.`
                 : isSuspended
                   ? 'The clinic owner has paused your access. Contact them to restore it.'

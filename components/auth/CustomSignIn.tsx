@@ -9,6 +9,17 @@ import Link from "next/link";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
 import { buildSsoRedirectUrls, toSafeInternalPath } from "@/lib/auth/ssoRedirect";
 
+/** Logs a rejected sign-in for the admin audit log. Fire-and-forget: never blocks signing in. */
+function reportFailedSignIn(err: unknown, identifier: string) {
+  const code = (err as { errors?: { code?: string }[] })?.errors?.[0]?.code;
+  if (!code) return;
+  fetch("/api/security/failed-sign-in", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, identifier }),
+    keepalive: true,
+  }).catch(() => undefined);
+}
 
 export default function CustomSignIn() {
   const { signIn, setActive } = useSignIn();
@@ -113,6 +124,7 @@ export default function CustomSignIn() {
       }
     } catch (err: unknown) {
       console.error("Email submit error:", err);
+      reportFailedSignIn(err, email);
       const errorMessage = extractErrorMessage(err, "An error occurred");
 
       if (errorMessage.toLowerCase().includes("not found") || errorMessage.toLowerCase().includes("identifier")) {
@@ -150,6 +162,7 @@ export default function CustomSignIn() {
       }
     } catch (err: unknown) {
       console.error("Password submit error:", err);
+      reportFailedSignIn(err, email);
       setError(extractErrorMessage(err, "Incorrect password. Please try again."));
     } finally {
       setIsLoading(false);

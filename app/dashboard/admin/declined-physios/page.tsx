@@ -1,326 +1,273 @@
-"use client";
+'use client'
 
-import { useMutation } from "convex/react";
-import { useQueryUntyped } from "@/lib/convexUntyped";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
-import { format } from "date-fns";
-import { useState, useCallback } from "react";
-import { toast } from "sonner";
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useMutation } from 'convex/react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { format } from 'date-fns'
+import { toast } from 'sonner'
+import { AlertCircle, Download, Eye, Phone, Search, Stethoscope, Trash2, Users, XCircle } from 'lucide-react'
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import { useQueryUntyped } from '@/lib/convexUntyped'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  AdminPage,
+  ConfirmDialog,
+  EmptyState,
+  FilterChips,
+  PageHeader,
+  Panel,
+  StatTile,
+  Stagger,
+  StaggerItem,
+  StatusBadge,
+  downloadCsv,
+  inputClass,
+  softButtonClass,
+} from '@/components/admin/ui'
+import { RoleBadge, UserAvatar, displayName } from '@/components/dashboard/admin/UserManagement'
+import { playSound } from '@/lib/sounds'
+import { cn } from '@/lib/utils'
 
-import { 
-  User, 
-  Stethoscope, 
-  Building2, 
-  Shield,
-  Phone,
-  AlertCircle,
-  XCircle,
-  Trash2,
-  RefreshCw
-} from "lucide-react";
-
-// Type definitions for approval objects
-type ApprovalWithUser = {
-  _id: Id<"accountApprovalStatus">;
-  _creationTime: number;
-  userId: Id<"users">;
-  status: string;
-  submittedAt: number;
-  reviewedAt?: number;
-  reviewedBy?: Id<"users">;
-  comments?: string;
-  requiredDocuments?: string[];
+type DeclinedApproval = {
+  _id: Id<'accountApprovalStatus'>
+  _creationTime: number
+  userId: Id<'users'>
+  status: string
+  submittedAt: number
+  reviewedAt?: number
+  reviewedBy?: Id<'users'>
+  comments?: string
   user: {
-    _id: Id<"users">;
-    role: string;
-    firstName?: string;
-    lastName?: string;
-    email?: string;
-    imageUrl?: string;
-    phoneNumber?: string;
-    [key: string]: unknown;
-  } | null;
-};
-
-export default function DeclinedPhysiosPage() {
-  const [processingUserId, setProcessingUserId] = useState<Id<"users"> | null>(null);
-
-  const declinedApprovals = useQueryUntyped(api.users.getDeclinedApprovals) as ApprovalWithUser[] | undefined;
-  const deleteUser = useMutation(api.users.adminDeleteUser);
-
-  const handleDelete = useCallback(async (userId: Id<"users">, userName: string) => {
-    setProcessingUserId(userId);
-    try {
-      await deleteUser({ userId });
-      toast.success(`${userName} deleted successfully`, {
-        description: 'The user and all associated data have been permanently removed.',
-        duration: 5000,
-      });
-    } catch (error) {
-      console.error('Failed to delete user:', error);
-      toast.error('Failed to delete user', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
-        duration: 5000,
-      });
-    } finally {
-      setProcessingUserId(null);
-    }
-  }, [deleteUser]);
-
-  // Loading state
-  if (declinedApprovals === undefined) {
-    return <DeclinedPageSkeleton />;
-  }
-
-  // Filter out to only show physiotherapists, or we can show all. The prompt said "declined physios and all their data". Let's focus on physios, or show everyone with a focus on physios.
-  // The user asked "where can I find the physiotherapist that were not approved. Physios that were declined."
-  // So it might be best to just filter by physiotherapist role, or show all with badges. We'll show all but keep it clear. Let's just filter by physio if that's what they asked for, or show all and let them see the badges. I'll show all but ensure roles are clear.
-  const declinedUsers = declinedApprovals.filter(approval => approval.user !== null);
-  const declinedPhysios = declinedUsers.filter(a => a.user?.role === 'physiotherapist');
-
-  return (
-    <div className="container mx-auto p-4 md:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center items-start gap-4 justify-between">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Declined Applications</h1>
-          <p className="text-muted-foreground mt-1">
-            Review physiotherapists and users whose applications were declined
-          </p>
-        </div>
-        <div className="flex items-center">
-          <Badge variant="secondary" className="text-sm">
-            {declinedUsers.length} total declined
-          </Badge>
-        </div>
-      </div>
-
-      {/* Approval Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Physiotherapists</CardTitle>
-            <Stethoscope className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {declinedPhysios.length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Declined physiotherapist applications
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Other Users</CardTitle>
-            <User className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {declinedUsers.length - declinedPhysios.length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Declined clinic owners and other users
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Declined Approvals */}
-      {!declinedUsers || declinedUsers.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No declined applications</h3>
-            <p className="text-muted-foreground text-center">
-              There are no declined user approval requests at this time.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Declined Applications History</h2>
-          </div>
-          
-          <div className="grid gap-4">
-            {declinedUsers.map((approval: ApprovalWithUser) => {
-              const roleConfig = {
-                physiotherapist: { label: 'Physiotherapist', icon: Stethoscope, color: 'blue' },
-                clinic_owner: { label: 'Clinic Owner', icon: Building2, color: 'green' },
-                patient: { label: 'Patient', icon: User, color: 'purple' },
-                family_member: { label: 'Family Member', icon: User, color: 'gray' },
-                admin: { label: 'Administrator', icon: Shield, color: 'red' }
-              };
-
-              // Skip if user is null
-              if (!approval.user) return null;
-
-              const config = roleConfig[approval.user.role as keyof typeof roleConfig] || roleConfig.patient;
-              const Icon = config.icon;
-              const isProcessing = processingUserId === approval.userId;
-              const userName = `${approval.user.firstName || ''} ${approval.user.lastName || ''}`.trim() || approval.user.email;
-
-              return (
-                <Card key={approval._id} className="hover:shadow-md transition-shadow border-l-4 border-l-red-500">
-                  <CardContent className="p-6">
-                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                      <div className="flex items-start space-x-4">
-                        <Avatar className="h-12 w-12 mt-1">
-                          <AvatarImage src={approval.user?.imageUrl ?? undefined} />
-                          <AvatarFallback>
-                            {approval.user.firstName?.charAt(0) || approval.user.email?.charAt(0) || 'U'}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <h3 className="font-semibold text-lg">
-                            {approval.user.firstName} {approval.user.lastName}
-                          </h3>
-                          <div className="flex flex-col gap-1 mt-1 text-sm text-muted-foreground">
-                            <p>{approval.user.email}</p>
-                            {approval.user.phoneNumber && (
-                              <p className="flex items-center">
-                                <Phone className="h-3 w-3 mr-1" />
-                                {approval.user.phoneNumber}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center space-x-2 mt-3">
-                            <Badge variant="outline" className="bg-gray-50">
-                              <Icon className="mr-1 h-3 w-3" />
-                              {config.label}
-                            </Badge>
-                            {approval.reviewedAt && (
-                              <Badge variant="secondary" className="bg-red-50 text-red-700 hover:bg-red-50">
-                                <XCircle className="mr-1 h-3 w-3" />
-                                Declined on {format(new Date(approval.reviewedAt), 'MMM dd, yyyy')}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {approval.comments && (
-                        <div className="bg-red-50 p-4 rounded-md md:max-w-md border border-red-100 flex-1 relative">
-                          <h4 className="text-sm font-semibold text-red-800 mb-1 flex items-center">
-                            <AlertCircle className="h-4 w-4 mr-1" />
-                            Reason for Decline
-                          </h4>
-                          <p className="text-sm text-red-700 whitespace-pre-wrap">
-                            {approval.comments}
-                          </p>
-
-                          <div className="absolute bottom-2 right-2">
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  disabled={isProcessing}
-                                  className="text-red-600 border-red-200 hover:bg-red-100 h-8 bg-white/50"
-                                >
-                                  {isProcessing ? (
-                                    <RefreshCw className="h-3 w-3 animate-spin mr-1" />
-                                  ) : (
-                                    <Trash2 className="h-3 w-3 mr-1" />
-                                  )}
-                                  Delete
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Permanently Delete User?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Are you absolutely sure you want to delete <strong>{userName}</strong>? 
-                                    This action cannot be undone. It will permanently remove their account, profile data, and this application.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction 
-                                    onClick={() => handleDelete(approval.userId, userName || 'User')}
-                                    className="bg-red-600 hover:bg-red-700"
-                                  >
-                                    Delete User
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    _id: Id<'users'>
+    role?: string
+    firstName?: string
+    lastName?: string
+    email?: string
+    imageUrl?: string
+    phoneNumber?: string
+  } | null
 }
 
-function DeclinedPageSkeleton() {
+type Filter = 'all' | 'physiotherapist' | 'other'
+
+export default function DeclinedPhysiosPage() {
+  const reduceMotion = useReducedMotion()
+  // Newest 300 declined records (bounded server-side)
+  const declined = useQueryUntyped(api.users.getDeclinedApprovals) as DeclinedApproval[] | undefined
+  const deleteUser = useMutation(api.users.adminDeleteUser)
+
+  const [filter, setFilter] = useState<Filter>('all')
+  const [search, setSearch] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<DeclinedApproval | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const rows = useMemo(() => (declined ?? []).filter((a) => a.user !== null), [declined])
+  const physioCount = rows.filter((a) => a.user?.role === 'physiotherapist').length
+
+  const visible = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    return rows.filter((a) => {
+      if (filter === 'physiotherapist' && a.user?.role !== 'physiotherapist') return false
+      if (filter === 'other' && a.user?.role === 'physiotherapist') return false
+      if (!term) return true
+      return (
+        displayName(a.user).toLowerCase().includes(term) ||
+        (a.user?.email ?? '').toLowerCase().includes(term) ||
+        (a.comments ?? '').toLowerCase().includes(term)
+      )
+    })
+  }, [rows, filter, search])
+
+  const lastThirtyDays = rows.filter((a) => a.reviewedAt && Date.now() - a.reviewedAt < 30 * 86_400_000).length
+
+  const exportCsv = () =>
+    downloadCsv(
+      `rehabify-declined-${format(new Date(), 'yyyy-MM-dd')}`,
+      visible.map((a) => ({
+        name: displayName(a.user),
+        email: a.user?.email ?? '',
+        phone: a.user?.phoneNumber ?? '',
+        role: a.user?.role ?? '',
+        submitted: new Date(a.submittedAt).toISOString(),
+        declined: a.reviewedAt ? new Date(a.reviewedAt).toISOString() : '',
+        reason: a.comments ?? '',
+      }))
+    )
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    const name = displayName(deleteTarget.user)
+    setDeletingId(deleteTarget.userId)
+    try {
+      await deleteUser({ userId: deleteTarget.userId })
+      playSound('reject')
+      toast.success(`${name} deleted`, { description: 'The account, profile and application were removed.' })
+      setDeleteTarget(null)
+    } catch (error) {
+      setDeletingId(null)
+      toast.error(`Could not delete ${name}`, {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
+      throw error
+    }
+  }
+
   return (
-    <div className="container mx-auto p-4 md:p-6 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center items-start gap-4 justify-between">
-        <div className="space-y-2 w-full md:w-auto">
-          <Skeleton className="h-8 w-48 md:w-64" />
-          <Skeleton className="h-4 w-64 md:w-96" />
-        </div>
-        <div className="flex items-center">
-          <Skeleton className="h-6 w-24" />
-        </div>
-      </div>
+    <AdminPage>
+      <PageHeader
+        eyebrow="Rehabify Physios"
+        title="Declined applications"
+        description="People whose applications were turned down, with the reason they were given."
+        actions={
+          <Button onClick={exportCsv} disabled={visible.length === 0} className={softButtonClass}>
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
+        }
+      />
 
-      {/* Statistics skeleton */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {[...Array(2)].map((_, i) => (
-          <Card key={i}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-16 mb-2" />
-              <Skeleton className="h-3 w-32" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <Stagger className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <StaggerItem>
+          <StatTile label="Physiotherapists" value={declined === undefined ? '—' : physioCount} icon={Stethoscope} tone="rose" />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile label="Other applicants" value={declined === undefined ? '—' : rows.length - physioCount} icon={Users} />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile label="Declined in the last 30 days" value={declined === undefined ? '—' : lastThirtyDays} icon={XCircle} tone="peach" />
+        </StaggerItem>
+      </Stagger>
 
-      {/* Approvals skeleton */}
-      <div className="grid gap-4 mt-8">
-        {[...Array(3)].map((_, i) => (
-          <Card key={i}>
-            <CardContent className="p-6">
-              <div className="flex flex-col md:flex-row items-start space-y-4 md:space-y-0 md:space-x-4">
-                <Skeleton className="h-12 w-12 rounded-full shrink-0" />
-                <div className="space-y-2 flex-1 w-full">
-                  <Skeleton className="h-5 w-48" />
-                  <Skeleton className="h-4 w-32" />
-                  <div className="flex space-x-2 mt-4">
-                    <Skeleton className="h-5 w-24" />
-                    <Skeleton className="h-5 w-32" />
-                  </div>
-                </div>
-                <Skeleton className="h-24 w-full md:w-64 rounded-md" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
+      <Panel bodyClassName="pb-2">
+        <div className="flex flex-col gap-3 px-5 pb-3 pt-4 lg:flex-row lg:items-center lg:justify-between">
+          <FilterChips
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: 'all', label: 'All', count: rows.length },
+              { value: 'physiotherapist', label: 'Physiotherapists', count: physioCount },
+              { value: 'other', label: 'Others', count: rows.length - physioCount },
+            ]}
+          />
+          <div className="relative w-full lg:w-72">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, email or reason"
+              className={cn(inputClass, 'h-10 pl-9')}
+              aria-label="Search declined applications"
+            />
+          </div>
+        </div>
+
+        {declined === undefined ? (
+          <div className="space-y-2 px-5 pb-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 w-full rounded-xl dark:bg-white/[0.06]" />
+            ))}
+          </div>
+        ) : visible.length === 0 ? (
+          <EmptyState
+            icon={<AlertCircle />}
+            title={rows.length === 0 ? 'No declined applications' : 'Nothing matches'}
+            description={rows.length === 0 ? 'Applications you decline will show up here.' : 'Try another search or filter.'}
+          />
+        ) : (
+          <ul className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
+            <AnimatePresence initial={false}>
+              {visible.map((a) => {
+                const name = displayName(a.user)
+                const busy = deletingId === a.userId
+                return (
+                  <motion.li
+                    key={a._id}
+                    layout={!reduceMotion}
+                    initial={reduceMotion ? false : { opacity: 0 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -48, transition: { duration: 0.25 } }}
+                    transition={{ duration: 0.2 }}
+                    className={cn('px-5 py-4', busy && 'pointer-events-none opacity-60')}
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <UserAvatar user={a.user} className="h-11 w-11" />
+                        <div className="min-w-0 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Link
+                              href={`/dashboard/admin/users/${a.userId}`}
+                              className="truncate text-[15px] font-semibold text-rh-night hover:underline dark:text-white"
+                            >
+                              {name}
+                            </Link>
+                            <RoleBadge role={a.user?.role} />
+                            {a.reviewedAt && (
+                              <StatusBadge tone="red" className="gap-1">
+                                <XCircle className="h-3 w-3" />
+                                Declined {format(a.reviewedAt, 'd MMM yyyy')}
+                              </StatusBadge>
+                            )}
+                          </div>
+                          <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                            {a.user?.email && <span className="truncate">{a.user.email}</span>}
+                            {a.user?.phoneNumber && (
+                              <span className="inline-flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {a.user.phoneNumber}
+                              </span>
+                            )}
+                            <span>Applied {format(a.submittedAt, 'd MMM yyyy')}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-3 lg:w-[420px] lg:shrink-0">
+                        <div className="rounded-xl bg-rh-blush p-3 text-sm text-[#be123c] dark:bg-rose-400/10 dark:text-rose-300">
+                          <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider opacity-80">Reason given</p>
+                          <p className="whitespace-pre-wrap leading-relaxed">{a.comments?.trim() || 'No reason recorded.'}</p>
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button asChild size="sm" className={softButtonClass}>
+                            <Link href={`/dashboard/admin/users/${a.userId}`}>
+                              <Eye className="mr-1.5 h-4 w-4" />
+                              View profile
+                            </Link>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDeleteTarget(a)}
+                            disabled={busy}
+                            className="rounded-xl text-rose-600 hover:bg-rh-blush hover:text-rose-700 dark:text-rose-300 dark:hover:bg-rose-400/10"
+                          >
+                            <Trash2 className="mr-1.5 h-4 w-4" />
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.li>
+                )
+              })}
+            </AnimatePresence>
+          </ul>
+        )}
+      </Panel>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title={`Delete ${displayName(deleteTarget?.user)}?`}
+        description="This permanently removes the account, its profile and this declined application. It cannot be undone."
+        confirmLabel="Delete user"
+        destructive
+        onConfirm={confirmDelete}
+      />
+    </AdminPage>
+  )
 }

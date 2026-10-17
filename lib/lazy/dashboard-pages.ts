@@ -14,17 +14,9 @@ export const LazyAdminPages = {
     () => import('@/app/dashboard/admin/analytics/page'),
     'AdminAnalytics'
   ),
-  AdminHealth: createLazyPage(
-    () => import('@/app/dashboard/admin/health/page'),
-    'AdminHealth'
-  ),
   AdminApprovals: createLazyPage(
     () => import('@/app/dashboard/admin/approvals/page'),
     'AdminApprovals'
-  ),
-  AdminSecurity: createLazyPage(
-    () => import('@/app/dashboard/admin/security/page'),
-    'AdminSecurity'
   ),
   AdminSystem: createLazyPage(
     () => import('@/app/dashboard/admin/system/page'),

@@ -10,8 +10,11 @@
  *   booked   – an appointment was booked (bright bell chord)
  *   paid     – a payment went through (rising arpeggio)
  *   success  – something was saved or completed
+ *   approve  – an application or request was approved (warm rising fifth)
+ *   reject   – something was declined or removed (soft falling tone)
+ *   error    – an action failed (low double tap)
  */
-export type SoundName = 'send' | 'receive' | 'booked' | 'paid' | 'success'
+export type SoundName = 'send' | 'receive' | 'booked' | 'paid' | 'success' | 'approve' | 'reject' | 'error'
 
 const STORAGE_KEY = 'rehabify:sounds'
 export const SOUND_SETTING_EVENT = 'rehabify:sounds-changed'
@@ -121,6 +124,19 @@ export function playSound(name: SoundName) {
     case 'success':
       note(ctx, 880, t, 0.25, 0.05) // A5
       note(ctx, 1318.51, t + 0.1, 0.4, 0.045) // E6
+      break
+    case 'approve':
+      note(ctx, 659.25, t, 0.22, 0.05) // E5
+      note(ctx, 987.77, t + 0.08, 0.28, 0.05) // B5
+      note(ctx, 1318.51, t + 0.16, 0.45, 0.04) // E6
+      break
+    case 'reject':
+      note(ctx, 587.33, t, 0.2, 0.045, 'triangle') // D5
+      note(ctx, 440, t + 0.1, 0.35, 0.04, 'triangle') // A4
+      break
+    case 'error':
+      note(ctx, 220, t, 0.12, 0.06, 'triangle') // A3
+      note(ctx, 207.65, t + 0.13, 0.18, 0.06, 'triangle') // G#3
       break
   }
 }

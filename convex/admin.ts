@@ -1,904 +1,1038 @@
-import { v } from "convex/values";
-import { query, mutation, action, internalAction } from "./_generated/server";
+import { v, ConvexError } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
+import { query, mutation, internalMutation, type QueryCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { ensureUserRole } from "./auth";
-import { Id } from "./_generated/dataModel";
-
-// ==== REAL-TIME ADMIN ANALYTICS ====
+import type { Doc, Id } from "./_generated/dataModel";
 
 /**
- * Get comprehensive platform analytics in real-time
+ * Admin console backend: home overview, platform status, analytics, activity log,
+ * announcements and transactions.
+ *
+ * Every function here is admin-only and every read is bounded. Counts stop at a cap and
+ * say so (`capped: true`), so the UI shows "1000+" instead of a wrong exact number.
+ * Nothing in this file is estimated or made up: if the platform doesn't record a
+ * measurement, it isn't returned.
  */
-export const getPlatformAnalytics = query({
+
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+
+const ROLE_COUNT_CAP = 1000;
+const TABLE_COUNT_CAP = 1000;
+const REGISTRY_COUNT_CAP = 500;
+const WINDOW_SCAN_CAP = 1000;
+const SERIES_SCAN_CAP = 2500;
+const QUEUE_CAP = 500;
+
+type Counted = { count: number; capped: boolean };
+type UserRoleValue = NonNullable<Doc<"users">["role"]>;
+
+const PLATFORM_ROLES: UserRoleValue[] = [
+  "patient",
+  "physiotherapist",
+  "clinic_owner",
+  "clinic_staff",
+  "doctor",
+  "partner",
+  "family_member",
+  "admin",
+];
+
+function counted(rows: unknown[], cap: number): Counted {
+  return { count: Math.min(rows.length, cap), capped: rows.length > cap };
+}
+
+function displayName(
+  user: Pick<Doc<"users">, "firstName" | "lastName" | "email"> | null | undefined,
+  fallback = "Unknown user"
+) {
+  if (!user) return fallback;
+  return `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || fallback;
+}
+
+/** The client's local midnight when it's plausible, otherwise UTC midnight. */
+function resolveDayStart(requested: number | undefined, now: number) {
+  if (requested !== undefined && Number.isFinite(requested) && requested <= now + HOUR && now - requested < 1.5 * DAY) {
+    return requested;
+  }
+  return Math.floor(now / DAY) * DAY;
+}
+
+// ==== USERS BY ROLE ====
+
+/** Accounts per role, read through the by_role index with a cap per role. */
+export const getUserRoleCounts = query({
   args: {},
-  returns: v.object({
-    overview: v.object({
-      totalUsers: v.number(),
-      activeUsers: v.number(),
-      totalClinics: v.number(),
-      totalAppointments: v.number(),
-      revenueThisMonth: v.number(),
-      growthRate: v.number(),
-    }),
-    userStats: v.object({
-      byRole: v.record(v.string(), v.number()),
-      newUsersThisWeek: v.number(),
-      activeUsersToday: v.number(),
-      onboardingCompletionRate: v.number(),
-      tourCompletions: v.number(),
-    }),
-    systemHealth: v.object({
-      uptime: v.number(),
-      responseTime: v.number(),
-      errorRate: v.number(),
-      notificationDeliveryRate: v.number(),
-    }),
-    engagement: v.object({
-      dailyActiveUsers: v.number(),
-      weeklyActiveUsers: v.number(),
-      monthlyActiveUsers: v.number(),
-      sessionDuration: v.number(),
-    }),
-  }),
   handler: async (ctx) => {
     await ensureUserRole(ctx, ["admin"]);
-
-    const now = Date.now();
-    const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-
-    // Get all users
-    const allUsers = await ctx.db.query("users").collect();
-    const totalUsers = allUsers.length;
-    const activeUsers = allUsers.filter(u => u.onboarded).length;
-
-    // Get user stats by role
-    const byRole: Record<string, number> = {};
-    allUsers.forEach(user => {
-      const role = user.role || 'unassigned';
-      byRole[role] = (byRole[role] || 0) + 1;
-    });
-
-    // Get new users this week
-    const newUsersThisWeek = allUsers.filter(u => u._creationTime > weekAgo).length;
-
-    // Get clinics
-    const allClinics = await ctx.db.query("clinics").collect();
-    // Get appointments
-    const allAppointments = await ctx.db.query("appointments").collect();
-    const totalAppointments = allAppointments.length;
-
-    // Calculate real revenue from payments table
-    const payments = await ctx.db.query("payments").collect();
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
-    const revenueThisMonth = payments
-      .filter(p => p.status === "completed" && p.createdAt >= monthStart)
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    const lastMonthStart = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
-    const lastMonthRevenue = payments
-      .filter(p => p.status === "completed" && p.createdAt >= lastMonthStart && p.createdAt < monthStart)
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    const growthRate = lastMonthRevenue > 0 ? ((revenueThisMonth - lastMonthRevenue) / lastMonthRevenue) * 100 : 0;
-
-    // Get tour completion metrics
-    const tourCompletions = await ctx.db
-      .query("performanceMetrics")
-      .withIndex("by_metric", q => q.eq("metric", "onboarding_tour_completed"))
-      .collect();
-
-    // Count unique users who completed the tour
-    const uniqueTourCompletions = new Set(tourCompletions.map(m => m.userId)).size;
-
+    const entries = await Promise.all(
+      [...PLATFORM_ROLES, undefined].map(async (role) => {
+        const rows = await ctx.db
+          .query("users")
+          .withIndex("by_role", (q) => q.eq("role", role))
+          .take(ROLE_COUNT_CAP + 1);
+        return [role ?? "unassigned", counted(rows, ROLE_COUNT_CAP)] as const;
+      })
+    );
+    const byRole = Object.fromEntries(entries) as Record<UserRoleValue | "unassigned", Counted>;
     return {
-      overview: {
-        totalUsers,
-        activeUsers,
-        totalClinics: allClinics.length,
-        totalAppointments,
-        revenueThisMonth,
-        growthRate,
-      },
-      userStats: {
-        byRole,
-        newUsersThisWeek,
-        activeUsersToday: Math.floor(activeUsers * 0.3), // Mock: 30% daily active
-        onboardingCompletionRate: totalUsers > 0 ? (uniqueTourCompletions / totalUsers) * 100 : 0,
-        tourCompletions: uniqueTourCompletions,
-      },
-      systemHealth: {
-        uptime: 99.9,
-        responseTime: 245,
-        errorRate: 0.02,
-        notificationDeliveryRate: 98.5,
-      },
-      engagement: {
-        dailyActiveUsers: Math.floor(activeUsers * 0.3),
-        weeklyActiveUsers: Math.floor(activeUsers * 0.7),
-        monthlyActiveUsers: activeUsers,
-        sessionDuration: 18.5, // Mock: 18.5 minutes average
-      },
+      byRole,
+      total: {
+        count: entries.reduce((sum, [, c]) => sum + c.count, 0),
+        capped: entries.some(([, c]) => c.capped),
+      } satisfies Counted,
+      cap: ROLE_COUNT_CAP,
     };
   },
 });
 
+// ==== HOME OVERVIEW ====
+
 /**
- * Get admin dashboard statistics
+ * Home page numbers that aren't queue badges (those come from adminConsole.getNavBadges):
+ * clinics, registry size, unassigned referrals and a today-vs-yesterday comparison.
+ * `todayStart` is the admin's local midnight so "today" matches their clock.
  */
 export const getAdminDashboardStats = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { todayStart: v.optional(v.number()) },
+  handler: async (ctx, args) => {
     await ensureUserRole(ctx, ["admin"]);
 
     const now = Date.now();
-    const todayStart = new Date().setHours(0, 0, 0, 0);
-    const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const todayStart = resolveDayStart(args.todayStart, now);
+    const yesterdayStart = todayStart - DAY;
+    const tomorrowStart = todayStart + DAY;
 
-    // Calculate active platform users (excluding admins, and requiring them to be fully onboarded)
-    const allUsers = await ctx.db.query("users").collect();
-    
-    // An active user is someone who is fully onboarded and is not an admin
-    const activePlatformUsers = allUsers.filter(u => u.onboarded === true && u.role !== 'admin');
-    const totalUsers = activePlatformUsers.length;
-    
-    const newUsersToday = activePlatformUsers.filter(u => u._creationTime >= todayStart).length;
-    const newUsersThisWeek = activePlatformUsers.filter(u => u._creationTime >= weekAgo).length;
+    const [clinics, registry, receivedReferrals, legacyReferrals, recentUsers, sessions, recentBookings] =
+      await Promise.all([
+        ctx.db.query("clinics").take(TABLE_COUNT_CAP + 1),
+        Promise.all(
+          (["listed", "verified", "pending"] as const).map((status) =>
+            ctx.db
+              .query("physioRegistry")
+              .withIndex("by_verification_status", (q) => q.eq("verificationStatus", status))
+              .take(REGISTRY_COUNT_CAP + 1)
+          )
+        ),
+        ctx.db
+          .query("inboundReferrals")
+          .withIndex("by_status", (q) => q.eq("status", "received"))
+          .order("desc")
+          .take(QUEUE_CAP + 1),
+        ctx.db
+          .query("inboundReferrals")
+          .withIndex("by_status", (q) => q.eq("status", "pending"))
+          .order("desc")
+          .take(QUEUE_CAP + 1),
+        ctx.db
+          .query("users")
+          .withIndex("by_creation_time", (q) => q.gte("_creationTime", yesterdayStart))
+          .take(WINDOW_SCAN_CAP + 1),
+        ctx.db
+          .query("appointments")
+          .withIndex("by_start_time", (q) => q.gte("startTime", yesterdayStart).lt("startTime", tomorrowStart))
+          .take(WINDOW_SCAN_CAP + 1),
+        ctx.db
+          .query("marketplaceBookings")
+          .withIndex("by_creation_time", (q) => q.gte("_creationTime", yesterdayStart))
+          .take(WINDOW_SCAN_CAP + 1),
+      ]);
 
-    // Get pending approvals from the accountApprovalStatus table
-    // (same source as the approvals page so numbers always match)
-    const pendingApprovalRecords = await ctx.db
-      .query("accountApprovalStatus")
-      .withIndex("by_status", (q) => q.eq("status", "pending_review"))
-      .collect();
-
-    // Filter out orphaned records (where user no longer exists)
-    let validPendingCount = 0;
-    for (const record of pendingApprovalRecords) {
-      const user = await ctx.db.get(record.userId);
-      if (user) validPendingCount++;
+    function split<T>(rows: T[], at: (row: T) => number, capped: boolean) {
+      let today = 0;
+      let yesterday = 0;
+      for (const row of rows) {
+        const t = at(row);
+        if (t >= todayStart && t < tomorrowStart) today++;
+        else if (t >= yesterdayStart && t < todayStart) yesterday++;
+      }
+      return { today, yesterday, capped };
     }
 
-    // Get all appointments
-    const allAppointments = await ctx.db.query("appointments").collect();
-    const appointmentsToday = allAppointments.filter(apt =>
-      apt.startTime >= todayStart && apt.startTime < todayStart + 24 * 60 * 60 * 1000
-    ).length;
+    const sessionsCapped = sessions.length > WINDOW_SCAN_CAP;
+    const realSessions = sessions
+      .slice(0, WINDOW_SCAN_CAP)
+      .filter((a) => !a.isRecordOnly && a.status !== "cancelled_by_patient" && a.status !== "cancelled_by_therapist");
 
-    // Get all clinics
-    const allClinics = await ctx.db.query("clinics").collect();
-
-    // Get notifications
-    const notifications = await ctx.db.query("notifications").collect();
-    const unsentNotifications = notifications.filter(n => !n.deliveredAt).length;
-
-    // Get public registry stats
-    const allRegistryEntries = await ctx.db.query("physioRegistry").collect();
-    const listedRegistryEntries = allRegistryEntries.filter(
-      (e) => e.verificationStatus === "listed" || e.verificationStatus === "verified" || e.verificationStatus === "pending"
+    const unassigned = [...receivedReferrals.slice(0, QUEUE_CAP), ...legacyReferrals.slice(0, QUEUE_CAP)].filter(
+      (r) => !r.assignedClinicId && !r.assignedPhysiotherapistId && r.environment !== "sandbox"
     );
-    const totalRegistered = listedRegistryEntries.length;
-
-    // Calculate overlap with platform physios
-    const platformPhysios = allUsers.filter(u => u.role === 'physiotherapist' && u.clerkId);
-    let overlapWithPlatform = 0;
-    
-    // We check overlap by seeing if the registry entry has a matching clerkUserId
-    listedRegistryEntries.forEach(entry => {
-      if (entry.clerkUserId) {
-        // If they have a clerkUserId linked, check if that user is a physiotherapist on the platform
-        const matchesPlatform = platformPhysios.some(p => p.clerkId === entry.clerkUserId);
-        if (matchesPlatform) {
-          overlapWithPlatform++;
-        }
-      } else {
-        // Fallback: Check if there's a platform physio with a matching email
-        const matchesEmail = platformPhysios.some(p => p.email && entry.email && p.email.toLowerCase() === entry.email.toLowerCase());
-        if (matchesEmail) {
-          overlapWithPlatform++;
-        }
-      }
-    });
 
     return {
-      totalUsers,
-      newUsersToday,
-      newUsersThisWeek,
-      pendingApprovals: validPendingCount,
-      appointmentsToday,
-      totalClinics: allClinics.length,
-      totalAppointments: allAppointments.length,
-      unsentNotifications,
-      usersByRole: {
-        patients: allUsers.filter(u => u.role === 'patient').length,
-        physiotherapists: platformPhysios.length,
-        clinicOwners: allUsers.filter(u => u.role === 'clinic_owner').length,
-        admins: allUsers.filter(u => u.role === 'admin').length,
+      dayStart: todayStart,
+      clinics: counted(clinics, TABLE_COUNT_CAP),
+      registryListed: {
+        count: registry.reduce((sum, rows) => sum + Math.min(rows.length, REGISTRY_COUNT_CAP), 0),
+        capped: registry.some((rows) => rows.length > REGISTRY_COUNT_CAP),
+      } satisfies Counted,
+      unassignedReferrals: {
+        count: unassigned.length,
+        capped: receivedReferrals.length > QUEUE_CAP || legacyReferrals.length > QUEUE_CAP,
+      } satisfies Counted,
+      today: {
+        sessions: split(realSessions, (a) => a.startTime, sessionsCapped),
+        completedSessions: split(
+          realSessions.filter((a) => a.status === "completed"),
+          (a) => a.startTime,
+          sessionsCapped
+        ),
+        signups: split(recentUsers.slice(0, WINDOW_SCAN_CAP), (u) => u._creationTime, recentUsers.length > WINDOW_SCAN_CAP),
+        bookings: split(
+          recentBookings.slice(0, WINDOW_SCAN_CAP),
+          (b) => b._creationTime,
+          recentBookings.length > WINDOW_SCAN_CAP
+        ),
       },
-      publicRegistryStats: {
-        totalRegistered,
-        overlapWithPlatform,
-      }
     };
   },
 });
 
+// ==== PLATFORM STATUS ====
+
+type HealthStatus = "ok" | "warning" | "error" | "idle";
+type HealthCheck = {
+  key: string;
+  label: string;
+  status: HealthStatus;
+  value: string;
+  detail: string;
+  /** Timestamp the detail refers to (e.g. last webhook), formatted by the client. */
+  at?: number;
+  href?: string;
+};
+
+const STATUS_RANK: Record<HealthStatus, number> = { idle: 0, ok: 1, warning: 2, error: 3 };
+
+function fmtCount(rows: unknown[], cap: number) {
+  return rows.length > cap ? `${cap}+` : String(rows.length);
+}
+
 /**
- * Get system health status
+ * Background delivery and error signals the platform actually records: retry queues,
+ * failed notifications, partner/AwaDoc webhooks, the Joy outbox and error logs.
+ * There is deliberately no uptime, CPU or latency figure; Convex doesn't expose them here.
  */
 export const getSystemHealth = query({
   args: {},
-  returns: v.object({
-    overall: v.number(),
-    status: v.union(v.literal("excellent"), v.literal("good"), v.literal("warning"), v.literal("critical")),
-    components: v.object({
-      database: v.object({
-        status: v.union(v.literal("healthy"), v.literal("warning"), v.literal("error")),
-        score: v.number(),
-        message: v.string(),
-      }),
-      api: v.object({
-        status: v.union(v.literal("healthy"), v.literal("warning"), v.literal("error")),
-        score: v.number(),
-        message: v.string(),
-      }),
-      notifications: v.object({
-        status: v.union(v.literal("healthy"), v.literal("warning"), v.literal("error")),
-        score: v.number(),
-        message: v.string(),
-      }),
-    }),
-  }),
   handler: async (ctx) => {
     await ensureUserRole(ctx, ["admin"]);
 
     const now = Date.now();
-    const oneHourAgo = now - 60 * 60 * 1000;
+    const dayAgo = now - DAY;
+    const weekAgo = now - WEEK;
+    const overdueBefore = now - 15 * 60 * 1000;
 
-    // Pull data needed for health computation
     const [
-      notifications,
-      retryQueue,
-      recentLogs,
-      recentEvents,
+      retryPending,
+      retryOverdue,
+      retryFailed,
+      emailOverdue,
+      emailFailed,
+      failedNotifications,
+      webhookFailed,
+      webhookPending,
+      awadocRecent,
+      joyFailed,
+      joyDead,
+      errorLogs,
+      apiErrors,
+      systemErrors,
     ] = await Promise.all([
-      ctx.db.query("notifications").collect(),
-      ctx.db.query("notificationRetryQueue").collect(),
+      ctx.db
+        .query("notificationRetryQueue")
+        .withIndex("by_status_and_next_retry", (q) => q.eq("status", "pending"))
+        .take(QUEUE_CAP + 1),
+      ctx.db
+        .query("notificationRetryQueue")
+        .withIndex("by_status_and_next_retry", (q) => q.eq("status", "pending").lt("nextRetryAt", overdueBefore))
+        .take(QUEUE_CAP + 1),
+      ctx.db
+        .query("notificationRetryQueue")
+        .withIndex("by_status_and_next_retry", (q) => q.eq("status", "failed"))
+        .order("desc")
+        .take(QUEUE_CAP + 1),
+      ctx.db
+        .query("emailRetryQueue")
+        .withIndex("by_status_and_next_retry", (q) => q.eq("status", "pending").lt("nextRetryAt", overdueBefore))
+        .take(QUEUE_CAP + 1),
+      ctx.db
+        .query("emailRetryQueue")
+        .withIndex("by_status_and_next_retry", (q) => q.eq("status", "failed"))
+        .order("desc")
+        .take(QUEUE_CAP + 1),
+      ctx.db
+        .query("notifications")
+        .withIndex("by_status", (q) => q.eq("status", "failed"))
+        .order("desc")
+        .take(QUEUE_CAP + 1),
+      ctx.db
+        .query("partnerWebhookDeliveries")
+        .withIndex("by_status_next_attempt", (q) => q.eq("status", "failed"))
+        .order("desc")
+        .take(QUEUE_CAP + 1),
+      ctx.db
+        .query("partnerWebhookDeliveries")
+        .withIndex("by_status_next_attempt", (q) => q.eq("status", "pending"))
+        .take(QUEUE_CAP + 1),
+      ctx.db.query("awadocEventLog").withIndex("by_processed_at").order("desc").take(100),
+      ctx.db
+        .query("joyEventOutbox")
+        .withIndex("by_status", (q) => q.eq("status", "failed"))
+        .take(QUEUE_CAP + 1),
+      ctx.db
+        .query("joyEventOutbox")
+        .withIndex("by_status", (q) => q.eq("status", "dead_letter"))
+        .take(QUEUE_CAP + 1),
       ctx.db
         .query("systemLogs")
-        .withIndex("by_timestamp", q => q.gte("timestamp", oneHourAgo))
-        .filter(q => q.eq(q.field("type"), "error"))
-        .collect()
-        .catch(() => []),
+        .withIndex("by_type", (q) => q.eq("type", "error").gte("_creationTime", dayAgo))
+        .take(QUEUE_CAP + 1),
       ctx.db
         .query("analytics_events")
-        .withIndex("by_timestamp")
-        .order("desc")
-        .filter(q => q.gte(q.field("timestamp"), oneHourAgo))
-        .collect()
-        .catch(() => []),
+        .withIndex("by_type_and_timestamp", (q) => q.eq("type", "api_error").gte("timestamp", dayAgo))
+        .take(QUEUE_CAP + 1),
+      ctx.db
+        .query("analytics_events")
+        .withIndex("by_type_and_timestamp", (q) => q.eq("type", "system_error").gte("timestamp", dayAgo))
+        .take(QUEUE_CAP + 1),
     ]);
 
-    // Notification metrics
-    const notifTotal = notifications.length;
-    const notifDelivered = notifications.filter(n => !!n.deliveredAt).length;
-    const notifFailed = notifications.filter(n => n.status === "failed").length;
-    const notifPending = notifications.filter(n => n.status === "pending" || n.status === "retrying").length;
-    const retryPending = retryQueue.filter(r => r.status === "pending").length;
+    const checks: HealthCheck[] = [];
 
-    const deliveryRate = notifTotal > 0 ? (notifDelivered / notifTotal) * 100 : 100;
-    const failureRate = notifTotal > 0 ? (notifFailed / notifTotal) * 100 : 0;
+    // 1. Notification retry queue
+    {
+      const failed7d = retryFailed.filter((r) => r.createdAt >= weekAgo);
+      const overdue = retryOverdue.length;
+      const status: HealthStatus =
+        overdue >= 50 ? "error" : overdue > 0 || failed7d.length > 0 ? "warning" : "ok";
+      const parts: string[] = [];
+      if (overdue > 0) parts.push(`${fmtCount(retryOverdue, QUEUE_CAP)} overdue by 15+ min (the retry job may be stuck)`);
+      if (failed7d.length > 0) parts.push(`${fmtCount(failed7d, QUEUE_CAP)} gave up in the last 7 days`);
+      checks.push({
+        key: "notificationRetries",
+        label: "Notification retries",
+        status,
+        value: `${fmtCount(retryPending, QUEUE_CAP)} waiting`,
+        detail: parts.length ? parts.join(" · ") : "Retries are running on schedule",
+      });
+    }
 
-    // API metrics from analytics events
-    const perfEvents = (recentEvents as any[]).filter(e => (e.metadata?.duration ?? undefined) !== undefined);
-    const durations = perfEvents.map(e => Number(e.metadata.duration)).filter((d: number) => Number.isFinite(d));
-    const avgResponseTime = durations.length > 0 ? durations.reduce((s: number, d: number) => s + d, 0) / durations.length : 245;
+    // 2. Failed in-app notifications
+    {
+      const recent = failedNotifications.filter((n) => (n.failedAt ?? n.updatedAt ?? n.createdAt) >= dayAgo);
+      checks.push({
+        key: "failedNotifications",
+        label: "Failed notifications (24h)",
+        status: recent.length >= 25 ? "error" : recent.length > 0 ? "warning" : "ok",
+        value: fmtCount(recent, QUEUE_CAP),
+        detail: recent.length > 0 ? "Notifications marked failed in the last 24 hours" : "No delivery failures in the last 24 hours",
+      });
+    }
 
-    const errorEvents = (recentEvents as any[]).filter(e => e.type === "api_error" || e.type === "system_error" || (e.metadata && e.metadata.error));
-    const apiErrorRate = (recentEvents as any[]).length > 0 ? (errorEvents.length / (recentEvents as any[]).length) * 100 : 0;
+    // 3. Email retries
+    {
+      const failed7d = emailFailed.filter((r) => r.createdAt >= weekAgo);
+      const parts: string[] = [];
+      if (emailOverdue.length > 0) parts.push(`${fmtCount(emailOverdue, QUEUE_CAP)} overdue`);
+      if (failed7d.length > 0) parts.push(`${fmtCount(failed7d, QUEUE_CAP)} gave up in the last 7 days`);
+      checks.push({
+        key: "emailRetries",
+        label: "Email retries",
+        status: emailOverdue.length >= 50 ? "error" : parts.length ? "warning" : "ok",
+        value: parts.length ? `${emailOverdue.length + failed7d.length} need attention` : "Clear",
+        detail: parts.length ? parts.join(" · ") : "No overdue or failed email retries",
+      });
+    }
 
-    // Database metrics derived from logs
-    const recentDbErrors = recentLogs.length;
+    // 4. Partner webhooks
+    {
+      const failed7d = webhookFailed.filter((d) => d.updatedAt >= weekAgo);
+      const overdue = webhookPending.filter((d) => (d.nextAttemptAt ?? d.createdAt) < now - 10 * 60 * 1000);
+      const parts: string[] = [];
+      if (overdue.length > 0) parts.push(`${fmtCount(overdue, QUEUE_CAP)} deliveries overdue`);
+      if (failed7d.length > 0) parts.push(`${fmtCount(failed7d, QUEUE_CAP)} failed in the last 7 days`);
+      checks.push({
+        key: "partnerWebhooks",
+        label: "Partner webhooks",
+        status: overdue.length >= 25 ? "error" : parts.length ? "warning" : "ok",
+        value: `${fmtCount(webhookPending, QUEUE_CAP)} queued`,
+        detail: parts.length ? parts.join(" · ") : "Deliveries are going out",
+        href: "/dashboard/admin/partnerships",
+      });
+    }
 
-    // Scores (0-100), no randomness
-    const notifScore = Math.max(0, 100 - failureRate - Math.min(20, notifPending + retryPending));
-    const responsePenalty = avgResponseTime > 200 ? Math.min(40, (avgResponseTime - 200) / 5) : 0;
-    const apiScore = Math.max(0, 100 - apiErrorRate - responsePenalty);
-    const dbScore = Math.max(0, 98 - Math.min(30, recentDbErrors * 5));
+    // 5. AwaDoc webhooks
+    {
+      const last = awadocRecent[0];
+      const errors24h = awadocRecent.filter((e) => e.status === "error" && e.processedAt >= dayAgo);
+      checks.push({
+        key: "awadoc",
+        label: "AwaDoc webhooks",
+        status: !last ? "idle" : errors24h.length >= 10 ? "error" : errors24h.length > 0 ? "warning" : "ok",
+        value: !last ? "No events" : errors24h.length > 0 ? `${errors24h.length} errors (24h)` : "No errors (24h)",
+        detail: !last
+          ? "No AwaDoc events recorded yet"
+          : `Last event: ${last.eventType} (${last.direction}, ${last.status})`,
+        at: last?.processedAt,
+        href: "/dashboard/admin/awadoc",
+      });
+    }
 
-    const overall = Math.round((notifScore + apiScore + dbScore) / 3);
+    // 6. Joy event outbox
+    {
+      const parts: string[] = [];
+      if (joyDead.length > 0) parts.push(`${fmtCount(joyDead, QUEUE_CAP)} dead-lettered`);
+      if (joyFailed.length > 0) parts.push(`${fmtCount(joyFailed, QUEUE_CAP)} retrying`);
+      checks.push({
+        key: "joyOutbox",
+        label: "Joy event outbox",
+        status: joyDead.length > 0 ? "error" : joyFailed.length >= 10 ? "warning" : "ok",
+        value: parts.length ? parts.join(", ") : "Clear",
+        detail: joyDead.length > 0 ? "Events that ran out of retries need manual repair" : "No stuck events",
+      });
+    }
 
-    const toComponentStatus = (score: number) => (score >= 95 ? 'healthy' as const : score >= 80 ? 'warning' as const : 'error' as const);
-    const toOverallStatus = (score: number) => (score >= 95 ? 'excellent' as const : score >= 80 ? 'good' as const : score >= 60 ? 'warning' as const : 'critical' as const);
+    // 7. Error logs
+    {
+      const total = errorLogs.length + apiErrors.length + systemErrors.length;
+      const capped = errorLogs.length > QUEUE_CAP || apiErrors.length > QUEUE_CAP || systemErrors.length > QUEUE_CAP;
+      checks.push({
+        key: "errorLogs",
+        label: "Error logs (24h)",
+        status: total >= 50 ? "error" : total > 0 ? "warning" : "ok",
+        value: capped ? `${total}+` : String(total),
+        detail: total > 0 ? "Errors written to systemLogs and analytics events" : "No errors logged in the last 24 hours",
+      });
+    }
+
+    const worst = checks.reduce<HealthStatus>(
+      (acc, c) => (STATUS_RANK[c.status] > STATUS_RANK[acc] ? c.status : acc),
+      "ok"
+    );
+
+    return { status: worst, checkedAt: now, checks };
+  },
+});
+
+// ==== ANALYTICS ====
+
+function monthWindow(months: number) {
+  const now = new Date();
+  const starts: number[] = [];
+  for (let i = months - 1; i >= 0; i--) starts.push(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+  return { starts, rangeStart: starts[0], rangeEnd: Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1) };
+}
+
+function monthKey(ts: number) {
+  const d = new Date(ts);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function safeMonths(requested: number | undefined) {
+  return requested === 3 || requested === 12 ? requested : 6;
+}
+
+/** Monday 00:00 UTC of the week containing `ts`. */
+function startOfUtcWeek(ts: number) {
+  const day = Math.floor(ts / DAY) * DAY;
+  const weekday = (new Date(day).getUTCDay() + 6) % 7; // Monday = 0
+  return day - weekday * DAY;
+}
+
+const SIGNUP_GROUPS = ["patient", "physiotherapist", "clinic", "other"] as const;
+type SignupGroup = (typeof SIGNUP_GROUPS)[number];
+
+function signupGroup(role: Doc<"users">["role"]): SignupGroup {
+  if (role === "patient") return "patient";
+  if (role === "physiotherapist") return "physiotherapist";
+  if (role === "clinic_owner" || role === "clinic_staff") return "clinic";
+  return "other";
+}
+
+/** New accounts per month (by role group) and per week for the last 12 weeks. */
+export const getPlatformAnalytics = query({
+  args: { months: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
+
+    const months = safeMonths(args.months);
+    const { starts, rangeStart } = monthWindow(months);
+    const WEEKS = 12;
+    const thisWeek = startOfUtcWeek(Date.now());
+    const weekStarts = Array.from({ length: WEEKS }, (_, i) => thisWeek - (WEEKS - 1 - i) * WEEK);
+    const scanStart = Math.min(rangeStart, weekStarts[0]);
+
+    // Newest first, so if the cap is hit it's the oldest buckets that are incomplete
+    const users = await ctx.db
+      .query("users")
+      .withIndex("by_creation_time", (q) => q.gte("_creationTime", scanStart))
+      .order("desc")
+      .take(SERIES_SCAN_CAP + 1);
+    const capped = users.length > SERIES_SCAN_CAP;
+    const rows = users.slice(0, SERIES_SCAN_CAP);
+
+    const byMonth = new Map(
+      starts.map((s) => [monthKey(s), { patient: 0, physiotherapist: 0, clinic: 0, other: 0, total: 0 }])
+    );
+    const byWeek = new Map(weekStarts.map((s) => [s, 0]));
+    for (const u of rows) {
+      const bucket = byMonth.get(monthKey(u._creationTime));
+      if (bucket && u._creationTime >= rangeStart) {
+        bucket[signupGroup(u.role)]++;
+        bucket.total++;
+      }
+      const week = startOfUtcWeek(u._creationTime);
+      if (byWeek.has(week)) byWeek.set(week, (byWeek.get(week) ?? 0) + 1);
+    }
 
     return {
-      overall,
-      status: toOverallStatus(overall),
-      components: {
-        database: {
-          status: toComponentStatus(dbScore),
-          score: Number(dbScore.toFixed(1)),
-          message: recentDbErrors === 0 ? 'No DB errors in last hour' : `${recentDbErrors} DB error(s) in last hour`,
-        },
-        api: {
-          status: toComponentStatus(apiScore),
-          score: Number(apiScore.toFixed(1)),
-          message: `Avg ${Math.round(avgResponseTime)}ms, ${apiErrorRate.toFixed(2)}% error rate`,
-        },
-        notifications: {
-          status: toComponentStatus(notifScore),
-          score: Number(notifScore.toFixed(1)),
-          message: `${notifFailed} failed, ${notifPending + retryPending} pending, ${deliveryRate.toFixed(1)}% delivered`,
-        },
-      },
+      months,
+      capped,
+      cap: SERIES_SCAN_CAP,
+      signupsByMonth: starts.map((s) => ({ month: monthKey(s), monthStart: s, ...byMonth.get(monthKey(s))! })),
+      signupsByWeek: weekStarts.map((s) => ({ weekStart: s, signups: byWeek.get(s) ?? 0 })),
+    };
+  },
+});
+
+/** Appointments per month by their scheduled date, split by outcome. */
+export const getAppointmentAnalytics = query({
+  args: { months: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
+
+    const months = safeMonths(args.months);
+    const { starts, rangeStart, rangeEnd } = monthWindow(months);
+    const appointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_start_time", (q) => q.gte("startTime", rangeStart).lt("startTime", rangeEnd))
+      .order("desc")
+      .take(SERIES_SCAN_CAP + 1);
+    const capped = appointments.length > SERIES_SCAN_CAP;
+
+    const byMonth = new Map(
+      starts.map((s) => [monthKey(s), { total: 0, completed: 0, cancelled: 0, noShow: 0, upcoming: 0 }])
+    );
+    for (const a of appointments.slice(0, SERIES_SCAN_CAP)) {
+      if (a.isRecordOnly) continue;
+      const bucket = byMonth.get(monthKey(a.startTime));
+      if (!bucket) continue;
+      bucket.total++;
+      if (a.status === "completed") bucket.completed++;
+      else if (a.status === "cancelled_by_patient" || a.status === "cancelled_by_therapist") bucket.cancelled++;
+      else if (a.status === "no_show") bucket.noShow++;
+      else bucket.upcoming++;
+    }
+
+    return {
+      months,
+      capped,
+      cap: SERIES_SCAN_CAP,
+      appointmentsByMonth: starts.map((s) => ({ month: monthKey(s), monthStart: s, ...byMonth.get(monthKey(s))! })),
     };
   },
 });
 
 /**
- * Get security events
+ * Paid invoice volume and platform fees per month (amounts in kobo), plus marketplace
+ * bookings made per month. Marketplace payments also create invoices, so revenue is
+ * counted once, from invoices.
+ */
+export const getRevenueAnalytics = query({
+  args: { months: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
+
+    const months = safeMonths(args.months);
+    const { starts, rangeStart, rangeEnd } = monthWindow(months);
+
+    const [invoices, bookings] = await Promise.all([
+      // Invoices paid in the window can be issued a little before it
+      ctx.db
+        .query("invoices")
+        .withIndex("by_creation_time", (q) => q.gte("_creationTime", rangeStart - 31 * DAY))
+        .order("desc")
+        .take(SERIES_SCAN_CAP + 1),
+      ctx.db
+        .query("marketplaceBookings")
+        .withIndex("by_creation_time", (q) => q.gte("_creationTime", rangeStart))
+        .order("desc")
+        .take(SERIES_SCAN_CAP + 1),
+    ]);
+
+    const revenue = new Map(starts.map((s) => [monthKey(s), { grossKobo: 0, platformFeeKobo: 0, paidInvoices: 0 }]));
+    for (const inv of invoices.slice(0, SERIES_SCAN_CAP)) {
+      if (inv.status !== "paid") continue;
+      const paidAt = inv.paymentDate ?? inv.issueDate;
+      if (paidAt < rangeStart || paidAt >= rangeEnd) continue;
+      const bucket = revenue.get(monthKey(paidAt));
+      if (!bucket) continue;
+      bucket.grossKobo += inv.totalAmount || 0;
+      bucket.platformFeeKobo += inv.platformFeeAmount || 0;
+      bucket.paidInvoices++;
+    }
+
+    const bookingMonths = new Map(starts.map((s) => [monthKey(s), { created: 0, paid: 0, cancelled: 0 }]));
+    for (const b of bookings.slice(0, SERIES_SCAN_CAP)) {
+      const bucket = bookingMonths.get(monthKey(b._creationTime));
+      if (!bucket) continue;
+      bucket.created++;
+      if (b.paymentStatus === "completed") bucket.paid++;
+      if (b.bookingStatus === "cancelled") bucket.cancelled++;
+    }
+
+    return {
+      months,
+      cap: SERIES_SCAN_CAP,
+      invoicesCapped: invoices.length > SERIES_SCAN_CAP,
+      bookingsCapped: bookings.length > SERIES_SCAN_CAP,
+      revenueByMonth: starts.map((s) => ({ month: monthKey(s), monthStart: s, ...revenue.get(monthKey(s))! })),
+      bookingsByMonth: starts.map((s) => ({ month: monthKey(s), monthStart: s, ...bookingMonths.get(monthKey(s))! })),
+    };
+  },
+});
+
+// ==== ACTIVITY & AUDIT LOG ====
+// Source: analytics_events. Event types are grouped into categories so the activity page
+// can filter through the by_type_and_timestamp index instead of scanning.
+
+const ACTIVITY_CATEGORIES = {
+  security: ["user_login", "user_logout", "failed_authentication", "role_changed", "permission_updated"],
+  admin: ["admin_settings_updated", "admin_announcement_sent"],
+  account: [
+    "user_signup",
+    "user_settings_update",
+    "patient_created",
+    "patient_updated",
+    "patient_archived",
+    "profile_view",
+  ],
+  appointments: [
+    "appointment_created",
+    "appointment_updated",
+    "appointment_cancelled",
+    "appointment_completed",
+    "treatment_started",
+    "treatment_updated",
+    "treatment_completed",
+  ],
+  payments: ["payment_initialized", "payment_completed", "payment_failed", "balance_updated"],
+  notifications: [
+    "notification_created",
+    "notification_sent",
+    "notification_delivered",
+    "notification_read",
+    "notification_failed",
+  ],
+  errors: ["api_error", "system_error"],
+} as const;
+
+type ActivityCategory = keyof typeof ACTIVITY_CATEGORIES | "other";
+
+const CATEGORY_BY_TYPE = new Map<string, ActivityCategory>(
+  (Object.entries(ACTIVITY_CATEGORIES) as [ActivityCategory, readonly string[]][]).flatMap(([category, types]) =>
+    types.map((t) => [t, category] as const)
+  )
+);
+
+const activityCategoryValidator = v.union(
+  v.literal("all"),
+  v.literal("security"),
+  v.literal("admin"),
+  v.literal("account"),
+  v.literal("appointments"),
+  v.literal("payments"),
+  v.literal("notifications"),
+  v.literal("errors")
+);
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  admin_settings_updated: "Platform settings changed",
+  admin_announcement_sent: "Announcement sent",
+  failed_authentication: "Failed sign-in",
+  user_login: "Signed in",
+  user_logout: "Signed out",
+};
+
+function activityLabel(type: string) {
+  return ACTIVITY_LABELS[type] ?? type.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+/** A one-line, human-readable summary of an event's metadata. */
+function describeEvent(event: Doc<"analytics_events">): string {
+  const details = event.metadata?.details as Record<string, unknown> | undefined;
+  if (event.type === "admin_settings_updated" && Array.isArray(details?.changes)) {
+    return (details.changes as { field: string; from: unknown; to: unknown }[])
+      .map((c) => `${c.field}: ${JSON.stringify(c.from)} → ${JSON.stringify(c.to)}`)
+      .join(", ")
+      .slice(0, 240);
+  }
+  if (event.type === "admin_announcement_sent" && details) {
+    const roles = Array.isArray(details.targetRoles) ? (details.targetRoles as string[]).join(", ") : "";
+    return `"${String(details.title ?? "")}"${roles ? ` to ${roles}` : ""}`.slice(0, 240);
+  }
+  const parts: string[] = [];
+  if (event.metadata?.error) parts.push(String(event.metadata.error));
+  if (event.metadata?.path) parts.push(String(event.metadata.path));
+  if (details && typeof details === "object") {
+    for (const [key, value] of Object.entries(details)) {
+      if (value === null || value === undefined || typeof value === "object") continue;
+      parts.push(`${key}: ${String(value)}`);
+      if (parts.length >= 4) break;
+    }
+  }
+  return parts.join(" · ").slice(0, 240);
+}
+
+const MAX_ACTIVITY_LIMIT = 1000;
+
+/**
+ * The activity & audit log. Newest first, within `sinceMs`, optionally one category.
+ * "Load more" works by raising `limit` (capped at 1000); the query stays live.
+ */
+export const getUserActivityLogs = query({
+  args: {
+    limit: v.optional(v.number()),
+    sinceMs: v.optional(v.number()),
+    category: v.optional(activityCategoryValidator),
+  },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
+
+    const limit = Math.min(Math.max(1, Math.floor(args.limit ?? 50) || 50), MAX_ACTIVITY_LIMIT);
+    const since = args.sinceMs ?? 0;
+    const category = args.category ?? "all";
+
+    let events: Doc<"analytics_events">[];
+    if (category === "all") {
+      events = await ctx.db
+        .query("analytics_events")
+        .withIndex("by_timestamp", (q) => q.gte("timestamp", since))
+        .order("desc")
+        .take(limit + 1);
+    } else {
+      const perType = await Promise.all(
+        (ACTIVITY_CATEGORIES[category] as readonly string[]).map((type) =>
+          ctx.db
+            .query("analytics_events")
+            .withIndex("by_type_and_timestamp", (q) => q.eq("type", type).gte("timestamp", since))
+            .order("desc")
+            .take(limit + 1)
+        )
+      );
+      events = perType.flat().sort((a, b) => b.timestamp - a.timestamp);
+    }
+
+    const hasMore = events.length > limit;
+    const page = events.slice(0, limit);
+
+    const userCache = new Map<Id<"users">, Doc<"users"> | null>();
+    const getUser = async (id: Id<"users">) => {
+      if (!userCache.has(id)) userCache.set(id, await ctx.db.get(id));
+      return userCache.get(id) ?? null;
+    };
+
+    const items = await Promise.all(
+      page.map(async (event) => {
+        const user = event.userId ? await getUser(event.userId) : null;
+        return {
+          _id: event._id,
+          type: event.type,
+          category: CATEGORY_BY_TYPE.get(event.type) ?? ("other" as ActivityCategory),
+          activity: activityLabel(event.type),
+          summary: describeEvent(event),
+          status: event.metadata?.status ?? null,
+          userId: event.userId ?? null,
+          userName: event.userId ? displayName(user, "Deleted user") : "System",
+          userRole: user?.role ?? (event.userId ? "unknown" : "system"),
+          userEmail: user?.email ?? null,
+          timestamp: event.timestamp,
+        };
+      })
+    );
+
+    return { items, hasMore, limit };
+  },
+});
+
+const SECURITY_SUMMARY = [
+  { key: "signIns", label: "Sign-ins", types: ["user_login"] },
+  { key: "failedSignIns", label: "Failed sign-ins", types: ["failed_authentication"] },
+  { key: "roleChanges", label: "Role & permission changes", types: ["role_changed", "permission_updated"] },
+  { key: "adminChanges", label: "Admin actions", types: ["admin_settings_updated", "admin_announcement_sent"] },
+] as const;
+
+/**
+ * Security-relevant counts for the activity page header. `tracked: false` means the app
+ * has never recorded that kind of event, so the UI says "Not recorded" instead of 0.
  */
 export const getSecurityEvents = query({
-  args: {},
-  returns: v.array(v.object({
-    id: v.string(),
-    type: v.string(),
-    severity: v.string(),
-    timestamp: v.number(),
-    details: v.string(),
-    userId: v.string(),
-  })),
-  handler: async (ctx) => {
+  args: { sinceMs: v.optional(v.number()) },
+  handler: async (ctx, args) => {
     await ensureUserRole(ctx, ["admin"]);
+    const since = args.sinceMs ?? Date.now() - DAY;
 
-    // Get real activity logs as security events
-    const activityLogs = await ctx.db
-      .query("analytics_events")
-      .withIndex("by_timestamp")
-      .order("desc")
-      .take(50);
-
-    // Filter for security-relevant events
-    const securityEvents = activityLogs
-      .filter(event =>
-        event.type === "user_login" ||
-        event.type === "user_logout" ||
-        event.type === "role_changed" ||
-        event.type === "permission_updated" ||
-        event.type === "failed_authentication"
-      )
-      .slice(0, 20);
-
-    // Transform to security event format
-    return Promise.all(securityEvents.map(async (event) => {
-      let userName = "System";
-      if (event.userId) {
-        const user = await ctx.db.get(event.userId);
-        if (user) {
-          userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Unknown';
-        }
-      }
-
-      return {
-        id: event._id.toString(),
-        type: event.type,
-        severity: event.type.includes("failed") ? "high" : "low",
-        timestamp: event.timestamp,
-        details: `${userName} - ${event.type.replace(/_/g, ' ')}`,
-        userId: event.userId?.toString() || "system",
-      };
-    }));
+    return Promise.all(
+      SECURITY_SUMMARY.map(async (group) => {
+        const [inWindow, ever] = await Promise.all([
+          Promise.all(
+            (group.types as readonly string[]).map((type) =>
+              ctx.db
+                .query("analytics_events")
+                .withIndex("by_type_and_timestamp", (q) => q.eq("type", type).gte("timestamp", since))
+                .take(QUEUE_CAP + 1)
+            )
+          ),
+          Promise.all(
+            (group.types as readonly string[]).map((type) =>
+              ctx.db
+                .query("analytics_events")
+                .withIndex("by_type", (q) => q.eq("type", type))
+                .first()
+            )
+          ),
+        ]);
+        const total = inWindow.reduce((sum, rows) => sum + Math.min(rows.length, QUEUE_CAP), 0);
+        return {
+          key: group.key,
+          label: group.label,
+          count: total,
+          capped: inWindow.some((rows) => rows.length > QUEUE_CAP),
+          tracked: ever.some((row) => row !== null),
+        };
+      })
+    );
   },
 });
 
-/**
- * Get system announcements
- */
+// ==== ANNOUNCEMENTS ====
+
+const ANNOUNCEMENT_ROLES = ["patient", "physiotherapist", "clinic_owner", "clinic_staff", "doctor", "partner", "admin"] as const;
+const ANNOUNCEMENT_BATCH_SIZE = 200;
+const MAX_ANNOUNCEMENT_TITLE = 120;
+const MAX_ANNOUNCEMENT_MESSAGE = 1000;
+
+/** Announcements sent from the admin console, newest first. */
 export const getAnnouncements = query({
-  args: {},
-  returns: v.array(v.object({
-    id: v.string(),
-    title: v.string(),
-    message: v.string(),
-    severity: v.string(),
-    timestamp: v.number(),
-    author: v.string(),
-  })),
-  handler: async (ctx) => {
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
     await ensureUserRole(ctx, ["admin"]);
-
-    // Get and transform notifications as announcements (no index assumptions)
-    const notifications = await ctx.db.query("notifications").collect();
-    const systemNotifications = notifications
-      .filter((n) => n.priority === "high")
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-      .slice(0, 10);
-
-    return systemNotifications.map((notification) => ({
-      id: notification._id.toString(),
-      title: (notification.payload && notification.payload.title) || "System Notification",
-      message: (notification.payload && notification.payload.body) || "",
-      severity: typeof notification.priority === "string" ? notification.priority : "info",
-      timestamp: notification.createdAt || Date.now(),
-      author: "System Admin",
-    }));
+    const limit = Math.min(Math.max(1, Math.floor(args.limit ?? 20) || 20), 100);
+    const rows = await ctx.db
+      .query("platformAnnouncements")
+      .withIndex("by_created_at")
+      .order("desc")
+      .take(limit + 1);
+    return { items: rows.slice(0, limit), hasMore: rows.length > limit };
   },
 });
 
 /**
- * Get user approval requests
- */
-export const getUserApprovalRequests = query({
-  args: {},
-  returns: v.array(v.object({
-    userId: v.id("users"),
-    email: v.optional(v.string()),
-    name: v.string(),
-    role: v.optional(v.union(
-      v.literal("physiotherapist"),
-      v.literal("clinic_owner"),
-      v.literal("patient"),
-      v.literal("family_member"),
-      v.literal("doctor"),
-      v.literal("admin"),
-      v.literal("partner"),
-      v.literal("clinic_staff")
-    )),
-    submittedAt: v.number(),
-    profile: v.optional(v.any()),
-  })),
-  handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
-
-    const users = await ctx.db
-      .query("users")
-      .filter(q => q.eq(q.field("onboarded"), false))
-      .collect();
-
-    // Map users to approval request format
-    return Promise.all(users.map(async (user) => {
-      // Get associated profile based on role
-      let profile = null;
-      if (user.role === "physiotherapist" && user.physiotherapistProfileId) {
-        profile = await ctx.db.get(user.physiotherapistProfileId);
-      } else if (user.role === "patient" && user.patientProfileId) {
-        profile = await ctx.db.get(user.patientProfileId);
-      }
-
-      return {
-        userId: user._id,
-        email: user.email,
-        name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-        role: user.role,
-        submittedAt: user._creationTime,
-        profile,
-      };
-    }));
-  },
-});
-
-// ==== APPROVAL ACTIONS ====
-
-/**
- * Approve a user account
- */
-export const approveUser = mutation({
-  args: {
-    userId: v.id("users"),
-    comments: v.optional(v.string()),
-  },
-  handler: async (ctx, { userId, comments }) => {
-    await ensureUserRole(ctx, ["admin"]);
-
-    const user = await ctx.db.get(userId);
-    if (!user) throw new Error("User not found");
-
-    // Update user status
-    await ctx.db.patch(userId, {
-      onboarded: true,
-    });
-
-    // Create approval notification
-    await ctx.db.insert("notifications", {
-      userId,
-      type: "account_approved",
-      priority: "high",
-      status: "pending",
-      payload: {
-        title: "Account Approved",
-        body: "Your account has been approved by an administrator.",
-        data: {
-          entityId: userId,
-          entityType: "user",
-          actionUrl: "/dashboard"
-        }
-      },
-      createdAt: Date.now(),
-    });
-
-    return { success: true };
-  },
-});
-
-/**
- * Decline a user account
- */
-export const declineUser = mutation({
-  args: {
-    userId: v.id("users"),
-    reason: v.string(),
-  },
-  handler: async (ctx, { userId, reason }) => {
-    await ensureUserRole(ctx, ["admin"]);
-
-    const user = await ctx.db.get(userId);
-    if (!user) throw new Error("User not found");
-
-    // Create decline notification
-    await ctx.db.insert("notifications", {
-      userId,
-      type: "account_declined",
-      priority: "high",
-      status: "pending",
-      payload: {
-        title: "Account Declined",
-        body: `Your account application was declined. Reason: ${reason}`,
-        data: {
-          entityId: userId,
-          entityType: "user",
-          actionUrl: "/",
-          metadata: { reason }
-        }
-      },
-      createdAt: Date.now(),
-    });
-
-    // In a real system, you might want to:
-    // 1. Mark the user as declined in the database
-    // 2. Prevent future login attempts
-    // 3. Schedule account for deletion after a grace period
-    // 4. Log the decline action for audit purposes
-
-    return { success: true };
-  },
-});
-
-/**
- * Broadcast system-wide announcement
+ * Record an announcement and start delivering it. Delivery runs in background batches of
+ * 200 users per role (deliverAnnouncementBatch), so it never hits mutation limits. Users get
+ * an in-app notification; no email or push is sent.
  */
 export const broadcastAnnouncement = mutation({
   args: {
     title: v.string(),
     message: v.string(),
-    targetRoles: v.optional(v.array(v.string())),
+    targetRoles: v.array(v.string()),
     priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
   },
-  returns: v.object({ announcementId: v.string(), recipientCount: v.number() }),
-  handler: async (ctx, args) => {
-    await ensureUserRole(ctx, ["admin"]);
+  handler: async (ctx, args): Promise<{ announcementId: Id<"platformAnnouncements"> }> => {
+    const admin = await ensureUserRole(ctx, ["admin"]);
 
-    // Get target users
-    let targetUsers = await ctx.db.query("users").collect();
-
-    if (args.targetRoles && args.targetRoles.length > 0) {
-      targetUsers = targetUsers.filter(user =>
-        args.targetRoles!.includes(user.role || 'unassigned')
-      );
+    const title = args.title.trim();
+    const message = args.message.trim();
+    if (!title || !message) throw new ConvexError("Add a title and a message.");
+    if (title.length > MAX_ANNOUNCEMENT_TITLE) throw new ConvexError(`Keep the title under ${MAX_ANNOUNCEMENT_TITLE} characters.`);
+    if (message.length > MAX_ANNOUNCEMENT_MESSAGE) {
+      throw new ConvexError(`Keep the message under ${MAX_ANNOUNCEMENT_MESSAGE} characters.`);
     }
+    const targetRoles = [...new Set(args.targetRoles)];
+    if (targetRoles.length === 0) throw new ConvexError("Choose at least one audience.");
+    const unknown = targetRoles.filter((r) => !(ANNOUNCEMENT_ROLES as readonly string[]).includes(r));
+    if (unknown.length) throw new ConvexError(`Unknown audience: ${unknown.join(", ")}`);
 
-    // Create notifications for all target users
-    const announcementId = `announcement_${Date.now()}`;
-
-    for (const user of targetUsers) {
-      await ctx.db.insert("notifications", {
-        userId: user._id,
-        type: "appointment_scheduled", // Using existing type, would add "announcement" type
-        priority: args.priority || "medium",
-        status: "pending",
-        payload: {
-          title: args.title,
-          body: args.message,
-          data: {
-            entityType: "announcement",
-            entityId: announcementId,
-          },
-        },
-        createdAt: Date.now(),
-      });
-    }
-
-    return {
-      announcementId,
-      recipientCount: targetUsers.length,
-    };
-  },
-});
-
-/**
- * Export platform data for analytics
- */
-export const exportPlatformData = internalAction({
-  args: {
-    dataType: v.union(
-      v.literal("users"),
-      v.literal("appointments"),
-      v.literal("revenue"),
-      v.literal("analytics")
-    ),
-    format: v.optional(v.union(v.literal("csv"), v.literal("json"))),
-    dateRange: v.optional(v.object({
-      startDate: v.number(),
-      endDate: v.number(),
-    })),
-  },
-  returns: v.object({
-    exportId: v.string(),
-    downloadUrl: v.optional(v.string()),
-    status: v.string(),
-  }),
-  handler: async (ctx, args) => {
-    // This would generate and store export files
-    // Mock implementation
-    const exportId = `export_${args.dataType}_${Date.now()}`;
-
-    return {
-      exportId,
-      downloadUrl: `/api/exports/${exportId}`, // Mock URL
-      status: "processing",
-    };
-  },
-});
-
-/**
- * Get system metrics for admin dashboard
- */
-export const getSystemMetrics = query({
-  args: {},
-  handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
-
-    // Aggregate metrics from available collections
-    const [users, appointments, notifications, clinics] = await Promise.all([
-      ctx.db.query("users").collect(),
-      ctx.db.query("appointments").collect(),
-      ctx.db.query("notifications").collect(),
-      ctx.db.query("clinics").collect(),
-    ]);
-
-    const totalDocuments = users.length + appointments.length + notifications.length + clinics.length;
-    const storageUsed = parseFloat((totalDocuments * 0.05).toFixed(1)); // ~50KB per doc estimate
-
-    const queueSize = notifications.filter(n => n.status === "pending").length;
-    const delivered = notifications.filter(n => !!n.deliveredAt).length;
-    const failed = notifications.filter(n => n.status === "failed").length;
-
-    const deliveryRate = notifications.length ? (delivered / notifications.length) * 100 : 100;
-    const failureRate = notifications.length ? (failed / notifications.length) * 100 : 0;
-
-    const requestsPerMinute = Math.max(0, Math.floor(totalDocuments / 12));
-    const averageResponseTime = 245;
-
-    return {
-      // Top-level fields (used by AdvancedAnalyticsDashboard)
-      uptime: 99.8,
-      memoryUsage: 65.2,
-      cpuUsage: 42.1,
-      diskUsage: storageUsed,
-      networkLatency: 45,
-      activeConnections: Math.max(100, queueSize + 100),
-      errorRate: parseFloat(failureRate.toFixed(2)),
-      requestsPerSecond: parseFloat((requestsPerMinute / 60).toFixed(1)),
-
-      // Nested fields (used by SystemMonitoring)
-      database: {
-        totalDocuments,
-        queryPerformance: 98.0,
-        indexEfficiency: 96.0,
-        storageUsed,
-      },
-      api: {
-        averageResponseTime,
-        requestsPerMinute,
-        errorRate: parseFloat(failureRate.toFixed(2)),
-      },
-      notifications: {
-        queueSize,
-        deliveryRate: parseFloat(deliveryRate.toFixed(1)),
-        failureRate: parseFloat(failureRate.toFixed(2)),
-      },
-    };
-  },
-});
-
-/**
- * Get user activity logs for admin
- */
-export const getUserActivityLogs = query({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, { limit = 50 }) => {
-    await ensureUserRole(ctx, ["admin"]);
-
-    // Get recent analytics events as activity logs
-    const events = await ctx.db
-      .query("analytics_events")
-      .withIndex("by_timestamp")
-      .order("desc")
-      .take(limit);
-
-    // Transform events into activity log format with user info
-    const logsWithUsers = await Promise.all(
-      events.map(async (event) => {
-        let userName = "System";
-        let userRole = "system";
-
-        if (event.userId) {
-          const user = await ctx.db.get(event.userId);
-          if (user) {
-            userName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || 'Unknown User';
-            userRole = user.role || 'unknown';
-          }
-        }
-
-        return {
-          _id: event._id,
-          activity: event.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-          userName,
-          userRole,
-          timestamp: event.timestamp,
-          details: event.metadata.details || {},
-        };
-      })
-    );
-
-    return logsWithUsers;
-  },
-});
-
-/**
- * Get platform revenue analytics
- */
-export const getPlatformRevenue = query({
-  args: {},
-  handler: async (ctx) => {
-    await ensureUserRole(ctx, ["admin"]);
-
-    // Calculate real revenue from payments table
-    const payments = await ctx.db.query("payments").collect();
     const now = Date.now();
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
-    const lastMonthStart = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
-
-    const completedPayments = payments.filter(p => p.status === "completed");
-    const totalRevenue = completedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-    const monthlyRevenue = completedPayments
-      .filter(p => p.createdAt >= monthStart)
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-    const lastMonthRevenue = completedPayments
-      .filter(p => p.createdAt >= lastMonthStart && p.createdAt < monthStart)
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-
-    const growthRate = lastMonthRevenue > 0 ? ((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100 : 0;
-
-    const allUsers = await ctx.db.query("users").collect();
-    const activeUsers = allUsers.filter(u => u.onboarded).length;
-    const averageRevenuePerUser = activeUsers > 0 ? totalRevenue / activeUsers : 0;
-
-    // Group by payment method
-    const breakdown: Record<string, number> = {};
-    completedPayments.forEach(p => {
-      const method = p.paymentMethod || "other";
-      breakdown[method] = (breakdown[method] || 0) + (p.amount || 0);
+    const priority = args.priority ?? "medium";
+    const createdByName = displayName(admin, "Admin");
+    const announcementId = await ctx.db.insert("platformAnnouncements", {
+      title,
+      message,
+      priority,
+      targetRoles,
+      status: "sending",
+      recipientCount: 0,
+      createdBy: admin._id,
+      createdByName,
+      createdAt: now,
     });
 
-    return {
-      totalRevenue,
-      monthlyRevenue,
-      lastMonthRevenue,
-      growthRate: parseFloat(growthRate.toFixed(2)),
-      averageRevenuePerUser: parseFloat(averageRevenuePerUser.toFixed(2)),
-      breakdown,
-    };
+    await ctx.db.insert("analytics_events", {
+      type: "admin_announcement_sent",
+      userId: admin._id,
+      timestamp: now,
+      metadata: {
+        status: "success",
+        details: { announcementId, title, targetRoles, priority },
+      },
+    });
+
+    await ctx.scheduler.runAfter(0, internal.admin.deliverAnnouncementBatch, {
+      announcementId,
+      roleIndex: 0,
+      cursor: null,
+    });
+
+    return { announcementId };
   },
 });
 
+/** One delivery batch: notify up to 200 users of one role, then schedule the next batch. */
+export const deliverAnnouncementBatch = internalMutation({
+  args: {
+    announcementId: v.id("platformAnnouncements"),
+    roleIndex: v.number(),
+    cursor: v.union(v.string(), v.null()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    const announcement = await ctx.db.get(args.announcementId);
+    if (!announcement || announcement.status !== "sending") return null;
+
+    const role = announcement.targetRoles[args.roleIndex] as UserRoleValue | undefined;
+    if (role === undefined) {
+      await ctx.db.patch(args.announcementId, { status: "sent", completedAt: Date.now() });
+      return null;
+    }
+
+    const result = await ctx.db
+      .query("users")
+      .withIndex("by_role", (q) => q.eq("role", role))
+      .paginate({ numItems: ANNOUNCEMENT_BATCH_SIZE, cursor: args.cursor });
+
+    const now = Date.now();
+    let delivered = 0;
+    for (const user of result.page) {
+      if (user.status === "suspended" || user.status === "terminated") continue;
+      await ctx.db.insert("notifications", {
+        userId: user._id,
+        type: "announcement",
+        priority: announcement.priority,
+        status: "pending",
+        payload: {
+          title: announcement.title,
+          body: announcement.message,
+          data: { entityType: "announcement", entityId: args.announcementId },
+        },
+        createdAt: now,
+      });
+      delivered++;
+    }
+
+    await ctx.db.patch(args.announcementId, { recipientCount: announcement.recipientCount + delivered });
+
+    await ctx.scheduler.runAfter(
+      0,
+      internal.admin.deliverAnnouncementBatch,
+      result.isDone
+        ? { announcementId: args.announcementId, roleIndex: args.roleIndex + 1, cursor: null }
+        : { announcementId: args.announcementId, roleIndex: args.roleIndex, cursor: result.continueCursor }
+    );
+    return null;
+  },
+});
+
+// ==== TRANSACTIONS ====
+
+const invoiceStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("sent"),
+  v.literal("paid"),
+  v.literal("overdue"),
+  v.literal("void"),
+  v.literal("partial_payment"),
+  v.literal("failed")
+);
+
 /**
- * Get all marketplace transactions/invoices for admin dashboard
- * Shows patient name, email, phone, physio name, amounts, payment status
+ * Invoices (marketplace and clinic), newest first, one page at a time, with patient,
+ * physiotherapist and linked-booking details. Use with usePaginatedQuery.
  */
 export const getMarketplaceTransactions = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    paginationOpts: paginationOptsValidator,
+    status: v.optional(invoiceStatusValidator),
+  },
+  handler: async (ctx, args) => {
     await ensureUserRole(ctx, ["admin"]);
 
-    const invoices = await ctx.db.query("invoices").collect();
+    let invoicesQuery = ctx.db.query("invoices").order("desc");
+    const status = args.status;
+    if (status) invoicesQuery = invoicesQuery.filter((q) => q.eq(q.field("status"), status));
+    const result = await invoicesQuery.paginate(args.paginationOpts);
 
-    // Sort by issue date descending (newest first)
-    invoices.sort((a, b) => (b.issueDate || 0) - (a.issueDate || 0));
+    const profileCache = new Map<Id<"users">, Doc<"physiotherapistProfiles"> | null>();
 
-    // Enrich with user details
-    const enriched = await Promise.all(
-      invoices.map(async (invoice) => {
-        const patient = await ctx.db.get(invoice.patientId);
-        const physio = invoice.physiotherapistId
-          ? await ctx.db.get(invoice.physiotherapistId)
-          : null;
+    const page = await Promise.all(
+      result.page.map(async (invoice) => {
+        const [patient, physio, linkedBooking] = await Promise.all([
+          ctx.db.get(invoice.patientId),
+          invoice.physiotherapistId ? ctx.db.get(invoice.physiotherapistId) : Promise.resolve(null),
+          invoice.paymentReference
+            ? ctx.db
+                .query("marketplaceBookings")
+                .withIndex("by_payment_reference", (q) => q.eq("paymentReference", invoice.paymentReference!))
+                .first()
+            : Promise.resolve(null),
+        ]);
 
-        // Find linked booking to extract guest fields + physio location
-        let isGuest = false;
-        let guestPhone = "";
-        let physioLocation = "";
-        let physioOffersOnline = false;
-        let physioOffersInPerson = false;
-
-        if (invoice.paymentReference) {
-          const linkedBooking = await ctx.db
-            .query("marketplaceBookings")
-            .withIndex("by_payment_reference", (q) =>
-              q.eq("paymentReference", invoice.paymentReference!)
-            )
-            .first();
-
-          if (linkedBooking) {
-            isGuest = Boolean(linkedBooking.isGuestBooking);
-            guestPhone = linkedBooking.guestPhone || "";
-          }
-        }
-
-        // Physio location
+        let physioProfile: Doc<"physiotherapistProfiles"> | null = null;
         if (physio) {
-          const physioProfile = await ctx.db
-            .query("physiotherapistProfiles")
-            .withIndex("by_user_id", (q) => q.eq("userId", physio._id))
-            .first();
-          if (physioProfile) {
-            physioLocation = physioProfile.location || "";
-            physioOffersOnline = physioProfile.offersOnlineSessions ?? false;
-            physioOffersInPerson = physioProfile.offersInPersonSessions ?? false;
+          if (!profileCache.has(physio._id)) {
+            profileCache.set(
+              physio._id,
+              await ctx.db
+                .query("physiotherapistProfiles")
+                .withIndex("by_user_id", (q) => q.eq("userId", physio._id))
+                .first()
+            );
           }
+          physioProfile = profileCache.get(physio._id) ?? null;
         }
-
-        // Patient name/email — for guests, the user record now holds their real info
-        const patientName = patient
-          ? `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || patient.email || "Guest"
-          : "Unknown";
-        const patientEmail = patient?.email || "";
-        const patientPhone = patient?.phoneNumber || guestPhone || "";
 
         return {
           _id: invoice._id,
           invoiceNumber: invoice.invoiceNumber,
-          isGuest,
-          // Patient info
-          patientName,
-          patientEmail,
-          patientPhone,
-          // Physio info
-          physiotherapistName: physio
-            ? `${physio.firstName || ""} ${physio.lastName || ""}`.trim()
-            : "Unknown",
+          isMarketplace: Boolean(linkedBooking),
+          isGuest: Boolean(linkedBooking?.isGuestBooking),
+          patientName: patient ? displayName(patient, "Guest") : "Unknown",
+          patientEmail: patient?.email || "",
+          patientPhone: patient?.phoneNumber || linkedBooking?.guestPhone || "",
+          physiotherapistName: physio ? displayName(physio, "Unknown") : "Unknown",
           physiotherapistEmail: physio?.email || "",
-          physioLocation,
-          physioOffersOnline,
-          physioOffersInPerson,
-          // Amounts
+          physioLocation: physioProfile?.location || "",
+          physioOffersOnline: physioProfile?.offersOnlineSessions ?? false,
+          physioOffersInPerson: physioProfile?.offersInPersonSessions ?? false,
           subtotalAmount: invoice.subtotalAmount || 0,
           platformFeeAmount: invoice.platformFeeAmount || 0,
-          paystackFeeAmount: (invoice as any).paystackFeeAmount || 0,
+          paystackFeeAmount: invoice.paystackFeeAmount || 0,
           totalAmount: invoice.totalAmount || 0,
           physiotherapistShare: invoice.physiotherapistShare || 0,
           currency: invoice.currency || "NGN",
-          // Status
           status: invoice.status,
           paymentMethod: invoice.paymentMethod || "",
           paymentReference: invoice.paymentReference || "",
-          paymentDate: invoice.paymentDate,
+          paymentDate: invoice.paymentDate ?? null,
           issueDate: invoice.issueDate,
-          // Items & notes
-          items: invoice.items,
-          notes: invoice.notes || "",
         };
       })
     );
 
-    return enriched;
+    return { ...result, page };
   },
 });
 

@@ -110,24 +110,18 @@ export function DashboardHeader() {
           action: {
             label: 'Open',
             onClick: () => {
-              console.log('[TOAST CLICK] Toast notification payload:', latest.payload)
               let url = latest.payload?.data?.actionUrl || latest.payload?.link
-              console.log('[TOAST CLICK] Extracted URL:', url)
 
               // Fix old clinic-owner routes to new clinic routes
               if (url && url.includes('/dashboard/clinic-owner')) {
                 url = url.replace('/dashboard/clinic-owner', '/dashboard/clinic/staff')
-                console.log('[TOAST CLICK] Replaced clinic-owner route:', url)
               }
               // Fallback for legacy notifications without URLs
               if (!url) {
                 url = '/dashboard/clinic/staff'
-                console.log('[TOAST CLICK] Using fallback URL:', url)
               }
 
-              console.log('[TOAST CLICK] Final URL:', url)
               if (url) {
-                console.log('[TOAST CLICK] Navigating to:', url)
                 router.push(url)
               } else {
                 console.error('[TOAST CLICK] No URL to navigate to!')
@@ -275,24 +269,18 @@ export function DashboardHeader() {
                             console.error('Failed to mark notification as read', e)
                           }
 
-                          console.log('[NOTIFICATION CLICK] Notification payload:', notification.payload)
                           let url = notification.payload?.data?.actionUrl || notification.payload?.link
-                          console.log('[NOTIFICATION CLICK] Extracted URL:', url)
 
                           // Fix old clinic-owner routes to new clinic routes
                           if (url && url.includes('/dashboard/clinic-owner')) {
                             url = url.replace('/dashboard/clinic-owner', '/dashboard/clinic/staff')
-                            console.log('[NOTIFICATION CLICK] Replaced clinic-owner route:', url)
                           }
                           // Fallback for legacy notifications without URLs
                           if (!url) {
                             url = '/dashboard/clinic/staff'
-                            console.log('[NOTIFICATION CLICK] Using fallback URL:', url)
                           }
 
-                          console.log('[NOTIFICATION CLICK] Final URL:', url)
                           if (url) {
-                            console.log('[NOTIFICATION CLICK] Navigating to:', url)
                             router.push(url)
                           } else {
                             console.error('[NOTIFICATION CLICK] No URL to navigate to!')

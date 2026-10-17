@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { format } from 'date-fns';
+import { escapeHtml, isServerOrAdmin } from '../_auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,9 +14,21 @@ interface MaintenanceAlertRequest {
 }
 
 export async function POST(request: NextRequest) {
+  // Only our own server (x-rehabify-server-secret) or a signed-in admin may send this.
+  if (!(await isServerOrAdmin(request))) {
+    return NextResponse.json({ success: false, error: 'Not authorised' }, { status: 401 });
+  }
+
   try {
     const body: MaintenanceAlertRequest = await request.json();
-    const { resourceName, maintenanceType, scheduledDate, description } = body;
+    const { maintenanceType, scheduledDate } = body;
+    if (!body.resourceName || typeof scheduledDate !== 'number') {
+      return NextResponse.json({ success: false, error: 'resourceName and scheduledDate are required' }, { status: 400 });
+    }
+    // Caller-supplied text goes into HTML, so escape it.
+    const resourceName = escapeHtml(body.resourceName);
+    const description = body.description ? escapeHtml(body.description) : undefined;
+    const subjectName = String(body.resourceName).replace(/\s+/g, ' ').slice(0, 120);
 
     // Get clinic details (you would fetch this from your database)
     // For now, using placeholder data
@@ -28,13 +41,13 @@ export async function POST(request: NextRequest) {
     const getSubject = () => {
       switch (maintenanceType) {
         case 'scheduled':
-          return `Upcoming Maintenance Alert - ${resourceName}`;
+          return `Upcoming Maintenance Alert - ${subjectName}`;
         case 'urgent':
-          return `🚨 URGENT: Maintenance Required - ${resourceName}`;
+          return `🚨 URGENT: Maintenance Required - ${subjectName}`;
         case 'overdue':
-          return `⚠️ OVERDUE: Maintenance Alert - ${resourceName}`;
+          return `⚠️ OVERDUE: Maintenance Alert - ${subjectName}`;
         default:
-          return `Maintenance Alert - ${resourceName}`;
+          return `Maintenance Alert - ${subjectName}`;
       }
     };
 

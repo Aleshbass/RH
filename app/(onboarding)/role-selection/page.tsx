@@ -20,6 +20,15 @@ function RoleSelectionContent() {
   const updateUserRole = useMutation(api.users.updateUserRole);
   const [loadingRole, setLoadingRole] = useState<OnboardingRole | null>(null);
   const currentUser = useQuery(api.users.getMyUser);
+  // Admins can pause new registrations per role (/dashboard/admin/system); the server enforces it too
+  const platform = useQuery(api.platformSettings.getPublicPlatformStatus);
+  const isPaused = (role: OnboardingRole) => {
+    if (!platform || currentUser?.role === role) return false;
+    if (role === 'patient') return !platform.allowPatientSignups;
+    if (role === 'physiotherapist') return !platform.allowPhysioSignups;
+    if (role === 'clinic_owner') return !platform.allowClinicSignups;
+    return false;
+  };
 
   // If user already completed onboarding, check their approval status
   useEffect(() => {
@@ -59,6 +68,10 @@ function RoleSelectionContent() {
   }, [currentUser, router]);
 
   const handleRoleSelect = async (role: OnboardingRole) => {
+    if (isPaused(role)) {
+      import('sonner').then(({ toast }) => toast.error('New registrations for this account type are paused right now.'));
+      return;
+    }
     try {
       setLoadingRole(role);
 
@@ -137,7 +150,7 @@ function RoleSelectionContent() {
               {/* Physiotherapist Card */}
               <button
                 onClick={() => handleRoleSelect('physiotherapist')}
-                disabled={loadingRole !== null}
+                disabled={loadingRole !== null || isPaused('physiotherapist')}
                 className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'physiotherapist' ? 'border-teal-500 ring-2 ring-teal-200 opacity-80' : 'border-teal-100 hover:border-teal-500 hover:shadow-md'
                   }`}
               >
@@ -148,12 +161,13 @@ function RoleSelectionContent() {
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 mb-1">Physiotherapist</h3>
                 <p className="text-sm text-gray-500">I treat patients and want to manage my practice.</p>
+                {isPaused('physiotherapist') && <p className="mt-2 text-xs font-medium text-amber-700">New registrations are paused</p>}
               </button>
 
               {/* Clinic Owner Card */}
               <button
                 onClick={() => handleRoleSelect('clinic_owner')}
-                disabled={loadingRole !== null}
+                disabled={loadingRole !== null || isPaused('clinic_owner')}
                 className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'clinic_owner' ? 'border-emerald-500 ring-2 ring-emerald-200 opacity-80' : 'border-emerald-100 hover:border-emerald-500 hover:shadow-md'
                   }`}
               >
@@ -164,12 +178,13 @@ function RoleSelectionContent() {
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 mb-1">Clinic Owner</h3>
                 <p className="text-sm text-gray-500">I run a facility and manage multiple staff.</p>
+                {isPaused('clinic_owner') && <p className="mt-2 text-xs font-medium text-amber-700">New registrations are paused</p>}
               </button>
 
               {/* Patient Card */}
               <button
                 onClick={() => handleRoleSelect('patient')}
-                disabled={loadingRole !== null}
+                disabled={loadingRole !== null || isPaused('patient')}
                 className={`p-6 bg-white border-2 rounded-2xl text-left transition-all duration-200 group relative overflow-hidden ${loadingRole === 'patient' ? 'border-blue-500 ring-2 ring-blue-200 opacity-80' : 'border-blue-100 hover:border-blue-500 hover:shadow-md'
                   }`}
               >
@@ -180,6 +195,7 @@ function RoleSelectionContent() {
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 mb-1">Patient</h3>
                 <p className="text-sm text-gray-500">I need care or have an invitation link.</p>
+                {isPaused('patient') && <p className="mt-2 text-xs font-medium text-amber-700">New registrations are paused</p>}
               </button>
             </>
           )}

@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { log } from '@/lib/monitoring/logger'
 import { ErrorTracker } from '@/lib/monitoring/sentry'
+import { isServerOrAdmin } from '../_auth'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
+  // Not called from anywhere in the app today; only our server or an admin may use it.
+  if (!(await isServerOrAdmin(request))) {
+    return NextResponse.json({ error: 'Not authorised' }, { status: 401 })
+  }
+
   let userId: string | undefined
-  
+
   try {
     const body = await request.json()
     const extractedData = body as { userId: string; accountName: string; bankName: string; accountNumber: string }

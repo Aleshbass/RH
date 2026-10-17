@@ -1,71 +1,166 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useState, type ComponentType, type ReactNode } from 'react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { useQuery, useMutation } from 'convex/react'
-import { api } from '@/convex/_generated/api'
-import { Id } from '@/convex/_generated/dataModel'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Separator } from '@/components/ui/separator'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  ArrowLeft,
-  Mail,
-  Phone,
-  MapPin,
-  Calendar,
-  Shield,
-  Stethoscope,
-  Building2,
-  User,
-  Star,
-  Users,
-  Clock,
-  Globe,
-  Award,
-  BookOpen,
-  DollarSign,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Briefcase,
-  Languages,
-  BadgeCheck,
-  Eye,
-  ExternalLink,
-  Copy,
-  Check,
-  Video,
-  Activity,
-  FileText,
-  UserCog,
-  Crown,
-  Sparkles,
-  ChevronRight,
-} from 'lucide-react'
+import { useMutation, useQuery } from 'convex/react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
+import {
+  Activity,
+  AlertCircle,
+  ArrowLeft,
+  Award,
+  BadgeCheck,
+  BookOpen,
+  Building2,
+  Calendar,
+  Check,
+  CheckCircle2,
+  Clock,
+  Copy,
+  ExternalLink,
+  FileText,
+  Globe,
+  Languages,
+  Mail,
+  MapPin,
+  Phone,
+  Shield,
+  Sparkles,
+  Star,
+  Stethoscope,
+  Trash2,
+  User,
+  UserCog,
+  Users,
+  Video,
+  Wallet,
+  XCircle,
+} from 'lucide-react'
 
-type UserRole = 'patient' | 'physiotherapist' | 'clinic_owner' | 'admin' | 'family_member'
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  AdminPage,
+  ConfirmDialog,
+  EmptyState,
+  IconChip,
+  PageHeader,
+  Panel,
+  StatTile,
+  Stagger,
+  StaggerItem,
+  StatusBadge,
+  cardClass,
+  dangerButtonClass,
+  primaryButtonClass,
+  softButtonClass,
+  tabsListClass,
+} from '@/components/admin/ui'
+import {
+  RoleBadge,
+  RoleChangeDialog,
+  UserAvatar,
+  displayName,
+  roleMeta,
+} from '@/components/dashboard/admin/UserManagement'
+import { publicAppUrl } from '@/lib/public-app-url'
+import { playSound } from '@/lib/sounds'
+import { cn } from '@/lib/utils'
+
+/** Row shapes returned by api.admin.getAdminUserDetails. */
+type PatientLink = { _id: string; patientId: string; status: string; name: string; email?: string; imageUrl?: string }
+type RecentAppointment = { _id: string; startTime: number; serviceType: string; status: string; isOnline?: boolean; patientName: string }
+
+/** Marketplace rates and earnings are stored in kobo. */
+function formatKobo(kobo?: number | null) {
+  if (kobo === undefined || kobo === null) return '—'
+  return `₦${(kobo / 100).toLocaleString('en-NG')}`
+}
+
+function Field({
+  icon: Icon,
+  label,
+  children,
+  mono,
+}: {
+  icon?: ComponentType<{ className?: string }>
+  label: string
+  children: ReactNode
+  mono?: boolean
+}) {
+  return (
+    <div className="rounded-xl bg-rh-canvas p-3.5 dark:bg-white/[0.04]">
+      <p className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+        {Icon && <Icon className="h-3.5 w-3.5 text-rh-teal dark:text-rh-aqua" />}
+        {label}
+      </p>
+      <div className={cn('mt-1 text-sm font-semibold text-rh-night dark:text-white', mono && 'font-mono')}>{children}</div>
+    </div>
+  )
+}
+
+function CopyRow({
+  icon: Icon,
+  label,
+  value,
+  copied,
+  onCopy,
+  mono,
+}: {
+  icon: ComponentType<{ className?: string }>
+  label: string
+  value: string
+  copied: boolean
+  onCopy: () => void
+  mono?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-2 text-neutral-600 dark:text-neutral-300">
+        <Icon className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+        <span className={cn('truncate', mono && 'font-mono')} title={value}>
+          {value}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onCopy}
+        className="rounded-md p-1 text-neutral-400 transition-colors hover:bg-rh-canvas hover:text-rh-night dark:hover:bg-white/[0.06] dark:hover:text-white"
+        aria-label={`Copy ${label}`}
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  )
+}
+
+function InfoRow({ icon: Icon, label, children }: { icon: ComponentType<{ className?: string }>; label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 text-neutral-600 dark:text-neutral-300">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+      <span className="shrink-0 text-neutral-500 dark:text-neutral-400">{label}</span>
+      <span className="min-w-0 truncate font-medium text-rh-night dark:text-white">{children}</span>
+    </div>
+  )
+}
+
+function approvalTone(status?: string) {
+  if (status === 'approved') return 'green' as const
+  if (status === 'declined') return 'red' as const
+  return 'amber' as const
+}
+
+function appointmentTone(status: string) {
+  if (status === 'completed') return 'green' as const
+  if (status === 'scheduled' || status === 'confirmed') return 'teal' as const
+  if (status.startsWith('cancelled')) return 'red' as const
+  return 'neutral' as const
+}
 
 export default function AdminUserDetailPage() {
   const params = useParams()
@@ -73,235 +168,148 @@ export default function AdminUserDetailPage() {
   const userId = params?.userId as string
 
   const [copiedField, setCopiedField] = useState<string | null>(null)
-  const [showRoleDialog, setShowRoleDialog] = useState(false)
-  const [selectedRole, setSelectedRole] = useState<UserRole>('physiotherapist')
-  const [isUpdatingRole, setIsUpdatingRole] = useState(false)
+  const [roleOpen, setRoleOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
-  const details = useQuery(
-    api.admin.getAdminUserDetails,
-    userId ? { userId: userId as Id<'users'> } : 'skip'
-  )
+  const details = useQuery(api.admin.getAdminUserDetails, userId ? { userId: userId as Id<'users'> } : 'skip')
+  const me = useQuery(api.users.getMyUser)
+  const deleteUser = useMutation(api.users.adminDeleteUser)
 
-  const setUserRole = useMutation(api.users.setUserRole)
-
-  const copyToClipboard = (text: string, fieldName: string) => {
-    navigator.clipboard.writeText(text)
-    setCopiedField(fieldName)
-    toast.success(`${fieldName} copied to clipboard`)
-    setTimeout(() => setCopiedField(null), 2000)
-  }
-
-  const handleRoleChange = async () => {
-    if (!details?.user) return
-    setIsUpdatingRole(true)
+  const copyToClipboard = async (text: string, fieldName: string) => {
     try {
-      await setUserRole({ userId: details.user._id, role: selectedRole })
-      toast.success(`Role updated to ${selectedRole.replace('_', ' ')}`)
-      setShowRoleDialog(false)
+      await navigator.clipboard.writeText(text)
+      setCopiedField(fieldName)
+      toast.success(`${fieldName} copied`)
+      setTimeout(() => setCopiedField(null), 2000)
     } catch {
-      toast.error('Failed to update user role')
-    } finally {
-      setIsUpdatingRole(false)
+      playSound('error')
+      toast.error('Could not copy to the clipboard')
     }
   }
 
-  if (details === undefined) {
-    return <HealthcareDetailSkeleton />
-  }
+  if (details === undefined) return <DetailSkeleton />
 
   if (details === null) {
     return (
-      <div className="flex items-center justify-center min-h-[500px]">
-        <div className="text-center max-w-md p-8 bg-card border rounded-2xl shadow-sm">
-          <div className="w-14 h-14 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-4">
-            <User className="h-7 w-7" />
-          </div>
-          <h2 className="text-2xl font-bold tracking-tight mb-2">Practitioner Not Found</h2>
-          <p className="text-muted-foreground text-sm mb-6">
-            The user or physiotherapist profile does not exist or has been removed from the platform.
-          </p>
-          <Button onClick={() => router.push('/dashboard/admin/users?role=physiotherapist')} className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Physiotherapists
-          </Button>
-        </div>
-      </div>
+      <AdminPage className="max-w-xl">
+        <Panel>
+          <EmptyState
+            icon={<User />}
+            title="Account not found"
+            description="This user does not exist or has been removed from the platform."
+            action={
+              <Button asChild className={primaryButtonClass}>
+                <Link href="/dashboard/admin/users">
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back to users
+                </Link>
+              </Button>
+            }
+          />
+        </Panel>
+      </AdminPage>
     )
   }
 
-  const {
-    user,
-    physioProfile,
-    patientProfile,
-    clinic,
-    stats,
-    recentAppointments,
-    activePatientsList,
-    approvalStatus,
-  } = details
+  const { user, physioProfile, patientProfile, clinic, stats, recentAppointments, activePatientsList, approvalStatus } = details
 
   const isPhysio = user.role === 'physiotherapist'
-  const isDoctor = user.role === 'doctor'
-  const isClinician = isPhysio || isDoctor
+  const isMe = me?._id === user._id
+  const meta = roleMeta(user.role)
+  const listHref = user.role === 'physiotherapist' || user.role === 'patient' ? `/dashboard/admin/users?role=${user.role}` : '/dashboard/admin/users'
 
-  const bookingUrl = physioProfile?.bookingSlug
-    ? `/book/${physioProfile.bookingSlug}`
-    : `/book/${user._id}`
+  const bookingPath = physioProfile?.bookingSlug ? `/book/${physioProfile.bookingSlug}` : `/book/${user._id}`
+  const bookingUrl = `${publicAppUrl()}${bookingPath}`
+  const defaultTab = isPhysio ? 'credentials' : patientProfile ? 'patient-info' : 'account'
 
-  const formatNaira = (kobo?: number) => {
-    if (kobo === undefined || kobo === null) return '—'
-    return `₦${(kobo / 100).toLocaleString('en-NG')}`
+  const confirmDelete = async () => {
+    try {
+      await deleteUser({ userId: user._id })
+      playSound('reject')
+      toast.success(`${displayName(user)} was deleted`)
+      router.push(listHref)
+    } catch (error) {
+      toast.error('Could not delete this user', {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
+      throw error
+    }
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16">
-      {/* ── Top Header & Breadcrumbs ── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <button
-              onClick={() => router.push('/dashboard/admin/users?role=physiotherapist')}
-              className="hover:text-foreground transition-colors"
-            >
-              User Management
-            </button>
-            <ChevronRight className="h-3.5 w-3.5" />
-            <span className="font-medium text-emerald-600 dark:text-emerald-400">
-              {isPhysio ? 'Physiotherapist Profile' : 'User Details'}
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8 rounded-lg"
-              onClick={() => router.push('/dashboard/admin/users?role=physiotherapist')}
-            >
-              <ArrowLeft className="h-4 w-4" />
+    <AdminPage className="pb-12">
+      <PageHeader
+        eyebrow={
+          <Link href={listHref} className="inline-flex items-center gap-1 hover:underline">
+            <ArrowLeft className="h-3 w-3" />
+            {meta.plural}
+          </Link>
+        }
+        title={displayName(user)}
+        description={[user.email, `Joined ${format(new Date(user._creationTime), 'd MMM yyyy')}`].filter(Boolean).join(' · ')}
+        actions={
+          <>
+            {isPhysio && (
+              <Button asChild className={softButtonClass}>
+                <a href={bookingUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Booking page
+                </a>
+              </Button>
+            )}
+            <Button onClick={() => setRoleOpen(true)} className={primaryButtonClass}>
+              <UserCog className="mr-2 h-4 w-4" />
+              Change role
             </Button>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-              {isPhysio ? 'PT ' : ''}{user.firstName} {user.lastName}
-            </h1>
-          </div>
-        </div>
+            {!isMe && (
+              <Button onClick={() => setDeleteOpen(true)} className={dangerButtonClass} aria-label="Delete user">
+                <Trash2 className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Delete</span>
+              </Button>
+            )}
+          </>
+        }
+      />
 
-        {/* Top Action Pills */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {isPhysio && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-xs h-9 border-emerald-200 hover:bg-emerald-50 text-emerald-700 dark:text-emerald-300 dark:border-emerald-800"
-              onClick={() => window.open(bookingUrl, '_blank')}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Public Booking Page
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5 text-xs h-9"
-            onClick={() => {
-              setSelectedRole(user.role || 'physiotherapist')
-              setShowRoleDialog(true)
-            }}
-          >
-            <UserCog className="h-3.5 w-3.5" />
-            Edit Role
-          </Button>
-        </div>
-      </div>
-
-      {/* ── Main Layout: Profile By The Side ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* ════ LEFT COLUMN: PRACTITIONER PROFILE CARD (SIDEBAR) ════ */}
-        <div className="lg:col-span-4 xl:col-span-4 space-y-6 lg:sticky lg:top-6">
-          {/* Main Identity Card */}
-          <Card className="border-emerald-100 dark:border-emerald-900/40 shadow-sm overflow-hidden bg-gradient-to-b from-card via-card to-emerald-50/20 dark:to-emerald-950/10">
-            <div className="h-20 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 relative">
-              {/* Verification Tag on Header */}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+        {/* ── Left: identity ── */}
+        <div className="space-y-6 lg:sticky lg:top-6 lg:col-span-4">
+          <section className={cn(cardClass, 'overflow-hidden')}>
+            <div className="relative h-16 bg-gradient-to-r from-rh-teal to-rh-teal-deep dark:from-rh-aqua/30 dark:to-rh-ink-3">
               {physioProfile?.verificationBadge && physioProfile.verificationBadge.status !== 'none' && (
-                <div className="absolute top-3 right-3 bg-white/95 dark:bg-zinc-900/90 backdrop-blur-sm px-2 py-0.5 rounded-full text-xs font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1 shadow-sm">
-                  <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" />
-                  {physioProfile.verificationBadge.status === 'pro_verified' ? 'Pro Verified' : 'Verified'}
-                </div>
+                <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-0.5 text-[11px] font-semibold text-rh-teal shadow-sm dark:bg-rh-ink-2 dark:text-rh-aqua">
+                  <BadgeCheck className="h-3.5 w-3.5" />
+                  {physioProfile.verificationBadge.status === 'pro_verified' ? 'Pro verified' : 'Verified'}
+                </span>
               )}
             </div>
-
-            <CardContent className="pt-0 relative px-6 pb-6">
-              {/* Avatar with Status Ring */}
-              <div className="-mt-10 mb-4 flex justify-between items-end">
+            <div className="px-5 pb-5">
+              <div className="-mt-9 mb-3 flex items-end justify-between">
                 <div className="relative">
-                  <Avatar className="h-20 w-20 border-4 border-background shadow-md">
-                    <AvatarImage src={user.imageUrl} className="object-cover" />
-                    <AvatarFallback className="text-xl font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
-                      {user.firstName?.charAt(0) || user.email?.charAt(0) || 'P'}
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar user={user} className="h-[72px] w-[72px] border-4 border-white text-lg dark:border-rh-ink-2" />
                   <span
-                    className={`absolute bottom-0 right-0 h-4 w-4 rounded-full border-2 border-background ${
+                    className={cn(
+                      'absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border-2 border-white dark:border-rh-ink-2',
                       user.onboarded ? 'bg-emerald-500' : 'bg-amber-500'
-                    }`}
-                    title={user.onboarded ? 'Profile Active' : 'Onboarding Pending'}
+                    )}
+                    title={user.onboarded ? 'Onboarded' : 'Onboarding not finished'}
                   />
                 </div>
-
-                {/* Rating Badge */}
                 {isPhysio && (
-                  <div className="flex items-center gap-1 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-800 dark:text-amber-300">
-                    <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                    <span>
-                      {stats.reviewStats.averageRating > 0
-                        ? stats.reviewStats.averageRating.toFixed(1)
-                        : 'New'}
-                    </span>
-                    <span className="text-muted-foreground font-normal">
-                      ({stats.reviewStats.count})
-                    </span>
-                  </div>
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-rh-peach px-2 py-1 text-xs font-semibold text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
+                    <Star className="h-3.5 w-3.5 fill-current" />
+                    {stats.reviewStats.averageRating > 0 ? stats.reviewStats.averageRating.toFixed(1) : 'New'}
+                    <span className="font-normal opacity-70">({stats.reviewStats.count})</span>
+                  </span>
                 )}
               </div>
 
-              {/* Practitioner Titles */}
-              <div className="space-y-1 mb-4">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-bold text-foreground">
-                    {user.firstName} {user.lastName}
-                  </h2>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-                  <Stethoscope className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>
-                    {isPhysio
-                      ? 'Licensed Physical Therapist'
-                      : user.role
-                        ? user.role.replace('_', ' ').toUpperCase()
-                        : 'Patient'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Badges Row */}
-              <div className="flex flex-wrap gap-1.5 mb-5">
-                <Badge
-                  variant={user.onboarded ? 'default' : 'secondary'}
-                  className="text-[11px] h-5 bg-emerald-600 hover:bg-emerald-700"
-                >
-                  {user.onboarded ? 'Active Account' : 'Pending Onboarding'}
-                </Badge>
-
+              <h2 className="text-lg font-semibold tracking-tight text-rh-night dark:text-white">{displayName(user)}</h2>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <RoleBadge role={user.role} />
+                <StatusBadge tone={user.onboarded ? 'teal' : 'neutral'}>{user.onboarded ? 'Onboarded' : 'Onboarding'}</StatusBadge>
                 {approvalStatus && (
-                  <Badge
-                    variant="outline"
-                    className={`text-[11px] h-5 gap-1 ${
-                      approvalStatus.status === 'approved'
-                        ? 'border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400'
-                        : approvalStatus.status === 'declined'
-                          ? 'border-red-300 text-red-700 bg-red-50 dark:bg-red-950/40 dark:border-red-800 dark:text-red-400'
-                          : 'border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-400'
-                    }`}
-                  >
+                  <StatusBadge tone={approvalTone(approvalStatus.status)} className="gap-1 capitalize">
                     {approvalStatus.status === 'approved' ? (
                       <CheckCircle2 className="h-3 w-3" />
                     ) : approvalStatus.status === 'declined' ? (
@@ -310,941 +318,485 @@ export default function AdminUserDetailPage() {
                       <AlertCircle className="h-3 w-3" />
                     )}
                     {approvalStatus.status.replace('_', ' ')}
-                  </Badge>
+                  </StatusBadge>
                 )}
-
                 {physioProfile?.isAvailableOnMarketplace !== undefined && (
-                  <Badge
-                    variant="secondary"
-                    className={`text-[11px] h-5 ${
-                      physioProfile.isAvailableOnMarketplace
-                        ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300'
-                        : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-                    }`}
-                  >
-                    {physioProfile.isAvailableOnMarketplace ? 'Marketplace Live' : 'Marketplace Hidden'}
-                  </Badge>
+                  <StatusBadge tone={physioProfile.isAvailableOnMarketplace ? 'green' : 'neutral'}>
+                    {physioProfile.isAvailableOnMarketplace ? 'Marketplace live' : 'Marketplace hidden'}
+                  </StatusBadge>
                 )}
               </div>
 
-              <Separator className="my-4" />
+              <div className="my-4 h-px bg-black/[0.05] dark:bg-white/[0.06]" />
 
-              {/* Quick Contact & Practice Details */}
-              <div className="space-y-3 text-xs">
-                {/* Email */}
+              <div className="space-y-2.5 text-xs">
                 {user.email && (
-                  <div className="flex items-center justify-between group">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="truncate max-w-[190px]">{user.email}</span>
-                    </div>
-                    <button
-                      onClick={() => copyToClipboard(user.email!, 'Email')}
-                      className="text-muted-foreground hover:text-foreground transition-colors p-1"
-                      title="Copy Email"
-                    >
-                      {copiedField === 'Email' ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-600" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </div>
+                  <CopyRow icon={Mail} label="email" value={user.email} copied={copiedField === 'Email'} onCopy={() => copyToClipboard(user.email!, 'Email')} />
                 )}
-
-                {/* Phone */}
                 {user.phoneNumber && (
-                  <div className="flex items-center justify-between group">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>{user.phoneNumber}</span>
-                    </div>
-                    <button
-                      onClick={() => copyToClipboard(user.phoneNumber!, 'Phone')}
-                      className="text-muted-foreground hover:text-foreground transition-colors p-1"
-                      title="Copy Phone"
-                    >
-                      {copiedField === 'Phone' ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-600" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </div>
+                  <CopyRow
+                    icon={Phone}
+                    label="phone"
+                    value={user.phoneNumber}
+                    copied={copiedField === 'Phone'}
+                    onCopy={() => copyToClipboard(user.phoneNumber!, 'Phone')}
+                  />
                 )}
-
-                {/* Clinic */}
-                {clinic && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Building2 className="h-3.5 w-3.5 text-emerald-600" />
-                    <span>Affiliated Clinic:</span>
-                    <span className="font-semibold text-foreground truncate">{clinic.name}</span>
-                  </div>
-                )}
-
-                {/* Location */}
-                {physioProfile?.location && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <MapPin className="h-3.5 w-3.5 text-emerald-600" />
-                    <span>Practice Location:</span>
-                    <span className="font-semibold text-foreground">{physioProfile.location}</span>
-                  </div>
-                )}
-
-                {/* License Number */}
                 {physioProfile?.licenseNumber && (
-                  <div className="flex items-center justify-between group">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Award className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>License:</span>
-                      <span className="font-mono font-medium text-foreground">
-                        {physioProfile.licenseNumber}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => copyToClipboard(physioProfile.licenseNumber!, 'License Number')}
-                      className="text-muted-foreground hover:text-foreground transition-colors p-1"
-                      title="Copy License Number"
-                    >
-                      {copiedField === 'License Number' ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-600" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  </div>
+                  <CopyRow
+                    icon={Award}
+                    label="licence number"
+                    value={physioProfile.licenseNumber}
+                    mono
+                    copied={copiedField === 'Licence number'}
+                    onCopy={() => copyToClipboard(physioProfile.licenseNumber!, 'Licence number')}
+                  />
                 )}
-
-                {/* Joined Date */}
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Calendar className="h-3.5 w-3.5" />
-                  <span>Joined Platform:</span>
-                  <span className="font-medium text-foreground">
-                    {format(new Date(user._creationTime), 'MMM dd, yyyy')}
-                  </span>
-                </div>
-
-                {/* Last Login */}
+                {clinic && (
+                  <InfoRow icon={Building2} label="Clinic">
+                    {clinic.name}
+                  </InfoRow>
+                )}
+                {physioProfile?.location && (
+                  <InfoRow icon={MapPin} label="Location">
+                    {physioProfile.location}
+                  </InfoRow>
+                )}
+                <InfoRow icon={Calendar} label="Joined">
+                  {format(new Date(user._creationTime), 'd MMM yyyy')}
+                </InfoRow>
                 {user.lastLoginAt && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5" />
-                    <span>Last Login:</span>
-                    <span className="font-medium text-foreground">
-                      {format(new Date(user.lastLoginAt), 'MMM dd, yyyy HH:mm')}
-                    </span>
-                  </div>
+                  <InfoRow icon={Clock} label="Last login">
+                    {format(new Date(user.lastLoginAt), 'd MMM yyyy, HH:mm')}
+                  </InfoRow>
                 )}
               </div>
 
-              {/* Consultation Delivery Modes */}
               {isPhysio && (
-                <div className="mt-5 p-3 rounded-lg bg-muted/40 border space-y-2">
-                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                    Session Modes Supported
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md font-medium ${
-                        physioProfile?.offersOnlineSessions
-                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                          : 'bg-zinc-100 text-zinc-400 dark:bg-zinc-800'
-                      }`}
-                    >
+                <div className="mt-4 space-y-2 rounded-xl bg-rh-canvas p-3 dark:bg-white/[0.04]">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Session modes</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <StatusBadge tone={physioProfile?.offersOnlineSessions ? 'teal' : 'neutral'} className="gap-1">
                       <Video className="h-3 w-3" />
-                      Telehealth Video
-                    </div>
-                    <div
-                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md font-medium ${
-                        physioProfile?.offersInPersonSessions
-                          ? 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300'
-                          : 'bg-zinc-100 text-zinc-400 dark:bg-zinc-800'
-                      }`}
-                    >
+                      Video
+                    </StatusBadge>
+                    <StatusBadge tone={physioProfile?.offersInPersonSessions ? 'teal' : 'neutral'} className="gap-1">
                       <Building2 className="h-3 w-3" />
-                      In-Person
-                    </div>
+                      In person
+                    </StatusBadge>
                   </div>
                 </div>
               )}
 
-              {/* Side CTA Actions */}
-              <div className="mt-5 space-y-2">
-                {isPhysio && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shadow-sm"
-                    onClick={() => window.open(bookingUrl, '_blank')}
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    View Live Marketplace Page
-                  </Button>
-                )}
-                {user.email && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full gap-2 text-xs"
-                    onClick={() => (window.location.href = `mailto:${user.email}`)}
-                  >
-                    <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                    Send Direct Email
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+              {user.email && (
+                <Button asChild className={cn(softButtonClass, 'mt-4 w-full')} size="sm">
+                  <a href={`mailto:${user.email}`}>
+                    <Mail className="mr-2 h-3.5 w-3.5" />
+                    Email {user.firstName || 'user'}
+                  </a>
+                </Button>
+              )}
+            </div>
+          </section>
 
-          {/* Declined Notice if applicable */}
           {approvalStatus?.status === 'declined' && approvalStatus.declineReason && (
-            <Card className="border-red-200 bg-red-50/80 dark:bg-red-950/20 dark:border-red-900/60 shadow-sm">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-semibold uppercase tracking-wider text-red-700 dark:text-red-400 flex items-center gap-1.5">
-                  <XCircle className="h-4 w-4" />
-                  Application Declined Note
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-red-800 dark:text-red-300 space-y-1.5">
-                <p className="leading-relaxed">{approvalStatus.declineReason}</p>
-                {approvalStatus.reviewedAt && (
-                  <p className="text-[11px] text-red-600 dark:text-red-400/80 pt-1">
-                    Recorded on {format(new Date(approvalStatus.reviewedAt), 'MMM dd, yyyy HH:mm')}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <section className="rounded-2xl bg-rh-blush p-4 text-xs text-[#be123c] dark:bg-rose-400/10 dark:text-rose-300">
+              <p className="mb-1 flex items-center gap-1.5 font-semibold uppercase tracking-wider">
+                <XCircle className="h-4 w-4" />
+                Declined: reason given
+              </p>
+              <p className="whitespace-pre-wrap leading-relaxed">{approvalStatus.declineReason}</p>
+              {approvalStatus.reviewedAt && (
+                <p className="mt-2 opacity-80">Recorded {format(new Date(approvalStatus.reviewedAt), 'd MMM yyyy, HH:mm')}</p>
+              )}
+            </section>
           )}
 
-          {/* Technical System IDs Card */}
-          <Card className="border shadow-sm">
-            <CardHeader className="py-3 px-4 border-b">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Shield className="h-3.5 w-3.5" />
-                System & Database References
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 space-y-2 text-[11px] font-mono">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground font-sans">User ID:</span>
-                <button
-                  onClick={() => copyToClipboard(user._id, 'User ID')}
-                  className="hover:underline flex items-center gap-1 text-foreground"
-                >
-                  <span className="truncate max-w-[140px]">{user._id}</span>
-                  <Copy className="h-3 w-3 text-muted-foreground" />
-                </button>
-              </div>
-              {physioProfile && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground font-sans">Physio Profile:</span>
-                  <button
-                    onClick={() => copyToClipboard(physioProfile._id, 'Profile ID')}
-                    className="hover:underline flex items-center gap-1 text-foreground"
-                  >
-                    <span className="truncate max-w-[140px]">{physioProfile._id}</span>
-                    <Copy className="h-3 w-3 text-muted-foreground" />
-                  </button>
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground font-sans">Clerk Auth ID:</span>
-                <span className="truncate max-w-[140px] text-muted-foreground">{user.clerkId}</span>
-              </div>
-            </CardContent>
-          </Card>
+          <Panel title="System references" bodyClassName="space-y-2.5 px-5 pb-4 pt-2 text-xs">
+            <CopyRow
+              icon={Shield}
+              label="user ID"
+              value={user._id}
+              mono
+              copied={copiedField === 'User ID'}
+              onCopy={() => copyToClipboard(user._id, 'User ID')}
+            />
+            {physioProfile && (
+              <CopyRow
+                icon={Stethoscope}
+                label="physio profile ID"
+                value={physioProfile._id}
+                mono
+                copied={copiedField === 'Profile ID'}
+                onCopy={() => copyToClipboard(physioProfile._id, 'Profile ID')}
+              />
+            )}
+            <CopyRow
+              icon={User}
+              label="Clerk ID"
+              value={user.clerkId}
+              mono
+              copied={copiedField === 'Clerk ID'}
+              onCopy={() => copyToClipboard(user.clerkId, 'Clerk ID')}
+            />
+          </Panel>
         </div>
 
-        {/* ════ RIGHT COLUMN: CLINICAL DETAILS & METRICS ════ */}
-        <div className="lg:col-span-8 xl:col-span-8 space-y-6">
-          {/* Healthcare KPI Metrics Banner (Physiotherapist stats) */}
+        {/* ── Right: details ── */}
+        <div className="space-y-6 lg:col-span-8">
           {isPhysio && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-              {/* Active Patients */}
-              <Card className="border-emerald-100 dark:border-emerald-950 shadow-sm bg-gradient-to-br from-emerald-50/40 to-transparent dark:from-emerald-950/20">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-muted-foreground">Active Patients</span>
-                    <div className="h-7 w-7 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                      <Users className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <div className="text-2xl font-bold text-foreground">{stats.patientCount}</div>
-                  <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
-                    Under active care
-                  </p>
-                </CardContent>
-              </Card>
-
-              {/* Total Appointments */}
-              <Card className="border-blue-100 dark:border-blue-950 shadow-sm bg-gradient-to-br from-blue-50/40 to-transparent dark:from-blue-950/20">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-muted-foreground">Total Sessions</span>
-                    <div className="h-7 w-7 rounded-lg bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                      <Calendar className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <div className="text-2xl font-bold text-foreground">{stats.appointmentCount}</div>
-                  <p className="text-[11px] text-blue-700 dark:text-blue-400 mt-0.5">
-                    Completed & booked
-                  </p>
-                </CardContent>
-              </Card>
-
-              {/* Upcoming Appointments */}
-              <Card className="border-purple-100 dark:border-purple-950 shadow-sm bg-gradient-to-br from-purple-50/40 to-transparent dark:from-purple-950/20">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-muted-foreground">Upcoming</span>
-                    <div className="h-7 w-7 rounded-lg bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center">
-                      <Clock className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <div className="text-2xl font-bold text-foreground">{stats.upcomingAppointments}</div>
-                  <p className="text-[11px] text-purple-700 dark:text-purple-400 mt-0.5">
-                    Scheduled ahead
-                  </p>
-                </CardContent>
-              </Card>
-
-              {/* Marketplace Earnings */}
-              <Card className="border-amber-100 dark:border-amber-950 shadow-sm bg-gradient-to-br from-amber-50/40 to-transparent dark:from-amber-950/20">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-muted-foreground">Total Earnings</span>
-                    <div className="h-7 w-7 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                      <DollarSign className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <div className="text-xl font-bold text-foreground truncate">
-                    {formatNaira(physioProfile?.totalMarketplaceEarnings || 0)}
-                  </div>
-                  <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
-                    Platform revenue
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
+            <Stagger className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <StaggerItem>
+                <StatTile label="Active patients" value={stats.patientCount} icon={Users} hint="Under active care" />
+              </StaggerItem>
+              <StaggerItem>
+                <StatTile label="Total sessions" value={stats.appointmentCount} icon={Calendar} tone="mint" hint="Booked and completed" />
+              </StaggerItem>
+              <StaggerItem>
+                <StatTile label="Upcoming" value={stats.upcomingAppointments} icon={Clock} tone="peach" hint="Scheduled ahead" />
+              </StaggerItem>
+              <StaggerItem>
+                <StatTile
+                  label="Earnings"
+                  value={formatKobo(physioProfile?.totalMarketplaceEarnings || 0)}
+                  icon={Wallet}
+                  tone="rose"
+                  hint="Marketplace total"
+                />
+              </StaggerItem>
+            </Stagger>
           )}
 
-          {/* Healthcare Clinical Information Tabs */}
-          <Tabs defaultValue="credentials" className="space-y-4">
-            <TabsList className="bg-muted/60 p-1 rounded-xl w-full justify-start overflow-x-auto flex flex-nowrap h-11 border">
-              <TabsTrigger value="credentials" className="gap-2 text-xs py-2 px-3.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-emerald-700 dark:data-[state=active]:text-emerald-400 data-[state=active]:shadow-sm font-semibold">
-                <Award className="h-3.5 w-3.5" />
-                Clinical Credentials
-              </TabsTrigger>
-              <TabsTrigger value="marketplace" className="gap-2 text-xs py-2 px-3.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-emerald-700 dark:data-[state=active]:text-emerald-400 data-[state=active]:shadow-sm font-semibold">
-                <Globe className="h-3.5 w-3.5" />
-                Marketplace & Rates
-              </TabsTrigger>
-              <TabsTrigger value="activity" className="gap-2 text-xs py-2 px-3.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-emerald-700 dark:data-[state=active]:text-emerald-400 data-[state=active]:shadow-sm font-semibold">
-                <Activity className="h-3.5 w-3.5" />
-                Patients & Sessions
-              </TabsTrigger>
+          <Tabs defaultValue={defaultTab} className="space-y-4">
+            <TabsList className={tabsListClass}>
+              {isPhysio && (
+                <>
+                  <TabsTrigger value="credentials" className="gap-1.5 text-xs font-semibold">
+                    <Award className="h-3.5 w-3.5" />
+                    Credentials
+                  </TabsTrigger>
+                  <TabsTrigger value="marketplace" className="gap-1.5 text-xs font-semibold">
+                    <Globe className="h-3.5 w-3.5" />
+                    Marketplace & rates
+                  </TabsTrigger>
+                  <TabsTrigger value="activity" className="gap-1.5 text-xs font-semibold">
+                    <Activity className="h-3.5 w-3.5" />
+                    Patients & sessions
+                  </TabsTrigger>
+                </>
+              )}
               {patientProfile && (
-                <TabsTrigger value="patient-info" className="gap-2 text-xs py-2 px-3.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm font-semibold">
+                <TabsTrigger value="patient-info" className="gap-1.5 text-xs font-semibold">
                   <User className="h-3.5 w-3.5" />
-                  Patient Record
+                  Patient record
                 </TabsTrigger>
               )}
+              <TabsTrigger value="account" className="gap-1.5 text-xs font-semibold">
+                <Shield className="h-3.5 w-3.5" />
+                Account
+              </TabsTrigger>
             </TabsList>
 
-            {/* ── TAB 1: CLINICAL CREDENTIALS ── */}
-            <TabsContent value="credentials" className="space-y-6 mt-0">
-              {/* Qualifications & Medical Board */}
-              <Card className="border shadow-sm">
-                <CardHeader className="pb-3 border-b">
-                  <CardTitle className="text-base font-semibold flex items-center gap-2 text-foreground">
-                    <Award className="h-4 w-4 text-emerald-600" />
-                    Medical Licensing & Board Qualifications
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Official registry, board examinations, and license credentials
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="p-6 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-3.5 rounded-xl bg-muted/40 border space-y-1">
-                      <span className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                        <Award className="h-3.5 w-3.5 text-emerald-600" />
-                        License / Registration Number
-                      </span>
-                      <div className="text-sm font-mono font-bold text-foreground">
+            {isPhysio && (
+              <>
+                {/* ── Credentials ── */}
+                <TabsContent value="credentials" className="mt-0 space-y-6">
+                  <Panel title="Licensing & qualifications" description="Registration, board and licence details" bodyClassName="p-5 pt-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <Field icon={Award} label="Licence / registration number" mono>
                         {physioProfile?.licenseNumber || 'Not recorded'}
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-muted/40 border space-y-1">
-                      <span className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                        <BookOpen className="h-3.5 w-3.5 text-blue-600" />
-                        Certification Board
-                      </span>
-                      <div className="text-sm font-semibold text-foreground">
+                      </Field>
+                      <Field icon={BookOpen} label="Certification board">
                         {physioProfile?.certificationBoard || 'Medical Rehabilitation Therapists Board (MRTB)'}
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-muted/40 border space-y-1">
-                      <span className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5 text-purple-600" />
-                        Certification Year
-                      </span>
-                      <div className="text-sm font-semibold text-foreground">
+                      </Field>
+                      <Field icon={Calendar} label="Certification year">
                         {physioProfile?.certificationYear || '—'}
-                      </div>
+                      </Field>
+                      <Field icon={Clock} label="Practice experience">
+                        {physioProfile?.yearsOfExperience !== undefined ? `${physioProfile.yearsOfExperience} years` : '—'}
+                      </Field>
+                      <Field icon={Calendar} label="Licence expiry">
+                        {physioProfile?.licenseExpiryDate || 'Not set'}
+                      </Field>
+                      <Field icon={Sparkles} label="CPD points">
+                        {physioProfile?.cpdPoints !== undefined ? `${physioProfile.cpdPoints} points` : '—'}
+                      </Field>
                     </div>
+                  </Panel>
 
-                    <div className="p-3.5 rounded-xl bg-muted/40 border space-y-1">
-                      <span className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                        <Clock className="h-3.5 w-3.5 text-amber-600" />
-                        Clinical Practice Experience
-                      </span>
-                      <div className="text-sm font-semibold text-foreground">
-                        {physioProfile?.yearsOfExperience !== undefined
-                          ? `${physioProfile.yearsOfExperience} years active practice`
-                          : '—'}
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-muted/40 border space-y-1">
-                      <span className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5 text-rose-600" />
-                        License Expiration Date
-                      </span>
-                      <div className="text-sm font-semibold text-foreground">
-                        {physioProfile?.licenseExpiryDate || 'Active / Not set'}
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-muted/40 border space-y-1">
-                      <span className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                        <Sparkles className="h-3.5 w-3.5 text-teal-600" />
-                        Continuing Professional Dev (CPD)
-                      </span>
-                      <div className="text-sm font-semibold text-foreground">
-                        {physioProfile?.cpdPoints !== undefined ? `${physioProfile.cpdPoints} Points` : '—'}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Clinical Specializations */}
-              <Card className="border shadow-sm">
-                <CardHeader className="pb-3 border-b">
-                  <CardTitle className="text-base font-semibold flex items-center gap-2 text-foreground">
-                    <Stethoscope className="h-4 w-4 text-emerald-600" />
-                    Clinical Specializations & Areas of Care
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Therapeutic focus areas advertised to prospective patients
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="p-6 space-y-4">
-                  {physioProfile?.specializations && physioProfile.specializations.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {physioProfile.specializations.map((spec: string, idx: number) => (
-                        <div
-                          key={idx}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/80 text-xs font-semibold"
-                        >
-                          <Stethoscope className="h-3.5 w-3.5 text-emerald-600" />
-                          <span>{spec}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground italic">
-                      No specific clinical specializations tagged yet.
-                    </p>
-                  )}
-
-                  {/* Languages */}
-                  <div className="pt-2">
-                    <span className="text-xs font-semibold text-muted-foreground block mb-2 flex items-center gap-1.5">
-                      <Languages className="h-3.5 w-3.5" />
-                      Languages for Consultation
-                    </span>
-                    {physioProfile?.languagesSpoken && physioProfile.languagesSpoken.length > 0 ? (
+                  <Panel title="Specialisations & languages" description="Focus areas shown to prospective patients" bodyClassName="space-y-4 p-5 pt-3">
+                    {physioProfile?.specializations && physioProfile.specializations.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
-                        {physioProfile.languagesSpoken.map((lang: string) => (
-                          <Badge key={lang} variant="outline" className="text-xs">
-                            {lang}
-                          </Badge>
+                        {physioProfile.specializations.map((spec: string, idx: number) => (
+                          <StatusBadge key={`${spec}-${idx}`} tone="teal" className="gap-1 px-2.5 py-1 text-xs">
+                            <Stethoscope className="h-3 w-3" />
+                            {spec}
+                          </StatusBadge>
                         ))}
                       </div>
                     ) : (
-                      <Badge variant="outline" className="text-xs">English</Badge>
+                      <p className="text-xs italic text-neutral-500 dark:text-neutral-400">No specialisations tagged yet.</p>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Clinical Bio & Philosophy */}
-              {physioProfile?.bio && (
-                <Card className="border shadow-sm">
-                  <CardHeader className="pb-3 border-b">
-                    <CardTitle className="text-base font-semibold flex items-center gap-2 text-foreground">
-                      <FileText className="h-4 w-4 text-emerald-600" />
-                      Professional Biography & Clinical Philosophy
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                      {physioProfile.bio}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
-
-            {/* ── TAB 2: MARKETPLACE & RATES ── */}
-            <TabsContent value="marketplace" className="space-y-6 mt-0">
-              {/* Rates Breakdown */}
-              <Card className="border shadow-sm">
-                <CardHeader className="pb-3 border-b">
-                  <CardTitle className="text-base font-semibold flex items-center gap-2 text-foreground">
-                    <DollarSign className="h-4 w-4 text-emerald-600" />
-                    Consultation Fees & Platform Pricing
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Published marketplace session rates and packages
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="p-6 space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    {/* Hourly Base Rate */}
-                    <div className="p-4 rounded-xl border bg-gradient-to-br from-card to-emerald-50/20 dark:to-emerald-950/10 space-y-1">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Standard Session (Hourly)
-                      </span>
-                      <div className="text-2xl font-bold text-foreground">
-                        {formatNaira(physioProfile?.hourlyRate)}
-                      </div>
-                      <span className="text-[11px] text-muted-foreground">Standard 60-min fee</span>
-                    </div>
-
-                    {/* Initial Consult Rate */}
-                    <div className="p-4 rounded-xl border bg-gradient-to-br from-card to-blue-50/20 dark:to-blue-950/10 space-y-1">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Initial Evaluation Rate
-                      </span>
-                      <div className="text-2xl font-bold text-foreground">
-                        {formatNaira(physioProfile?.initialConsultRate || physioProfile?.hourlyRate)}
-                      </div>
-                      <span className="text-[11px] text-muted-foreground">First assessment fee</span>
-                    </div>
-
-                    {/* Telehealth Platform */}
-                    <div className="p-4 rounded-xl border bg-gradient-to-br from-card to-purple-50/20 dark:to-purple-950/10 space-y-1">
-                      <span className="text-xs text-muted-foreground font-medium">
-                        Telehealth Provider
-                      </span>
-                      <div className="text-lg font-bold text-foreground capitalize flex items-center gap-1.5 pt-1">
-                        <Video className="h-4 w-4 text-purple-600" />
-                        {physioProfile?.videoPlatformPreference || 'GetStream Video'}
-                      </div>
-                      <span className="text-[11px] text-muted-foreground">Integrated consult engine</span>
-                    </div>
-                  </div>
-
-                  {/* Multi-Session Packages */}
-                  {physioProfile?.packageRates && physioProfile.packageRates.length > 0 && (
-                    <div className="space-y-3 pt-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                          Multi-Session Care Packages
-                        </span>
-                        {physioProfile.packageDiscountPercent && (
-                          <Badge variant="secondary" className="text-xs bg-emerald-100 text-emerald-800">
-                            {physioProfile.packageDiscountPercent}% Package Discount applied
-                          </Badge>
+                    <div>
+                      <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+                        <Languages className="h-3.5 w-3.5" />
+                        Consultation languages
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(physioProfile?.languagesSpoken && physioProfile.languagesSpoken.length > 0 ? physioProfile.languagesSpoken : ['English']).map(
+                          (lang: string) => (
+                            <StatusBadge key={lang}>{lang}</StatusBadge>
+                          )
                         )}
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {physioProfile.packageRates.map((pkg: any, idx: number) => (
-                          <div key={idx} className="p-3.5 rounded-xl border bg-muted/30 space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-sm text-foreground">
-                                {pkg.sessions} Sessions
-                              </span>
-                              <Badge variant="outline" className="text-[11px]">
-                                {formatNaira(pkg.price)}
-                              </Badge>
+                    </div>
+                  </Panel>
+
+                  {physioProfile?.bio && (
+                    <Panel title="Biography" bodyClassName="p-5 pt-3">
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">{physioProfile.bio}</p>
+                    </Panel>
+                  )}
+                </TabsContent>
+
+                {/* ── Marketplace & rates ── */}
+                <TabsContent value="marketplace" className="mt-0 space-y-6">
+                  <Panel title="Fees & pricing" description="Published marketplace session rates and packages" bodyClassName="space-y-5 p-5 pt-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <Field label="Standard session">
+                        <span className="text-xl">{formatKobo(physioProfile?.hourlyRate)}</span>
+                      </Field>
+                      <Field label="Initial assessment">
+                        <span className="text-xl">{formatKobo(physioProfile?.initialConsultRate || physioProfile?.hourlyRate)}</span>
+                      </Field>
+                      <Field icon={Video} label="Video provider">
+                        <span className="capitalize">{physioProfile?.videoPlatformPreference || 'GetStream Video'}</span>
+                      </Field>
+                    </div>
+
+                    {physioProfile?.packageRates && physioProfile.packageRates.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Session packages</p>
+                          {physioProfile.packageDiscountPercent ? (
+                            <StatusBadge tone="green">{physioProfile.packageDiscountPercent}% package discount</StatusBadge>
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          {physioProfile.packageRates.map((pkg: { sessions: number; price: number; description?: string }, idx: number) => (
+                            <div key={idx} className="rounded-xl bg-rh-canvas p-3.5 dark:bg-white/[0.04]">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-semibold text-rh-night dark:text-white">{pkg.sessions} sessions</span>
+                                <StatusBadge tone="teal">{formatKobo(pkg.price)}</StatusBadge>
+                              </div>
+                              {pkg.description && <p className="pt-1 text-xs leading-snug text-neutral-500 dark:text-neutral-400">{pkg.description}</p>}
                             </div>
-                            {pkg.description && (
-                              <p className="text-xs text-muted-foreground pt-1 leading-snug">
-                                {pkg.description}
-                              </p>
-                            )}
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </Panel>
+
+                  <section className={cn(cardClass, 'p-5')}>
+                    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <IconChip icon={Globe} />
+                        <div className="min-w-0">
+                          <h3 className="text-[15px] font-semibold text-rh-night dark:text-white">Public booking link</h3>
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400">Patients can book this physiotherapist directly from this link.</p>
+                          <p className="mt-2 inline-block max-w-full truncate rounded-lg bg-rh-canvas px-3 py-1.5 font-mono text-xs text-rh-teal dark:bg-white/[0.04] dark:text-rh-aqua">
+                            {bookingUrl}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Button onClick={() => copyToClipboard(bookingUrl, 'Booking link')} className={primaryButtonClass} size="sm">
+                          {copiedField === 'Booking link' ? <Check className="mr-1.5 h-3.5 w-3.5" /> : <Copy className="mr-1.5 h-3.5 w-3.5" />}
+                          Copy
+                        </Button>
+                        <Button asChild className={softButtonClass} size="sm">
+                          <a href={bookingUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                            Open
+                          </a>
+                        </Button>
+                      </div>
+                    </div>
+                  </section>
+                </TabsContent>
+
+                {/* ── Patients & sessions ── */}
+                <TabsContent value="activity" className="mt-0 space-y-6">
+                  <Panel
+                    title="Patients"
+                    description="Patient relationships connected to this physiotherapist"
+                    actions={<StatusBadge tone="teal">{stats.patientCount} active</StatusBadge>}
+                    bodyClassName="p-5 pt-3"
+                  >
+                    {activePatientsList && activePatientsList.length > 0 ? (
+                      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                        {activePatientsList.map((patient: PatientLink) => (
+                          <Link
+                            key={patient._id}
+                            href={`/dashboard/admin/users/${patient.patientId}`}
+                            className="flex items-center justify-between gap-3 rounded-xl bg-rh-canvas p-3 transition-colors hover:bg-rh-mist dark:bg-white/[0.04] dark:hover:bg-white/[0.07]"
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <UserAvatar user={{ firstName: patient.name, imageUrl: patient.imageUrl }} />
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{patient.name}</p>
+                                <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{patient.email || 'No email'}</p>
+                              </div>
+                            </div>
+                            <StatusBadge className="capitalize">{patient.status}</StatusBadge>
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState icon={<Users />} title="No patients yet" description="Patient relationships will appear here." />
+                    )}
+                  </Panel>
+
+                  <Panel
+                    title="Recent sessions"
+                    description="Latest booked and completed appointments"
+                    actions={<StatusBadge>{stats.appointmentCount} total</StatusBadge>}
+                    bodyClassName="p-5 pt-3"
+                  >
+                    {recentAppointments && recentAppointments.length > 0 ? (
+                      <div className="space-y-2">
+                        {recentAppointments.map((appt: RecentAppointment) => (
+                          <div
+                            key={appt._id}
+                            className="flex flex-col justify-between gap-2 rounded-xl bg-rh-canvas p-3 dark:bg-white/[0.04] sm:flex-row sm:items-center"
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <IconChip icon={appt.isOnline ? Video : Building2} />
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-rh-night dark:text-white">
+                                  {appt.serviceType || 'Physiotherapy session'}
+                                </p>
+                                <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                                  {appt.patientName} · {format(new Date(appt.startTime), 'd MMM yyyy, HH:mm')}
+                                </p>
+                              </div>
+                            </div>
+                            <StatusBadge tone={appointmentTone(appt.status)} className="self-start capitalize sm:self-center">
+                              {appt.status.replace(/_/g, ' ')}
+                            </StatusBadge>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Public Booking Link Card */}
-              <Card className="border shadow-sm bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white">
-                <CardContent className="p-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Globe className="h-4 w-4 text-emerald-400" />
-                        <h3 className="font-bold text-base">Public Direct Booking URL</h3>
-                      </div>
-                      <p className="text-xs text-emerald-200/80">
-                        Patients can directly book appointments with this physiotherapist via this link.
-                      </p>
-                      <div className="pt-2 font-mono text-xs text-emerald-300 bg-black/40 px-3 py-1.5 rounded-lg inline-block border border-emerald-800/60">
-                        physioaroundme.com{bookingUrl}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs gap-1.5"
-                        onClick={() => copyToClipboard(`https://physioaroundme.com${bookingUrl}`, 'Booking URL')}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                        Copy Link
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="border-emerald-400/40 text-white hover:bg-white/10 text-xs gap-1.5"
-                        onClick={() => window.open(bookingUrl, '_blank')}
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        Open
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* ── TAB 3: PATIENTS & SESSIONS ── */}
-            <TabsContent value="activity" className="space-y-6 mt-0">
-              {/* Active Patients */}
-              <Card className="border shadow-sm">
-                <CardHeader className="pb-3 border-b">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-base font-semibold flex items-center gap-2 text-foreground">
-                        <Users className="h-4 w-4 text-emerald-600" />
-                        Assigned Patient Relationships
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        Active patient caseload connected to this practitioner
-                      </CardDescription>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {stats.patientCount} Active Patients
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-6">
-                  {activePatientsList && activePatientsList.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {activePatientsList.map((patient: any) => (
-                        <div
-                          key={patient._id}
-                          className="flex items-center justify-between p-3 rounded-xl border bg-muted/30 hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-9 w-9">
-                              <AvatarImage src={patient.imageUrl} />
-                              <AvatarFallback className="text-xs bg-emerald-100 text-emerald-800">
-                                {patient.name.charAt(0)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <div className="font-semibold text-sm text-foreground">
-                                {patient.name}
-                              </div>
-                              <div className="text-xs text-muted-foreground truncate max-w-[160px]">
-                                {patient.email || 'No email provided'}
-                              </div>
-                            </div>
-                          </div>
-                          <Badge variant="secondary" className="text-[11px] capitalize">
-                            {patient.status}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground space-y-2">
-                      <Users className="h-8 w-8 mx-auto text-muted-foreground/50" />
-                      <p className="text-sm">No patient relationships recorded yet.</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Recent Sessions */}
-              <Card className="border shadow-sm">
-                <CardHeader className="pb-3 border-b">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-base font-semibold flex items-center gap-2 text-foreground">
-                        <Calendar className="h-4 w-4 text-emerald-600" />
-                        Recent & Scheduled Consultations
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        Historical and upcoming appointment activity
-                      </CardDescription>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {stats.appointmentCount} Total Sessions
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-6">
-                  {recentAppointments && recentAppointments.length > 0 ? (
-                    <div className="space-y-2.5">
-                      {recentAppointments.map((appt: any) => (
-                        <div
-                          key={appt._id}
-                          className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border bg-card hover:bg-muted/40 transition-colors gap-2"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="h-9 w-9 rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center shrink-0">
-                              {appt.isOnline ? (
-                                <Video className="h-4 w-4" />
-                              ) : (
-                                <Building2 className="h-4 w-4" />
-                              )}
-                            </div>
-                            <div>
-                              <div className="font-semibold text-sm text-foreground">
-                                {appt.serviceType || 'Physical Therapy Session'}
-                              </div>
-                              <div className="text-xs text-muted-foreground flex items-center gap-2">
-                                <span>Patient: {appt.patientName}</span>
-                                <span>•</span>
-                                <span>
-                                  {format(new Date(appt.startTime), 'MMM dd, yyyy · HH:mm')}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2 self-end sm:self-center">
-                            <Badge
-                              variant="outline"
-                              className={`text-[11px] capitalize ${
-                                appt.status === 'completed'
-                                  ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
-                                  : appt.status === 'scheduled' || appt.status === 'confirmed'
-                                    ? 'border-blue-200 text-blue-700 bg-blue-50'
-                                    : 'border-zinc-200 text-zinc-600'
-                              }`}
-                            >
-                              {appt.status.replace('_', ' ')}
-                            </Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground space-y-2">
-                      <Calendar className="h-8 w-8 mx-auto text-muted-foreground/50" />
-                      <p className="text-sm">No appointment history found for this practitioner.</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* ── TAB 4: PATIENT RECORD (IF APPLICABLE) ── */}
-            {patientProfile && (
-              <TabsContent value="patient-info" className="space-y-6 mt-0">
-                <Card className="border shadow-sm">
-                  <CardHeader className="pb-3 border-b">
-                    <CardTitle className="text-base font-semibold flex items-center gap-2 text-foreground">
-                      <User className="h-4 w-4 text-purple-600" />
-                      Patient Medical Profile
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-6 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                      <div className="p-3 rounded-lg bg-muted/40 border">
-                        <span className="text-muted-foreground block">Date of Birth</span>
-                        <span className="font-semibold text-foreground text-sm">{patientProfile.dateOfBirth || '—'}</span>
-                      </div>
-                      <div className="p-3 rounded-lg bg-muted/40 border">
-                        <span className="text-muted-foreground block">Gender</span>
-                        <span className="font-semibold text-foreground text-sm capitalize">{patientProfile.gender || '—'}</span>
-                      </div>
-                      <div className="p-3 rounded-lg bg-muted/40 border">
-                        <span className="text-muted-foreground block">City & Country</span>
-                        <span className="font-semibold text-foreground text-sm">
-                          {[patientProfile.city, patientProfile.country].filter(Boolean).join(', ') || '—'}
-                        </span>
-                      </div>
-                      <div className="p-3 rounded-lg bg-muted/40 border">
-                        <span className="text-muted-foreground block">Address</span>
-                        <span className="font-semibold text-foreground text-sm">{patientProfile.address || '—'}</span>
-                      </div>
-                    </div>
-
-                    {patientProfile.medicalHistorySummary && (
-                      <div className="space-y-1.5 pt-2">
-                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                          Medical History Summary
-                        </span>
-                        <p className="text-xs bg-muted/40 p-3.5 rounded-xl border text-foreground leading-relaxed">
-                          {patientProfile.medicalHistorySummary}
-                        </p>
-                      </div>
+                    ) : (
+                      <EmptyState icon={<Calendar />} title="No sessions yet" description="Appointments with this physiotherapist will appear here." />
                     )}
-                  </CardContent>
-                </Card>
+                  </Panel>
+                </TabsContent>
+              </>
+            )}
+
+            {/* ── Patient record ── */}
+            {patientProfile && (
+              <TabsContent value="patient-info" className="mt-0 space-y-6">
+                <Panel title="Patient profile" bodyClassName="space-y-4 p-5 pt-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label="Date of birth">{patientProfile.dateOfBirth || '—'}</Field>
+                    <Field label="Gender">
+                      <span className="capitalize">{patientProfile.gender || '—'}</span>
+                    </Field>
+                    <Field icon={MapPin} label="City & country">
+                      {[patientProfile.city, patientProfile.country].filter(Boolean).join(', ') || '—'}
+                    </Field>
+                    <Field label="Address">{patientProfile.address || '—'}</Field>
+                  </div>
+                  {patientProfile.medicalHistorySummary && (
+                    <div>
+                      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                        Medical history summary
+                      </p>
+                      <p className="whitespace-pre-wrap rounded-xl bg-rh-canvas p-3.5 text-sm leading-relaxed text-neutral-700 dark:bg-white/[0.04] dark:text-neutral-200">
+                        {patientProfile.medicalHistorySummary}
+                      </p>
+                    </div>
+                  )}
+                </Panel>
               </TabsContent>
             )}
+
+            {/* ── Account ── */}
+            <TabsContent value="account" className="mt-0 space-y-6">
+              <Panel title="Account" description="Role, onboarding and approval state" bodyClassName="p-5 pt-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field icon={meta.icon} label="Role">
+                    {meta.label}
+                  </Field>
+                  <Field icon={CheckCircle2} label="Onboarding">
+                    {user.onboarded ? 'Completed' : 'Not finished'}
+                  </Field>
+                  <Field icon={FileText} label="Approval">
+                    <span className="capitalize">{approvalStatus ? approvalStatus.status.replace('_', ' ') : 'Not required'}</span>
+                  </Field>
+                  <Field icon={Clock} label="Reviewed">
+                    {approvalStatus?.reviewedAt ? format(new Date(approvalStatus.reviewedAt), 'd MMM yyyy, HH:mm') : '—'}
+                  </Field>
+                  <Field icon={Building2} label="Clinic">
+                    {clinic?.name || '—'}
+                  </Field>
+                  <Field icon={Calendar} label="Last login">
+                    {user.lastLoginAt ? format(new Date(user.lastLoginAt), 'd MMM yyyy, HH:mm') : '—'}
+                  </Field>
+                </div>
+                {approvalStatus?.status === 'pending_review' && (
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-rh-peach p-3 text-xs text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
+                    <span>This account is waiting for review.</span>
+                    <Link href="/dashboard/admin/approvals" className="font-semibold underline-offset-2 hover:underline">
+                      Open approvals queue
+                    </Link>
+                  </div>
+                )}
+              </Panel>
+            </TabsContent>
           </Tabs>
         </div>
       </div>
 
-      {/* ── Role Change Dialog ── */}
-      <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Update Platform Role</DialogTitle>
-            <DialogDescription>
-              Assign a new operational role to {user.firstName} {user.lastName} ({user.email}).
-            </DialogDescription>
-          </DialogHeader>
+      <RoleChangeDialog user={user} open={roleOpen} onOpenChange={setRoleOpen} />
 
-          <div className="py-4 space-y-4">
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Select New Role:</label>
-              <Select value={selectedRole} onValueChange={(val) => setSelectedRole(val as UserRole)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="physiotherapist">
-                    <div className="flex items-center gap-2">
-                      <Stethoscope className="h-4 w-4 text-emerald-600" />
-                      <span>Physiotherapist</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="clinic_owner">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-4 w-4 text-blue-600" />
-                      <span>Clinic Owner</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="patient">
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4 text-purple-600" />
-                      <span>Patient</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="family_member">
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4 text-zinc-600" />
-                      <span>Family Member</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="admin">
-                    <div className="flex items-center gap-2">
-                      <Shield className="h-4 w-4 text-red-600" />
-                      <span>Administrator</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {selectedRole === 'admin' && (
-              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
-                <Crown className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                <p>
-                  Granting administrator privileges gives this user full platform governance and clinical oversight capabilities.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRoleDialog(false)} disabled={isUpdatingRole}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleRoleChange}
-              disabled={isUpdatingRole || selectedRole === user.role}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              {isUpdatingRole ? 'Updating...' : 'Save Role'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={`Delete ${displayName(user)}?`}
+        description="This permanently removes the account, its patient/physio/clinic profile and any approval record. It cannot be undone."
+        confirmLabel="Delete user"
+        destructive
+        onConfirm={confirmDelete}
+      />
+    </AdminPage>
   )
 }
 
-function HealthcareDetailSkeleton() {
+function DetailSkeleton() {
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16">
-      <div className="flex items-center justify-between border-b pb-4">
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-48" />
-          <Skeleton className="h-8 w-64" />
-        </div>
-        <Skeleton className="h-9 w-32 rounded-lg" />
+    <AdminPage>
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-32 dark:bg-white/[0.06]" />
+        <Skeleton className="h-8 w-64 dark:bg-white/[0.06]" />
+        <Skeleton className="h-4 w-80 dark:bg-white/[0.06]" />
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left skeleton */}
-        <div className="lg:col-span-4 space-y-6">
-          <Card>
-            <Skeleton className="h-20 w-full" />
-            <CardContent className="pt-0 px-6 pb-6 space-y-4">
-              <Skeleton className="h-20 w-20 rounded-full -mt-10 border-4 border-background" />
-              <Skeleton className="h-6 w-48" />
-              <Skeleton className="h-4 w-32" />
-              <div className="space-y-3 pt-4">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-4 w-2/3" />
-              </div>
-            </CardContent>
-          </Card>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="space-y-6 lg:col-span-4">
+          <Skeleton className="h-[420px] w-full rounded-2xl dark:bg-white/[0.06]" />
         </div>
-
-        {/* Right skeleton */}
-        <div className="lg:col-span-8 space-y-6">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-            {[...Array(4)].map((_, i) => (
-              <Card key={i}>
-                <CardContent className="p-4 space-y-2">
-                  <Skeleton className="h-3 w-16" />
-                  <Skeleton className="h-7 w-20" />
-                  <Skeleton className="h-3 w-24" />
-                </CardContent>
-              </Card>
+        <div className="space-y-6 lg:col-span-8">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 rounded-2xl dark:bg-white/[0.06]" />
             ))}
           </div>
-          <Card>
-            <CardContent className="p-6 space-y-4">
-              <Skeleton className="h-6 w-48" />
-              <div className="grid grid-cols-2 gap-4">
-                {[...Array(4)].map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full rounded-xl" />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <Skeleton className="h-10 w-full rounded-xl dark:bg-white/[0.06]" />
+          <Skeleton className="h-64 w-full rounded-2xl dark:bg-white/[0.06]" />
         </div>
       </div>
-    </div>
+    </AdminPage>
   )
 }

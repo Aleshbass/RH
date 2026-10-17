@@ -153,8 +153,11 @@ export const logInitiatedLoan = mutation({
         patientEmail: v.optional(v.string()),
         applicationUrl: v.string(),
         expiresAt: v.string(),
+        serverSecret: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        // Only /api/myitura/initiate records loans, after it has checked the caller's role
+        assertServerCaller(args.serverSecret);
         const identity = await ctx.auth.getUserIdentity();
         let initiator = null;
 

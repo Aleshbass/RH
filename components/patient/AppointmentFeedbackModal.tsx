@@ -23,7 +23,7 @@ interface AppointmentFeedbackModalProps {
 interface FeedbackCategory {
   key: string
   label: string
-  icon: React.ElementType
+  icon: React.ComponentType<{ className?: string }>
 }
 
 const feedbackCategories: FeedbackCategory[] = [

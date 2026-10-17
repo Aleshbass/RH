@@ -306,6 +306,113 @@ export const listPendingApprovals = query({
 export const getPendingApprovals = listPendingApprovals;
 
 /**
+ * The admin review queue: pending applications, oldest first, with a compact applicant
+ * summary and the list of uploaded documents (names/types only, no URLs; the review
+ * dialog loads URLs through getApprovalDetails). Bounded to `limit` rows (default 100,
+ * max 200) and 25 documents per applicant. Applications whose user was deleted are skipped.
+ */
+export const adminListApprovalQueue = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 100), 200));
+
+    const statuses = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_status", (q) => q.eq("status", "pending_review"))
+      .order("asc")
+      .take(limit);
+
+    const rows = await Promise.all(
+      statuses.map(async (status) => {
+        const user = await ctx.db.get(status.userId);
+        if (!user) return null;
+
+        let documents: { _id: string; fileName: string; documentType: string; uploadedAt?: number }[] = [];
+        let summary: {
+          licenseNumber?: string;
+          location?: string;
+          yearsOfExperience?: number;
+          clinicName?: string;
+          specializations?: string[];
+        } = {};
+
+        if (user.role === "physiotherapist") {
+          const profile = user.physiotherapistProfileId
+            ? await ctx.db.get(user.physiotherapistProfileId)
+            : await ctx.db
+                .query("physiotherapistProfiles")
+                .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+                .first();
+          if (profile) {
+            summary = {
+              licenseNumber: profile.licenseNumber,
+              location: profile.location,
+              yearsOfExperience: profile.yearsOfExperience,
+              specializations: (profile.specializations ?? []).slice(0, 4),
+            };
+            const docs = await ctx.db
+              .query("physiotherapistDocuments")
+              .withIndex("by_physiotherapist_id", (q) => q.eq("physiotherapistId", profile._id))
+              .take(25);
+            documents = docs.map((d) => ({
+              _id: d._id,
+              fileName: d.fileName,
+              documentType: d.documentType,
+              uploadedAt: d.uploadedAt,
+            }));
+          }
+        } else if (user.role === "clinic_owner") {
+          const clinic = await ctx.db
+            .query("clinics")
+            .withIndex("by_owner_id", (q) => q.eq("ownerId", user._id))
+            .first();
+          if (clinic) {
+            summary = {
+              clinicName: clinic.name,
+              location: [clinic.city, clinic.country].filter(Boolean).join(", ") || undefined,
+            };
+            const docs = await ctx.db
+              .query("clinicDocuments")
+              .withIndex("by_clinic_id", (q) => q.eq("clinicId", clinic._id))
+              .take(25);
+            documents = docs.map((d) => ({
+              _id: d._id,
+              fileName: d.fileName,
+              documentType: d.documentType,
+              uploadedAt: d.uploadedAt,
+            }));
+          }
+        }
+
+        return {
+          _id: status._id,
+          userId: status.userId,
+          submittedAt: status.submittedAt,
+          requiredDocuments: status.requiredDocuments,
+          user: {
+            _id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phoneNumber: user.phoneNumber,
+            imageUrl: user.imageUrl,
+            role: user.role,
+            _creationTime: user._creationTime,
+          },
+          summary,
+          documents,
+        };
+      })
+    );
+
+    return rows.filter((r) => r !== null);
+  },
+});
+
+/**
  * Approve an account
  * Called by admin
  */

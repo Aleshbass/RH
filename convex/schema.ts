@@ -156,8 +156,15 @@ export default defineSchema({
       defaultCurrency: v.optional(v.string()), // e.g., "NGN"
       language: v.optional(v.string()), // e.g., "en"
     })),
+    // Set by Rehabify admins. Missing means active. A suspended clinic's team can still
+    // sign in and look, but every change is refused (see assertClinicNotSuspended).
+    status: v.optional(v.union(v.literal("active"), v.literal("suspended"))),
+    suspendedReason: v.optional(v.string()),
+    suspendedAt: v.optional(v.number()),
+    suspendedBy: v.optional(v.id("users")),
   })
-    .index("by_owner_id", ["ownerId"]),
+    .index("by_owner_id", ["ownerId"])
+    .index("by_status", ["status"]),
 
   // Physiotherapist specific profiles/details
   physiotherapistProfiles: defineTable({
@@ -672,7 +679,9 @@ export default defineSchema({
     .index("by_clinic_id_and_time", ["clinicId", "startTime"])
     .index("by_physiotherapist_id_and_time", ["physiotherapistId", "startTime"])
     .index("by_series_id", ["seriesId"])
-    .index("by_instance_date", ["instanceDate"]),
+    .index("by_instance_date", ["instanceDate"])
+    // Platform-wide "what's on today" counts for the admin console
+    .index("by_start_time", ["startTime"]),
 
   // Recurring appointment series
   recurringSeries: defineTable({
@@ -1620,7 +1629,8 @@ export default defineSchema({
 
   // Payouts table for tracking earnings payouts to physiotherapists/clinics
   payouts: defineTable({
-    paymentId: v.id("payments"),
+    paymentId: v.optional(v.id("payments")), // Set when the invoice's payment record is known
+
     invoiceId: v.id("invoices"),
     userId: v.id("users"), // Recipient (physiotherapist or clinic owner)
     type: v.union(
@@ -1639,6 +1649,10 @@ export default defineSchema({
     processedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
     failureReason: v.optional(v.string()),
+    // Set by admins from /dashboard/admin/payouts
+    transferReference: v.optional(v.string()),
+    adminNote: v.optional(v.string()),
+    updatedBy: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -3576,6 +3590,34 @@ export default defineSchema({
     updatedAt: v.number(),
     updatedBy: v.optional(v.string()),
   }),
+
+  // ─── Platform controls (admin Settings page; latest row wins, see convex/platformSettings.ts) ──
+  platformControls: defineTable({
+    maintenanceMode: v.boolean(),
+    maintenanceMessage: v.optional(v.string()),
+    allowPatientSignups: v.boolean(),
+    allowPhysioSignups: v.boolean(),
+    allowClinicSignups: v.boolean(),
+    marketplaceEnabled: v.boolean(),
+    supportEmail: v.optional(v.string()),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.id("users")),
+    updatedByName: v.optional(v.string()),
+  }),
+
+  // ─── Platform announcements (admin broadcast history; delivered to users in batches) ──
+  platformAnnouncements: defineTable({
+    title: v.string(),
+    message: v.string(),
+    priority: v.union(v.literal("low"), v.literal("medium"), v.literal("high")),
+    targetRoles: v.array(v.string()),
+    status: v.union(v.literal("sending"), v.literal("sent"), v.literal("failed")),
+    recipientCount: v.number(),
+    createdBy: v.id("users"),
+    createdByName: v.string(),
+    createdAt: v.number(),
+    completedAt: v.optional(v.number()),
+  }).index("by_created_at", ["createdAt"]),
 
   // ─── Partner Bank Accounts (Paystack-verified for monthly payouts) ──────
   partnerBankAccounts: defineTable({

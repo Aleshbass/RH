@@ -1,0 +1,235 @@
+import {
+  Activity,
+  BarChart3,
+  Banknote,
+  BookOpen,
+  Box,
+  Building2,
+  CalendarCheck,
+  ClipboardCheck,
+  Code2,
+  FileSignature,
+  Flag,
+  Globe,
+  GraduationCap,
+  Handshake,
+  HeartPulse,
+  Home,
+  Inbox,
+  Landmark,
+  LineChart,
+  Megaphone,
+  Percent,
+  ReceiptText,
+  Settings,
+  ShieldCheck,
+  Stethoscope,
+  Store,
+  UserCheck,
+  UserRound,
+  UserX,
+  Users,
+  WalletCards,
+  type LucideIcon,
+} from 'lucide-react'
+
+export const ADMIN_HOME = '/dashboard/admin'
+
+/** Live counts shown next to nav items. Resolved in AdminSidebar. */
+export type AdminBadgeKey = 'approvals' | 'partnerApplications' | 'openReports' | 'bankTransfers'
+
+export type AdminNavItem = {
+  title: string
+  href: string
+  icon: LucideIcon
+  badgeKey?: AdminBadgeKey
+  /** Extra words the command palette matches on. */
+  keywords?: string[]
+}
+
+export type AdminNavSection = {
+  id: string
+  label: string
+  icon: LucideIcon
+  items: AdminNavItem[]
+  /** Only shown in development or when NEXT_PUBLIC_ADMIN_DEV_TOOLS=true. */
+  devOnly?: boolean
+}
+
+const a = (path: string) => `${ADMIN_HOME}${path}`
+
+/**
+ * The admin console, grouped by who or what is being managed. This list drives the sidebar,
+ * the breadcrumbs and the command palette, so a page only needs adding here once.
+ */
+export const ADMIN_NAV: AdminNavSection[] = [
+  {
+    id: 'overview',
+    label: 'Overview',
+    icon: Home,
+    items: [
+      { title: 'Home', href: ADMIN_HOME, icon: Home, keywords: ['dashboard', 'start'] },
+      { title: 'Analytics', href: a('/analytics'), icon: BarChart3, keywords: ['stats', 'growth', 'revenue'] },
+    ],
+  },
+  {
+    id: 'physios',
+    label: 'Rehabify Physios',
+    icon: Stethoscope,
+    items: [
+      { title: 'All physiotherapists', href: a('/users?role=physiotherapist'), icon: Stethoscope, keywords: ['physio', 'clinicians'] },
+      { title: 'Approvals', href: a('/approvals'), icon: UserCheck, badgeKey: 'approvals', keywords: ['pending', 'review', 'verify'] },
+      { title: 'Declined', href: a('/declined-physios'), icon: UserX, keywords: ['rejected'] },
+      { title: 'Public registry', href: a('/physio-registry'), icon: ShieldCheck, keywords: ['directory', 'listing'] },
+      { title: 'Payouts', href: a('/payouts'), icon: Banknote, keywords: ['earnings', 'paystack', 'transfers'] },
+    ],
+  },
+  {
+    id: 'patients',
+    label: 'Patients & Care',
+    icon: HeartPulse,
+    items: [
+      { title: 'All patients', href: a('/users?role=patient'), icon: UserRound, keywords: ['clients'] },
+      { title: 'Inbound referrals', href: a('/referrals'), icon: Inbox, keywords: ['intake', 'routing'] },
+      { title: 'Care follow-ups', href: a('/care-follow-ups'), icon: HeartPulse, keywords: ['check-ins', 'discharge'] },
+      { title: 'MediLoan', href: a('/loans'), icon: WalletCards, keywords: ['myitura', 'finance', 'credit'] },
+    ],
+  },
+  {
+    id: 'clinics',
+    label: 'Clinics',
+    icon: Building2,
+    items: [
+      { title: 'All clinics', href: a('/clinics'), icon: Building2, keywords: ['practices', 'clinic owners', 'staff'] },
+      { title: 'Clinic fees', href: a('/clinic-fees'), icon: Percent, keywords: ['split', 'commission', 'stamp duty'] },
+    ],
+  },
+  {
+    id: 'marketplace',
+    label: 'Marketplace',
+    icon: Store,
+    items: [
+      { title: 'Bookings', href: a('/marketplace-bookings'), icon: CalendarCheck, keywords: ['appointments', 'joy', 'reassign'] },
+      { title: 'Bank transfers', href: a('/bank-transfers'), icon: Landmark, badgeKey: 'bankTransfers', keywords: ['confirm', 'manual payment'] },
+      { title: 'Reports', href: a('/marketplace-reports'), icon: Flag, badgeKey: 'openReports', keywords: ['moderation', 'complaints'] },
+      { title: 'Marketplace analytics', href: a('/marketplace-analytics'), icon: LineChart, keywords: ['earnings', 'packages'] },
+    ],
+  },
+  {
+    id: 'partners',
+    label: 'Partners',
+    icon: Handshake,
+    items: [
+      { title: 'Partners & applications', href: a('/partnerships'), icon: Handshake, badgeKey: 'partnerApplications', keywords: ['go-live', 'inquiries', 'api'] },
+      { title: 'Contracts', href: a('/partner-contracts'), icon: FileSignature, keywords: ['commercial terms', 'pricing'] },
+      { title: 'AwaDoc', href: a('/awadoc'), icon: Globe, keywords: ['integration', 'webhooks'] },
+    ],
+  },
+  {
+    id: 'finance',
+    label: 'Finance',
+    icon: ReceiptText,
+    items: [
+      { title: 'Transactions', href: a('/transactions'), icon: ReceiptText, keywords: ['payments', 'invoices'] },
+      { title: 'Partner payouts', href: a('/partnerships?tab=bulk_payouts'), icon: Banknote, keywords: ['settlements', 'monthly'] },
+      { title: 'Revenue settings', href: a('/partnerships?tab=revenue'), icon: Percent, keywords: ['split', 'commission'] },
+    ],
+  },
+  {
+    id: 'library',
+    label: 'Exercise Library',
+    icon: BookOpen,
+    items: [
+      { title: 'Exercises', href: a('/exercises'), icon: BookOpen, keywords: ['programmes', 'videos'] },
+      { title: '3D library & licences', href: a('/exercise-library'), icon: Box, keywords: ['animations', 'sign-off', 'licence'] },
+    ],
+  },
+  {
+    id: 'learn',
+    label: 'Rehabify Learn',
+    icon: GraduationCap,
+    items: [
+      { title: 'MSK Specialist Program', href: a('/learn'), icon: GraduationCap, keywords: ['cohort', 'course', 'training', 'certificate', 'registrations', 'cpd'] },
+    ],
+  },
+  {
+    id: 'platform',
+    label: 'Platform',
+    icon: Settings,
+    items: [
+      { title: 'Users & roles', href: a('/users'), icon: Users, keywords: ['accounts', 'permissions', 'admins'] },
+      { title: 'Announcements', href: a('/announcements'), icon: Megaphone, keywords: ['broadcast', 'notify'] },
+      { title: 'Activity & audit log', href: a('/activity'), icon: Activity, keywords: ['security', 'events', 'logs'] },
+      { title: 'Settings', href: a('/system'), icon: Settings, keywords: ['maintenance', 'registrations'] },
+    ],
+  },
+  {
+    id: 'developer',
+    label: 'Developer',
+    icon: Code2,
+    devOnly: true,
+    items: [
+      { title: 'Reminder tests', href: a('/test-reminders'), icon: ClipboardCheck },
+      { title: 'AwaDoc webhook test', href: a('/awadoc/test'), icon: Globe },
+      { title: 'Approvals debug', href: a('/approvals/debug'), icon: UserCheck },
+      { title: 'Marketplace migration', href: a('/marketplace-migration'), icon: Store },
+    ],
+  },
+]
+
+export function devToolsEnabled() {
+  return process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_ADMIN_DEV_TOOLS === 'true'
+}
+
+export function visibleAdminNav(): AdminNavSection[] {
+  const showDev = devToolsEnabled()
+  return ADMIN_NAV.filter((section) => !section.devOnly || showDev)
+}
+
+/** How well a nav href matches the current URL: higher is better, 0 means no match. */
+export function matchScore(href: string, pathname: string, search: URLSearchParams): number {
+  const [path, query] = href.split('?')
+  if (path === ADMIN_HOME) return pathname === ADMIN_HOME ? 1 : 0
+  if (pathname !== path && !pathname.startsWith(`${path}/`)) return 0
+  if (!query) return path.length
+  // Items that pin a query (e.g. ?role=patient) only win when every pinned value matches
+  const wanted = new URLSearchParams(query)
+  for (const [key, value] of wanted) {
+    if (search.get(key) !== value) return 0
+  }
+  return path.length + 1
+}
+
+/** The single nav item that best represents the current page. */
+export function findActiveItem(pathname: string, search: URLSearchParams) {
+  let best: { section: AdminNavSection; item: AdminNavItem; score: number } | null = null
+  for (const section of ADMIN_NAV) {
+    for (const item of section.items) {
+      const score = matchScore(item.href, pathname, search)
+      if (score > 0 && (!best || score > best.score)) best = { section, item, score }
+    }
+  }
+  return best
+}
+
+const EXTRA_LABELS: Record<string, string> = {
+  new: 'New',
+  edit: 'Edit',
+  test: 'Test',
+  debug: 'Debug',
+}
+
+/** Breadcrumbs: section › page › detail. */
+export function adminBreadcrumbs(pathname: string, search: URLSearchParams) {
+  const crumbs: { label: string; href?: string }[] = [{ label: 'Admin', href: ADMIN_HOME }]
+  if (pathname === ADMIN_HOME) return [{ label: 'Admin' }, { label: 'Home' }]
+  const active = findActiveItem(pathname, search)
+  if (!active) return crumbs
+  crumbs.push({ label: active.section.label })
+  const itemPath = active.item.href.split('?')[0]
+  const rest = pathname.slice(itemPath.length).split('/').filter(Boolean)
+  crumbs.push({ label: active.item.title, href: rest.length ? active.item.href : undefined })
+  const last = rest[rest.length - 1]
+  if (last) crumbs.push({ label: EXTRA_LABELS[last] ?? 'Details' })
+  return crumbs
+}

@@ -1,380 +1,256 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState, type ComponentType } from 'react';
+import { notFound } from 'next/navigation';
 import { useAction } from 'convex/react';
+import { AlertTriangle, Bell, Calendar, CheckCircle2, Database, FileText, Loader2, Play, XCircle } from 'lucide-react';
 import { api } from '@/convex/_generated/api';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  Play, 
-  CheckCircle2, 
-  XCircle, 
-  Loader2,
-  AlertTriangle,
-  Database,
-  Bell,
-  Calendar,
-  FileText
-} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { playSound } from '@/lib/sounds';
+import { devToolsEnabled } from '@/components/admin/shell/adminNav';
+import {
+  AdminPage,
+  IconChip,
+  PageHeader,
+  Panel,
+  StatTile,
+  StatusBadge,
+  cardClass,
+  primaryButtonClass,
+  softButtonClass,
+} from '@/components/admin/ui';
 
-export default function TestRemindersPage() {
-  const [testResults, setTestResults] = useState<any>(null);
-  const [dataCheck, setDataCheck] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [individualTest, setIndividualTest] = useState<string | null>(null);
+type TestRun = {
+  error?: string;
+  timestamp?: string | number;
+  tests?: { name: string; status: string; details?: unknown; error?: string }[];
+  summary: { total: number; passed: number; failed: number };
+};
 
-  // @ts-ignore
+type DataCheck = {
+  error?: string;
+  activePlans?: number;
+  unpaidInvoices?: number;
+  upcomingAppointments?: number;
+  recommendations?: string[];
+};
+
+type SingleResult = { success: boolean; result?: unknown; error?: string };
+
+type Busy = 'data' | 'all' | 'exercise' | 'invoice' | 'appointment' | null;
+
+const INDIVIDUAL: { id: 'exercise' | 'invoice' | 'appointment'; label: string; icon: ComponentType<{ className?: string }> }[] = [
+  { id: 'exercise', label: 'Exercise reminders', icon: Bell },
+  { id: 'invoice', label: 'Invoice reminders', icon: FileText },
+  { id: 'appointment', label: 'Appointment reminders', icon: Calendar },
+];
+
+const passed = (status: string) => status.includes('PASSED');
+
+function ReminderTests() {
+  const [testResults, setTestResults] = useState<TestRun | null>(null);
+  const [dataCheck, setDataCheck] = useState<DataCheck | null>(null);
+  const [busy, setBusy] = useState<Busy>(null);
+
   const runAllTests = useAction(api.test_reminders.testAllReminders);
-  // @ts-ignore
   const checkData = useAction(api.test_reminders.checkTestData);
-  // @ts-ignore
   const testExercise = useAction(api.test_reminders.testExerciseReminders);
-  // @ts-ignore
   const testInvoice = useAction(api.test_reminders.testInvoiceReminders);
-  // @ts-ignore
   const testAppointment = useAction(api.test_reminders.testAppointmentReminders);
 
+  const finish = (run: TestRun) => {
+    setTestResults(run);
+    playSound(run.error || run.summary.failed > 0 ? 'error' : 'success');
+  };
+
   const handleRunAllTests = async () => {
-    setLoading(true);
+    setBusy('all');
     setTestResults(null);
     try {
-      const results = await runAllTests();
-      setTestResults(results);
+      finish((await runAllTests()) as TestRun);
     } catch (e) {
-      setTestResults({
-        error: (e as Error).message,
-        summary: { total: 0, passed: 0, failed: 0 },
-      });
+      finish({ error: (e as Error).message, summary: { total: 0, passed: 0, failed: 0 } });
     } finally {
-      setLoading(false);
+      setBusy(null);
     }
   };
 
   const handleCheckData = async () => {
-    setLoading(true);
+    setBusy('data');
     setDataCheck(null);
     try {
-      const data = await checkData();
-      setDataCheck(data);
+      setDataCheck((await checkData()) as DataCheck);
     } catch (e) {
+      playSound('error');
       setDataCheck({ error: (e as Error).message });
     } finally {
-      setLoading(false);
+      setBusy(null);
     }
   };
 
-  const handleIndividualTest = async (testType: string) => {
-    setLoading(true);
-    setIndividualTest(testType);
+  const handleIndividualTest = async (testType: 'exercise' | 'invoice' | 'appointment') => {
+    setBusy(testType);
     setTestResults(null);
     try {
-      let result;
-      switch (testType) {
-        case 'exercise':
-          result = await testExercise();
-          break;
-        case 'invoice':
-          result = await testInvoice();
-          break;
-        case 'appointment':
-          result = await testAppointment();
-          break;
-      }
-      setTestResults({
-        tests: [{
-          name: testType,
-          status: result.success ? '✅ PASSED' : '❌ FAILED',
-          details: result.result || result.error,
-        }],
-        summary: {
-          total: 1,
-          passed: result.success ? 1 : 0,
-          failed: result.success ? 0 : 1,
-        },
+      const run = testType === 'exercise' ? testExercise : testType === 'invoice' ? testInvoice : testAppointment;
+      const result = (await run()) as SingleResult;
+      finish({
+        tests: [{ name: testType, status: result.success ? 'PASSED' : 'FAILED', details: result.result || result.error }],
+        summary: { total: 1, passed: result.success ? 1 : 0, failed: result.success ? 0 : 1 },
       });
     } catch (e) {
-      setTestResults({
-        error: (e as Error).message,
-        summary: { total: 1, passed: 0, failed: 1 },
-      });
+      finish({ error: (e as Error).message, summary: { total: 1, passed: 0, failed: 1 } });
     } finally {
-      setLoading(false);
-      setIndividualTest(null);
+      setBusy(null);
     }
   };
 
+  const spinner = <Loader2 className="mr-2 h-4 w-4 animate-spin" />;
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Reminder System Test Suite</h1>
-        <p className="text-muted-foreground mt-2">
-          Test all reminder systems to ensure they're wired correctly
-        </p>
+    <AdminPage className="max-w-5xl">
+      <PageHeader eyebrow="Developer" title="Reminder tests" description="Check that every reminder system is wired correctly." />
+
+      <p className="flex items-start gap-2 rounded-2xl bg-rh-peach px-4 py-3 text-sm text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          <strong>These tests send real notifications</strong> when matching data exists. Run them in a test environment first.
+        </span>
+      </p>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Panel title="Check test data" description="See whether the database has data the tests can use" bodyClassName="p-5 pt-3">
+          <Button onClick={handleCheckData} disabled={busy !== null} className={cn(softButtonClass, 'w-full')}>
+            {busy === 'data' ? spinner : <Database className="mr-2 h-4 w-4" />}
+            Check data availability
+          </Button>
+        </Panel>
+        <Panel title="Run all tests" description="Test every reminder system at once" bodyClassName="p-5 pt-3">
+          <Button onClick={handleRunAllTests} disabled={busy !== null} className={cn(primaryButtonClass, 'w-full')}>
+            {busy === 'all' ? spinner : <Play className="mr-2 h-4 w-4" />}
+            Run all tests
+          </Button>
+        </Panel>
       </div>
 
-      <Alert>
-        <AlertTriangle className="h-4 w-4" />
-        <AlertDescription>
-          <strong>Note:</strong> These tests will actually send notifications if data exists. 
-          Run in a test environment first.
-        </AlertDescription>
-      </Alert>
+      <Panel title="Individual tests" description="Test each reminder system on its own" bodyClassName="grid grid-cols-1 gap-3 p-5 pt-3 sm:grid-cols-3">
+        {INDIVIDUAL.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => handleIndividualTest(id)}
+            disabled={busy !== null}
+            className={cn(
+              cardClass,
+              'flex flex-col items-center gap-2 px-4 py-5 text-sm font-medium text-rh-night transition hover:-translate-y-0.5 hover:shadow-lift disabled:pointer-events-none disabled:opacity-60 dark:text-white'
+            )}
+          >
+            {busy === id ? <Loader2 className="h-6 w-6 animate-spin text-rh-teal dark:text-rh-aqua" /> : <IconChip icon={Icon} />}
+            {label}
+          </button>
+        ))}
+      </Panel>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Check Test Data
-            </CardTitle>
-            <CardDescription>
-              Verify if test data exists in the database
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button 
-              onClick={handleCheckData} 
-              disabled={loading}
-              className="w-full"
-            >
-              {loading && !testResults ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Database className="h-4 w-4 mr-2" />
-              )}
-              Check Data Availability
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Play className="h-5 w-5" />
-              Run All Tests
-            </CardTitle>
-            <CardDescription>
-              Test all reminder systems at once
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button 
-              onClick={handleRunAllTests} 
-              disabled={loading}
-              className="w-full"
-            >
-              {loading && !dataCheck ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Play className="h-4 w-4 mr-2" />
-              )}
-              Run All Tests
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Individual Tests */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Individual Tests</CardTitle>
-          <CardDescription>
-            Test each reminder system separately
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Button
-              variant="outline"
-              onClick={() => handleIndividualTest('exercise')}
-              disabled={loading}
-              className="h-20 flex-col"
-            >
-              {loading && individualTest === 'exercise' ? (
-                <Loader2 className="h-6 w-6 mb-2 animate-spin" />
-              ) : (
-                <Bell className="h-6 w-6 mb-2" />
-              )}
-              <span>Exercise Reminders</span>
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => handleIndividualTest('invoice')}
-              disabled={loading}
-              className="h-20 flex-col"
-            >
-              {loading && individualTest === 'invoice' ? (
-                <Loader2 className="h-6 w-6 mb-2 animate-spin" />
-              ) : (
-                <FileText className="h-6 w-6 mb-2" />
-              )}
-              <span>Invoice Reminders</span>
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => handleIndividualTest('appointment')}
-              disabled={loading}
-              className="h-20 flex-col"
-            >
-              {loading && individualTest === 'appointment' ? (
-                <Loader2 className="h-6 w-6 mb-2 animate-spin" />
-              ) : (
-                <Calendar className="h-6 w-6 mb-2" />
-              )}
-              <span>Appointment Reminders</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Data Check Results */}
       {dataCheck && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Data Availability Check</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {dataCheck.error ? (
-              <Alert variant="destructive">
-                <XCircle className="h-4 w-4" />
-                <AlertDescription>{dataCheck.error}</AlertDescription>
-              </Alert>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="text-center p-4 border rounded-lg">
-                    <div className="text-3xl font-bold">{dataCheck.activePlans}</div>
-                    <div className="text-sm text-muted-foreground">Active Plans</div>
-                  </div>
-                  <div className="text-center p-4 border rounded-lg">
-                    <div className="text-3xl font-bold">{dataCheck.unpaidInvoices}</div>
-                    <div className="text-sm text-muted-foreground">Unpaid Invoices</div>
-                  </div>
-                  <div className="text-center p-4 border rounded-lg">
-                    <div className="text-3xl font-bold">{dataCheck.upcomingAppointments}</div>
-                    <div className="text-sm text-muted-foreground">Upcoming Appointments</div>
-                  </div>
-                </div>
-
-                {dataCheck.recommendations && dataCheck.recommendations.length > 0 && (
-                  <Alert>
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>
-                      <div className="font-semibold mb-2">Recommendations:</div>
-                      <ul className="list-disc list-inside space-y-1">
-                        {dataCheck.recommendations.map((rec: string, i: number) => (
-                          <li key={i} className="text-sm">{rec}</li>
-                        ))}
-                      </ul>
-                    </AlertDescription>
-                  </Alert>
-                )}
+        <Panel title="Data availability" bodyClassName="space-y-4 p-5 pt-3">
+          {dataCheck.error ? (
+            <p className="flex items-start gap-2 rounded-xl bg-rh-blush px-3 py-2 text-sm text-[#be123c] dark:bg-rose-400/10 dark:text-rose-300">
+              <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              {dataCheck.error}
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <StatTile label="Active plans" value={dataCheck.activePlans ?? 0} />
+                <StatTile label="Unpaid invoices" value={dataCheck.unpaidInvoices ?? 0} tone="peach" />
+                <StatTile label="Upcoming appointments" value={dataCheck.upcomingAppointments ?? 0} tone="mint" />
               </div>
-            )}
-          </CardContent>
-        </Card>
+              {dataCheck.recommendations && dataCheck.recommendations.length > 0 && (
+                <div className="rounded-xl bg-rh-canvas px-4 py-3 dark:bg-white/[0.04]">
+                  <p className="mb-1.5 text-sm font-semibold text-rh-night dark:text-white">Recommendations</p>
+                  <ul className="list-inside list-disc space-y-1 text-sm text-neutral-600 dark:text-neutral-300">
+                    {dataCheck.recommendations.map((rec, i) => (
+                      <li key={i}>{rec}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </Panel>
       )}
 
-      {/* Test Results */}
       {testResults && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Test Results</CardTitle>
-            <CardDescription>
-              {testResults.timestamp && `Run at: ${new Date(testResults.timestamp).toLocaleString()}`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {testResults.error ? (
-              <Alert variant="destructive">
-                <XCircle className="h-4 w-4" />
-                <AlertDescription>{testResults.error}</AlertDescription>
-              </Alert>
-            ) : (
-              <div className="space-y-4">
-                {/* Summary */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center p-4 border rounded-lg">
-                    <div className="text-2xl font-bold">{testResults.summary.total}</div>
-                    <div className="text-sm text-muted-foreground">Total Tests</div>
-                  </div>
-                  <div className="text-center p-4 border rounded-lg bg-green-50">
-                    <div className="text-2xl font-bold text-green-600">
-                      {testResults.summary.passed}
-                    </div>
-                    <div className="text-sm text-muted-foreground">Passed</div>
-                  </div>
-                  <div className="text-center p-4 border rounded-lg bg-red-50">
-                    <div className="text-2xl font-bold text-red-600">
-                      {testResults.summary.failed}
-                    </div>
-                    <div className="text-sm text-muted-foreground">Failed</div>
-                  </div>
-                </div>
-
-                {/* Individual Test Results */}
-                <div className="space-y-3">
-                  {testResults.tests?.map((test: any, i: number) => (
-                    <Card key={i}>
-                      <CardContent className="pt-6">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start gap-3">
-                            {test.status.includes('PASSED') ? (
-                              <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5" />
-                            ) : (
-                              <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
-                            )}
-                            <div>
-                              <h4 className="font-semibold">{test.name}</h4>
-                              {test.details && (
-                                <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto">
-                                  {JSON.stringify(test.details, null, 2)}
-                                </pre>
-                              )}
-                              {test.error && (
-                                <div className="mt-2 text-sm text-red-600">
-                                  Error: {test.error}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <Badge
-                            variant={test.status.includes('PASSED') ? 'default' : 'destructive'}
-                          >
-                            {test.status}
-                          </Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-
-                {/* Final Status */}
-                {testResults.summary.failed === 0 ? (
-                  <Alert className="bg-green-50 border-green-200">
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    <AlertDescription className="text-green-800">
-                      <strong>🎉 All tests passed!</strong> Reminder system is wired correctly.
-                    </AlertDescription>
-                  </Alert>
-                ) : (
-                  <Alert variant="destructive">
-                    <XCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      <strong>Some tests failed.</strong> Check the errors above and verify your setup.
-                    </AlertDescription>
-                  </Alert>
-                )}
+        <Panel
+          title="Test results"
+          description={testResults.timestamp ? `Run at ${new Date(testResults.timestamp).toLocaleString()}` : undefined}
+          bodyClassName="space-y-4 p-5 pt-3"
+        >
+          {testResults.error ? (
+            <p className="flex items-start gap-2 rounded-xl bg-rh-blush px-3 py-2 text-sm text-[#be123c] dark:bg-rose-400/10 dark:text-rose-300">
+              <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              {testResults.error}
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <StatTile label="Total" value={testResults.summary.total} tone="neutral" />
+                <StatTile label="Passed" value={testResults.summary.passed} tone="mint" />
+                <StatTile label="Failed" value={testResults.summary.failed} tone={testResults.summary.failed > 0 ? 'rose' : 'neutral'} />
               </div>
-            )}
-          </CardContent>
-        </Card>
+
+              <ul className="space-y-3">
+                {testResults.tests?.map((test, i) => (
+                  <li key={i} className="rounded-xl border border-black/[0.06] p-4 dark:border-white/[0.08]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        {passed(test.status) ? (
+                          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-300" />
+                        ) : (
+                          <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-300" />
+                        )}
+                        <div className="min-w-0">
+                          <h4 className="font-semibold capitalize text-rh-night dark:text-white">{test.name}</h4>
+                          {test.details !== undefined && test.details !== null && (
+                            <pre className="mt-2 max-h-72 overflow-auto rounded-lg bg-rh-canvas p-2 text-xs text-neutral-700 dark:bg-rh-ink dark:text-neutral-300">
+                              {JSON.stringify(test.details, null, 2)}
+                            </pre>
+                          )}
+                          {test.error && <p className="mt-2 text-sm text-rose-600 dark:text-rose-300">Error: {test.error}</p>}
+                        </div>
+                      </div>
+                      <StatusBadge tone={passed(test.status) ? 'green' : 'red'}>{passed(test.status) ? 'Passed' : 'Failed'}</StatusBadge>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              {testResults.summary.failed === 0 ? (
+                <p className="flex items-center gap-2 rounded-xl bg-rh-mint px-3 py-2 text-sm text-[#047857] dark:bg-emerald-400/10 dark:text-emerald-300">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>
+                    <strong>All tests passed.</strong> The reminder system is wired correctly.
+                  </span>
+                </p>
+              ) : (
+                <p className="flex items-center gap-2 rounded-xl bg-rh-blush px-3 py-2 text-sm text-[#be123c] dark:bg-rose-400/10 dark:text-rose-300">
+                  <XCircle className="h-4 w-4 shrink-0" />
+                  <span>
+                    <strong>Some tests failed.</strong> Check the errors above and verify your setup.
+                  </span>
+                </p>
+              )}
+            </>
+          )}
+        </Panel>
       )}
-    </div>
+    </AdminPage>
   );
+}
+
+/** Developer tool: hidden in production unless NEXT_PUBLIC_ADMIN_DEV_TOOLS=true. */
+export default function TestRemindersPage() {
+  if (!devToolsEnabled()) notFound();
+  return <ReminderTests />;
 }

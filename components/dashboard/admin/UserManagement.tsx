@@ -1,24 +1,40 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { useQuery, useMutation } from 'convex/react'
-import { api } from '@/convex/_generated/api'
-import { Id } from '@/convex/_generated/dataModel'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { DataTable } from '@/components/ui/data-table'
-import { Skeleton } from '@/components/ui/skeleton'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useEffect, useMemo, useState, type ComponentType } from 'react'
+import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { format } from 'date-fns'
+import { toast } from 'sonner'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+  Building2,
+  Crown,
+  Download,
+  Eye,
+  HeartHandshake,
+  Loader2,
+  MoreHorizontal,
+  Search,
+  Shield,
+  Stethoscope,
+  Trash2,
+  User,
+  UserCog,
+  UserRound,
+  Users,
+  Briefcase,
+  Handshake,
+  HelpCircle,
+} from 'lucide-react'
+
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -28,576 +44,604 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Users,
-  Shield,
-  MoreHorizontal,
-  UserCog,
-  Crown,
-  Stethoscope,
-  Building2,
-  User,
-  Trash2,
-  Eye
-} from 'lucide-react'
-import { ColumnDef } from '@tanstack/react-table'
-import { format } from 'date-fns'
-import { toast } from 'sonner'
+  AdminPage,
+  ConfirmDialog,
+  EmptyState,
+  FilterChips,
+  PageHeader,
+  Panel,
+  StatTile,
+  Stagger,
+  StaggerItem,
+  StatusBadge,
+  downloadCsv,
+  inputClass,
+  primaryButtonClass,
+  softButtonClass,
+  tableWrapClass,
+} from '@/components/admin/ui'
+import { playSound } from '@/lib/sounds'
+import { cn } from '@/lib/utils'
 
-type UserRole = 'patient' | 'physiotherapist' | 'clinic_owner' | 'admin' | 'family_member'
+// ─── Shared helpers (also used by the user detail, approvals and declined pages) ─────────
 
-interface UserData {
+type BadgeTone = 'neutral' | 'teal' | 'green' | 'amber' | 'red'
+
+export const ROLE_META: Record<
+  string,
+  { label: string; plural: string; icon: ComponentType<{ className?: string }>; tone: BadgeTone }
+> = {
+  physiotherapist: { label: 'Physiotherapist', plural: 'Physiotherapists', icon: Stethoscope, tone: 'teal' },
+  patient: { label: 'Patient', plural: 'Patients', icon: UserRound, tone: 'neutral' },
+  clinic_owner: { label: 'Clinic owner', plural: 'Clinic owners', icon: Building2, tone: 'green' },
+  clinic_staff: { label: 'Clinic staff', plural: 'Clinic staff', icon: Briefcase, tone: 'green' },
+  doctor: { label: 'Doctor', plural: 'Doctors', icon: Stethoscope, tone: 'teal' },
+  family_member: { label: 'Family member', plural: 'Family members', icon: HeartHandshake, tone: 'neutral' },
+  partner: { label: 'Partner', plural: 'Partners', icon: Handshake, tone: 'amber' },
+  admin: { label: 'Administrator', plural: 'Administrators', icon: Shield, tone: 'red' },
+  none: { label: 'No role yet', plural: 'No role yet', icon: HelpCircle, tone: 'neutral' },
+}
+
+export function roleMeta(role?: string | null) {
+  return ROLE_META[role || 'none'] ?? { label: role ?? 'Unknown', plural: role ?? 'Unknown', icon: User, tone: 'neutral' as BadgeTone }
+}
+
+export function RoleBadge({ role }: { role?: string | null }) {
+  const meta = roleMeta(role)
+  const Icon = meta.icon
+  return (
+    <StatusBadge tone={meta.tone} className="gap-1">
+      <Icon className="h-3 w-3" />
+      {meta.label}
+    </StatusBadge>
+  )
+}
+
+export function displayName(u: { firstName?: string; lastName?: string; email?: string } | null | undefined) {
+  if (!u) return 'Unknown user'
+  return `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || 'Unnamed user'
+}
+
+export function UserAvatar({
+  user,
+  className,
+}: {
+  user: { firstName?: string; lastName?: string; email?: string; imageUrl?: string | null } | null | undefined
+  className?: string
+}) {
+  const initial = (user?.firstName?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase()
+  return (
+    <Avatar className={cn('h-9 w-9', className)}>
+      {user?.imageUrl ? <AvatarImage src={user.imageUrl} alt="" className="object-cover" /> : null}
+      <AvatarFallback className="bg-rh-mist text-xs font-semibold text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+        {initial}
+      </AvatarFallback>
+    </Avatar>
+  )
+}
+
+/** Roles an admin can assign with users.setUserRole. */
+export const ASSIGNABLE_ROLES = ['patient', 'physiotherapist', 'clinic_owner', 'family_member', 'admin'] as const
+export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number]
+
+/**
+ * Change-role dialog shared by the users list and the user detail page.
+ * Plays 'success' on change and 'error' on failure.
+ */
+export function RoleChangeDialog({
+  user,
+  open,
+  onOpenChange,
+}: {
+  user: { _id: Id<'users'>; firstName?: string; lastName?: string; email?: string; imageUrl?: string; role?: string } | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const setUserRole = useMutation(api.users.setUserRole)
+  const [selected, setSelected] = useState<AssignableRole>('patient')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (open && user) {
+      setSelected((ASSIGNABLE_ROLES as readonly string[]).includes(user.role ?? '') ? (user.role as AssignableRole) : 'patient')
+    }
+  }, [open, user])
+
+  const save = async () => {
+    if (!user) return
+    if (selected === user.role) {
+      onOpenChange(false)
+      return
+    }
+    setSaving(true)
+    try {
+      await setUserRole({ userId: user._id, role: selected })
+      playSound('success')
+      toast.success(`${displayName(user)} is now ${roleMeta(selected).label.toLowerCase()}`)
+      onOpenChange(false)
+    } catch (error) {
+      playSound('error')
+      toast.error('Could not change the role', {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
+      <DialogContent className="rounded-2xl sm:max-w-md dark:border-white/10 dark:bg-rh-ink-2">
+        <DialogHeader>
+          <DialogTitle className="dark:text-white">Change role</DialogTitle>
+          <DialogDescription>Roles decide which dashboard a person lands on and what they can see.</DialogDescription>
+        </DialogHeader>
+
+        {user && (
+          <div className="space-y-4 py-2">
+            <div className="flex items-center gap-3 rounded-xl bg-rh-canvas p-3 dark:bg-white/[0.04]">
+              <UserAvatar user={user} className="h-10 w-10" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-rh-night dark:text-white">{displayName(user)}</p>
+                <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{user.email}</p>
+              </div>
+              <div className="ml-auto">
+                <RoleBadge role={user.role} />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400">New role</label>
+              <Select value={selected} onValueChange={(v) => setSelected(v as AssignableRole)}>
+                <SelectTrigger className={inputClass}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="dark:border-white/10 dark:bg-rh-ink-2">
+                  {ASSIGNABLE_ROLES.map((role) => {
+                    const meta = roleMeta(role)
+                    const Icon = meta.icon
+                    return (
+                      <SelectItem key={role} value={role}>
+                        <span className="flex items-center gap-2">
+                          <Icon className="h-4 w-4" />
+                          {meta.label}
+                        </span>
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selected === 'admin' && user.role !== 'admin' && (
+              <div className="flex items-start gap-2 rounded-xl bg-rh-peach p-3 text-xs text-[#b4690e] dark:bg-amber-400/10 dark:text-amber-300">
+                <Crown className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>Administrators get full access to the admin console, including payouts, approvals and every account.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter className="gap-2">
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving} className="rounded-xl dark:text-white dark:hover:bg-white/[0.06]">
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving || !user || selected === user.role} className={primaryButtonClass}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save role
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function accountStatus(u: { approvalStatus?: string | null; status?: string; onboarded?: boolean }): {
+  label: string
+  tone: BadgeTone
+} {
+  if (u.status === 'suspended') return { label: 'Suspended', tone: 'red' }
+  if (u.status === 'terminated') return { label: 'Terminated', tone: 'red' }
+  if (u.approvalStatus === 'pending_review') return { label: 'Pending review', tone: 'amber' }
+  if (u.approvalStatus === 'declined') return { label: 'Declined', tone: 'red' }
+  if (u.approvalStatus === 'approved') return { label: 'Approved', tone: 'green' }
+  return u.onboarded ? { label: 'Active', tone: 'teal' } : { label: 'Onboarding', tone: 'neutral' }
+}
+
+// ─── Users & roles page ──────────────────────────────────────────────────────────────
+
+type RoleFilter =
+  | 'all'
+  | 'physiotherapist'
+  | 'patient'
+  | 'clinic_owner'
+  | 'clinic_staff'
+  | 'doctor'
+  | 'family_member'
+  | 'partner'
+  | 'admin'
+  | 'none'
+
+const ROLE_FILTERS: RoleFilter[] = [
+  'all',
+  'physiotherapist',
+  'patient',
+  'clinic_owner',
+  'clinic_staff',
+  'doctor',
+  'family_member',
+  'partner',
+  'admin',
+  'none',
+]
+
+type UserRow = {
   _id: Id<'users'>
-  clerkId: string
+  _creationTime: number
   firstName?: string
   lastName?: string
   email?: string
   imageUrl?: string
   phoneNumber?: string
-  role?: UserRole
+  role?: string
   onboarded: boolean
-  physiotherapistProfileId?: Id<'physiotherapistProfiles'>
-  patientProfileId?: Id<'patientProfiles'>
+  status?: string
   lastLoginAt?: number
-  _creationTime: number
+  approvalStatus: 'pending_review' | 'approved' | 'declined' | null
 }
 
-interface RoleChangeDialogProps {
-  user: UserData
-  onClose: () => void
-  onRoleChange: (userId: Id<'users'>, newRole: UserRole) => void
-}
+type RoleCounts = { counts: Record<string, number>; capped: string[]; cap: number }
 
-function RoleChangeDialog({ user, onClose, onRoleChange }: RoleChangeDialogProps) {
-  const [selectedRole, setSelectedRole] = useState<UserRole>(user.role || 'patient')
-  const [isLoading, setIsLoading] = useState(false)
+const PAGE_SIZE = 25
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-  const handleRoleChange = async () => {
-    if (selectedRole === user.role) {
-      onClose()
-      return
+const usersApi = api.users
+
+function headerFor(role: RoleFilter) {
+  if (role === 'physiotherapist')
+    return {
+      eyebrow: 'Rehabify Physios',
+      title: 'All physiotherapists',
+      description: 'Every physiotherapist account, their approval state and when they joined.',
     }
-
-    setIsLoading(true)
-    try {
-      await onRoleChange(user._id, selectedRole)
-      toast.success(`User role updated to ${selectedRole.replace('_', ' ')}`)
-      onClose()
-    } catch {
-      toast.error('Failed to update user role')
-    } finally {
-      setIsLoading(false)
+  if (role === 'patient')
+    return {
+      eyebrow: 'Patients & Care',
+      title: 'All patients',
+      description: 'Patient accounts across the marketplace, clinics and partner referrals.',
     }
+  return {
+    eyebrow: 'Platform',
+    title: 'Users & roles',
+    description: 'Find any account, change what role it has, or remove it.',
   }
-
-  const roleLabels = {
-    patient: 'Patient',
-    physiotherapist: 'Physiotherapist',
-    clinic_owner: 'Clinic Owner',
-    family_member: 'Family Member',
-    admin: 'Administrator'
-  }
-
-  const roleIcons = {
-    patient: User,
-    physiotherapist: Stethoscope,
-    clinic_owner: Building2,
-    family_member: User,
-    admin: Shield
-  }
-
-  return (
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>Change User Role</DialogTitle>
-        <DialogDescription>
-          Update the role for {user.firstName} {user.lastName} ({user.email})
-        </DialogDescription>
-      </DialogHeader>
-
-      <div className="py-4">
-        <div className="space-y-4">
-          <div className="flex items-center space-x-3">
-            <Avatar className="h-10 w-10">
-              <AvatarImage src={user.imageUrl} />
-              <AvatarFallback>
-                {user.firstName?.charAt(0) || user.email?.charAt(0) || 'U'}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">{user.firstName} {user.lastName}</p>
-              <p className="text-sm text-muted-foreground">{user.email}</p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Select New Role:</label>
-            <Select value={selectedRole} onValueChange={(value) => setSelectedRole(value as UserRole)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(roleLabels).map(([value, label]) => {
-                  const Icon = roleIcons[value as UserRole]
-                  return (
-                    <SelectItem key={value} value={value}>
-                      <div className="flex items-center space-x-2">
-                        <Icon className="h-4 w-4" />
-                        <span>{label}</span>
-                      </div>
-                    </SelectItem>
-                  )
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedRole === 'admin' && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <Crown className="h-4 w-4 text-yellow-600" />
-                <p className="text-sm font-medium text-yellow-800">Admin Privileges</p>
-              </div>
-              <p className="text-xs text-yellow-700 mt-1">
-                This user will have full administrative access to the platform.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <DialogFooter>
-        <Button variant="outline" onClick={onClose} disabled={isLoading}>
-          Cancel
-        </Button>
-        <Button onClick={handleRoleChange} disabled={isLoading || selectedRole === user.role}>
-          {isLoading ? 'Updating...' : 'Update Role'}
-        </Button>
-      </DialogFooter>
-    </DialogContent>
-  )
 }
 
 export function UserManagement() {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
-  const roleParam = searchParams?.get('role') as UserRole | 'all' | null
+  const reduceMotion = useReducedMotion()
 
-  const [selectedUser, setSelectedUser] = useState<UserData | null>(null)
-  const [showRoleDialog, setShowRoleDialog] = useState(false)
-  const [userToDelete, setUserToDelete] = useState<UserData | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const [activeRoleFilter, setActiveRoleFilter] = useState<UserRole | 'all'>(roleParam || 'all')
+  const roleParam = searchParams?.get('role') ?? 'all'
+  const role: RoleFilter = (ROLE_FILTERS as string[]).includes(roleParam) ? (roleParam as RoleFilter) : 'all'
 
-  // Update filter when URL changes
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
   useEffect(() => {
-    if (roleParam && roleParam !== activeRoleFilter) {
-      setActiveRoleFilter(roleParam)
-    }
-  }, [roleParam, activeRoleFilter])
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300)
+    return () => clearTimeout(t)
+  }, [searchInput])
 
-  const handleRoleFilterChange = (value: UserRole | 'all') => {
-    setActiveRoleFilter(value)
-    if (value === 'all') {
-      router.push('/dashboard/admin/users')
-    } else {
-      router.push(`/dashboard/admin/users?role=${value}`)
-    }
-  }
+  const [roleTarget, setRoleTarget] = useState<UserRow | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null)
 
-  // Get all users
-  const users = useQuery(api.users.getAllUsers)
+  const me = useQuery(api.users.getMyUser)
+  const roleCounts = (useQuery as any)(usersApi.adminUserRoleCounts) as RoleCounts | undefined
+  const { results, status, loadMore } = (usePaginatedQuery as any)(
+    usersApi.adminListUsers,
+    { role: role === 'all' ? undefined : role, search: search || undefined },
+    { initialNumItems: PAGE_SIZE }
+  ) as { results: UserRow[]; status: 'LoadingFirstPage' | 'CanLoadMore' | 'LoadingMore' | 'Exhausted'; loadMore: (n: number) => void }
 
-  // Filter users
-  const filteredUsers = useMemo(() => {
-    if (!users) return []
-    if (activeRoleFilter === 'all') return users
-    return users.filter((u: any) => u.role === activeRoleFilter)
-  }, [users, activeRoleFilter])
-
-  // Get current user to verify admin status
-  const currentUser = useQuery(api.users.getMyUser)
-
-  // Mutations
-  const setUserRole = useMutation(api.users.setUserRole)
   const deleteUser = useMutation(api.users.adminDeleteUser)
 
-  const handleDeleteUser = async () => {
-    if (!userToDelete) return
-    setIsDeleting(true)
-    try {
-      await deleteUser({ userId: userToDelete._id })
-      toast.success('User deleted successfully')
-      setUserToDelete(null)
-    } catch (error) {
-      toast.error('Failed to delete user', {
-        description: error instanceof Error ? error.message : 'Unknown error'
-      })
-    } finally {
-      setIsDeleting(false)
-    }
+  const setRole = (next: RoleFilter) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? '')
+    if (next === 'all') params.delete('role')
+    else params.set('role', next)
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
 
-  const handleRoleChange = async (userId: Id<'users'>, newRole: UserRole) => {
-    await setUserRole({ userId, role: newRole })
+  const countLabel = (key: string) => {
+    if (!roleCounts) return undefined
+    const n = roleCounts.counts[key] ?? 0
+    return n
   }
-
-  const openRoleDialog = (user: UserData) => {
-    setSelectedUser(user)
-    setShowRoleDialog(true)
+  const countText = (key: string) => {
+    if (!roleCounts) return '—'
+    const n = roleCounts.counts[key] ?? 0
+    return roleCounts.capped.includes(key) ? `${roleCounts.cap}+` : n.toLocaleString()
   }
+  const totalText = useMemo(() => {
+    if (!roleCounts) return '—'
+    const total = Object.values(roleCounts.counts).reduce((s, n) => s + n, 0)
+    return `${total.toLocaleString()}${roleCounts.capped.length ? '+' : ''}`
+  }, [roleCounts])
 
-  const closeRoleDialog = () => {
-    setSelectedUser(null)
-    setShowRoleDialog(false)
-  }
+  const chipOptions = ROLE_FILTERS.filter((r) => r === 'all' || r === role || (roleCounts?.counts[r] ?? 1) > 0).map((r) => ({
+    value: r,
+    label: r === 'all' ? 'All' : roleMeta(r).plural,
+    count: r === 'all' ? undefined : countLabel(r),
+  }))
 
-  const userColumns: ColumnDef<UserData>[] = [
-    {
-      accessorKey: 'email',
-      header: 'User',
-      cell: ({ row }) => (
-        <div className="flex items-center space-x-3">
-          <Avatar className="h-8 w-8">
-            <AvatarImage src={row.original.imageUrl} />
-            <AvatarFallback>
-              {row.original.firstName?.charAt(0) || row.original.email?.charAt(0) || 'U'}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <div className="font-medium">
-              {row.original.firstName} {row.original.lastName}
-            </div>
-            <div className="text-sm text-muted-foreground">{row.original.email}</div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      accessorKey: 'role',
-      header: 'Role',
-      cell: ({ row }) => {
-        const role = row.original.role || 'patient'
-        const roleConfig: Record<string, { label: string; icon: any; variant: 'default' | 'secondary' | 'destructive' }> = {
-          patient: { label: 'Patient', icon: User, variant: 'secondary' as const },
-          physiotherapist: { label: 'Physiotherapist', icon: Stethoscope, variant: 'default' as const },
-          clinic_owner: { label: 'Clinic Owner', icon: Building2, variant: 'default' as const },
-          family_member: { label: 'Family Member', icon: User, variant: 'secondary' as const },
-          doctor: { label: 'Doctor', icon: Stethoscope, variant: 'default' as const },
-          admin: { label: 'Administrator', icon: Shield, variant: 'destructive' as const }
-        }
+  const header = headerFor(role)
+  const searchingWithinPages = !!search && !EMAIL_RE.test(search)
 
-        const config = roleConfig[role] || { label: role, icon: User, variant: 'secondary' as const }
-        const Icon = config.icon
-
-        return (
-          <Badge variant={config.variant} className="gap-1">
-            <Icon className="h-3 w-3" />
-            {config.label}
-          </Badge>
-        )
-      },
-    },
-    {
-      accessorKey: 'phoneNumber',
-      header: 'Phone',
-      cell: ({ row }) => (
-        <div className="text-sm text-muted-foreground">
-          {row.original.phoneNumber || 'Not provided'}
-        </div>
-      ),
-    },
-    {
-      accessorKey: 'status',
-      header: 'Status',
-      cell: ({ row }) => (
-        <Badge variant={row.original.onboarded ? 'default' : 'secondary'}>
-          {row.original.onboarded ? 'Active' : 'Pending'}
-        </Badge>
-      ),
-    },
-    {
-      accessorKey: 'createdAt',
-      header: 'Joined',
-      cell: ({ row }) => (
-        <div className="text-sm">
-          {format(new Date(row.original._creationTime), 'MMM dd, yyyy')}
-        </div>
-      ),
-    },
-    {
-      id: 'actions',
-      header: 'Actions',
-      cell: ({ row }) => (
-        <div onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push(`/dashboard/admin/users/${row.original._id}`)}>
-                <Eye className="mr-2 h-4 w-4" />
-                View Details
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => openRoleDialog(row.original)}>
-                <UserCog className="mr-2 h-4 w-4" />
-                Change Role
-              </DropdownMenuItem>
-              {row.original.role !== 'admin' && (
-                <DropdownMenuItem onClick={() => openRoleDialog(row.original)}>
-                  <Crown className="mr-2 h-4 w-4" />
-                  Promote to Admin
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                className="text-red-600 focus:text-red-600" 
-                onClick={() => setUserToDelete(row.original)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete User
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      ),
-    },
-  ]
-
-  if (users === undefined || currentUser === undefined) {
-    return <UserManagementSkeleton />
-  }
-
-  if (!currentUser || currentUser.role !== 'admin') {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <Shield className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Access Denied
-          </h2>
-          <p className="text-gray-600">
-            You need administrator privileges to access this page.
-          </p>
-        </div>
-      </div>
+  const exportCsv = () => {
+    if (results.length === 0) return
+    downloadCsv(
+      `rehabify-${role === 'all' ? 'users' : role}-${format(new Date(), 'yyyy-MM-dd')}`,
+      results.map((u) => ({
+        id: u._id,
+        name: displayName(u),
+        email: u.email ?? '',
+        phone: u.phoneNumber ?? '',
+        role: u.role ?? '',
+        status: accountStatus(u).label,
+        joined: new Date(u._creationTime).toISOString(),
+        lastLogin: u.lastLoginAt ? new Date(u.lastLoginAt).toISOString() : '',
+      }))
     )
   }
 
-  const roleStats = {
-    total: users.length,
-    admins: users.filter((u: UserData) => u.role === 'admin').length,
-    physiotherapists: users.filter((u: UserData) => u.role === 'physiotherapist').length,
-    clinicOwners: users.filter((u: UserData) => u.role === 'clinic_owner').length,
-    patients: users.filter((u: UserData) => u.role === 'patient').length,
-    familyMembers: users.filter((u: UserData) => u.role === 'family_member').length,
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    try {
+      await deleteUser({ userId: deleteTarget._id })
+      playSound('reject')
+      toast.success(`${displayName(deleteTarget)} was deleted`, {
+        description: 'Their account, profile and approval record were removed.',
+      })
+      setDeleteTarget(null)
+    } catch (error) {
+      toast.error('Could not delete this user', {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
+      throw error
+    }
   }
 
+  const isLoadingFirst = status === 'LoadingFirstPage'
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
-          <p className="text-muted-foreground">
-            Manage user roles and permissions across the platform
-          </p>
+    <AdminPage>
+      <PageHeader
+        eyebrow={header.eyebrow}
+        title={header.title}
+        description={header.description}
+        actions={
+          <Button onClick={exportCsv} disabled={results.length === 0} className={softButtonClass}>
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
+        }
+      />
+
+      <Stagger className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <StaggerItem>
+          <StatTile label="All accounts" value={totalText} icon={Users} href="/dashboard/admin/users" />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile
+            label="Physiotherapists"
+            value={countText('physiotherapist')}
+            icon={Stethoscope}
+            href="/dashboard/admin/users?role=physiotherapist"
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile label="Patients" value={countText('patient')} icon={UserRound} tone="mint" href="/dashboard/admin/users?role=patient" />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile
+            label="Clinic owners"
+            value={countText('clinic_owner')}
+            icon={Building2}
+            tone="peach"
+            href="/dashboard/admin/users?role=clinic_owner"
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile label="Administrators" value={countText('admin')} icon={Shield} tone="rose" href="/dashboard/admin/users?role=admin" />
+        </StaggerItem>
+      </Stagger>
+
+      <Panel bodyClassName="pb-2">
+        <div className="space-y-3 px-5 pb-3 pt-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <FilterChips value={role} onChange={setRole} options={chipOptions} />
+            <div className="relative w-full lg:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search name, email or phone"
+                className={cn(inputClass, 'h-10 pl-9')}
+                aria-label="Search users"
+              />
+            </div>
+          </div>
+          {searchingWithinPages && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              Name and phone search looks through the accounts loaded so far. Type a full email address for an exact match,
+              or load more to search further back.
+            </p>
+          )}
         </div>
-      </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{roleStats.total}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Administrators</CardTitle>
-            <Shield className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{roleStats.admins}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Physiotherapists</CardTitle>
-            <Stethoscope className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{roleStats.physiotherapists}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Clinic Owners</CardTitle>
-            <Building2 className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{roleStats.clinicOwners}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Patients</CardTitle>
-            <User className="h-4 w-4 text-purple-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{roleStats.patients}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Users Table */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>All Users</CardTitle>
-            <CardDescription>
-              Manage user roles and permissions
-            </CardDescription>
+        {isLoadingFirst ? (
+          <div className="space-y-2 px-5 pb-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded-xl dark:bg-white/[0.06]" />
+            ))}
           </div>
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-muted-foreground font-medium">Filter by Role:</span>
-            <Select value={activeRoleFilter} onValueChange={(value) => handleRoleFilterChange(value as UserRole | 'all')}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="All Roles" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Roles</SelectItem>
-                <SelectItem value="patient">Patients</SelectItem>
-                <SelectItem value="physiotherapist">Physiotherapists</SelectItem>
-                <SelectItem value="clinic_owner">Clinic Owners</SelectItem>
-                <SelectItem value="family_member">Family Members</SelectItem>
-                <SelectItem value="admin">Administrators</SelectItem>
-              </SelectContent>
-            </Select>
+        ) : results.length === 0 ? (
+          <EmptyState
+            icon={<Users />}
+            title={search ? 'No matching accounts' : 'No accounts here yet'}
+            description={
+              search
+                ? status === 'CanLoadMore'
+                  ? 'Nothing in the accounts loaded so far. Load more to keep searching.'
+                  : 'Try a different name or the full email address.'
+                : 'Accounts with this role will show up here.'
+            }
+            action={
+              search && status === 'CanLoadMore' ? (
+                <Button onClick={() => loadMore(PAGE_SIZE * 2)} className={softButtonClass}>
+                  Search further back
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <div className={tableWrapClass}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="px-5 py-2.5 text-left">User</th>
+                  <th className="px-3 py-2.5 text-left">Role</th>
+                  <th className="px-3 py-2.5 text-left">Status</th>
+                  <th className="hidden px-3 py-2.5 text-left md:table-cell">Joined</th>
+                  <th className="px-5 py-2.5 text-right">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <AnimatePresence initial={false}>
+                  {results.map((u) => {
+                    const st = accountStatus(u)
+                    const isMe = me?._id === u._id
+                    return (
+                      <motion.tr
+                        key={u._id}
+                        layout={!reduceMotion}
+                        initial={reduceMotion ? false : { opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -16 }}
+                        transition={{ duration: 0.2 }}
+                        className="cursor-pointer border-b transition-colors"
+                        onClick={() => router.push(`/dashboard/admin/users/${u._id}`)}
+                      >
+                        <td className="px-5 py-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <UserAvatar user={u} />
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-rh-night dark:text-white">
+                                {displayName(u)}
+                                {isMe && <span className="ml-1.5 text-xs font-normal text-neutral-400">(you)</span>}
+                              </p>
+                              <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{u.email ?? 'No email'}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <RoleBadge role={u.role} />
+                        </td>
+                        <td className="px-3 py-3">
+                          <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+                        </td>
+                        <td className="hidden whitespace-nowrap px-3 py-3 text-neutral-500 dark:text-neutral-400 md:table-cell">
+                          {format(new Date(u._creationTime), 'd MMM yyyy')}
+                        </td>
+                        <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu modal={false}>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 rounded-lg dark:text-neutral-300 dark:hover:bg-white/[0.06]"
+                                aria-label={`Actions for ${displayName(u)}`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44 rounded-xl dark:border-white/10 dark:bg-rh-ink-2">
+                              <DropdownMenuLabel className="truncate text-xs text-neutral-500">{displayName(u)}</DropdownMenuLabel>
+                              <DropdownMenuSeparator className="dark:bg-white/10" />
+                              <DropdownMenuItem asChild>
+                                <Link href={`/dashboard/admin/users/${u._id}`}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => setRoleTarget(u)}>
+                                <UserCog className="mr-2 h-4 w-4" />
+                                Change role
+                              </DropdownMenuItem>
+                              {!isMe && (
+                                <>
+                                  <DropdownMenuSeparator className="dark:bg-white/10" />
+                                  <DropdownMenuItem
+                                    onSelect={() => setDeleteTarget(u)}
+                                    className="text-rose-600 focus:text-rose-600 dark:text-rose-300 dark:focus:text-rose-300"
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </motion.tr>
+                    )
+                  })}
+                </AnimatePresence>
+              </tbody>
+            </table>
           </div>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            data={filteredUsers}
-            columns={userColumns}
-            searchKey="email"
-            onRowClick={(user: UserData) => {
-              router.push(`/dashboard/admin/users/${user._id}`)
-            }}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Delete User Confirmation */}
-      <AlertDialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the user
-              <strong> {userToDelete?.firstName} {userToDelete?.lastName} ({userToDelete?.email})</strong> 
-              and remove their associated profile data from our servers.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={(e) => {
-                e.preventDefault()
-                handleDeleteUser()
-              }}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {isDeleting ? 'Deleting...' : 'Delete User'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Role Change Dialog */}
-      <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
-        {selectedUser && (
-          <RoleChangeDialog
-            user={selectedUser}
-            onClose={closeRoleDialog}
-            onRoleChange={handleRoleChange}
-          />
         )}
-      </Dialog>
-    </div>
+
+        {!isLoadingFirst && results.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-xs text-neutral-500 dark:text-neutral-400">
+            <span>
+              Showing {results.length.toLocaleString()} {results.length === 1 ? 'account' : 'accounts'}
+              {status === 'Exhausted' ? '' : ' so far'}
+            </span>
+            {(status === 'CanLoadMore' || status === 'LoadingMore') && (
+              <Button onClick={() => loadMore(PAGE_SIZE)} disabled={status === 'LoadingMore'} className={softButtonClass} size="sm">
+                {status === 'LoadingMore' && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                Load more
+              </Button>
+            )}
+          </div>
+        )}
+      </Panel>
+
+      <RoleChangeDialog user={roleTarget} open={!!roleTarget} onOpenChange={(o) => !o && setRoleTarget(null)} />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title={`Delete ${displayName(deleteTarget)}?`}
+        description="This permanently removes the account, its patient/physio/clinic profile and any approval record. It cannot be undone."
+        confirmLabel="Delete user"
+        destructive
+        onConfirm={confirmDelete}
+      />
+    </AdminPage>
   )
 }
-
-function UserManagementSkeleton() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-96" />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
-        {[...Array(5)].map((_, i) => (
-          <Card key={i}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-8 w-16" />
-                </div>
-                <Skeleton className="h-8 w-8 rounded" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <Card>
-        <CardContent className="p-6">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Skeleton className="h-6 w-32" />
-              <Skeleton className="h-4 w-64" />
-            </div>
-            <div className="space-y-2">
-              {[...Array(10)].map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-} 

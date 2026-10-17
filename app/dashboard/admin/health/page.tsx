@@ -1,7 +1,6 @@
-"use client";
+import { redirect } from 'next/navigation'
 
-import { SystemMonitoring } from "@/components/admin/SystemMonitoring";
-
-export default function AdminSystemHealthPage() {
-  return <SystemMonitoring />;
-} 
+// Platform status now lives on the admin home page; keep old links working.
+export default function AdminHealthRedirect() {
+  redirect('/dashboard/admin')
+}

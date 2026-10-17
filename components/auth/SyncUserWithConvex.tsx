@@ -1,13 +1,16 @@
 "use client";
 
 import { api } from "@/convex/_generated/api";
-import { useUser } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef } from "react";
 import { clearPartnerReferralCookie, getReferralPublicCode } from "@/lib/referralCookie";
 
 export default function SyncUserWithConvex() {
   const { user, isLoaded } = useUser();
+  const { sessionId } = useAuth();
+  const recordSignIn = useMutation(api.securityEvents.recordSignIn);
+  const loggedSessionRef = useRef<string | null>(null);
   const storeUserInConvex = useMutation(api.users.storeUserFromClerk);
   const claimReferralAttribution = useMutation(api.partnerLinks.claimReferralAttribution);
   const currentUser = useQuery(api.users.getMyUser);
@@ -93,6 +96,15 @@ export default function SyncUserWithConvex() {
       syncUserData();
     }
   }, [user, isLoaded, currentUser, storeUserInConvex]);
+
+  // One "user_login" audit event per Clerk session (the server ignores repeats)
+  useEffect(() => {
+    if (!sessionId || !currentUser || loggedSessionRef.current === sessionId) return;
+    loggedSessionRef.current = sessionId;
+    recordSignIn({ sessionId }).catch(() => {
+      // Audit logging is best effort
+    });
+  }, [sessionId, currentUser, recordSignIn]);
 
   return null;
 }

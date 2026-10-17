@@ -1,572 +1,478 @@
-"use client";
+'use client'
 
-import { useMutation, useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
-import { useQueryUntyped } from "@/lib/convexUntyped";
-
-// Type definitions for approval objects
-type ApprovalWithUser = {
-  _id: Id<"accountApprovalStatus">;
-  _creationTime: number;
-  userId: Id<"users">;
-  status: string;
-  submittedAt: number;
-  reviewedAt?: number;
-  reviewedBy?: Id<"users">;
-  comments?: string;
-  requiredDocuments?: string[];
-  user: {
-    _id: Id<"users">;
-    role: string;
-    firstName?: string;
-    lastName?: string;
-    email?: string;
-    imageUrl?: string;
-    phoneNumber?: string;
-    [key: string]: unknown;
-  } | null;
-};
-
-import { useState, useCallback } from "react";
-import { format } from "date-fns";
-import { toast } from "sonner";
-
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Skeleton } from "@/components/ui/skeleton";
-import { UserApprovalDialog } from "@/components/admin/UserApprovalDialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-
-import { 
-  Check, 
-  Clock, 
-  User, 
-  Stethoscope, 
-  Building2, 
-  Shield,
-  Eye,
-  RefreshCw,
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useMutation, useQuery } from 'convex/react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { format, formatDistanceToNowStrict } from 'date-fns'
+import { toast } from 'sonner'
+import {
   AlertTriangle,
+  Building2,
+  Check,
   CheckCircle2,
+  Clock,
+  Eye,
+  FileText,
+  Hourglass,
+  MapPin,
   Phone,
-  Trash2
-} from "lucide-react";
+  Stethoscope,
+  Trash2,
+  Wrench,
+  X,
+} from 'lucide-react'
+
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  AdminPage,
+  ConfirmDialog,
+  EmptyState,
+  FilterChips,
+  PageHeader,
+  Panel,
+  StatTile,
+  Stagger,
+  StaggerItem,
+  StatusBadge,
+  inputClass,
+  primaryButtonClass,
+  softButtonClass,
+} from '@/components/admin/ui'
+import { devToolsEnabled } from '@/components/admin/shell/adminNav'
+import { UserApprovalDialog, documentLabel } from '@/components/admin/UserApprovalDialog'
+import { RoleBadge, UserAvatar, displayName } from '@/components/dashboard/admin/UserManagement'
+import { playSound } from '@/lib/sounds'
+import { cn } from '@/lib/utils'
+
+type QueueItem = {
+  _id: Id<'accountApprovalStatus'>
+  userId: Id<'users'>
+  submittedAt: number
+  requiredDocuments?: string[]
+  user: {
+    _id: Id<'users'>
+    firstName?: string
+    lastName?: string
+    email?: string
+    phoneNumber?: string
+    imageUrl?: string
+    role?: string
+    _creationTime: number
+  }
+  summary: {
+    licenseNumber?: string
+    location?: string
+    yearsOfExperience?: number
+    clinicName?: string
+    specializations?: string[]
+  }
+  documents: { _id: string; fileName: string; documentType: string; uploadedAt?: number }[]
+}
+
+type RoleFilter = 'all' | 'physiotherapist' | 'clinic_owner' | 'other'
+type Leaving = 'approve' | 'decline' | 'delete'
+
+const QUEUE_LIMIT = 100
+
+const approvalApi = api.accountApproval
 
 export default function AdminApprovalsPage() {
-  const [selectedUserId, setSelectedUserId] = useState<Id<"users"> | null>(null);
-  const [showDialog, setShowDialog] = useState(false);
-  const [processingUserId, setProcessingUserId] = useState<Id<"users"> | null>(null);
-  const [showDebug, setShowDebug] = useState(false);
+  const reduceMotion = useReducedMotion()
+  const showDevTools = devToolsEnabled()
 
-  // Queries and mutations
-  const pendingApprovals = useQueryUntyped(api.users.getPendingApprovals) as ApprovalWithUser[] | undefined;
-  const debugApprovals = useQueryUntyped(api.users.debugApprovalStatus) as ApprovalWithUser[] | undefined;
-  const approveUser = useMutation(api.users.approveUser);
-  const declineUser = useMutation(api.users.declineUser);
-  const deleteUser = useMutation(api.users.adminDeleteUser);
-  const cleanupOrphanedApprovals = useMutation(api.users.cleanupOrphanedApprovals);
-  const testNotificationEmail = useAction(api.users.testNotificationEmail);
+  const queue = (useQuery as any)(approvalApi.adminListApprovalQueue, { limit: QUEUE_LIMIT }) as QueueItem[] | undefined
+  const approveUser = useMutation(api.users.approveUser)
+  const declineUser = useMutation(api.users.declineUser)
+  const deleteUser = useMutation(api.users.adminDeleteUser)
 
-  const handleApprove = useCallback(async (userId: Id<"users">, comments?: string) => {
-    setProcessingUserId(userId);
+  const [filter, setFilter] = useState<RoleFilter>('all')
+  const [reviewUserId, setReviewUserId] = useState<Id<'users'> | null>(null)
+  const [approveTarget, setApproveTarget] = useState<QueueItem | null>(null)
+  const [declineTarget, setDeclineTarget] = useState<QueueItem | null>(null)
+  const [declineReason, setDeclineReason] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<QueueItem | null>(null)
+  // How each row should animate out once the reactive query drops it
+  const [leaving, setLeaving] = useState<Record<string, Leaving>>({})
+
+  const markLeaving = (userId: string, kind: Leaving) => setLeaving((prev) => ({ ...prev, [userId]: kind }))
+  const clearLeaving = (userId: string) =>
+    setLeaving((prev) => {
+      const next = { ...prev }
+      delete next[userId]
+      return next
+    })
+
+  const counts = useMemo(() => {
+    const rows = queue ?? []
+    const physio = rows.filter((r) => r.user.role === 'physiotherapist').length
+    const clinic = rows.filter((r) => r.user.role === 'clinic_owner').length
+    return { all: rows.length, physiotherapist: physio, clinic_owner: clinic, other: rows.length - physio - clinic }
+  }, [queue])
+
+  const visible = useMemo(() => {
+    const rows = queue ?? []
+    if (filter === 'all') return rows
+    if (filter === 'other') return rows.filter((r) => r.user.role !== 'physiotherapist' && r.user.role !== 'clinic_owner')
+    return rows.filter((r) => r.user.role === filter)
+  }, [queue, filter])
+
+  const oldest = queue && queue.length > 0 ? queue[0] : null
+  const capped = (queue?.length ?? 0) >= QUEUE_LIMIT
+
+  // ── Actions ──────────────────────────────────────────────────────────────
+
+  const runApprove = async (userId: Id<'users'>, name: string, comments?: string) => {
+    markLeaving(userId, 'approve')
     try {
-      await approveUser({ userId, comments });
-      toast.success('User approved successfully', {
-        description: 'Email notification has been sent to the user.',
-        duration: 5000,
-      });
-      setShowDialog(false);
-      setSelectedUserId(null);
+      await approveUser({ userId, comments })
+      playSound('approve')
+      toast.success(`${name} approved`, { description: 'They can sign in to their dashboard now. An approval email is on its way.' })
     } catch (error) {
-      console.error('Failed to approve user:', error);
-      toast.error('Failed to approve user', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
-        duration: 5000,
-      });
-      throw error;
-    } finally {
-      setProcessingUserId(null);
+      clearLeaving(userId)
+      toast.error(`Could not approve ${name}`, {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
+      throw error
     }
-  }, [approveUser]);
+  }
 
-  const handleDecline = useCallback(async (userId: Id<"users">, comments: string) => {
-    setProcessingUserId(userId);
+  const runDecline = async (userId: Id<'users'>, name: string, reason: string) => {
+    markLeaving(userId, 'decline')
     try {
-      await declineUser({ userId, comments });
-      toast.success('User declined', {
-        description: 'Email notification has been sent to the user.',
-        duration: 5000,
-      });
-      setShowDialog(false);
-      setSelectedUserId(null);
+      await declineUser({ userId, comments: reason })
+      playSound('reject')
+      toast.success(`${name} declined`, { description: 'They have been emailed the reason. You can find them under Declined.' })
     } catch (error) {
-      console.error('Failed to decline user:', error);
-      toast.error('Failed to decline user', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
-        duration: 5000,
-      });
-      throw error;
-    } finally {
-      setProcessingUserId(null);
+      clearLeaving(userId)
+      toast.error(`Could not decline ${name}`, {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
+      throw error
     }
-  }, [declineUser]);
+  }
 
-  const handleDelete = useCallback(async (userId: Id<"users">, userName: string) => {
-    setProcessingUserId(userId);
+  const confirmQuickApprove = async () => {
+    if (!approveTarget) return
+    await runApprove(approveTarget.userId, displayName(approveTarget.user))
+    setApproveTarget(null)
+  }
+
+  const confirmDecline = async () => {
+    if (!declineTarget) return
+    const reason = declineReason.trim()
+    if (!reason) {
+      toast.error('Add a reason first', { description: 'The applicant sees it in their decline email.' })
+      throw new Error('Decline reason required')
+    }
+    await runDecline(declineTarget.userId, displayName(declineTarget.user), reason)
+    setDeclineTarget(null)
+    setDeclineReason('')
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    const name = displayName(deleteTarget.user)
+    markLeaving(deleteTarget.userId, 'delete')
     try {
-      await deleteUser({ userId });
-      toast.success(`${userName} deleted successfully`, {
-        description: 'The user and all associated data have been permanently removed.',
-        duration: 5000,
-      });
-      // Close dialog if open for this user
-      if (selectedUserId === userId) {
-        setShowDialog(false);
-        setSelectedUserId(null);
-      }
+      await deleteUser({ userId: deleteTarget.userId })
+      playSound('reject')
+      toast.success(`${name} deleted`, { description: 'The account, profile and application were removed.' })
+      if (reviewUserId === deleteTarget.userId) setReviewUserId(null)
+      setDeleteTarget(null)
     } catch (error) {
-      console.error('Failed to delete user:', error);
-      toast.error('Failed to delete user', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
-        duration: 5000,
-      });
-    } finally {
-      setProcessingUserId(null);
+      clearLeaving(deleteTarget.userId)
+      toast.error(`Could not delete ${name}`, {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
+      throw error
     }
-  }, [deleteUser, selectedUserId]);
+  }
 
-  const handleQuickApprove = useCallback(async (userId: Id<"users">, userName: string) => {
-    setProcessingUserId(userId);
+  // Review dialog handlers: the dialog stays open if these throw
+  const reviewApprove = async (userId: Id<'users'>, comments?: string) => {
+    const item = queue?.find((q) => q.userId === userId)
     try {
-      await approveUser({ userId });
-      toast.success(`${userName} approved successfully`, {
-        description: 'Email notification has been sent.',
-        duration: 5000,
-      });
+      await runApprove(userId, displayName(item?.user), comments)
     } catch (error) {
-      console.error('Failed to approve user:', error);
-      toast.error('Failed to approve user', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
-        duration: 5000,
-      });
-    } finally {
-      setProcessingUserId(null);
+      playSound('error')
+      throw error
     }
-  }, [approveUser]);
-
-  const openApprovalDialog = useCallback((userId: Id<"users">) => {
-    setSelectedUserId(userId);
-    setShowDialog(true);
-  }, []);
-
-  const closeApprovalDialog = useCallback(() => {
-    setSelectedUserId(null);
-    setShowDialog(false);
-  }, []);
-
-  const handleCleanupOrphaned = useCallback(async () => {
+  }
+  const reviewDecline = async (userId: Id<'users'>, comments: string) => {
+    const item = queue?.find((q) => q.userId === userId)
     try {
-      const result = await cleanupOrphanedApprovals({});
-      toast.success(`Cleanup completed! Removed ${result.deletedCount} orphaned records.`, {
-        description: result.deletedCount > 0 ? 'Pending approvals list should now show correctly.' : 'No orphaned records found.',
-        duration: 5000,
-      });
+      await runDecline(userId, displayName(item?.user), comments)
     } catch (error) {
-      console.error('Failed to cleanup orphaned approvals:', error);
-      toast.error('Failed to cleanup orphaned records', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
-        duration: 5000,
-      });
+      playSound('error')
+      throw error
     }
-  }, [cleanupOrphanedApprovals]);
+  }
 
-  const handleTestEmail = useCallback(async () => {
-    try {
-      const result = await testNotificationEmail({});
-      toast.success('Test email sent!', {
-        description: result.message,
-        duration: 8000,
-      });
-    } catch (error) {
-      console.error('Failed to send test email:', error);
-      toast.error('Failed to send test email', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
-        duration: 5000,
-      });
-    }
-  }, [testNotificationEmail]);
-
-  // Loading state
-  if (pendingApprovals === undefined) {
-    return <ApprovalsPageSkeleton />;
+  const exitFor = (kind?: Leaving) => {
+    if (reduceMotion) return { opacity: 0 }
+    if (kind === 'approve') return { opacity: 0, x: 48, transition: { duration: 0.25 } }
+    if (kind === 'decline' || kind === 'delete') return { opacity: 0, x: -48, transition: { duration: 0.25 } }
+    return { opacity: 0, transition: { duration: 0.2 } }
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">User Approvals</h1>
-          <p className="text-muted-foreground">
-            Review and approve user account applications
-          </p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <Badge variant="secondary" className="text-sm">
-            {pendingApprovals?.length || 0} pending
-          </Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowDebug(!showDebug)}
-            className="gap-2"
-          >
-            <AlertTriangle className="h-4 w-4" />
-            Debug
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+    <AdminPage>
+      <PageHeader
+        eyebrow="Rehabify Physios"
+        title="Approvals"
+        description="New physiotherapist and clinic applications, oldest first. Check their licence and ID before approving."
+        actions={
+          showDevTools ? (
+            <Button asChild className={softButtonClass}>
+              <Link href="/dashboard/admin/approvals/debug">
+                <Wrench className="mr-2 h-4 w-4" />
+                Debug tools
+              </Link>
+            </Button>
+          ) : undefined
+        }
+      />
 
-      {/* Debug Section */}
-      {showDebug && (
-        <Card className="border-yellow-200 bg-yellow-50">
-          <CardHeader>
-            <CardTitle className="text-yellow-800">Debug Information</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-semibold text-yellow-800">Pending Approvals Query Result:</h4>
-                <pre className="text-xs bg-white p-3 rounded border overflow-auto max-h-40">
-                  {JSON.stringify(pendingApprovals, null, 2)}
-                </pre>
-              </div>
-              <div>
-                <h4 className="font-semibold text-yellow-800">All Approval Status Records:</h4>
-                <pre className="text-xs bg-white p-3 rounded border overflow-auto max-h-40">
-                  {JSON.stringify(debugApprovals, null, 2)}
-                </pre>
-              </div>
-              <div className="bg-white p-4 rounded border border-orange-200">
-                <h4 className="font-semibold text-orange-800 mb-2">🔧 Fix Detected Issue</h4>
-                <p className="text-sm text-orange-700 mb-3">
-                  Found {debugApprovals?.filter((a) => a.user === null && a.status === 'pending_review').length || 0} orphaned approval records 
-                  (where user no longer exists). These are causing pending approvals to not show up.
-                </p>
-                <div className="flex gap-2">
-                  <Button 
-                    onClick={handleCleanupOrphaned}
-                    size="sm"
-                    className="bg-orange-600 hover:bg-orange-700"
-                  >
-                    Clean Up Orphaned Records
-                  </Button>
-                  <Button 
-                    onClick={handleTestEmail}
-                    size="sm"
-                    variant="outline"
-                    className="border-blue-300 text-blue-700 hover:bg-blue-50"
-                  >
-                    🧪 Test Email System
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <Stagger className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StaggerItem>
+          <StatTile
+            label="Waiting for review"
+            value={queue === undefined ? '—' : `${counts.all}${capped ? '+' : ''}`}
+            icon={Clock}
+            tone={counts.all > 0 ? 'attention' : 'teal'}
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile label="Physiotherapists" value={queue === undefined ? '—' : counts.physiotherapist} icon={Stethoscope} />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile label="Clinic owners" value={queue === undefined ? '—' : counts.clinic_owner} icon={Building2} tone="mint" />
+        </StaggerItem>
+        <StaggerItem>
+          <StatTile
+            label="Oldest waiting"
+            value={oldest ? formatDistanceToNowStrict(oldest.submittedAt) : '—'}
+            hint={oldest ? `Since ${format(oldest.submittedAt, 'd MMM yyyy')}` : 'Nothing waiting'}
+            icon={Hourglass}
+            tone="peach"
+          />
+        </StaggerItem>
+      </Stagger>
 
-      {/* Approval Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Reviews</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{pendingApprovals?.length || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              Require your attention
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Physiotherapists</CardTitle>
-            <Stethoscope className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {pendingApprovals?.filter((a) => a.user?.role === 'physiotherapist').length || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Pending physiotherapist approvals
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Clinic Owners</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {pendingApprovals?.filter((a) => a.user?.role === 'clinic_owner').length || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Pending clinic owner approvals
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Pending Approvals */}
-      {!pendingApprovals || pendingApprovals.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <CheckCircle2 className="h-12 w-12 text-green-500 mb-4" />
-            <h3 className="text-lg font-semibold mb-2">All caught up!</h3>
-            <p className="text-muted-foreground text-center">
-              There are no pending user approval requests at this time.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Pending Applications</h2>
-            <div className="text-sm text-muted-foreground">
-              Click &quot;Review Details&quot; for complete information
-            </div>
+      <Panel
+        title="Review queue"
+        description={capped ? `Showing the oldest ${QUEUE_LIMIT} applications.` : undefined}
+        actions={
+          queue && queue.length > 0 ? (
+            <FilterChips
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: 'all', label: 'All', count: counts.all },
+                { value: 'physiotherapist', label: 'Physios', count: counts.physiotherapist },
+                { value: 'clinic_owner', label: 'Clinics', count: counts.clinic_owner },
+                ...(counts.other > 0 ? [{ value: 'other' as const, label: 'Other', count: counts.other }] : []),
+              ]}
+            />
+          ) : undefined
+        }
+        bodyClassName="pb-2 pt-2"
+      >
+        {queue === undefined ? (
+          <div className="space-y-2 px-5 pb-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 w-full rounded-xl dark:bg-white/[0.06]" />
+            ))}
           </div>
-          
-          <div className="grid gap-4">
-            {pendingApprovals.map((approval: ApprovalWithUser) => {
-              const roleConfig = {
-                physiotherapist: { label: 'Physiotherapist', icon: Stethoscope, color: 'blue' },
-                clinic_owner: { label: 'Clinic Owner', icon: Building2, color: 'green' },
-                patient: { label: 'Patient', icon: User, color: 'purple' },
-                family_member: { label: 'Family Member', icon: User, color: 'gray' },
-                admin: { label: 'Administrator', icon: Shield, color: 'red' }
-              };
-
-              // Skip if user is null
-              if (!approval.user) return null;
-
-              const config = roleConfig[approval.user.role as keyof typeof roleConfig] || roleConfig.patient;
-              const Icon = config.icon;
-              const userName = `${approval.user.firstName || ''} ${approval.user.lastName || ''}`.trim() || approval.user.email;
-              const isProcessing = processingUserId === approval.userId;
-
-              return (
-                <Card key={approval._id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <Avatar className="h-12 w-12">
-                          <AvatarImage src={approval.user?.imageUrl ?? undefined} />
-                          <AvatarFallback>
-                            {approval.user.firstName?.charAt(0) || approval.user.email?.charAt(0) || 'U'}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <h3 className="font-semibold">
-                            {approval.user.firstName} {approval.user.lastName}
-                          </h3>
-                          <div className="flex flex-col gap-1 mt-1 text-sm text-muted-foreground">
-                            <p>{approval.user.email}</p>
-                            {approval.user.phoneNumber && (
-                              <p className="flex items-center">
-                                <Phone className="h-3 w-3 mr-1" />
-                                {approval.user.phoneNumber}
-                              </p>
-                            )}
+        ) : visible.length === 0 ? (
+          <EmptyState
+            icon={<CheckCircle2 />}
+            title="All caught up"
+            description={filter === 'all' ? 'No applications are waiting for review.' : 'Nothing waiting in this group.'}
+          />
+        ) : (
+          <ul className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
+            <AnimatePresence initial={false}>
+              {visible.map((item) => {
+                const name = displayName(item.user)
+                const busy = !!leaving[item.userId]
+                const docs = item.documents
+                const waitingDays = Math.floor((Date.now() - item.submittedAt) / 86_400_000)
+                return (
+                  <motion.li
+                    key={item._id}
+                    layout={!reduceMotion}
+                    initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, x: 0, y: 0 }}
+                    exit={exitFor(leaving[item.userId])}
+                    transition={{ duration: 0.22 }}
+                    className={cn('px-5 py-4', busy && 'pointer-events-none opacity-60')}
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <UserAvatar user={item.user} className="h-11 w-11" />
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Link
+                              href={`/dashboard/admin/users/${item.userId}`}
+                              className="truncate text-[15px] font-semibold text-rh-night hover:underline dark:text-white"
+                            >
+                              {name}
+                            </Link>
+                            <RoleBadge role={item.user.role} />
+                            <StatusBadge tone={waitingDays >= 3 ? 'amber' : 'neutral'} className="gap-1">
+                              <Clock className="h-3 w-3" />
+                              {format(item.submittedAt, 'd MMM yyyy')} · {formatDistanceToNowStrict(item.submittedAt, { addSuffix: true })}
+                            </StatusBadge>
                           </div>
-                          <div className="flex items-center space-x-2 mt-2">
-                            <Badge variant="outline">
-                              <Icon className="mr-1 h-3 w-3" />
-                              {config.label}
-                            </Badge>
-                            <Badge variant="secondary">
-                              <Clock className="mr-1 h-3 w-3" />
-                              {format(new Date(approval.submittedAt), 'MMM dd, yyyy')}
-                            </Badge>
+                          <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                            {item.user.email && <span className="truncate">{item.user.email}</span>}
+                            {item.user.phoneNumber && (
+                              <span className="inline-flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {item.user.phoneNumber}
+                              </span>
+                            )}
+                          </p>
+                          <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-neutral-600 dark:text-neutral-300">
+                            {item.summary.clinicName && (
+                              <span className="inline-flex items-center gap-1">
+                                <Building2 className="h-3 w-3" />
+                                {item.summary.clinicName}
+                              </span>
+                            )}
+                            {item.summary.licenseNumber && <span className="font-mono">Licence {item.summary.licenseNumber}</span>}
+                            {item.summary.yearsOfExperience !== undefined && <span>{item.summary.yearsOfExperience} yrs experience</span>}
+                            {item.summary.location && (
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {item.summary.location}
+                              </span>
+                            )}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                            {docs.length === 0 ? (
+                              <StatusBadge tone="amber" className="gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                No documents uploaded
+                              </StatusBadge>
+                            ) : (
+                              <>
+                                {docs.slice(0, 4).map((d) => (
+                                  <StatusBadge key={d._id} tone="teal" className="gap-1">
+                                    <FileText className="h-3 w-3" />
+                                    {documentLabel(d.documentType)}
+                                  </StatusBadge>
+                                ))}
+                                {docs.length > 4 && <StatusBadge>+{docs.length - 4} more</StatusBadge>}
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        {/* Quick approve for low-risk applications */}
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              disabled={isProcessing}
-                              className="text-green-600 border-green-200 hover:bg-green-50"
-                            >
-                              <Check className="mr-1 h-4 w-4" />
-                              Quick Approve
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Quick Approve User</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to approve <strong>{userName}</strong> as a {config.label.toLowerCase()}? 
-                                This will immediately grant them access to the platform and send them an approval email.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction 
-                                onClick={() => handleQuickApprove(approval.userId, userName || 'User')}
-                                className="bg-green-600 hover:bg-green-700"
-                              >
-                                Approve Now
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
 
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => openApprovalDialog(approval.userId)}
-                          disabled={isProcessing}
-                        >
-                          <Eye className="mr-2 h-4 w-4" />
-                          Review Details
+                      <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                        <Button size="sm" onClick={() => setApproveTarget(item)} disabled={busy} className={primaryButtonClass}>
+                          <Check className="mr-1.5 h-4 w-4" />
+                          Approve
                         </Button>
-
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              disabled={isProcessing}
-                              className="text-red-600 border-red-200 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Permanently Delete User?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you absolutely sure you want to delete <strong>{userName}</strong>? 
-                                This action cannot be undone. It will permanently remove their account, profile data, and this pending application.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction 
-                                onClick={() => handleDelete(approval.userId, userName || 'User')}
-                                className="bg-red-600 hover:bg-red-700"
-                              >
-                                Delete User
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        <Button size="sm" onClick={() => setReviewUserId(item.userId)} disabled={busy} className={softButtonClass}>
+                          <Eye className="mr-1.5 h-4 w-4" />
+                          Review
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setDeclineReason('')
+                            setDeclineTarget(item)
+                          }}
+                          disabled={busy}
+                          className="rounded-xl bg-rh-blush text-[#be123c] hover:bg-rose-100 dark:bg-rose-400/10 dark:text-rose-300 dark:hover:bg-rose-400/20"
+                        >
+                          <X className="mr-1.5 h-4 w-4" />
+                          Decline
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setDeleteTarget(item)}
+                          disabled={busy}
+                          className="h-9 w-9 rounded-xl text-neutral-400 hover:bg-rh-blush hover:text-rose-600 dark:hover:bg-rose-400/10 dark:hover:text-rose-300"
+                          aria-label={`Delete ${name}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
-                    
-                    {isProcessing && (
-                      <div className="mt-4 flex items-center space-x-2 text-sm text-muted-foreground">
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        <span>Processing...</span>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                  </motion.li>
+                )
+              })}
+            </AnimatePresence>
+          </ul>
+        )}
+      </Panel>
 
-      {/* Enhanced Approval Dialog */}
       <UserApprovalDialog
-        userId={selectedUserId}
-        isOpen={showDialog}
-        onClose={closeApprovalDialog}
-        onApprove={handleApprove}
-        onDecline={handleDecline}
+        userId={reviewUserId}
+        isOpen={!!reviewUserId}
+        onClose={() => setReviewUserId(null)}
+        onApprove={reviewApprove}
+        onDecline={reviewDecline}
       />
-    </div>
-  );
-}
 
-function ApprovalsPageSkeleton() {
-  return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-96" />
-        </div>
-        <div className="flex items-center space-x-3">
-          <Skeleton className="h-6 w-20" />
-          <Skeleton className="h-9 w-24" />
-        </div>
-      </div>
+      <ConfirmDialog
+        open={!!approveTarget}
+        onOpenChange={(o) => !o && setApproveTarget(null)}
+        title={`Approve ${displayName(approveTarget?.user)}?`}
+        description={
+          approveTarget && approveTarget.documents.length === 0
+            ? 'They have not uploaded any documents. Approving gives them access straight away and sends an approval email.'
+            : 'They get access to their dashboard straight away and receive an approval email.'
+        }
+        confirmLabel="Approve"
+        onConfirm={confirmQuickApprove}
+      />
 
-      {/* Statistics skeleton */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[...Array(3)].map((_, i) => (
-          <Card key={i}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-16 mb-2" />
-              <Skeleton className="h-3 w-32" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <ConfirmDialog
+        open={!!declineTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setDeclineTarget(null)
+            setDeclineReason('')
+          }
+        }}
+        title={`Decline ${displayName(declineTarget?.user)}?`}
+        description="They will be emailed this reason and can reapply after fixing it."
+        confirmLabel="Decline application"
+        destructive
+        onConfirm={confirmDecline}
+      >
+        <Textarea
+          autoFocus
+          rows={3}
+          value={declineReason}
+          onChange={(e) => setDeclineReason(e.target.value)}
+          placeholder="For example: the licence uploaded has expired."
+          className={inputClass}
+          aria-label="Reason for declining"
+        />
+      </ConfirmDialog>
 
-      {/* Approvals skeleton */}
-      <div className="grid gap-4">
-        {[...Array(3)].map((_, i) => (
-          <Card key={i}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <Skeleton className="h-12 w-12 rounded-full" />
-                  <div className="space-y-2">
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-3 w-48" />
-                    <div className="flex space-x-2">
-                      <Skeleton className="h-5 w-24" />
-                      <Skeleton className="h-5 w-16" />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex space-x-2">
-                  <Skeleton className="h-9 w-28" />
-                  <Skeleton className="h-9 w-32" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title={`Delete ${displayName(deleteTarget?.user)}?`}
+        description="This permanently removes the account, its profile and this application. It cannot be undone. To turn someone down, decline instead."
+        confirmLabel="Delete user"
+        destructive
+        onConfirm={confirmDelete}
+      />
+    </AdminPage>
+  )
 }

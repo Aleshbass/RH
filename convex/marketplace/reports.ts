@@ -1,12 +1,34 @@
-// @ts-nocheck
 /**
  * Patient Report/Flag System for Physiotherapists
- * Allows patients to report concerns to admins
+ * Allows patients to report concerns to admins. Admins review them at
+ * /dashboard/admin/marketplace-reports.
  */
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "../_generated/server";
-import { api } from "../_generated/api";
+import type { Doc } from "../_generated/dataModel";
+import { ensureUserRole } from "../auth";
+
+const reportStatusV = v.union(
+  v.literal("pending"),
+  v.literal("under_review"),
+  v.literal("resolved"),
+  v.literal("dismissed")
+);
+
+const reportSeverityV = v.union(
+  v.literal("low"),
+  v.literal("medium"),
+  v.literal("high"),
+  v.literal("critical")
+);
+
+/** Hard cap on rows read by one admin list query. */
+const READ_CAP = 1000;
+/** Cap per status for the filter-chip counts. */
+const COUNT_CAP = 500;
+
+const REPORTS_URL = "/dashboard/admin/marketplace-reports";
 
 /**
  * Submit a report against a physiotherapist
@@ -26,12 +48,7 @@ export const reportPhysiotherapist = mutation({
     description: v.string(),
     appointmentId: v.optional(v.id("appointments")),
     bookingId: v.optional(v.id("marketplaceBookings")),
-    severity: v.union(
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-      v.literal("critical")
-    ),
+    severity: reportSeverityV,
   },
 
   handler: async (ctx, args) => {
@@ -73,8 +90,8 @@ export const reportPhysiotherapist = mutation({
     // Create notification for admins
     const admins = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("role"), "admin"))
-      .collect();
+      .withIndex("by_role", (q) => q.eq("role", "admin"))
+      .take(50);
 
     for (const admin of admins) {
       await ctx.db.insert("notifications", {
@@ -84,11 +101,11 @@ export const reportPhysiotherapist = mutation({
         status: "pending",
         payload: {
           title: "New Physiotherapist Report",
-          body: `${user.firstName} ${user.lastName} reported ${physiotherapist.firstName} ${physiotherapist.lastName} for ${args.reason}`,
+          body: `${user.firstName ?? ""} ${user.lastName ?? ""} reported ${physiotherapist.firstName ?? ""} ${physiotherapist.lastName ?? ""} for ${args.reason.replace(/_/g, " ")}`,
           data: {
             entityId: reportId,
             entityType: "report",
-            actionUrl: "/dashboard/admin/reports",
+            actionUrl: REPORTS_URL,
           },
         },
         createdAt: Date.now(),
@@ -99,86 +116,81 @@ export const reportPhysiotherapist = mutation({
   },
 });
 
+function displayName(u: Doc<"users"> | null) {
+  if (!u) return "Unknown";
+  return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email || "Unknown";
+}
+
 /**
- * Get all reports (admin only)
+ * Get all reports (admin only). Reads through the status (or severity) index and caps
+ * how many rows it reads, so the cost stays flat as the table grows.
  */
 export const getAllReports = query({
   args: {
-    status: v.optional(v.union(
-      v.literal("pending"),
-      v.literal("under_review"),
-      v.literal("resolved"),
-      v.literal("dismissed")
-    )),
-    severity: v.optional(v.union(
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-      v.literal("critical")
-    )),
+    status: v.optional(reportStatusV),
+    severity: v.optional(reportSeverityV),
     limit: v.optional(v.number()),
     offset: v.optional(v.number()),
   },
 
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    await ensureUserRole(ctx, ["admin"]);
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user || user.role !== "admin") {
-      throw new Error("Only admins can view reports");
-    }
-
-    let query = ctx.db.query("physiotherapistReports");
-
-    // Apply filters
-    let reports = await query.collect();
-
+    let reports: Doc<"physiotherapistReports">[];
     if (args.status) {
-      reports = reports.filter((r) => r.status === args.status);
-    }
-
-    if (args.severity) {
-      reports = reports.filter((r) => r.severity === args.severity);
+      const status = args.status;
+      reports = await ctx.db
+        .query("physiotherapistReports")
+        .withIndex("by_status", (q) => q.eq("status", status))
+        .order("desc")
+        .take(READ_CAP);
+      if (args.severity) reports = reports.filter((r) => r.severity === args.severity);
+    } else if (args.severity) {
+      const severity = args.severity;
+      reports = await ctx.db
+        .query("physiotherapistReports")
+        .withIndex("by_severity", (q) => q.eq("severity", severity))
+        .order("desc")
+        .take(READ_CAP);
+    } else {
+      reports = await ctx.db.query("physiotherapistReports").withIndex("by_created_at").order("desc").take(READ_CAP);
     }
 
     // Sort by createdAt desc
     reports.sort((a, b) => b.createdAt - a.createdAt);
 
     // Pagination
-    const limit = args.limit || 50;
-    const offset = args.offset || 0;
+    const limit = Math.min(Math.max(Math.floor(args.limit ?? 50), 1), 200);
+    const offset = Math.max(Math.floor(args.offset ?? 0), 0);
     const total = reports.length;
     const paginatedReports = reports.slice(offset, offset + limit);
 
     // Enrich with user details
     const enrichedReports = await Promise.all(
       paginatedReports.map(async (report) => {
-        const physiotherapist = await ctx.db.get(report.physiotherapistId);
-        const reporter = await ctx.db.get(report.reporterId);
-        const appointment = report.appointmentId ? await ctx.db.get(report.appointmentId) : null;
-        const booking = report.bookingId ? await ctx.db.get(report.bookingId) : null;
+        const [physiotherapist, reporter, reviewer, appointment, booking] = await Promise.all([
+          ctx.db.get(report.physiotherapistId),
+          ctx.db.get(report.reporterId),
+          report.reviewedBy ? ctx.db.get(report.reviewedBy) : null,
+          report.appointmentId ? ctx.db.get(report.appointmentId) : null,
+          report.bookingId ? ctx.db.get(report.bookingId) : null,
+        ]);
 
         return {
           ...report,
           physiotherapist: physiotherapist ? {
             id: physiotherapist._id,
-            name: `${physiotherapist.firstName} ${physiotherapist.lastName}`,
+            name: displayName(physiotherapist),
             email: physiotherapist.email,
             imageUrl: physiotherapist.imageUrl,
           } : null,
           reporter: reporter ? {
             id: reporter._id,
-            name: `${reporter.firstName} ${reporter.lastName}`,
+            name: displayName(reporter),
             email: reporter.email,
             role: reporter.role,
           } : null,
+          reviewer: reviewer ? { id: reviewer._id, name: displayName(reviewer) } : null,
           appointment,
           booking,
         };
@@ -191,71 +203,83 @@ export const getAllReports = query({
       offset,
       limit,
       hasMore: offset + limit < total,
+      // True when the index held more rows than we read
+      capped: total >= READ_CAP,
     };
   },
 });
 
+/** Report counts per status for the admin filter chips (each capped at COUNT_CAP). */
+export const getReportCounts = query({
+  args: {},
+  handler: async (ctx) => {
+    await ensureUserRole(ctx, ["admin"]);
+    const count = async (status: Doc<"physiotherapistReports">["status"]) =>
+      (
+        await ctx.db
+          .query("physiotherapistReports")
+          .withIndex("by_status", (q) => q.eq("status", status))
+          .take(COUNT_CAP)
+      ).length;
+    const [pending, under_review, resolved, dismissed] = await Promise.all([
+      count("pending"),
+      count("under_review"),
+      count("resolved"),
+      count("dismissed"),
+    ]);
+    return { pending, under_review, resolved, dismissed, cap: COUNT_CAP };
+  },
+});
+
 /**
- * Update report status (admin only)
+ * Update report status (admin only). Notes and action are only changed when sent, so
+ * moving a report along doesn't wipe what an earlier reviewer wrote.
  */
 export const updateReportStatus = mutation({
   args: {
     reportId: v.id("physiotherapistReports"),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("under_review"),
-      v.literal("resolved"),
-      v.literal("dismissed")
-    ),
+    status: reportStatusV,
     adminNotes: v.optional(v.string()),
     actionTaken: v.optional(v.string()),
   },
 
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user || user.role !== "admin") {
-      throw new Error("Only admins can update reports");
-    }
+    const user = await ensureUserRole(ctx, ["admin"]);
 
     const report = await ctx.db.get(args.reportId);
     if (!report) {
-      throw new Error("Report not found");
+      throw new ConvexError("Report not found");
     }
 
+    const now = Date.now();
     await ctx.db.patch(args.reportId, {
       status: args.status,
-      adminNotes: args.adminNotes,
-      actionTaken: args.actionTaken,
+      ...(args.adminNotes !== undefined ? { adminNotes: args.adminNotes.trim().slice(0, 4000) || undefined } : {}),
+      ...(args.actionTaken !== undefined ? { actionTaken: args.actionTaken.trim().slice(0, 2000) || undefined } : {}),
       reviewedBy: user._id,
-      reviewedAt: Date.now(),
-      updatedAt: Date.now(),
+      reviewedAt: now,
+      updatedAt: now,
     });
 
-    // Notify reporter of update
-    await ctx.db.insert("notifications", {
-      userId: report.reporterId,
-      type: "report_update",
-      priority: "medium",
-      status: "pending",
-      payload: {
-        title: "Report Update",
-        body: `Your report has been ${args.status}`,
-        data: {
-          entityId: args.reportId,
-          entityType: "report",
+    // Tell the reporter when the outcome changes (not for note-only edits)
+    if (args.status !== report.status) {
+      const label = args.status === "under_review" ? "is being reviewed" : `has been ${args.status}`;
+      await ctx.db.insert("notifications", {
+        userId: report.reporterId,
+        type: "report_update",
+        priority: "medium",
+        status: "pending",
+        payload: {
+          title: "Report Update",
+          body: `Your report ${label}`,
+          data: {
+            entityId: args.reportId,
+            entityType: "report",
+          },
         },
-      },
-      createdAt: Date.now(),
-    });
+        createdAt: now,
+      });
+    }
 
     return { success: true };
   },
@@ -270,24 +294,15 @@ export const getPhysiotherapistReports = query({
   },
 
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    await ensureUserRole(ctx, ["admin"]);
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!user || user.role !== "admin") {
-      throw new Error("Only admins can view reports");
-    }
-
-    const reports = await ctx.db
-      .query("physiotherapistReports")
-      .filter((q) => q.eq(q.field("physiotherapistId"), args.physiotherapistId))
-      .collect();
+    const reports = (
+      await ctx.db
+        .query("physiotherapistReports")
+        .withIndex("by_physiotherapist", (q) => q.eq("physiotherapistId", args.physiotherapistId))
+        .order("desc")
+        .take(200)
+    ).sort((a, b) => b.createdAt - a.createdAt);
 
     // Count by status
     const statusCounts = {

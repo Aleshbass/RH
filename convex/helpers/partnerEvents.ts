@@ -8,7 +8,11 @@
  */
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { internal } from "../_generated/api";
+import { makeFunctionReference } from "convex/server";
+
+const deliverPartnerWebhookRef = makeFunctionReference<"action", { deliveryId: Id<"partnerWebhookDeliveries"> }>(
+  "actions/partners/dispatchWebhook:deliverPartnerWebhook"
+);
 import {
   API_VERSION,
   type InternalReferralStatus,
@@ -90,7 +94,8 @@ export async function enqueuePartnerEvent(
     updatedAt: now,
   });
   if (queued) {
-    await ctx.scheduler.runAfter(0, internal.actions.partners.dispatchWebhook.deliverPartnerWebhook, { deliveryId });
+    // Referenced by name: expanding the full `internal` type here hits TS2589 (too deep)
+    await ctx.scheduler.runAfter(0, deliverPartnerWebhookRef, { deliveryId });
   }
   return { eventId, deliveryId, queued };
 }

@@ -29,8 +29,10 @@ export function Button({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }) {
+  // A bare ElementType spans every HTML tag, which leaves no props JSX can accept
+  const Root = Component as React.ComponentType<React.HTMLAttributes<HTMLElement> & Record<string, unknown>>;
   return (
-    <Component
+    <Root
       className={cn(
         "relative h-16 w-40 overflow-hidden bg-transparent p-[1px] text-xl cursor-pointer",
         containerClassName
@@ -65,7 +67,7 @@ export function Button({
       >
         {children}
       </div>
-    </Component>
+    </Root>
   );
 }
 

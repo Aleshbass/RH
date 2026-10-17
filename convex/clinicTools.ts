@@ -5,6 +5,7 @@ import { getAuthenticatedUser } from "./auth";
 import { internal } from "./_generated/api";
 import { clinicPaymentSplit } from "./clinicFees";
 import { loadClinicFeeConfig } from "./clinicFeeSettings";
+import { logSecurityEvent } from "./helpers/securityLog";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clinic access: the owner, and team members (clinicians and front-desk staff)
@@ -89,6 +90,8 @@ export async function getClinicMember(ctx: QueryCtx, area?: ClinicArea): Promise
   if (area && !canUseArea(member, area)) {
     throw new ConvexError(`Your role doesn't include ${AREA_LABELS[area]}. Ask the clinic owner for access.`);
   }
+  // Only mutations have db.insert: a suspended clinic can still be viewed, but not changed
+  if ("insert" in ctx.db) assertClinicNotSuspended(member.clinic);
   return member;
 }
 
@@ -398,11 +401,20 @@ export async function getApprovalStatus(ctx: QueryCtx, userId: Id<"users">) {
   return approval?.status ?? null;
 }
 
+/** Rehabify admins can suspend a clinic (convex/adminClinics.ts). Its team keeps read-only access. */
+export function assertClinicNotSuspended(clinic: Doc<"clinics">) {
+  if (clinic.status === "suspended") {
+    throw new ConvexError("This clinic has been suspended by Rehabify. Contact support.");
+  }
+}
+
 /**
  * Changes are only allowed once the clinic's owner has finished registration and Rehabify
- * has approved the clinic. Applies to team members too, since they act for the clinic.
+ * has approved the clinic, and while the clinic isn't suspended. Applies to team members
+ * too, since they act for the clinic.
  */
 export async function ensureClinicApproved(ctx: QueryCtx, clinic: Doc<"clinics">) {
+  assertClinicNotSuspended(clinic);
   const owner = await ctx.db.get(clinic.ownerId);
   // A skip always leaves onboarded=false, so once onboarded is true a stale skip flag is ignored
   if (!owner?.onboarded) {
@@ -2687,6 +2699,9 @@ export const getMyClinicAccess = query({
       ownerOnboarded: Boolean(owner?.onboarded),
       approvalStatus,
       suspended: !member.isOwner && Boolean(user.status) && user.status !== "active",
+      // The whole clinic was suspended by Rehabify (changes are refused server-side)
+      clinicSuspended: member.clinic.status === "suspended",
+      clinicSuspendedReason: member.clinic.status === "suspended" ? (member.clinic.suspendedReason ?? null) : null,
     };
   },
 });
@@ -2794,6 +2809,13 @@ export const setMemberClinicRole = mutation({
       if (!role || role.clinicId !== clinic._id) throw new ConvexError("Role not found");
     }
     await ctx.db.patch(target._id, { clinicRoleId: args.roleId ?? undefined });
+    if ((target.clinicRoleId ?? null) !== (args.roleId ?? null)) {
+      await logSecurityEvent(ctx, "permission_updated", {
+        userId: target._id,
+        clinicId: clinic._id,
+        details: { from: target.clinicRoleId ?? "full_access", to: args.roleId ?? "full_access" },
+      });
+    }
     return { success: true };
   },
 });

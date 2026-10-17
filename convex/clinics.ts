@@ -3,7 +3,7 @@ import { mutation, query, internalQuery } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
-import { getClinicMember, getClinicMemberOrPreview, getOwnerClinic, getOwnerClinicOrPreview } from "./clinicTools";
+import { assertClinicNotSuspended, getClinicMember, getClinicMemberOrPreview, getOwnerClinic, getOwnerClinicOrPreview } from "./clinicTools";
 
 /**
  * Create the owner's clinic during onboarding, or update it if one already exists
@@ -343,6 +343,9 @@ export const acceptClinicInvitation = mutation({
         `This email is registered as a ${user.role.replace(/_/g, " ")} account. Ask the clinic to invite a different email.`
       );
     }
+
+    const invitingClinic = await ctx.db.get(invitation.clinicId);
+    if (invitingClinic) assertClinicNotSuspended(invitingClinic);
 
     const isClinician = invitation.role === "physiotherapist";
     const now = Date.now();
@@ -1490,6 +1493,7 @@ export const updateClinic = mutation({
     if (!clinic) {
       throw new Error("Clinic not found");
     }
+    assertClinicNotSuspended(clinic);
 
     const updateData: Partial<Doc<"clinics">> = {};
     if (args.name !== undefined) updateData.name = args.name;
@@ -1638,6 +1642,7 @@ export const reassignStaffToClinic = mutation({
     if (!clinic) {
       throw new Error("Clinic not found");
     }
+    assertClinicNotSuspended(clinic);
 
     // Verify the staff member belongs to this clinic
     const staffMember = await ctx.db.get(args.staffId);
@@ -1650,6 +1655,7 @@ export const reassignStaffToClinic = mutation({
     if (!newClinic || newClinic.ownerId !== user._id) {
       throw new Error("Target clinic not found or not owned by you");
     }
+    assertClinicNotSuspended(newClinic);
 
     // Update the staff member's clinic assignment
     await ctx.db.patch(args.staffId, {
@@ -1686,10 +1692,9 @@ export const createStaffDirect = mutation({
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
     phoneNumber: v.optional(v.string()),
-    role: v.union(
-      v.literal("physiotherapist"),
-      v.literal("admin")
-    ),
+    // Clinic owners can only add clinicians. Platform roles (e.g. "admin") are never grantable
+    // from a clinic account.
+    role: v.literal("physiotherapist"),
   },
   handler: async (ctx, args) => {
     const user = await getAuthenticatedUser(ctx);

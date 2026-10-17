@@ -10,7 +10,11 @@ import DashboardAuthGuard from '@/components/auth/DashboardAuthGuard'
 
 /** Portals that render their own shell, theme and access rules. */
 export function hasOwnPortalShell(pathname: string) {
-  return pathname.startsWith('/dashboard/clinic') || pathname.startsWith('/dashboard/physiotherapist')
+  return (
+    pathname.startsWith('/dashboard/clinic') ||
+    pathname.startsWith('/dashboard/physiotherapist') ||
+    pathname.startsWith('/dashboard/admin')
+  )
 }
 
 /**
