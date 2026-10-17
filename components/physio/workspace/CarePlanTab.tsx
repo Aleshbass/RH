@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { InteractiveTreatmentPlan } from '@/components/dashboard/physiotherapist/treatment/InteractiveTreatmentPlan'
+import { ExerciseProgramsPanel } from '@/components/exercise-programs/ExerciseProgramsPanel'
 import { EmptyState, Panel, StatusBadge, primaryButtonClass } from '@/components/physio/ui'
 import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
@@ -325,9 +326,16 @@ export function CarePlanTab({ workspace }: { workspace: Workspace }) {
         </Panel>
       )}
 
-      {plan && (
+      <ExerciseProgramsPanel
+        patientId={workspace.patient._id}
+        patientName={workspace.patient.firstName || 'your patient'}
+        hasPhone={Boolean(workspace.patient.phoneNumber?.replace(/\D/g, '').length)}
+        canWrite={isActive}
+      />
+
+      {plan && plan.totalExercises > 0 && (
         <section className="space-y-3">
-          <h3 className="px-1 text-[15px] font-semibold tracking-tight text-rh-night dark:text-white">Home exercise programme</h3>
+          <h3 className="px-1 text-[15px] font-semibold tracking-tight text-rh-night dark:text-white">Exercises in the care plan</h3>
           <InteractiveTreatmentPlan patientId={workspace.patient._id} variant="exercises" />
         </section>
       )}

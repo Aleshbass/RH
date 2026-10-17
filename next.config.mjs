@@ -170,6 +170,29 @@ const nextConfig = {
           },
         ],
       },
+      // 3D exercise library: encrypted, versioned files (new content = new folder), so the CDN
+      // and browsers can keep them forever. Keys come from Convex per viewer.
+      {
+        source: '/exercise-library/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'X-Robots-Tag', value: 'noindex' },
+        ],
+      },
+      {
+        source: '/vendor/draco/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=2592000' }],
+      },
+      // Exercise links sent on WhatsApp: private, never cached or indexed, token never leaked
+      // to other sites through the Referer header.
+      {
+        source: '/x/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
     ];
   },
 

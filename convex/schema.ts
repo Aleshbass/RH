@@ -792,6 +792,16 @@ export default defineSchema({
     timesAssigned: v.optional(v.number()),
     averageRating: v.optional(v.number()),
 
+    // 3D demonstration (convex/exerciseLibraryCatalog.ts). Sided exercises have a left and a
+    // right clip. Patients only see an animation once a licensed physiotherapist approves it.
+    animationSlug: v.optional(v.string()),
+    sided: v.optional(v.boolean()),
+    position: v.optional(v.string()),
+    defaultHoldSeconds: v.optional(v.number()),
+    animationStatus: v.optional(v.union(v.literal("draft"), v.literal("approved"))),
+    animationApprovedBy: v.optional(v.id("users")),
+    animationApprovedAt: v.optional(v.number()),
+
     // Legacy compatibility
     media: v.optional(v.array(v.object({ type: v.union(v.literal("image"), v.literal("video")), url: v.string() }))),
     translations: v.optional(v.object({ // Key-value for language code and translated instructions
@@ -804,7 +814,8 @@ export default defineSchema({
     .index("by_difficulty", ["difficultyLevel"])
     .index("by_clinic", ["clinicId"])
     .index("by_public", ["isPublic"])
-    .index("by_target_muscles", ["targetMuscles"]),
+    .index("by_target_muscles", ["targetMuscles"])
+    .index("by_animation_slug", ["animationSlug"]),
 
   // Treatment Templates: Reusable templates physiotherapists can apply to patients
   treatmentTemplates: defineTable({
@@ -3582,5 +3593,123 @@ export default defineSchema({
   })
     .index("by_partner_code", ["partnerCode"])
     .index("by_partner_code_default", ["partnerCode", "isDefault"]),
+
+  // ─── 3D exercise library: programmes, share links, viewing grants, licences ─────
+  // A home exercise programme a physio or clinic sends to a patient. It shows in the patient's
+  // dashboard and can also be opened from a PIN-protected link (exerciseShareLinks).
+  exercisePrograms: defineTable({
+    patientId: v.id("users"),
+    createdBy: v.id("users"),
+    clinicId: v.optional(v.id("clinics")),
+    treatmentPlanId: v.optional(v.id("treatmentPlans")),
+    episodeId: v.optional(v.id("careEpisodes")),
+    title: v.string(),
+    note: v.optional(v.string()),
+    voiceNoteStorageId: v.optional(v.id("_storage")),
+    voiceNoteSeconds: v.optional(v.number()),
+    items: v.array(v.object({
+      exerciseId: v.id("exercises"),
+      side: v.optional(v.union(v.literal("L"), v.literal("R"))),
+      sets: v.number(),
+      reps: v.number(),
+      holdSeconds: v.optional(v.number()),
+      frequency: v.string(),
+      note: v.optional(v.string()),
+    })),
+    status: v.union(v.literal("active"), v.literal("archived")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    archivedAt: v.optional(v.number()),
+  })
+    .index("by_patient", ["patientId", "createdAt"])
+    .index("by_creator", ["createdBy", "createdAt"])
+    .index("by_clinic", ["clinicId", "createdAt"]),
+
+  // One patient-reported completion of one exercise in a programme.
+  exerciseProgramLogs: defineTable({
+    programId: v.id("exercisePrograms"),
+    patientId: v.id("users"),
+    itemIndex: v.number(),
+    setsDone: v.optional(v.number()),
+    painScore: v.optional(v.number()), // 0-10
+    difficulty: v.optional(v.union(v.literal("easy"), v.literal("ok"), v.literal("hard"))),
+    note: v.optional(v.string()),
+    source: v.union(v.literal("app"), v.literal("link")),
+    linkId: v.optional(v.id("exerciseShareLinks")),
+    createdAt: v.number(),
+  })
+    .index("by_program", ["programId", "createdAt"])
+    .index("by_patient", ["patientId", "createdAt"]),
+
+  // PIN-protected link to a programme (sent on WhatsApp). Only hashes of the token, PIN and
+  // device sessions are stored.
+  exerciseShareLinks: defineTable({
+    programId: v.id("exercisePrograms"),
+    patientId: v.id("users"),
+    createdBy: v.id("users"),
+    tokenHash: v.string(),
+    pinSalt: v.string(),
+    pinHash: v.string(),
+    pinSource: v.union(v.literal("phone"), v.literal("custom")),
+    expiresAt: v.number(),
+    revokedAt: v.optional(v.number()),
+    failedPins: v.number(),
+    lockedUntil: v.optional(v.number()),
+    lockedOut: v.optional(v.boolean()), // Too many wrong PINs; the physio must send a new link
+    openCount: v.number(),
+    lastOpenedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_token", ["tokenHash"])
+    .index("by_program", ["programId"]),
+
+  exerciseShareSessions: defineTable({
+    linkId: v.id("exerciseShareLinks"),
+    sessionHash: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_session", ["sessionHash"])
+    .index("by_link", ["linkId"]),
+
+  // Audit trail and rate limit for handing out asset keys.
+  exerciseViewGrants: defineTable({
+    subject: v.string(), // "user:<id>" or "link:<id>"
+    userId: v.optional(v.id("users")),
+    linkId: v.optional(v.id("exerciseShareLinks")),
+    licenceId: v.optional(v.id("libraryLicences")),
+    access: v.string(), // staff | patient | link | licence
+    clipCount: v.number(),
+    version: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_subject", ["subject", "createdAt"])
+    .index("by_licence", ["licenceId", "createdAt"]),
+
+  // Organisations outside physiotherapy that license the library (billing comes later).
+  libraryLicences: defineTable({
+    orgName: v.string(),
+    sector: v.string(),
+    partnerId: v.optional(v.id("partners")),
+    plan: v.union(v.literal("trial"), v.literal("standard"), v.literal("enterprise")),
+    seats: v.number(),
+    status: v.union(v.literal("active"), v.literal("suspended"), v.literal("expired")),
+    expiresAt: v.optional(v.number()),
+    watermarkLabel: v.string(),
+    allowedOrigins: v.array(v.string()), // reserved for the embeddable player
+    notes: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_status", ["status"]),
+
+  libraryLicenceMembers: defineTable({
+    licenceId: v.id("libraryLicences"),
+    userId: v.id("users"),
+    addedBy: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_licence", ["licenceId"]),
 
 });

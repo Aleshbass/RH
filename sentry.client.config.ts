@@ -1,5 +1,8 @@
 import * as Sentry from '@sentry/nextjs'
 
+// Exercise share links carry their access token in the path (/x/<token>); never send it to Sentry.
+const scrubLinks = (value?: string) => value?.replace(/\/x\/[A-Za-z0-9]+/g, '/x/[link]')
+
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
   environment: process.env.NODE_ENV,
@@ -28,10 +31,19 @@ Sentry.init({
       return null
     }
 
+    if (event.request?.url) event.request.url = scrubLinks(event.request.url)
+    if (event.transaction) event.transaction = scrubLinks(event.transaction)
+    if (event.request?.headers?.Referer) event.request.headers.Referer = scrubLinks(event.request.headers.Referer) ?? ''
+
     return event
   },
   
   beforeBreadcrumb(breadcrumb) {
+    if (breadcrumb.data) {
+      for (const key of ['url', 'to', 'from']) {
+        if (typeof breadcrumb.data[key] === 'string') breadcrumb.data[key] = scrubLinks(breadcrumb.data[key])
+      }
+    }
     // Filter sensitive data from breadcrumbs
     if (breadcrumb.category === 'console' && breadcrumb.level === 'error') {
       return breadcrumb

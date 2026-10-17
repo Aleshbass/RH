@@ -1,236 +1,143 @@
-'use client';
+'use client'
 
-import React, { useMemo, useState } from 'react';
-import { useQuery, useMutation } from 'convex/react';
-import { api } from '@/convex/_generated/api';
-import { ExerciseLibrary } from '@/components/dashboard/physiotherapist/treatment/ExerciseLibrary';
-import { Button } from '@/components/ui/button';
-import { CheckCircle2 } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/components/ui/use-toast';
-import type { Exercise as AssessmentExercise } from '@/types/assessments';
-import { Loader2, X } from 'lucide-react';
+import { useMemo, useState } from 'react'
+import { useQuery } from 'convex/react'
+import { Loader2, Rotate3d, Search, Send } from 'lucide-react'
+import { api } from '@/convex/_generated/api'
+import type { Id } from '@/convex/_generated/dataModel'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { ExercisePreviewDialog } from '@/components/exercise-programs/ExercisePreviewDialog'
+import { LibraryPicker } from '@/components/exercise-programs/LibraryPicker'
+import { SendProgramDialog } from '@/components/exercise-programs/SendProgramDialog'
+import { ShareLinkDialog } from '@/components/exercise-programs/ShareLinkDialog'
+import type { LibraryData, LibraryEntry } from '@/components/exercise-programs/types'
+import { PageContainer, PageHeader, Panel, primaryButtonClass } from '@/components/physio/ui'
+
+type PatientOption = { _id: Id<'users'>; firstName?: string; lastName?: string; email?: string; phoneNumber?: string }
+
+function PatientChooser({ open, onOpenChange, onChoose }: { open: boolean; onOpenChange: (open: boolean) => void; onChoose: (p: PatientOption) => void }) {
+  const patients = useQuery(api.patientInvitations.getMyPatients, open ? { status: 'active' } : 'skip') as PatientOption[] | undefined
+  const [search, setSearch] = useState('')
+  const list = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return (patients ?? []).filter((p) => !q || `${p.firstName ?? ''} ${p.lastName ?? ''} ${p.email ?? ''}`.toLowerCase().includes(q))
+  }, [patients, search])
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-3xl sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Send to which patient?</DialogTitle>
+          <DialogDescription>Patients you&apos;re currently treating.</DialogDescription>
+        </DialogHeader>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search patients" className="rounded-xl pl-9" />
+        </div>
+        <ul className="max-h-80 space-y-1 overflow-y-auto">
+          {patients === undefined ? (
+            <li className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-rh-teal" /></li>
+          ) : list.length === 0 ? (
+            <li className="py-8 text-center text-sm text-neutral-500">No active patients found.</li>
+          ) : (
+            list.map((p) => (
+              <li key={p._id}>
+                <button
+                  type="button"
+                  onClick={() => onChoose(p)}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-rh-mist dark:hover:bg-white/[0.05]"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-rh-teal text-sm font-semibold text-white">
+                    {(p.firstName?.[0] ?? 'P').toUpperCase()}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-rh-night dark:text-white">{`${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() || 'Patient'}</span>
+                    {p.email && <span className="block truncate text-xs text-neutral-500">{p.email}</span>}
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 export default function ExerciseLibraryPage() {
-  const { toast } = useToast();
-  const [selectedPatientId, setSelectedPatientId] = useState<string>('');
-  const [selectedExercises, setSelectedExercises] = useState<AssessmentExercise[]>([]);
-  const [isAssigning, setIsAssigning] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-
-  // Load my patients (active relationships)
-  const myPatients = useQuery(api.patientInvitations.getMyPatients, { status: 'active' });
-
-  // Load the active plan for the selected patient (if any)
-  const activePlans = useQuery(
-    api.treatmentPlans.getPatientTreatmentPlans,
-    selectedPatientId ? ({ patientId: selectedPatientId as any, status: 'active' }) : 'skip'
-  );
-  const activePlan = activePlans?.[0] || null;
-
-  // Mutations
-  const createTreatmentPlan = useMutation(api.treatmentPlans.createTreatmentPlan);
-  const updateTreatmentPlan = useMutation(api.treatmentPlans.updateTreatmentPlan);
-  const updateTreatmentPlanStatus = useMutation(api.treatmentPlans.updateTreatmentPlanStatus);
-
-  const selectedPatient = useMemo(
-    () => myPatients?.find((p: any) => p._id === selectedPatientId) || null,
-    [myPatients, selectedPatientId]
-  );
-
-  const onExerciseSelect = (exercise: AssessmentExercise) => {
-    setSelectedExercises((prev) => {
-      if (prev.some((e) => e._id === exercise._id)) return prev;
-      return [...prev, exercise];
-    });
-  };
-
-  const clearSelection = () => setSelectedExercises([]);
-
-  const buildPhaseFromSelected = () => {
-    return {
-      name: 'Phase 1',
-      description: 'Initial phase',
-      duration: '2 weeks',
-      order: 1,
-      exercises: selectedExercises.map((ex) => ({
-        exerciseId: ex._id,
-        sets: ex.sets || 3,
-        reps: ex.reps || 10,
-        duration: undefined,
-        frequency: ex.frequency || 'Daily',
-        notes: ex.instructions?.join('. ') || '',
-      })),
-    };
-  };
-
-  const handleAssignToExistingPlan = async () => {
-    if (!selectedPatientId || !activePlan || selectedExercises.length === 0) return;
-    setIsAssigning(true);
-    try {
-      const updatedPhases = activePlan.phases ? [...activePlan.phases] : [];
-      if (updatedPhases.length === 0) {
-        updatedPhases.push(buildPhaseFromSelected());
-      } else {
-        const last = updatedPhases[updatedPhases.length - 1];
-        last.exercises = [
-          ...last.exercises,
-          ...selectedExercises.map((ex) => ({
-            exerciseId: ex._id,
-            sets: ex.sets || 3,
-            reps: ex.reps || 10,
-            duration: undefined,
-            frequency: ex.frequency || 'Daily',
-            notes: ex.instructions?.join('. ') || '',
-          })),
-        ];
-      }
-
-      await updateTreatmentPlan({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        treatmentPlanId: activePlan._id as any,
-        phases: updatedPhases,
-      });
-
-      toast({ title: 'Exercises Assigned', description: 'Selected exercises were added to the active plan.' });
-      clearSelection();
-    } catch (e) {
-      toast({ title: 'Error', description: 'Failed to add exercises to the plan.', variant: 'destructive' });
-    } finally {
-      setIsAssigning(false);
-    }
-  };
-
-  const handleCreateNewPlan = async () => {
-    if (!selectedPatientId || selectedExercises.length === 0) return;
-    setIsCreating(true);
-    try {
-      const planId = await createTreatmentPlan({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        patientId: selectedPatientId as any,
-        title: 'Treatment Plan',
-        description: '',
-        startDate: Date.now(),
-        endDate: undefined,
-        priority: 'medium',
-        goals: [],
-        phases: [buildPhaseFromSelected()],
-        reviewInterval: 14,
-        notes: '',
-      });
-
-      await updateTreatmentPlanStatus({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        treatmentPlanId: planId as any,
-        status: 'active',
-      });
-
-      toast({ title: 'Plan Created', description: 'A new plan was created and activated with your selected exercises.' });
-      clearSelection();
-    } catch (e) {
-      toast({ title: 'Error', description: 'Failed to create treatment plan.', variant: 'destructive' });
-    } finally {
-      setIsCreating(false);
-    }
-  };
+  const library = useQuery(api.exerciseLibrary.listLibrary) as LibraryData | null | undefined
+  const [preview, setPreview] = useState<LibraryEntry | null>(null)
+  const [choosing, setChoosing] = useState<LibraryEntry | null>(null)
+  const [target, setTarget] = useState<{ patient: PatientOption; entry: LibraryEntry } | null>(null)
+  const [shareFor, setShareFor] = useState<{ programId: Id<'exercisePrograms'>; patient: PatientOption } | null>(null)
+  const count3d = library?.items.filter((i) => i.animation).length ?? 0
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight text-neutral-900 dark:text-white sm:text-2xl">Exercise library</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Choose a patient, pick exercises, then add them to their active plan or start a new one.
-        </p>
-        <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
-          More physiotherapy exercises are on the way. Until then, add your own from a patient’s treatment plan, with before and after photos.
-        </p>
-      </div>
+    <PageContainer>
+      <PageHeader
+        eyebrow="Exercise library"
+        title="3D exercise library"
+        description="Every exercise is demonstrated in 3D by a Rehabify clinician. Preview it, then send it to a patient with your own dose and voice note."
+        actions={
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-rh-mist px-3 py-1.5 text-sm font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">
+            <Rotate3d className="h-4 w-4" /> {count3d} in 3D
+          </span>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Assign to Patient</CardTitle>
-          <CardDescription>Select a patient and manage assignment of selected exercises.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-            <div>
-              <div className="text-sm font-medium mb-1">Patient</div>
-              <Select value={selectedPatientId} onValueChange={setSelectedPatientId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a patient" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(myPatients || []).map((p: any) => (
-                    <SelectItem key={p._id} value={p._id}>
-                      {p.firstName} {p.lastName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <Panel bodyClassName="p-5">
+        {library === undefined ? (
+          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-rh-teal" /></div>
+        ) : !library ? (
+          <p className="py-10 text-center text-sm text-neutral-500">The library opens once your account is approved.</p>
+        ) : (
+          <LibraryPicker items={library.items} onPreview={setPreview} />
+        )}
+      </Panel>
 
-            <div>
-              <div className="text-sm font-medium mb-1">Active Plan</div>
-              <div className="text-sm">
-                {activePlan ? (
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-[#005b57] dark:text-[#2dd4bf]" />
-                    <span>{activePlan.title}</span>
-                    <Badge variant="secondary">Active</Badge>
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground">No active plan</span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex gap-2 justify-start md:justify-end">
-              <Button
-                variant="secondary"
-                onClick={handleAssignToExistingPlan}
-                disabled={!selectedPatientId || selectedExercises.length === 0 || !activePlan || isAssigning}
-              >
-                {isAssigning && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Add to Active Plan
-              </Button>
-              <Button
-                onClick={handleCreateNewPlan}
-                disabled={!selectedPatientId || selectedExercises.length === 0 || isCreating}
-              >
-                {isCreating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Create New Plan
-              </Button>
-            </div>
-          </div>
-
-          {selectedExercises.length > 0 && (
-            <div className="mt-4">
-              <div className="text-sm font-medium mb-2">Selected Exercises ({selectedExercises.length})</div>
-              <div className="flex flex-wrap gap-2">
-                {selectedExercises.map((ex) => (
-                  <Badge key={ex._id} variant="secondary" className="gap-1 pr-1">
-                    {ex.name}
-                    <button
-                      type="button"
-                      onClick={() => setSelectedExercises((prev) => prev.filter((e) => e._id !== ex._id))}
-                      className="ml-1 rounded-full hover:bg-black/10 p-0.5"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-                <Button variant="ghost" size="sm" onClick={clearSelection} className="h-6 text-xs">
-                  Clear All
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <ExerciseLibrary onExerciseSelect={onExerciseSelect} selectedExercises={selectedExercises} />
-    </div>
-  );
+      <ExercisePreviewDialog
+        entry={preview}
+        onOpenChange={(o) => !o && setPreview(null)}
+        action={
+          preview && (
+            <Button
+              className={primaryButtonClass}
+              onClick={() => {
+                setChoosing(preview)
+                setPreview(null)
+              }}
+            >
+              <Send className="mr-2 h-4 w-4" /> Send to a patient
+            </Button>
+          )
+        }
+      />
+      <PatientChooser
+        open={Boolean(choosing)}
+        onOpenChange={(o) => !o && setChoosing(null)}
+        onChoose={(patient) => {
+          if (choosing) setTarget({ patient, entry: choosing })
+          setChoosing(null)
+        }}
+      />
+      {target && (
+        <SendProgramDialog
+          patientId={target.patient._id}
+          patientName={target.patient.firstName || 'your patient'}
+          open
+          initial={[target.entry]}
+          onOpenChange={(o) => !o && setTarget(null)}
+          onSent={(programId) => setShareFor({ programId, patient: target.patient })}
+        />
+      )}
+      <ShareLinkDialog
+        programId={shareFor?.programId ?? null}
+        patientName={shareFor?.patient.firstName || 'your patient'}
+        hasPhone={Boolean(shareFor?.patient.phoneNumber)}
+        open={Boolean(shareFor)}
+        onOpenChange={(o) => !o && setShareFor(null)}
+      />
+    </PageContainer>
+  )
 }

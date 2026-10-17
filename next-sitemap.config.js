@@ -3,13 +3,13 @@ module.exports = {
   siteUrl: process.env.SITE_URL || 'https://physioaroundme.com',
   generateRobotsTxt: true, // (optional)
   sitemapSize: 7000,
-  exclude: ['/dashboard/*', '/admin/*', '/auth/*'], // Exclude private routes
+  exclude: ['/dashboard/*', '/admin/*', '/auth/*', '/x/*', '/library'], // Exclude private routes
   robotsTxtOptions: {
     policies: [
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/dashboard', '/admin', '/auth'],
+        disallow: ['/dashboard', '/admin', '/auth', '/x/', '/exercise-library/'],
       },
     ],
   },

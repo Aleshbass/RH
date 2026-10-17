@@ -1,0 +1,228 @@
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
+import Image from 'next/image'
+import type { AnimationClip } from 'three'
+import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { Eye, Loader2, Pause, Play, RotateCcw, Rotate3d, Turtle, WifiOff } from 'lucide-react'
+import { EXERCISE_CATALOG, findClip, posterUrl } from '@/convex/exerciseLibraryCatalog'
+import type { ViewerGrant } from '@/lib/exercise3d/useViewerGrant'
+import { cn } from '@/lib/utils'
+import type { ViewName } from './ExerciseStage'
+
+const ExerciseStage = dynamic(() => import('./ExerciseStage'), { ssr: false })
+
+type Phase = 'checking' | 'lite' | 'loading' | 'ready' | 'denied' | 'error'
+
+const clips = new Map<string, Promise<AnimationClip>>()
+
+function liteReason(): string | null {
+  if (typeof window === 'undefined') return null
+  const nav = navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string }; deviceMemory?: number }
+  if (nav.connection?.saveData) return 'Data Saver is on'
+  if (nav.connection?.effectiveType && /(^|-)2g$/.test(nav.connection.effectiveType)) return 'Your connection is slow'
+  if (typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 2) return 'Saving your phone’s memory'
+  try {
+    const c = document.createElement('canvas')
+    if (!(c.getContext('webgl2') || c.getContext('webgl'))) return '3D isn’t supported on this device'
+  } catch {
+    return '3D isn’t supported on this device'
+  }
+  return null
+}
+
+const totalKb = Math.round((EXERCISE_CATALOG.character.bytes + 12_000) / 1024)
+
+export type ExerciseViewerProps = {
+  clipId: string
+  requestGrant: (clipIds: string[]) => Promise<ViewerGrant>
+  className?: string
+  /** Start loading straight away (otherwise waits for a tap in low-data mode only). */
+  autoPlay?: boolean
+  onRep?: (count: number) => void
+  /** Hide the small control bar (e.g. thumbnails). */
+  bare?: boolean
+}
+
+/** One exercise in 3D, with a poster first and graceful fallbacks. */
+export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = true, onRep, bare }: ExerciseViewerProps) {
+  const clipInfo = findClip(clipId)
+  const [phase, setPhase] = useState<Phase>('checking')
+  const [lite, setLite] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [assets, setAssets] = useState<{ gltf: GLTF; clip: AnimationClip; watermark: string } | null>(null)
+  const [playing, setPlaying] = useState(true)
+  const [slow, setSlow] = useState(false)
+  const [view, setView] = useState<ViewName>('front')
+  const [viewNonce, setViewNonce] = useState(0)
+  const [reps, setReps] = useState(0)
+  const repsRef = useRef(0)
+  const loadId = useRef(0)
+
+  const load = useCallback(async () => {
+    const id = ++loadId.current
+    setPhase('loading')
+    setError(null)
+    try {
+      const grant = await requestGrant([clipId])
+      if (grant.denied.includes(clipId) || !grant.clips[clipId] || !grant.character) {
+        if (id === loadId.current) setPhase('denied')
+        return
+      }
+      const base = EXERCISE_CATALOG.basePath
+      // three.js only downloads once a demonstration is actually played.
+      const [{ loadEncrypted, parseMotion, pruneOldVersions }, { parseCharacter }] = await Promise.all([
+        import('@/lib/exercise3d/assets'),
+        import('./ExerciseStage'),
+      ])
+      void pruneOldVersions(grant.version)
+      const characterKey = grant.character
+      const gltf = await parseCharacter(grant.version, () => loadEncrypted(`${base}/${EXERCISE_CATALOG.character.file}`, characterKey))
+      let clipPromise = clips.get(clipId)
+      if (!clipPromise) {
+        clipPromise = loadEncrypted(`${base}/m/${clipId}.rhx`, grant.clips[clipId]).then((buf) => parseMotion(buf, clipId))
+        clipPromise.catch(() => clips.delete(clipId))
+        clips.set(clipId, clipPromise)
+      }
+      const clip = await clipPromise
+      if (id !== loadId.current) return
+      setAssets({ gltf, clip, watermark: grant.watermark })
+      setPhase('ready')
+    } catch (err) {
+      if (id !== loadId.current) return
+      setError((err as Error)?.message?.replace(/^.*ConvexError: /, '') || 'Couldn’t load the demonstration.')
+      setPhase('error')
+    }
+  }, [clipId, requestGrant])
+
+  useEffect(() => {
+    repsRef.current = 0
+    setReps(0)
+    setAssets(null)
+    setView('front')
+    const reason = liteReason()
+    setLite(reason)
+    if (reason || !autoPlay) setPhase('lite')
+    else void load()
+  }, [clipId, autoPlay, load])
+
+  const handleRep = useCallback(() => {
+    repsRef.current += 1
+    setReps(repsRef.current)
+    onRep?.(repsRef.current)
+  }, [onRep])
+
+  const chip =
+    'inline-flex h-9 items-center gap-1.5 rounded-full bg-white/90 px-3 text-xs font-medium text-rh-night shadow-sm backdrop-blur transition hover:bg-white active:scale-95 dark:bg-rh-ink-2/90 dark:text-white'
+
+  return (
+    <div
+      className={cn(
+        'relative isolate aspect-square w-full select-none overflow-hidden rounded-3xl bg-gradient-to-b from-rh-mist via-white to-rh-canvas dark:from-white/[0.06] dark:via-rh-ink-2 dark:to-rh-ink-2',
+        className
+      )}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {/* Poster until the 3D scene is ready. Not secret: it's a still. */}
+      <Image
+        src={posterUrl(clipId)}
+        alt={clipInfo ? `${clipInfo.name}: starting position` : 'Exercise'}
+        fill
+        sizes="(max-width: 1024px) 100vw, 640px"
+        draggable={false}
+        className={cn('object-contain p-4 transition-opacity duration-500', phase === 'ready' ? 'opacity-0' : 'opacity-100')}
+      />
+
+      {phase === 'ready' && assets && (
+        <ExerciseStage
+          className="absolute inset-0 animate-in fade-in duration-500"
+          gltf={assets.gltf}
+          clip={assets.clip}
+          props={clipInfo?.props ?? []}
+          playing={playing}
+          speed={slow ? 0.5 : 1}
+          view={view}
+          viewNonce={viewNonce}
+          watermark={assets.watermark}
+          onRep={handleRep}
+          onContextLost={() => {
+            setLite('3D was paused to save memory')
+            setPhase('lite')
+          }}
+        />
+      )}
+
+      {phase === 'loading' && (
+        <div className="absolute inset-x-0 bottom-4 flex justify-center">
+          <span className={chip}>
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-rh-teal" /> Loading 3D demonstration…
+          </span>
+        </div>
+      )}
+
+      {phase === 'lite' && (
+        <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-1.5 px-4 text-center">
+          <button type="button" onClick={() => void load()} className={cn(chip, 'h-10 bg-rh-teal px-4 text-white hover:bg-rh-teal-deep dark:bg-rh-aqua dark:text-rh-night')}>
+            <Rotate3d className="h-4 w-4" /> Watch in 3D ({totalKb} KB)
+          </button>
+          {lite && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500">
+              <WifiOff className="h-3 w-3" /> {lite}. Showing the picture and steps.
+            </span>
+          )}
+        </div>
+      )}
+
+      {phase === 'denied' && (
+        <div className="absolute inset-x-0 bottom-4 flex justify-center px-4">
+          <span className={cn(chip, 'h-auto py-2 text-center')}>The 3D demonstration is waiting for clinical review. Follow the picture and steps.</span>
+        </div>
+      )}
+
+      {phase === 'error' && (
+        <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-2 px-4 text-center">
+          <span className="text-xs text-rose-600">{error}</span>
+          <button type="button" onClick={() => void load()} className={chip}>
+            <RotateCcw className="h-3.5 w-3.5" /> Try again
+          </button>
+        </div>
+      )}
+
+      {phase === 'ready' && !bare && (
+        <>
+          <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-medium text-rh-teal backdrop-blur dark:bg-rh-ink-2/80 dark:text-rh-aqua">
+            <Rotate3d className="h-3.5 w-3.5" /> Drag to turn
+          </div>
+          <div className="pointer-events-none absolute right-3 top-3 rounded-2xl bg-rh-teal px-3 py-1.5 text-center text-white shadow-sm dark:bg-rh-aqua dark:text-rh-night">
+            <p className="text-lg font-semibold leading-none tabular-nums">{reps}</p>
+            <p className="text-[10px] uppercase tracking-wider opacity-80">reps</p>
+          </div>
+          <div className="absolute inset-x-0 bottom-3 flex flex-wrap items-center justify-center gap-1.5 px-3">
+            <button type="button" className={chip} onClick={() => setPlaying((p) => !p)} aria-label={playing ? 'Pause' : 'Play'}>
+              {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              {playing ? 'Pause' : 'Play'}
+            </button>
+            <button type="button" className={cn(chip, slow && 'bg-rh-teal text-white hover:bg-rh-teal-deep')} onClick={() => setSlow((s) => !s)} aria-pressed={slow}>
+              <Turtle className="h-3.5 w-3.5" /> {slow ? '0.5×' : '1×'}
+            </button>
+            {(['front', 'side', 'top'] as ViewName[]).map((v) => (
+              <button
+                key={v}
+                type="button"
+                className={cn(chip, view === v && 'ring-2 ring-rh-teal/40')}
+                onClick={() => {
+                  setView(v)
+                  setViewNonce((n) => n + 1)
+                }}
+              >
+                {v === 'front' && <Eye className="h-3.5 w-3.5" />}
+                {v[0].toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,5 @@
+# Keep raw and decrypted 3D assets out of CLI deploys
+assets-src
+*.fbx
+scripts/exercise-3d/out
+.tools

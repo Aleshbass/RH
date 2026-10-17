@@ -61,3 +61,10 @@ node_modules/
 
 .vercel
 .env*
+
+# 3D exercise source assets and build output (never commit or deploy raw/decrypted models)
+/assets-src/
+*.fbx
+/scripts/exercise-3d/out/
+/.tools/
+__pycache__/

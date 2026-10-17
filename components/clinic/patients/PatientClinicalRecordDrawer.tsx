@@ -36,6 +36,7 @@ import {
 } from './patient-record-shared'
 import { ClinicianPickerDialog, EditPatientDetailsDialog } from './PatientRecordDialogs'
 import { samplePatientRecord } from './sample-patient-record'
+import { ExerciseProgramsPanel } from '@/components/exercise-programs/ExerciseProgramsPanel'
 
 type PatientRecord = NonNullable<FunctionReturnType<typeof api.clinicTools.getClinicPatientFullRecord>>
 type SessionLog = PatientRecord['sessionLogs'][number]
@@ -369,7 +370,15 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
                 primaryClinicianId={primary?._id ?? null}
               />
             </TabsContent>
-            <TabsContent value="programme" className="mt-0">
+            <TabsContent value="programme" className="mt-0 space-y-6">
+              {!isSample && (
+                <ExerciseProgramsPanel
+                  patientId={patientId}
+                  patientName={patient.firstName || 'this patient'}
+                  hasPhone={Boolean(patient.phoneNumber?.replace(/\D/g, '').length)}
+                  canWrite={isActive}
+                />
+              )}
               <ProgrammeTab patientId={patientId} plans={record.treatmentPlans} />
             </TabsContent>
             <TabsContent value="documents" className="mt-0">
