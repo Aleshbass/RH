@@ -63,7 +63,7 @@ function LogDialog({
   const submit = async () => {
     setSaving(true)
     try {
-      await onSubmit({ painScore: pain, difficulty, note: note.trim() || undefined, setsDone: item.sets })
+      await onSubmit({ painScore: pain, difficulty, note: note.trim() || undefined, setsDone: item.sets ?? undefined })
       onOpenChange(false)
     } finally {
       setSaving(false)
@@ -128,7 +128,7 @@ function LogDialog({
 }
 
 /** Guided sets: counts reps from the animation loop, rests between sets, celebrates at the end. */
-function Guided({ item, rep, onFinish, onExit }: { item: ProgramItem; rep: number; onFinish: () => void; onExit: () => void }) {
+function Guided({ item, rep, onFinish, onExit }: { item: ProgramItem & { sets: number; reps: number }; rep: number; onFinish: () => void; onExit: () => void }) {
   const [set, setSet] = useState(1)
   const [base, setBase] = useState(rep)
   const [rest, setRest] = useState(0)
@@ -206,6 +206,8 @@ export function ProgramPlayer({
   const [logOpen, setLogOpen] = useState(false)
   const detailRef = useRef<HTMLDivElement>(null)
   const item = program.items[selected] ?? null
+  // Education items have no dose, so there is nothing to count through
+  const dosed = item && item.sets !== null && item.reps !== null ? { ...item, sets: item.sets, reps: item.reps } : null
   const done = useMemo(() => new Set(doneToday), [doneToday])
   const from = program.clinicName ?? program.senderName
 
@@ -288,7 +290,7 @@ export function ProgramPlayer({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-rh-night dark:text-white">{it.exercise?.name ?? 'Exercise'}</span>
-                    <span className="block text-xs text-neutral-500">{doseLabel(it)} · {it.frequency}</span>
+                    <span className="block text-xs text-neutral-500">{[doseLabel(it), it.frequency].filter(Boolean).join(' · ')}</span>
                     {side && <span className="mt-0.5 inline-block rounded-full bg-rh-peach px-2 py-0.5 text-[10px] font-medium text-[#b4690e]">{side}</span>}
                   </span>
                   <ChevronRight className="h-4 w-4 text-neutral-400" />
@@ -319,15 +321,15 @@ export function ProgramPlayer({
               </div>
             )}
 
-            {guided && <Guided item={item} rep={rep} onFinish={() => { setGuided(false); if (onLog && !readOnly) setLogOpen(true) }} onExit={() => setGuided(false)} />}
+            {guided && dosed && <Guided item={dosed} rep={rep} onFinish={() => { setGuided(false); if (onLog && !readOnly) setLogOpen(true) }} onExit={() => setGuided(false)} />}
 
             <section className="rounded-3xl border border-black/[0.04] bg-white p-5 shadow-soft dark:border-white/[0.06] dark:bg-rh-ink-2">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-semibold tracking-tight text-rh-night dark:text-white">{item.exercise?.name}</h3>
                   <div className="mt-1.5 flex flex-wrap gap-1.5 text-xs">
-                    <span className="rounded-full bg-rh-mist px-2.5 py-1 font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">{item.sets} sets</span>
-                    <span className="rounded-full bg-rh-mist px-2.5 py-1 font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">{item.reps} reps</span>
+                    {item.sets !== null && <span className="rounded-full bg-rh-mist px-2.5 py-1 font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">{item.sets} sets</span>}
+                    {item.reps !== null && <span className="rounded-full bg-rh-mist px-2.5 py-1 font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">{item.reps} reps</span>}
                     {item.holdSeconds ? <span className="rounded-full bg-rh-mist px-2.5 py-1 font-medium text-rh-teal dark:bg-rh-aqua/10 dark:text-rh-aqua">hold {item.holdSeconds}s</span> : null}
                     <span className="rounded-full bg-rh-canvas px-2.5 py-1 text-neutral-600 dark:bg-white/[0.05] dark:text-neutral-300">{item.frequency}</span>
                     {sideLabel(item.exercise?.animation?.slug, item.side) && (
@@ -337,7 +339,7 @@ export function ProgramPlayer({
                 </div>
                 {!readOnly && (
                   <div className="flex gap-2">
-                    {item.clipId && !guided && (
+                    {item.clipId && dosed && !guided && (
                       <Button variant="outline" className="rounded-xl" onClick={() => setGuided(true)}>
                         <Play className="mr-1.5 h-4 w-4" /> Do it with me
                       </Button>

@@ -65,6 +65,20 @@ type Draft = {
   fromIndex?: number
 }
 
+/** One item as the server accepts it (itemFields in convex/exercisePrograms.ts), plus its old position when editing. */
+type PayloadItem = {
+  exerciseId?: Id<'exercises'>
+  kind?: 'exercise' | 'education'
+  name?: string
+  side?: 'L' | 'R'
+  sets?: number
+  reps?: number
+  holdSeconds?: number
+  frequency?: string
+  note?: string
+  fromIndex?: number
+}
+
 let draftCounter = 0
 const nextKey = () => `d${++draftCounter}`
 
@@ -300,7 +314,7 @@ export function SendProgramDialog({
   }
 
   const payloadItems = () =>
-    drafts.flatMap((d) => {
+    drafts.flatMap((d): PayloadItem[] => {
       const fromIndex = d.fromIndex
       if (d.type === 'education') return [{ kind: 'education' as const, name: d.name.trim() || undefined, note: d.note.trim() || undefined, fromIndex }]
       const dose = {
