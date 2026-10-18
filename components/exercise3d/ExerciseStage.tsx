@@ -73,12 +73,32 @@ function Wedge({ p }: { p: CatalogProp }) {
   )
 }
 
-type StrapBones = Record<'lk' | 'lt' | 'rk' | 'rt' | 'ankle' | 'ball' | 'tip' | 'knee', THREE.Object3D>
+type StrapBones = Record<
+  'lk' | 'lt' | 'rk' | 'rt' | 'ankle' | 'ball' | 'tip' | 'knee' | 'lKnee' | 'rKnee' | 'lHip' | 'rHip',
+  THREE.Object3D
+>
 
 /**
- * Where a towel held in both hands wraps under one foot: (left grip, right grip, left anchor, right
- * anchor). Same construction as scripts/exercise-3d/blender/rh_props.py strap_points.
+ * Segments of a strap, as pairs of points. A towel held in both hands wraps under one foot (hand to
+ * foot on each side, then across the sole); a belt (at "knees") loops round both knees. Same
+ * construction as scripts/exercise-3d/blender/rh_props.py strap_points / strap_segments.
  */
+function strapSegments(b: StrapBones, at: string): [THREE.Vector3, THREE.Vector3][] {
+  const w = (o: THREE.Object3D) => o.getWorldPosition(new THREE.Vector3())
+  if (at === 'knees') {
+    const lk = w(b.lKnee), rk = w(b.rKnee), lh = w(b.lHip), rh = w(b.rHip)
+    const across = lk.clone().lerp(lh, 0.12).sub(rk.clone().lerp(rh, 0.12)).normalize()
+    const la = lk.clone().lerp(lh, 0.12).addScaledVector(across, 0.065)
+    const ra = rk.clone().lerp(rh, 0.12).addScaledVector(across, -0.065)
+    const thigh = lh.clone().sub(lk).add(rh.clone().sub(rk)).normalize()
+    const front = new THREE.Vector3().crossVectors(across, thigh).normalize().multiplyScalar(0.055)
+    const [lf, rf, lb, rb] = [la.clone().add(front), ra.clone().add(front), la.clone().sub(front), ra.clone().sub(front)]
+    return [[lf, rf], [lb, rb], [lf, lb], [rf, rb]]
+  }
+  const [lg, rg, la, ra] = strapPoints(b, at === 'toes')
+  return [[lg, la], [rg, ra], [la, ra]]
+}
+
 function strapPoints(b: StrapBones, atToes: boolean) {
   const w = (o: THREE.Object3D) => o.getWorldPosition(new THREE.Vector3())
   const lg = w(b.lk).lerp(w(b.lt), 0.5)
@@ -143,7 +163,7 @@ function Props({ props }: { props: CatalogProp[] }) {
         }
         if (p.type === 'step') {
           const h = num(p, 'height', 0.15), d = num(p, 'depth', 0.32)
-          return <Box key={i} size={[num(p, 'width', 0.7), h, d]} center={blender(0, num(p, 'frontY') + d / 2, h / 2)} color="#efeae2" />
+          return <Box key={i} size={[num(p, 'width', 0.7), h, d]} center={blender(num(p, 'x'), num(p, 'frontY') + d / 2, h / 2)} color="#efeae2" />
         }
         return null
       })}
@@ -216,6 +236,7 @@ function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, 
     const names = {
       lk: 'LeftHandMiddle1', lt: 'LeftHandMiddle3', rk: 'RightHandMiddle1', rt: 'RightHandMiddle3',
       ankle: `${foot}Foot`, ball: `${foot}ToeBase`, tip: `${foot}Toe_End`, knee: `${foot}Leg`,
+      lKnee: 'LeftLeg', rKnee: 'RightLeg', lHip: 'LeftUpLeg', rHip: 'RightUpLeg',
     }
     const found = Object.fromEntries(Object.entries(names).map(([k, n]) => [k, model.getObjectByName(n)]))
     return Object.values(found).every(Boolean) ? (found as StrapBones) : null
@@ -317,11 +338,14 @@ function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, 
     }
     if (strapBones) {
       model.updateMatrixWorld(true)
-      const [lg, rg, la, ra] = strapPoints(strapBones, strap?.at === 'toes')
+      const segments = strapSegments(strapBones, String(strap?.at ?? 'ball'))
       const up = new THREE.Vector3(0, 1, 0)
-      ;[[lg, la], [rg, ra], [la, ra]].forEach(([a, b], i) => {
-        const seg = strapSegs.current[i]
+      strapSegs.current.forEach((seg, i) => {
         if (!seg) return
+        const pair = segments[i]
+        seg.visible = Boolean(pair)
+        if (!pair) return
+        const [a, b] = pair
         const d = b.clone().sub(a)
         seg.position.copy(a).add(b).multiplyScalar(0.5)
         seg.quaternion.setFromUnitVectors(up, d.clone().normalize())
@@ -361,7 +385,7 @@ function Scene({ gltf, clip, props, playing, speed, view, viewNonce, watermark, 
       <primitive object={model} dispose={null} />
       <Props props={props} />
       {strapBones &&
-        [0, 1, 2].map((i) => (
+        [0, 1, 2, 3].map((i) => (
           <mesh key={i} ref={(el) => { strapSegs.current[i] = el }}>
             <cylinderGeometry args={[0.014, 0.014, 1, 12]} />
             <meshStandardMaterial color="#b8dbd8" roughness={0.9} />

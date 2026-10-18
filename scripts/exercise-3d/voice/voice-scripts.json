@@ -581,5 +581,210 @@
         "text": "And relax."
       }
     ]
+  },
+  "knee-rolling": {
+    "intro": "This is knee rolling. Lie on your back with your knees bent and your feet flat. Slowly let both knees roll to one side, keeping your shoulders on the floor. Bring them back to the middle, then roll them to the other side. Keep it gentle and rhythmic. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Knees to one side."
+      },
+      {
+        "at": 3,
+        "text": "Back to the middle."
+      },
+      {
+        "at": 4.5,
+        "text": "And to the other side."
+      },
+      {
+        "at": 7.5,
+        "text": "Back to the middle."
+      }
+    ]
+  },
+  "pelvic-rocking": {
+    "intro": "This is pelvic rocking. Lie on your back with your knees bent and your feet flat. Gently flatten your lower back into the floor by tilting your pelvis, then gently arch your lower back a little. Rock slowly between the two. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Flatten your back."
+      },
+      {
+        "at": 2.2,
+        "text": "Now arch it a little."
+      },
+      {
+        "at": 5,
+        "text": "And relax."
+      }
+    ]
+  },
+  "sitting-pelvic-rocking": {
+    "intro": "This is sitting pelvic rocking. Sit on a firm chair with your feet flat. Slowly roll your pelvis back so your lower back slumps a little, then roll forwards so you sit tall with a small arch. Repeat slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Roll back and slump."
+      },
+      {
+        "at": 2.6,
+        "text": "Now sit up tall."
+      },
+      {
+        "at": 5.8,
+        "text": "And relax."
+      }
+    ]
+  },
+  "forward-bend-sitting": {
+    "intro": "This is a forward bend in sitting. Sit on a chair with your feet apart. Slowly bend forwards, letting your hands slide down towards the floor. Hold, then slowly sit back up. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.4,
+        "text": "Bend slowly forwards."
+      },
+      {
+        "at": 2.6,
+        "text": "Hold."
+      },
+      {
+        "at": 4.4,
+        "text": "Slowly sit up."
+      }
+    ]
+  },
+  "childs-pose": {
+    "intro": "This is the child's pose stretch. Kneel on the floor on your hands and knees. Sit back towards your heels, walking your hands forwards on the floor. Let your head relax down and breathe slowly, feeling a gentle stretch in your back. Hold, then come back up. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.4,
+        "text": "Sit back towards your heels."
+      },
+      {
+        "at": 2.9,
+        "text": "Breathe slowly, and hold."
+      },
+      {
+        "at": 6.8,
+        "text": "Come back up."
+      }
+    ]
+  },
+  "sciatic-nerve-glide": {
+    "intro": "This is a sciatic nerve glide for your {side} leg. Sit on a chair, slumped slightly. Straighten your {side} knee while you look up, then bend the knee again as you look down. Keep the movement smooth and rhythmic, and don't hold the stretch. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Knee straight, look up."
+      },
+      {
+        "at": 1.7,
+        "text": "Bend, look down."
+      }
+    ]
+  },
+  "femoral-nerve-glide": {
+    "intro": "This is a femoral nerve glide for your {side} leg. Lie on your side with your {side} leg on top. Hold the top ankle and gently bend the knee while moving the hip back, then release and return. Keep it gentle and rhythmic. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Bend the knee, hip back."
+      },
+      {
+        "at": 1.8,
+        "text": "And return."
+      }
+    ]
+  },
+  "chair-squat": {
+    "intro": "This is a chair squat. Stand in front of a chair with your feet hip-width apart. Push your hips back and bend your knees until you lightly touch the chair, then stand back up without sitting down. Try not to use your hands. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Hips back, down to the chair."
+      },
+      {
+        "at": 2.3,
+        "text": "Stand up tall."
+      }
+    ]
+  },
+  "static-hip-pushout": {
+    "intro": "This is a static hip push-out. Lie on your back with your knees bent and a belt or band around your knees. Press your knees gently outwards into the belt, without moving, and hold. Then relax. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.5,
+        "text": "Press your knees out."
+      },
+      {
+        "at": 1.6,
+        "text": "Hold."
+      },
+      {
+        "at": 6.5,
+        "text": "And relax."
+      }
+    ]
+  },
+  "pelvic-dips": {
+    "intro": "These are pelvic dips on a step, standing on your {side} leg. Stand side-on on the bottom step on your {side} leg, holding the rail if you need to. Keeping your standing knee straight, let your other hip drop down slowly, then lift it back up using the muscles at the side of your standing hip. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Let the hip drop."
+      },
+      {
+        "at": 2.2,
+        "text": "Lift it back up."
+      }
+    ]
+  },
+  "side-lying-hip-lift": {
+    "intro": "This is a side-lying hip lift for your {side} hip. Lie on your side with the bottom knee bent and your {side} leg on top, straight. Lift the top leg up slowly, keeping it slightly behind you with your toes pointing forwards, then lower it slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.4,
+        "text": "Lift your top leg."
+      },
+      {
+        "at": 1.9,
+        "text": "Hold."
+      },
+      {
+        "at": 2.7,
+        "text": "Lower slowly."
+      }
+    ]
+  },
+  "buttock-squeeze": {
+    "intro": "This is a buttock squeeze. Lie on your back with your legs straight. Squeeze your buttocks together and hold, breathing normally, then relax fully. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.5,
+        "text": "Squeeze your buttocks."
+      },
+      {
+        "at": 2,
+        "text": "Hold."
+      },
+      {
+        "at": 6.2,
+        "text": "And relax fully."
+      }
+    ]
+  },
+  "pendulum-leg-swing": {
+    "intro": "These are pendulum leg swings for your {side} hip. Stand on a step on your other leg, holding a support, and let your {side} leg hang free. Let it swing gently forwards and back. Keep it relaxed, and don't force the movement. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Let your leg swing gently."
+      },
+      {
+        "at": 3,
+        "text": "Keep it relaxed."
+      }
+    ]
   }
 }

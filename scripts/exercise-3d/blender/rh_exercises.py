@@ -345,16 +345,21 @@ def four_point_kneel():
 
     The rig's arms are long for its legs, so the trunk inclines ~4 deg (head end up) to get
     both knees onto the mat with straight arms."""
-    quad = {"root": [("x", 90)], **_sym(hip_flex=90, knee_flex=90, ankle_plantar=70, forearm_pron=90, wrist_ext=85),
-            "arm_L": {"flex": 90, "abd": -10}, "arm_R": {"flex": 90, "abd": -10}, "neck_flex": -10}
-    quad = R.ground(quad, MAT_TOP)
-    hands = R.points(("LeftHand", "RightHand"), quad)
-    kn = R.points(("LeftLeg", "RightLeg"), quad)
-    knee_t = {b: v.__class__((v.x, v.y, v.z - 0.065)) for b, v in kn.items()}
-    for _ in range(4):
-        quad = R.lock(quad, hands)
-        quad = R.solve(quad, [("root", "x"), "hip_flex_L", "hip_flex_R"], knee_t, iters=20)
-    return quad
+    def quad(tilt):
+        # Thighs and arms stay vertical whatever the trunk's tilt (hip flexion and arm flexion = tilt).
+        return R.ground({"root": [("x", tilt)], **_sym(hip_flex=tilt, knee_flex=90, ankle_plantar=70, forearm_pron=90, wrist_ext=85),
+                         "arm_L": {"flex": tilt, "abd": -10}, "arm_R": {"flex": tilt, "abd": -10}, "neck_flex": -10}, MAT_TOP)
+
+    def knee_minus_hand(tilt):
+        # How far the knees sit above the hands' contact once the lowest point is on the mat.
+        p = quad(tilt)
+        R.apply_pose(p)
+        k, h = R.world_point("LeftLeg"), R.world_point("LeftHand")
+        knee = min(w.z for w in mesh_points(("RH_Pants",), lambda w: (w - k).length < 0.07))
+        hand = min(w.z for w in mesh_points(("RH_Body1",), lambda w: (w - h).length < 0.1))
+        return knee - hand
+
+    return quad(bisect(knee_minus_hand, 90, 70, iters=12))
 
 
 def _kneel_contacts(base):
@@ -1281,6 +1286,362 @@ def heel_to_toe_walking():
     return act, report
 
 
+# ─── Lower back and hip pack (Oct 2026) ──────────────────────────────────────────────────
+
+FEET_POINTS = ("LeftFoot", "RightFoot", "LeftToeBase", "RightToeBase")
+
+
+def _supine_scene(start):
+    """Mat under a supine pose; the neck point that holds the upper body still."""
+    import rh_props as P
+
+    neck = R.points(("Neck",), start)
+    P.clear()
+    return neck, P.mat(center_y=neck["Neck"].y - 0.55)
+
+
+def knee_rolling():
+    """Lying on the back, knees bent and feet flat. Keeping the shoulders on the mat, let both knees
+    roll slowly to one side, back to the middle, then over to the other side. 9.5 s."""
+    start = hook_lying()
+    neck, mat = _supine_scene(start)
+    feet = R.points(FEET_POINTS, start)
+    shoulders = R.points(("LeftArm", "RightArm"), start)
+
+    def roll(deg):
+        # Knees fall to one side together: the pelvis rolls part of the way about the body's long axis,
+        # the hips rotate the rest (one turns out, the other in); the chest turns back so the shoulders
+        # stay down, and the feet stay on the mat.
+        sign = 1 if deg > 0 else -1
+        lead, trail = ("L", "R") if deg > 0 else ("R", "L")
+        return dict(start, root=[("x", -90), ("y", deg * 0.45)],
+                    **{f"hip_ext_rot_{lead}": abs(deg) * 0.9, f"hip_ext_rot_{trail}": -abs(deg) * 0.6})
+
+    reach = _foot_reach(feet, extra=("hip_abd",)) + [(["spine_rot"], shoulders)]
+    left, right = settle(roll(36), neck, reach, rounds=3), settle(roll(-36), neck, reach, rounds=3)
+    hold = {"step": 6}
+    act, report = R.animate("EX_knee_rolling", start, [
+        (left, 60), (left, 30, hold), (start, 45), (right, 60), (right, 30, hold), (start, 45), (start, 15, hold),
+    ], locks=neck, reach=reach, rounds=2)
+    report["props"] = [mat]
+    return act, report
+
+
+def pelvic_rocking():
+    """Lying on the back, knees bent. Gently flatten the lower back into the mat by tilting the pelvis,
+    then arch it a little; rock slowly between the two. 7 s."""
+    start = hook_lying()
+    neck, mat = _supine_scene(start)
+    feet = R.points(FEET_POINTS, start)
+
+    def tilt(d):
+        # d > 0 tucks the pelvis (back flattens); the lumbar spine bends the same amount the other way.
+        return dict(start, root=[("x", -90 - d)], spine_flex=d)
+
+    reach = _foot_reach(feet)
+    flat, arch = settle(tilt(9), neck, reach), settle(tilt(-8), neck, reach)
+    hold = {"step": 6}
+    act, report = R.animate("EX_pelvic_rocking", start, [
+        (flat, 42), (flat, 24, hold), (arch, 60), (arch, 24, hold), (start, 45), (start, 15, hold),
+    ], locks=neck, reach=reach)
+    report["props"] = [mat]
+    return act, report
+
+
+def _seated_trunk(sit, tilt, spine):
+    """Seated pose with the pelvis rolled by `tilt` and the spine bent by `spine`; eyes stay level."""
+    trunk = tilt + spine
+    return dict(sit, root=[("x", -4 + tilt)], spine_flex=spine, neck_flex=-0.45 * trunk, head_flex=-0.45 * trunk)
+
+
+def sitting_pelvic_rocking():
+    """Sitting on a firm chair, feet flat. Slowly roll the pelvis back so the lower back slumps a
+    little, then roll it forward to sit tall with a small arch. 8 s."""
+    sit, feet = seated_base()
+    chair = fit_chair(sit)
+    hips = R.points(("LeftUpLeg", "RightUpLeg"), sit)
+    reach = [(leg_params(s), {k: v for k, v in feet.items() if k.startswith(SIDE_NAME[s])}) for s in ("L", "R")]
+    reach += hands_on_thighs({"L": ("L", 0.55, 0.0), "R": ("R", 0.55, 0.0)})
+    rest = settle(_seated_trunk(sit, 0, 0), hips, reach)
+    slump = settle(_seated_trunk(sit, -12, 16), hips, reach)
+    tall = settle(_seated_trunk(sit, 9, -7), hips, reach)
+    hold = {"step": 6}
+    act, report = R.animate("EX_sitting_pelvic_rocking", rest, [
+        (slump, 54), (slump, 24, hold), (tall, 72), (tall, 24, hold), (rest, 45), (rest, 21, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair]
+    return act, report
+
+
+def forward_bend_sitting():
+    """Sitting on a chair with the feet apart, slowly bend forwards and let the hands slide down
+    towards the floor; hold, then slowly sit up. 8 s."""
+    sit, feet0 = seated_base()
+    chair = fit_chair(sit)
+    hips = R.points(("LeftUpLeg", "RightUpLeg"), sit)
+    feet = {b: v + Vector((0.09 if b.startswith("Left") else -0.09, 0, 0)) for b, v in feet0.items()}
+    reach = [(leg_params(s, "hip_abd"), {k: v for k, v in feet.items() if k.startswith(SIDE_NAME[s])}) for s in ("L", "R")]
+    hands = {"arm_L": {"flex": 6, "abd": 6}, "arm_R": {"flex": 6, "abd": 6}, **_sym(elbow_flex=12)}
+    up = settle(dict(sit, **hands), hips, reach)
+    # Arms hang towards the floor: with the trunk bent ~80 degrees they are flexed about as much.
+    down = settle(dict(up, root=[("x", 36)], spine_flex=42, neck_flex=16, head_flex=10,
+                       arm_L={"flex": 72, "abd": 4}, arm_R={"flex": 72, "abd": 4}), hips, reach)
+    hold = {"step": 6}
+    act, report = R.animate("EX_forward_bend_sitting", up, [
+        (up, 12, hold), (down, 66), (down, 54, hold), (up, 66), (up, 42, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair]
+    return act, report
+
+
+def childs_pose():
+    """Child's pose: from hands and knees, sit back towards the heels with the arms stretched forward
+    on the mat and the head relaxed down; hold, then come back up. 9 s."""
+    import rh_props as P
+
+    base = four_point_kneel()
+    knees, hands, feet = _kneel_contacts(base)
+    P.clear()
+    mat = P.mat(center_y=-0.05)
+    # The shins stay on the mat, so as the knees bend the thighs fold back over them: the shin's
+    # angle (pelvis tilt - hip flexion + knee flexion) is held at its hands-and-knees value. The
+    # trunk tilt that best keeps the hands on their spots is found by a scan; the arms do the rest.
+    trunk = base["root"][0][1]
+    shin = {s: trunk - base[f"hip_flex_{s}"] + base[f"knee_flex_{s}"] for s in ("L", "R")}
+    # The hands walk forward along the mat as the hips sit back ("label" goes 0 -> 1), and the
+    # wrists keep the palms flat.
+    palm_names = [f"{n}{b}" for n in ("Left", "Right") for b in ("Hand",) + PALM]
+    palms = R.points(palm_names, base)
+    reach_forward = 0.14
+
+    def palm_targets(p, names):
+        shift = Vector((0, -reach_forward * p.get("label", 0.0), 0))
+        return {n: palms[n] + shift for n in names}
+
+    arm_reach = []
+    for s in ("L", "R"):
+        n = SIDE_NAME[s]
+        arm_reach.append(([(f"arm_{s}", "flex"), (f"arm_{s}", "abd"), f"elbow_flex_{s}"],
+                          lambda p, n=n: palm_targets(p, [f"{n}Hand"])))
+        arm_reach.append(([f"wrist_ext_{s}", f"forearm_pron_{s}", f"wrist_dev_{s}"],
+                          lambda p, n=n: palm_targets(p, [f"{n}{b}" for b in PALM])))
+    toes = R.points(("LeftToeBase", "RightToeBase"), base)
+    foot_reach = [([f"ankle_plantar_{s}"], {f"{SIDE_NAME[s]}ToeBase": toes[f"{SIDE_NAME[s]}ToeBase"]}) for s in ("L", "R")]
+
+    def folded(knee, tilt, spine):
+        p = dict(base, root=[("x", tilt)], spine_flex=spine, neck_flex=-10 + spine * 1.1, head_flex=spine * 0.5, label=1.0)
+        for s in ("L", "R"):
+            p[f"knee_flex_{s}"] = knee
+            p[f"hip_flex_{s}"] = tilt - shin[s] + knee
+        return settle(p, knees, arm_reach + foot_reach, rounds=1)
+
+    def hand_error(p):
+        R.apply_pose(p)
+        return R.lock_error(palm_targets(p, ["LeftHand", "RightHand"]))
+
+    knee = 144
+    tilt = min(range(int(trunk), int(trunk) + 70, 5), key=lambda t: hand_error(folded(knee, t, 26)))
+    tilt = min((tilt + d for d in (-3, -1.5, 0, 1.5, 3)), key=lambda t: hand_error(folded(knee, t, 26)))
+    child = folded(knee, tilt, 26)
+
+    def head_gap(neck):
+        # Forehead resting on the mat, not sunk into it.
+        R.apply_pose(dict(child, neck_flex=neck))
+        h = R.world_point("Head")
+        return min(w.z for w in mesh_points(("RH_Body1", "RH_Cap", "RH_Mask"), lambda w: (w - h).length < 0.16)) - MAT_TOP
+
+    child = dict(child, neck_flex=bisect(head_gap, child["neck_flex"], -40, iters=12))
+    base = dict(base, label=0.0)
+    hold = {"step": 6}
+    act, report = R.animate("EX_childs_pose", base, [
+        (base, 12, hold), (child, 72), (child, 120, hold), (base, 60), (base, 6, hold),
+    ], locks=knees, reach=arm_reach + foot_reach)
+    report["tilt"] = tilt
+    report["props"] = [mat]
+    return act, report
+
+
+def sciatic_nerve_glide(side="L"):
+    """Sciatic nerve glide (slider). Sitting slightly slumped, straighten one knee while looking up,
+    then bend it again as you look down. Smooth and rhythmic, never held at the end. 3.6 s."""
+    other = OTHER[side]
+    sit, feet = seated_base()
+    chair = fit_chair(sit)
+    hips = R.points(("LeftUpLeg", "RightUpLeg"), sit)
+    reach = [(leg_params(other), {k: v for k, v in feet.items() if k.startswith(SIDE_NAME[other])})]
+    reach += hands_on_thighs({"L": ("L", 0.5, 0.0), "R": ("R", 0.5, 0.0)})
+    slump = dict(sit, spine_flex=14)
+    down = settle(dict(slump, neck_flex=20, head_flex=14), hips, reach)
+    up = settle(dict(slump, neck_flex=-14, head_flex=-10, **{f"knee_flex_{side}": 18, f"ankle_plantar_{side}": -8,
+                                                            f"hip_flex_{side}": sit[f"hip_flex_{side}"] + 3}), hips, reach)
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_sciatic_nerve_glide_{side}", down, [
+        (up, 42), (up, 9, hold), (down, 48), (down, 9, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair]
+    return act, report
+
+
+def femoral_nerve_glide(side="L"):
+    """Femoral nerve glide, lying on the side with the sore leg (side) on top. Hold the top ankle, bend
+    the knee and take the hip gently back, then return; keep it gentle and rhythmic. 4 s.
+    side names the top leg: L lies on the right side."""
+    import rh_props as P
+
+    s = SIDE_NAME[side]
+    start = side_lying(hip_flex_L=12, knee_flex_L=72, ankle_plantar_L=25, arm_L={"flex": -20, "abd": -10}, elbow_flex_L=20)
+    glide = dict(start, hip_flex_L=-14, knee_flex_L=112, ankle_plantar_L=30)
+    if side == "R":
+        start, glide = R.ground(R.mirror(start), MAT_TOP), R.mirror(glide)
+    P.clear()
+    mat = P.mat(center_y=0.0, along="x", length=1.9)
+    pillow = head_pillow(start)
+
+    def ankle_grip(p):
+        R.apply_pose(p)
+        a = R.world_point(f"{s}Foot").lerp(R.world_point(f"{s}ToeBase"), 0.45)
+        return {f"{s}HandMiddle3": a + Vector((0, 0, 0.035))}     # over the top of the ankle
+
+    reach = [([(f"arm_{side}", "flex"), (f"arm_{side}", "abd"), f"elbow_flex_{side}", "spine_flex"], ankle_grip)]
+    start, glide = settle(start, None, reach, rounds=3), settle(glide, None, reach, rounds=3)
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_femoral_nerve_glide_{side}", start, [
+        (glide, 45), (glide, 9, hold), (start, 54), (start, 12, hold),
+    ], reach=reach)
+    report["props"] = [mat, pillow]
+    return act, report
+
+
+def chair_squat():
+    """Chair squat: standing in front of a chair, push the hips back and bend the knees until the
+    buttocks lightly touch the seat, then stand straight back up without sitting. 5 s."""
+    feet = R.points(FEET)
+    stand = {"arm_L": {"flex": 80}, "arm_R": {"flex": 80}}
+    touch = R.lock(squat_pose(pelvis_tilt=34, thigh=74, knee=94, arm_flex=80), feet)
+    chair = fit_chair(touch)
+    hold = {"step": 6}
+    act, report = R.animate("EX_chair_squat", stand, [
+        (touch, 60), (touch, 9, hold), (stand, 54), (stand, 27, hold),
+    ], locks=feet)
+    report["props"] = [chair]
+    return act, report
+
+
+def static_hip_pushout():
+    """Static hip push-out (gluteal tendinopathy, isometric). Lying on the back, knees bent, a belt
+    round the knees. Press the knees gently outwards into the belt without moving; hold; relax. 8.5 s."""
+    import rh_props as P
+
+    start = hook_lying()
+    neck, mat = _supine_scene(start)
+    feet = R.points(FEET_POINTS, start)
+    reach = _foot_reach(feet, extra=("hip_abd",))
+    press = settle(dict(start, **_sym(hip_ext_rot=5)), neck, reach)
+    hold = {"step": 10}
+    act, report = R.animate("EX_static_hip_pushout", start, [
+        (start, 15, hold), (press, 30), (press, 150, hold), (start, 30), (start, 30, hold),
+    ], locks=neck, reach=reach)
+    report["props"] = [mat, P.strap(at="knees")]
+    return act, report
+
+
+def pelvic_dips(side="L"):
+    """Pelvic dips on a step (gluteal tendinopathy). Standing side-on on a step on the sore leg (side),
+    hands on hips, the other leg hanging free. Keeping the standing knee straight, let the other hip
+    drop slowly, then lift it back up with the muscles at the side of the standing hip. 5 s."""
+    import rh_props as P
+
+    w, wn = side, SIDE_NAME[side]
+    h = 0.15
+    plant = {b: v + Vector((0, 0, h)) for b, v in foot_targets(w).items()}
+    akimbo = {"arm_L": {"flex": 8, "abd": 34}, "arm_R": {"flex": 8, "abd": 34}, **_sym(elbow_flex=100, forearm_pron=40)}
+    base = dict(akimbo, knee_flex_R=6)
+    level = R.lock(_side(base, side), plant)
+    hip = R.points((f"{wn}UpLeg",), level)
+    stance = [(leg_params(w, "hip_abd"), plant)]
+    # Authored for the left leg standing: the right side of the pelvis drops (rotation about the
+    # standing hip), the trunk stays upright and the free leg keeps hanging clear of the step.
+    drop = _side(dict(base, root=[("y", -12)], spine_side=9, hip_abd_R=13, knee_flex_R=8), side)
+    drop = settle(drop, hip, stance, rounds=3)
+    foot_x = plant[f"{wn}Foot"].x
+    ball_y = plant[f"{wn}ToeBase"].y
+    P.clear()
+    step = P.step(h, front_y=round(ball_y - 0.24, 3), depth=0.42, width=0.3, x=round(foot_x + (0.06 if side == "L" else -0.06), 3))
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_pelvic_dips_{side}", level, [
+        (drop, 54), (drop, 12, hold), (level, 54), (level, 30, hold),
+    ], locks=hip, reach=stance, rounds=2)
+    report["props"] = [step]
+    return act, report
+
+
+def side_lying_hip_lift(side="L"):
+    """Side-lying hip lift. Lying on the side, bottom knee bent and top leg (side) straight. Lift the
+    top leg slowly, keeping it slightly behind you with the toes pointing forwards; lower. 5 s.
+    side names the top leg: L lies on the right side."""
+    import rh_props as P
+
+    start = side_lying(hip_flex_L=4, knee_flex_L=3, ankle_plantar_L=12)
+    lifted = dict(start, hip_abd_L=32, hip_flex_L=-6)
+    if side == "R":
+        start, lifted = R.ground(R.mirror(start), MAT_TOP), R.mirror(lifted)
+    P.clear()
+    mat = P.mat(center_y=0.0, along="x", length=1.9)
+    pillow = head_pillow(start)
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_side_lying_hip_lift_{side}", start, [
+        (start, 12, hold), (lifted, 45), (lifted, 24, hold), (start, 54), (start, 15, hold),
+    ])
+    report["props"] = [mat, pillow]
+    return act, report
+
+
+def buttock_squeeze():
+    """Buttock squeeze, lying on the back with the legs straight: squeeze the buttocks together and
+    hold, then relax fully. 8 s."""
+    start = R.ground(supine(**_sym(**STRAIGHT), arm_L={"flex": -6, "abd": 14}, arm_R={"flex": -6, "abd": 14}), MAT_TOP)
+    neck, mat = _supine_scene(start)
+    squeeze = dict(start, **_sym(hip_ext_rot=7, hip_flex=-2))
+    hold = {"step": 10}
+    act, report = R.animate("EX_buttock_squeeze", start, [
+        (start, 15, hold), (squeeze, 21), (squeeze, 150, hold), (start, 24), (start, 30, hold),
+    ], locks=neck)
+    report["props"] = [mat]
+    return act, report
+
+
+def pendulum_leg_swing(side="L"):
+    """Pendulum leg swings (hip osteoarthritis). Standing on a step on the other leg with a hand on a
+    wall, let the sore leg (side) hang free and swing gently forwards and back. Relaxed, never forced.
+    6.5 s. Authored with the left leg standing."""
+    import rh_props as P
+
+    w, o = OTHER[side], side
+    side = w   # the poses below are authored for the standing leg
+    wn = SIDE_NAME[w]
+    h = 0.15
+    plant = {b: v + Vector((0, 0, h)) for b, v in foot_targets(w).items()}
+    shift = dict(hip_abd_L=-4, ankle_inv_L=-4, hip_abd_R=7)
+
+    def leg(hip, knee, ankle):
+        return _side(dict(wall_arms(70, 25, 75, sides=("L",)), **shift, hip_flex_R=hip, knee_flex_R=knee,
+                          ankle_plantar_R=ankle), side)
+
+    hang = R.lock(leg(0, 12, 8), plant)
+    contact, face, arm_reach = palms_on_wall(hang, sides=(w,))
+    fwd, back = leg(22, 14, 2), leg(-20, 22, 14)
+    foot_x = plant[f"{wn}Foot"].x
+    ball_y = plant[f"{wn}ToeBase"].y
+    P.clear()
+    step = P.step(h, front_y=round(ball_y - 0.24, 3), depth=0.42, width=0.3, x=round(foot_x + (0.06 if side == "L" else -0.06), 3))
+    wall = P.wall(face_y=face)
+    act, report = R.animate(f"EX_pendulum_leg_swing_{o}", hang, [
+        (fwd, 30), (back, 45), (fwd, 45), (back, 45), (hang, 30),
+    ], locks=plant, reach=arm_reach)
+    report["props"] = [step, wall]
+    return act, report
+
+
 def wall_slide(name, bottom_knee, timing):
     """Back flat against a wall behind, feet forward: slide down by bending the knees, then back up.
     timing: list of ("down" | "up" | "hold", frames)."""
@@ -1403,4 +1764,17 @@ BUILDERS = {
     "single_leg_decline_squat": single_leg_decline_squat,
     "heel_to_toe_walking": heel_to_toe_walking,
     "static_quads": static_quads,
+    "knee_rolling": knee_rolling,
+    "pelvic_rocking": pelvic_rocking,
+    "sitting_pelvic_rocking": sitting_pelvic_rocking,
+    "forward_bend_sitting": forward_bend_sitting,
+    "childs_pose": childs_pose,
+    "sciatic_nerve_glide": sciatic_nerve_glide,
+    "femoral_nerve_glide": femoral_nerve_glide,
+    "chair_squat": chair_squat,
+    "static_hip_pushout": static_hip_pushout,
+    "pelvic_dips": pelvic_dips,
+    "side_lying_hip_lift": side_lying_hip_lift,
+    "buttock_squeeze": buttock_squeeze,
+    "pendulum_leg_swing": pendulum_leg_swing,
 }

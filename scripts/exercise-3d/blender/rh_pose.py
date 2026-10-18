@@ -273,40 +273,67 @@ def _set(p, key, value):
         p[key] = value
 
 
+def _copy_pose(p):
+    return {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v) for k, v in p.items()}
+
+
 def solve(p, params, targets, iters=14, tol=0.0015, step=0.5):
-    """Adjust clinical angles so bone heads reach world targets (a tiny Gauss-Newton IK).
+    """Adjust clinical angles so bone heads reach world targets (a small Levenberg-Marquardt IK).
 
     params: angle keys to adjust, e.g. ["hip_flex_L", "knee_flex_L"] or ("arm_L", "flex").
     targets: {bone_name: world Vector}. The hips are not moved, so call lock() first.
+    A step is only taken when it brings the bones closer, so the angles never wander off.
     Returns a new pose dict; the result stays in readable joint angles.
     """
     import numpy as np
 
-    q = {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v) for k, v in p.items()}
+    q = _copy_pose(p)
     bones = list(targets)
+    start = np.array([_get(q, key) for key in params])
+    # A very light pull back to the starting angles (1 mm per 50 degrees): it doesn't stop the bones
+    # reaching their targets, but where several joints can trade off against each other (pelvis tilt
+    # against hip flexion, say) it keeps the pose near where it started instead of drifting.
+    prior = 2e-5
 
     def residual(pose):
         apply_pose(pose)
-        return np.concatenate([np.array(world_point(b) - targets[b]) for b in bones])
+        reach = np.concatenate([np.array(world_point(b) - targets[b]) for b in bones])
+        angles = np.array([_get(pose, key) for key in params])
+        return np.concatenate([reach, prior * (angles - start)])
 
     r = residual(q)
+    cost = float(r @ r)
+    # Damping is relative to the Jacobian's scale (a fixed value swamps short segments such as
+    # forearms, which move contact points only a few millimetres per degree) and adapts: smaller
+    # after a good step, larger after a rejected one.
+    mu = 1e-3
     for _ in range(iters):
-        if np.abs(r).max() < tol:
+        if np.abs(r[: 3 * len(bones)]).max() < tol:
             break
         jac = np.zeros((len(r), len(params)))
         for j, key in enumerate(params):
-            trial = {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v) for k, v in q.items()}
+            trial = _copy_pose(q)
             _set(trial, key, _get(q, key) + step)
             jac[:, j] = (residual(trial) - r) / step
-        # Damping relative to the Jacobian's scale: a fixed value swamps short segments (forearms,
-        # hands), whose angles move contact points only a few millimetres per degree.
         jtj = jac.T @ jac
-        lam = 1e-3 * float(np.max(np.diag(jtj))) + 1e-12
-        delta = np.linalg.solve(jtj + lam * np.eye(len(params)), -jac.T @ r)
-        delta = np.clip(delta, -15, 15)
-        for j, key in enumerate(params):
-            _set(q, key, _get(q, key) + float(delta[j]))
-        r = residual(q)
+        scale = float(np.max(np.diag(jtj))) + 1e-12
+        while True:
+            # Small steps keep the solution in the basin of the starting pose (several joints can
+            # often reach the same point; a long jump lands on a different, wrong configuration).
+            delta = np.clip(np.linalg.solve(jtj + mu * scale * np.eye(len(params)), -jac.T @ r), -6, 6)
+            trial = _copy_pose(q)
+            for j, key in enumerate(params):
+                _set(trial, key, _get(q, key) + float(delta[j]))
+            r_trial = residual(trial)
+            if float(r_trial @ r_trial) < cost:
+                q, r, cost = trial, r_trial, float(r_trial @ r_trial)
+                mu = max(mu / 3, 1e-6)
+                break
+            mu *= 5
+            if mu > 1e4:
+                apply_pose(q)
+                return q
+    apply_pose(q)
     return q
 
 

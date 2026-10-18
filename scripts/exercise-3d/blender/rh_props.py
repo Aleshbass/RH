@@ -88,9 +88,12 @@ def mat(center_y=0.0, length=1.8, width=0.62, along="y"):
     return {"type": "mat", "centerY": round(center_y, 3), "length": length, "width": width, "along": along}
 
 
-def step(height, front_y, depth=0.32, width=0.7):
-    _box("Prop_Step", (width, depth, height), (0.0, front_y + depth / 2, height / 2), "step")
-    return {"type": "step", "height": height, "frontY": round(front_y, 3), "depth": depth, "width": width}
+def step(height, front_y, depth=0.32, width=0.7, x=0.0):
+    _box("Prop_Step", (width, depth, height), (x, front_y + depth / 2, height / 2), "step")
+    out = {"type": "step", "height": height, "frontY": round(front_y, 3), "depth": depth, "width": width}
+    if x:
+        out["x"] = round(x, 3)
+    return out
 
 
 def pillow(center_x, center_y, top_z, length=0.5, depth=0.34):
@@ -169,9 +172,29 @@ def line(x=0.0, width=0.05, length=8.0):
 STRAP_RADIUS = 0.014
 
 
-def strap_points(foot, at):
-    """World points: (left hand grip, right hand grip, left anchor, right anchor) for the towel."""
+def belt_points():
+    """A belt looped around both knees (just above them): front and back of the loop,
+    from the outside of the left knee to the outside of the right knee."""
     import rh_pose as R
+
+    lk, rk = R.world_point("LeftLeg"), R.world_point("RightLeg")
+    lh, rh = R.world_point("LeftUpLeg"), R.world_point("RightUpLeg")
+    # Just above the knees, on the outside of each thigh.
+    la, ra = lk.lerp(lh, 0.12), rk.lerp(rh, 0.12)
+    across = (la - ra).normalized()
+    la, ra = la + across * 0.065, ra - across * 0.065
+    thigh = ((lh - lk) + (rh - rk)).normalized()
+    front = across.cross(thigh).normalized() * 0.055
+    return la + front, ra + front, la - front, ra - front
+
+
+def strap_points(foot, at):
+    """World points: (left hand grip, right hand grip, left anchor, right anchor) for the towel.
+    at="knees" is a belt around both knees instead (front pair, back pair)."""
+    import rh_pose as R
+
+    if at == "knees":
+        return belt_points()
 
     def head(b):
         return R.world_point(b)
@@ -198,9 +221,23 @@ def strap_points(foot, at):
     return grips[0], grips[1], left_anchor, right_anchor
 
 
+STRAP_SEGMENTS = 4
+
+
+def strap_segments(at, a, b, c, d):
+    """Towel: each hand to the foot and across the sole (the fourth segment is unused).
+    Belt (at="knees"): front, back and both sides of the loop."""
+    if at == "knees":
+        return ((a, b), (c, d), (a, c), (b, d))
+    return ((a, c), (b, d), (c, d), (c, c))
+
+
 def _place_segment(o, p0, p1):
     d = p1 - p0
-    length = max(d.length, 1e-4)
+    o.hide_render = o.hide_viewport = d.length < 1e-4     # an unused segment
+    if o.hide_render:
+        return
+    length = d.length
     rot = Vector((0, 0, 1)).rotation_difference(d.normalized()).to_matrix().to_4x4()
     o.matrix_world = Matrix.Translation((p0 + p1) / 2) @ rot @ Matrix.Diagonal((1, 1, length, 1))
 
@@ -211,15 +248,16 @@ def _rh_update_straps(scene=None, depsgraph=None):
         return
     spec = json.loads(first["rh_strap"])
     lh, rh, la, ra = strap_points(spec["foot"], spec["at"])
-    for i, (p0, p1) in enumerate(((lh, la), (rh, ra), (la, ra))):
+    for i, (p0, p1) in enumerate(strap_segments(spec["at"], lh, rh, la, ra)):
         o = bpy.data.objects.get(f"Prop_Strap_{i}")
         if o is not None:
             _place_segment(o, p0, p1)
 
 
 def strap(foot="Left", at="ball"):
-    """Towel looped under one foot and held in both hands; it follows the pose on every frame."""
-    for i in range(3):
+    """Towel looped under one foot and held in both hands (at="ball" or "toes"), or a belt around
+    both knees (at="knees"); it follows the pose on every frame."""
+    for i in range(STRAP_SEGMENTS):
         old = bpy.data.objects.get(f"Prop_Strap_{i}")
         if old:
             bpy.data.objects.remove(old, do_unlink=True)
