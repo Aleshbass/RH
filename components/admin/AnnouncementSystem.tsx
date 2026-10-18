@@ -125,7 +125,7 @@ export function AnnouncementSystem() {
         description="Send an in-app notification to groups of users. No email or push is sent."
       />
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Panel title="New announcement" className="lg:col-span-2" bodyClassName="space-y-5 px-5 pb-5 pt-3">
           <div className="space-y-1.5">
             <Label htmlFor="announcement-title" className="text-sm font-medium text-rh-night dark:text-white">

@@ -61,7 +61,7 @@ function PaymentCallbackContent() {
           if (result?.success) {
             setStatus('success')
             setMessage('Payment confirmed — your booking is confirmed.')
-            playSound('paid')
+            playSound('booked')
             toast.success('Payment successful!')
           } else if (result?.status === 'abandoned' || result?.status === 'failed') {
             setStatus('failed')

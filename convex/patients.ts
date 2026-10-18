@@ -4,6 +4,7 @@ import { mutation, query } from "./_generated/server";
 import { getAuthenticatedUser, ensureClinicOwner, ensureUserRole, ensureIsClinicOwner } from "./auth";
 import { Id } from "./_generated/dataModel";
 import { getClinicMember, requireClinicWrite } from "./clinicTools";
+import { normalizePhone } from "./helpers/partnerShared";
 
 /**
  * Get authenticated physiotherapist user and validate permissions
@@ -902,8 +903,31 @@ export const getPatientCareTeam = query({
             email: physiotherapist.email,
             imageUrl: physiotherapist.imageUrl,
           },
-          profile: physiotherapistProfile,
-          clinic: clinicInfo,
+          // Public fields only: the full rows hold earnings, licence and admin data
+          profile: physiotherapistProfile
+            ? {
+                specializations: physiotherapistProfile.specializations,
+                bio: physiotherapistProfile.bio,
+                yearsOfExperience: physiotherapistProfile.yearsOfExperience,
+                languagesSpoken: physiotherapistProfile.languagesSpoken,
+                location: physiotherapistProfile.location,
+                offersOnlineSessions: physiotherapistProfile.offersOnlineSessions,
+                offersInPersonSessions: physiotherapistProfile.offersInPersonSessions,
+                averageRating: physiotherapistProfile.averageRating,
+                reviewCount: physiotherapistProfile.reviewCount,
+                bookingSlug: physiotherapistProfile.bookingSlug,
+              }
+            : null,
+          clinic: clinicInfo
+            ? {
+                _id: clinicInfo._id,
+                name: clinicInfo.name,
+                address: clinicInfo.address,
+                city: clinicInfo.city,
+                contactPhone: clinicInfo.contactPhone,
+                logoUrl: clinicInfo.logoUrl,
+              }
+            : null,
           relationship: {
             isPrimary: relationship.isPrimaryPhysiotherapist,
             startDate: relationship.startDate,
@@ -920,32 +944,32 @@ export const getPatientCareTeam = query({
 });
 
 /**
- * Get patient by their user ID (for patient dashboard use)
+ * The signed-in patient's own details (patient settings). `userId` is ignored and kept only so
+ * older clients still validate: the record always comes from the caller's identity.
  */
 export const getPatientByUserId = query({
   args: {
-    userId: v.string(),
+    userId: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
     }
 
-    // Get the user by their clerk ID
     const user = await ctx.db
       .query("users")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.userId))
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique();
 
     if (!user || user.role !== "patient") {
       return null;
     }
 
-    // Get patient profile
-    const patientProfile = user.patientProfileId
-      ? await ctx.db.get(user.patientProfileId)
-      : null;
+    // Joy and marketplace patients may have a profile row without users.patientProfileId
+    const patientProfile =
+      (user.patientProfileId ? await ctx.db.get(user.patientProfileId) : null) ??
+      (await ctx.db.query("patientProfiles").withIndex("by_user_id", (q) => q.eq("userId", user._id)).first());
 
     return {
       _id: user._id,
@@ -955,8 +979,158 @@ export const getPatientByUserId = query({
       phone: user.phoneNumber,
       dateOfBirth: patientProfile?.dateOfBirth,
       imageUrl: user.imageUrl,
-      patientProfileId: user.patientProfileId,
+      patientProfileId: patientProfile?._id,
       profile: patientProfile,
+      notificationPreferences: user.notificationPreferences,
+    };
+  },
+});
+
+const PATIENT_GENDERS = v.union(
+  v.literal("male"),
+  v.literal("female"),
+  v.literal("other"),
+  v.literal("prefer_not_to_say")
+);
+
+/** The signed-in patient updates their own details (settings page). Email is managed by Clerk. */
+export const updateMyPatientProfile = mutation({
+  args: {
+    firstName: v.string(),
+    lastName: v.string(),
+    phoneNumber: v.optional(v.string()),
+    dateOfBirth: v.optional(v.string()),
+    gender: v.optional(PATIENT_GENDERS),
+    address: v.optional(v.string()),
+    city: v.optional(v.string()),
+    emergencyContact: v.optional(
+      v.object({ name: v.string(), relationship: v.string(), phone: v.string() })
+    ),
+  },
+  handler: async (ctx, args) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (user.role !== "patient") throw new ConvexError("Only patients can update this profile.");
+
+    const firstName = args.firstName.trim();
+    const lastName = args.lastName.trim();
+    if (!firstName || !lastName) throw new ConvexError("Please enter your first and last name.");
+    if (firstName.length > 80 || lastName.length > 80) throw new ConvexError("Names must be 80 characters or fewer.");
+    if (args.dateOfBirth && (!/^\d{4}-\d{2}-\d{2}$/.test(args.dateOfBirth) || Date.parse(args.dateOfBirth) > Date.now())) {
+      throw new ConvexError("Please enter a valid date of birth.");
+    }
+
+    // Joy finds WhatsApp patients by phone, so numbers are stored in one format (+234...)
+    // and a number must belong to one account only
+    const phoneNumber = args.phoneNumber?.trim() ? normalizePhone(args.phoneNumber) ?? undefined : undefined;
+    if (args.phoneNumber?.trim() && !phoneNumber) {
+      throw new ConvexError("Please enter a valid phone number, e.g. 0803 123 4567 or +234 803 123 4567.");
+    }
+    if (phoneNumber && phoneNumber !== user.phoneNumber) {
+      const taken = await ctx.db
+        .query("users")
+        .withIndex("by_phone_number", (q) => q.eq("phoneNumber", phoneNumber))
+        .first();
+      if (taken && taken._id !== user._id) {
+        throw new ConvexError(
+          taken.clerkId.startsWith("joy-whatsapp:")
+            ? "This number has WhatsApp bookings with Joy. Contact support and we'll link them to this account."
+            : "This number is linked to another account. Please contact support."
+        );
+      }
+    }
+
+    await ctx.db.patch(user._id, { firstName, lastName, phoneNumber });
+
+    const profileFields = {
+      dateOfBirth: args.dateOfBirth || undefined,
+      gender: args.gender,
+      address: args.address?.trim() || undefined,
+      city: args.city?.trim() || undefined,
+      emergencyContact: args.emergencyContact?.name.trim() ? args.emergencyContact : undefined,
+    };
+    const profile =
+      (user.patientProfileId ? await ctx.db.get(user.patientProfileId) : null) ??
+      (await ctx.db.query("patientProfiles").withIndex("by_user_id", (q) => q.eq("userId", user._id)).first());
+    if (profile) {
+      await ctx.db.patch(profile._id, profileFields);
+      if (user.patientProfileId !== profile._id) await ctx.db.patch(user._id, { patientProfileId: profile._id });
+    } else {
+      const profileId = await ctx.db.insert("patientProfiles", { userId: user._id, ...profileFields });
+      await ctx.db.patch(user._id, { patientProfileId: profileId });
+    }
+    return { success: true };
+  },
+});
+
+/**
+ * Everything the platform holds for the signed-in patient, for "Download my data". Clinician-only
+ * working notes (notesForTherapist, internal follow-up notes) are left out.
+ */
+export const exportMyData = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getAuthenticatedUser(ctx);
+    if (user.role !== "patient") throw new ConvexError("Only patients can export patient data.");
+
+    const profile =
+      (user.patientProfileId ? await ctx.db.get(user.patientProfileId) : null) ??
+      (await ctx.db.query("patientProfiles").withIndex("by_user_id", (q) => q.eq("userId", user._id)).first());
+
+    const appointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", user._id))
+      .collect();
+    const documents = profile
+      ? await ctx.db.query("patientDocuments").withIndex("by_patient_profile_id", (q) => q.eq("patientProfileId", profile._id)).collect()
+      : [];
+    const checkIns = await ctx.db.query("patientCheckIns").withIndex("by_patient", (q) => q.eq("patientId", user._id)).collect();
+    const exerciseLogs = await ctx.db.query("exerciseProgramLogs").withIndex("by_patient", (q) => q.eq("patientId", user._id)).collect();
+    const invoices = await ctx.db.query("invoices").withIndex("by_patient_id", (q) => q.eq("patientId", user._id)).collect();
+    // appointmentFeedback.patientId is typed as a "patients" id but holds users ids; go via appointments
+    const feedback = (
+      await Promise.all(
+        appointments.map((a) =>
+          ctx.db.query("appointmentFeedback").withIndex("by_appointment", (q) => q.eq("appointmentId", a._id)).first()
+        )
+      )
+    ).filter((f) => f !== null);
+    const careEpisodes = await ctx.db.query("careEpisodes").withIndex("by_patient", (q) => q.eq("patientId", user._id)).collect();
+    const joyIntakes = await ctx.db.query("joyIntakes").withIndex("by_patient", (q) => q.eq("patientId", user._id)).collect();
+    const joyJourney = await ctx.db.query("joyJourneyEvents").withIndex("by_patient", (q) => q.eq("patientId", user._id)).collect();
+
+    return {
+      exportedAt: new Date().toISOString(),
+      account: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        createdAt: user._creationTime,
+        notificationPreferences: user.notificationPreferences,
+      },
+      profile: profile
+        ? {
+            dateOfBirth: profile.dateOfBirth,
+            gender: profile.gender,
+            address: profile.address,
+            city: profile.city,
+            area: profile.area,
+            country: profile.country,
+            medicalHistorySummary: profile.medicalHistorySummary,
+            emergencyContact: profile.emergencyContact,
+          }
+        : null,
+      appointments: appointments
+        .filter((a) => !a.isRecordOnly)
+        .map(({ notesForTherapist: _privateNotes, ...appointment }) => appointment),
+      documents: documents.map(({ storageId: _storageId, ...document }) => document),
+      checkIns,
+      exerciseLogs,
+      invoices,
+      feedback,
+      careEpisodes: careEpisodes.map(({ followUpNotes: _internalNotes, ...episode }) => episode),
+      whatsAppIntakes: joyIntakes,
+      whatsAppJourney: joyJourney.map(({ stage, occurredAt, bookingId }) => ({ stage, occurredAt, bookingId })),
     };
   },
 });

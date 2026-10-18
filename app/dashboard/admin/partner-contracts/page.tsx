@@ -642,7 +642,7 @@ function ContractDialog({
             void submit()
           }}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Partner</Label>
               <Select value={form.partnerId} onValueChange={(v) => set('partnerId', v)} disabled={Boolean(editing)}>
@@ -687,7 +687,7 @@ function ContractDialog({
             <p className="text-xs text-neutral-500 dark:text-neutral-400">{MODEL_META[form.modelType].help}</p>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {usesShare(form.modelType) && (
               <div className="space-y-1.5">
                 <Label htmlFor="ctr-share">{form.modelType === 'tiered_volume' ? 'Fallback share (%)' : 'Revenue share (%)'}</Label>
@@ -741,7 +741,7 @@ function ContractDialog({
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="ctr-days">Payment terms (days)</Label>
               <Input id="ctr-days" type="number" inputMode="numeric" min={0} max={365} value={form.paymentTermsDays} onChange={(e) => set('paymentTermsDays', e.target.value)} className={inputClass} />

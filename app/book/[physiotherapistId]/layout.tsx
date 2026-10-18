@@ -1,7 +1,13 @@
-import { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { publicAppUrl } from "@/lib/public-app-url";
+
+// Browser chrome matches the night-green booking pages on mobile.
+export const viewport: Viewport = {
+    themeColor: "#002e2c",
+};
 
 type Props = {
     params: Promise<{ physiotherapistId: string }>;
@@ -11,7 +17,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { physiotherapistId } = await params;
 
     // Base URL for OG image generation
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physioaroundme.com";
+    const baseUrl = publicAppUrl();
 
     try {
         const convex = getConvexClient();

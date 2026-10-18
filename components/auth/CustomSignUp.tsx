@@ -1,458 +1,400 @@
 'use client';
 
-import Image from 'next/image';
-import { useSignUp, useSignIn, useAuth } from "@clerk/nextjs";
-import { motion, Variants } from "framer-motion";
-import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+/**
+ * Custom Clerk sign-up: details → emailed code → session. Used by /sign-up and the partner
+ * portal (/partners/sign-up, or /sign-up on partners.*).
+ *
+ * Bot protection: Clerk's Smart CAPTCHA renders into #clerk-captcha during signUp.create()
+ * and only becomes visible when it needs the person to tick a box. It sits right above the
+ * submit button so that challenge is never off-screen.
+ */
 import Link from "next/link";
-import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
-import { buildSsoRedirectUrls, toSafeInternalPath } from "@/lib/auth/ssoRedirect";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth, useSignUp } from "@clerk/nextjs";
+import { useReducedMotion } from "framer-motion";
+import { toSafeInternalPath } from "@/lib/auth/ssoRedirect";
+import { cn } from "@/lib/utils";
+import { AuthShell } from "./AuthShell";
+import {
+  AuthField,
+  AuthSteps,
+  CodeField,
+  FormNotice,
+  GoogleButton,
+  OrDivider,
+  PasswordField,
+  PrimaryButton,
+  SPACE,
+  StepHeading,
+  TextAction,
+  useCooldown,
+  useGoogleAuth,
+} from "./AuthControls";
+import {
+  AUTH_COPY,
+  authHref,
+  authRoutes,
+  EMAIL_PATTERN,
+  parseAuthError,
+  type AuthAudience,
+  type AuthError,
+  type AuthField as FieldName,
+} from "./authConfig";
 
+type Step = "details" | "verify";
+type FieldErrors = Partial<Record<FieldName, string>>;
 
-export default function CustomSignUp() {
-  const { signUp, setActive } = useSignUp();
-  const { signIn } = useSignIn();
+const MISSING_FIELD_LABELS: Record<string, string> = {
+  phone_number: "a phone number",
+  username: "a username",
+  first_name: "your first name",
+  last_name: "your last name",
+  legal_accepted: "acceptance of the terms",
+  password: "a password",
+};
+
+export default function CustomSignUp({
+  audience = "default",
+  partnersHost = false,
+}: {
+  audience?: AuthAudience;
+  partnersHost?: boolean;
+}) {
+  const { signUp, setActive, isLoaded } = useSignUp();
   const { isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const reduceMotion = useReducedMotion();
+  const routes = authRoutes(audience, partnersHost);
+  const copy = AUTH_COPY[audience].signUp;
   const redirectTarget = toSafeInternalPath(
     searchParams?.get("redirect") || searchParams?.get("redirect_url"),
-    "/role-selection",
+    routes.defaultRedirect.signUp,
   );
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+
+  const [step, setStep] = useState<Step>("details");
+  const [direction, setDirection] = useState<1 | -1>(1);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [pendingVerification, setPendingVerification] = useState(false);
+  const [pending, setPending] = useState<"create" | "verify" | "resend" | null>(null);
+  const [slow, setSlow] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [error, setError] = useState<AuthError | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const cooldown = useCooldown();
+  const google = useGoogleAuth(redirectTarget, setError);
 
-  const withTimeout = async <T,>(operation: Promise<T>, action: string): Promise<T> => {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error(`${action} is taking longer than expected. Please check your connection and try again.`));
-      }, 20_000);
-    });
-
-    try {
-      return await Promise.race([operation, timeout]);
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
-    }
-  };
-
-  const fadeIn: Variants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        type: "spring" as const,
-        stiffness: 100,
-        damping: 15
-      }
-    }
-  };
-
-  // Safely extract an error message from Clerk/unknown error objects without using `any`
-  const extractErrorMessage = (err: unknown, fallback: string) => {
-    if (typeof err === 'object' && err !== null) {
-      const obj = err as Record<string, unknown>;
-      const maybeMessage = obj.message;
-      if (typeof maybeMessage === 'string') return maybeMessage;
-
-      const maybeErrors = obj.errors;
-      if (Array.isArray(maybeErrors) && maybeErrors.length > 0) {
-        const first = maybeErrors[0] as unknown;
-        if (typeof first === 'object' && first !== null) {
-          const msg = (first as Record<string, unknown>).message;
-          if (typeof msg === 'string') return msg;
-        }
-      }
-    }
-    return fallback;
-  };
-
-  // Redirect if already signed in - honor redirect_url if present (using useEffect to avoid setState during render)
+  // Already signed in (or just finished): go to the destination
   useEffect(() => {
-    if (isSignedIn) {
-      router.push(redirectTarget || "/dashboard");
-    }
+    if (isSignedIn) router.replace(redirectTarget);
   }, [isSignedIn, router, redirectTarget]);
 
-  // Show loading state while redirecting
+  // A CAPTCHA challenge makes create() wait for the person; say so instead of spinning silently
+  useEffect(() => {
+    if (pending !== "create") return;
+    const id = setTimeout(() => setSlow(true), 6000);
+    return () => clearTimeout(id);
+  }, [pending]);
+
+  // Bring the challenge into view if it appears on a screen too short to show everything
+  const captchaRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (!el || typeof ResizeObserver === "undefined") return;
+      const observer = new ResizeObserver(() => {
+        if (el.offsetHeight > 0) el.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+      });
+      observer.observe(el);
+      return () => observer.disconnect();
+    },
+    [reduceMotion],
+  );
+
+  const goTo = (next: Step, dir: 1 | -1 = 1) => {
+    setDirection(dir);
+    setError(null);
+    setFieldErrors({});
+    setStep(next);
+  };
+
+  const busy = pending !== null || google.loading;
+  const signInHref = authHref(routes.signIn, redirectTarget, routes.defaultRedirect.signUp);
+
+  const clearFieldError = (field: FieldName) => {
+    if (fieldErrors[field]) setFieldErrors((current) => ({ ...current, [field]: undefined }));
+    if (error) setError(null);
+  };
+
+  /** Errors tied to a field show under it; the rest (and "email taken", which needs a link) above the button. */
+  const fail = (err: unknown, fallback: string) => {
+    const parsed = parseAuthError(err, fallback);
+    if (parsed.code === "session_exists") {
+      router.replace(redirectTarget);
+      return;
+    }
+    if (parsed.field && parsed.code !== "form_identifier_exists") {
+      setFieldErrors({ [parsed.field]: parsed.message });
+      return;
+    }
+    setError(parsed);
+  };
+
+  const submitDetails = async (e: FormEvent) => {
+    e.preventDefault();
+    const found: FieldErrors = {};
+    if (!firstName.trim()) found.firstName = "Enter your first name.";
+    if (!lastName.trim()) found.lastName = "Enter your last name.";
+    if (!EMAIL_PATTERN.test(email.trim())) found.email = "Enter a valid email address.";
+    if (password.length < 8) found.password = "Use at least 8 characters.";
+    setFieldErrors(found);
+    setError(null);
+    if (Object.keys(found).length > 0) {
+      const first = Object.keys(found)[0];
+      document.getElementById(`signup-${first}`)?.focus();
+      return;
+    }
+    if (!isLoaded || !signUp) return;
+
+    setSlow(false);
+    setPending("create");
+    try {
+      // No client-side timeout: create() waits for the CAPTCHA, which may need a tick from the person.
+      // Names also go in unsafeMetadata because first/last name may be switched off on the Clerk instance.
+      await signUp.create({
+        emailAddress: email.trim(),
+        password,
+        unsafeMetadata: { firstName: firstName.trim(), lastName: lastName.trim() },
+      });
+      try {
+        await signUp.update({ firstName: firstName.trim(), lastName: lastName.trim() });
+      } catch {
+        // Name fields disabled in Clerk (User & authentication → First and last name); kept in metadata
+      }
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      setCode("");
+      setNotice(null);
+      cooldown.restart();
+      goTo("verify");
+    } catch (err) {
+      fail(err, "We couldn't create your account. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const submitCode = async (e?: FormEvent, value = code) => {
+    e?.preventDefault();
+    if (value.length !== 6) {
+      setFieldErrors({ code: "Enter the 6-digit code." });
+      return;
+    }
+    if (!signUp) return;
+    setPending("verify");
+    setError(null);
+    setFieldErrors({});
+    try {
+      const attempt = await signUp.attemptEmailAddressVerification({ code: value });
+      if (attempt.status === "complete" && attempt.createdSessionId) {
+        await setActive?.({ session: attempt.createdSessionId });
+        router.replace(redirectTarget);
+        return;
+      }
+      // Previously a silent dead end: the code was accepted but Clerk still wants more
+      const missing = (attempt.missingFields ?? []).map((field) => MISSING_FIELD_LABELS[field] ?? field.replace(/_/g, " "));
+      setError({
+        message: missing.length
+          ? `Your email is verified, but your account still needs ${missing.join(", ")}. Please contact support.`
+          : "We couldn't finish creating your account. Please try again.",
+      });
+    } catch (err) {
+      fail(err, "That code didn't work. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const resendCode = async () => {
+    if (!signUp || cooldown.left > 0) return;
+    setPending("resend");
+    setError(null);
+    setFieldErrors({});
+    try {
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      setCode("");
+      setNotice(`We've sent a new code to ${email.trim()}.`);
+      cooldown.restart();
+    } catch (err) {
+      fail(err, "We couldn't send a new code. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const formNotice = error && (
+    <FormNotice
+      action={
+        error.code === "form_identifier_exists" ? (
+          <Link href={signInHref} className="font-semibold text-rh-night underline underline-offset-4">
+            Sign in instead
+          </Link>
+        ) : error.code === "verification_expired" || error.code === "verification_failed" ? (
+          <TextAction onClick={resendCode} disabled={busy || cooldown.left > 0} className="text-[13px]">
+            {cooldown.left > 0 ? `Send a new code in ${cooldown.left}s` : "Send a new code"}
+          </TextAction>
+        ) : undefined
+      }
+    >
+      {error.message}
+    </FormNotice>
+  );
+
   if (isSignedIn) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAF6E7]">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-[#005b57] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Redirecting...</p>
-        </div>
-      </div>
+      <AuthShell audience={audience} partnersHost={partnersHost}>
+        <p role="status" className="py-16 text-center text-sm text-rh-night/60">
+          Setting up your account…
+        </p>
+      </AuthShell>
     );
   }
 
-  const handleSignUpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !password || !firstName || !lastName) return;
-
-    setIsLoading(true);
-    setError("");
-
-    try {
-      // Some Clerk configurations don't accept name fields at create() time
-      // Pass only core fields first, then update names in a separate call.
-      if (!signUp) throw new Error("Sign-up is still loading. Please refresh and try again.");
-
-      await withTimeout(signUp.create({
-        emailAddress: email,
-        password,
-      }), "Creating your account");
-
-      // Best-effort update of profile names. If not allowed, ignore the error.
-      try {
-        await signUp?.update({ firstName, lastName });
-      } catch {
-        // ignore; not all instances allow updating these fields at this step
-      }
-
-      await withTimeout(
-        signUp.prepareEmailAddressVerification({ strategy: "email_code" }),
-        "Sending the verification code",
-      );
-      setPendingVerification(true);
-    } catch (err: unknown) {
-      setError(extractErrorMessage(err, "An error occurred"));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleResendEmailVerification = async () => {
-    if (!signUp) {
-      setError("Sign-up is still loading. Please refresh and try again.");
-      return;
-    }
-
-    setIsLoading(true);
-    setError("");
-    try {
-      await withTimeout(
-        signUp.prepareEmailAddressVerification({ strategy: "email_code" }),
-        "Resending the verification code",
-      );
-    } catch (err: unknown) {
-      setError(extractErrorMessage(err, "We could not resend the verification code. Please try again."));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleVerificationSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!code) return;
-
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const result = await signUp?.attemptEmailAddressVerification({ code });
-
-      if (result?.status === "complete") {
-        await setActive?.({ session: result.createdSessionId });
-        router.push(redirectTarget);
-      }
-    } catch (err: unknown) {
-      setError(extractErrorMessage(err, "Invalid verification code"));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGoogleSignUp = async () => {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      // Store every target (including the default) as a callback fallback.
-      localStorage.setItem('authRedirectUrl', redirectTarget);
-      const ssoUrls = buildSsoRedirectUrls(redirectTarget);
-
-      // Use signIn flow for OAuth; Clerk will create or reuse accounts automatically
-      if (!signIn) throw new Error("Google sign-in is still loading. Please refresh and try again.");
-
-      await withTimeout(signIn.authenticateWithRedirect({
-        strategy: "oauth_google",
-        // Use Clerk's recommended callback route
-        redirectUrl: ssoUrls.redirectUrl,
-        // Final destination after OAuth completes
-        redirectUrlComplete: ssoUrls.redirectUrlComplete,
-      }), "Starting Google sign-in");
-    } catch (err: unknown) {
-      console.error("Google sign-up error:", err);
-      setError(extractErrorMessage(err, "Google sign-up failed"));
-      setIsLoading(false);
-    }
-  };
-
   return (
-    <motion.div
-      initial="hidden"
-      animate="visible"
-      variants={fadeIn}
-      className="min-h-screen flex items-center justify-center bg-[#FAF6E7] px-4 sm:px-6 lg:px-8 py-6"
-    >
-      {/* Main container with split layout on desktop, centered modal on mobile */}
-      <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 bg-white rounded-2xl shadow-lg overflow-hidden">
-        {/* Left side - Image container (hidden on mobile, shown on desktop) */}
-        <div className="relative hidden lg:block">
-          <Image
-            src="/logos/images/Group 469272 (1).webp"
-            alt="Rehabify Health - Sign up"
-            fill
-            className="object-cover"
-            priority
-            sizes="(min-width: 1024px) 50vw, 100vw"
-            placeholder="blur"
-            blurDataURL="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-black/20" aria-hidden="true" />
-          {/* Logo overlay on image */}
-          <div className="absolute top-8 left-8 right-8">
-            <Image
-              src="/logos/favicon/apple-touch-icon.png"
-              alt="Rehabify Health"
-              width={48}
-              height={48}
-              className="bg-white/10 backdrop-blur-sm rounded-lg p-2"
-            />
-          </div>
-          <div className="absolute bottom-8 left-8 right-8 text-white">
-            <h2 className="text-3xl font-bold">Create Your Account</h2>
-            <p className="mt-2 text-lg text-white/90">Your rehabilitation journey starts here</p>
-          </div>
-        </div>
-
-        {/* Right side - Form container */}
-        <motion.div
-          className="w-full flex flex-col items-center justify-center py-8 px-6 sm:px-10 lg:px-12 min-h-[500px] lg:min-h-0"
-          initial={{ scale: 0.95 }}
-          animate={{ scale: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <div className="w-full max-w-sm mx-auto">
-            {/* Breadcrumb Navigation */}
-            <div className="mb-8">
-              <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem>
-                    <BreadcrumbLink asChild>
-                      <Link href="/" className="flex items-center gap-2 text-[#005b57] hover:text-[#00443e]">
-                        <Image
-                          src="/logos/favicon/apple-touch-icon.png"
-                          alt="Rehabify Health"
-                          width={20}
-                          height={20}
-                        />
-                        Home
-                      </Link>
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-                  <BreadcrumbSeparator />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage>{pendingVerification ? "Verify Email" : "Sign Up"}</BreadcrumbPage>
-                  </BreadcrumbItem>
-                </BreadcrumbList>
-              </Breadcrumb>
+    <AuthShell audience={audience} partnersHost={partnersHost}>
+      <AuthSteps stepKey={step} direction={direction}>
+        {step === "details" ? (
+          <>
+            <StepHeading eyebrow={copy.eyebrow} title={copy.title} subtitle={copy.subtitle} optionalSubtitle />
+            <div className={SPACE.section}>
+              <GoogleButton onClick={google.start} loading={google.loading} disabled={!google.ready || pending !== null} />
             </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
-            )}
-
-            {pendingVerification ? (
-              /* Verification Form */
-              <form onSubmit={handleVerificationSubmit} className="space-y-4">
-                <div>
-                  <label htmlFor="code" className="block text-sm font-medium text-[#002e2c] mb-1">
-                    Verification code
-                  </label>
-                  <input
-                    id="code"
-                    type="text"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    placeholder="Enter the 6-digit code"
-                    className="h-12 w-full px-3 border border-gray-300 rounded-md focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 focus:outline-none text-center text-lg tracking-widest"
-                    maxLength={6}
-                    required
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={isLoading || !code}
-                  className="w-full h-12 bg-gradient-to-r from-[#002e2c] to-[#005b57] hover:opacity-90 text-white font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-[#005b57]/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                >
-                  {isLoading ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    "Verify Email"
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleResendEmailVerification}
-                  disabled={isLoading}
-                  className="w-full text-sm text-[#005b57] hover:text-[#00443e] underline disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isLoading ? "Sending a new code…" : "Resend verification code"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError("");
-                    setPendingVerification(false);
+            <div className={SPACE.divider}>
+              <OrDivider />
+            </div>
+            <form onSubmit={submitDetails} noValidate className={cn("flex flex-col", SPACE.fields)}>
+              <div className={cn("grid grid-cols-2", SPACE.fields)}>
+                <AuthField
+                  id="signup-firstName"
+                  label="First name"
+                  autoComplete="given-name"
+                  value={firstName}
+                  onChange={(e) => {
+                    setFirstName(e.target.value);
+                    clearFieldError("firstName");
                   }}
-                  className="w-full text-sm text-[#005b57] hover:text-[#00443e] underline"
-                >
-                  ← Back to sign up
-                </button>
-              </form>
-            ) : (
-              <>
-                {/* Clerk Smart CAPTCHA mount point (required for Smart CAPTCHA in custom flows). */}
-                {/* If not present, Clerk falls back to Invisible CAPTCHA and logs a console error. */}
-                <div id="clerk-captcha" className="mb-4" />
-
-                {/* Google Sign Up Button */}
-                <button
-                  onClick={handleGoogleSignUp}
-                  disabled={isLoading}
-                  className="w-full h-12 mb-4 flex items-center justify-center gap-3 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                  </svg>
-                  Continue with Google
-                </button>
-
-                <div className="relative mb-4">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-300" />
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-2 bg-white text-gray-500">or</span>
-                  </div>
-                </div>
-
-                {/* Sign Up Form */}
-                <form onSubmit={handleSignUpSubmit} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="firstName" className="block text-sm font-medium text-[#002e2c] mb-1">
-                        First name
-                      </label>
-                      <input
-                        id="firstName"
-                        type="text"
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        placeholder="First name"
-                        className="h-12 w-full px-3 border border-gray-300 rounded-md focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 focus:outline-none"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="lastName" className="block text-sm font-medium text-[#002e2c] mb-1">
-                        Last name
-                      </label>
-                      <input
-                        id="lastName"
-                        type="text"
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        placeholder="Last name"
-                        className="h-12 w-full px-3 border border-gray-300 rounded-md focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 focus:outline-none"
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-[#002e2c] mb-1">
-                      Email address
-                    </label>
-                    <input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="Enter your email address"
-                      className="h-12 w-full px-3 border border-gray-300 rounded-md focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 focus:outline-none"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="password" className="block text-sm font-medium text-[#002e2c] mb-1">
-                      Password
-                    </label>
-                    <input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Create a strong password"
-                      className="h-12 w-full px-3 border border-gray-300 rounded-md focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 focus:outline-none"
-                      required
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={isLoading || !email || !password || !firstName || !lastName}
-                    className="w-full h-12 bg-gradient-to-r from-[#002e2c] to-[#005b57] hover:opacity-90 text-white font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-[#005b57]/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                  >
-                    {isLoading ? (
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      "Create Account"
-                    )}
-                  </button>
-
-                  {/* Terms and Privacy Policy Links */}
-                  <p className="text-xs text-gray-600 text-center leading-relaxed">
-                    By signing up, you agree to our{" "}
-                    <Link href="/terms-and-conditions" className="text-[#005b57] hover:underline font-medium">
-                      Terms & Conditions
-                    </Link>
-                    {" "}and{" "}
-                    <Link href="/privacy-policy" className="text-[#005b57] hover:underline font-medium">
-                      Privacy Policy
-                    </Link>
-                  </p>
-                </form>
-              </>
-            )}
-
-            {/* Footer */}
-            <div className="mt-8 text-center">
-              <p className="text-sm text-gray-600">
-                Already have an account?{" "}
-                <Link href={`/sign-in${redirectTarget !== '/role-selection' ? `?redirect=${encodeURIComponent(redirectTarget)}` : ''}`} className="text-[#005b57] hover:text-[#00443e] font-medium">
-                  Sign in
+                  error={fieldErrors.firstName}
+                />
+                <AuthField
+                  id="signup-lastName"
+                  label="Last name"
+                  autoComplete="family-name"
+                  value={lastName}
+                  onChange={(e) => {
+                    setLastName(e.target.value);
+                    clearFieldError("lastName");
+                  }}
+                  error={fieldErrors.lastName}
+                />
+              </div>
+              <AuthField
+                id="signup-email"
+                label="Email address"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  clearFieldError("email");
+                }}
+                error={fieldErrors.email}
+              />
+              <PasswordField
+                id="signup-password"
+                label="Password"
+                autoComplete="new-password"
+                placeholder="At least 8 characters"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  clearFieldError("password");
+                }}
+                error={fieldErrors.password}
+              />
+              {/* Clerk Smart CAPTCHA mount point: required for bot protection on custom sign-up flows */}
+              <div id="clerk-captcha" ref={captchaRef} data-cl-theme="light" data-cl-size="flexible" />
+              {formNotice}
+              {slow && pending === "create" && (
+                <p role="status" className="px-1 text-[13px] leading-5 text-rh-night/60">
+                  Still working… If a security check appears above, complete it to continue.
+                </p>
+              )}
+              <PrimaryButton loading={pending === "create"} disabled={busy || !isLoaded} className="mt-1">
+                Create account
+              </PrimaryButton>
+              <p className="px-1 text-center text-[11.5px] leading-4 text-rh-night/50">
+                By continuing you agree to our{" "}
+                <Link href={`${routes.siteOrigin}/terms-and-conditions`} className="underline underline-offset-2 hover:text-rh-night">
+                  Terms
+                </Link>{" "}
+                and{" "}
+                <Link href={`${routes.siteOrigin}/privacy-policy`} className="underline underline-offset-2 hover:text-rh-night">
+                  Privacy policy
                 </Link>
+                .
               </p>
-            </div>
-          </div>
-        </motion.div>
-      </div>
-    </motion.div>
+            </form>
+            <p className={cn("text-center text-sm text-rh-night/65", SPACE.submit)}>
+              Already have an account?{" "}
+              <Link href={signInHref} className="font-semibold text-rh-teal underline-offset-4 hover:underline">
+                Sign in
+              </Link>
+            </p>
+          </>
+        ) : (
+          <>
+            <StepHeading
+              eyebrow={copy.eyebrow}
+              title="Check your email"
+              subtitle={
+                <>
+                  Enter the 6-digit code we sent to <span className="font-semibold text-rh-night">{email.trim()}</span>.
+                </>
+              }
+            />
+            <form onSubmit={submitCode} noValidate className={cn("flex flex-col", SPACE.section, SPACE.fields)}>
+              {notice && !error && <FormNotice tone="info">{notice}</FormNotice>}
+              <CodeField
+                id="signup-code"
+                value={code}
+                onChange={(value) => {
+                  setCode(value);
+                  clearFieldError("code");
+                }}
+                onComplete={(value) => void submitCode(undefined, value)}
+                error={fieldErrors.code}
+                disabled={pending === "verify"}
+              />
+              {formNotice}
+              <PrimaryButton loading={pending === "verify"} disabled={busy}>
+                Verify and continue
+              </PrimaryButton>
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
+                <TextAction onClick={() => goTo("details", -1)} disabled={busy}>
+                  Change details
+                </TextAction>
+                <TextAction onClick={resendCode} disabled={busy || cooldown.left > 0}>
+                  {pending === "resend" ? "Sending…" : cooldown.left > 0 ? `Resend in ${cooldown.left}s` : "Resend code"}
+                </TextAction>
+              </div>
+              <p className="px-1 text-[12px] leading-4 text-rh-night/50">Can&apos;t find it? Check your spam or promotions folder.</p>
+            </form>
+          </>
+        )}
+      </AuthSteps>
+    </AuthShell>
   );
 }

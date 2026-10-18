@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Calendar, Clock, User, Loader2, AlertCircle, ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import { format, addDays } from 'date-fns'
 import { toast } from 'sonner'
+import { playSound } from '@/lib/sounds'
 import { Id } from '@/convex/_generated/dataModel'
 import { GoogleCalendarRequiredModal } from '@/components/modals/GoogleCalendarRequiredModal'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -164,6 +165,7 @@ export function AppointmentBookingModal({
       })
 
       if (result.success) {
+        playSound('booked')
         toast.success(result.message)
         onAppointmentBooked()
         if (result.googleMeetLink) setGoogleMeetLink(result.googleMeetLink)

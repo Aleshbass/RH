@@ -14,6 +14,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { AlertTriangle, Calendar, Clock, CheckCircle, Loader2, XCircle } from 'lucide-react'
 import { format, addDays } from 'date-fns'
 import { toast } from 'sonner'
+import { playSound } from '@/lib/sounds'
 import { Id } from '@/convex/_generated/dataModel'
 
 interface Appointment {
@@ -155,6 +156,7 @@ export function ConfirmAppointmentModal({
     try {
       const result = await confirmAppointment({ appointmentId: appointment._id as Id<'appointments'> })
       if (result.success) {
+        playSound('booked')
         toast.success(result.message)
         onAppointmentConfirmed()
         onClose()

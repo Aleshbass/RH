@@ -45,6 +45,14 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
   const isPatientMatchingRoute = pathname.startsWith('/find-my-physio')
   // Individual physio profile page — clean focused experience
   const isPhysioProfileRoute = /^\/find-a-physio\/.+/.test(pathname)
+  // Sign-in/up (main site and partner portal) and the OAuth callback: full-screen pages with
+  // their own logo and legal links, sized to the viewport so they never scroll
+  const isAuthRoute =
+    pathname.startsWith('/sign-in') ||
+    pathname.startsWith('/sign-up') ||
+    pathname.startsWith('/sso-callback') ||
+    pathname.startsWith('/partners/sign-in') ||
+    pathname.startsWith('/partners/sign-up')
 
   // B2B, Partner Hub, API, Documentation, and Patient Care Tracker routes
   // MUST NEVER display the consumer marketplace header or footer
@@ -71,6 +79,7 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
   const isStandaloneRoute = isB2BOrDocsRoute || Boolean(isB2BSubdomain)
 
   const showHeader =
+    !isAuthRoute &&
     !isStandaloneRoute &&
     !isDashboardRoute &&
     !isPaymentRoute &&
@@ -79,6 +88,7 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
     !isStartTreatmentRoute
 
   const showFooter =
+    !isAuthRoute &&
     !isStandaloneRoute &&
     !isDashboardRoute &&
     !isOnboardingRoute &&
@@ -92,7 +102,8 @@ export default function ConditionalLayout({ children, isSubdomainHost = false }:
   return (
     <>
       {showHeader && <Header />}
-      <main className={isDashboardRoute || isStandaloneRoute ? "min-h-screen" : "flex-grow"}>
+      {/* Auth pages size themselves to 100dvh; min-h-screen (100vh) would add mobile scroll */}
+      <main className={isAuthRoute ? undefined : isDashboardRoute || isStandaloneRoute ? "min-h-screen" : "flex-grow"}>
         {showHeader && <LearnAnnouncementSpacer />}
         {children}
       </main>

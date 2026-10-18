@@ -110,8 +110,10 @@ export const createAppointment = mutation({
         )
       )
       .filter((q) =>
-        q.neq(q.field("status"), "cancelled_by_patient") &&
-        q.neq(q.field("status"), "cancelled_by_therapist")
+        q.and(
+          q.neq(q.field("status"), "cancelled_by_patient"),
+          q.neq(q.field("status"), "cancelled_by_therapist")
+        )
       )
       .collect();
 
@@ -658,8 +660,10 @@ export const rescheduleAppointment = mutation({
         )
       )
       .filter((q) =>
-        q.neq(q.field("status"), "cancelled_by_patient") &&
-        q.neq(q.field("status"), "cancelled_by_therapist")
+        q.and(
+          q.neq(q.field("status"), "cancelled_by_patient"),
+          q.neq(q.field("status"), "cancelled_by_therapist")
+        )
       )
       .collect();
 
@@ -921,11 +925,18 @@ export const getPatientAppointments = query({
       appointmentsQuery = appointmentsQuery.filter((q) => q.eq(q.field("status"), args.status!));
     }
 
-    const results = await appointmentsQuery.order("asc").take(limit);
+    // Record-only rows anchor a physio's notes/check-ins and are not visits. Take the newest
+    // `limit` (so long-term patients keep their upcoming visits), returned oldest first.
+    const results = (
+      await appointmentsQuery
+        .filter((q) => q.neq(q.field("isRecordOnly"), true))
+        .order("desc")
+        .take(limit)
+    ).reverse();
 
     // Get physiotherapist details and feedback status for each appointment
     const appointmentsWithDetails = await Promise.all(
-      results.map(async (appointment) => {
+      results.map(async ({ notesForTherapist: _privateNotes, ...appointment }) => {
         const physiotherapist = await ctx.db.get(appointment.physiotherapistId);
         if (!physiotherapist) return appointment;
 
@@ -1110,6 +1121,7 @@ export const requestAppointment = mutation({
     serviceType: v.string(),
     notes: v.optional(v.string()),
     appointmentType: v.optional(v.union(v.literal("in-person"), v.literal("telehealth"))),
+    location: v.optional(v.string()), // Address for in-person visits
   },
   handler: async (ctx, args): Promise<{
     success: boolean;
@@ -1120,6 +1132,16 @@ export const requestAppointment = mutation({
   }> => {
     const patient = await getAuthenticatedPatient(ctx);
 
+    if (args.startTime < Date.now() - 60_000) {
+      throw new Error("Please choose a time in the future.");
+    }
+    if (args.endTime <= args.startTime || args.endTime - args.startTime > 4 * 60 * 60_000) {
+      throw new Error("Please choose a valid session length.");
+    }
+    if (args.appointmentType === "in-person" && !args.location?.trim()) {
+      throw new Error("Please enter the address for an in-person visit.");
+    }
+
     // Verify patient has relationship with this physiotherapist
     const relationship = await ctx.db
       .query("patientPhysiotherapistRelationships")
@@ -1127,7 +1149,7 @@ export const requestAppointment = mutation({
         q.eq("patientId", patient._id).eq("physiotherapistId", args.physiotherapistId)
       )
       .filter((q) => q.eq(q.field("status"), "active"))
-      .unique();
+      .first();
 
     if (!relationship) {
       throw new Error("Access denied. You are not assigned to this physiotherapist.");
@@ -1157,15 +1179,15 @@ export const requestAppointment = mutation({
         )
       )
       .filter((q) =>
-        q.neq(q.field("status"), "cancelled_by_patient") &&
-        q.neq(q.field("status"), "cancelled_by_therapist")
+        q.and(
+          q.neq(q.field("status"), "cancelled_by_patient"),
+          q.neq(q.field("status"), "cancelled_by_therapist")
+        )
       )
       .collect();
 
     if (conflictingAppointments.length > 0) {
-      const sorted = conflictingAppointments.sort((a, b) => a.startTime - b.startTime);
-      const details = sorted.slice(0, 3).map((a) => `${new Date(a.startTime).toISOString()} - ${new Date(a.endTime).toISOString()}`).join(", ");
-      throw new Error(`Time slot is no longer available. Please select a different time. Conflicts: ${details}`);
+      throw new Error("That time has just been taken. Please choose another time.");
     }
 
     // Create the appointment
@@ -1180,6 +1202,7 @@ export const requestAppointment = mutation({
       notesForPatient: undefined,
       notesForTherapist: args.notes,
       appointmentType: args.appointmentType || "telehealth", // Default to telehealth for patient booking as per design
+      location: args.appointmentType === "in-person" ? args.location?.trim() : undefined,
     });
 
     const patientName = `${patient.firstName} ${patient.lastName}`;
@@ -1217,7 +1240,9 @@ export const requestAppointment = mutation({
         clinicAddress = (clinic as any).address || '';
       }
     }
-    const appointmentTimeStr = `${new Date(args.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(args.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    // Convex runs in UTC; show times as patients and physios see them
+    const lagosTime = (ms: number) => new Date(ms).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Lagos' });
+    const appointmentTimeStr = `${lagosTime(args.startTime)} - ${lagosTime(args.endTime)}`;
 
     // Create notification for physiotherapist
     await ctx.db.insert("notifications", {
@@ -1550,8 +1575,10 @@ export const requestAppointmentReschedule = mutation({
         )
       )
       .filter((q) =>
-        q.neq(q.field("status"), "cancelled_by_patient") &&
-        q.neq(q.field("status"), "cancelled_by_therapist")
+        q.and(
+          q.neq(q.field("status"), "cancelled_by_patient"),
+          q.neq(q.field("status"), "cancelled_by_therapist")
+        )
       )
       .collect();
 
@@ -1808,14 +1835,15 @@ export const getPatientAppointmentDetails = query({
       ? await ctx.db.get(appointment.clinicId)
       : null;
 
-    // Get session log if exists
+    // Get session log if exists; patients get the visit summary, not the clinician's working notes
     const sessionLog = await ctx.db
       .query("sessionLogs")
       .withIndex("by_appointment_id", (q) => q.eq("appointmentId", args.appointmentId))
-      .unique();
+      .first();
+    const { notesForTherapist: _privateNotes, ...visibleAppointment } = appointment;
 
     return {
-      appointment,
+      appointment: visibleAppointment,
       physiotherapist: physiotherapist ? {
         _id: physiotherapist._id,
         firstName: physiotherapist.firstName,
@@ -1830,7 +1858,12 @@ export const getPatientAppointmentDetails = query({
         address: clinic.address,
         contactPhone: clinic.contactPhone,
       } : null,
-      sessionLog,
+      sessionLog: sessionLog ? {
+        subjectiveAssessment: sessionLog.subjectiveAssessment,
+        objectiveAssessment: sessionLog.objectiveAssessment,
+        treatmentAdministered: sessionLog.treatmentAdministered,
+        planForNextSession: sessionLog.planForNextSession,
+      } : null,
     };
   },
 });

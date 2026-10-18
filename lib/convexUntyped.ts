@@ -4,6 +4,13 @@
 // "Type instantiation is excessively deep and possibly infinite".
 
 import { useQuery, useAction, useMutation } from "convex/react";
+import type { RegisteredQuery } from "convex/server";
+
+/**
+ * A Convex query's result type, read from the query itself (`typeof getX` imported from
+ * convex/...) rather than the generated `api` object, which degrades to `any` in the full build.
+ */
+export type QueryResult<T> = T extends RegisteredQuery<any, any, infer R> ? Awaited<R> : never;
 
 export function useQueryUntyped(fn: unknown, args?: unknown): any {
   // Double-cast the function reference so TS doesn't try to expand its types

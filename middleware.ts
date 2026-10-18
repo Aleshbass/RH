@@ -102,6 +102,12 @@ export default clerkMiddleware(async (auth, req) => {
     if (url.pathname.startsWith("/api")) {
       return NextResponse.next({ request: { headers: requestHeaders } });
     }
+    // On this host the partner auth pages are /sign-in and /sign-up (everything else is the portal)
+    if (url.pathname === "/partners/sign-in" || url.pathname === "/partners/sign-up") {
+      const target = url.clone();
+      target.pathname = url.pathname.replace("/partners", "");
+      return NextResponse.redirect(target);
+    }
     // Allow care tracker, auth, sso-callback and onboarding to resolve directly
     if (
       url.pathname.startsWith("/track") ||

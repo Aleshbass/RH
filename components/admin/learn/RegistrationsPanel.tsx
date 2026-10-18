@@ -309,7 +309,7 @@ function RegistrationDialog({
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Detail label="Email" value={<a className="text-rh-teal hover:underline dark:text-rh-aqua" href={`mailto:${row.email}`}>{row.email}</a>} />
             <Detail label="Phone" value={<a className="text-rh-teal hover:underline dark:text-rh-aqua" href={`tel:${row.phone}`}>{row.phone}</a>} />
             <Detail label="Licence number" value={row.licenseNumber} />
@@ -530,7 +530,7 @@ export function RegistrationsPanel({ cohort, programUrl }: { cohort: AdminCohort
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <SummaryTile onClick={() => showOnly('paid', 'rehabify')} active={status === 'paid' && track === 'rehabify'}>
           <StatTile
             label="Rehabify physios paid"

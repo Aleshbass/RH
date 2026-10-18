@@ -50,7 +50,7 @@ function Section({ title, description, children }: { title: string; description?
     <div className="border-t border-black/[0.05] px-5 py-5 first:border-t-0 dark:border-white/[0.06]">
       <p className="text-sm font-semibold text-rh-night dark:text-white">{title}</p>
       {description && <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{description}</p>}
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">{children}</div>
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
     </div>
   )
 }
@@ -230,7 +230,7 @@ export function CohortForm({
   const range = isCalendarDate(draft.startDate) && isCalendarDate(draft.endDate) ? formatCohortRange(draft.startDate, draft.endDate) : null
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
       <Panel title={title} description={description} bodyClassName="pb-2">
         <form
           onSubmit={(e) => {

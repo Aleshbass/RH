@@ -41,10 +41,10 @@ const matter = localFont({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com'),
   title: {
-    default: "Physio Around Me by Rehabify Health - AI-Powered Physical Therapy & Rehabilitation",
+    default: "Physio Around Me by Rehabify Health — Book a Verified Physiotherapist in Nigeria",
     template: "%s | Physio Around Me by Rehabify Health",
   },
-  description: "Revolutionary healthcare platform connecting patients with licensed physiotherapists. Find a physio around me. AI-powered exercise monitoring, telehealth appointments, treatment plans, and comprehensive rehabilitation services in Nigeria and beyond.",
+  description: "Find and book licensed, verified physiotherapists in Nigeria. Online video sessions or in-person care at home or in clinic, with secure payment by Paystack.",
   keywords: [
     'physio around me',
     'physioaroundme',
@@ -59,7 +59,8 @@ export const metadata: Metadata = {
     'online physiotherapy',
     'telehealth physical therapy',
     'virtual rehabilitation',
-    'AI exercise monitoring',
+    'physiotherapist near me',
+    'home physiotherapy',
     'rehabilitation services Nigeria',
     'book physiotherapist online',
     'virtual physical therapy sessions',
@@ -83,9 +84,9 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com',
-    title: 'Physio Around Me by Rehabify Health - Expert Physical Therapy',
-    description: 'Find a physio around me. Revolutionary healthcare platform connecting patients with licensed physiotherapists. AI-powered exercise monitoring and telehealth appointments.',
+    // No og:url here: like a canonical, it would be inherited by every page (pages set their own)
+    title: 'Physio Around Me by Rehabify Health — Book a Verified Physiotherapist in Nigeria',
+    description: 'Find and book licensed, verified physiotherapists in Nigeria. Online video sessions or in-person care at home or in clinic.',
     siteName: 'Physio Around Me by Rehabify Health',
     images: [
       {
@@ -98,9 +99,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Physio Around Me by Rehabify Health - Expert Physical Therapy',
-    description: 'Find a physio around me. Revolutionary healthcare platform connecting patients with licensed physiotherapists.',
-    creator: '@RehabifyHealth',
+    title: 'Physio Around Me by Rehabify Health — Book a Verified Physiotherapist in Nigeria',
+    description: 'Find and book licensed, verified physiotherapists in Nigeria. Online video sessions or in-person care at home or in clinic.',
     images: ['/opengraph-image'],
   },
   robots: {
@@ -117,9 +117,8 @@ export const metadata: Metadata = {
   verification: {
     google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
   },
-  alternates: {
-    canonical: process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com',
-  },
+  // No canonical here: a layout canonical is inherited by every page and pointed them all at
+  // the homepage. Pages set their own (lib/seo/utils pageMetadata; homepage in HomePageSEO).
   other: {
     'apple-mobile-web-app-capable': 'yes',
     'apple-mobile-web-app-status-bar-style': 'black-translucent',

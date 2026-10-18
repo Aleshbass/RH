@@ -440,7 +440,7 @@ export default function AdminBankTransfersPage() {
                 {target.sessionDate ? ` · ${format(target.sessionDate, 'EEE d MMM, HH:mm')}` : ''}
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="bt-sender">Sender’s name</Label>
                 <Input id="bt-sender" value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="As shown on the transfer" className={inputClass} maxLength={120} />

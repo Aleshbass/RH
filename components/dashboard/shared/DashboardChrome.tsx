@@ -33,7 +33,7 @@ export function DashboardChrome({ children }: { children: ReactNode }) {
 
   return (
     <DashboardAuthGuard>
-      <div className="min-h-screen bg-[#F5F5DC]">
+      <div className="min-h-screen bg-rh-canvas">
         <DashboardHeader />
 
         <div className="flex">

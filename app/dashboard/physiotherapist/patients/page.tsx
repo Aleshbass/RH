@@ -46,6 +46,7 @@ const SOURCE_BADGE: Record<string, string> = {
   booking_link: 'Booking link',
   invite: 'Invited',
   clinic_direct: 'Clinic',
+  joy_whatsapp: 'Joy · WhatsApp',
 };
 
 const BASE = '/dashboard/physiotherapist/patients';

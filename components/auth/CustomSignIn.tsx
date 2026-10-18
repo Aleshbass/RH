@@ -1,13 +1,42 @@
 'use client';
 
-import Image from 'next/image';
-import { useSignIn, useAuth } from "@clerk/nextjs";
-import { motion, Variants } from "framer-motion";
-import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+/**
+ * Custom Clerk sign-in: email → password, with an emailed code as the fallback (accounts
+ * without a password, "email me a code", new-device checks) and a forgot-password reset.
+ * Used by /sign-in and the partner portal (/partners/sign-in, or /sign-in on partners.*).
+ */
 import Link from "next/link";
-import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
-import { buildSsoRedirectUrls, toSafeInternalPath } from "@/lib/auth/ssoRedirect";
+import { useEffect, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth, useSignIn } from "@clerk/nextjs";
+import { toSafeInternalPath } from "@/lib/auth/ssoRedirect";
+import { cn } from "@/lib/utils";
+import { AuthShell } from "./AuthShell";
+import {
+  AuthField,
+  AuthSteps,
+  CodeField,
+  FormNotice,
+  GoogleButton,
+  OrDivider,
+  PasswordField,
+  PrimaryButton,
+  SPACE,
+  StepHeading,
+  TextAction,
+  useCooldown,
+  useGoogleAuth,
+} from "./AuthControls";
+import {
+  AUTH_COPY,
+  authHref,
+  authRoutes,
+  EMAIL_PATTERN,
+  parseAuthError,
+  type AuthAudience,
+  type AuthError,
+  type AuthField as FieldName,
+} from "./authConfig";
 
 /** Logs a rejected sign-in for the admin audit log. Fire-and-forget: never blocks signing in. */
 function reportFailedSignIn(err: unknown, identifier: string) {
@@ -21,381 +50,526 @@ function reportFailedSignIn(err: unknown, identifier: string) {
   }).catch(() => undefined);
 }
 
-export default function CustomSignIn() {
-  const { signIn, setActive } = useSignIn();
+type SignInAttempt = NonNullable<ReturnType<typeof useSignIn>["signIn"]>;
+type Step = "identifier" | "password" | "code" | "reset";
+/** Which Clerk factor the code step verifies. */
+type CodeMode = "email_first" | "email_second" | "totp";
+
+/** The email address id behind a factor, or undefined when the factor isn't offered. */
+function factorEmailId(factors: readonly { strategy: string }[] | null | undefined, strategy: string) {
+  const factor = factors?.find((f) => f.strategy === strategy) as { emailAddressId?: string } | undefined;
+  return factor ? factor.emailAddressId ?? "" : undefined;
+}
+
+export default function CustomSignIn({
+  audience = "default",
+  partnersHost = false,
+}: {
+  audience?: AuthAudience;
+  partnersHost?: boolean;
+}) {
+  const { signIn, setActive, isLoaded } = useSignIn();
   const { isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const routes = authRoutes(audience, partnersHost);
+  const copy = AUTH_COPY[audience].signIn;
   const redirectTarget = toSafeInternalPath(
     searchParams?.get("redirect") || searchParams?.get("redirect_url"),
-    "/dashboard",
+    routes.defaultRedirect.signIn,
   );
+
+  const [step, setStep] = useState<Step>("identifier");
+  const [direction, setDirection] = useState<1 | -1>(1);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [isEmailStep, setIsEmailStep] = useState(true);
+  const [newPassword, setNewPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [codeMode, setCodeMode] = useState<CodeMode>("email_first");
+  const [codeEmailId, setCodeEmailId] = useState("");
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<AuthError | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const cooldown = useCooldown();
+  const google = useGoogleAuth(redirectTarget, setError);
 
-  const fadeIn: Variants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        type: "spring" as const,
-        stiffness: 100,
-        damping: 15
-      }
-    }
-  };
-
-  // Safely extract an error message from Clerk/unknown error objects without using `any`
-  const extractErrorMessage = (err: unknown, fallback: string) => {
-    if (typeof err === 'object' && err !== null) {
-      const obj = err as Record<string, unknown>;
-      const maybeMessage = obj.message;
-      if (typeof maybeMessage === 'string') return maybeMessage;
-
-      const maybeErrors = obj.errors;
-      if (Array.isArray(maybeErrors) && maybeErrors.length > 0) {
-        const first = maybeErrors[0] as unknown;
-        if (typeof first === 'object' && first !== null) {
-          const msg = (first as Record<string, unknown>).message;
-          if (typeof msg === 'string') return msg;
-        }
-      }
-    }
-    return fallback;
-  };
-
-  // Redirect if already signed in (using useEffect to avoid setState during render)
+  // Already signed in (or just finished): go to the destination
   useEffect(() => {
-    if (isSignedIn) {
-      router.push(redirectTarget);
-    }
+    if (isSignedIn) router.replace(redirectTarget);
   }, [isSignedIn, router, redirectTarget]);
 
-  // Show loading state while redirecting
+  const goTo = (next: Step, dir: 1 | -1 = 1) => {
+    setDirection(dir);
+    setError(null);
+    setStep(next);
+  };
+
+  const fieldError = (field: FieldName) => (error?.field === field ? error.message : undefined);
+  const busy = pending !== null || google.loading;
+  const signUpHref = authHref(routes.signUp, redirectTarget, routes.defaultRedirect.signIn);
+
+  const fail = (err: unknown, fallback: string) => {
+    const parsed = parseAuthError(err, fallback);
+    if (parsed.code === "session_exists") {
+      router.replace(redirectTarget);
+      return;
+    }
+    setError(parsed);
+  };
+
+  /** Completes the attempt, or moves to the step Clerk still needs. */
+  const proceed = async (attempt: SignInAttempt) => {
+    if (attempt.status === "complete" && attempt.createdSessionId) {
+      await setActive?.({ session: attempt.createdSessionId });
+      router.replace(redirectTarget);
+      return;
+    }
+    if (attempt.status === "needs_second_factor") {
+      // Without MFA this is Clerk's new-device check (Client Trust): an emailed code
+      const emailId = factorEmailId(attempt.supportedSecondFactors, "email_code");
+      if (emailId !== undefined) {
+        await attempt.prepareSecondFactor({ strategy: "email_code", ...(emailId ? { emailAddressId: emailId } : {}) });
+        setCodeMode("email_second");
+        setCodeEmailId(emailId);
+        setCode("");
+        setNotice("For your security, confirm it's you on this device with the code we've emailed you.");
+        cooldown.restart();
+        goTo("code");
+        return;
+      }
+      if (factorEmailId(attempt.supportedSecondFactors, "totp") !== undefined) {
+        setCodeMode("totp");
+        setCode("");
+        setNotice(null);
+        goTo("code");
+        return;
+      }
+      setError({ message: "This account needs a verification method we can't offer here. Please contact support." });
+      return;
+    }
+    setError({ message: "We couldn't finish signing you in. Please try again." });
+  };
+
+  const sendEmailCode = async (attempt: SignInAttempt, emailId: string) => {
+    await attempt.prepareFirstFactor({ strategy: "email_code", emailAddressId: emailId });
+    setCodeMode("email_first");
+    setCodeEmailId(emailId);
+    setCode("");
+    cooldown.restart();
+    goTo("code");
+  };
+
+  const submitIdentifier = async (e: FormEvent) => {
+    e.preventDefault();
+    const identifier = email.trim();
+    if (!EMAIL_PATTERN.test(identifier)) {
+      setError({ message: "Enter a valid email address.", field: "email" });
+      return;
+    }
+    if (!isLoaded || !signIn) return;
+    setPending("identifier");
+    setError(null);
+    setNotice(null);
+    try {
+      const attempt = await signIn.create({ identifier });
+      if (attempt.status === "needs_first_factor") {
+        const factors = attempt.supportedFirstFactors;
+        if (factors?.some((f) => f.strategy === "password")) {
+          setPassword("");
+          goTo("password");
+          return;
+        }
+        const emailId = factorEmailId(factors, "email_code");
+        if (emailId) {
+          setNotice("This account doesn't have a password, so we've emailed you a sign-in code.");
+          await sendEmailCode(attempt, emailId);
+          return;
+        }
+        setError({ message: "This account signs in with Google. Use “Continue with Google” above." });
+        return;
+      }
+      await proceed(attempt);
+    } catch (err) {
+      reportFailedSignIn(err, identifier);
+      fail(err, "We couldn't check that email. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const submitPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!password) {
+      setError({ message: "Enter your password.", field: "password" });
+      return;
+    }
+    if (!signIn) return;
+    setPending("password");
+    setError(null);
+    try {
+      await proceed(await signIn.attemptFirstFactor({ strategy: "password", password }));
+    } catch (err) {
+      reportFailedSignIn(err, email.trim());
+      fail(err, "Incorrect password. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const emailMeACode = async () => {
+    const emailId = factorEmailId(signIn?.supportedFirstFactors, "email_code");
+    if (!signIn || !emailId) return;
+    setPending("email-code");
+    setError(null);
+    setNotice(null);
+    try {
+      await sendEmailCode(signIn, emailId);
+    } catch (err) {
+      fail(err, "We couldn't send a code. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const submitCode = async (e?: FormEvent, value = code) => {
+    e?.preventDefault();
+    if (value.length !== 6) {
+      setError({ message: "Enter the 6-digit code.", field: "code" });
+      return;
+    }
+    if (!signIn) return;
+    setPending("code");
+    setError(null);
+    try {
+      const attempt =
+        codeMode === "email_first"
+          ? await signIn.attemptFirstFactor({ strategy: "email_code", code: value })
+          : codeMode === "totp"
+            ? await signIn.attemptSecondFactor({ strategy: "totp", code: value })
+            : await signIn.attemptSecondFactor({ strategy: "email_code", code: value });
+      await proceed(attempt);
+    } catch (err) {
+      reportFailedSignIn(err, email.trim());
+      fail(err, "That code didn't work. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const resendCode = async () => {
+    if (!signIn || cooldown.left > 0) return;
+    setPending("resend");
+    setError(null);
+    try {
+      if (codeMode === "email_first") {
+        await signIn.prepareFirstFactor({ strategy: "email_code", emailAddressId: codeEmailId });
+      } else {
+        await signIn.prepareSecondFactor({ strategy: "email_code", ...(codeEmailId ? { emailAddressId: codeEmailId } : {}) });
+      }
+      setCode("");
+      setNotice(`We've sent a new code to ${email.trim()}.`);
+      cooldown.restart();
+    } catch (err) {
+      fail(err, "We couldn't send a new code. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const startReset = async () => {
+    if (!signIn) return;
+    setPending("reset-start");
+    setError(null);
+    setNotice(null);
+    try {
+      await signIn.create({ strategy: "reset_password_email_code", identifier: email.trim() });
+      setCode("");
+      setNewPassword("");
+      cooldown.restart();
+      goTo("reset");
+    } catch (err) {
+      fail(err, "We couldn't send a reset code. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const resendReset = async () => {
+    if (!signIn || cooldown.left > 0) return;
+    setPending("resend");
+    setError(null);
+    try {
+      await signIn.create({ strategy: "reset_password_email_code", identifier: email.trim() });
+      setCode("");
+      setNotice(`We've sent a new code to ${email.trim()}.`);
+      cooldown.restart();
+    } catch (err) {
+      fail(err, "We couldn't send a new code. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const submitReset = async (e: FormEvent) => {
+    e.preventDefault();
+    if (code.length !== 6) {
+      setError({ message: "Enter the 6-digit code from the email.", field: "code" });
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError({ message: "Use at least 8 characters.", field: "password" });
+      return;
+    }
+    if (!signIn) return;
+    setPending("reset");
+    setError(null);
+    try {
+      let attempt = await signIn.attemptFirstFactor({ strategy: "reset_password_email_code", code, password: newPassword });
+      if (attempt.status === "needs_new_password") {
+        attempt = await attempt.resetPassword({ password: newPassword, signOutOfOtherSessions: true });
+      }
+      await proceed(attempt);
+    } catch (err) {
+      reportFailedSignIn(err, email.trim());
+      fail(err, "We couldn't reset your password. Please try again.");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const backToEmail = () => {
+    setPassword("");
+    setCode("");
+    setNotice(null);
+    goTo("identifier", -1);
+  };
+
+  const emailChip = (
+    <span className="mt-1 inline-flex max-w-full items-center gap-2 rounded-full bg-white px-3 py-1 text-sm text-rh-night ring-1 ring-inset ring-rh-night/10">
+      <span className="truncate">{email.trim()}</span>
+      <button
+        type="button"
+        onClick={backToEmail}
+        className="shrink-0 rounded font-semibold text-rh-teal underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-teal/30"
+      >
+        Change
+      </button>
+    </span>
+  );
+
+  const formNotice = error && !error.field && (
+    <FormNotice
+      action={
+        error.code === "form_identifier_not_found" ? (
+          <Link href={signUpHref} className="font-semibold text-rh-night underline underline-offset-4">
+            Create an account instead
+          </Link>
+        ) : error.code === "form_password_pwned" ? (
+          <TextAction onClick={startReset} disabled={busy} className="text-[13px]">
+            Reset your password
+          </TextAction>
+        ) : undefined
+      }
+    >
+      {error.message}
+    </FormNotice>
+  );
+  const infoNotice = notice && !formNotice && <FormNotice tone="info">{notice}</FormNotice>;
+
   if (isSignedIn) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAF6E7]">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-[#005b57] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Redirecting...</p>
-        </div>
-      </div>
+      <AuthShell audience={audience} partnersHost={partnersHost}>
+        <p role="status" className="py-16 text-center text-sm text-rh-night/60">
+          Signing you in…
+        </p>
+      </AuthShell>
     );
   }
 
-  // Step 1: Check what verification methods are available for this email
-  const handleEmailSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) return;
-
-    setIsLoading(true);
-    setError("");
-
-    try {
-      // First, create sign-in to check what verification methods are available
-      const result = await signIn?.create({
-        identifier: email,
-      });
-
-      if (result?.status === "needs_first_factor") {
-        // Check if password is a supported first factor
-        const hasPasswordStrategy = result.supportedFirstFactors?.some(
-          (factor: { strategy: string }) => factor.strategy === "password"
-        );
-
-        if (hasPasswordStrategy) {
-          // Show password field
-          setIsEmailStep(false);
-        } else {
-          // Account exists but was created with OAuth (Google)
-          setError("This account uses Google sign-in. Please click 'Continue with Google' above.");
-        }
-      } else if (result?.status === "complete") {
-        // Already signed in
-        await setActive?.({ session: result.createdSessionId });
-        router.push(redirectTarget);
-      } else {
-        console.log("Clerk signIn status:", result?.status, result);
-        setError("Unexpected authentication state. Please try again.");
-      }
-    } catch (err: unknown) {
-      console.error("Email submit error:", err);
-      reportFailedSignIn(err, email);
-      const errorMessage = extractErrorMessage(err, "An error occurred");
-
-      if (errorMessage.toLowerCase().includes("not found") || errorMessage.toLowerCase().includes("identifier")) {
-        setError("No account found with this email. Please sign up first.");
-      } else {
-        setError(errorMessage);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Step 2: Submit password for accounts that have password auth
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!password) return;
-
-    setIsLoading(true);
-    setError("");
-
-    try {
-      const result = await signIn?.attemptFirstFactor({
-        strategy: "password",
-        password,
-      });
-
-      if (result?.status === "complete") {
-        await setActive?.({ session: result.createdSessionId });
-        router.push(redirectTarget);
-      } else if (result?.status === "needs_second_factor") {
-        setError("Two-factor authentication is required. Please use a different method.");
-      } else {
-        console.log("Password submit status:", result?.status);
-        setError("Sign-in failed. Please try again.");
-      }
-    } catch (err: unknown) {
-      console.error("Password submit error:", err);
-      reportFailedSignIn(err, email);
-      setError(extractErrorMessage(err, "Incorrect password. Please try again."));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setIsLoading(true);
-    setError("");
-
-    try {
-      // Store every target (including the default) as a callback fallback.
-      localStorage.setItem('authRedirectUrl', redirectTarget);
-      const ssoUrls = buildSsoRedirectUrls(redirectTarget);
-
-      await signIn?.authenticateWithRedirect({
-        strategy: "oauth_google",
-        // Use Clerk's callback route we created to complete the OAuth flow
-        // This prevents 404s when providers redirect back
-        redirectUrl: ssoUrls.redirectUrl,
-        // After Clerk completes, send user to the original destination
-        redirectUrlComplete: ssoUrls.redirectUrlComplete,
-      });
-    } catch (err: unknown) {
-      console.error("Google sign-in error:", err);
-      setError(extractErrorMessage(err, "Google sign-in failed"));
-      setIsLoading(false);
-    }
-  };
-
   return (
-    <motion.div
-      initial="hidden"
-      animate="visible"
-      variants={fadeIn}
-      className="min-h-screen flex items-center justify-center bg-[#FAF6E7] px-4 sm:px-6 lg:px-8 py-6"
-    >
-      {/* Main container with split layout on desktop, centered modal on mobile */}
-      <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 bg-white rounded-2xl shadow-lg overflow-hidden">
-        {/* Left side - Image container (hidden on mobile, shown on desktop) */}
-        <div className="relative hidden lg:block">
-          <Image
-            src="/logos/images/Group 469272.webp"
-            alt="Rehabify Health - Sign in"
-            fill
-            className="object-cover"
-            priority
-            sizes="(min-width: 1024px) 50vw, 100vw"
-            placeholder="blur"
-            blurDataURL="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-black/20" aria-hidden="true" />
-          {/* Logo overlay on image */}
-          <div className="absolute top-8 left-8 right-8">
-            <Image
-              src="/logos/favicon/apple-touch-icon.png"
-              alt="Rehabify Health"
-              width={48}
-              height={48}
-              className="bg-white/10 backdrop-blur-sm rounded-lg p-2"
+    <AuthShell audience={audience} partnersHost={partnersHost}>
+      <AuthSteps stepKey={step} direction={direction}>
+        {step === "identifier" && (
+          <>
+            <StepHeading eyebrow={copy.eyebrow} title={copy.title} subtitle={copy.subtitle} optionalSubtitle />
+            <div className={SPACE.section}>
+              <GoogleButton onClick={google.start} loading={google.loading} disabled={!google.ready || pending !== null} />
+            </div>
+            <div className={SPACE.divider}>
+              <OrDivider />
+            </div>
+            <form onSubmit={submitIdentifier} noValidate className={cn("flex flex-col", SPACE.fields)}>
+              <AuthField
+                id="signin-email"
+                label="Email address"
+                type="email"
+                inputMode="email"
+                autoComplete="username email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (error) setError(null);
+                }}
+                error={fieldError("email")}
+              />
+              {formNotice}
+              <PrimaryButton loading={pending === "identifier"} disabled={busy || !isLoaded} className="mt-1">
+                Continue
+              </PrimaryButton>
+            </form>
+            <p className={cn("text-center text-sm text-rh-night/65", SPACE.section)}>
+              {audience === "partner" ? "New partner? " : "New to Rehabify? "}
+              <Link href={signUpHref} className="font-semibold text-rh-teal underline-offset-4 hover:underline">
+                {audience === "partner" ? "Apply for access" : "Create an account"}
+              </Link>
+            </p>
+          </>
+        )}
+
+        {step === "password" && (
+          <>
+            <StepHeading eyebrow={copy.eyebrow} title="Enter your password" subtitle={emailChip} />
+            <form onSubmit={submitPassword} noValidate className={cn("flex flex-col", SPACE.section, SPACE.fields)}>
+              {/* Lets password managers pair the saved password with the email */}
+              <input type="email" name="username" autoComplete="username" value={email.trim()} readOnly hidden />
+              <PasswordField
+                id="signin-password"
+                label="Password"
+                autoComplete="current-password"
+                autoFocus
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (error) setError(null);
+                }}
+                error={fieldError("password")}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
+                <TextAction onClick={startReset} disabled={busy}>
+                  {pending === "reset-start" ? "Sending…" : "Forgot password?"}
+                </TextAction>
+                {factorEmailId(signIn?.supportedFirstFactors, "email_code") && (
+                  <TextAction onClick={emailMeACode} disabled={busy}>
+                    {pending === "email-code" ? "Sending…" : "Email me a code instead"}
+                  </TextAction>
+                )}
+              </div>
+              {formNotice}
+              <PrimaryButton loading={pending === "password"} disabled={busy}>
+                Sign in
+              </PrimaryButton>
+            </form>
+          </>
+        )}
+
+        {step === "code" && (
+          <>
+            <StepHeading
+              eyebrow={copy.eyebrow}
+              title={codeMode === "totp" ? "Two-step verification" : "Check your email"}
+              subtitle={
+                codeMode === "totp" ? (
+                  "Enter the 6-digit code from your authenticator app."
+                ) : (
+                  <>
+                    We sent a 6-digit code to <span className="font-semibold text-rh-night">{email.trim()}</span>.
+                  </>
+                )
+              }
             />
-          </div>
-          <div className="absolute bottom-8 left-8 right-8 text-white">
-            <h2 className="text-3xl font-bold">Welcome Back</h2>
-            <p className="mt-2 text-lg text-white/90">Sign in to continue your rehabilitation journey</p>
-          </div>
-        </div>
-
-        {/* Right side - Form container */}
-        <motion.div
-          className="w-full flex flex-col items-center justify-center py-8 px-6 sm:px-10 lg:px-12 min-h-[500px] lg:min-h-0"
-          initial={{ scale: 0.95 }}
-          animate={{ scale: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <div className="w-full max-w-sm mx-auto">
-            {/* Breadcrumb Navigation */}
-            <div className="mb-8">
-              <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem>
-                    <BreadcrumbLink asChild>
-                      <Link href="/" className="flex items-center gap-2 text-[#005b57] hover:text-[#00443e]">
-                        <Image
-                          src="/logos/favicon/apple-touch-icon.png"
-                          alt="Rehabify Health"
-                          width={20}
-                          height={20}
-                        />
-                        Home
-                      </Link>
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-                  <BreadcrumbSeparator />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage>Sign In</BreadcrumbPage>
-                  </BreadcrumbItem>
-                </BreadcrumbList>
-              </Breadcrumb>
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-sm text-red-600">{error}</p>
+            <form onSubmit={submitCode} noValidate className={cn("flex flex-col", SPACE.section, SPACE.fields)}>
+              {infoNotice}
+              <CodeField
+                id="signin-code"
+                value={code}
+                onChange={(value) => {
+                  setCode(value);
+                  if (error) setError(null);
+                }}
+                onComplete={(value) => void submitCode(undefined, value)}
+                error={fieldError("code")}
+                disabled={pending === "code"}
+              />
+              {formNotice}
+              <PrimaryButton loading={pending === "code"} disabled={busy}>
+                Verify and sign in
+              </PrimaryButton>
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
+                <TextAction onClick={backToEmail} disabled={busy}>
+                  Use a different email
+                </TextAction>
+                {codeMode !== "totp" && (
+                  <TextAction onClick={resendCode} disabled={busy || cooldown.left > 0}>
+                    {pending === "resend" ? "Sending…" : cooldown.left > 0 ? `Resend in ${cooldown.left}s` : "Resend code"}
+                  </TextAction>
+                )}
               </div>
-            )}
+            </form>
+          </>
+        )}
 
-            {/* Clerk Smart CAPTCHA mount point (required for Smart CAPTCHA in custom flows). */}
-            {/* If not present, Clerk falls back to Invisible CAPTCHA and logs a console error. */}
-            <div id="clerk-captcha" className="mb-4" />
-
-            {/* Google Sign In Button */}
-            <button
-              onClick={handleGoogleSignIn}
-              disabled={isLoading}
-              className="w-full h-12 mb-4 flex items-center justify-center gap-3 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-              </svg>
-              Continue with Google
-            </button>
-
-            <div className="relative mb-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">or</span>
-              </div>
-            </div>
-
-            {/* Email/Password Form - Two step */}
-            {isEmailStep ? (
-              <form onSubmit={handleEmailSubmit} className="space-y-4">
-                <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-[#002e2c] mb-1">
-                    Email address
-                  </label>
-                  <input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your email address"
-                    className="h-12 w-full px-3 border border-gray-300 rounded-md focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 focus:outline-none"
-                    required
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={isLoading || !email}
-                  className="w-full h-12 bg-gradient-to-r from-[#002e2c] to-[#005b57] hover:opacity-90 text-white font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-[#005b57]/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                >
-                  {isLoading ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    "Continue →"
-                  )}
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                <div className="text-sm text-gray-600 mb-2">
-                  Signing in as <strong>{email}</strong>
-                </div>
-                <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-[#002e2c] mb-1">
-                    Password
-                  </label>
-                  <input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    className="h-12 w-full px-3 border border-gray-300 rounded-md focus:border-[#005b57] focus:ring-2 focus:ring-[#005b57]/20 focus:outline-none"
-                    required
-                    autoFocus
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={isLoading || !password}
-                  className="w-full h-12 bg-gradient-to-r from-[#002e2c] to-[#005b57] hover:opacity-90 text-white font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-[#005b57]/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                >
-                  {isLoading ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    "Sign In"
-                  )}
-                </button>
-                <button
-                  type="button"
+        {step === "reset" && (
+          <>
+            <StepHeading
+              eyebrow={copy.eyebrow}
+              title="Reset your password"
+              subtitle={
+                <>
+                  Enter the code we sent to <span className="font-semibold text-rh-night">{email.trim()}</span> and choose a
+                  new password.
+                </>
+              }
+            />
+            <form onSubmit={submitReset} noValidate className={cn("flex flex-col", SPACE.section, SPACE.fields)}>
+              {infoNotice}
+              <CodeField
+                id="reset-code"
+                value={code}
+                onChange={(value) => {
+                  setCode(value);
+                  if (error) setError(null);
+                }}
+                onComplete={() => document.getElementById("reset-password")?.focus()}
+                error={fieldError("code")}
+              />
+              <input type="email" name="username" autoComplete="username" value={email.trim()} readOnly hidden />
+              <PasswordField
+                id="reset-password"
+                label="New password"
+                autoComplete="new-password"
+                placeholder="At least 8 characters"
+                autoFocus={false}
+                value={newPassword}
+                onChange={(e) => {
+                  setNewPassword(e.target.value);
+                  if (error) setError(null);
+                }}
+                error={fieldError("password")}
+              />
+              {formNotice}
+              <PrimaryButton loading={pending === "reset"} disabled={busy}>
+                Reset and sign in
+              </PrimaryButton>
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
+                <TextAction
                   onClick={() => {
-                    setIsEmailStep(true);
-                    setPassword("");
-                    setError("");
+                    setCode("");
+                    setNotice(null);
+                    goTo("password", -1);
                   }}
-                  className="w-full text-sm text-[#005b57] hover:text-[#00443e] underline"
+                  disabled={busy}
                 >
-                  ← Use a different email
-                </button>
-              </form>
-            )}
-
-            {/* Footer */}
-            <div className="mt-8 text-center space-y-3">
-              <p className="text-sm text-gray-600">
-                Don&apos;t have an account?{" "}
-                <Link href={`/sign-up${redirectTarget !== '/dashboard' ? `?redirect=${encodeURIComponent(redirectTarget)}` : ''}`} className="text-[#005b57] hover:text-[#00443e] font-medium">
-                  Sign up
-                </Link>
-              </p>
-
-              {/* Legal Links */}
-              <div className="flex items-center justify-center gap-3 text-xs text-gray-500">
-                <Link href="/terms-and-conditions" className="hover:text-[#005b57] hover:underline">
-                  Terms & Conditions
-                </Link>
-                <span>•</span>
-                <Link href="/privacy-policy" className="hover:text-[#005b57] hover:underline">
-                  Privacy Policy
-                </Link>
+                  Back to sign in
+                </TextAction>
+                <TextAction onClick={resendReset} disabled={busy || cooldown.left > 0}>
+                  {pending === "resend" ? "Sending…" : cooldown.left > 0 ? `Resend in ${cooldown.left}s` : "Resend code"}
+                </TextAction>
               </div>
-            </div>
-          </div>
-        </motion.div>
-      </div>
-    </motion.div>
+            </form>
+          </>
+        )}
+      </AuthSteps>
+    </AuthShell>
   );
-};
+}

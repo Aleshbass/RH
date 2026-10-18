@@ -1,7 +1,8 @@
 // @ts-nocheck
 import { v } from "convex/values"
-import { internalMutation } from "./_generated/server"
+import { internalMutation, internalQuery } from "./_generated/server"
 import type { Doc, Id } from './_generated/dataModel'
+import { canEndVideoCall, canJoinVideoCall, findCallByRoomId } from "./helpers/callAccess"
 
 // Helper to resolve either a Clerk user ID (identity.subject like "user_xxx")
 // or a Convex users._id into a Convex Id<"users">. Returns null if not found.
@@ -116,6 +117,26 @@ export const updateCallStatus = internalMutation({
           console.error('Failed to update appointment status:', error)
         }
       }
+    }
+  },
+})
+
+// Whether a signed-in Clerk user may join / end a Stream call; used by the Node actions in stream.ts.
+// A room with no record yet is a new ad-hoc call, which anyone signed in may start.
+export const getCallAccess = internalQuery({
+  args: { callId: v.string(), clerkId: v.string() },
+  handler: async (ctx, args) => {
+    const call = await findCallByRoomId(ctx, args.callId)
+    if (!call) return { exists: false, canJoin: true, canEnd: false }
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q: any) => q.eq("clerkId", args.clerkId))
+      .first()
+    if (!user) return { exists: true, canJoin: false, canEnd: false }
+    return {
+      exists: true,
+      canJoin: await canJoinVideoCall(ctx, call, user),
+      canEnd: await canEndVideoCall(ctx, call, user),
     }
   },
 })

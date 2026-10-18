@@ -1,16 +1,20 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import Link from 'next/link'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '@/convex/_generated/api'
+import type { getPatientCareTeam } from '@/convex/patients'
+import type { QueryResult } from '@/lib/convexUntyped'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Calendar } from '@/components/ui/calendar'
+import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { Id } from '@/convex/_generated/dataModel'
-import { format, addDays, setHours, setMinutes, isBefore, startOfToday } from 'date-fns'
-import { ChevronLeft, X, Check, Video, Calendar as CalendarIcon, Clock, User, MapPin } from 'lucide-react'
+import { format, addDays, isBefore, startOfToday, startOfDay, isSameDay } from 'date-fns'
+import { ChevronLeft, Check, Video, Calendar as CalendarIcon, Clock, User, MapPin, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { playSound } from '@/lib/sounds'
 
@@ -22,8 +26,9 @@ interface PatientAppointmentBookingModalProps {
 }
 
 type Step = 'date' | 'time' | 'details' | 'success'
-type VideoPlatform = 'rehabify' | 'google_meet'
 type AppointmentType = 'telehealth' | 'in-person'
+type Slot = { start: number; end: number; duration: number }
+type CareTeamMember = { physiotherapist: { _id: string; firstName?: string; lastName?: string } } | null
 
 const SERVICE_TYPES = [
     'Initial Consultation',
@@ -37,11 +42,15 @@ const SERVICE_TYPES = [
     'Massage Therapy',
 ]
 
-const TIME_SLOTS = [
-    '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-    '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
-    '16:00', '16:30', '17:00', '17:30'
-]
+const SESSION_MINUTES = 60
+const BOOKING_WINDOW_DAYS = 60
+
+function errorMessage(error: unknown) {
+    const raw = error instanceof Error ? error.message : ''
+    // Convex prefixes server errors with request details; keep the readable part
+    const match = raw.match(/(?:Uncaught Error|ConvexError):\s*(.+?)(?:\n|\s+at\s|$)/)
+    return match?.[1] || "We couldn't book that time. Please try again."
+}
 
 export function PatientAppointmentBookingModal({
     isOpen,
@@ -51,28 +60,25 @@ export function PatientAppointmentBookingModal({
 }: PatientAppointmentBookingModalProps) {
     const [step, setStep] = useState<Step>('date')
     const [date, setDate] = useState<Date | undefined>(undefined)
-    const [time, setTime] = useState<string | null>(null)
+    const [slot, setSlot] = useState<Slot | null>(null)
     const [serviceType, setServiceType] = useState<string>('')
     const [appointmentType, setAppointmentType] = useState<AppointmentType>('telehealth')
     const [location, setLocation] = useState<string>('')
-    const [videoPlatform, setVideoPlatform] = useState<VideoPlatform>('rehabify')
+    const [notes, setNotes] = useState<string>('')
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [physiotherapistId, setPhysiotherapistId] = useState<string>('')
 
-    // Get patient's care team
-    const careTeam = useQuery(api.patients.getPatientCareTeam)
-    const user = useQuery(api.users.getMyUser)
-    const googleCredentials = useQuery(api.calendar.oauth.getCredentials, user ? { userId: user._id } : 'skip')
-
-    // Create appointment mutation
-    const createAppointment = useMutation(api.appointments.createAppointment)
+    // Typed from the query itself: the generated `api` type degrades to `any` in the full app build
+    const careTeam = useQuery(api.patients.getPatientCareTeam, isOpen ? {} : 'skip') as
+        | QueryResult<typeof getPatientCareTeam>
+        | undefined as CareTeamMember[] | undefined
+    const requestAppointment = useMutation(api.appointments.requestAppointment)
 
     useEffect(() => {
         if (preselectedPhysiotherapistId) {
             setPhysiotherapistId(preselectedPhysiotherapistId)
         } else if (careTeam && careTeam.length > 0 && !physiotherapistId) {
-            // Default to first physiotherapist if none selected
-            setPhysiotherapistId(careTeam[0].physiotherapist?._id || '')
+            setPhysiotherapistId(careTeam[0]?.physiotherapist?._id || '')
         }
     }, [preselectedPhysiotherapistId, careTeam, physiotherapistId])
 
@@ -81,25 +87,55 @@ export function PatientAppointmentBookingModal({
         if (isOpen) {
             setStep('date')
             setDate(undefined)
-            setTime(null)
+            setSlot(null)
             setServiceType('')
             setAppointmentType('telehealth')
             setLocation('')
-            setVideoPlatform('rehabify')
+            setNotes('')
             setIsSubmitting(false)
         }
     }, [isOpen])
 
+    // The physio's real openings (working hours, days off, existing bookings and holds)
+    const range = useMemo(() => {
+        const start = startOfToday()
+        return { startDate: start.getTime(), endDate: addDays(start, BOOKING_WINDOW_DAYS).getTime() - 1 }
+        // Recomputed each time the modal opens so "today" stays current
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen])
+    const slots = useQuery(
+        api.calendar.availability.getAvailableSlots,
+        isOpen && physiotherapistId
+            ? { physiotherapistId: physiotherapistId as Id<'users'>, ...range, sessionDuration: SESSION_MINUTES }
+            : 'skip'
+    ) as Slot[] | undefined
+
+    const upcomingSlots = useMemo(
+        () => (slots ?? []).filter((s) => s.start > Date.now()).sort((a, b) => a.start - b.start),
+        [slots]
+    )
+    const openDays = useMemo(
+        () => new Set(upcomingSlots.map((s) => startOfDay(new Date(s.start)).getTime())),
+        [upcomingSlots]
+    )
+    const slotsForDate = useMemo(
+        () => (date ? upcomingSlots.filter((s) => isSameDay(new Date(s.start), date)) : []),
+        [date, upcomingSlots]
+    )
+
+    const selectedPhysiotherapist = careTeam?.find(
+        (member) => member?.physiotherapist?._id === physiotherapistId
+    )
+    const physioName = selectedPhysiotherapist
+        ? `${selectedPhysiotherapist.physiotherapist.firstName ?? ''} ${selectedPhysiotherapist.physiotherapist.lastName ?? ''}`.trim()
+        : ''
+
     const handleDateSelect = (selectedDate: Date | undefined) => {
         if (selectedDate) {
             setDate(selectedDate)
+            setSlot(null)
             setStep('time')
         }
-    }
-
-    const handleTimeSelect = (selectedTime: string) => {
-        setTime(selectedTime)
-        setStep('details')
     }
 
     const handleBack = () => {
@@ -108,351 +144,267 @@ export function PatientAppointmentBookingModal({
     }
 
     const handleSubmit = async () => {
-        if (!date || !time || !serviceType || !physiotherapistId || !user) return
-        if (appointmentType === 'in-person' && (!location || location.trim() === '')) {
-            toast.error('Please enter an exact street address for the appointment');
-            return;
+        if (!slot || !serviceType || !physiotherapistId) return
+        if (appointmentType === 'in-person' && !location.trim()) {
+            toast.error('Please enter the address for your visit')
+            return
         }
 
         setIsSubmitting(true)
-
         try {
-            const [hours, minutes] = time.split(':').map(Number)
-            const startDateTime = setMinutes(setHours(date, hours), minutes)
-            const endDateTime = setMinutes(setHours(date, hours + 60), minutes) // Default 60 min
-
-            await createAppointment({
-                patientId: user._id,
+            await requestAppointment({
                 physiotherapistId: physiotherapistId as Id<'users'>,
-                startTime: startDateTime.getTime(),
-                endTime: endDateTime.getTime(),
-                serviceType: serviceType,
-                appointmentType: appointmentType,
-                manualMeetingLink: appointmentType === 'telehealth' && videoPlatform === 'google_meet' ? 'pending-generation' : undefined,
-                location: appointmentType === 'in-person' ? location : undefined,
-                status: 'scheduled',
+                startTime: slot.start,
+                endTime: slot.end,
+                serviceType,
+                appointmentType,
+                location: appointmentType === 'in-person' ? location.trim() : undefined,
+                notes: notes.trim() || undefined,
             })
-
             playSound('booked')
             setStep('success')
             onAppointmentBooked?.()
         } catch (error) {
             console.error('Error booking appointment:', error)
-            toast.error('Failed to book appointment')
+            toast.error(errorMessage(error))
             setIsSubmitting(false)
         }
     }
 
-    const selectedPhysiotherapist = careTeam?.find(
-        (member: any) => member.physiotherapist?._id === physiotherapistId
-    )
-
-    const renderHeader = () => {
-        if (step === 'success') return null
-
-        const title = step === 'date' ? 'Select Date' : step === 'time' ? 'Select Time' : 'Confirm Details'
-
-        return (
-            <div className="flex items-center gap-3">
-                {step !== 'date' && (
-                    <Button variant="ghost" size="icon" onClick={handleBack} className="h-8 w-8">
-                        <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                )}
-                <DialogTitle className="text-lg font-semibold text-gray-900">
-                    {title}
-                </DialogTitle>
-            </div>
-        )
-    }
+    const noCareTeam = careTeam !== undefined && careTeam.length === 0 && !preselectedPhysiotherapistId
+    const title = step === 'date' ? 'Choose a day' : step === 'time' ? 'Choose a time' : 'Confirm your visit'
 
     return (
-        <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !isSubmitting) onClose(); }}>
-            <DialogContent className="sm:max-w-[450px] p-0 overflow-hidden bg-white">
+        <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !isSubmitting) onClose() }}>
+            <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-3xl border-0 bg-white p-0 sm:max-w-[460px]">
                 {step !== 'success' && (
-                    <div className="px-6 pt-6 pb-3">
-                        {renderHeader()}
-                        {/* Progress Bar */}
-                        <div className="h-1 bg-gray-100 w-full rounded-full overflow-hidden mt-4">
+                    <div className="px-5 pb-3 pt-5 sm:px-6 sm:pt-6">
+                        <div className="flex items-center gap-2">
+                            {step !== 'date' && (
+                                <Button variant="ghost" size="icon" onClick={handleBack} className="h-9 w-9 rounded-full" aria-label="Back">
+                                    <ChevronLeft className="h-4 w-4" />
+                                </Button>
+                            )}
+                            <DialogTitle className="text-lg font-semibold text-rh-night">{title}</DialogTitle>
+                        </div>
+                        <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-rh-mist">
                             <div
-                                className="h-full bg-blue-500 transition-all duration-300 ease-in-out"
-                                style={{
-                                    width: step === 'date' ? '33%' : step === 'time' ? '66%' : '100%'
-                                }}
+                                className="h-full rounded-full bg-rh-teal transition-all duration-300 ease-in-out"
+                                style={{ width: step === 'date' ? '33%' : step === 'time' ? '66%' : '100%' }}
                             />
                         </div>
                     </div>
                 )}
 
-                <div className={step === 'date' ? 'px-4 pb-6' : 'px-6 pb-6'}>
+                <div className="px-5 pb-6 sm:px-6">
                     {step === 'date' && (
-                        <Calendar
-                            mode="single"
-                            selected={date}
-                            onSelect={handleDateSelect}
-                            {...({ disabled: (date: Date) => isBefore(date, startOfToday()) } as any)}
-                            initialFocus
-                            className="w-full"
-                        />
+                        noCareTeam ? (
+                            <div className="space-y-4 py-6 text-center">
+                                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-rh-mint">
+                                    <User className="h-6 w-6 text-rh-teal" />
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="font-semibold text-rh-night">You&apos;re not linked to a physiotherapist yet</p>
+                                    <p className="text-sm text-neutral-600">Find a physio and book your first session from their page.</p>
+                                </div>
+                                <Button asChild className="rounded-full bg-rh-teal text-white hover:bg-rh-teal-deep">
+                                    <Link href="/find-a-physio">Find a physio</Link>
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {!preselectedPhysiotherapistId && (careTeam?.length ?? 0) > 1 && (
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-rh-night">Physiotherapist</label>
+                                        <Select
+                                            value={physiotherapistId}
+                                            onValueChange={(value) => { setPhysiotherapistId(value); setDate(undefined); setSlot(null) }}
+                                        >
+                                            <SelectTrigger className="rounded-xl">
+                                                <SelectValue placeholder="Select physiotherapist" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {careTeam?.map((member) => member && (
+                                                    <SelectItem key={member.physiotherapist._id} value={member.physiotherapist._id}>
+                                                        {member.physiotherapist.firstName} {member.physiotherapist.lastName}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
+                                {physioName && (
+                                    <p className="text-sm text-neutral-600">
+                                        Days with openings for <span className="font-medium text-rh-night">{physioName}</span> are shown below.
+                                    </p>
+                                )}
+                                {slots === undefined && physiotherapistId ? (
+                                    <div className="flex items-center justify-center gap-2 py-16 text-sm text-neutral-500">
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Checking availability…
+                                    </div>
+                                ) : upcomingSlots.length === 0 && physiotherapistId ? (
+                                    <div className="rounded-2xl bg-rh-canvas p-5 text-center text-sm text-neutral-600">
+                                        No openings in the next {BOOKING_WINDOW_DAYS} days. Send your physio a message to arrange a time.
+                                    </div>
+                                ) : (
+                                    <div className="flex justify-center">
+                                        <Calendar
+                                            mode="single"
+                                            selected={date}
+                                            onSelect={handleDateSelect}
+                                            {...({
+                                                disabled: (day: Date) =>
+                                                    isBefore(day, startOfToday()) || !openDays.has(startOfDay(day).getTime()),
+                                            } as any)}
+                                            initialFocus
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )
                     )}
 
                     {step === 'time' && (
                         <div className="space-y-4">
-                            <div className="text-center mb-6">
-                                <h3 className="font-medium text-lg">
-                                    {date ? format(date, 'EEEE, MMMM d') : ''}
-                                </h3>
-                                <p className="text-sm text-gray-500">Select a time for your appointment</p>
+                            <div className="text-center">
+                                <h3 className="text-base font-semibold text-rh-night">{date ? format(date, 'EEEE, MMMM d') : ''}</h3>
+                                <p className="text-sm text-neutral-500">{SESSION_MINUTES}-minute session · times in your time zone</p>
                             </div>
-                            <div className="grid grid-cols-3 gap-3">
-                                {TIME_SLOTS.map((slot) => (
-                                    <Button
-                                        key={slot}
-                                        variant="outline"
-                                        className="hover:bg-[#005b57] hover:text-white transition-colors"
-                                        onClick={() => handleTimeSelect(slot)}
-                                    >
-                                        {format(setMinutes(setHours(new Date(), parseInt(slot.split(':')[0])), parseInt(slot.split(':')[1])), 'h:mm a')}
-                                    </Button>
-                                ))}
-                            </div>
+                            {slotsForDate.length === 0 ? (
+                                <div className="rounded-2xl bg-rh-canvas p-5 text-center text-sm text-neutral-600">
+                                    That day has just filled up. Please pick another day.
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                    {slotsForDate.map((s) => (
+                                        <Button
+                                            key={s.start}
+                                            variant="outline"
+                                            className="h-11 rounded-xl border-rh-teal/20 text-rh-night hover:border-rh-teal hover:bg-rh-teal hover:text-white"
+                                            onClick={() => { setSlot(s); setStep('details') }}
+                                        >
+                                            {format(new Date(s.start), 'h:mm a')}
+                                        </Button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 
-                    {step === 'details' && (
-                        <div className="space-y-6">
-                            <div className="bg-blue-50 p-4 rounded-lg space-y-3">
-                                <h3 className="font-semibold text-blue-900 flex items-center gap-2">
-                                    <Check className="h-4 w-4" /> Confirm Details
-                                </h3>
-
-                                <div className="space-y-2 text-sm text-blue-800">
-                                    <div className="flex items-center gap-2">
-                                        <User className="h-4 w-4 opacity-70" />
-                                        <span>{selectedPhysiotherapist?.physiotherapist?.firstName} {selectedPhysiotherapist?.physiotherapist?.lastName}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <CalendarIcon className="h-4 w-4 opacity-70" />
-                                        <span>{date ? format(date, 'MMMM d, yyyy') : ''}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Clock className="h-4 w-4 opacity-70" />
-                                        <span>{time ? format(setMinutes(setHours(new Date(), parseInt(time.split(':')[0])), parseInt(time.split(':')[1])), 'h:mm a') : ''} (60 min)</span>
-                                    </div>
+                    {step === 'details' && slot && (
+                        <div className="space-y-5">
+                            <div className="space-y-2 rounded-2xl bg-rh-mint/60 p-4 text-sm text-rh-night">
+                                <div className="flex items-center gap-2">
+                                    <User className="h-4 w-4 text-rh-teal" />
+                                    <span>{physioName || 'Your physiotherapist'}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <CalendarIcon className="h-4 w-4 text-rh-teal" />
+                                    <span>{format(new Date(slot.start), 'EEEE, MMMM d, yyyy')}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Clock className="h-4 w-4 text-rh-teal" />
+                                    <span>{format(new Date(slot.start), 'h:mm a')} – {format(new Date(slot.end), 'h:mm a')}</span>
                                 </div>
                             </div>
 
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium">Physiotherapist *</label>
-                                    <Select
-                                        value={physiotherapistId}
-                                        onValueChange={(value) => setPhysiotherapistId(value)}
-                                        disabled={!!preselectedPhysiotherapistId || !careTeam || careTeam.length === 0}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select physiotherapist" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {careTeam?.map((member: { physiotherapist: { _id: string; firstName: string; lastName: string; }; }) => (
-                                                <SelectItem
-                                                    key={member.physiotherapist?._id}
-                                                    value={member.physiotherapist?._id || ''}
-                                                >
-                                                    {member.physiotherapist?.firstName} {member.physiotherapist?.lastName}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-rh-night">What is this visit for? *</label>
+                                <Select value={serviceType} onValueChange={setServiceType}>
+                                    <SelectTrigger className="rounded-xl">
+                                        <SelectValue placeholder="Select a service" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {SERVICE_TYPES.map((type) => (
+                                            <SelectItem key={type} value={type}>{type}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium">Service Type *</label>
-                                    <Select value={serviceType} onValueChange={setServiceType}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select service type" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {SERVICE_TYPES.map((type) => (
-                                                <SelectItem key={type} value={type}>{type}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className="text-sm font-medium">Appointment Type *</label>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-rh-night">How would you like to meet? *</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {([
+                                        { value: 'telehealth', label: 'Video call', Icon: Video },
+                                        { value: 'in-person', label: 'In person', Icon: MapPin },
+                                    ] as const).map(({ value, label, Icon }) => (
+                                        <button
+                                            key={value}
+                                            type="button"
+                                            onClick={() => setAppointmentType(value)}
+                                            aria-pressed={appointmentType === value}
                                             className={cn(
-                                                "border rounded-lg p-3 cursor-pointer transition-all hover:border-[#005b57]",
-                                                appointmentType === 'telehealth' ? "border-[#005b57] bg-[#005b57]/5 ring-1 ring-[#005b57]" : "border-gray-200"
+                                                'flex flex-col items-center gap-2 rounded-2xl border p-3 text-sm font-medium transition-all',
+                                                appointmentType === value
+                                                    ? 'border-rh-teal bg-rh-teal/5 text-rh-night ring-1 ring-rh-teal'
+                                                    : 'border-neutral-200 text-neutral-600 hover:border-rh-teal/50'
                                             )}
-                                            onClick={() => setAppointmentType('telehealth')}
                                         >
-                                            <div className="flex flex-col items-center gap-2 text-center">
-                                                <Video className={cn("h-5 w-5", appointmentType === 'telehealth' ? "text-[#005b57]" : "text-gray-500")} />
-                                                <span className="text-sm font-medium">Telehealth</span>
-                                            </div>
-                                        </div>
-
-                                        <div
-                                            className={cn(
-                                                "border rounded-lg p-3 cursor-pointer transition-all hover:border-[#005b57]",
-                                                appointmentType === 'in-person' ? "border-[#005b57] bg-[#005b57]/5 ring-1 ring-[#005b57]" : "border-gray-200"
-                                            )}
-                                            onClick={() => setAppointmentType('in-person')}
-                                        >
-                                            <div className="flex flex-col items-center gap-2 text-center">
-                                                <MapPin className={cn("h-5 w-5", appointmentType === 'in-person' ? "text-[#005b57]" : "text-gray-500")} />
-                                                <span className="text-sm font-medium">In-person</span>
-                                            </div>
-                                        </div>
-                                    </div>
+                                            <Icon className={cn('h-5 w-5', appointmentType === value ? 'text-rh-teal' : 'text-neutral-400')} />
+                                            {label}
+                                        </button>
+                                    ))}
                                 </div>
-
-                                {appointmentType === 'in-person' ? (
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium">Exact Address *</label>
-                                        <input
-                                            type="text"
-                                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#005b57] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                            placeholder="Enter house number, street name, and city..."
-                                            value={location}
-                                            onChange={(e) => setLocation(e.target.value)}
-                                        />
-                                        <p className="text-xs text-gray-500">
-                                            Please provide an exact address so your physiotherapist can navigate to you.
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium">Video Platform</label>
-                                        <div className="grid grid-cols-2 gap-4">
-                                        <div
-                                            className={cn(
-                                                "border rounded-lg p-4 cursor-pointer transition-all hover:border-[#005b57]",
-                                                videoPlatform === 'rehabify' ? "border-[#005b57] bg-[#005b57]/5 ring-1 ring-[#005b57]" : "border-gray-200"
-                                            )}
-                                            onClick={() => setVideoPlatform('rehabify')}
-                                        >
-                                            <div className="flex flex-col items-center gap-2 text-center">
-                                                <div className="h-8 w-8 rounded-full bg-[#005b57] flex items-center justify-center text-white">
-                                                    <Video className="h-4 w-4" />
-                                                </div>
-                                                <span className="text-sm font-medium">Rehabify Video</span>
-                                            </div>
-                                        </div>
-
-                                        <div
-                                            className={cn(
-                                                "border rounded-lg p-4 cursor-pointer transition-all hover:border-[#005b57]",
-                                                videoPlatform === 'google_meet' ? "border-[#005b57] bg-[#005b57]/5 ring-1 ring-[#005b57]" : "border-gray-200"
-                                            )}
-                                            onClick={() => setVideoPlatform('google_meet')}
-                                        >
-                                            <div className="flex flex-col items-center gap-2 text-center">
-                                                <div className="h-8 w-8 rounded-full bg-white border flex items-center justify-center">
-                                                    <img src="https://www.gstatic.com/meet/google_meet_primary_horizontal_2020q4_475x124_be869f6d52660a998c915584fc294866.png" alt="Google Meet" className="h-4 w-auto object-contain" />
-                                                </div>
-                                                <span className="text-sm font-medium">Google Meet</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {videoPlatform === 'google_meet' && !googleCredentials && (
-                                        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
-                                            <div className="bg-amber-100 p-1 rounded-full mt-0.5">
-                                                <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                                </svg>
-                                            </div>
-                                            <div className="text-sm text-amber-800">
-                                                <p className="font-medium">Google Calendar not connected</p>
-                                                <p className="mt-1 text-amber-700">
-                                                    You need to connect your Google account to use Google Meet.
-                                                    <a href="/dashboard/patient/settings?tab=calendar" target="_blank" className="underline font-semibold ml-1 hover:text-amber-900">
-                                                        Connect in Settings
-                                                    </a>
-                                                </p>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                {appointmentType === 'telehealth' && (
+                                    <p className="text-xs text-neutral-500">
+                                        Once your physio confirms, the video link appears on your dashboard and in your email.
+                                    </p>
                                 )}
                             </div>
 
+                            {appointmentType === 'in-person' && (
+                                <div className="space-y-2">
+                                    <label htmlFor="visit-address" className="text-sm font-medium text-rh-night">Address *</label>
+                                    <input
+                                        id="visit-address"
+                                        type="text"
+                                        className="flex h-11 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-teal"
+                                        placeholder="House number, street and city"
+                                        value={location}
+                                        onChange={(e) => setLocation(e.target.value)}
+                                    />
+                                </div>
+                            )}
+
+                            <div className="space-y-2">
+                                <label htmlFor="visit-notes" className="text-sm font-medium text-rh-night">Anything your physio should know? (optional)</label>
+                                <Textarea
+                                    id="visit-notes"
+                                    value={notes}
+                                    onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
+                                    placeholder="e.g. my knee pain has got worse since last week"
+                                    className="min-h-[80px] rounded-xl"
+                                />
+                            </div>
+
                             <Button
-                                className="w-full bg-[#005b57] hover:bg-[#00443e] mt-4"
-                                disabled={
-                                    !serviceType ||
-                                    isSubmitting ||
-                                    (appointmentType === 'telehealth' && videoPlatform === 'google_meet' && !googleCredentials) ||
-                                    (appointmentType === 'in-person' && (!location || location.trim() === ''))
-                                }
+                                className="h-11 w-full rounded-full bg-rh-teal text-white hover:bg-rh-teal-deep"
+                                disabled={!serviceType || isSubmitting || (appointmentType === 'in-person' && !location.trim())}
                                 onClick={handleSubmit}
                             >
-                                {isSubmitting ? 'Confirming...' : 'Confirm Booking'}
+                                {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending request…</> : 'Request appointment'}
                             </Button>
                         </div>
                     )}
 
-                    {step === 'success' && (
-                        <div className="text-center space-y-6 py-6">
-                            <div className="h-16 w-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                                <Check className="h-8 w-8 text-green-600" />
+                    {step === 'success' && slot && (
+                        <div className="space-y-6 py-8 text-center">
+                            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rh-mint">
+                                <Check className="h-8 w-8 text-rh-teal" />
                             </div>
-
                             <div className="space-y-2">
-                                <h2 className="text-2xl font-bold text-gray-900">This meeting is scheduled</h2>
-                                <p className="text-gray-500">We sent an email with a calendar invitation with the details to everyone.</p>
+                                <DialogTitle className="text-2xl font-bold text-rh-night">Request sent</DialogTitle>
+                                <p className="text-sm text-neutral-600">
+                                    {physioName || 'Your physiotherapist'} will confirm your visit on{' '}
+                                    <span className="font-medium text-rh-night">{format(new Date(slot.start), 'EEEE, MMMM d')} at {format(new Date(slot.start), 'h:mm a')}</span>.
+                                    We&apos;ll email you when it&apos;s confirmed.
+                                </p>
                             </div>
-
-                            <div className="bg-gray-50 rounded-lg p-6 text-left space-y-4 max-w-sm mx-auto">
-                                <div className="grid grid-cols-[60px_1fr] gap-4">
-                                    <span className="font-semibold text-gray-900">What</span>
-                                    <span className="text-gray-600">60 Min Meeting with {selectedPhysiotherapist?.physiotherapist?.firstName} {selectedPhysiotherapist?.physiotherapist?.lastName}</span>
-                                </div>
-                                <div className="grid grid-cols-[60px_1fr] gap-4">
-                                    <span className="font-semibold text-gray-900">When</span>
-                                    <span className="text-gray-600">
-                                        {date && format(date, 'EEEE, MMMM d, yyyy')}
-                                        <br />
-                                        {time} - {time && format(setMinutes(setHours(new Date(), parseInt(time.split(':')[0]) + 1), parseInt(time.split(':')[1])), 'HH:mm')}
-                                    </span>
-                                </div>
-                                <div className="grid grid-cols-[60px_1fr] gap-4">
-                                    <span className="font-semibold text-gray-900">Who</span>
-                                    <div className="text-gray-600">
-                                        <p>{user?.firstName} {user?.lastName}</p>
-                                        <p className="text-sm text-gray-500">{user?.email}</p>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-[60px_1fr] gap-4">
-                                    <span className="font-semibold text-gray-900">Where</span>
-                                    <div className="flex items-center gap-2 text-gray-600">
-                                        {appointmentType === 'in-person' ? (
-                                            <>
-                                                <MapPin className="h-4 w-4" /> {location}
-                                            </>
-                                        ) : videoPlatform === 'rehabify' ? (
-                                            <>
-                                                <Video className="h-4 w-4" /> Rehabify Video
-                                            </>
-                                        ) : (
-                                            <>
-                                                <img src="https://www.gstatic.com/meet/google_meet_primary_horizontal_2020q4_475x124_be869f6d52660a998c915584fc294866.png" alt="Google Meet" className="h-3 w-auto" /> Google Meet
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3 justify-center pt-4">
-                                <Button variant="outline" onClick={onClose}>
-                                    Close
-                                </Button>
-                                <Button className="bg-[#0f172a] text-white hover:bg-[#1e293b]">
-                                    Open Google Calendar
+                            <div className="flex flex-col justify-center gap-3 sm:flex-row">
+                                <Button variant="outline" className="rounded-full" onClick={onClose}>Close</Button>
+                                <Button asChild className="rounded-full bg-rh-teal text-white hover:bg-rh-teal-deep">
+                                    <Link href="/dashboard/patient/appointments" onClick={onClose}>View my appointments</Link>
                                 </Button>
                             </div>
                         </div>

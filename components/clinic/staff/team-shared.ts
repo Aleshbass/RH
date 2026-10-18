@@ -11,7 +11,7 @@ import { friendlyError } from '@/components/clinic/patients/patient-record-share
 export interface ClinicRole {
   _id: Id<'clinicRoles'>
   name: string
-  /** Empty means full access */
+  /** Empty means full access (the owner's explicit choice for this role) */
   permissions: ClinicArea[]
   memberCount: number
 }
@@ -40,8 +40,29 @@ export interface StaffInvitation {
   isExpired: boolean
 }
 
-/** Select value used for "no role" (full access). */
+/**
+ * Select value used for "no role". What no role means depends on who it is: clinicians get
+ * CLINICIAN_DEFAULT_PAGES (their own clinical work), front-desk staff every page.
+ * (Matches resolveClinicMember in convex/clinicTools.ts.)
+ */
 export const FULL_ACCESS = 'full'
+
+export type TeamMemberKind = 'clinician' | 'front_desk'
+
+/** Pages a clinician without a role can open (convex CLINICIAN_DEFAULT_AREAS). */
+export const CLINICIAN_DEFAULT_PAGES: ClinicArea[] = ['appointments', 'patients']
+
+/** "Clinician access" / "Full access": what having no role gives this kind of member. */
+export function defaultAccessLabel(kind: TeamMemberKind = 'clinician') {
+  return kind === 'clinician' ? 'Clinician access' : 'Full access'
+}
+
+/** One-line explanation of the default, for help text. */
+export function defaultAccessDescription(kind: TeamMemberKind = 'clinician') {
+  return kind === 'clinician'
+    ? `Can open Home, ${CLINICIAN_DEFAULT_PAGES.map((area) => CLINIC_AREA_LABELS[area]).join(', ')}`
+    : 'Can open every page'
+}
 
 /** The readable reason from a Convex error (ConvexError data), or the fallback. */
 export function teamError(err: unknown, fallback: string) {
@@ -55,10 +76,14 @@ export function roleSummary(permissions: readonly string[]) {
   return pages.length === 0 ? 'Full access' : pages.map((area) => CLINIC_AREA_LABELS[area]).join(', ')
 }
 
-/** Role name for a member, falling back to full access when they have none (or it was deleted). */
-export function roleLabel(roleId: string | null | undefined, roles: ClinicRole[] | undefined) {
-  if (!roleId) return 'Full access'
-  return roles?.find((r) => r._id === roleId)?.name ?? 'Full access'
+/** Role name for a member, falling back to the default when they have none (or it was deleted). */
+export function roleLabel(
+  roleId: string | null | undefined,
+  roles: ClinicRole[] | undefined,
+  kind: TeamMemberKind = 'clinician'
+) {
+  if (!roleId) return defaultAccessLabel(kind)
+  return roles?.find((r) => r._id === roleId)?.name ?? defaultAccessLabel(kind)
 }
 
 export const pluralPeople = (count: number) => (count === 1 ? '1 person' : `${count} people`)

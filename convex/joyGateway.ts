@@ -409,6 +409,27 @@ export const recordSpecialistReviewPaymentWebhook = httpAction(async (ctx, reque
   return Response.json(await ctx.runMutation((internal as any).joyIntegration.recordJoySpecialistReviewPaymentWebhook, { reference: data.reference, amountKobo: data.amount_kobo, currency: data.currency, paystackEventId: data.paystack_event_id }));
 });
 
+// Handoff to the clinician: Joy's structured intake and summaries for an assessment revision.
+// Field validation and length limits live in joyHandoff.upsertJoyIntake.
+export const upsertIntake = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/upsert_intake");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const { patient_id, conversation_id, assessment_id, assessment_revision } = parsed.data;
+  if (typeof patient_id !== "string" || typeof conversation_id !== "string" || typeof assessment_id !== "string" || typeof assessment_revision !== "number") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyHandoff.upsertJoyIntake, { payload: parsed.data }));
+});
+
+// A stage the patient reached in the WhatsApp conversation (see JOY_REPORTED_STAGES).
+export const recordJourneyEvent = httpAction(async (ctx, request) => {
+  const parsed = await readJson(request, "/joy-integration/record_journey_event");
+  if (parsed instanceof Response) return parsed;
+  if (!(await reserveNonce(ctx, parsed.nonce))) return new Response("Replay detected", { status: 409 });
+  const { patient_id, stage, event_id } = parsed.data;
+  if (typeof patient_id !== "string" || typeof stage !== "string" || typeof event_id !== "string") return new Response("Invalid payload", { status: 400 });
+  return Response.json(await ctx.runMutation((internal as any).joyHandoff.recordJoyJourneyEventFromJoy, { payload: parsed.data }));
+});
+
 export const enqueueEvent = httpAction(async (ctx, request) => {
   const parsed = await readJson(request, "/joy-integration/enqueue_event");
   if (parsed instanceof Response) return parsed;

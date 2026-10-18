@@ -14,6 +14,7 @@ import { PhysioBrand, PhysioSidebar, PHYSIO_HOME } from '@/components/physio/Phy
 import { PhysioNotifications } from '@/components/physio/PhysioNotifications'
 import { PhysioDutySwitch } from '@/components/physio/PhysioDutySwitch'
 import { PhysioDeclined, PhysioUnderReview } from '@/components/physio/PhysioReviewStates'
+import { CLINIC_PORTAL_HOME, clinicianBelongsInClinicPortal } from '@/components/clinic/clinician-routing'
 
 function ShellSkeleton() {
   return (
@@ -56,11 +57,11 @@ function usePhysioAccess(pathname: string) {
   if (user === null) redirectTo = '/sign-in'
   else if (user) {
     const u = user as typeof user & { clinicId?: string; onboardingSkipped?: boolean }
-    const isClinicClinician = Boolean(u.clinicId) && u.role === 'physiotherapist'
     if (u.role !== 'physiotherapist') redirectTo = '/dashboard'
-    // Clinic clinicians work from the clinic dashboard until their own onboarding is approved
-    else if (isClinicClinician && (!u.onboarded || (setup && setup.approvalStatus !== 'approved')))
-      redirectTo = '/dashboard/clinic'
+    // Clinic clinicians without their own approved Rehabify account work from the clinic portal
+    // (same rule as /dashboard: components/clinic/clinician-routing.ts)
+    else if (clinicianBelongsInClinicPortal(u, setup === undefined ? undefined : (setup?.approvalStatus ?? null)))
+      redirectTo = CLINIC_PORTAL_HOME
     else if (!u.onboarded && !u.onboardingSkipped) redirectTo = '/physiotherapist'
     // Onboarded but never submitted for review (older accounts): finish the application,
     // which creates the review request. Without one, every approved-only query would fail.

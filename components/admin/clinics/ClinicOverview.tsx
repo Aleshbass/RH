@@ -56,11 +56,11 @@ export function ClinicOverviewTab({ data }: { data: ClinicDetail }) {
   const services = Array.from(new Set([...clinic.services, ...clinic.specializations]))
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
         <Panel title="Clinic details" bodyClassName="px-5 pb-5 pt-3">
           {clinic.description && <p className="mb-4 text-sm text-neutral-600 dark:text-neutral-300">{clinic.description}</p>}
-          <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
             <Detail label="Registration number" value={clinic.registrationNumber} mono />
             <Detail label="Clinic type" value={clinic.clinicType} />
             <Detail label="Established" value={clinic.yearEstablished} />
@@ -232,7 +232,7 @@ export function ClinicFeesTab({ data }: { data: ClinicDetail }) {
   ]
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
         <Panel
           title="Payout account"

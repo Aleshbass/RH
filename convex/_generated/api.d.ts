@@ -108,6 +108,7 @@ import type * as files from "../files.js";
 import type * as health from "../health.js";
 import type * as helpers_adminRecipients from "../helpers/adminRecipients.js";
 import type * as helpers_appUrl from "../helpers/appUrl.js";
+import type * as helpers_callAccess from "../helpers/callAccess.js";
 import type * as helpers_careAccess from "../helpers/careAccess.js";
 import type * as helpers_escapeHtml from "../helpers/escapeHtml.js";
 import type * as helpers_exerciseAccess from "../helpers/exerciseAccess.js";
@@ -127,6 +128,7 @@ import type * as helpers_triggerRetryProcessing from "../helpers/triggerRetryPro
 import type * as http from "../http.js";
 import type * as imagekit from "../imagekit.js";
 import type * as joyGateway from "../joyGateway.js";
+import type * as joyHandoff from "../joyHandoff.js";
 import type * as joyIntegration from "../joyIntegration.js";
 import type * as joyOperations from "../joyOperations.js";
 import type * as joyProviderBootstrap from "../joyProviderBootstrap.js";
@@ -312,6 +314,7 @@ declare const fullApi: ApiFromModules<{
   health: typeof health;
   "helpers/adminRecipients": typeof helpers_adminRecipients;
   "helpers/appUrl": typeof helpers_appUrl;
+  "helpers/callAccess": typeof helpers_callAccess;
   "helpers/careAccess": typeof helpers_careAccess;
   "helpers/escapeHtml": typeof helpers_escapeHtml;
   "helpers/exerciseAccess": typeof helpers_exerciseAccess;
@@ -331,6 +334,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   imagekit: typeof imagekit;
   joyGateway: typeof joyGateway;
+  joyHandoff: typeof joyHandoff;
   joyIntegration: typeof joyIntegration;
   joyOperations: typeof joyOperations;
   joyProviderBootstrap: typeof joyProviderBootstrap;

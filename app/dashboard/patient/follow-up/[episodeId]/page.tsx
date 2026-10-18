@@ -146,7 +146,7 @@ export default function FollowUpPage() {
           aria-label="Comments"
         />
 
-        <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-[#f7f5ef] p-3">
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-rh-canvas p-3">
           <Checkbox checked={wantsCall} onCheckedChange={(checked) => setWantsCall(Boolean(checked))} className="mt-0.5" />
           <span className="text-sm text-[#002e2c]">I’d like someone from Rehabify to call me</span>
         </label>

@@ -1,6 +1,14 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { query, mutation, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { Doc, Id } from "./_generated/dataModel";
+import { findRelationship } from "./helpers/careAccess";
+
+/** Patients see their own health data, physios only their own patients', admins everyone's. */
+async function assertCanSeeHealth(ctx: QueryCtx | MutationCtx, user: Doc<"users">, patientId: Id<"users">) {
+  if (user._id === patientId || user.role === "admin") return;
+  if (user.role === "physiotherapist" && (await findRelationship(ctx, user._id, patientId))) return;
+  throw new Error("Unauthorized");
+}
 
 // VITAL SIGNS QUERIES AND MUTATIONS
 
@@ -21,9 +29,7 @@ export const getPatientVitalSigns = query({
     if (!user) throw new Error("User not found");
 
     // Authorization: patient can view their own data, physiotherapists can view their patients' data
-    if (user.role === "patient" && user._id !== args.patientId) {
-      throw new Error("Unauthorized");
-    }
+    await assertCanSeeHealth(ctx, user, args.patientId);
 
     return await ctx.db
       .query("vitalSigns")
@@ -86,9 +92,7 @@ export const getPatientMedications = query({
     if (!user) throw new Error("User not found");
 
     // Authorization check
-    if (user.role === "patient" && user._id !== args.patientId) {
-      throw new Error("Unauthorized");
-    }
+    await assertCanSeeHealth(ctx, user, args.patientId);
 
     let query = ctx.db.query("medications").withIndex("by_patient", (q) => q.eq("patientId", args.patientId));
     
@@ -124,6 +128,7 @@ export const addMedication = mutation({
     if (!user || !["physiotherapist", "patient"].includes(user.role || "")) {
       throw new Error("Unauthorized");
     }
+    await assertCanSeeHealth(ctx, user, args.patientId);
 
     return await ctx.db.insert("medications", {
       ...args,
@@ -149,9 +154,7 @@ export const getMedicationLogs = query({
 
     if (!user) throw new Error("User not found");
 
-    if (user.role === "patient" && user._id !== args.patientId) {
-      throw new Error("Unauthorized");
-    }
+    await assertCanSeeHealth(ctx, user, args.patientId);
 
     return await ctx.db
       .query("medicationLogs")
@@ -215,9 +218,7 @@ export const getSymptomLogs = query({
 
     if (!user) throw new Error("User not found");
 
-    if (user.role === "patient" && user._id !== args.patientId) {
-      throw new Error("Unauthorized");
-    }
+    await assertCanSeeHealth(ctx, user, args.patientId);
 
     return await ctx.db
       .query("symptomLogs")
@@ -271,9 +272,7 @@ export const getPainLogs = query({
 
     if (!user) throw new Error("User not found");
 
-    if (user.role === "patient" && user._id !== args.patientId) {
-      throw new Error("Unauthorized");
-    }
+    await assertCanSeeHealth(ctx, user, args.patientId);
 
     return await ctx.db
       .query("painLogs")
@@ -329,9 +328,7 @@ export const getFitbitData = query({
 
     if (!user) throw new Error("User not found");
 
-    if (user.role === "patient" && user._id !== args.patientId) {
-      throw new Error("Unauthorized");
-    }
+    await assertCanSeeHealth(ctx, user, args.patientId);
 
     return await ctx.db
       .query("fitbitData")
@@ -418,9 +415,7 @@ export const getHealthGoals = query({
 
     if (!user) throw new Error("User not found");
 
-    if (user.role === "patient" && user._id !== args.patientId) {
-      throw new Error("Unauthorized");
-    }
+    await assertCanSeeHealth(ctx, user, args.patientId);
 
     let query = ctx.db.query("healthGoals").withIndex("by_patient", (q) => q.eq("patientId", args.patientId));
     
@@ -514,9 +509,7 @@ export const getHealthDashboardStats = query({
 
     if (!user) throw new Error("User not found");
 
-    if (user.role === "patient" && user._id !== args.patientId) {
-      throw new Error("Unauthorized");
-    }
+    await assertCanSeeHealth(ctx, user, args.patientId);
 
     // Get latest Fitbit data
     const latestFitbit = await ctx.db

@@ -7,6 +7,7 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "../_generated/server";
 import { isPhysioBookable } from "../physioSetup";
+import { platformDefaultKobo } from "../helpers/marketplacePricing";
 
 /**
  * Search and filter physiotherapists in the marketplace
@@ -249,6 +250,7 @@ export const getPhysiotherapistProfile = query({
       .query("physiotherapistProfiles")
       .withIndex("by_user_id", (q) => q.eq("userId", args.physiotherapistId))
       .first();
+    const revenueSettings = await ctx.db.query("platformRevenueSettings").order("desc").first();
 
     // Return null ONLY if explicitly opted out
     if (profile && profile.isAvailableOnMarketplace === false) {
@@ -294,8 +296,7 @@ export const getPhysiotherapistProfile = query({
       fullName: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Physiotherapist",
       firstName: user.firstName || "",
       lastName: user.lastName || "",
-      email: user.email || "",
-      phoneNumber: user.phoneNumber,
+      // Public query: no email or phone. Patients reach the physio through bookings and chat.
       imageUrl: user.imageUrl,
       credentials: [
         profile?.certificationBoard,
@@ -319,6 +320,17 @@ export const getPhysiotherapistProfile = query({
         price: pkg.price / 100,
       })),
       packageDiscountPercent: (profile as any)?.packageDiscountPercent || 0,
+      // Video / in-person prices set under Prices & listing (0 = platform standard rate).
+      // The booking page shows these; the server charges them via resolveServiceAmountKobo.
+      virtualConsultationRate: profile?.virtualConsultationRate
+        ? profile.virtualConsultationRate / 100
+        : 0,
+      inPersonConsultationRate: profile?.inPersonConsultationRate
+        ? profile.inPersonConsultationRate / 100
+        : 0,
+      // The platform standard (Admin › Revenue settings) used when the physio has no price set
+      standardVirtualRate: platformDefaultKobo(revenueSettings?.defaultVirtualRateKobo, 600_000) / 100,
+      standardInPersonRate: platformDefaultKobo(revenueSettings?.defaultInPersonRateKobo, 1_000_000) / 100,
 
       // Ratings
       averageRating: profile?.averageRating || 0,

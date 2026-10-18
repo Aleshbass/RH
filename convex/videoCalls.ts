@@ -5,6 +5,7 @@ import { api, internal } from "./_generated/api"
 import { type ActionCtx, type MutationCtx, type QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { publicAppUrl } from './helpers/appUrl';
+import { canJoinVideoCall } from './helpers/callAccess';
 // Stream video imports will be handled in the action
 
 // Hosts a physiotherapist may use as an external meeting link (Google Meet / Zoom).
@@ -278,6 +279,7 @@ export const setMyRsvpStatus = mutation({
     }
 
     if (!call) throw new Error("Call not found")
+    if (!(await canJoinVideoCall(ctx, call, user))) throw new Error("You're not on this call")
 
     const participant = await ctx.db
       .query("videoCallParticipants")
@@ -511,6 +513,9 @@ export const joinVideoCall = mutation({
     if (!call) {
       throw new Error("Call not found for the provided roomId")
     } else {
+      if (!(await canJoinVideoCall(ctx, call, user))) {
+        throw new Error("You're not on this call")
+      }
       // For existing calls, add user to participants if not already included
       if (!call.participants.includes(user._id)) {
         await ctx.db.patch(call._id, {
@@ -1074,16 +1079,24 @@ export const getMyVideoCalls = query({
       throw new Error("User not found")
     }
 
-    // Get all calls where user is involved (as initiator, participant, patient, or physiotherapist)
-    const allCalls = await ctx.db.query("videoCalls").collect()
-
-    // Filter calls where user is involved
-    const myCalls = allCalls.filter(call =>
-      call.initiatorId === user._id ||
-      call.participants?.includes(user._id) ||
-      call.patientId === user._id ||
-      call.physiotherapistId === user._id
-    )
+    // Calls the user started, was booked onto, has an appointment for, or has joined (by index;
+    // appointment calls from marketplace/Joy bookings list the patient only as a participant)
+    const calls = new Map<string, Doc<"videoCalls">>()
+    const add = (call: Doc<"videoCalls"> | null) => { if (call) calls.set(call._id, call) }
+    for (const call of await ctx.db.query("videoCalls").withIndex("by_initiator", (q) => q.eq("initiatorId", user._id)).collect()) add(call)
+    for (const call of await ctx.db.query("videoCalls").withIndex("by_patient_id_and_scheduled", (q) => q.eq("patientId", user._id)).collect()) add(call)
+    const appointments = user.role === "physiotherapist"
+      ? await ctx.db.query("appointments").withIndex("by_physiotherapist_id_and_time", (q) => q.eq("physiotherapistId", user._id)).collect()
+      : await ctx.db.query("appointments").withIndex("by_patient_id_and_time", (q) => q.eq("patientId", user._id)).collect()
+    for (const appointment of appointments) {
+      if (!appointment.videoCallId && !appointment.meetingLink) continue
+      for (const call of await ctx.db.query("videoCalls").withIndex("by_appointment", (q) => q.eq("appointmentId", appointment._id)).collect()) add(call)
+    }
+    for (const joined of await ctx.db.query("videoCallParticipants").withIndex("by_user_id", (q) => q.eq("userId", user._id)).collect()) {
+      add(await ctx.db.get(joined.callId))
+    }
+    // Daily meeting tokens are per-participant secrets; never send them to the list
+    const myCalls = [...calls.values()].map(({ dailyConfig: _dailyConfig, ...call }) => call)
 
     // Enrich calls with patient/physiotherapist data
     const enrichedCalls = await Promise.all(

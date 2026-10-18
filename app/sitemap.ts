@@ -1,164 +1,88 @@
-import { MetadataRoute } from 'next';
+import type { MetadataRoute } from 'next';
+import { api } from '@/convex/_generated/api';
+import { getConvexClient } from '@/lib/convex-client';
+import { SITE_CONFIG } from '@/lib/seo/config';
 
 /**
- * Dynamic Sitemap Generation for RehabifyHealth
- * 
- * This generates an XML sitemap that tells search engines:
- * - All public pages on the site
- * - How often they change (changeFrequency)
- * - Their importance relative to other pages (priority)
- * - When they were last modified
- * 
- * @see https://nextjs.org/docs/app/api-reference/file-conventions/metadata/sitemap
+ * sitemap.xml — the only sitemap source (next-sitemap is no longer run after the build).
+ *
+ * Lists public, indexable pages plus the profile of every physiotherapist patients can book.
+ * Auth pages, redirect stubs (/blog, /faqs, /support, /forum, /physio-register/verify) and
+ * private areas are left out. Check a route still renders real content before adding it.
+ * docs.* and partners.* are separate hosts and are not listed here.
+ *
+ * Regenerated at most hourly; if Convex is unreachable the static pages are still served.
  */
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
-  const currentDate = new Date();
+export const revalidate = 3600;
 
-  // Static routes with SEO priority
-  const staticRoutes: MetadataRoute.Sitemap = [
-    {
-      url: baseUrl,
-      lastModified: currentDate,
-      changeFrequency: 'daily',
-      priority: 1.0, // Highest priority for homepage
-    },
-    {
-      url: `${baseUrl}/sign-up`,
-      lastModified: currentDate,
-      changeFrequency: 'monthly',
-      priority: 0.9, // High priority for conversion page
-    },
-    {
-      url: `${baseUrl}/blog`,
-      lastModified: currentDate,
-      changeFrequency: 'daily',
-      priority: 0.8, // Important for SEO content
-    },
-    {
-      url: `${baseUrl}/learn`,
-      lastModified: currentDate,
-      changeFrequency: 'weekly',
-      priority: 0.8, // MSK Specialist Program (cohort dates change per intake)
-    },
-    // Legal pages - HTML format for better SEO and accessibility
-    {
-      url: `${baseUrl}/terms-and-conditions`,
-      lastModified: new Date('2025-10-02'),
-      changeFrequency: 'yearly',
-      priority: 0.5, // Increased priority for HTML pages
-    },
-    {
-      url: `${baseUrl}/privacy-policy`,
-      lastModified: new Date('2025-10-02'),
-      changeFrequency: 'yearly',
-      priority: 0.5,
-    },
-    {
-      url: `${baseUrl}/payment-policy`,
-      lastModified: new Date('2025-10-02'),
-      changeFrequency: 'yearly',
-      priority: 0.5,
-    },
-    // Add more public routes as your site grows
-    // Examples:
-    // {
-    //   url: `${baseUrl}/about`,
-    //   lastModified: currentDate,
-    //   changeFrequency: 'monthly',
-    //   priority: 0.7,
-    // },
-    // {
-    //   url: `${baseUrl}/pricing`,
-    //   lastModified: currentDate,
-    //   changeFrequency: 'weekly',
-    //   priority: 0.8,
-    // },
-    // {
-    //   url: `${baseUrl}/how-it-works`,
-    //   lastModified: currentDate,
-    //   changeFrequency: 'monthly',
-    //   priority: 0.7,
-    // },
-    // {
-    //   url: `${baseUrl}/contact`,
-    //   lastModified: currentDate,
-    //   changeFrequency: 'monthly',
-    //   priority: 0.6,
-    // },
-  ];
+const CONVEX_TIMEOUT_MS = 8000;
 
-  // TODO: Add dynamic routes from your database
-  // Examples of what you can add when you have the data:
-  
-  // 1. Blog posts (if you have a blog)
-  // const blogPosts = await getBlogPosts();
-  // const blogRoutes: MetadataRoute.Sitemap = blogPosts.map((post) => ({
-  //   url: `${baseUrl}/blog/${post.slug}`,
-  //   lastModified: post.updatedAt || post.createdAt,
-  //   changeFrequency: 'weekly',
-  //   priority: 0.6,
-  // }));
+type StaticRoute = {
+  path: string;
+  changeFrequency: NonNullable<MetadataRoute.Sitemap[number]['changeFrequency']>;
+  priority: number;
+  lastModified?: string;
+};
 
-  // 2. Public physiotherapist profiles (if you want them indexed)
-  // const physiotherapists = await getPublicPhysiotherapists();
-  // const physioRoutes: MetadataRoute.Sitemap = physiotherapists.map((physio) => ({
-  //   url: `${baseUrl}/physiotherapists/${physio.id}`,
-  //   lastModified: physio.updatedAt,
-  //   changeFrequency: 'weekly',
-  //   priority: 0.5,
-  // }));
+const STATIC_ROUTES: StaticRoute[] = [
+  { path: '', changeFrequency: 'daily', priority: 1.0 },
+  { path: '/find-a-physio', changeFrequency: 'daily', priority: 0.9 },
+  { path: '/start-treatment', changeFrequency: 'monthly', priority: 0.8 },
+  { path: '/pricing', changeFrequency: 'monthly', priority: 0.8 },
+  { path: '/about', changeFrequency: 'monthly', priority: 0.7 },
+  { path: '/meet-joy', changeFrequency: 'monthly', priority: 0.6 },
+  { path: '/payment', changeFrequency: 'monthly', priority: 0.5 },
+  { path: '/platform/patients', changeFrequency: 'monthly', priority: 0.6 },
+  { path: '/platform/family', changeFrequency: 'monthly', priority: 0.5 },
+  { path: '/platform/physiotherapists', changeFrequency: 'monthly', priority: 0.6 },
+  { path: '/platform/clinics', changeFrequency: 'monthly', priority: 0.6 },
+  { path: '/partnerships', changeFrequency: 'monthly', priority: 0.6 },
+  { path: '/physio-register', changeFrequency: 'weekly', priority: 0.6 },
+  { path: '/learn', changeFrequency: 'weekly', priority: 0.7 }, // MSK Specialist Program (cohort dates change per intake)
+  // Policies
+  { path: '/terms-and-conditions', changeFrequency: 'yearly', priority: 0.3, lastModified: '2025-10-02' },
+  { path: '/privacy-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2025-10-02' },
+  { path: '/payment-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2025-10-02' },
+  { path: '/consultation-booking-policy', changeFrequency: 'yearly', priority: 0.3, lastModified: '2026-09-22' },
+  { path: '/payout-policy', changeFrequency: 'yearly', priority: 0.3 },
+];
 
-  // 3. Educational content/resources
-  // const resources = await getResources();
-  // const resourceRoutes: MetadataRoute.Sitemap = resources.map((resource) => ({
-  //   url: `${baseUrl}/resources/${resource.slug}`,
-  //   lastModified: resource.updatedAt,
-  //   changeFrequency: 'monthly',
-  //   priority: 0.5,
-  // }));
-
-  return [
-    ...staticRoutes,
-    // ...blogRoutes,
-    // ...physioRoutes,
-    // ...resourceRoutes,
-  ];
+/** User ids of every physiotherapist whose public profile can be booked (same rule as /find-a-physio). */
+async function bookablePhysioIds(): Promise<string[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const query = getConvexClient().query(api.marketplace.search.searchPhysiotherapists, {
+      limit: 5000,
+      offset: 0,
+    });
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), CONVEX_TIMEOUT_MS);
+    });
+    const result = await Promise.race([query, timeout]);
+    return result ? result.results.map((physio) => physio.id) : [];
+  } catch {
+    // Convex unreachable or not configured (e.g. local build): static pages only
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-/**
- * SITEMAP BEST PRACTICES:
- * 
- * 1. PRIORITY GUIDELINES:
- *    - 1.0: Homepage only
- *    - 0.8-0.9: Key conversion pages (signup, pricing)
- *    - 0.6-0.7: Important content (blog, about, services)
- *    - 0.4-0.5: Secondary pages (individual blog posts, profiles)
- * 
- * 2. CHANGE FREQUENCY:
- *    - 'always': Real-time content (rarely used)
- *    - 'hourly': Very dynamic content
- *    - 'daily': Frequently updated (blog index, homepage)
- *    - 'weekly': Regular updates (blog posts, profiles)
- *    - 'monthly': Occasional updates (about, pricing)
- *    - 'yearly': Static content (legal pages)
- *    - 'never': Archived content
- * 
- * 3. SIZE LIMITS:
- *    - Max 50,000 URLs per sitemap
- *    - Max 50MB uncompressed
- *    - For larger sites, create a sitemap index
- * 
- * 4. WHAT TO INCLUDE:
- *    ✅ All public pages users can access
- *    ✅ Blog posts and articles
- *    ✅ Service/product pages
- *    ✅ Category/archive pages
- * 
- * 5. WHAT TO EXCLUDE:
- *    ❌ Login/signup pages (can include in robots allow though)
- *    ❌ Dashboard/admin pages
- *    ❌ API routes
- *    ❌ Duplicate content
- *    ❌ Low-value pages (thank you pages, etc.)
- */
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const baseUrl = SITE_CONFIG.url;
+
+  const staticEntries: MetadataRoute.Sitemap = STATIC_ROUTES.map((route) => ({
+    url: `${baseUrl}${route.path}`,
+    changeFrequency: route.changeFrequency,
+    priority: route.priority,
+    ...(route.lastModified && { lastModified: new Date(route.lastModified) }),
+  }));
+
+  const physioEntries: MetadataRoute.Sitemap = (await bookablePhysioIds()).map((id) => ({
+    url: `${baseUrl}/find-a-physio/${id}`,
+    changeFrequency: 'weekly',
+    priority: 0.6,
+  }));
+
+  return [...staticEntries, ...physioEntries];
+}

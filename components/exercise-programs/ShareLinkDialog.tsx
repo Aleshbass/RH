@@ -11,7 +11,9 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { primaryButtonClass } from '@/components/physio/ui'
+import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { programError } from './errors'
 
 type Expiry = 'plan' | '7' | '30' | '90'
 type Result = { url: string; message: string; whatsappUrl: string; expiresAt: number; pinSource: 'phone' | 'custom'; pinHint: string }
@@ -74,7 +76,8 @@ export function ShareLinkDialog({
       })
       setResult(res)
     } catch (error) {
-      toast.error((error as Error).message?.replace(/^.*ConvexError: /, '') || 'Couldn’t create the link')
+      playSound('error')
+      toast.error(programError(error, 'Couldn’t create the link. Please try again.'))
     } finally {
       setBusy(false)
     }

@@ -9,6 +9,13 @@ import { useEffect, useState } from 'react'
 import { User } from '@/app/types'
 import PendingApprovalPage from '@/components/dashboard/shared/PendingApprovalPage'
 import { Button } from '@/components/ui/button'
+import {
+  CLINIC_PORTAL_HOME,
+  PHYSIO_PORTAL_HOME,
+  clinicianBelongsInClinicPortal,
+  isClinicClinician,
+  isClinicFrontDesk,
+} from '@/components/clinic/clinician-routing'
 
 type UserRole = 'physiotherapist' | 'clinic_owner' | 'patient' | 'family_member' | 'doctor' | 'admin';
 
@@ -24,6 +31,12 @@ export default function DashboardPage() {
     api.queries.checkDashboardAccess,
     isLoaded && isSignedIn ? {} : "skip"
   )
+  // Clinic clinicians: the same approval the physio portal reads, so both agree where they belong
+  const isClinicianOnTeam = isClinicClinician(user as unknown as { clinicId?: string; role?: string } | null | undefined)
+  const physioSetup = useQuery(
+    api.physioSetup.getMySetupStatus,
+    isLoaded && isSignedIn && isClinicianOnTeam ? {} : "skip"
+  ) as { approvalStatus: string | null } | null | undefined
   const [isRedirecting, setIsRedirecting] = useState(false)
 
   // Handle redirects based on user role and approval status
@@ -38,15 +51,25 @@ export default function DashboardPage() {
 
     if (user === null) return // Will show error message below
 
-    // Clinic team members work in their clinic's dashboard: front-desk staff always, and
-    // clinicians until they've finished physio onboarding of their own
+    // Clinic team members (components/clinic/clinician-routing.ts): front-desk staff work in the
+    // clinic portal; clinicians do too unless they have their own approved Rehabify physio account,
+    // in which case they land on the physio portal and switch to the clinic from its sidebar.
     const clinicTeam = user as unknown as { clinicId?: string; role?: string; onboarded?: boolean }
-    if (
-      clinicTeam.clinicId &&
-      (clinicTeam.role === 'clinic_staff' || (clinicTeam.role === 'physiotherapist' && !clinicTeam.onboarded))
-    ) {
+    if (isClinicFrontDesk(clinicTeam)) {
       if (!isRedirecting) setIsRedirecting(true)
-      router.replace('/dashboard/clinic')
+      router.replace(CLINIC_PORTAL_HOME)
+      return
+    }
+    if (isClinicClinician(clinicTeam)) {
+      const approvalStatus = physioSetup === undefined ? undefined : (physioSetup?.approvalStatus ?? null)
+      if (clinicianBelongsInClinicPortal(clinicTeam, approvalStatus)) {
+        if (!isRedirecting) setIsRedirecting(true)
+        router.replace(CLINIC_PORTAL_HOME)
+        return
+      }
+      if (approvalStatus === undefined) return // Still loading
+      if (!isRedirecting) setIsRedirecting(true)
+      router.replace(PHYSIO_PORTAL_HOME)
       return
     }
 
@@ -113,7 +136,7 @@ export default function DashboardPage() {
           router.replace('/role-selection')
       }
     }
-  }, [isLoaded, isSignedIn, user, dashboardAccess, isRedirecting, router])
+  }, [isLoaded, isSignedIn, user, dashboardAccess, physioSetup, isRedirecting, router])
 
   // Loading state while checking auth and user data
   if (!isLoaded || user === undefined || dashboardAccess === undefined) {
@@ -142,6 +165,18 @@ export default function DashboardPage() {
           <Button onClick={() => router.push('/sign-in')}>
             Sign In Again
           </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Clinic team members are always sent on to a portal (see the effect above)
+  if (isRedirecting || isClinicianOnTeam || isClinicFrontDesk(user as unknown as { clinicId?: string; role?: string })) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600">Redirecting to your dashboard...</p>
         </div>
       </div>
     )

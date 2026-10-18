@@ -6,6 +6,8 @@ degrees; see rh_pose.JOINTS for the sign conventions. Every clip still needs sig
 from a licensed physiotherapist before patients see it.
 """
 
+from mathutils import Vector
+
 import rh_pose as R
 
 STAND = {}
@@ -419,6 +421,96 @@ def bird_dog(side="L"):
     return act, report
 
 
+# ─── Knee and ankle pack (Oct 2026) ──────────────────────────────────────────────────────
+
+SIDE_NAME = {"L": "Left", "R": "Right"}
+OTHER = {"L": "R", "R": "L"}
+PALM = ("HandMiddle1", "HandPinky1", "HandIndex1")
+
+
+def foot_targets(side, shift=(0.0, 0.0, 0.0), p=None):
+    """Ankle and ball-of-foot points of one foot in pose p (neutral standing by default), moved by shift."""
+    s = SIDE_NAME[side]
+    pts = R.points((f"{s}Foot", f"{s}ToeBase"), p)
+    return {b: v + Vector(shift) for b, v in pts.items()}
+
+
+def leg_params(side, *extra):
+    return [f"hip_flex_{side}", f"knee_flex_{side}", f"ankle_plantar_{side}", *[f"{e}_{side}" for e in extra]]
+
+
+def wall_arms(flex, elbow, wrist, dev=0.0, abd=-2.0, sides=("L", "R")):
+    """Arms reaching forward with the palms facing forward, for hands flat on a wall in front."""
+    p = {}
+    for s in sides:
+        p.update({f"forearm_pron_{s}": 90, f"wrist_ext_{s}": wrist, f"wrist_dev_{s}": dev, f"elbow_flex_{s}": elbow,
+                  f"arm_{s}": {"flex": flex, "abd": abd}})
+    return p
+
+
+def palms_on_wall(pose, sides=("L", "R")):
+    """Palm contact points in `pose`, the y of a wall face just in front of them, and the reach
+    that keeps the palms there (shoulder and elbow place the wrist, then the wrist squares the palm)."""
+    names = []
+    for s in sides:
+        names += [f"{SIDE_NAME[s]}Hand"] + [f"{SIDE_NAME[s]}{b}" for b in PALM]
+    contact = R.points(names, pose)
+    face = min(contact[f"{SIDE_NAME[s]}HandMiddle1"].y for s in sides) - 0.016
+    reach = []
+    for s in sides:
+        n = SIDE_NAME[s]
+        reach.append(([(f"arm_{s}", "flex"), (f"arm_{s}", "abd"), f"elbow_flex_{s}"], {f"{n}Hand": contact[f"{n}Hand"]}))
+        reach.append(([f"wrist_ext_{s}", f"forearm_pron_{s}", f"wrist_dev_{s}"], {f"{n}{b}": contact[f"{n}{b}"] for b in PALM}))
+    return contact, face, reach
+
+
+def settle(p, locks, reach, rounds=2):
+    """Solve a key pose once so animation samples near it start from a pose that already fits."""
+    for _ in range(rounds):
+        if locks:
+            p = R.lock(p, locks)
+        for params, targets in reach:
+            p = R.solve(p, params, targets, iters=25)
+    return p
+
+
+def calf_stretch(side="L"):
+    """Hands on a wall, the leg being stretched (side) back with its heel down. With the back knee
+    straight, lean the hips towards the wall to stretch the upper calf (gastrocnemius); hold. Ease
+    off, then bend the back knee, heel still down, to stretch the lower calf (soleus); hold. 15.5 s."""
+    import rh_props as P
+
+    front = OTHER[side]
+    tilt = 8
+    back_t = foot_targets(side, (0, 0.22, 0))
+    front_t = foot_targets(front, (0, -0.22, 0))
+
+    def stance(hip, knee, arms):
+        # Authored with the left leg back. Ankle angle keeps the back foot flat: ankle = hip - knee - tilt,
+        # so the back ankle's dorsiflexion is tilt - hip + knee.
+        p = {"root": [("x", tilt)], "hip_flex_L": hip, "knee_flex_L": knee, "ankle_plantar_L": hip - knee - tilt,
+             "hip_flex_R": 30, "knee_flex_R": 24, "ankle_plantar_R": 6 - tilt,
+             "neck_flex": -0.4 * tilt, "head_flex": -0.5 * tilt, **arms}
+        return _side(p, side)
+
+    front_reach = [(leg_params(front), front_t)]
+    # The upright start is the furthest the body gets from the wall: hands and front foot are placed
+    # from it, so leaning in only ever bends the elbows and front knee more.
+    start = settle(stance(-5, 0, wall_arms(96 + tilt, 4, 80)), back_t, front_reach)   # 13 deg dorsiflexion
+    contact, face, arm_reach = palms_on_wall(start)
+    reach = front_reach + arm_reach
+    gastroc = settle(stance(-10, 0, wall_arms(100, 40, 70)), back_t, reach)            # 18 deg, knee straight
+    soleus = settle(stance(2, 22, wall_arms(100, 40, 70)), back_t, reach)              # 28 deg, knee bent
+    P.clear()
+    wall = P.wall(face_y=face)
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_calf_stretch_{side}", start, [
+        (gastroc, 60), (gastroc, 120, hold), (start, 45), (soleus, 60), (soleus, 120, hold), (start, 45), (start, 15, hold),
+    ], locks=back_t, reach=reach)
+    report["props"] = [wall]
+    return act, report
+
+
 BUILDERS = {
     "mini_squat": mini_squat,
     "sit_to_stand": sit_to_stand,
@@ -434,4 +526,5 @@ BUILDERS = {
     "clamshell": clamshell,
     "cat_camel": cat_camel,
     "bird_dog": bird_dog,
+    "calf_stretch": calf_stretch,
 }

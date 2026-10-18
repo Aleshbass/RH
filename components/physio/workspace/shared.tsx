@@ -11,6 +11,7 @@ export type EpisodeSource =
   | 'booking_link'
   | 'clinic'
   | 'invite'
+  | 'joy_whatsapp'
   | 'other'
 
 export type Outcome = 'goals_met' | 'partially_met' | 'not_met' | 'referred_on' | 'stopped_attending'
@@ -104,6 +105,7 @@ export const SOURCE_LABELS: Record<EpisodeSource, string> = {
   booking_link: 'Booking link',
   clinic: 'Clinic',
   invite: 'Invited',
+  joy_whatsapp: 'Joy · WhatsApp',
   other: 'Other',
 }
 

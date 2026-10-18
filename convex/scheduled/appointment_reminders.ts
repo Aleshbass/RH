@@ -40,6 +40,8 @@ export const sendDailyAppointmentReminders = internalMutation({
         const patient = await ctx.db.get(appt.patientId);
         const physio = await ctx.db.get(appt.physiotherapistId);
         if (!patient || !physio || !patient.email) continue;
+        // Patients can switch reminders off in their settings
+        if (patient.notificationPreferences?.appointmentReminders === false) continue;
 
         // Compute names and strings
         const patientName = `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || patient.email;

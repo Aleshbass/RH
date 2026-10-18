@@ -9,23 +9,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 import { useClinicAccess } from '@/components/clinic/ClinicPreviewContext'
 import { fieldClass, isPreviewId } from '@/components/clinic/patients/patient-record-shared'
-import { FULL_ACCESS, roleLabel, teamError, type ClinicRole } from './team-shared'
+import {
+  FULL_ACCESS,
+  defaultAccessDescription,
+  defaultAccessLabel,
+  roleLabel,
+  teamError,
+  type ClinicRole,
+  type TeamMemberKind,
+} from './team-shared'
 
 /**
  * A team member's dashboard role. The owner picks it from a compact select;
- * everyone else just sees the name.
+ * everyone else just sees the name. With no role, clinicians get their clinical pages
+ * (Appointments, Patients) and front-desk staff every page.
  */
 export function MemberRoleSelect({
   memberId,
   memberName,
   roleId,
   roles,
+  kind = 'clinician',
   className,
 }: {
   memberId: Id<'users'>
   memberName: string
   roleId: Id<'clinicRoles'> | null | undefined
   roles: ClinicRole[] | undefined
+  kind?: TeamMemberKind
   className?: string
 }) {
   const { isOwner, isStaff, isLoaded, requireFullAccess } = useClinicAccess()
@@ -33,7 +44,7 @@ export function MemberRoleSelect({
   const [saving, setSaving] = useState(false)
 
   const current = roleId && roles?.some((r) => r._id === roleId) ? String(roleId) : FULL_ACCESS
-  const label = roleLabel(roleId, roles)
+  const label = roleLabel(roleId, roles, kind)
 
   // Team members and anyone still loading get a plain label
   if (!isOwner && (isStaff || !isLoaded)) {
@@ -58,8 +69,8 @@ export function MemberRoleSelect({
       await setMemberRole({ memberId, roleId: nextRoleId })
       toast.success(
         nextRoleId
-          ? `${memberName} now has the ${roleLabel(nextRoleId, roles)} role`
-          : `${memberName} now has full access`
+          ? `${memberName} now has the ${roleLabel(nextRoleId, roles, kind)} role`
+          : `${memberName} now has ${defaultAccessLabel(kind).toLowerCase()} (${defaultAccessDescription(kind).replace(/^Can open /, '')})`
       )
     } catch (err) {
       toast.error(teamError(err, 'Could not change the role'))
@@ -78,7 +89,7 @@ export function MemberRoleSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={FULL_ACCESS}>Full access</SelectItem>
+        <SelectItem value={FULL_ACCESS}>{defaultAccessLabel(kind)}</SelectItem>
         {(roles ?? []).map((role) => (
           <SelectItem key={role._id} value={role._id}>
             {role.name}

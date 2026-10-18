@@ -5,11 +5,12 @@
  * pending review and declined states. Extracted unchanged from the original portal page
  * (except: a failed logo upload no longer submits a temporary blob: URL).
  */
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from "react";
 import Link from "next/link";
 import NextImage from "next/image";
 import { useMutation } from "convex/react";
-import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
+import { UserButton, useUser } from "@clerk/nextjs";
+import { authRoutes } from "@/components/auth/authConfig";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -44,8 +45,18 @@ type PartnerSummaryLite = {
   logoUrl?: string | null;
 } | null | undefined;
 
+const noSubscribe = () => () => undefined;
+
 /** Signed-out visitors. */
 export function PartnerGateway() {
+    // Partner sign-in/up pages return to /partners/portal. On partners.* they live at
+    // /sign-in and /sign-up, since the middleware rewrites every other path to the portal.
+    const partnersHost = useSyncExternalStore(
+      noSubscribe,
+      () => window.location.hostname.toLowerCase().startsWith("partners."),
+      () => false,
+    );
+    const authLinks = authRoutes("partner", partnersHost);
     return (
       <div className="min-h-screen py-16 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto flex flex-col items-center justify-center font-sans antialiased">
         {/* Apple-style floating hero card */}
@@ -79,29 +90,21 @@ export function PartnerGateway() {
 
           {/* Primary Authentication Action Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 w-full max-w-md pt-2">
-            <SignInButton
-              mode="modal"
-              fallbackRedirectUrl="/partners/portal"
-              forceRedirectUrl="/partners/portal"
+            <Link
+              href={authLinks.signIn}
+              className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
-              <button className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#002e2c] text-[#FAF6E7] font-semibold text-sm hover:bg-[#004744] active:scale-[0.98] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer">
-                <Lock className="w-4 h-4 text-emerald-400" />
-                <span>Sign In to Portal</span>
-              </button>
-            </SignInButton>
+              <Lock className="w-4 h-4 text-emerald-400" />
+              <span>Sign In to Portal</span>
+            </Link>
 
-            <SignUpButton
-              mode="modal"
-              fallbackRedirectUrl="/partners/portal"
-              forceRedirectUrl="/partners/portal"
-              signInFallbackRedirectUrl="/partners/portal"
-              signInForceRedirectUrl="/partners/portal"
+            <Link
+              href={authLinks.signUp}
+              className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#FAF6E7]/80 hover:bg-[#FAF6E7] text-[#002e2c] border border-[#002e2c]/15 font-semibold text-sm active:scale-[0.98] transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
             >
-              <button className="w-full sm:flex-1 py-3.5 px-6 rounded-2xl bg-[#FAF6E7]/80 hover:bg-[#FAF6E7] text-[#002e2c] border border-[#002e2c]/15 font-semibold text-sm active:scale-[0.98] transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer">
-                <Building2 className="w-4 h-4 text-[#005b57]" />
-                <span>Apply for Partner Access</span>
-              </button>
-            </SignUpButton>
+              <Building2 className="w-4 h-4 text-[#005b57]" />
+              <span>Apply for Partner Access</span>
+            </Link>
           </div>
 
           <div className="pt-2 text-xs text-[#52706e] flex items-center justify-center gap-2">

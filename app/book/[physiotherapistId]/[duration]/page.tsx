@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useParams, useRouter } from "next/navigation";
@@ -8,218 +8,213 @@ import { Id } from "@/convex/_generated/dataModel";
 import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
 import Link from "next/link";
+import { motion, useReducedMotion } from "framer-motion";
 import {
-    Loader2,
     ArrowLeft,
     ArrowRight,
-    CheckCircle2,
-    Video,
-    Users,
+    CalendarDays,
+    Check,
+    Loader2,
+    Lock,
     Mail,
+    MapPin,
     Phone,
-    LogIn,
+    User,
+    Video,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import CalendarBookingWidget from "@/components/marketplace/CalendarBookingWidget";
-import PackageSelector, { type SimplePackageBreakdown } from "@/components/marketplace/PackageSelector";
 import { toast } from "sonner";
-import { formatNaira, calculatePaystackInboundGrossAmount } from "@/lib/pricing";
+import { cn } from "@/lib/utils";
+import { calculatePaystackInboundGrossAmount } from "@/lib/pricing";
 import { getReferralPublicCode } from "@/lib/referralCookie";
+import { playSound } from "@/lib/sounds";
+import CalendarBookingWidget, { type AvailableSlot } from "@/components/marketplace/CalendarBookingWidget";
+import { BookingShell, PoweredBy } from "@/components/booking/BookingShell";
+import { BookingBottomSheet } from "@/components/booking/BookingBottomSheet";
+import { PhysioHostCard } from "@/components/booking/PhysioHostCard";
+import { PACKAGE_LABELS, PackagePicker, calcPackage, type PackageSize } from "@/components/booking/PackagePicker";
+import {
+    bookingPricing,
+    formatNaira,
+    initialsOf,
+    looksLikeConvexId,
+    priceRows,
+    readTreatmentPrefs,
+    sessionTypeForDuration,
+    singleSessionPrice,
+    type BookingProfile,
+    type SessionMode,
+    type TreatmentPrefs,
+} from "@/components/booking/booking-shared";
 
 type BookingStep = "select-time" | "select-package" | "details" | "confirm";
 
-// Treatment prefs from onboarding flow
-interface TreatmentPrefs {
-    cityKey: string;
-    areaIndex?: number;
-    areaLabel: string;
-    conditionLabel: string;
-    conditionLevel: string;
-    sessionRate: number;
-    timestamp: number;
+const PENDING_KEY = "pendingBooking";
+
+const fieldClass =
+    "w-full rounded-xl border border-rh-night/15 bg-white px-3.5 py-2.5 text-base text-rh-night placeholder:text-rh-night/40 transition-[border-color,box-shadow] focus:border-rh-night focus:outline-none focus:ring-4 focus:ring-rh-lime/25 sm:text-sm";
+
+const primaryButton =
+    "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rh-lime px-5 text-[15px] font-semibold text-rh-night shadow-[0_10px_24px_-12px_rgba(0,205,15,0.9)] transition-[filter,transform] hover:brightness-95 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-night focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none";
+
+const secondaryButton =
+    "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-rh-night/15 bg-white px-5 text-[15px] font-semibold text-rh-night transition-colors hover:bg-rh-night/[0.04] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime";
+
+function formatDate(timestamp: number) {
+    return new Date(timestamp).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
 
-// Session info based on duration
-function getSessionInfo(duration: number) {
-    if (duration <= 30) {
-        return { title: "Quick Check-in", description: "Brief progress review" };
-    }
-    if (duration <= 45) {
-        return { title: "Follow-up Session", description: "Standard therapy session" };
-    }
-    return { title: "Initial Consultation", description: "Comprehensive assessment & treatment plan" };
+function formatTime(timestamp: number) {
+    return new Date(timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-// Helper: check if a string looks like a valid Convex document ID
-function looksLikeConvexId(value: string): boolean {
-    return /^[a-zA-Z0-9_]+$/.test(value) && value.length > 10;
+function StepDots({ steps, current }: { steps: string[]; current: number }) {
+    return (
+        <ol className="flex items-center gap-1.5" aria-label={`Step ${current + 1} of ${steps.length}`}>
+            {steps.map((label, index) => (
+                <li key={label} className="flex items-center gap-1.5">
+                    <span
+                        className={cn(
+                            "h-1.5 rounded-full transition-all duration-300",
+                            index < current && "w-4 bg-rh-night/40",
+                            index === current && "w-7 bg-rh-lime",
+                            index > current && "w-4 bg-rh-night/10"
+                        )}
+                        aria-hidden
+                    />
+                    <span className="sr-only">
+                        {label}
+                        {index === current ? " (current)" : ""}
+                    </span>
+                </li>
+            ))}
+        </ol>
+    );
 }
 
 export default function BookingPage() {
     const params = useParams();
     const router = useRouter();
+    const reduceMotion = useReducedMotion();
     const { user, isSignedIn } = useUser();
 
     const rawParam = params.physiotherapistId as string;
     const durationParam = params.duration as string;
-    const sessionDuration = durationParam ? parseInt(durationParam) : 60;
+    const parsedDuration = durationParam ? parseInt(durationParam, 10) : 60;
+    const sessionDuration = Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 60;
+    const sessionInfo = useMemo(() => sessionTypeForDuration(sessionDuration), [sessionDuration]);
 
-    // Determine if the URL param is a slug or a raw Convex ID
     const isRawId = looksLikeConvexId(rawParam);
-
-    // Try resolving as a slug (skip if it already looks like a raw Convex ID)
-    const slugResult = useQuery(
-        api.marketplace.search.resolveBookingSlug,
-        isRawId ? "skip" : { slug: rawParam }
-    );
-
-    // Determine the real userId
-    const physiotherapistId: Id<"users"> | null =
-        isRawId
-            ? (rawParam as Id<"users">)
-            : slugResult?.userId ?? null;
-
-    // Get session title and description based on duration
-    const sessionInfo = useMemo(() => getSessionInfo(sessionDuration), [sessionDuration]);
+    const slugResult = useQuery(api.marketplace.search.resolveBookingSlug, isRawId ? "skip" : { slug: rawParam }) as
+        | { userId: Id<"users"> }
+        | null
+        | undefined;
+    const physiotherapistId: Id<"users"> | null = isRawId ? (rawParam as Id<"users">) : slugResult?.userId ?? null;
 
     // State
     const [step, setStep] = useState<BookingStep>("select-time");
-    const [selectedSlot, setSelectedSlot] = useState<{
-        start: number;
-        end: number;
-        duration: number;
-    } | null>(null);
-    const [sessionMode, setSessionMode] = useState<"online" | "in-person">(
-        "online"
-    );
+    const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
+    const [sessionMode, setSessionMode] = useState<SessionMode>("online");
     const [notes, setNotes] = useState("");
     const [patientAddress, setPatientAddress] = useState("");
-    const savedPrefsRef = useRef(false);
     const [treatmentPrefs, setTreatmentPrefs] = useState<TreatmentPrefs | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [selectedPackage, setSelectedPackage] = useState<PackageSize>(1);
+    const savedPrefsRef = useRef(false);
+    const restoredRef = useRef(false);
 
-    // Guest checkout state (for non-signed-in users)
+    // Guest checkout (not signed in)
     const [guestEmail, setGuestEmail] = useState("");
     const [guestPhone, setGuestPhone] = useState("");
     const [guestName, setGuestName] = useState("");
     const [showGuestForm, setShowGuestForm] = useState(false);
 
-    // Package selection state
-    const [selectedPackage, setSelectedPackage] = useState<1 | 4 | 8 | 12>(1);
-    const [packageBreakdown, setPackageBreakdown] = useState<SimplePackageBreakdown | null>(null);
-
-    // Fetch profile — skip until we have a valid user ID
     const profile = useQuery(
         api.marketplace.search.getPhysiotherapistProfile,
         physiotherapistId ? { physiotherapistId } : "skip"
-    );
+    ) as BookingProfile | null | undefined;
+    const revenueSettings = useQuery(api.platformSettings.getPlatformRevenueSettings) as
+        | { paystackFeeBearerInbound?: string }
+        | undefined;
 
-    // Platform revenue settings (for fee bearer logic)
-    const revenueSettings = useQuery(api.platformSettings.getPlatformRevenueSettings);
+    const createBooking = useMutation(api.marketplace.booking.createMarketplaceBooking);
+    const guestCreateBooking = useMutation(api.marketplace.booking.guestCreateMarketplaceBooking);
+    const confirmFreeBooking = useMutation(api.marketplace.booking.confirmFreeMarketplaceBooking);
+    const saveTreatmentPrefs = useMutation(api.marketplace.matching.savePatientTreatmentPrefs);
 
-    // Create booking mutation
-    const createBooking = useMutation(
-        api.marketplace.booking.createMarketplaceBooking
-    );
+    // ── Pricing (mirrors resolveServiceAmountKobo on the server) ──
+    const pricing = useMemo(() => bookingPricing(profile, treatmentPrefs?.sessionRate), [profile, treatmentPrefs]);
+    const packagesAvailable = pricing.kind === "package";
+    const discountPercent = profile?.packageDiscountPercent || 7;
+    const effectivePackage: PackageSize = packagesAvailable ? selectedPackage : 1;
+    const packageBreakdown = pricing.kind === "package" ? calcPackage(pricing.sessionRate, effectivePackage, discountPercent) : null;
+    const packageName = PACKAGE_LABELS[effectivePackage];
 
-    // Guest booking mutation (no auth required)
-    const guestCreateBooking = useMutation(
-        api.marketplace.booking.guestCreateMarketplaceBooking
-    );
+    /** Naira amount sent to the server: 0 lets the server charge the physio's standard rate. */
+    const amountToSend = packageBreakdown ? packageBreakdown.total : pricing.kind === "initial" ? pricing.sessionRate : 0;
+    /** What the patient pays before any processing fee. */
+    const displayBase = packageBreakdown ? packageBreakdown.total : singleSessionPrice(pricing, sessionMode);
 
-    // Confirm a genuinely free session (server re-checks that the physio charges nothing)
-    const confirmFreeBooking = useMutation(
-        api.marketplace.booking.confirmFreeMarketplaceBooking
-    );
-
-    // Save treatment prefs mutation
-    const saveTreatmentPrefs = useMutation(
-        api.marketplace.matching.savePatientTreatmentPrefs
-    );
-
-    // Get the physio's discount percent (default to 7% if not set)
-    const discountPercent = useMemo(() => {
-        if (!profile) return 7;
-        return (profile as any).packageDiscountPercent || 7;
-    }, [profile]);
-
-    // Session rate: prefer formula-calculated rate from patient onboarding,
-    // fall back to physio's manually-set rate if no prefs exist
-    const sessionRate = useMemo(() => {
-        // Use the formula-based rate from /start-treatment onboarding
-        if (treatmentPrefs?.sessionRate && treatmentPrefs.sessionRate > 0) {
-            return treatmentPrefs.sessionRate;
-        }
-        // Fallback: use physio's profile rate
-        if (!profile) return 0;
-        return profile.hourlyRate || 0;
-    }, [treatmentPrefs, profile]);
-
-    // Patient-facing fee surcharge calculation
     const patientBearsFee = revenueSettings?.paystackFeeBearerInbound === "patient";
     const feeSurcharge = useMemo(() => {
-        if (!patientBearsFee) return { grossNaira: 0, feeNaira: 0, applies: false };
-        const baseNaira = packageBreakdown?.total || sessionRate;
-        if (baseNaira <= 0) return { grossNaira: 0, feeNaira: 0, applies: false };
-        const baseKobo = Math.round(baseNaira * 100);
-        const { grossKobo, feeKobo } = calculatePaystackInboundGrossAmount(baseKobo);
-        return {
-            grossNaira: Math.round(grossKobo / 100),
-            feeNaira: Math.round(feeKobo / 100),
-            applies: feeKobo > 0,
-        };
-    }, [patientBearsFee, packageBreakdown, sessionRate]);
+        if (!patientBearsFee || amountToSend <= 0) return { grossNaira: 0, feeNaira: 0, applies: false };
+        const { grossKobo, feeKobo } = calculatePaystackInboundGrossAmount(Math.round(amountToSend * 100));
+        return { grossNaira: Math.round(grossKobo / 100), feeNaira: Math.round(feeKobo / 100), applies: feeKobo > 0 };
+    }, [patientBearsFee, amountToSend]);
+    const totalToPay = feeSurcharge.applies ? feeSurcharge.grossNaira : displayBase;
 
-    // ── Load treatment prefs from localStorage (from /start-treatment) ──
+    const offersOnline = profile?.offersOnlineSessions ?? true;
+    const offersInPerson = profile?.offersInPersonSessions ?? false;
+    const prices = useMemo(() => priceRows(pricing, offersOnline, offersInPerson), [pricing, offersOnline, offersInPerson]);
+
+    // ── Treatment prefs from /start-treatment ──
     useEffect(() => {
-        try {
-            const stored = localStorage.getItem("treatmentPrefs");
-            if (stored) {
-                const prefs = JSON.parse(stored) as TreatmentPrefs;
-                // Only use if less than 24 hours old
-                if (Date.now() - prefs.timestamp < 24 * 60 * 60 * 1000) {
-                    setTreatmentPrefs(prefs);
-                    // Auto-populate notes with condition if notes are empty
-                    if (!notes && prefs.conditionLabel) {
-                        setNotes(`Condition: ${prefs.conditionLabel}`);
-                    }
-                }
-            }
-
-            // Also check for pending booking (returned from sign-in redirect)
-            const pendingBooking = localStorage.getItem("pendingBooking");
-            if (pendingBooking) {
-                const pending = JSON.parse(pendingBooking);
-                if (pending.physiotherapistId === physiotherapistId) {
-                    // Restore booking state
-                    if (pending.slot) setSelectedSlot(pending.slot);
-                    if (pending.sessionMode) setSessionMode(pending.sessionMode);
-                    if (pending.notes) setNotes(pending.notes);
-                    if (pending.patientAddress) setPatientAddress(pending.patientAddress);
-                    if (pending.selectedPackage) setSelectedPackage(pending.selectedPackage);
-                    if (pending.packageBreakdown) setPackageBreakdown(pending.packageBreakdown);
-                    if (pending.slot) setStep("details");
-                }
-                localStorage.removeItem("pendingBooking");
-            }
-        } catch {
-            // localStorage may not be available
+        const prefs = readTreatmentPrefs();
+        if (prefs) {
+            setTreatmentPrefs(prefs);
+            if (prefs.conditionLabel) setNotes((current) => current || `Condition: ${prefs.conditionLabel}`);
         }
     }, []);
 
+    // ── Restore a booking in progress after signing in ──
+    useEffect(() => {
+        if (restoredRef.current || !physiotherapistId) return;
+        restoredRef.current = true;
+        try {
+            const stored = localStorage.getItem(PENDING_KEY);
+            if (!stored) return;
+            localStorage.removeItem(PENDING_KEY);
+            const pending = JSON.parse(stored);
+            if (pending.physiotherapistId !== physiotherapistId || pending.sessionDuration !== sessionDuration) return;
+            if (pending.slot && pending.slot.start > Date.now()) {
+                setSelectedSlot(pending.slot);
+                setStep("details");
+            }
+            if (pending.sessionMode === "online" || pending.sessionMode === "in-person") setSessionMode(pending.sessionMode);
+            if (typeof pending.notes === "string") setNotes(pending.notes);
+            if (typeof pending.patientAddress === "string") setPatientAddress(pending.patientAddress);
+            if ([1, 4, 8, 12].includes(pending.selectedPackage)) setSelectedPackage(pending.selectedPackage);
+        } catch {
+            // localStorage unavailable
+        }
+    }, [physiotherapistId, sessionDuration]);
+
+    // Coming Back from Paystack can restore this page from the back-forward cache mid-"Processing…"
+    useEffect(() => {
+        const onPageShow = (event: PageTransitionEvent) => {
+            if (event.persisted) setIsProcessing(false);
+        };
+        window.addEventListener("pageshow", onPageShow);
+        return () => window.removeEventListener("pageshow", onPageShow);
+    }, []);
+
+    // Physios who only see patients in person
+    useEffect(() => {
+        if (profile && profile.offersOnlineSessions === false && profile.offersInPersonSessions) setSessionMode("in-person");
+    }, [profile]);
+
     // ── Save treatment prefs to DB after sign-in ──
     useEffect(() => {
-        if (
-            isSignedIn &&
-            treatmentPrefs &&
-            !savedPrefsRef.current &&
-            treatmentPrefs.cityKey &&
-            treatmentPrefs.areaIndex !== undefined
-        ) {
+        if (isSignedIn && treatmentPrefs && !savedPrefsRef.current && treatmentPrefs.cityKey && treatmentPrefs.areaIndex !== undefined) {
             savedPrefsRef.current = true;
             saveTreatmentPrefs({
                 cityKey: treatmentPrefs.cityKey,
@@ -228,91 +223,54 @@ export default function BookingPage() {
                 conditionLabel: treatmentPrefs.conditionLabel,
                 conditionLevel: treatmentPrefs.conditionLevel,
                 sessionRate: treatmentPrefs.sessionRate,
-            }).catch((err) => {
-                console.error("Failed to save treatment prefs:", err);
+            }).catch(() => {
+                // Non-critical: prefs only personalise future matching
             });
         }
     }, [isSignedIn, treatmentPrefs, saveTreatmentPrefs]);
 
-    // Initialize default package breakdown when profile loads
-    useEffect(() => {
-        if (sessionRate > 0 && !packageBreakdown) {
-            setPackageBreakdown({
-                sessions: 1,
-                sessionRate,
-                discountPercent: 0,
-                discountedRate: sessionRate,
-                total: sessionRate,
-                normalTotal: sessionRate,
-                saves: 0,
-            });
-        }
-    }, [sessionRate, packageBreakdown]);
-
-    // Still loading: slug resolution in progress or profile query pending
-    const isLoading =
-        (!isRawId && slugResult === undefined) ||
-        (physiotherapistId !== null && profile === undefined);
+    const isLoading = (!isRawId && slugResult === undefined) || (physiotherapistId !== null && profile === undefined);
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#005b57] flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-teal-300" />
-            </div>
-        );
-    }
-
-    if (!profile) {
-        return (
-            <div className="min-h-screen bg-[#005b57] flex items-center justify-center">
-                <div className="text-center">
-                    <p className="text-white/65 mb-4">Physiotherapist not found</p>
-                    <Button
-                        onClick={() => router.push("/find-a-physio")}
-                        variant="outline"
-                        className="border-white/15 text-white/80 hover:bg-white/[0.07]"
-                    >
-                        <ArrowLeft className="h-4 w-4 mr-2" />
-                        Back to Search
-                    </Button>
+            <BookingShell wide>
+                <div className="flex min-h-[50vh] items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-rh-lime" aria-label="Loading" />
                 </div>
-            </div>
+            </BookingShell>
         );
     }
 
-    const handleSlotSelect = (slot: {
-        start: number;
-        end: number;
-        duration: number;
-    }) => {
-        setSelectedSlot(slot);
-    };
+    if (!profile || !physiotherapistId) {
+        return (
+            <BookingShell>
+                <div className="rounded-[28px] bg-white p-8 text-center text-rh-night">
+                    <p className="mb-5 text-rh-night/70">This physiotherapist isn&#39;t taking bookings right now.</p>
+                    <button type="button" onClick={() => router.push("/find-a-physio")} className={secondaryButton}>
+                        <ArrowLeft className="h-4 w-4" />
+                        Find another physio
+                    </button>
+                </div>
+            </BookingShell>
+        );
+    }
 
-    const goToPackageSelection = () => {
+    const steps = packagesAvailable ? ["Time", "Plan", "Details"] : ["Time", "Details"];
+    const stepIndex = step === "select-time" ? 0 : step === "select-package" ? 1 : steps.length - 1;
+    const modeLabel = sessionMode === "online" ? "Video call" : "In person";
+
+    const goNext = () => {
         if (!selectedSlot) {
-            toast.error("Please select a time slot");
+            toast.error("Please pick a time");
             return;
         }
-        setStep("select-package");
-    };
-
-    const goToDetails = () => {
-        setStep("details");
+        setStep(packagesAvailable ? "select-package" : "details");
     };
 
     const goBack = () => {
-        if (step === "select-package") {
-            setStep("select-time");
-        } else if (step === "details") {
-            setStep("select-package");
-        } else if (step === "confirm") {
-            setStep("details");
-        }
-    };
-
-    const handlePackageSelect = (pkg: 1 | 4 | 8 | 12, breakdown: SimplePackageBreakdown) => {
-        setSelectedPackage(pkg);
-        setPackageBreakdown(breakdown);
+        setShowGuestForm(false);
+        if (step === "select-package") setStep("select-time");
+        else if (step === "details") setStep(packagesAvailable ? "select-package" : "select-time");
     };
 
     const initializePaystackPayment = async (
@@ -328,63 +286,42 @@ export default function BookingPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 bookingId,
-                amount: amountNaira, // naira — API converts to kobo
+                amount: amountNaira, // informational — the route charges the booking's own amount
                 email,
                 phone: phone || null,
                 name: name || null,
                 ...(feeBreakdown || {}),
             }),
         });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Paystack init failed:", response.status, errorText);
-            throw new Error(`Payment initialization failed: ${response.statusText}`);
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.success || !data.authorization_url) {
+            throw new Error(data?.error || "We couldn't start the payment. Please try again.");
         }
-
-        const data = await response.json();
-
-        if (data.success && data.authorization_url) {
-            window.location.href = data.authorization_url;
-        } else {
-            throw new Error(data.error || "Failed to initialize payment");
-        }
+        window.location.href = data.authorization_url;
     };
-
-    const packageLabels: Record<number, string> = {
-        1: "Single Session",
-        4: "Starter Package",
-        8: "Complete Care",
-        12: "Full Recovery",
-    };
-    const packageName = packageLabels[selectedPackage] || "Package";
 
     const processBookingAndPay = async (email: string, phone?: string, name?: string) => {
         if (!selectedSlot) {
-            toast.error("Please select a time slot");
+            toast.error("Please pick a time");
             return;
         }
-
         if (sessionMode === "in-person" && !patientAddress.trim()) {
-            toast.error("Please provide your exact address for in-person visits.");
+            toast.error("Please add your address for the home visit.");
             return;
         }
-
-        const baseAmount = packageBreakdown?.total || profile.initialConsultRate || profile.hourlyRate || 0;
-        const totalAmount = feeSurcharge.applies ? feeSurcharge.grossNaira : baseAmount;
 
         setIsProcessing(true);
-
         try {
+            const packageNote = `Package: ${packageName} (${effectivePackage} session${effectivePackage > 1 ? "s" : ""})`;
             const bookingArgs = {
                 physiotherapistId,
-                sessionType: selectedPackage === 1 ? "initial_consult" : "package",
+                sessionType: effectivePackage === 1 ? "initial_consult" : "package",
                 sessionDate: selectedSlot.start,
                 sessionDuration,
                 isOnline: sessionMode === "online",
-                serviceAmount: Math.round(totalAmount * 100), // in kobo
-                patientNotes: notes ? `${notes}\n\nPackage: ${packageName} (${selectedPackage} sessions)` : `Package: ${packageName} (${selectedPackage} sessions)`,
-                packageSessions: selectedPackage,
+                serviceAmount: Math.round((feeSurcharge.applies ? feeSurcharge.grossNaira : amountToSend) * 100), // kobo
+                patientNotes: notes ? `${notes}\n\n${packageNote}` : packageNote,
+                packageSessions: effectivePackage,
                 packageDiscountPercent: discountPercent,
                 patientAddress: sessionMode === "in-person" ? patientAddress : undefined,
                 conditionLabel: treatmentPrefs?.conditionLabel,
@@ -393,39 +330,34 @@ export default function BookingPage() {
                 referralPublicCode: getReferralPublicCode(),
             };
 
-            let result;
-            if (isSignedIn) {
-                result = await createBooking(bookingArgs);
-            } else {
-                result = await guestCreateBooking({
-                    ...bookingArgs,
-                    guestEmail: email,
-                    guestPhone: phone,
-                    guestName: name,
-                });
-            }
+            const result = (isSignedIn
+                ? await createBooking(bookingArgs)
+                : await guestCreateBooking({ ...bookingArgs, guestEmail: email, guestPhone: phone, guestName: name })) as {
+                bookingId: Id<"marketplaceBookings">;
+                fees?: { serviceAmount: number };
+            };
 
             // Free session — only when the server priced the booking at zero
             if (result.fees?.serviceAmount === 0) {
                 await confirmFreeBooking({ bookingId: result.bookingId });
+                playSound("booked");
                 toast.success("Booking confirmed!");
                 setStep("confirm");
                 setIsProcessing(false);
                 return;
             }
 
-            // Initialize Paystack payment
+            const chargedNaira = result.fees?.serviceAmount ? result.fees.serviceAmount / 100 : totalToPay;
             const feeBreakdown = feeSurcharge.applies
-                ? { baseAmount: baseAmount, processingFee: feeSurcharge.feeNaira, feeBearer: "patient" }
+                ? { baseAmount: amountToSend, processingFee: feeSurcharge.feeNaira, feeBearer: "patient" }
                 : undefined;
-            await initializePaystackPayment(result.bookingId, totalAmount, email, phone, name, feeBreakdown);
-        } catch (error: any) {
-            console.error("Booking error:", error);
+            await initializePaystackPayment(result.bookingId, chargedNaira, email, phone, name, feeBreakdown);
+        } catch (error) {
+            const err = error as { data?: unknown; message?: string };
+            playSound("error");
             toast.error("Booking failed", {
                 description:
-                    (typeof error?.data === "string" ? error.data : undefined) ||
-                    error.message ||
-                    "Failed to create booking. Please try again.",
+                    (typeof err?.data === "string" ? err.data : undefined) || err?.message || "We couldn't create the booking. Please try again.",
             });
             setIsProcessing(false);
         }
@@ -433,16 +365,14 @@ export default function BookingPage() {
 
     const handleBooking = async () => {
         if (!selectedSlot) {
-            toast.error("Please select a time slot");
+            toast.error("Please pick a time");
             return;
         }
         if (sessionMode === "in-person" && !patientAddress.trim()) {
-            toast.error("Please provide your exact address for in-person visits.");
+            toast.error("Please add your address for the home visit.");
             return;
         }
-
         if (isSignedIn) {
-            // Signed-in: use Clerk email directly
             const email = user?.primaryEmailAddress?.emailAddress;
             if (!email) {
                 toast.error("No email address found on your account.");
@@ -450,441 +380,427 @@ export default function BookingPage() {
             }
             await processBookingAndPay(email, undefined, user?.fullName || user?.firstName || undefined);
         } else {
-            // Not signed in: show guest form
             setShowGuestForm(true);
         }
     };
 
     const handleGuestPay = async () => {
-        if (!guestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
+        if (!guestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.trim())) {
             toast.error("Please enter a valid email address.");
             return;
         }
         await processBookingAndPay(guestEmail.trim(), guestPhone.trim() || undefined, guestName.trim() || undefined);
     };
 
-    const formatDate = (timestamp: number) => {
-        return new Date(timestamp).toLocaleDateString("en-US", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-        });
+    const rememberBookingForSignIn = () => {
+        try {
+            localStorage.setItem(
+                PENDING_KEY,
+                JSON.stringify({
+                    physiotherapistId,
+                    sessionDuration,
+                    slot: selectedSlot,
+                    sessionMode,
+                    notes,
+                    patientAddress,
+                    selectedPackage: effectivePackage,
+                })
+            );
+        } catch {
+            // Booking just won't be restored
+        }
     };
 
-    const formatTime = (timestamp: number) => {
-        return new Date(timestamp).toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true,
-        });
-    };
+    const signInHref = `/sign-in?redirect=${encodeURIComponent(`/book/${rawParam}/${sessionDuration}`)}`;
+    const ctaLabel = totalToPay > 0 ? (isSignedIn ? `Confirm & pay ${formatNaira(totalToPay)}` : "Continue to payment") : "Book now";
 
-    return (
-        <div className="min-h-screen bg-[#005b57] flex flex-col">
-            <main className="flex-1 flex items-center justify-center px-4 py-8">
-                {/* Step: Select Time */}
-                {step === "select-time" && (
-                    <div className="w-full max-w-5xl space-y-6">
-                        {physiotherapistId && <CalendarBookingWidget
-                            physiotherapistId={physiotherapistId}
-                            physiotherapistName={profile.fullName}
-                            physiotherapistImage={profile.imageUrl}
-                            sessionDuration={sessionDuration}
-                            sessionTitle={sessionInfo.title}
-                            sessionDescription={sessionInfo.description}
-                            offersOnlineSessions={profile.offersOnlineSessions}
-                            timezone="Africa/Lagos"
-                            onSlotSelect={handleSlotSelect}
-                        />}
+    // ── Shared summary for the later steps ──
+    const summary = selectedSlot && (
+        <div className="flex items-start gap-3.5 rounded-2xl bg-rh-canvas/80 p-4 ring-1 ring-inset ring-rh-night/[0.06]">
+            {profile.imageUrl ? (
+                <Image
+                    src={profile.imageUrl}
+                    alt={profile.fullName}
+                    width={44}
+                    height={44}
+                    unoptimized
+                    className="h-11 w-11 shrink-0 rounded-full object-cover ring-1 ring-rh-night/10"
+                />
+            ) : (
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-rh-night text-sm font-semibold text-white" aria-hidden>
+                    {initialsOf(profile.fullName)}
+                </div>
+            )}
+            <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-rh-night">
+                    {sessionInfo.title} <span className="font-normal text-rh-night/55">with {profile.fullName}</span>
+                </p>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-rh-night/75">
+                    <CalendarDays className="h-4 w-4 shrink-0 text-rh-night/45" aria-hidden />
+                    {formatDate(selectedSlot.start)}
+                </p>
+                <p className="mt-0.5 pl-[22px] text-sm font-semibold tabular-nums text-rh-night">
+                    {formatTime(selectedSlot.start)} – {formatTime(selectedSlot.end)}
+                    <span className="font-normal text-rh-night/55"> · {sessionDuration} min</span>
+                </p>
+            </div>
+            <button
+                type="button"
+                onClick={() => {
+                    setShowGuestForm(false);
+                    setStep("select-time");
+                }}
+                className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-rh-night underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime"
+            >
+                Change
+            </button>
+        </div>
+    );
 
-                        {/* Continue Button */}
-                        {selectedSlot && (
-                            <div className="flex justify-end">
-                                <Button
-                                    onClick={goToPackageSelection}
-                                    className="bg-white text-[#002e2c] hover:bg-emerald-50 px-8"
-                                >
-                                    Continue
-                                    <ArrowRight className="w-4 h-4 ml-2" />
-                                </Button>
-                            </div>
-                        )}
-                    </div>
-                )}
+    const changeSessionLink = (
+        <Link
+            href={`/book/${rawParam}`}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-white/75 ring-1 ring-white/15 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime"
+        >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            All sessions
+        </Link>
+    );
 
-                {/* Step: Select Package */}
-                {step === "select-package" && selectedSlot && (
-                    <div className="max-w-lg mx-auto w-full">
-                        <div className="bg-[#00443e] rounded-xl p-5 sm:p-6 border border-white/10">
-                            {/* Physio header mini */}
-                            <div className="flex items-center gap-3 mb-5 pb-4 border-b border-white/10">
-                                {profile.imageUrl && (
-                                    <Image
-                                        src={profile.imageUrl}
-                                        alt={profile.fullName}
-                                        width={40}
-                                        height={40}
-                                        className="rounded-full object-cover"
-                                    />
-                                )}
-                                <div>
-                                    <p className="text-sm font-medium text-white">
-                                        {profile.fullName}
+    // ── Step: pick a time ──
+    if (step === "select-time") {
+        return (
+            <BookingShell wide topRight={changeSessionLink} className={selectedSlot ? "pb-56 lg:pb-14" : undefined}>
+                <CalendarBookingWidget
+                    physiotherapistId={physiotherapistId}
+                    physiotherapistName={profile.fullName}
+                    physiotherapistImage={profile.imageUrl}
+                    sessionDuration={sessionDuration}
+                    sessionTitle={sessionInfo.title}
+                    sessionDescription={sessionInfo.description}
+                    offersOnlineSessions={offersOnline}
+                    offersInPersonSessions={offersInPerson}
+                    host={<PhysioHostCard profile={profile} tone="light" />}
+                    prices={prices}
+                    selectedSlot={selectedSlot}
+                    onSlotSelect={setSelectedSlot}
+                    onContinue={goNext}
+                    continueLabel="Next"
+                />
+                <PoweredBy />
+
+                <BookingBottomSheet open={Boolean(selectedSlot)} label="Selected time">
+                    {selectedSlot && (
+                        <div className="text-rh-night dark:text-white">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-rh-night/50 dark:text-white/50">
+                                        {sessionInfo.title} · {sessionDuration} min
                                     </p>
-                                    <p className="text-xs text-white/50">
-                                        {formatDate(selectedSlot.start)} · {formatTime(selectedSlot.start)}
+                                    <p className="mt-1 truncate text-base font-semibold">
+                                        {new Date(selectedSlot.start).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+                                        <span className="tabular-nums"> · {formatTime(selectedSlot.start)}</span>
+                                    </p>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                    <p className="text-lg font-bold tabular-nums">
+                                        {formatNaira(singleSessionPrice(pricing, sessionMode))}
+                                    </p>
+                                    <p className="text-[11px] text-rh-night/55 dark:text-white/55">
+                                        {pricing.kind === "standard" && offersOnline && offersInPerson && pricing.video !== pricing.inPerson
+                                            ? `video · ${formatNaira(pricing.inPerson)} in person`
+                                            : "per session"}
                                     </p>
                                 </div>
                             </div>
-
-                            {/* Package Selector */}
-                            <PackageSelector
-                                sessionRate={sessionRate}
-                                discountPercent={discountPercent}
-                                selectedPackage={selectedPackage}
-                                onSelect={handlePackageSelect}
-                            />
-
-                            {/* Action Buttons */}
-                            <div className="flex gap-3 mt-6">
-                                <Button
-                                    onClick={goBack}
-                                    variant="outline"
-                                    className="flex-1 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
-                                >
-                                    <ArrowLeft className="w-4 h-4 mr-2" />
-                                    Back
-                                </Button>
-                                <Button
-                                    onClick={goToDetails}
-                                    className="flex-1 bg-white text-[#002e2c] hover:bg-emerald-50"
-                                >
-                                    Continue
-                                    <ArrowRight className="w-4 h-4 ml-2" />
-                                </Button>
-                            </div>
+                            <button type="button" onClick={goNext} className={cn(primaryButton, "mt-4 w-full")}>
+                                Continue
+                                <ArrowRight className="h-4 w-4" aria-hidden />
+                            </button>
                         </div>
-                    </div>
+                    )}
+                </BookingBottomSheet>
+            </BookingShell>
+        );
+    }
+
+    // ── Step: confirmed (free sessions) ──
+    if (step === "confirm") {
+        return (
+            <BookingShell>
+                <div className="rounded-[28px] bg-white p-6 text-center text-rh-night shadow-[0_30px_80px_-30px_rgba(0,0,0,0.6)] sm:p-8">
+                    <motion.div
+                        initial={reduceMotion ? false : { scale: 0.6, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 18 }}
+                        className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-rh-lime shadow-[0_14px_30px_-12px_rgba(0,205,15,0.9)]"
+                    >
+                        <Check className="h-8 w-8 text-rh-night" strokeWidth={3} />
+                    </motion.div>
+                    <h2 className="text-2xl font-semibold tracking-tight">You&#39;re booked</h2>
+                    <p className="mt-2 text-rh-night/65">
+                        Your {packageName.toLowerCase()} with {profile.fullName} is scheduled.
+                    </p>
+                    <div className="mt-6 text-left">{summary}</div>
+                    {effectivePackage > 1 && (
+                        <p className="mt-3 text-sm text-rh-night/55">+ {effectivePackage - 1} more sessions to schedule with your physio</p>
+                    )}
+                    <p className="mt-6 text-sm text-rh-night/55">We&#39;ve emailed you the details and the meeting link.</p>
+                    <button type="button" onClick={() => router.push("/dashboard/patient/appointments")} className={cn(primaryButton, "mt-6 w-full")}>
+                        View my appointments
+                    </button>
+                </div>
+                <PoweredBy />
+            </BookingShell>
+        );
+    }
+
+    // ── Steps: plan and details ──
+    return (
+        <BookingShell topRight={changeSessionLink}>
+            <motion.div
+                key={step}
+                initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: reduceMotion ? 0 : 0.22, ease: "easeOut" }}
+                className="rounded-[28px] bg-white p-5 text-rh-night shadow-[0_30px_80px_-30px_rgba(0,0,0,0.6)] sm:p-7"
+            >
+                <div className="mb-5 flex items-center justify-between gap-3">
+                    <h1 className="text-xl font-semibold tracking-tight">{step === "select-package" ? "Choose your plan" : "Your details"}</h1>
+                    <StepDots steps={steps} current={stepIndex} />
+                </div>
+
+                {summary}
+
+                {step === "select-package" && packageBreakdown && pricing.kind === "package" && (
+                    <>
+                        <p className="mb-3 mt-6 text-sm text-rh-night/60">
+                            Book one session or save with a package. Each session is {formatNaira(pricing.sessionRate)}.
+                        </p>
+                        <PackagePicker
+                            sessionRate={pricing.sessionRate}
+                            discountPercent={discountPercent}
+                            selected={effectivePackage}
+                            onSelect={setSelectedPackage}
+                        />
+                        <div className="mt-6 grid grid-cols-[auto_1fr] gap-3">
+                            <button type="button" onClick={goBack} className={secondaryButton} aria-label="Back">
+                                <ArrowLeft className="h-4 w-4" />
+                            </button>
+                            <button type="button" onClick={() => setStep("details")} className={primaryButton}>
+                                Continue · {formatNaira(packageBreakdown.total)}
+                                <ArrowRight className="h-4 w-4" aria-hidden />
+                            </button>
+                        </div>
+                    </>
                 )}
 
-                {/* Step: Details */}
                 {step === "details" && selectedSlot && (
-                    <div className="max-w-lg mx-auto w-full">
-                        <div className="bg-[#00443e] rounded-xl p-5 sm:p-6 border border-white/10">
-                            <h2 className="text-xl font-semibold text-white mb-6">
-                                Booking Details
-                            </h2>
-
-                            {/* Selected Time Summary */}
-                            <div className="bg-white/[0.07] rounded-lg p-4 mb-6">
-                                <p className="text-white/65 text-sm mb-1">Selected Time</p>
-                                <p className="text-white font-medium">
-                                    {formatDate(selectedSlot.start)}
-                                </p>
-                                <p className="text-teal-300">
-                                    {formatTime(selectedSlot.start)} -{" "}
-                                    {formatTime(selectedSlot.end)}
-                                </p>
-                            </div>
-
-                            {/* Session Mode */}
-                            {profile.offersOnlineSessions &&
-                                profile.offersInPersonSessions && (
-                                    <div className="mb-6">
-                                        <Label className="text-white/80 mb-3 block">
-                                            Session Mode
-                                        </Label>
-                                        <RadioGroup
-                                            value={sessionMode}
-                                            onValueChange={(v) =>
-                                                setSessionMode(v as "online" | "in-person")
-                                            }
-                                            className="space-y-3"
-                                        >
-                                            <div
-                                                className={`flex items-center space-x-3 p-4 rounded-lg border ${sessionMode === "online"
-                                                    ? "border-teal-500 bg-teal-500/10"
-                                                    : "border-white/15 bg-white/[0.07]"
-                                                    }`}
+                    <div className="mt-6 space-y-6">
+                        {/* Session mode */}
+                        {offersOnline && offersInPerson && (
+                            <fieldset>
+                                <legend className="mb-2.5 text-sm font-semibold">How would you like to meet?</legend>
+                                <div role="radiogroup" className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                                    {(["online", "in-person"] as const).map((mode) => {
+                                        const selected = sessionMode === mode;
+                                        const Icon = mode === "online" ? Video : MapPin;
+                                        return (
+                                            <motion.button
+                                                key={mode}
+                                                type="button"
+                                                role="radio"
+                                                aria-checked={selected}
+                                                onClick={() => setSessionMode(mode)}
+                                                whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+                                                className={cn(
+                                                    "flex items-center gap-3 rounded-2xl border p-4 text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime focus-visible:ring-offset-2",
+                                                    selected
+                                                        ? "border-rh-lime bg-rh-honeydew shadow-[0_0_0_1px_#00cd0f]"
+                                                        : "border-rh-night/10 hover:border-rh-night/30"
+                                                )}
                                             >
-                                                <RadioGroupItem
-                                                    value="online"
-                                                    id="online"
-                                                    className="border-white/30"
-                                                />
-                                                <Label
-                                                    htmlFor="online"
-                                                    className="flex items-center gap-2 cursor-pointer text-white"
+                                                <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", selected ? "bg-rh-night text-rh-lime" : "bg-rh-night/[0.06] text-rh-night/70")}>
+                                                    <Icon className="h-4 w-4" aria-hidden />
+                                                </span>
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block text-sm font-semibold">{mode === "online" ? "Video call" : "In person"}</span>
+                                                    <span className="block text-xs text-rh-night/55">
+                                                        {mode === "online" ? "From anywhere" : "Home visit at your address"}
+                                                        {pricing.kind === "standard" && ` · ${formatNaira(mode === "online" ? pricing.video : pricing.inPerson)}`}
+                                                    </span>
+                                                </span>
+                                                <span
+                                                    aria-hidden
+                                                    className={cn(
+                                                        "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2",
+                                                        selected ? "border-rh-lime bg-rh-lime text-rh-night" : "border-rh-night/20"
+                                                    )}
                                                 >
-                                                    <Video className="h-4 w-4 text-teal-300" />
-                                                    Online (Video Call)
-                                                </Label>
-                                            </div>
-                                            <div
-                                                className={`flex items-center space-x-3 p-4 rounded-lg border ${sessionMode === "in-person"
-                                                    ? "border-teal-500 bg-teal-500/10"
-                                                    : "border-white/15 bg-white/[0.07]"
-                                                    }`}
-                                            >
-                                                <RadioGroupItem
-                                                    value="in-person"
-                                                    id="in-person"
-                                                    className="border-white/30"
-                                                />
-                                                <Label
-                                                    htmlFor="in-person"
-                                                    className="flex items-center gap-2 cursor-pointer text-white"
-                                                >
-                                                    <Users className="h-4 w-4 text-blue-400" />
-                                                    In-Person
-                                                </Label>
-                                            </div>
-                                        </RadioGroup>
-                                    </div>
-                                )}
-
-                            {/* Exact Address for In-Person */}
-                            {sessionMode === "in-person" && (
-                                <div className="mb-6">
-                                    <Label htmlFor="address" className="text-white/80 mb-2 block">
-                                        Exact Home Address <span className="text-red-400">*</span>
-                                    </Label>
-                                    <Textarea
-                                        id="address"
-                                        value={patientAddress}
-                                        onChange={(e) => setPatientAddress(e.target.value)}
-                                        placeholder="Enter your exact street address, apartment number, and any special instructions for the physiotherapist..."
-                                        className="bg-white/[0.07] border-white/15 text-white placeholder:text-white/50 resize-none"
-                                        rows={3}
-                                        required
-                                    />
+                                                    {selected && <Check className="h-3 w-3" strokeWidth={3} />}
+                                                </span>
+                                            </motion.button>
+                                        );
+                                    })}
                                 </div>
-                            )}
+                            </fieldset>
+                        )}
 
-                            {/* Notes */}
-                            <div className="mb-6">
-                                <Label htmlFor="notes" className="text-white/80 mb-2 block">
-                                    Additional Notes (Optional)
-                                </Label>
-                                <Textarea
-                                    id="notes"
-                                    value={notes}
-                                    onChange={(e) => setNotes(e.target.value)}
-                                    placeholder="Tell the physiotherapist about your condition..."
-                                    className="bg-white/[0.07] border-white/15 text-white placeholder:text-white/50 resize-none"
-                                    rows={4}
+                        {sessionMode === "in-person" && (
+                            <div>
+                                <label htmlFor="address" className="mb-1.5 block text-sm font-semibold">
+                                    Your address <span className="text-red-600">*</span>
+                                </label>
+                                <textarea
+                                    id="address"
+                                    value={patientAddress}
+                                    onChange={(e) => setPatientAddress(e.target.value)}
+                                    placeholder="Street, apartment number, landmarks and anything the physio should know"
+                                    className={cn(fieldClass, "resize-none")}
+                                    rows={3}
+                                    required
                                 />
                             </div>
+                        )}
 
-                            {/* Price Summary */}
-                            <div className="bg-white/[0.07] rounded-lg p-4 mb-6 space-y-2">
-                                <div className="flex justify-between items-center">
-                                    <div>
-                                        <span className="text-white/80 text-sm font-medium">
-                                            {packageName}
-                                        </span>
-                                        <span className="text-white/50 text-xs ml-2">
-                                            {selectedPackage} session{selectedPackage > 1 ? "s" : ""}
-                                        </span>
-                                    </div>
-                                    <span className={`font-bold text-white ${feeSurcharge.applies ? "text-base" : "text-xl"}`}>
-                                        {packageBreakdown
-                                            ? formatNaira(packageBreakdown.total)
-                                            : sessionRate > 0
-                                                ? formatNaira(sessionRate)
-                                                : "Standard rate"
-                                        }
-                                    </span>
+                        <div>
+                            <label htmlFor="notes" className="mb-1.5 block text-sm font-semibold">
+                                Anything we should know? <span className="font-normal text-rh-night/50">(optional)</span>
+                            </label>
+                            <textarea
+                                id="notes"
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                placeholder="Tell the physiotherapist about your pain or condition"
+                                className={cn(fieldClass, "resize-none")}
+                                rows={3}
+                            />
+                        </div>
+
+                        {/* Price summary */}
+                        <div className="rounded-2xl border border-rh-night/10 p-4">
+                            <dl className="space-y-2 text-sm">
+                                <div className="flex items-baseline justify-between gap-3">
+                                    <dt className="text-rh-night/70">
+                                        {effectivePackage > 1 ? `${packageName} · ${effectivePackage} sessions` : `${sessionInfo.title} · ${modeLabel}`}
+                                    </dt>
+                                    <dd className="font-semibold tabular-nums">{formatNaira(displayBase)}</dd>
                                 </div>
                                 {packageBreakdown && packageBreakdown.saves > 0 && (
-                                    <div className="flex justify-between items-center text-xs">
-                                        <span className="text-green-400">You save</span>
-                                        <span className="text-green-400 font-medium">
-                                            {formatNaira(packageBreakdown.saves)}
-                                        </span>
+                                    <div className="flex items-baseline justify-between gap-3 text-emerald-700">
+                                        <dt>Package saving ({packageBreakdown.discountPercent}%)</dt>
+                                        <dd className="font-semibold tabular-nums">−{formatNaira(packageBreakdown.saves)}</dd>
                                     </div>
                                 )}
-                                {selectedPackage > 1 && packageBreakdown && (
-                                    <p className="text-[11px] text-white/50">
-                                        {formatNaira(Math.round(packageBreakdown.total / selectedPackage))}/session average
-                                    </p>
-                                )}
-
-                                {/* Paystack Processing Fee (patient-facing surcharge) */}
                                 {feeSurcharge.applies && (
-                                    <>
-                                        <div className="flex justify-between items-center text-xs pt-2 border-t border-white/15">
-                                            <span className="text-white/65">Payment Processing Fee <span className="text-white/40">(Paystack)</span></span>
-                                            <span className="text-white/80 font-medium">
-                                                {formatNaira(feeSurcharge.feeNaira)}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-white/15">
-                                            <span className="text-white text-sm font-semibold">Total to Pay</span>
-                                            <span className="text-xl font-bold text-white">
-                                                {formatNaira(feeSurcharge.grossNaira)}
-                                            </span>
-                                        </div>
-                                    </>
+                                    <div className="flex items-baseline justify-between gap-3">
+                                        <dt className="text-rh-night/70">Payment processing (Paystack)</dt>
+                                        <dd className="font-semibold tabular-nums">{formatNaira(feeSurcharge.feeNaira)}</dd>
+                                    </div>
                                 )}
-
-                                {/* Change plan link */}
+                                <div className="flex items-baseline justify-between gap-3 border-t border-rh-night/10 pt-3">
+                                    <dt className="font-semibold">Total</dt>
+                                    <dd className="text-2xl font-bold tabular-nums">{formatNaira(totalToPay)}</dd>
+                                </div>
+                            </dl>
+                            {packagesAvailable && (
                                 <button
                                     type="button"
                                     onClick={() => setStep("select-package")}
-                                    className="text-teal-300 text-xs hover:text-teal-200 underline pt-1"
+                                    className="mt-2 rounded text-xs font-semibold text-rh-night underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime"
                                 >
                                     Change plan
                                 </button>
-                            </div>
-
-                            {/* Guest checkout form */}
-                            {showGuestForm && !isSignedIn && (
-                                <div className="bg-[#003d38] border border-teal-300/40 rounded-xl p-5 mb-5 space-y-4">
-                                    <p className="text-teal-300 text-sm font-semibold">Quick Checkout — No Account Needed</p>
-                                    <div>
-                                        <Label htmlFor="guestName" className="text-white/80 mb-1 block text-xs">Full Name (Optional)</Label>
-                                        <div className="relative">
-                                            <Input
-                                                id="guestName"
-                                                value={guestName}
-                                                onChange={(e) => setGuestName(e.target.value)}
-                                                placeholder="Your full name"
-                                                className="bg-white/[0.07] border-white/15 text-white pl-9"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <Label htmlFor="guestEmail" className="text-white/80 mb-1 block text-xs">Email Address <span className="text-red-400">*</span></Label>
-                                        <div className="relative">
-                                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
-                                            <Input
-                                                id="guestEmail"
-                                                type="email"
-                                                value={guestEmail}
-                                                onChange={(e) => setGuestEmail(e.target.value)}
-                                                placeholder="you@example.com"
-                                                className="bg-white/[0.07] border-white/15 text-white pl-9"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <Label htmlFor="guestPhone" className="text-white/80 mb-1 block text-xs">Phone Number (Optional)</Label>
-                                        <div className="relative">
-                                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
-                                            <Input
-                                                id="guestPhone"
-                                                type="tel"
-                                                value={guestPhone}
-                                                onChange={(e) => setGuestPhone(e.target.value)}
-                                                placeholder="080xxxxxxxx"
-                                                className="bg-white/[0.07] border-white/15 text-white pl-9"
-                                            />
-                                        </div>
-                                    </div>
-                                    <Button
-                                        onClick={handleGuestPay}
-                                        disabled={isProcessing || !guestEmail.trim()}
-                                        className="w-full bg-white text-[#002e2c] hover:bg-emerald-50"
-                                    >
-                                        {isProcessing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</> : "Continue to Payment"}
-                                    </Button>
-                                    <p className="text-center text-xs text-white/50">
-                                        Already have an account?{" "}
-                                        <Link
-                                            href={`/sign-in?redirect=/book/${rawParam}/${sessionDuration}`}
-                                            className="text-teal-300 hover:underline"
-                                        >
-                                            Sign in instead
-                                        </Link>
-                                    </p>
-                                </div>
                             )}
+                        </div>
 
-                            {/* Action Buttons */}
-                            {!showGuestForm && (
-                            <div className="flex gap-3">
-                                <Button
-                                    onClick={goBack}
-                                    variant="outline"
-                                    className="flex-1 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
-                                >
-                                    <ArrowLeft className="w-4 h-4 mr-2" />
-                                    Back
-                                </Button>
-                                <Button
+                        {/* Guest checkout */}
+                        {showGuestForm && !isSignedIn && (
+                            <motion.div
+                                initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="space-y-4 rounded-2xl bg-rh-canvas/80 p-4 ring-1 ring-inset ring-rh-night/[0.06] sm:p-5"
+                            >
+                                <div>
+                                    <p className="text-sm font-semibold">Quick checkout</p>
+                                    <p className="text-xs text-rh-night/55">No account needed. We&#39;ll send your booking to this email.</p>
+                                </div>
+                                <div>
+                                    <label htmlFor="guestName" className="mb-1.5 block text-xs font-semibold">Full name <span className="font-normal text-rh-night/50">(optional)</span></label>
+                                    <div className="relative">
+                                        <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/40" />
+                                        <input id="guestName" value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Your full name" autoComplete="name" className={cn(fieldClass, "pl-10")} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label htmlFor="guestEmail" className="mb-1.5 block text-xs font-semibold">Email <span className="text-red-600">*</span></label>
+                                    <div className="relative">
+                                        <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/40" />
+                                        <input id="guestEmail" type="email" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" className={cn(fieldClass, "pl-10")} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label htmlFor="guestPhone" className="mb-1.5 block text-xs font-semibold">Phone <span className="font-normal text-rh-night/50">(optional)</span></label>
+                                    <div className="relative">
+                                        <Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rh-night/40" />
+                                        <input id="guestPhone" type="tel" value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} placeholder="080xxxxxxxx" autoComplete="tel" className={cn(fieldClass, "pl-10")} />
+                                    </div>
+                                </div>
+                                <button type="button" onClick={handleGuestPay} disabled={isProcessing || !guestEmail.trim()} className={cn(primaryButton, "w-full")}>
+                                    {isProcessing ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 animate-spin" /> Processing…
+                                        </>
+                                    ) : totalToPay > 0 ? (
+                                        <>
+                                            <Lock className="h-4 w-4" aria-hidden /> Pay {formatNaira(totalToPay)}
+                                        </>
+                                    ) : (
+                                        "Book now"
+                                    )}
+                                </button>
+                                <p className="text-center text-xs text-rh-night/55">
+                                    Have an account?{" "}
+                                    <Link href={signInHref} onClick={rememberBookingForSignIn} className="font-semibold text-rh-night underline underline-offset-4 hover:no-underline">
+                                        Sign in instead
+                                    </Link>
+                                </p>
+                            </motion.div>
+                        )}
+
+                        {!showGuestForm && (
+                            <div className="grid grid-cols-[auto_1fr] gap-3">
+                                <button type="button" onClick={goBack} className={secondaryButton} aria-label="Back">
+                                    <ArrowLeft className="h-4 w-4" />
+                                </button>
+                                <button
+                                    type="button"
                                     onClick={handleBooking}
                                     disabled={isProcessing || (sessionMode === "in-person" && !patientAddress.trim())}
-                                    className="flex-1 bg-white text-[#002e2c] hover:bg-emerald-50 disabled:opacity-50"
+                                    className={primaryButton}
                                 >
                                     {isProcessing ? (
                                         <>
-                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                            Processing...
+                                            <Loader2 className="h-4 w-4 animate-spin" /> Processing…
                                         </>
-                                    ) : !sessionRate ? (
-                                        isSignedIn ? "Book Now" : "Book Now"
-                                    ) : isSignedIn ? (
-                                        "Confirm & Pay"
                                     ) : (
-                                        "Continue to Payment"
+                                        <>
+                                            {totalToPay > 0 && <Lock className="h-4 w-4" aria-hidden />}
+                                            {ctaLabel}
+                                        </>
                                     )}
-                                </Button>
+                                </button>
                             </div>
-                            )}
-                        </div>
+                        )}
+
+                        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-rh-night/50">
+                            <Lock className="h-3.5 w-3.5" aria-hidden />
+                            Secure payment by Paystack
+                        </p>
                     </div>
                 )}
-
-                {/* Step: Confirmation */}
-                {step === "confirm" && (
-                    <div className="max-w-lg mx-auto text-center">
-                        <div className="bg-[#00443e] rounded-xl p-8 border border-white/10">
-                            <div className="w-16 h-16 bg-[#005b57] rounded-full flex items-center justify-center mx-auto mb-6">
-                                <CheckCircle2 className="w-8 h-8 text-white" />
-                            </div>
-
-                            <h2 className="text-2xl font-bold text-white mb-2">
-                                Booking Confirmed!
-                            </h2>
-                            <p className="text-white/65 mb-6">
-                                Your {packageName.toLowerCase()} with {profile.fullName} has been scheduled.
-                            </p>
-
-                            {selectedSlot && (
-                                <div className="bg-white/[0.07] rounded-lg p-4 mb-6 text-left">
-                                    <p className="text-white/65 text-sm mb-1">First Session</p>
-                                    <p className="text-white font-medium">
-                                        {formatDate(selectedSlot.start)}
-                                    </p>
-                                    <p className="text-teal-300">
-                                        {formatTime(selectedSlot.start)} -{" "}
-                                        {formatTime(selectedSlot.end)}
-                                    </p>
-                                    {selectedPackage > 1 && (
-                                        <p className="text-white/50 text-sm mt-2">
-                                            + {selectedPackage - 1} more sessions to be scheduled
-                                        </p>
-                                    )}
-                                </div>
-                            )}
-
-                            <p className="text-sm text-white/50 mb-6">
-                                You will receive a confirmation email with the session details
-                                and meeting link.
-                            </p>
-
-                            <Button
-                                onClick={() => router.push("/dashboard/patient/appointments")}
-                                className="w-full bg-white text-[#002e2c] hover:bg-emerald-50"
-                            >
-                                View My Appointments
-                            </Button>
-                        </div>
-                    </div>
-                )}
-            </main>
-        </div>
+            </motion.div>
+            <PoweredBy />
+        </BookingShell>
     );
 }

@@ -32,6 +32,7 @@ import FileUpload from '@/components/ui/FileUpload'
 import { TourGuide } from '@/components/shared/TourGuide'
 import { InsightsSidebar } from '@/components/dashboard/shared/InsightsSidebar'
 import { PatientCheckInCard, PatientFollowUpBanner } from '@/components/patient/PatientCheckInCard'
+import { JoyJourneyCard } from '@/components/patient/JoyJourneyCard'
 
 interface PatientDashboardProps {
   initialUser?: any;
@@ -77,9 +78,31 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
     )
   }
 
-  const upcomingAppointments = appointments?.filter((a: Appointment) => new Date(a.startTime) > new Date()).sort((a, b) => a.startTime - b.startTime) || []
+  const isCancelled = (a: Appointment) => String(a.status).startsWith('cancelled') || String(a.status) === 'no_show'
+  // A visit stays "next" until it ends, so a call in progress can still be joined
+  const upcomingAppointments = appointments?.filter((a: Appointment) => new Date(a.endTime || a.startTime) > new Date() && !isCancelled(a)).sort((a, b) => a.startTime - b.startTime) || []
   const nextAppointment = upcomingAppointments[0]
-  const pastAppointments = appointments?.filter((a: Appointment) => new Date(a.startTime) <= new Date()) || []
+  const pastAppointments = appointments?.filter((a: Appointment) => String(a.status) === 'completed') || []
+
+  // The real room for an online visit: our Stream call, Google Meet or the physio's own link
+  const meetingLinkFor = (a: Appointment) => {
+    const links = a as Appointment & { meetingLink?: string; streamMeetingLink?: string; googleMeetLink?: string }
+    return links.meetingLink || links.streamMeetingLink || links.googleMeetLink || null
+  }
+  const isOnlineVisit = (a: Appointment) =>
+    a.appointmentType === 'telehealth' || (a as Appointment & { isOnline?: boolean }).isOnline === true
+  const joinCall = (a: Appointment) => {
+    const link = meetingLinkFor(a)
+    if (!link) return
+    try {
+      const url = new URL(link, window.location.origin)
+      if (url.pathname.startsWith('/video-call/')) {
+        router.push(url.pathname)
+        return
+      }
+    } catch { /* not a URL we can parse; open as-is */ }
+    window.open(link, '_blank', 'noopener,noreferrer')
+  }
 
   const handleUploadDocument = async (files: File | File[] | null) => {
     if (patientProfileId && uploadPatientDocument && files) {
@@ -111,6 +134,9 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
         {/* After-care follow-up, then today's check-in for the physio */}
         <PatientFollowUpBanner />
         <PatientCheckInCard />
+
+        {/* Patients who booked through Joy on WhatsApp */}
+        <JoyJourneyCard />
 
         {/* Next Appointment Hero Card */}
         {nextAppointment && (
@@ -144,14 +170,22 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
                 </div>
               </div>
 
-              {nextAppointment.appointmentType === 'telehealth' && nextAppointment.status === 'confirmed' && (
-                <Button
-                  className="w-full bg-brand hover:bg-brand-dark text-white"
-                  onClick={() => router.push(`/video-call/${nextAppointment._id}`)}
-                >
-                  <Video className="h-4 w-4 mr-2" />
-                  Join Video Call
-                </Button>
+              {isOnlineVisit(nextAppointment) && (
+                meetingLinkFor(nextAppointment) && nextAppointment.status === 'confirmed' ? (
+                  <Button
+                    className="w-full bg-brand hover:bg-brand-dark text-white"
+                    onClick={() => joinCall(nextAppointment)}
+                  >
+                    <Video className="h-4 w-4 mr-2" />
+                    Join Video Call
+                  </Button>
+                ) : (
+                  <p className="rounded-lg bg-rh-canvas px-3 py-2 text-center text-sm text-gray-600">
+                    {nextAppointment.status === 'confirmed'
+                      ? 'Your video link will appear here before the session.'
+                      : 'Your video link will appear here once your physio confirms.'}
+                  </p>
+                )
               )}
             </CardContent>
           </Card>
@@ -350,11 +384,11 @@ export function PatientDashboard({ initialUser, initialAppointments, initialStat
                         >
                           {appointment.status}
                         </Badge>
-                        {appointment.appointmentType === 'telehealth' && appointment.status === 'confirmed' && new Date(appointment.startTime) > new Date() && (
+                        {isOnlineVisit(appointment) && appointment.status === 'confirmed' && meetingLinkFor(appointment) && new Date(appointment.endTime) > new Date() && (
                           <Button
                             size="sm"
                             className="bg-brand hover:bg-brand-dark text-white shrink-0"
-                            onClick={() => router.push(`/video-call/${appointment._id}`)}
+                            onClick={() => joinCall(appointment)}
                           >
                             <Video className="h-4 w-4 sm:mr-2" />
                             <span className="hidden sm:inline">Join</span>

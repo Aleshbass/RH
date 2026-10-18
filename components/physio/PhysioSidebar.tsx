@@ -4,9 +4,12 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useClerk, useUser } from '@clerk/nextjs'
+import { useQuery } from 'convex/react'
 import {
+  ArrowLeftRight,
   BarChart3,
   BookOpen,
+  Building2,
   Calendar,
   CalendarDays,
   ChevronLeft,
@@ -37,6 +40,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ClinicThemeToggle } from '@/components/clinic/ClinicTheme'
 import { START_PHYSIO_TOUR_EVENT } from '@/components/physio/PhysioTour'
+import { api } from '@/convex/_generated/api'
+import { CLINIC_PORTAL_HOME } from '@/components/clinic/clinician-routing'
 
 export const PHYSIO_HOME = '/dashboard/physiotherapist'
 
@@ -97,9 +102,22 @@ export function PhysioBrand({ className, onBrand = false }: { className?: string
   )
 }
 
+/**
+ * The clinic this physiotherapist also works at, if any, so they can switch to its workspace.
+ * Their personal Rehabify account and the clinic's dashboard stay separate.
+ */
+function useClinicWorkspace() {
+  const access = useQuery(api.clinicTools.getMyClinicAccess) as
+    | { mode: string; staffKind?: string; clinicName?: string }
+    | undefined
+  if (!access || access.mode !== 'staff' || access.staffKind !== 'clinician' || !access.clinicName) return null
+  return { name: access.clinicName }
+}
+
 function AccountMenu({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const { isLoaded, user } = useUser()
   const { openUserProfile, signOut } = useClerk()
+  const clinicWorkspace = useClinicWorkspace()
   if (!isLoaded || !user) return null
 
   const name = user.fullName || user.primaryEmailAddress?.emailAddress || 'Account'
@@ -155,6 +173,14 @@ function AccountMenu({ collapsed, onNavigate }: { collapsed: boolean; onNavigate
           <PlayCircle className="mr-2 h-4 w-4 text-neutral-500" />
           Take the tour
         </DropdownMenuItem>
+        {clinicWorkspace && (
+          <DropdownMenuItem asChild>
+            <Link href={CLINIC_PORTAL_HOME} onClick={onNavigate}>
+              <Building2 className="mr-2 h-4 w-4 shrink-0 text-neutral-500" />
+              <span className="truncate">Switch to {clinicWorkspace.name}</span>
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => signOut({ redirectUrl: '/' })}>
           <LogOut className="mr-2 h-4 w-4 text-neutral-500" />
@@ -180,6 +206,7 @@ export function PhysioSidebar({
   const pathname = usePathname() ?? ''
   const [isCollapsed, setIsCollapsed] = useState(false)
   const collapsed = collapsible && isCollapsed
+  const clinicWorkspace = useClinicWorkspace()
 
   const renderItem = (item: NavItem) => {
     const active = isActivePath(pathname, item.href)
@@ -253,6 +280,27 @@ export function PhysioSidebar({
       </ScrollArea>
 
       <div className="space-y-0.5 p-3">
+        {clinicWorkspace && (
+          <Link
+            href={CLINIC_PORTAL_HOME}
+            onClick={onNavigate}
+            title={collapsed ? `Switch to ${clinicWorkspace.name}` : undefined}
+            aria-label={`Switch to the ${clinicWorkspace.name} clinic workspace`}
+            className={cn(
+              'mb-2 flex items-center gap-3 rounded-xl border border-white/15 px-3 py-2 text-left text-white/85 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40',
+              collapsed && 'justify-center border-0 px-0'
+            )}
+          >
+            <Building2 className="h-[18px] w-[18px] shrink-0 text-white/70" />
+            {!collapsed && (
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{clinicWorkspace.name}</span>
+                <span className="block text-[11px] text-white/55">Clinic workspace</span>
+              </span>
+            )}
+            {!collapsed && <ArrowLeftRight className="h-4 w-4 shrink-0 text-white/50" />}
+          </Link>
+        )}
         {renderItem({ title: 'Settings', href: `${PHYSIO_HOME}/settings`, icon: Settings })}
         <ClinicThemeToggle
           withLabel={!collapsed}

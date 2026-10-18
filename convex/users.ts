@@ -7,6 +7,7 @@ import { api, internal } from "./_generated/api";
 import { getAuthenticatedUser, ensureUserRole } from "./auth";
 import { publicAppUrl } from "./helpers/appUrl";
 import { attributeUserToLink } from "./helpers/partnerAttribution";
+import { normalizePhone } from "./helpers/partnerShared";
 import { assertSignupAllowed } from "./platformSettings";
 import { logSecurityEvent } from "./helpers/securityLog";
 
@@ -197,16 +198,37 @@ export const updateOrCreateUser = internalMutation({
 // Records created for a patient before they had a Clerk account.
 const PLACEHOLDER_CLERK_ID_PREFIXES = ["clinic_patient_", "rehabify_ref_", "joy-whatsapp:"];
 
+/** A Joy (WhatsApp) patient record for this verified phone number, if exactly one exists. */
+async function joyPlaceholderByPhone(ctx: MutationCtx, verifiedPhone: string) {
+  const e164 = normalizePhone(verifiedPhone);
+  if (!e164) return null;
+  // Joy stores the number as WhatsApp sent it; try the common spellings of the same number
+  const spellings = [...new Set([e164, e164.slice(1), e164.startsWith("+234") ? `0${e164.slice(4)}` : e164])];
+  const found = new Map<Id<"users">, Doc<"users">>();
+  for (const phone of spellings) {
+    const rows = await ctx.db
+      .query("users")
+      .withIndex("by_phone_number", (q) => q.eq("phoneNumber", phone))
+      .collect();
+    for (const row of rows) {
+      if (row.clerkId.startsWith("joy-whatsapp:") && row.role === "patient") found.set(row._id, row);
+    }
+  }
+  return found.size === 1 ? [...found.values()][0] : null;
+}
+
 /**
  * A clinic, referral or Joy may have created this patient before they had an
  * account. Hand that record to the new Clerk user so they see their programme
- * and history. Callers must pass an email Clerk has verified.
+ * and history. Callers must pass an email or phone number Clerk has verified;
+ * the phone only claims Joy records, since Joy identifies people by WhatsApp number.
  */
 async function claimPlaceholderPatient(
   ctx: MutationCtx,
   args: {
     clerkId: string;
     verifiedEmail: string | null | undefined;
+    verifiedPhone?: string | null;
     firstName?: string;
     lastName?: string;
     imageUrl?: string;
@@ -215,22 +237,34 @@ async function claimPlaceholderPatient(
   }
 ): Promise<Id<"users"> | null> {
   const email = args.verifiedEmail?.toLowerCase().trim();
-  if (!email) return null;
 
-  const candidates = await ctx.db
-    .query("users")
-    .withIndex("by_email", (q) => q.eq("email", email))
-    .collect();
-  const placeholder = candidates.find((candidate) =>
-    PLACEHOLDER_CLERK_ID_PREFIXES.some((prefix) => candidate.clerkId.startsWith(prefix))
-  );
+  const candidates = email
+    ? await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", email))
+        .collect()
+    : [];
+  const placeholder =
+    candidates.find((candidate) =>
+      PLACEHOLDER_CLERK_ID_PREFIXES.some((prefix) => candidate.clerkId.startsWith(prefix))
+    ) ?? (args.verifiedPhone ? await joyPlaceholderByPhone(ctx, args.verifiedPhone) : null);
   if (!placeholder) return null;
 
+  const isJoyRecord = placeholder.clerkId.startsWith("joy-whatsapp:");
+  // Older Joy records have a profile row the user record doesn't point to
+  const profileId =
+    placeholder.patientProfileId ??
+    (await ctx.db.query("patientProfiles").withIndex("by_user_id", (q) => q.eq("userId", placeholder._id)).first())?._id;
   await ctx.db.patch(placeholder._id, {
+    patientProfileId: profileId,
     clerkId: args.clerkId,
-    firstName: placeholder.firstName || args.firstName,
+    // Joy names people "Patient" until it learns their name
+    firstName: (placeholder.firstName && placeholder.firstName !== "Patient" ? placeholder.firstName : undefined) || args.firstName || placeholder.firstName,
     lastName: placeholder.lastName || args.lastName,
     imageUrl: placeholder.imageUrl || args.imageUrl,
+    email: placeholder.email || email,
+    // A Joy patient already has their role and profile; don't send them through onboarding again
+    ...(isJoyRecord && placeholder.role === "patient" ? { onboarded: true } : {}),
   });
   return placeholder._id;
 }
@@ -301,6 +335,8 @@ export const storeUserFromClerk = mutation({
       const claimedId = await claimPlaceholderPatient(ctx, {
         clerkId: args.clerkId,
         verifiedEmail: identity.emailVerified && typeof identity.email === "string" ? identity.email : null,
+        // Needs phone_number and phone_number_verified in Clerk's "convex" JWT template
+        verifiedPhone: identity.phoneNumberVerified && typeof identity.phoneNumber === "string" ? identity.phoneNumber : null,
         firstName: args.firstName,
         lastName: args.lastName,
         imageUrl: args.imageUrl,

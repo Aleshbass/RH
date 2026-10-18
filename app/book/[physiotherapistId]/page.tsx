@@ -1,49 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useParams, useRouter } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
-import Image from "next/image";
+import Link from "next/link";
+import { useReducedMotion } from "framer-motion";
 import {
-    Loader2,
-    Clock,
-    ArrowRight,
     Banknote,
-    ExternalLink,
-    X,
     CheckCircle2,
+    ChevronDown,
+    ExternalLink,
+    Loader2,
+    Mail,
     Phone,
     User,
-    Mail,
-    ChevronDown,
+    X,
 } from "lucide-react";
-
-// Session type options for physiotherapy
-const SESSION_TYPES = [
-    {
-        id: "initial",
-        title: "Initial Consultation",
-        description: "Comprehensive assessment & treatment plan",
-        duration: 60,
-    },
-    {
-        id: "followup",
-        title: "Follow-up Session",
-        description: "Standard therapy session",
-        duration: 45,
-    },
-    {
-        id: "quick",
-        title: "Quick Check-in",
-        description: "Brief progress review",
-        duration: 30,
-    },
-];
+import { PhysioHostCard } from "@/components/booking/PhysioHostCard";
+import { BookingShell, PoweredBy } from "@/components/booking/BookingShell";
+import { SessionTypeOption } from "@/components/booking/SessionTypeOption";
+import {
+    SESSION_TYPES,
+    bookingPricing,
+    looksLikeConvexId,
+    priceRows,
+    readTreatmentPrefs,
+    type BookingProfile,
+    type SessionType,
+} from "@/components/booking/booking-shared";
 
 // ── MediLoan Self-Service Widget ──────────────────────────────────────────────
 type LoanFormState = "idle" | "open" | "submitting" | "success" | "error";
+
+const loanField =
+    "w-full rounded-xl border border-white/10 bg-white/[0.06] py-2.5 pl-9 pr-3 text-base text-white placeholder:text-white/40 sm:text-sm transition-colors focus:border-rh-lime/60 focus:outline-none focus:ring-2 focus:ring-rh-lime/25";
 
 function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }) {
     const [state, setState] = useState<LoanFormState>("idle");
@@ -76,349 +68,296 @@ function MediLoanWidget({ physiotherapistName }: { physiotherapistName: string }
             const data = await res.json();
             if (!res.ok || !data.success) throw new Error(data.error || "Failed to submit loan request.");
             setState("success");
-        } catch (err: any) {
-            setError(err.message || "Something went wrong. Please try again.");
+        } catch (err) {
+            setError((err as Error)?.message || "Something went wrong. Please try again.");
             setState("error");
         }
     };
 
-    // ── Idle: collapsed trigger button ──
     if (state === "idle") {
         return (
-            <div className="mt-6">
-                <button
-                    onClick={() => setState("open")}
-                    className="w-full bg-white/[0.05] rounded-xl border border-emerald-800/40 p-5 text-left hover:border-emerald-600/50 transition-all group relative overflow-hidden"
-                >
-                    <div className="relative z-10 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-lg bg-emerald-500/15 flex items-center justify-center group-hover:bg-emerald-500/25 transition-colors">
-                                <Banknote className="w-5 h-5 text-emerald-400" />
-                            </div>
-                            <div>
-                                <h3 className="text-white font-semibold text-sm">
-                                    Seek Loan from Our Partners — MediLoan
-                                </h3>
-                                <p className="text-emerald-400/70 text-xs">
-                                    Get treated now, pay later · Powered by MyItura
-                                </p>
-                            </div>
-                        </div>
-                        <ChevronDown className="w-4 h-4 text-emerald-400/60 group-hover:text-emerald-400 transition-colors" />
-                    </div>
-                </button>
-            </div>
+            <button
+                type="button"
+                onClick={() => setState("open")}
+                className="group mt-4 flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-left transition-colors hover:border-white/20 hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime"
+            >
+                <span className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rh-lime/15">
+                        <Banknote className="h-5 w-5 text-rh-lime" />
+                    </span>
+                    <span>
+                        <span className="block text-sm font-semibold text-white">Spread the cost with MediLoan</span>
+                        <span className="block text-xs text-white/55">Get treated now, pay later · by MyItura</span>
+                    </span>
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-white/50 transition-colors group-hover:text-white" />
+            </button>
         );
     }
 
-    // ── Success state ──
     if (state === "success") {
         return (
-            <div className="mt-6 bg-white/[0.05] rounded-xl border border-emerald-600/50 p-5">
-                <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            <div className="mt-4 rounded-2xl border border-rh-lime/40 bg-white/[0.05] p-5">
+                <div className="mb-3 flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rh-lime/20">
+                        <CheckCircle2 className="h-5 w-5 text-rh-lime" />
                     </div>
                     <div>
-                        <h3 className="text-white font-semibold text-sm">Request Received!</h3>
-                        <p className="text-emerald-400/80 text-xs">The Rehabify team has been notified</p>
+                        <h3 className="text-sm font-semibold text-white">Request received</h3>
+                        <p className="text-xs text-white/60">The Rehabify team has been notified</p>
                     </div>
                 </div>
-                <p className="text-white/65 text-[13px] leading-relaxed">
-                    Your MediLoan request has been submitted. The Rehabify Health team will review it and
-                    initiate your loan. You&#39;ll receive an <span className="text-emerald-400 font-medium">SMS from MediLoan</span> with
-                    a secure link to complete your application.
+                <p className="text-[13px] leading-relaxed text-white/70">
+                    We&#39;ll review your MediLoan request and start the loan. You&#39;ll get an{" "}
+                    <span className="font-medium text-rh-lime">SMS from MediLoan</span> with a secure link to finish your application.
                 </p>
-                <p className="text-white/40 text-[11px] mt-3 leading-relaxed border-t border-white/10 pt-2">
-                    All loan matters are handled by MediLoan (MyItura) — an independent third party. Rehabify Health does not manage loan repayments.
+                <p className="mt-3 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-white/45">
+                    All loan matters are handled by MediLoan (MyItura), an independent third party. Rehabify Health does not manage loan repayments.
                 </p>
             </div>
         );
     }
 
-    // ── Open / submitting / error: application form ──
     return (
-        <div className="mt-6 bg-white/[0.05] rounded-xl border border-emerald-700/40 p-5 relative overflow-hidden">
-            <div className="relative z-10">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-emerald-500/15 flex items-center justify-center">
-                            <Banknote className="w-5 h-5 text-emerald-400" />
-                        </div>
-                        <div>
-                            <h3 className="text-white font-semibold text-sm">Apply for MediLoan</h3>
-                            <p className="text-emerald-400/70 text-xs">Independent financing by MyItura</p>
-                        </div>
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.05] p-5">
+            <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rh-lime/15">
+                        <Banknote className="h-5 w-5 text-rh-lime" />
                     </div>
-                    <button
-                        onClick={() => { setState("idle"); setError(""); }}
-                        className="text-white/50 hover:text-white/80 transition-colors p-1"
+                    <div>
+                        <h3 className="text-sm font-semibold text-white">Apply for MediLoan</h3>
+                        <p className="text-xs text-white/55">Independent financing by MyItura</p>
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    aria-label="Close"
+                    onClick={() => {
+                        setState("idle");
+                        setError("");
+                    }}
+                    className="rounded-full p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                    <X className="h-4 w-4" />
+                </button>
+            </div>
+
+            <p className="mb-4 text-[13px] leading-relaxed text-white/65">
+                Fill in your details and MediLoan will SMS you a secure link to complete your loan application.
+                You can set the exact treatment amount inside MediLoan&#39;s app.
+            </p>
+
+            <form onSubmit={handleSubmit} className="space-y-3">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    <div className="relative">
+                        <User className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/50" />
+                        <input type="text" placeholder="First name" required value={firstName} onChange={(e) => setFirstName(e.target.value)} className={loanField} />
+                    </div>
+                    <div className="relative">
+                        <User className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/50" />
+                        <input type="text" placeholder="Last name" required value={lastName} onChange={(e) => setLastName(e.target.value)} className={loanField} />
+                    </div>
+                </div>
+                <div className="relative">
+                    <Phone className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/50" />
+                    <input type="tel" placeholder="Phone number (e.g. 08012345678)" required value={phone} onChange={(e) => setPhone(e.target.value)} className={loanField} />
+                </div>
+                <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/50" />
+                    <input type="email" placeholder="Email address (optional)" value={email} onChange={(e) => setEmail(e.target.value)} className={loanField} />
+                </div>
+                <div className="relative">
+                    <select
+                        value={gender}
+                        onChange={(e) => setGender(e.target.value)}
+                        className="w-full appearance-none rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2.5 text-sm text-white/70 transition-colors focus:border-rh-lime/60 focus:outline-none focus:ring-2 focus:ring-rh-lime/25"
                     >
-                        <X className="w-4 h-4" />
-                    </button>
+                        <option value="">Gender (optional)</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Prefer not to say</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/50" />
                 </div>
 
-                <p className="text-white/65 text-[13px] leading-relaxed mb-4">
-                    Fill in your details and MediLoan will SMS you a secure link to complete your loan application.
-                    You can specify the exact treatment amount directly inside MediLoan&#39;s app.
-                </p>
+                {error && (
+                    <p className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</p>
+                )}
 
-                <form onSubmit={handleSubmit} className="space-y-3">
-                    {/* Name row */}
-                    <div className="grid grid-cols-2 gap-2.5">
-                        <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
-                            <input
-                                type="text"
-                                placeholder="First name"
-                                required
-                                value={firstName}
-                                onChange={(e) => setFirstName(e.target.value)}
-                                className="w-full bg-white/[0.06] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-white/40 focus:border-emerald-600/60 focus:outline-none transition-colors"
-                            />
-                        </div>
-                        <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
-                            <input
-                                type="text"
-                                placeholder="Last name"
-                                required
-                                value={lastName}
-                                onChange={(e) => setLastName(e.target.value)}
-                                className="w-full bg-white/[0.06] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-white/40 focus:border-emerald-600/60 focus:outline-none transition-colors"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Phone */}
-                    <div className="relative">
-                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
-                        <input
-                            type="tel"
-                            placeholder="Phone number (e.g. 08012345678)"
-                            required
-                            value={phone}
-                            onChange={(e) => setPhone(e.target.value)}
-                            className="w-full bg-white/[0.06] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-white/40 focus:border-emerald-600/60 focus:outline-none transition-colors"
-                        />
-                    </div>
-
-                    {/* Email (optional) */}
-                    <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
-                        <input
-                            type="email"
-                            placeholder="Email address (optional)"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="w-full bg-white/[0.06] border border-white/10 rounded-lg pl-9 pr-3 py-2.5 text-white text-sm placeholder:text-white/40 focus:border-emerald-600/60 focus:outline-none transition-colors"
-                        />
-                    </div>
-
-                    {/* Gender (optional) */}
-                    <div className="relative">
-                        <select
-                            value={gender}
-                            onChange={(e) => setGender(e.target.value)}
-                            className="w-full bg-white/[0.06] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white/65 focus:border-emerald-600/60 focus:outline-none transition-colors appearance-none"
-                        >
-                            <option value="">Gender (optional)</option>
-                            <option value="male">Male</option>
-                            <option value="female">Female</option>
-                            <option value="other">Prefer not to say</option>
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/50 pointer-events-none" />
-                    </div>
-
-                    {/* Error */}
-                    {error && (
-                        <p className="text-red-400 text-xs bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">
-                            {error}
-                        </p>
+                <button
+                    type="submit"
+                    disabled={state === "submitting"}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-rh-lime py-2.5 text-sm font-semibold text-rh-night transition-[filter] hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                    {state === "submitting" ? (
+                        <>
+                            <Loader2 className="h-4 w-4 animate-spin" /> Sending application…
+                        </>
+                    ) : (
+                        <>
+                            <Banknote className="h-4 w-4" /> Apply for MediLoan
+                        </>
                     )}
+                </button>
+            </form>
 
-                    {/* Submit */}
-                    <button
-                        type="submit"
-                        disabled={state === "submitting"}
-                        className="w-full bg-white text-[#002e2c] hover:bg-emerald-50 disabled:opacity-60 disabled:cursor-not-allowed font-semibold py-2.5 rounded-lg text-sm transition-all flex items-center justify-center gap-2"
-                    >
-                        {state === "submitting" ? (
-                            <><Loader2 className="w-4 h-4 animate-spin" /> Sending Application...</>
-                        ) : (
-                            <><Banknote className="w-4 h-4" /> Apply for MediLoan</>
-                        )}
-                    </button>
-                </form>
-
-                {/* Legal disclaimer */}
-                <p className="text-white/40 text-[10px] mt-3 leading-relaxed border-t border-white/10 pt-2">
-                    MediLoan is a service by MyItura — an independent third party. Rehabify Health does not manage,
-                    guarantee, or take responsibility for loan outcomes. All loan queries go directly to MediLoan.{" "}
-                    <a
-                        href="https://myitura.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-emerald-600 hover:text-emerald-500 inline-flex items-center gap-0.5"
-                    >
-                        myitura.com <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
-                </p>
-            </div>
+            <p className="mt-3 border-t border-white/10 pt-2 text-[10px] leading-relaxed text-white/45">
+                MediLoan is a service by MyItura, an independent third party. Rehabify Health does not manage,
+                guarantee, or take responsibility for loan outcomes. All loan queries go directly to MediLoan.{" "}
+                <a href="https://myitura.com" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-rh-lime hover:underline">
+                    myitura.com <ExternalLink className="h-2.5 w-2.5" />
+                </a>
+            </p>
         </div>
     );
-}
-
-// Helper: check if a string looks like a valid Convex document ID
-// Convex IDs are alphanumeric strings — slugs contain hyphens
-function looksLikeConvexId(value: string): boolean {
-    return /^[a-zA-Z0-9_]+$/.test(value) && value.length > 10;
 }
 
 // ── Main Booking Page ─────────────────────────────────────────────────────────
 export default function PhysioBookingPage() {
     const params = useParams();
     const router = useRouter();
+    const reduceMotion = useReducedMotion();
     const rawParam = params.physiotherapistId as string;
-
-    // Determine if the URL param is a slug or a raw Convex ID
     const isRawId = looksLikeConvexId(rawParam);
 
-    // Try resolving as a slug (skip if it already looks like a raw Convex ID)
-    const slugResult = useQuery(
-        api.marketplace.search.resolveBookingSlug,
-        isRawId ? "skip" : { slug: rawParam }
-    );
+    const slugResult = useQuery(api.marketplace.search.resolveBookingSlug, isRawId ? "skip" : { slug: rawParam }) as
+        | { userId: Id<"users"> }
+        | null
+        | undefined;
 
-    // Determine the real userId:
-    // - If it's a raw Convex ID, use it directly
-    // - If slug resolved, use the resolved userId
-    // - If slug lookup is still loading (undefined), we don't have an ID yet
-    // - If slug lookup returned null (no match), there's no valid ID
-    const resolvedUserId: Id<"users"> | null =
-        isRawId
-            ? (rawParam as Id<"users">)
-            : slugResult?.userId ?? null;
+    const resolvedUserId: Id<"users"> | null = isRawId ? (rawParam as Id<"users">) : slugResult?.userId ?? null;
 
-    // Fetch physio profile — skip until we have a valid user ID
     const profile = useQuery(
         api.marketplace.search.getPhysiotherapistProfile,
         resolvedUserId ? { physiotherapistId: resolvedUserId } : "skip"
+    ) as BookingProfile | null | undefined;
+
+    const [onboardingRate, setOnboardingRate] = useState<number | undefined>(undefined);
+    const [selectedId, setSelectedId] = useState<SessionType["id"] | null>(null);
+    const navTimer = useRef<number | null>(null);
+
+    useEffect(() => {
+        setOnboardingRate(readTreatmentPrefs()?.sessionRate || undefined);
+    }, []);
+
+    useEffect(() => {
+        for (const session of SESSION_TYPES) router.prefetch(`/book/${rawParam}/${session.duration}`);
+    }, [router, rawParam]);
+
+    useEffect(() => {
+        // Restored from the back-forward cache: let the patient pick again.
+        const onPageShow = (event: PageTransitionEvent) => {
+            if (event.persisted) setSelectedId(null);
+        };
+        window.addEventListener("pageshow", onPageShow);
+        return () => {
+            window.removeEventListener("pageshow", onPageShow);
+            if (navTimer.current) window.clearTimeout(navTimer.current);
+        };
+    }, []);
+
+    const offersOnline = profile?.offersOnlineSessions ?? true;
+    const offersInPerson = profile?.offersInPersonSessions ?? false;
+    const prices = useMemo(
+        () => priceRows(bookingPricing(profile, onboardingRate), offersOnline, offersInPerson),
+        [profile, onboardingRate, offersOnline, offersInPerson]
     );
 
-    // Still loading: slug resolution in progress or profile query pending
-    const isLoading =
-        (!isRawId && slugResult === undefined) || // slug still resolving
-        (resolvedUserId !== null && profile === undefined); // profile still loading
+    const isLoading = (!isRawId && slugResult === undefined) || (resolvedUserId !== null && profile === undefined);
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-[#005b57] flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-teal-300" />
-            </div>
+            <BookingShell>
+                <div className="animate-pulse" aria-label="Loading booking page">
+                    <div className="flex items-center gap-4">
+                        <div className="h-[72px] w-[72px] rounded-full bg-white/10" />
+                        <div className="space-y-2">
+                            <div className="h-5 w-44 rounded-full bg-white/10" />
+                            <div className="h-4 w-28 rounded-full bg-white/10" />
+                        </div>
+                    </div>
+                    <div className="mt-6 h-16 rounded-2xl bg-white/[0.06]" />
+                    <div className="mt-8 space-y-3 rounded-[28px] bg-white/[0.06] p-5">
+                        {[0, 1, 2].map((i) => (
+                            <div key={i} className="h-28 rounded-2xl bg-white/[0.06]" />
+                        ))}
+                    </div>
+                </div>
+            </BookingShell>
         );
     }
 
     if (!profile) {
         return (
-            <div className="min-h-screen bg-[#005b57] flex items-center justify-center p-4">
-                <div className="w-full max-w-md">
-                    <div className="bg-[#00443e] rounded-xl border border-white/10 p-8 text-center">
-                        <div className="w-16 h-16 rounded-full bg-white/[0.07] flex items-center justify-center mx-auto mb-6">
-                            <svg className="w-8 h-8 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                            </svg>
-                        </div>
-                        <h1 className="text-xl font-semibold text-white mb-2">Profile Not Available</h1>
-                        <p className="text-white/65 text-sm mb-6 leading-relaxed">
-                            This physiotherapist hasn&#39;t enabled their booking page yet.
-                            <br />
-                            <span className="text-white/50">
-                                If you&#39;re the owner of this profile, please enable your profile on the marketplace to start accepting bookings.
-                            </span>
-                        </p>
-                        <div className="space-y-3">
-                            <a href="/dashboard/physiotherapist/settings/marketplace" className="block w-full py-3 px-4 bg-white text-[#002e2c] hover:bg-emerald-50 rounded-lg font-medium transition-colors text-center">
-                                Enable My Profile
-                            </a>
-                        </div>
+            <BookingShell>
+                <div className="rounded-[28px] bg-white p-8 text-center text-rh-night shadow-[0_30px_80px_-30px_rgba(0,0,0,0.55)]">
+                    <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-rh-canvas">
+                        <User className="h-8 w-8 text-rh-night/50" />
                     </div>
-                    <div className="mt-6 text-center">
-                        <p className="text-white/40 text-xs">Powered by</p>
-                        <p className="text-white/50 text-sm font-medium">Rehabify Health</p>
-                    </div>
+                    <h1 className="mb-2 text-xl font-semibold">Booking page not available</h1>
+                    <p className="mb-6 text-sm leading-relaxed text-rh-night/65">
+                        This physiotherapist isn&#39;t taking online bookings yet.
+                        <br />
+                        <span className="text-rh-night/50">
+                            If this is your profile, finish your marketplace setup to start accepting bookings.
+                        </span>
+                    </p>
+                    <Link
+                        href="/dashboard/physiotherapist/settings/marketplace"
+                        className="block w-full rounded-xl bg-rh-night px-4 py-3 text-center font-semibold text-white transition-colors hover:bg-rh-teal-deep"
+                    >
+                        Set up my profile
+                    </Link>
                 </div>
-            </div>
+                <PoweredBy />
+            </BookingShell>
         );
     }
 
-    const handleSessionSelect = (duration: number) => {
-        router.push(`/book/${rawParam}/${duration}`);
+    const handleSessionSelect = (session: SessionType) => {
+        if (selectedId) return;
+        setSelectedId(session.id);
+        // Let the selected state register before moving on.
+        navTimer.current = window.setTimeout(
+            () => router.push(`/book/${rawParam}/${session.duration}`),
+            reduceMotion ? 120 : 340
+        );
     };
 
     return (
-        <div className="min-h-screen bg-[#005b57] flex items-center justify-center p-4">
-            <div className="w-full max-w-md">
-                {/* Profile Card */}
-                <div className="bg-[#00443e] rounded-xl border border-white/10 p-6 mb-6">
-                    <div className="flex items-center gap-4 mb-2">
-                        {profile.imageUrl ? (
-                            <Image
-                                src={profile.imageUrl}
-                                alt={profile.fullName}
-                                width={64}
-                                height={64}
-                                className="rounded-full object-cover"
-                            />
-                        ) : (
-                            <div className="w-16 h-16 rounded-full bg-[#005b57] flex items-center justify-center text-white text-xl font-bold">
-                                {profile.fullName.split(" ").map((n: string) => n[0]).join("")}
-                            </div>
-                        )}
-                    </div>
-                    <h1 className="text-xl font-bold text-white mt-4">{profile.fullName}</h1>
-                    {profile.specializations && profile.specializations.length > 0 && (
-                        <p className="text-white/65 text-sm mt-1">
-                            {profile.specializations.slice(0, 2).join(" • ")}
-                        </p>
-                    )}
-                </div>
+        <BookingShell>
+            <PhysioHostCard profile={profile} tone="dark" size="lg" />
 
-                {/* Session Types */}
-                <div className="space-y-3">
+            <section
+                className="mt-8 rounded-[28px] bg-white p-3 text-rh-night shadow-[0_30px_80px_-30px_rgba(0,0,0,0.6)] ring-1 ring-white/10 sm:p-4"
+                aria-labelledby="session-types-heading"
+            >
+                <div className="flex flex-wrap items-baseline justify-between gap-2 px-2 pb-3 pt-2 sm:px-3">
+                    <h2 id="session-types-heading" className="text-lg font-semibold tracking-tight">
+                        Choose a session
+                    </h2>
+                    <p className="text-xs text-rh-night/55">Pay securely when you book</p>
+                </div>
+                <div className="space-y-2.5">
                     {SESSION_TYPES.map((session) => (
-                        <button
+                        <SessionTypeOption
                             key={session.id}
-                            onClick={() => handleSessionSelect(session.duration)}
-                            className="w-full bg-[#00443e] border border-white/10 rounded-xl p-5 text-left hover:border-white/15 hover:bg-[#003d38] transition-all group"
-                        >
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-white font-semibold text-lg">{session.title}</h3>
-                                    {session.description && (
-                                        <p className="text-white/50 text-sm mt-1">{session.description}</p>
-                                    )}
-                                    <div className="flex items-center gap-1 mt-2 text-white/65">
-                                        <Clock className="w-4 h-4" />
-                                        <span className="text-sm">{session.duration}m</span>
-                                    </div>
-                                </div>
-                                <ArrowRight className="w-5 h-5 text-white/40 group-hover:text-teal-200 transition-colors" />
-                            </div>
-                        </button>
+                            session={session}
+                            prices={prices}
+                            offersOnline={offersOnline}
+                            offersInPerson={offersInPerson}
+                            selected={selectedId === session.id}
+                            busy={selectedId !== null}
+                            onSelect={() => handleSessionSelect(session)}
+                        />
                     ))}
                 </div>
+            </section>
 
-                {/* MediLoan Patient Self-Service Widget */}
-                <MediLoanWidget physiotherapistName={profile.fullName} />
+            <MediLoanWidget physiotherapistName={profile.fullName} />
 
-                {/* Footer */}
-                <div className="mt-8 text-center">
-                    <p className="text-white/40 text-sm">Powered by</p>
-                    <p className="text-white/65 font-medium">Rehabify Health</p>
-                </div>
-            </div>
-        </div>
+            <PoweredBy />
+        </BookingShell>
     );
 }

@@ -1,91 +1,72 @@
 /**
  * SEO Utility Functions
- * 
+ *
  * Helper functions for generating SEO-friendly content,
  * metadata, and handling URL optimization.
  */
 
-import { Metadata } from 'next';
-import { DEFAULT_METADATA, SITE_CONFIG } from './config';
+import type { Metadata } from 'next';
+import { SITE_CONFIG } from './config';
 
 /**
- * Generate metadata for a page
- * Merges default metadata with page-specific metadata
+ * Metadata for one public page: title, description, its own canonical URL and Open Graph /
+ * Twitter cards. Use it in a page's or a pass-through layout's `export const metadata`.
+ *
+ * `path` is the page's own path ("/pricing"). Every page needs its own canonical: a canonical
+ * set in a parent layout is inherited by every child, which tells Google and Bing that those
+ * pages are duplicates of the parent.
+ *
+ * `title` is the short page title; the root layout's template appends the site name.
+ * A child `openGraph` replaces the parent's entirely (images included), so the site image from
+ * app/opengraph-image.tsx is set explicitly unless `ogImage` is given.
  */
-export function generateMetadata({
+export function pageMetadata({
   title,
   description,
-  keywords,
-  ogImage,
+  path,
   noIndex = false,
-  canonical,
-  alternates,
+  ogImage,
+  ogType = 'website',
 }: {
   title: string;
   description: string;
-  keywords?: string[];
-  ogImage?: string;
+  path: string;
   noIndex?: boolean;
-  canonical?: string;
-  alternates?: { [key: string]: string };
+  ogImage?: string;
+  ogType?: 'website' | 'profile' | 'article';
 }): Metadata {
-  const fullTitle = title.includes(SITE_CONFIG.name) 
-    ? title 
-    : `${title} | ${SITE_CONFIG.name}`;
+  const socialTitle = `${title} | ${SITE_CONFIG.name}`;
+  const image = ogImage
+    ? { url: ogImage, alt: title }
+    : { url: SITE_CONFIG.ogImage, width: 1200, height: 630, alt: SITE_CONFIG.name };
 
   return {
-    title: fullTitle,
+    title,
     description,
-    keywords: keywords || DEFAULT_METADATA.keywords,
+    alternates: { canonical: path },
     openGraph: {
-      title: fullTitle,
-      description,
-      url: canonical || SITE_CONFIG.url,
+      type: ogType,
+      locale: SITE_CONFIG.locale,
+      url: path,
       siteName: SITE_CONFIG.name,
-      images: [
-        {
-          url: ogImage || SITE_CONFIG.ogImage,
-          width: 1200,
-          height: 630,
-          alt: fullTitle,
-        },
-      ],
-      locale: 'en_US',
-      type: 'website',
+      title: socialTitle,
+      description,
+      images: [image],
     },
     twitter: {
       card: 'summary_large_image',
-      title: fullTitle,
+      title: socialTitle,
       description,
-      images: [ogImage || SITE_CONFIG.ogImage],
-      creator: SITE_CONFIG.twitterHandle,
+      images: [image.url],
     },
-    robots: noIndex
-      ? {
-          index: false,
-          follow: false,
-          googleBot: {
-            index: false,
-            follow: false,
-          },
-        }
-      : {
-          index: true,
-          follow: true,
-          googleBot: {
-            index: true,
-            follow: true,
-            'max-video-preview': -1,
-            'max-image-preview': 'large',
-            'max-snippet': -1,
-          },
-        },
-    alternates: {
-      canonical: canonical || SITE_CONFIG.url,
-      ...alternates,
-    },
+    ...(noIndex && { robots: { index: false, follow: true } }),
   };
 }
+
+/** Metadata for pages that must stay out of search results (redirect stubs, auth, utilities). */
+export const NOINDEX_METADATA: Metadata = {
+  robots: { index: false, follow: true },
+};
 
 /**
  * Create SEO-friendly URL slugs

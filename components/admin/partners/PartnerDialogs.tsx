@@ -314,7 +314,7 @@ function ReferralLinkForm({ partner, onClose }: { partner: PartnerApplication; o
             />
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <span className={labelClass}>Default care mode</span>
               <Select value={careMode} onValueChange={setCareMode}>

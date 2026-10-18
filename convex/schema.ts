@@ -371,7 +371,8 @@ export default defineSchema({
       v.literal("existing_patient"),  // the physio's own patient before Rehabify
       v.literal("marketplace"),
       v.literal("booking_link"),
-      v.literal("invite")
+      v.literal("invite"),
+      v.literal("joy_whatsapp")       // booked through Joy on WhatsApp
     )),
     referredBy: v.optional(v.string()), // Who referred them, when source is "referred"
     // Follow-up task: when the clinic should next check in with this patient
@@ -902,6 +903,7 @@ export default defineSchema({
       v.literal("booking_link"),
       v.literal("clinic"),
       v.literal("invite"),
+      v.literal("joy_whatsapp"),
       v.literal("other")
     ),
     referredBy: v.optional(v.string()),
@@ -2796,6 +2798,91 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_booking", ["bookingId"]).index("by_status", ["status"]),
 
+  // What Joy learned on WhatsApp before handing the patient to a clinician: the structured
+  // intake and Joy's summaries. Clinical content, so it is only ever read through
+  // convex/joyHandoff.ts (the patient, their linked physio, admins). One row per assessment
+  // revision; a later revision is a new row.
+  joyIntakes: defineTable({
+    patientId: v.id("users"),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    conversationId: v.string(),
+    assessmentId: v.string(),
+    assessmentRevision: v.number(),
+    protocolVersion: v.optional(v.string()),
+    triageLevel: v.optional(v.union(v.literal("green"), v.literal("amber"), v.literal("red"))),
+    chiefComplaint: v.optional(v.string()),
+    bodyAreas: v.optional(v.array(v.string())),
+    painScore: v.optional(v.number()), // 0-10
+    onset: v.optional(v.string()),
+    duration: v.optional(v.string()),
+    redFlags: v.optional(v.array(v.object({ question: v.string(), answer: v.string(), flagged: v.boolean() }))),
+    aggravatingFactors: v.optional(v.array(v.string())),
+    easingFactors: v.optional(v.array(v.string())),
+    goals: v.optional(v.string()),
+    medicalHistory: v.optional(v.string()),
+    medications: v.optional(v.string()),
+    answers: v.optional(v.array(v.object({ question: v.string(), answer: v.string() }))),
+    clinicianSummary: v.optional(v.string()), // for the physio
+    patientSummary: v.optional(v.string()), // plain language, shown to the patient
+    language: v.optional(v.string()),
+    preferredTimes: v.optional(v.string()),
+    // The patient's agreement that Joy may pass this intake to the treating clinician.
+    // When it is explicitly false the physio sees that an intake exists, not its content.
+    consent: v.optional(v.object({
+      shareWithClinician: v.boolean(),
+      policyVersion: v.optional(v.string()),
+      acceptanceReference: v.optional(v.string()),
+      givenAt: v.number(),
+    })),
+    receivedAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_patient", ["patientId", "receivedAt"])
+    .index("by_booking", ["bookingId"])
+    .index("by_assessment", ["assessmentId", "assessmentRevision"]),
+
+  // Where a Joy patient is in their journey: stages Joy reports from WhatsApp and the ones
+  // Rehabify records itself (payment, physio response, scheduling, call joined). `eventKey`
+  // makes every write idempotent.
+  joyJourneyEvents: defineTable({
+    patientId: v.id("users"),
+    bookingId: v.optional(v.id("marketplaceBookings")),
+    stage: v.union(
+      v.literal("conversation_started"),
+      v.literal("referral_linked"),
+      v.literal("triage_completed"),
+      v.literal("eligibility_passed"),
+      v.literal("eligibility_blocked"),
+      v.literal("matches_shown"),
+      v.literal("booking_held"),
+      v.literal("payment_link_sent"),
+      v.literal("payment_completed"),
+      v.literal("payment_failed"),
+      v.literal("provider_requested"),
+      v.literal("provider_accepted"),
+      v.literal("provider_rejected"),
+      v.literal("provider_timeout"),
+      v.literal("awaiting_admin_schedule"),
+      v.literal("admin_scheduled"),
+      v.literal("rescheduled"),
+      v.literal("meeting_link_sent"),
+      v.literal("reminder_sent"),
+      v.literal("call_joined"),
+      v.literal("session_completed"),
+      v.literal("hold_expired"),
+      v.literal("abandoned"),
+      v.literal("cancelled"),
+      v.literal("handed_to_human")
+    ),
+    source: v.union(v.literal("joy"), v.literal("rehabify")),
+    occurredAt: v.number(),
+    note: v.optional(v.string()), // short operational note, never clinical narrative
+    eventKey: v.string(),
+  })
+    .index("by_patient", ["patientId", "occurredAt"])
+    .index("by_booking", ["bookingId", "occurredAt"])
+    .index("by_event_key", ["eventKey"]),
+
   // Paid five-minute AMBER review. This is deliberately separate from a
   // marketplace booking: a reviewer is allocated only after verified payment,
   // never fabricated merely to create a payment link.
@@ -3649,13 +3736,24 @@ export default defineSchema({
     note: v.optional(v.string()),
     voiceNoteStorageId: v.optional(v.id("_storage")),
     voiceNoteSeconds: v.optional(v.number()),
+    // Optional goals shown at the top of the programme (e.g. "Climb stairs without the rail").
+    goals: v.optional(v.array(v.string())),
+    // Exercises and/or education, in the order the patient sees them. Older programmes only
+    // hold library exercises, so every field added here is optional.
     items: v.array(v.object({
-      exerciseId: v.id("exercises"),
+      // A library exercise. Absent for the care team's own exercises and for education.
+      exerciseId: v.optional(v.id("exercises")),
+      // "education": advice to read, with no dose. Absent means an exercise.
+      kind: v.optional(v.union(v.literal("exercise"), v.literal("education"))),
+      // Name of an exercise that isn't in the library, or the title of an education item.
+      name: v.optional(v.string()),
       side: v.optional(v.union(v.literal("L"), v.literal("R"))),
-      sets: v.number(),
-      reps: v.number(),
+      // Always set for exercises; left out for education.
+      sets: v.optional(v.number()),
+      reps: v.optional(v.number()),
       holdSeconds: v.optional(v.number()),
-      frequency: v.string(),
+      frequency: v.optional(v.string()),
+      // Instructions for an exercise, or the text of an education item.
       note: v.optional(v.string()),
     })),
     status: v.union(v.literal("active"), v.literal("archived")),

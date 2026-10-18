@@ -371,7 +371,7 @@ function ReportSheet({
                 <p className="mt-2 whitespace-pre-wrap text-sm text-rh-night dark:text-neutral-100">{report.description}</p>
               </section>
 
-              <section className="grid gap-3 sm:grid-cols-2">
+              <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl bg-white p-4 shadow-soft dark:bg-rh-ink-2 dark:shadow-none">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Physiotherapist</p>
                   <p className="mt-1 text-sm font-medium text-rh-night dark:text-white">{report.physiotherapist?.name ?? 'Unknown'}</p>

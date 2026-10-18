@@ -131,7 +131,8 @@ function ShellFrame({ children }: { children: ReactNode }) {
         <AdminSidebar className="sticky top-3 h-[calc(100vh-1.5rem)] rounded-3xl shadow-lift" />
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* clip, not hidden: stops sideways scroll on phones without breaking the sticky topbar */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-x-clip">
         <header className="sticky top-0 z-40 flex h-16 items-center gap-3 bg-rh-canvas/85 px-4 backdrop-blur-xl supports-[backdrop-filter]:bg-rh-canvas/70 dark:bg-rh-ink/85 dark:supports-[backdrop-filter]:bg-rh-ink/70 sm:px-6 lg:px-8">
           <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
             <SheetTrigger asChild>

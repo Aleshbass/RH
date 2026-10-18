@@ -52,6 +52,7 @@ import {
   startOfWeek,
 } from 'date-fns'
 import { cn } from '@/lib/utils'
+import { playSound } from '@/lib/sounds'
 import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
 import {
   EmptyState,
@@ -723,6 +724,7 @@ function BookDialog({
         notes: form.note.trim() || undefined,
         serviceType: form.service !== 'none' ? form.service : undefined,
       })
+      playSound('booked')
       toast.success(`Booked for ${format(start, 'EEE d MMM, HH:mm')}`)
       reset()
       onOpenChange(false)

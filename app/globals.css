@@ -124,7 +124,7 @@ body {
   --color-rh-mist: #e6f0ef;
   --color-rh-cream: #faf6e7;
   --color-rh-sand: #efeae2;
-  --color-rh-canvas: #f7f5ef;
+  --color-rh-canvas: #f4ede3; /* light background for every dashboard */
   --color-rh-amber: #e8a54f;
   --color-rh-peach: #fdf0dc;
   --color-rh-rose: #ffcfdc;
@@ -138,6 +138,22 @@ body {
   --color-rh-ink-3: #1b2827;
   --shadow-soft: 0 1px 2px rgb(0 46 44 / 0.05), 0 10px 30px -14px rgb(0 46 44 / 0.18);
   --shadow-lift: 0 2px 4px rgb(0 46 44 / 0.06), 0 18px 40px -16px rgb(0 46 44 / 0.28);
+
+  /* Older names from tailwind.config.js, which Tailwind v4 no longer reads (bg-brand, bg-call-bg, ...) */
+  --color-brand: #005b57;
+  --color-brand-dark: #00443e;
+  --color-brand-light: #007d77;
+  --color-cream: #faf6e7;
+  --color-teal-dark: #002e2c;
+  --color-call-bg: #faf6e7;
+  --color-call-control: #ffffff;
+  --color-call-accent: #002e2c;
+  --animate-fadeIn: fadeIn 0.5s ease-in-out forwards;
+
+  @keyframes fadeIn {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
 }
 
 @theme inline {

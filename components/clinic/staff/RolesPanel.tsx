@@ -148,7 +148,8 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
         ) : roles.length === 0 ? (
           <div className="px-4 py-5 sm:px-5">
             <p className="text-sm text-neutral-700 dark:text-neutral-300">
-              No roles yet. Everyone on your team can open every page.
+              No roles yet. Clinicians can open Appointments and Patients; give them a role to add clinic pages
+              such as Referrals, Billing, Team or Reports.
             </p>
             {canManage && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -242,8 +243,8 @@ export default function RolesPanel({ roles }: { roles: ClinicRole[] | undefined 
             <AlertDialogTitle>Delete the {deleteFor?.name} role?</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteFor && deleteFor.memberCount > 0
-                ? `${pluralPeople(deleteFor.memberCount)} with this role will get full access until you give them another role.`
-                : 'No one has this role. Pending invitations that use it will give full access instead.'}
+                ? `${pluralPeople(deleteFor.memberCount)} with this role will go back to the default (clinicians: Appointments and Patients) until you give them another role.`
+                : 'No one has this role. Pending invitations that use it will give the default clinician access (Appointments and Patients) instead.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

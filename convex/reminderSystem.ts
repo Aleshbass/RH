@@ -255,8 +255,8 @@ export const sendAppointmentReminders = internalAction({
           }
         );
 
-        // Send to patient (max 2 reminders per appointment)
-        if (patientReminderCount < 2) {
+        // Send to patient (max 2 reminders per appointment), unless they switched reminders off
+        if (patientReminderCount < 2 && patient.notificationPreferences?.appointmentReminders !== false) {
           await ctx.runMutation(
             internal.notifications.core.createNotificationWithDeduplication,
             {

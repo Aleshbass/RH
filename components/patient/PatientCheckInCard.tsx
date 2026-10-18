@@ -28,7 +28,7 @@ const EXERCISES: { value: Exercises; label: string }[] = [
 ]
 
 function painColour(score: number, selected: boolean) {
-  if (!selected) return 'bg-white text-neutral-600 hover:bg-[#f7f5ef] border-black/[0.08]'
+  if (!selected) return 'bg-white text-neutral-600 hover:bg-rh-canvas border-black/[0.08]'
   if (score >= 7) return 'bg-[#be3a5f] text-white border-[#be3a5f]'
   if (score >= 4) return 'bg-[#e8a54f] text-white border-[#e8a54f]'
   return 'bg-[#005b57] text-white border-[#005b57]'

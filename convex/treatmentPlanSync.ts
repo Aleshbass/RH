@@ -9,9 +9,10 @@ import { getAuthenticatedUser } from "./auth";
  */
 
 /**
- * Sync treatment plan changes to patient with notification
+ * Sync treatment plan changes to patient with notification. Internal: only the physio-side
+ * plan mutations call it, after their own access checks.
  */
-export const syncTreatmentPlanToPatient = mutation({
+export const syncTreatmentPlanToPatient = internalMutation({
   args: {
     treatmentPlanId: v.id("treatmentPlans"),
     changeType: v.union(
@@ -147,10 +148,16 @@ export const markTreatmentChangesAsRead = mutation({
     if (user.role !== "patient") {
       throw new Error("Access denied");
     }
+    const plan = await ctx.db.get(args.treatmentPlanId);
+    if (!plan || plan.patientId !== user._id) {
+      throw new Error("Access denied");
+    }
 
     // Mark specific versions as read, or all unread versions
     if (args.versionIds) {
       for (const versionId of args.versionIds) {
+        const version = await ctx.db.get(versionId);
+        if (!version || version.treatmentPlanId !== plan._id) continue;
         await ctx.db.patch(versionId, {
           patientNotified: true,
           notificationSentAt: Date.now(),

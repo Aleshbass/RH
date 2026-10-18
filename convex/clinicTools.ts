@@ -29,11 +29,22 @@ const AREA_LABELS: Record<ClinicArea, string> = {
 
 export const isClinicArea = (value: string): value is ClinicArea => (CLINIC_AREAS as readonly string[]).includes(value);
 
+/**
+ * What a clinician gets when the owner hasn't given them a role: their own clinical work.
+ * Clinic management (Referrals, Billing, Team, Reports, Clinic settings) needs a role that includes it.
+ */
+export const CLINICIAN_DEFAULT_AREAS: readonly ClinicArea[] = ["appointments", "patients"];
+
 export type ClinicMember = {
   user: Doc<"users">;
   clinic: Doc<"clinics">;
   isOwner: boolean;
-  /** "all" when the member has no role, or a role with no pages ticked */
+  /** owner, a clinician (physiotherapist on the team) or front desk (clinic_staff) */
+  kind: "owner" | "clinician" | "front_desk";
+  /**
+   * "all" for the owner, front desk without a role, and anyone whose role has no pages ticked.
+   * A clinician without a role gets CLINICIAN_DEFAULT_AREAS.
+   */
   permissions: "all" | ClinicArea[];
   roleName: string | null;
 };
@@ -47,23 +58,26 @@ async function resolveClinicMember(ctx: QueryCtx, user: Doc<"users">): Promise<C
       .query("clinics")
       .withIndex("by_owner_id", (q: any) => q.eq("ownerId", user._id))
       .first();
-    return clinic ? { user, clinic, isOwner: true, permissions: "all", roleName: null } : null;
+    return clinic ? { user, clinic, isOwner: true, kind: "owner", permissions: "all", roleName: null } : null;
   }
 
   if (user.clinicId && isClinicTeamRole(user.role)) {
     const clinic = await ctx.db.get(user.clinicId);
     if (!clinic) return null;
-    let permissions: ClinicMember["permissions"] = "all";
+    const kind = user.role === "physiotherapist" ? ("clinician" as const) : ("front_desk" as const);
+    // No role (or a deleted one): clinicians get their clinical pages, front desk keeps every page
+    let permissions: ClinicMember["permissions"] = kind === "clinician" ? [...CLINICIAN_DEFAULT_AREAS] : "all";
     let roleName: string | null = null;
     if (user.clinicRoleId) {
       const role = await ctx.db.get(user.clinicRoleId);
       if (role && role.clinicId === clinic._id) {
         roleName = role.name;
         const allowed = role.permissions.filter(isClinicArea);
-        if (allowed.length > 0) permissions = allowed;
+        // The owner chose this role; one with no pages ticked is their way of giving full access
+        permissions = allowed.length > 0 ? allowed : "all";
       }
     }
-    return { user, clinic, isOwner: false, permissions, roleName };
+    return { user, clinic, isOwner: false, kind, permissions, roleName };
   }
 
   return null;
@@ -1389,64 +1403,73 @@ export const getClinicFollowUpQueue = query({
       ];
     }
     const { clinic } = auth;
-
-    const staffIds = await getClinicStaffUserIds(ctx, clinic);
     const patientIds = await getActiveClinicPatientIds(ctx, clinic);
-
-    const rows = await Promise.all(
-      patientIds.slice(0, 100).map(async (patientId) => {
-        const patient = await ctx.db.get(patientId);
-        if (!patient) return null;
-
-        const recent = (
-          await ctx.db
-            .query("appointments")
-            .withIndex("by_patient_id_and_time", (q: any) => q.eq("patientId", patientId))
-            .order("desc")
-            .take(20)
-        ).filter(
-          (apt) =>
-            !apt.isRecordOnly &&
-            (apt.clinicId === clinic._id || staffIds.has(apt.physiotherapistId)) &&
-            apt.status !== "cancelled_by_patient" &&
-            apt.status !== "cancelled_by_therapist"
-        );
-        const upcoming = recent.filter((apt) => apt.startTime >= now).sort((a, b) => a.startTime - b.startTime)[0];
-        const lastVisit = recent.find((apt) => apt.startTime < now);
-
-        const daysSinceLastVisit = lastVisit ? Math.floor((now - lastVisit.startTime) / DAY) : null;
-        const activeRels = (
-          await ctx.db
-            .query("patientPhysiotherapistRelationships")
-            .withIndex("by_patient", (q: any) => q.eq("patientId", patientId))
-            .collect()
-        ).filter((rel) => rel.status === "active" && (rel.clinicId === clinic._id || staffIds.has(rel.physiotherapistId)));
-        const nextCheckInAt = activeRels.map((rel) => rel.nextCheckInAt).find((at) => at !== undefined) ?? null;
-
-        // A scheduled check-in date wins. Otherwise: nothing booked and not seen for a week.
-        const needsCheckIn =
-          nextCheckInAt !== null
-            ? nextCheckInAt <= now
-            : !upcoming && (daysSinceLastVisit === null || daysSinceLastVisit >= 7);
-        if (!needsCheckIn) return null;
-
-        return {
-          patientId: patient._id,
-          patientName: `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || patient.email || "Patient",
-          phone: patient.phoneNumber || null,
-          lastVisitAt: lastVisit?.startTime ?? null,
-          daysSinceLastVisit,
-          lastVisitStatus: lastVisit?.status ?? null,
-          checkInDueAt: nextCheckInAt,
-        };
-      })
-    );
-
-    return rows
-      .filter((row): row is NonNullable<typeof row> => row !== null)
-      .sort((a, b) => (b.daysSinceLastVisit ?? 9999) - (a.daysSinceLastVisit ?? 9999));
+    return await buildFollowUpRows(ctx, clinic, patientIds);
   },
 });
+
+/**
+ * Which of these patients are due a check-in: their check-in date has been reached, or (with
+ * no date set) nothing is booked and they haven't been seen for a week. Most overdue first.
+ */
+async function buildFollowUpRows(ctx: QueryCtx, clinic: Doc<"clinics">, patientIds: Id<"users">[]) {
+  const now = Date.now();
+  const DAY = 24 * 60 * 60 * 1000;
+  const staffIds = await getClinicStaffUserIds(ctx, clinic);
+
+  const rows = await Promise.all(
+    patientIds.slice(0, 100).map(async (patientId) => {
+      const patient = await ctx.db.get(patientId);
+      if (!patient) return null;
+
+      const recent = (
+        await ctx.db
+          .query("appointments")
+          .withIndex("by_patient_id_and_time", (q: any) => q.eq("patientId", patientId))
+          .order("desc")
+          .take(20)
+      ).filter(
+        (apt) =>
+          !apt.isRecordOnly &&
+          (apt.clinicId === clinic._id || staffIds.has(apt.physiotherapistId)) &&
+          apt.status !== "cancelled_by_patient" &&
+          apt.status !== "cancelled_by_therapist"
+      );
+      const upcoming = recent.filter((apt) => apt.startTime >= now).sort((a, b) => a.startTime - b.startTime)[0];
+      const lastVisit = recent.find((apt) => apt.startTime < now);
+
+      const daysSinceLastVisit = lastVisit ? Math.floor((now - lastVisit.startTime) / DAY) : null;
+      const activeRels = (
+        await ctx.db
+          .query("patientPhysiotherapistRelationships")
+          .withIndex("by_patient", (q: any) => q.eq("patientId", patientId))
+          .collect()
+      ).filter((rel) => rel.status === "active" && (rel.clinicId === clinic._id || staffIds.has(rel.physiotherapistId)));
+      const nextCheckInAt = activeRels.map((rel) => rel.nextCheckInAt).find((at) => at !== undefined) ?? null;
+
+      // A scheduled check-in date wins. Otherwise: nothing booked and not seen for a week.
+      const needsCheckIn =
+        nextCheckInAt !== null
+          ? nextCheckInAt <= now
+          : !upcoming && (daysSinceLastVisit === null || daysSinceLastVisit >= 7);
+      if (!needsCheckIn) return null;
+
+      return {
+        patientId: patient._id,
+        patientName: `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || patient.email || "Patient",
+        phone: patient.phoneNumber || null,
+        lastVisitAt: lastVisit?.startTime ?? null,
+        daysSinceLastVisit,
+        lastVisitStatus: lastVisit?.status ?? null,
+        checkInDueAt: nextCheckInAt,
+      };
+    })
+  );
+
+  return rows
+    .filter((row): row is NonNullable<typeof row> => row !== null)
+    .sort((a, b) => (b.daysSinceLastVisit ?? 9999) - (a.daysSinceLastVisit ?? 9999));
+}
 
 /**
  * Record a follow-up action or outreach note
@@ -2266,6 +2289,7 @@ export const getClinicRehabifyReferrals = query({
           partnerSource: "Lagoon Hospital Orthopedics",
           createdAt: Date.now() - 4 * 3600000,
           assignedPhysiotherapistId: null,
+          patientId: null,
           isRehabifyReferral: true,
         },
         {
@@ -2282,6 +2306,7 @@ export const getClinicRehabifyReferrals = query({
           partnerSource: "First Cardiology Clinic Network",
           createdAt: Date.now() - 28 * 3600000,
           assignedPhysiotherapistId: "prev_doc1",
+          patientId: "prev_p2",
           isRehabifyReferral: true,
         },
       ];
@@ -2308,6 +2333,8 @@ export const getClinicRehabifyReferrals = query({
       partnerSource: ref.partnerId || ref.conversionSource || "Rehabify Partner Network",
       createdAt: ref.createdAt || ref._creationTime,
       assignedPhysiotherapistId: ref.assignedPhysiotherapistId || null,
+      // Set once accepted: the patient record it became, so the Patients list can show its progress
+      patientId: ref.patientId ?? null,
       isRehabifyReferral: true, // Distinguishes from direct clinic patients
     }));
   },
@@ -2503,6 +2530,9 @@ export const getClinicConsolidatedDashboard = query({
     }
 
     const { clinic } = auth;
+    // Money and referral figures only for those whose role includes those pages
+    const seesBilling = canUseArea(auth, "billing");
+    const seesReferrals = canUseArea(auth, "referrals");
     const staffIds = await getClinicStaffUserIds(ctx, clinic);
     const patientIds = await getActiveClinicPatientIds(ctx, clinic);
 
@@ -2553,18 +2583,22 @@ export const getClinicConsolidatedDashboard = query({
       (apt) => apt.startTime >= endOfDay && (apt.status === "scheduled" || apt.status === "confirmed")
     ).length;
 
-    const invoices = await ctx.db
-      .query("invoices")
-      .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinic._id))
-      .collect();
+    const invoices: Doc<"invoices">[] = seesBilling
+      ? await ctx.db
+          .query("invoices")
+          .withIndex("by_clinic_id", (q: any) => q.eq("clinicId", clinic._id))
+          .collect()
+      : [];
     const unpaid = invoices.filter((inv) => inv.status === "sent" || inv.status === "overdue" || inv.status === "partial_payment");
 
-    const newReferralsCount = (
-      await ctx.db
-        .query("inboundReferrals")
-        .withIndex("by_assigned_clinic", (q: any) => q.eq("assignedClinicId", clinic._id))
-        .collect()
-    ).filter((ref) => ref.status === "received" || ref.status === "pending").length;
+    const newReferralsCount = seesReferrals
+      ? (
+          await ctx.db
+            .query("inboundReferrals")
+            .withIndex("by_assigned_clinic", (q: any) => q.eq("assignedClinicId", clinic._id))
+            .collect()
+        ).filter((ref) => ref.status === "received" || ref.status === "pending").length
+      : 0;
 
     const activeProgrammesCount = (
       await ctx.db
@@ -2643,19 +2677,161 @@ export const getClinicConsolidatedDashboard = query({
 });
 
 /**
- * Small counts for the sidebar (new referrals waiting for a response).
+ * Small counts for the sidebar: new referrals waiting for a response (shown on Patients),
+ * only for those whose role includes Referrals.
  */
 export const getClinicNavCounts = query({
   args: {},
   handler: async (ctx) => {
     const auth = await getOwnerClinicOrPreview(ctx);
-    if (!auth) return { newReferrals: 0 };
+    if (!auth || !canUseArea(auth, "referrals")) return { newReferrals: 0 };
     const referrals = await ctx.db
       .query("inboundReferrals")
       .withIndex("by_assigned_clinic", (q: any) => q.eq("assignedClinicId", auth.clinic._id))
       .collect();
     return {
       newReferrals: referrals.filter((ref) => ref.status === "received" || ref.status === "pending").length,
+    };
+  },
+});
+
+/**
+ * A clinician's own home in the clinic portal: their visits today, their patients and their
+ * check-ins, instead of the clinic-wide overview the owner sees. Null for preview visitors,
+ * the owner and front-desk staff.
+ */
+export const getMyClinicianHome = query({
+  args: {},
+  handler: async (ctx) => {
+    let member: ClinicMember | null;
+    try {
+      member = await getClinicMemberOrPreview(ctx);
+    } catch {
+      // e.g. the owner paused this clinician: the home explains that instead of erroring
+      return null;
+    }
+    if (!member || member.kind !== "clinician") return null;
+    const { clinic, user: me } = member;
+    const seesSchedule = canUseArea(member, "appointments");
+    const seesPatients = canUseArea(member, "patients");
+
+    const HOUR = 3600000;
+    const DAY = 24 * HOUR;
+    const now = new Date();
+    const nowTs = now.getTime();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const endOfDay = startOfDay + DAY;
+    const weekAhead = startOfDay + 7 * DAY;
+    const isLive = (apt: Doc<"appointments">) =>
+      !apt.isRecordOnly && apt.status !== "cancelled_by_patient" && apt.status !== "cancelled_by_therapist";
+
+    const userCache = new Map<string, Doc<"users"> | null>();
+    const getUser = async (id: Id<"users">) => {
+      if (!userCache.has(id)) userCache.set(id, await ctx.db.get(id));
+      return userCache.get(id) ?? null;
+    };
+    const fullName = (u: Doc<"users"> | null) =>
+      u ? `${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email || "Patient" : "Patient";
+
+    // My visits from today through the coming week (the clinic schedule includes all of these)
+    const myWeek: Doc<"appointments">[] = seesSchedule
+      ? (
+          await ctx.db
+            .query("appointments")
+            .withIndex("by_physiotherapist_id_and_time", (q: any) =>
+              q.eq("physiotherapistId", me._id).gte("startTime", startOfDay).lt("startTime", weekAhead)
+            )
+            .collect()
+        ).filter(isLive)
+      : [];
+    myWeek.sort((a, b) => a.startTime - b.startTime);
+
+    const today = await Promise.all(
+      myWeek
+        .filter((apt) => apt.startTime < endOfDay)
+        .map(async (apt) => ({
+          _id: apt._id,
+          patientId: apt.patientId,
+          startTime: apt.startTime,
+          endTime: apt.endTime,
+          appointmentType: apt.appointmentType ?? "in-person",
+          status: apt.status,
+          patientName: fullName(await getUser(apt.patientId)),
+        }))
+    );
+    const upcomingWeekCount = myWeek.filter(
+      (apt) => apt.startTime >= endOfDay && (apt.status === "scheduled" || apt.status === "confirmed")
+    ).length;
+
+    if (!seesPatients) {
+      return {
+        clinicName: clinic.name,
+        seesSchedule,
+        seesPatients,
+        today,
+        upcomingWeekCount,
+        patientsCount: 0,
+        patients: [],
+        checkInsCount: 0,
+        checkIns: [],
+      };
+    }
+
+    // Patients in my care (same rule as the clinic's patient list: an active relationship)
+    const myRels = await ctx.db
+      .query("patientPhysiotherapistRelationships")
+      .withIndex("by_physiotherapist", (q: any) => q.eq("physiotherapistId", me._id))
+      .filter((q: any) => q.eq(q.field("status"), "active"))
+      .collect();
+    const myPatientIds = Array.from(new Set(myRels.map((rel) => rel.patientId)));
+
+    const patients = (
+      await Promise.all(
+        myPatientIds.slice(0, 60).map(async (patientId) => {
+          const patient = await getUser(patientId);
+          if (!patient) return null;
+          const visits = (
+            await ctx.db
+              .query("appointments")
+              .withIndex("by_patient_id_and_time", (q: any) => q.eq("patientId", patientId))
+              .order("desc")
+              .take(20)
+          ).filter((apt) => isLive(apt) && apt.physiotherapistId === me._id);
+          const lastVisitAt = visits.find((apt) => apt.startTime < nowTs)?.startTime ?? null;
+          const nextVisitAt =
+            visits
+              .filter((apt) => apt.startTime >= nowTs && (apt.status === "scheduled" || apt.status === "confirmed"))
+              .sort((a, b) => a.startTime - b.startTime)[0]?.startTime ?? null;
+          return {
+            patientId,
+            name: fullName(patient),
+            imageUrl: patient.imageUrl ?? null,
+            lastVisitAt,
+            nextVisitAt,
+          };
+        })
+      )
+    )
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      // Next visit soonest first, then the ones with nothing booked
+      .sort(
+        (a, b) =>
+          (a.nextVisitAt ?? Number.MAX_SAFE_INTEGER) - (b.nextVisitAt ?? Number.MAX_SAFE_INTEGER) ||
+          a.name.localeCompare(b.name)
+      );
+
+    const checkIns = await buildFollowUpRows(ctx, clinic, myPatientIds);
+
+    return {
+      clinicName: clinic.name,
+      seesSchedule,
+      seesPatients,
+      today,
+      upcomingWeekCount,
+      patientsCount: myPatientIds.length,
+      patients: patients.slice(0, 6),
+      checkInsCount: checkIns.length,
+      checkIns: checkIns.slice(0, 5),
     };
   },
 });
@@ -2684,6 +2860,19 @@ export const getMyClinicAccess = query({
 
     const owner = member.isOwner ? user : await ctx.db.get(member.clinic.ownerId);
     const approvalStatus = (await getApprovalStatus(ctx, member.clinic.ownerId)) ?? "not_submitted";
+
+    // A clinician who also has their own approved Rehabify physio account can switch to it.
+    // Same rule as hasOwnPhysioAccount in components/clinic/clinician-routing.ts, and the same
+    // approval row the physio portal reads (physioSetup.getMySetupStatus takes the first one).
+    let hasOwnPhysioPortal = false;
+    if (member.kind === "clinician" && user.onboarded) {
+      const ownApproval = await ctx.db
+        .query("accountApprovalStatus")
+        .withIndex("by_user_id", (q: any) => q.eq("userId", user._id))
+        .first();
+      hasOwnPhysioPortal = ownApproval?.status === "approved";
+    }
+
     return {
       mode: member.isOwner ? ("owner" as const) : ("staff" as const),
       signedIn: true,
@@ -2691,11 +2880,9 @@ export const getMyClinicAccess = query({
       logoUrl: member.clinic.logoUrl ?? null,
       permissions: member.permissions,
       roleName: member.roleName,
-      staffKind: member.isOwner
-        ? ("owner" as const)
-        : user.role === "clinic_staff"
-          ? ("front_desk" as const)
-          : ("clinician" as const),
+      staffKind: member.kind,
+      firstName: user.firstName?.trim() || null,
+      hasOwnPhysioPortal,
       ownerOnboarded: Boolean(owner?.onboarded),
       approvalStatus,
       suspended: !member.isOwner && Boolean(user.status) && user.status !== "active",
@@ -2768,7 +2955,7 @@ export const saveClinicRole = mutation({
   },
 });
 
-/** Delete a role. Anyone who had it gets full access until given another role. */
+/** Delete a role. Anyone who had it falls back to the default (clinicians: Appointments and Patients; front desk: every page). */
 export const deleteClinicRole = mutation({
   args: { roleId: v.id("clinicRoles") },
   handler: async (ctx, args) => {
@@ -2795,7 +2982,7 @@ export const deleteClinicRole = mutation({
   },
 });
 
-/** Give a team member a role, or null for full access. */
+/** Give a team member a role, or null for the default (clinicians: Appointments and Patients; front desk: every page). */
 export const setMemberClinicRole = mutation({
   args: { memberId: v.id("users"), roleId: v.union(v.id("clinicRoles"), v.null()) },
   handler: async (ctx, args) => {
@@ -2813,7 +3000,7 @@ export const setMemberClinicRole = mutation({
       await logSecurityEvent(ctx, "permission_updated", {
         userId: target._id,
         clinicId: clinic._id,
-        details: { from: target.clinicRoleId ?? "full_access", to: args.roleId ?? "full_access" },
+        details: { from: target.clinicRoleId ?? "default_access", to: args.roleId ?? "default_access" },
       });
     }
     return { success: true };

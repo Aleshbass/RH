@@ -9,8 +9,8 @@
  *   - package of 1, 4, 8 or 12 sessions with the physio's package discount (default 7%)
  *   - or the physio's initial consultation / hourly rate on their own
  *   - plus Paystack's inbound fee when the platform makes the patient bear it
- * Physiotherapists without any rate are booked at the default virtual (₦6,000) or in-person
- * (₦10,000) rate, never for free.
+ * Physiotherapists without any rate are booked at the platform default virtual or in-person
+ * rate (Admin › Revenue settings; ₦6,000 / ₦10,000 until changed), never for free.
  *
  * Mirrors app/book/[physiotherapistId]/[duration]/page.tsx; scripts/marketplace-pricing.test.ts
  * checks that every price the page can produce is accepted and tampered amounts are rejected.
@@ -54,6 +54,11 @@ function tariffRates(): number[] {
   return tariffRatesNaira;
 }
 
+/** The admin-set default rate (kobo), or the built-in one when none is saved or it's invalid. */
+export function platformDefaultKobo(configured: number | undefined, fallback: number): number {
+  return configured && Number.isInteger(configured) && configured > 0 ? configured : fallback;
+}
+
 /** Package total in naira, exactly as the booking page computes it. */
 function packageTotalNaira(sessionRateNaira: number, sessions: number, discountPercent: number): number {
   const discount = sessions === 1 ? 0 : discountPercent;
@@ -77,7 +82,10 @@ function chargedKobo(baseNaira: number, patientBearsFee: boolean): number {
 export function resolveServiceAmountKobo(
   profile: PricedProfile,
   booking: { serviceAmountKobo: number | undefined; packageSessions?: number; isOnline?: boolean },
-  settings: { paystackFeeBearerInbound?: string } | null | undefined
+  settings:
+    | { paystackFeeBearerInbound?: string; defaultVirtualRateKobo?: number; defaultInPersonRateKobo?: number }
+    | null
+    | undefined
 ): number {
   const amount = booking.serviceAmountKobo ?? 0;
   if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 0) {
@@ -91,9 +99,10 @@ export function resolveServiceAmountKobo(
   const hourlyNaira = profile.hourlyRate ? profile.hourlyRate / 100 : 0;
   const initialNaira = profile.initialConsultRate ? profile.initialConsultRate / 100 : 0;
   const hasOwnRate = hourlyNaira > 0 || initialNaira > 0;
+  // A physio's own rate wins; otherwise the default set in Admin › Revenue settings
   const defaultKobo = booking.isOnline
-    ? profile.virtualConsultationRate || DEFAULT_VIRTUAL_KOBO
-    : profile.inPersonConsultationRate || DEFAULT_IN_PERSON_KOBO;
+    ? profile.virtualConsultationRate || platformDefaultKobo(settings?.defaultVirtualRateKobo, DEFAULT_VIRTUAL_KOBO)
+    : profile.inPersonConsultationRate || platformDefaultKobo(settings?.defaultInPersonRateKobo, DEFAULT_IN_PERSON_KOBO);
 
   // No amount from the page: only physios without their own rate get the default rate.
   if (amount === 0) {

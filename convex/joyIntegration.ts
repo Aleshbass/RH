@@ -8,6 +8,7 @@ import { normalizePhone, normalizeTrackingCode, phonesMatch, referralEnv, toPubl
 import { markProviderMatched, transitionReferral } from "./helpers/partnerEvents";
 import { attributeUserToLink, attributeUserToReferral, bumpLinkCounter } from "./helpers/partnerAttribution";
 import { recordPartnerCommission } from "./helpers/partnerLedger";
+import { ensureJoyCareLink, logJourney } from "./joyHandoff";
 
 const HOUR_MS = 60 * 60 * 1000;
 const BOOKING_HOLD_MS = 30 * 60 * 1000;
@@ -398,14 +399,17 @@ export const resolveOrCreatePatientByPhone = internalMutation({
         // This is intentionally not a Clerk ID. It identifies a service-created
         // WhatsApp patient until the person later links a Clerk account.
         clerkId: `joy-whatsapp:${args.joyPersonId}`,
-        email: args.email,
+        // Lower-cased so a later sign-up with the same (verified) email claims this record
+        email: args.email?.trim().toLowerCase() || undefined,
         firstName: firstName || "Patient",
         lastName: remainingNames.join(" "),
         phoneNumber: phone,
         role: "patient",
         onboarded: false,
       });
-      await ctx.db.insert("patientProfiles", { userId: resolvedPatientId });
+      const patientProfileId = await ctx.db.insert("patientProfiles", { userId: resolvedPatientId });
+      // Documents and the patient dashboard find the profile through this pointer
+      await ctx.db.patch(resolvedPatientId, { patientProfileId });
       resultResolution = "CREATED";
       resultDisplayName = [firstName, ...remainingNames].filter(Boolean).join(" ") || undefined;
     }
@@ -844,6 +848,9 @@ export const createPendingJoyBooking = internalMutation({
       createdAt: now, updatedAt: now,
     });
     await bumpLinkCounter(ctx, referralLinkId, "bookings");
+    await logJourney(ctx, { patientId: args.patientId, bookingId, stage: "booking_held", eventKey: `booking-held-${bookingId}` });
+    // Every Joy booking gets its short link up front, so the patient can follow its status
+    await ctx.scheduler.runAfter(0, internal.joyIntegration.ensureJoyBookingCode, { bookingId });
 
     // A physiotherapist was matched. The referral becomes "booked" only once payment
     // is verified (recordJoyPaymentWebhook).
@@ -925,6 +932,8 @@ export const createAdminScheduledJoyVirtualBooking = internalMutation({
       joyConsultationType: args.consultationType, adminSchedulingStatus: "awaiting_schedule",
       replacementStatus: "not_needed", createdAt: now, updatedAt: now,
     });
+    await logJourney(ctx, { patientId: args.patientId, bookingId, stage: "booking_held", eventKey: `booking-held-${bookingId}` });
+    await ctx.scheduler.runAfter(0, internal.joyIntegration.ensureJoyBookingCode, { bookingId });
     return { booking_id: bookingId, booking_status: "pending_payment", payment_status: "pending", amount_kobo: args.amountKobo, hold_expires_at: now + BOOKING_HOLD_MS };
   },
 });
@@ -987,6 +996,7 @@ export const cancelJoyBooking = internalMutation({
     // an operational/refund workflow and must not erase payment evidence.
     if (booking.paymentStatus !== "pending" || booking.bookingStatus !== "pending_payment") throw new Error("Paid bookings require the approved cancellation workflow");
     await ctx.db.patch(booking._id, { bookingStatus: "cancelled", cancellationReason: args.reason, holdExpiresAt: Date.now(), updatedAt: Date.now() });
+    await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "cancelled", eventKey: `booking-cancelled-${booking._id}` });
     return { booking_id: booking._id, booking_status: "cancelled", payment_status: booking.paymentStatus };
   },
 });
@@ -1105,6 +1115,8 @@ export const recordJoyPaymentWebhook = internalMutation({
         updatedAt: now,
       });
       await creditPartnerForJoyPayment(ctx, booking, args.reference, now);
+      await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "payment_completed", eventKey: `payment-completed-${booking._id}` });
+      await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "awaiting_admin_schedule", eventKey: `awaiting-admin-schedule-${booking._id}` });
       return {
         handled: true,
         duplicate: false,
@@ -1116,6 +1128,8 @@ export const recordJoyPaymentWebhook = internalMutation({
     }
     await ctx.db.patch(booking._id, { paymentStatus: "completed", paidAt: now, paymentReference: args.reference, paidAmountKobo: args.amountKobo, updatedAt: now, providerResponse: "pending", providerResponseDueAt: now + 5 * HOUR_MS });
     await creditPartnerForJoyPayment(ctx, booking, args.reference, now);
+    await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "payment_completed", eventKey: `payment-completed-${booking._id}` });
+    await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "provider_requested", eventKey: `provider-requested-${booking._id}-${booking.physiotherapistId}` });
 
     return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId, physiotherapist_id: booking.physiotherapistId, provider_response_due_at: now + 5 * HOUR_MS, event_id: args.paystackEventId };
   },
@@ -1142,6 +1156,7 @@ export const recordJoyPaymentFailedWebhook = internalMutation({
       updatedAt: now,
     });
     await ctx.db.patch(booking._id, { paymentStatus: "failed", updatedAt: now });
+    await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "payment_failed", eventKey: `payment-failed-${attempt._id}` });
     return { handled: true, duplicate: false, booking_id: booking._id, patient_id: booking.patientId };
   },
 });
@@ -1164,6 +1179,8 @@ export const adminScheduleJoyVirtualBooking = mutation({
     if (appointments.some(a => a.status !== "cancelled_by_patient" && a.status !== "cancelled_by_therapist" && a.startTime < endTime && a.endTime > args.startTime)) throw new Error("That clinician already has an appointment at this time");
     const appointmentId = await ctx.db.insert("appointments", { patientId: booking.patientId, physiotherapistId: args.physiotherapistId, startTime: args.startTime, endTime, serviceType: booking.sessionType, status: "confirmed", appointmentType: "telehealth", isOnline: true });
     await ctx.db.patch(booking._id, { physiotherapistId: args.physiotherapistId, sessionDate: args.startTime, appointmentId, bookingStatus: "confirmed", adminSchedulingStatus: "scheduled", providerResponse: "accepted", updatedAt: Date.now() });
+    await ensureJoyCareLink(ctx, booking, args.physiotherapistId, appointmentId);
+    await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "admin_scheduled", eventKey: `admin-scheduled-${booking._id}` });
     await ctx.scheduler.runAfter(0, internal.joyIntegration.notifyJoyAdminScheduledVirtualBooking, { bookingId: booking._id, appointmentId, patientId: booking.patientId, physiotherapistId: args.physiotherapistId, startTime: args.startTime, endTime });
     return { booking_id: booking._id, appointment_id: appointmentId };
   },
@@ -1193,6 +1210,7 @@ export const adminRescheduleJoyVirtualBooking = mutation({
     }
     await ctx.db.patch(appointment._id, { startTime: args.startTime, endTime });
     await ctx.db.patch(booking._id, { sessionDate: args.startTime, updatedAt: now });
+    await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "rescheduled", eventKey: `rescheduled-${booking._id}-${now}` });
     await ctx.scheduler.runAfter(0, internal.joyIntegration.notifyJoyVirtualBookingRescheduled, {
       bookingId: booking._id, appointmentId: appointment._id, patientId: booking.patientId,
       physiotherapistId: booking.physiotherapistId, startTime: args.startTime, endTime,
@@ -1352,6 +1370,7 @@ export const respondToJoyBooking = internalMutation({
     if ((booking.providerResponseDueAt ?? 0) < Date.now()) throw new Error("Provider response has expired");
     if (args.response === "reject") {
       await ctx.db.patch(booking._id, { providerResponse: "rejected", replacementStatus: "awaiting_patient_slot", updatedAt: Date.now() });
+      await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "provider_rejected", eventKey: `provider-rejected-${booking._id}-${args.physiotherapistId}` });
       return { outcome: "replacement_required", booking_id: booking._id, patient_id: booking.patientId };
     }
     if (!booking.sessionDate) throw new Error("Validated booking slot missing");
@@ -1362,6 +1381,8 @@ export const respondToJoyBooking = internalMutation({
       isOnline: booking.isOnline, location: booking.patientAddress,
     });
     await ctx.db.patch(booking._id, { providerResponse: "accepted", bookingStatus: "confirmed", appointmentId, updatedAt: Date.now() });
+    await ensureJoyCareLink(ctx, booking, args.physiotherapistId, appointmentId);
+    await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "provider_accepted", eventKey: `provider-accepted-${booking._id}` });
     if (booking.isOnline) {
       await ctx.scheduler.runAfter(0, internal.joyIntegration.createJoyOnlineMeeting, {
         bookingId: booking._id, appointmentId, patientId: booking.patientId, physiotherapistId: booking.physiotherapistId,
@@ -1421,7 +1442,8 @@ export const getJoyJoinSession = query({
   handler: async (ctx, args) => {
     const booking = await bookingByCode(ctx, args.code);
     const appointment = booking?.appointmentId ? await ctx.db.get(booking.appointmentId) : null;
-    if (!booking || !appointment) return null;
+    // Only online visits have a call; the page shows getJoyBookingStatus for everything else
+    if (!booking || !appointment || !booking.isOnline) return null;
     const [clinician, identity] = await Promise.all([ctx.db.get(appointment.physiotherapistId), ctx.auth.getUserIdentity()]);
     // The clinician uses their normal signed-in call page, never the patient seat.
     const viewerIsClinician = !!identity && clinician?.clerkId === identity.subject;
@@ -1441,14 +1463,14 @@ export const resolveJoyPatientJoin = internalQuery({
   handler: async (ctx, args) => {
     const booking = await bookingByCode(ctx, args.code);
     const appointment = booking?.appointmentId ? await ctx.db.get(booking.appointmentId) : null;
-    if (!booking || !appointment) return { ok: false as const, reason: "not_found" as const };
+    if (!booking || !appointment || !booking.isOnline) return { ok: false as const, reason: "not_found" as const };
     if (isJoyAppointmentCancelled(booking, appointment)) return { ok: false as const, reason: "cancelled" as const };
     const { opensAt, closesAt } = joyJoinWindow(appointment);
     if (args.now < opensAt) return { ok: false as const, reason: "too_early" as const };
     if (args.now > closesAt) return { ok: false as const, reason: "ended" as const };
     const [patient, clinician] = await Promise.all([ctx.db.get(appointment.patientId), ctx.db.get(appointment.physiotherapistId)]);
     return {
-      ok: true as const, callId: joyRoomId(appointment._id), patientId: appointment.patientId, closesAt,
+      ok: true as const, callId: joyRoomId(appointment._id), patientId: appointment.patientId, bookingId: booking._id, closesAt,
       patientName: (patient && displayName(patient)) || "Patient",
       clinicianName: (clinician && displayName(clinician)) || "your physiotherapist",
     };
@@ -1587,6 +1609,9 @@ export const createJoyOnlineMeeting = internalAction({
           meeting_url: patientJoinUrl, platform, start_time: args.startTime,
         },
       });
+      await ctx.runMutation(internal.joyHandoff.recordJourneyEvent, {
+        patientId: args.patientId, bookingId: args.bookingId, stage: "meeting_link_sent", eventKey: `meeting-link-${args.bookingId}`,
+      });
     } catch (error) {
       await ctx.runMutation(internal.joyIntegration.createJoyOnlineMeetingFollowUp, {
         bookingId: args.bookingId, reason: "online_meeting_link_generation_failed",
@@ -1606,6 +1631,7 @@ export const expireJoyProviderResponses = internalMutation({
     for (const booking of due) {
       const now = Date.now();
       await ctx.db.patch(booking._id, { providerResponse: "rejected", replacementStatus: "awaiting_patient_slot", updatedAt: now });
+      await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "provider_timeout", eventKey: `provider-timeout-${booking._id}-${booking.physiotherapistId}` });
       await ctx.db.insert("joyEventOutbox", {
         eventId: `booking-provider-timeout-${booking._id}`,
         eventType: "booking.provider_rejected",
@@ -1721,6 +1747,7 @@ export const reassignPaidJoyBooking = internalMutation({
     if (conflicts.length) throw new Error("Replacement slot is no longer available");
     const now = Date.now();
     await ctx.db.patch(booking._id, { physiotherapistId: profile.userId, sessionDate: args.slotStart, providerResponse: "pending", providerResponseDueAt: now + 5 * HOUR_MS, replacementStatus: "not_needed", updatedAt: now });
+    await logJourney(ctx, { patientId: booking.patientId, bookingId: booking._id, stage: "provider_requested", eventKey: `provider-requested-${booking._id}-${profile.userId}` });
     return { booking_id: booking._id, physiotherapist_id: profile.userId, provider_response_due_at: now + 5 * HOUR_MS };
   },
 });

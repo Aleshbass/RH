@@ -133,17 +133,18 @@ def poster_lighting(camera_dir):
     fill.data.color = (0.9, 0.95, 1.0)
 
 
-def render_poster(clip_id, frame, view):
-    """Transparent-background still from a three-quarter camera that frames the character and props."""
+def frame_camera(frame, view):
+    """Aim RH_PosterCam at the character and props at this frame, from direction `view`, and light it."""
     from mathutils import Vector
 
     scene = bpy.context.scene
     scene.frame_set(frame)
     deps = bpy.context.evaluated_depsgraph_get()
     pts = []
-    for n in CHARACTER_OBJECTS[1:] + tuple(o.name for o in bpy.data.collections.get(P.COLLECTION).objects):
+    props = bpy.data.collections.get(P.COLLECTION)
+    for n in CHARACTER_OBJECTS[1:] + tuple(o.name for o in (props.objects if props else ())):
         o = bpy.data.objects.get(n)
-        if o is None or o.type != "MESH" or n == "Prop_Mat" or n == "Prop_Wall":
+        if o is None or o.type != "MESH" or n in ("Prop_Mat", "Prop_Wall", "Prop_Line"):
             continue
         oe = o.evaluated_get(deps)
         pts += [oe.matrix_world @ Vector(c) for c in oe.bound_box]
@@ -161,7 +162,13 @@ def render_poster(clip_id, frame, view):
     cam.rotation_euler = (center - cam.location).to_track_quat("-Z", "Y").to_euler()
     scene.camera = cam
     poster_lighting(view)
+    return cam
 
+
+def render_poster(clip_id, frame, view):
+    """Transparent-background still from a three-quarter camera that frames the character and props."""
+    scene = bpy.context.scene
+    frame_camera(frame, view)
     r = scene.render
     r.resolution_x = r.resolution_y = 640
     r.film_transparent = True

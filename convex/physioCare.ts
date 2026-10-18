@@ -37,6 +37,7 @@ const sourceValidator = v.union(
   v.literal("booking_link"),
   v.literal("clinic"),
   v.literal("invite"),
+  v.literal("joy_whatsapp"),
   v.literal("other")
 );
 type EpisodeSource = Doc<"careEpisodes">["source"];
@@ -79,6 +80,8 @@ function sourceFromRelationship(relationship: Doc<"patientPhysiotherapistRelatio
       return "clinic";
     case "invite":
       return "invite";
+    case "joy_whatsapp":
+      return "joy_whatsapp";
     default:
       return relationship.invitationId ? "invite" : "other";
   }

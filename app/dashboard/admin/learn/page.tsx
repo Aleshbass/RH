@@ -206,7 +206,7 @@ function PublishCard({ cohort, onDeleted }: { cohort: AdminCohort; onDeleted: ()
 
       {autoClosed && <Callout tone="warning" className="mt-4" title="Registration closed automatically">{autoClosed} Change the dates or seats below to reopen it.</Callout>}
 
-      <ul className="mt-5 grid gap-3 border-t border-black/[0.05] pt-5 sm:grid-cols-3 dark:border-white/[0.06]">
+      <ul className="mt-5 grid grid-cols-1 gap-3 border-t border-black/[0.05] pt-5 sm:grid-cols-3 dark:border-white/[0.06]">
         <Visibility on={onPage} label="Program page" detail={onPage ? (promoting ? 'Open for registration' : 'Shows “registration closed”') : 'Hidden'} />
         <Visibility
           on={promoting && cohort.showOnLanding}

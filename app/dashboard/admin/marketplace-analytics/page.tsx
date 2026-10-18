@@ -540,7 +540,7 @@ export default function AdminMarketplaceAnalyticsPage() {
         </StaggerItem>
       </Stagger>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Panel title="Revenue by month" description="Paid bookings, last 12 months" className="lg:col-span-2">
           {hasMonthlyRevenue ? (
             <MonthlyBars data={revenueMonths} valueLabel="Revenue" countLabel="paid" />

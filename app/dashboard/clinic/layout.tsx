@@ -30,19 +30,19 @@ export default function ClinicLayout({ children }: { children: React.ReactNode }
   )
 }
 
-/** Which permission each clinic page needs (home is always available). */
-const PAGE_AREAS: { prefix: string; area: ClinicArea }[] = [
+/** Which permission each clinic page needs (home is always available). Referrals live inside Patients. */
+const PAGE_AREAS: { prefix: string; area: ClinicArea; orArea?: ClinicArea }[] = [
   { prefix: '/dashboard/clinic/appointments', area: 'appointments' },
-  { prefix: '/dashboard/clinic/patients', area: 'patients' },
-  { prefix: '/dashboard/clinic/referrals', area: 'referrals' },
+  // Someone who only handles referrals still opens Patients, where the referral inbox is
+  { prefix: '/dashboard/clinic/patients', area: 'patients', orArea: 'referrals' },
   { prefix: '/dashboard/clinic/billing', area: 'billing' },
   { prefix: '/dashboard/clinic/staff', area: 'team' },
   { prefix: '/dashboard/clinic/analytics', area: 'reports' },
   { prefix: '/dashboard/clinic/settings', area: 'settings' },
 ]
 
-function areaForPath(pathname: string): ClinicArea | null {
-  return PAGE_AREAS.find((page) => pathname === page.prefix || pathname.startsWith(`${page.prefix}/`))?.area ?? null
+function pageForPath(pathname: string) {
+  return PAGE_AREAS.find((page) => pathname === page.prefix || pathname.startsWith(`${page.prefix}/`)) ?? null
 }
 
 function PortalSkeleton() {
@@ -104,8 +104,9 @@ function ClinicPortal({ children }: { children: React.ReactNode }) {
     )
   }
 
-  const area = areaForPath(pathname)
-  const blocked = area !== null && !canUse(area)
+  const page = pageForPath(pathname)
+  const area = page?.area ?? null
+  const blocked = page !== null && !canUse(page.area) && !(page.orArea && canUse(page.orArea))
 
   return (
     <div className="flex min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50">

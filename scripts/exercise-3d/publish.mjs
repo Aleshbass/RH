@@ -46,6 +46,12 @@ const manifest = JSON.parse(fs.readFileSync(path.join(OUT, 'manifest.json'), 'ut
 const characterBytes = fs.readFileSync(path.join(OUT, 'character.glb'))
 const motions = manifest.exercises.map((e) => ({ ...e, data: fs.readFileSync(path.join(OUT, 'motions', `${e.id}.rhm`)) }))
 
+// Voiceovers (voice/generate.mjs). Plain MP3s: narration has no value without the 3D demo.
+const VOICE_DIR = path.join(OUT, 'voice')
+const voiceIndexPath = path.join(VOICE_DIR, 'audio-index.json')
+const voiceIndex = fs.existsSync(voiceIndexPath) ? JSON.parse(fs.readFileSync(voiceIndexPath, 'utf8')).clips : {}
+const voiceFiles = [...new Set(Object.values(voiceIndex).flatMap((v) => [v.intro, ...v.cues.map((c) => c.file)]))].sort()
+
 // Version = hash of everything that ships, so new content always gets new URLs.
 const hash = crypto.createHash('sha256')
 hash.update(characterBytes)
@@ -54,6 +60,11 @@ for (const m of motions) {
   hash.update(m.data)
   hash.update(fs.readFileSync(path.join(OUT, 'posters', `${m.id}.webp`)))
 }
+for (const file of voiceFiles) {
+  hash.update(file)
+  hash.update(fs.readFileSync(path.join(VOICE_DIR, file)))
+}
+hash.update(JSON.stringify(voiceIndex))
 const version = hash.digest('hex').slice(0, 12)
 
 function keyFor(assetId) {
@@ -76,12 +87,18 @@ fs.mkdirSync(path.join(dir, 'p'), { recursive: true })
 const character = encrypt('character', characterBytes)
 fs.writeFileSync(path.join(dir, 'c.rhx'), character)
 
+if (voiceFiles.length) {
+  fs.mkdirSync(path.join(dir, 'a'), { recursive: true })
+  for (const file of voiceFiles) fs.copyFileSync(path.join(VOICE_DIR, file), path.join(dir, 'a', file))
+}
+
 const clips = []
 for (const m of motions) {
   const enc = encrypt(`motion:${m.id}`, m.data)
   fs.writeFileSync(path.join(dir, 'm', `${m.id}.rhx`), enc)
   fs.copyFileSync(path.join(OUT, 'posters', `${m.id}.webp`), path.join(dir, 'p', `${m.id}.webp`))
   const slug = m.side ? m.id.replace(/-(left|right)$/, '') : m.id
+  const voice = voiceIndex[m.id]
   clips.push({
     id: m.id,
     slug,
@@ -91,6 +108,7 @@ for (const m of motions) {
     props: m.props,
     bytes: enc.length,
     quality: m.quality,
+    audio: voice ? { intro: voice.intro, cues: voice.cues, transcript: voice.transcript } : null,
   })
 }
 
@@ -119,6 +137,8 @@ export type CatalogClip = {
   props: CatalogProp[];
   bytes: number;
   quality: { contactErrorMm: number; lowestPointMm: number };
+  /** English voiceover (files under a/): intro once, cues at \`at\` seconds into every loop. */
+  audio: { intro: string; cues: { at: number; file: string }[]; transcript: string } | null;
 };
 
 export const EXERCISE_CATALOG: {
@@ -134,6 +154,10 @@ export function posterUrl(clipId: string) {
 
 export function findClip(clipId: string) {
   return EXERCISE_CATALOG.clips.find((c) => c.id === clipId) ?? null;
+}
+
+export function audioUrl(file: string) {
+  return \`\${EXERCISE_CATALOG.basePath}/a/\${file}\`;
 }
 `
 fs.writeFileSync(CATALOG_FILE, ts)

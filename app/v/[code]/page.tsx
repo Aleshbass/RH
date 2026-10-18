@@ -1,13 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAction, useQuery } from 'convex/react'
 import { StreamCall, StreamTheme, StreamVideo, StreamVideoClient } from '@stream-io/video-react-sdk'
 import '@stream-io/video-react-sdk/dist/css/styles.css'
-import { CalendarClock, CalendarX, Link2Off, Loader2, PhoneOff, WifiOff } from 'lucide-react'
+import Link from 'next/link'
+import { CalendarCheck, CalendarClock, CalendarX, CreditCard, Hourglass, Link2Off, Loader2, PhoneOff, UserSearch, WifiOff } from 'lucide-react'
 import { api } from '@/convex/_generated/api'
 import { CallLobby, CallRoom, CallStatusScreen } from '@/components/video/room'
+import { SERVICE_MODE, type JoyBookingState, type JoyServiceMode } from '@/lib/joyJourney'
 
 // Short patient join link sent by Joy on WhatsApp: /v/<booking code>.
 // Joy patients have no login; the code is checked server-side before a
@@ -51,6 +53,8 @@ export default function PatientJoinPage() {
   const router = useRouter()
   const code = String(params.code ?? '')
   const session = useQuery(api.joyIntegration.getJoyJoinSession, { code })
+  // No call to join (not paid yet, not online, waiting for a physio...): show where the booking stands
+  const bookingStatus = useQuery(api.joyHandoff.getJoyBookingStatus, session === null ? { code } : 'skip')
   const getCallToken = useAction(api.stream.getJoyPatientCallToken)
   const now = useNow(15_000)
 
@@ -140,6 +144,10 @@ export default function PatientJoinPage() {
   }
 
   if (session === null) {
+    if (bookingStatus === undefined) {
+      return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Loading your booking" />
+    }
+    if (bookingStatus) return <BookingStatusScreen status={bookingStatus} />
     return (
       <CallStatusScreen
         icon={<Link2Off className="h-6 w-6" />}
@@ -190,7 +198,9 @@ export default function PatientJoinPage() {
         icon={<PhoneOff className="h-6 w-6" />}
         title="This appointment has ended"
         description="Thank you for joining. Your physiotherapist will follow up with any next steps on WhatsApp."
-      />
+      >
+        <AccountPrompt />
+      </CallStatusScreen>
     )
   }
 
@@ -232,4 +242,108 @@ export default function PatientJoinPage() {
   }
 
   return <CallStatusScreen icon={<Loader2 className="h-6 w-6 animate-spin text-brand" />} title="Getting your appointment ready" />
+}
+
+/** Signing up links these WhatsApp bookings to a full Rehabify account (claimed by verified phone or email). */
+function AccountPrompt() {
+  return (
+    <div className="space-y-2">
+      <Link href="/sign-up" className={primaryButton}>
+        Create your Rehabify account
+      </Link>
+      <p className="text-xs text-neutral-500">Use this WhatsApp number to see your bookings, exercises and what you shared with Joy.</p>
+    </div>
+  )
+}
+
+type BookingStatus = {
+  bookingCode: string
+  state: JoyBookingState
+  mode: JoyServiceMode
+  startTime: number | null
+  durationMinutes: number
+  clinicianName: string | null
+}
+
+const STATUS_COPY: Record<JoyBookingState, { title: string; description: (s: BookingStatus) => string; icon: ReactNode }> = {
+  awaiting_payment: {
+    title: 'Waiting for your payment',
+    description: () => 'Complete payment with the link Joy sent you on WhatsApp to confirm this booking.',
+    icon: <CreditCard className="h-6 w-6" />,
+  },
+  payment_failed: {
+    title: "Your payment didn't go through",
+    description: () => 'Reply to Joy on WhatsApp to try again.',
+    icon: <CreditCard className="h-6 w-6" />,
+  },
+  expired: {
+    title: 'This time was released',
+    description: () => 'The hold ran out before payment. Reply to Joy on WhatsApp to choose another time.',
+    icon: <Hourglass className="h-6 w-6" />,
+  },
+  awaiting_physio: {
+    title: 'Payment received',
+    description: (s) => `We've asked ${s.clinicianName ?? 'your physiotherapist'} to confirm. Joy will message you on WhatsApp as soon as they do.`,
+    icon: <Hourglass className="h-6 w-6" />,
+  },
+  finding_new_physio: {
+    title: 'Finding you another physio',
+    description: () => "Your physiotherapist couldn't take this booking. Joy will message you with other options.",
+    icon: <UserSearch className="h-6 w-6" />,
+  },
+  awaiting_schedule: {
+    title: 'Payment received',
+    description: () => 'The Rehabify team is booking your session and will send you the time on WhatsApp.',
+    icon: <Hourglass className="h-6 w-6" />,
+  },
+  confirmed: {
+    title: "You're booked",
+    description: (s) =>
+      s.mode === 'home_visit'
+        ? `${s.clinicianName ?? 'Your physiotherapist'} will come to the address you gave Joy.`
+        : s.mode === 'clinic'
+          ? `See ${s.clinicianName ?? 'your physiotherapist'} at the clinic Joy shared with you.`
+          : `Your video link opens here 30 minutes before the session.`,
+    icon: <CalendarCheck className="h-6 w-6" />,
+  },
+  completed: {
+    title: 'Session completed',
+    description: () => 'Thank you. Your physiotherapist will follow up with next steps.',
+    icon: <CalendarCheck className="h-6 w-6" />,
+  },
+  missed: {
+    title: 'This session was missed',
+    description: () => 'Reply to Joy on WhatsApp to book another time.',
+    icon: <CalendarX className="h-6 w-6" />,
+  },
+  cancelled: {
+    title: 'Booking cancelled',
+    description: () => 'Reply to Joy on WhatsApp if you would like to book again.',
+    icon: <CalendarX className="h-6 w-6" />,
+  },
+}
+
+function BookingStatusScreen({ status }: { status: BookingStatus }) {
+  const copy = STATUS_COPY[status.state]
+  return (
+    <CallStatusScreen
+      icon={copy.icon}
+      title={copy.title}
+      description={
+        <div className="space-y-1">
+          <p>{copy.description(status)}</p>
+          {status.startTime && (
+            <p className="pt-2 text-neutral-700">
+              {SERVICE_MODE[status.mode]} · {formatDay(status.startTime)} · {formatTime(status.startTime)} · {status.durationMinutes} min
+            </p>
+          )}
+          <p className="pt-1 text-sm text-neutral-500">
+            Booking code <span className="font-mono tracking-wider text-neutral-800">{status.bookingCode}</span>
+          </p>
+        </div>
+      }
+    >
+      <AccountPrompt />
+    </CallStatusScreen>
+  )
 }

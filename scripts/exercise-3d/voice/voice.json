@@ -1,0 +1,7 @@
+{
+  "_about": "Voice used for all exercise voiceovers. Pick from assets-src/voice-samples/ (run voices.mjs to refresh them), then re-run generate.mjs.",
+  "voiceName": "en-GB-Chirp3-HD-Achird",
+  "languageCode": "en-GB",
+  "introRate": 0.95,
+  "cueRate": 1.0
+}

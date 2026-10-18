@@ -30,6 +30,7 @@ JOINTS = {
     "hip_ext_rot":    ("UpLeg",    Z, +1, -1),   # toes turn out
     "knee_flex":      ("Leg",      X, +1, +1),   # heel towards buttock
     "ankle_plantar":  ("Foot",     X, +1, +1),   # point the toes (negative = dorsiflex)
+    "ankle_inv":      ("Foot",     Y, +1, -1),   # turn the sole inwards (negative = evert)
     "toe_ext":        ("ToeBase",  X, -1, -1),   # toes bend up (for heel raises)
     "shoulder_elev":  ("Shoulder", Y, -1, +1),   # shrug the shoulder girdle up
     "shoulder_protr": ("Shoulder", Z, -1, +1),   # shoulder girdle forward (negative = squeeze back)
@@ -101,7 +102,7 @@ def pose_quats(p):
         world[f"{side_name(side)}Arm"] = arm_rotation(side, **arm)
 
     # Twists about a limb's own long axis must be applied first (innermost), then hinges.
-    inner_first = {"hip_ext_rot": 0, "forearm_pron": 0}
+    inner_first = {"hip_ext_rot": 0, "forearm_pron": 0, "ankle_inv": 0}
     for key in sorted(p, key=lambda k: inner_first.get(k.rpartition("_")[0], 1)):
         deg = p[key]
         if key.startswith("arm_") or key in ("hips", "root", "label"):
@@ -288,8 +289,11 @@ def solve(p, params, targets, iters=14, tol=0.0015, step=0.5):
             trial = {k: (dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v) for k, v in q.items()}
             _set(trial, key, _get(q, key) + step)
             jac[:, j] = (residual(trial) - r) / step
-        lam = 1e-4
-        delta = np.linalg.solve(jac.T @ jac + lam * np.eye(len(params)), -jac.T @ r)
+        # Damping relative to the Jacobian's scale: a fixed value swamps short segments (forearms,
+        # hands), whose angles move contact points only a few millimetres per degree.
+        jtj = jac.T @ jac
+        lam = 1e-3 * float(np.max(np.diag(jtj))) + 1e-12
+        delta = np.linalg.solve(jtj + lam * np.eye(len(params)), -jac.T @ r)
         delta = np.clip(delta, -15, 15)
         for j, key in enumerate(params):
             _set(q, key, _get(q, key) + float(delta[j]))
@@ -375,22 +379,31 @@ def animate(name, start, moves, locks=None, step=3, reach=None, rounds=1):
     knees on the mat). targets may be a function(pose) -> {bone: Vector} for contacts
     that slide. rounds > 1 alternates lock and reach, for when the reach params include
     the pelvis tilt and so move the locked points.
+    A move can also be (pose, frames, opts): opts may replace "locks" and "reach" for that
+    segment (stepping, where the planted foot changes), set "ease": False for a steady pace,
+    and "step" to sample a hold more sparsely.
+    Segment boundaries should be poses where both the old and new contacts hold.
     Returns (action, report) where report has the worst lock error and lowest point.
     """
     act = new_action(name)
-    samples = [(1, start)]
+    first = moves[0][2] if len(moves[0]) > 2 else {}
+    samples = [(1, start, first.get("locks", locks), first.get("reach", reach))]
     frame, prev = 1, start
-    for pose, frames in moves:
+    for move in moves:
+        pose, frames = move[0], move[1]
+        opts = move[2] if len(move) > 2 else {}
+        curve = ease if opts.get("ease", True) else (lambda t: t)
+        seg_step = opts.get("step", step)
         for i in range(1, frames + 1):
-            if i % step and i != frames:
+            if i % seg_step and i != frames:
                 continue
-            samples.append((frame + i, blend(prev, pose, ease(i / frames))))
+            samples.append((frame + i, blend(prev, pose, curve(i / frames)), opts.get("locks", locks), opts.get("reach", reach)))
         frame += frames
         prev = pose
     worst, lowest = 0.0, math.inf
-    for f, p in samples:
-        targets = locks(p) if callable(locks) else locks
-        resolved = [(params, t(p) if callable(t) else t) for params, t in reach or []]
+    for f, p, seg_locks, seg_reach in samples:
+        targets = seg_locks(p) if callable(seg_locks) else seg_locks
+        resolved = [(params, t(p) if callable(t) else t) for params, t in seg_reach or []]
         for _ in range(rounds):
             if targets:
                 p = lock(p, targets)

@@ -201,7 +201,8 @@ export default function StaffManagementPage() {
           {
             target: '#staff-roles',
             title: 'Roles',
-            content: 'Choose which pages each role can open. Anyone without a role can open every page.',
+            content:
+              'Choose which pages each role can open. Clinicians without a role can open Appointments and Patients only.',
             position: 'top',
           },
         ]}

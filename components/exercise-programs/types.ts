@@ -26,9 +26,19 @@ export type LinkStatus =
 /** The shape every player view needs (patient dashboard, share link, care-team preview). */
 export type ProgramForPlayer = Pick<
   ProgramView,
-  '_id' | 'title' | 'note' | 'voiceNoteUrl' | 'voiceNoteSeconds' | 'senderName' | 'clinicName' | 'createdAt' | 'items'
+  '_id' | 'title' | 'note' | 'goals' | 'voiceNoteUrl' | 'voiceNoteSeconds' | 'senderName' | 'clinicName' | 'createdAt' | 'items'
 >
 export type ProgramItem = ProgramForPlayer['items'][number]
+
+/** What to call a list of items: "3 exercises", "2 exercises · 1 education". */
+export function itemsSummary(items: { kind?: string | null }[]) {
+  const education = items.filter((i) => i.kind === 'education').length
+  const exercises = items.length - education
+  const parts = []
+  if (exercises || !education) parts.push(`${exercises} exercise${exercises === 1 ? '' : 's'}`)
+  if (education) parts.push(`${education} education`)
+  return parts.join(' · ')
+}
 
 export type LogInput = {
   itemIndex: number
@@ -45,6 +55,7 @@ export type LogInput = {
 export const isLocalImage = (src: string) => src.startsWith('/')
 
 export function doseLabel(item: Pick<ProgramItem, 'sets' | 'reps' | 'holdSeconds'>) {
+  if (item.sets === null || item.reps === null) return ''
   const base = `${item.sets} × ${item.reps}`
   return item.holdSeconds ? `${base} · hold ${item.holdSeconds}s` : base
 }

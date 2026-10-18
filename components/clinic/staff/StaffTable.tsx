@@ -52,7 +52,7 @@ export interface TeamMember {
     availabilitySchedule?: any
     activeCaseload: number
     monthlyAppointmentsCount: number
-    /** Dashboard role; null means full access */
+    /** Dashboard role; null means the clinician default (Appointments, Patients) */
     clinicRoleId?: Id<'clinicRoles'> | null
 }
 

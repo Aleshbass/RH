@@ -155,6 +155,7 @@ const SOURCE_LABEL: Record<string, string> = {
   marketplace: 'Marketplace',
   booking_link: 'Booking link',
   invite: 'Invited',
+  joy_whatsapp: 'Joy · WhatsApp',
 }
 
 export function ClinicPatientsTab({ clinicId }: { clinicId: Id<'clinics'> }) {

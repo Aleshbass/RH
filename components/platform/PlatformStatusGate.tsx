@@ -15,7 +15,7 @@ import { api } from '@/convex/_generated/api'
  *
  * This is a UI gate, not an API lock: Convex functions and API routes keep working.
  */
-const MAINTENANCE_OPEN_PATHS = ['/sign-in', '/sso-callback', '/dashboard/admin', '/docs']
+const MAINTENANCE_OPEN_PATHS = ['/sign-in', '/partners/sign-in', '/sso-callback', '/dashboard/admin', '/docs']
 const MARKETPLACE_PATHS = ['/book', '/find-a-physio', '/find-my-physio']
 
 function matches(pathname: string, prefixes: string[]) {

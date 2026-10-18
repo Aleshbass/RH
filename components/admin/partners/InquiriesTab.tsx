@@ -134,7 +134,7 @@ export function InquiriesTab({ inquiries }: { inquiries: Inquiry[] | undefined }
                     </Select>
                   </div>
 
-                  <div className="grid gap-3 text-xs sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
                     <div>
                       <p className="text-neutral-500 dark:text-neutral-400">Contact person</p>
                       <p className="text-sm font-medium text-rh-night dark:text-white">{inquiry.name || inquiry.contactName || 'Contact'}</p>

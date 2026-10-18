@@ -1,10 +1,26 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import Image from 'next/image'
 import { useMutation, useQuery } from 'convex/react'
 import { format, formatDistanceToNow } from 'date-fns'
-import { Archive, ArchiveRestore, Dumbbell, Eye, Link2, Loader2, MessageCircle, Mic, Plus, TriangleAlert } from 'lucide-react'
+import {
+  Archive,
+  ArchiveRestore,
+  BookOpen,
+  Dumbbell,
+  Eye,
+  Flag,
+  Link2,
+  ListPlus,
+  Loader2,
+  MessageCircle,
+  Mic,
+  Pencil,
+  Plus,
+  Send,
+  TriangleAlert,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/convex/_generated/api'
 import type { Id } from '@/convex/_generated/dataModel'
@@ -13,15 +29,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { EmptyState, Panel, StatusBadge, primaryButtonClass, softButtonClass } from '@/components/physio/ui'
 import { posterUrl } from '@/convex/exerciseLibraryCatalog'
 import { useViewerGrant } from '@/lib/exercise3d/useViewerGrant'
+import { playSound } from '@/lib/sounds'
 import { cn } from '@/lib/utils'
+import { programError } from './errors'
 import { ProgramPlayer } from './ProgramPlayer'
-import { SendProgramDialog } from './SendProgramDialog'
+import { SendProgramDialog, type ProgramDialogMode } from './SendProgramDialog'
 import { ShareLinkDialog } from './ShareLinkDialog'
-import type { CareTeamProgram } from './types'
-
-function errorText(error: unknown, fallback: string) {
-  return (error as Error)?.message?.replace(/^.*ConvexError: /, '') || fallback
-}
+import { itemsSummary, type CareTeamProgram } from './types'
 
 function PreviewDialog({ program, onOpenChange }: { program: CareTeamProgram | null; onOpenChange: (open: boolean) => void }) {
   const requestGrant = useViewerGrant({ kind: 'staff' })
@@ -42,11 +56,15 @@ function LinksList({ program, canWrite }: { program: CareTeamProgram; canWrite: 
   const revoke = useMutation(api.exerciseShareLinks.revokeShareLink)
   const extend = useMutation(api.exerciseShareLinks.extendShareLink)
   if (program.links.length === 0) return null
+  const fail = (fallback: string) => (error: unknown) => {
+    playSound('error')
+    toast.error(programError(error, fallback))
+  }
   return (
     <ul className="space-y-1.5">
       {program.links.map((link) => (
         <li key={link._id} className="flex flex-wrap items-center gap-2 rounded-xl bg-rh-canvas px-3 py-2 text-xs dark:bg-white/[0.03]">
-          <Link2 className="h-3.5 w-3.5 text-rh-teal" />
+          <Link2 className="h-3.5 w-3.5 text-rh-teal dark:text-rh-aqua" />
           <span className="text-neutral-600 dark:text-neutral-300">
             Sent {format(link.createdAt, 'd MMM')} · {link.state === 'active' ? `works until ${format(link.expiresAt, 'd MMM')}` : link.state}
             {link.openCount > 0 && ` · opened ${link.lastOpenedAt ? formatDistanceToNow(link.lastOpenedAt, { addSuffix: true }) : ''}`}
@@ -57,15 +75,15 @@ function LinksList({ program, canWrite }: { program: CareTeamProgram; canWrite: 
               <button
                 type="button"
                 className="rounded-lg px-2 py-1 font-medium text-rh-teal hover:bg-white dark:text-rh-aqua dark:hover:bg-white/10"
-                onClick={() => extend({ linkId: link._id, days: 30 }).then(() => toast.success('Link extended by 30 days')).catch((e) => toast.error(errorText(e, 'Couldn’t extend')))}
+                onClick={() => extend({ linkId: link._id, days: 30 }).then(() => toast.success('Link extended by 30 days')).catch(fail('Couldn’t extend the link.'))}
               >
                 +30 days
               </button>
               {link.state === 'active' && (
                 <button
                   type="button"
-                  className="rounded-lg px-2 py-1 font-medium text-rose-600 hover:bg-white dark:hover:bg-white/10"
-                  onClick={() => revoke({ linkId: link._id }).then(() => toast.success('Link turned off')).catch((e) => toast.error(errorText(e, 'Couldn’t turn it off')))}
+                  className="rounded-lg px-2 py-1 font-medium text-rose-600 hover:bg-white dark:text-rose-300 dark:hover:bg-white/10"
+                  onClick={() => revoke({ linkId: link._id }).then(() => toast.success('Link turned off')).catch(fail('Couldn’t turn the link off.'))}
                 >
                   Turn off
                 </button>
@@ -78,20 +96,55 @@ function LinksList({ program, canWrite }: { program: CareTeamProgram; canWrite: 
   )
 }
 
+function ItemThumb({ item }: { item: CareTeamProgram['items'][number] }) {
+  return (
+    <div className="w-20 shrink-0" title={item.name}>
+      <div
+        className={cn(
+          'relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl',
+          item.kind === 'education' ? 'bg-rh-cream dark:bg-amber-400/10' : 'bg-rh-mist dark:bg-white/[0.05]'
+        )}
+      >
+        {item.clipId ? (
+          <Image src={posterUrl(item.clipId)} alt="" fill sizes="80px" className="object-contain" draggable={false} />
+        ) : item.kind === 'education' ? (
+          <BookOpen className="h-6 w-6 text-[#b4690e] dark:text-amber-300" />
+        ) : (
+          <Dumbbell className="h-6 w-6 text-rh-teal/50 dark:text-rh-aqua/60" />
+        )}
+      </div>
+      <p className="mt-1 line-clamp-2 text-[11px] leading-tight text-neutral-600 dark:text-neutral-300">{item.name}</p>
+    </div>
+  )
+}
+
 function ProgramCard({
   program,
   canWrite,
   onPreview,
   onShare,
+  onEdit,
+  onAdd,
 }: {
   program: CareTeamProgram
   canWrite: boolean
   onPreview: () => void
   onShare: () => void
+  onEdit: () => void
+  onAdd: () => void
 }) {
   const archive = useMutation(api.exercisePrograms.archiveProgram)
   const archived = program.status === 'archived'
   const a = program.adherence
+  const edited = program.updatedAt - program.createdAt > 60_000
+  const toggleArchive = () =>
+    archive({ programId: program._id, archived: !archived })
+      .then(() => toast.success(archived ? 'Programme restored' : 'Programme archived'))
+      .catch((error) => {
+        playSound('error')
+        toast.error(programError(error, 'Couldn’t update the programme.'))
+      })
+
   return (
     <li className={cn('space-y-3 px-5 py-4', archived && 'opacity-60')}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -99,47 +152,42 @@ function ProgramCard({
           <p className="font-semibold text-rh-night dark:text-white">
             {program.title} {archived && <StatusBadge className="ml-1">Archived</StatusBadge>}
           </p>
-          <p className="text-xs text-neutral-500">
-            {program.items.length} exercises · sent {format(program.createdAt, 'd MMM yyyy')} by {program.senderName}
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            {itemsSummary(program.items)} · sent {format(program.createdAt, 'd MMM yyyy')} by {program.senderName}
+            {edited && ` · updated ${formatDistanceToNow(program.updatedAt, { addSuffix: true })}`}
             {program.voiceNoteUrl && (
-              <span className="ml-1 inline-flex items-center gap-0.5 text-rh-teal"><Mic className="h-3 w-3" /> voice note</span>
+              <span className="ml-1 inline-flex items-center gap-0.5 text-rh-teal dark:text-rh-aqua"><Mic className="h-3 w-3" /> voice note</span>
             )}
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Button size="sm" variant="outline" className="rounded-xl" onClick={onPreview}><Eye className="mr-1.5 h-4 w-4" /> Preview</Button>
           {canWrite && !archived && (
-            <Button size="sm" className="rounded-xl bg-[#25D366] text-white hover:bg-[#1ebe5b]" onClick={onShare}>
-              <MessageCircle className="mr-1.5 h-4 w-4" /> WhatsApp
-            </Button>
+            <>
+              <Button size="sm" variant="outline" className="rounded-xl" onClick={onAdd}><ListPlus className="mr-1.5 h-4 w-4" /> Add exercises</Button>
+              <Button size="sm" variant="outline" className="rounded-xl" onClick={onEdit}><Pencil className="mr-1.5 h-4 w-4" /> Edit</Button>
+              <Button size="sm" className="rounded-xl bg-[#25D366] text-white hover:bg-[#1ebe5b]" onClick={onShare}>
+                <MessageCircle className="mr-1.5 h-4 w-4" /> WhatsApp
+              </Button>
+            </>
           )}
           {canWrite && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="rounded-xl"
-              onClick={() => archive({ programId: program._id, archived: !archived }).catch((e) => toast.error(errorText(e, 'Couldn’t update')))}
-              aria-label={archived ? 'Restore programme' : 'Archive programme'}
-            >
+            <Button size="sm" variant="ghost" className="rounded-xl" onClick={toggleArchive} aria-label={archived ? 'Restore programme' : 'Archive programme'} title={archived ? 'Restore' : 'Archive'}>
               {archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
             </Button>
           )}
         </div>
       </div>
 
+      {program.goals.length > 0 && (
+        <p className="flex items-start gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+          <Flag className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#047857] dark:text-emerald-300" />
+          <span>{program.goals.join(' · ')}</span>
+        </p>
+      )}
+
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {program.items.map((item) => (
-          <div key={item.index} className="w-20 shrink-0" title={item.exercise?.name ?? ''}>
-            <div className="relative h-20 w-20 overflow-hidden rounded-xl bg-rh-mist dark:bg-white/[0.05]">
-              {item.clipId ? (
-                <Image src={posterUrl(item.clipId)} alt="" fill sizes="80px" className="object-contain" draggable={false} />
-              ) : (
-                <Dumbbell className="m-7 h-6 w-6 text-rh-teal/50" />
-              )}
-            </div>
-            <p className="mt-1 line-clamp-2 text-[11px] leading-tight text-neutral-600 dark:text-neutral-300">{item.exercise?.name}</p>
-          </div>
-        ))}
+        {program.items.map((item) => <ItemThumb key={item.index} item={item} />)}
       </div>
 
       <div className="flex flex-wrap gap-1.5 text-xs">
@@ -159,7 +207,7 @@ function ProgramCard({
           <ul className="mt-2 space-y-1">
             {a.recent.map((log, i) => (
               <li key={i} className="text-neutral-600 dark:text-neutral-300">
-                {format(log.createdAt, 'd MMM, h:mm a')} · {program.items[log.itemIndex]?.exercise?.name ?? 'Exercise'}
+                {format(log.createdAt, 'd MMM, h:mm a')} · {program.items[log.itemIndex]?.name ?? 'A removed exercise'}
                 {log.painScore !== null && ` · pain ${log.painScore}/10`}
                 {log.difficulty && ` · ${log.difficulty === 'ok' ? 'just right' : log.difficulty}`}
                 {log.source === 'link' && ' · via WhatsApp link'}
@@ -175,55 +223,92 @@ function ProgramCard({
   )
 }
 
-/** Home exercise programmes for one patient, for their physio or clinic. */
+type DialogState = { mode: ProgramDialogMode; program: CareTeamProgram | null }
+
+/**
+ * A patient's home programmes for their physio or clinic. The list comes first; "Send exercises"
+ * adds to a programme (or starts one), "New programme" starts one, and each programme can be
+ * edited or added to. `children` renders below the list (e.g. older programmes).
+ */
 export function ExerciseProgramsPanel({
   patientId,
   patientName,
   hasPhone,
   canWrite,
+  title = 'Home programmes',
+  children,
 }: {
   patientId: Id<'users'>
   patientName: string
   hasPhone: boolean
   canWrite: boolean
+  title?: string
+  children?: ReactNode
 }) {
   const programs = useQuery(api.exercisePrograms.listForPatient, { patientId }) as CareTeamProgram[] | null | undefined
-  const [sending, setSending] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialog, setDialog] = useState<DialogState>({ mode: 'send', program: null })
   const [preview, setPreview] = useState<CareTeamProgram | null>(null)
   const [shareFor, setShareFor] = useState<Id<'exercisePrograms'> | null>(null)
   const [showArchived, setShowArchived] = useState(false)
 
-  const visible = (programs ?? []).filter((p) => showArchived || p.status === 'active')
-  const archivedCount = (programs ?? []).filter((p) => p.status === 'archived').length
+  const all = programs ?? []
+  const active = all.filter((p) => p.status === 'active')
+  const visible = all.filter((p) => showArchived || p.status === 'active')
+  const archivedCount = all.length - active.length
+
+  const openDialog = (mode: ProgramDialogMode, program: CareTeamProgram | null = null) => {
+    setDialog({ mode, program })
+    setDialogOpen(true)
+  }
 
   return (
     <>
       <Panel
-        title="Home exercise programmes"
-        description="3D exercises with your notes, in the patient's app and on WhatsApp"
+        title={title}
+        description="Exercises and education in the patient's app, and on WhatsApp"
         actions={
           canWrite && (
-            <Button size="sm" className={primaryButtonClass} onClick={() => setSending(true)}>
-              <Plus className="mr-1 h-4 w-4" /> Send exercises
-            </Button>
+            <>
+              <Button size="sm" variant="outline" className="rounded-xl" onClick={() => openDialog('new')}>
+                <Plus className="mr-1 h-4 w-4" /> New programme
+              </Button>
+              <Button size="sm" className={primaryButtonClass} onClick={() => openDialog('send')}>
+                <Send className="mr-1.5 h-4 w-4" /> Send exercises
+              </Button>
+            </>
           )
         }
       >
         {programs === undefined ? (
           <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-rh-teal" /></div>
         ) : programs === null ? (
-          <p className="px-5 pb-5 text-sm text-neutral-500">You can&apos;t see this patient&apos;s exercises.</p>
+          <p className="px-5 pb-5 text-sm text-neutral-500">You can&apos;t see this patient&apos;s programmes.</p>
         ) : visible.length === 0 ? (
           <EmptyState
             icon={<Dumbbell />}
-            title="No exercises sent yet"
-            description="Pick exercises from the 3D library, set the dose, add a voice note, and send. They'll see them in their app, or on WhatsApp with a PIN."
-            action={canWrite && <Button className={primaryButtonClass} onClick={() => setSending(true)}>Send exercises</Button>}
+            title={archivedCount > 0 ? 'No active programmes' : 'No home programme yet'}
+            description="Pick exercises from the 3D library or add your own, add education, set the dose and send. They'll see it in their app, or on WhatsApp with a PIN."
+            action={
+              canWrite && (
+                <Button className={primaryButtonClass} onClick={() => openDialog('new')}>
+                  <Plus className="mr-1 h-4 w-4" /> New programme
+                </Button>
+              )
+            }
           />
         ) : (
           <ul className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
             {visible.map((program) => (
-              <ProgramCard key={program._id} program={program} canWrite={canWrite} onPreview={() => setPreview(program)} onShare={() => setShareFor(program._id)} />
+              <ProgramCard
+                key={program._id}
+                program={program}
+                canWrite={canWrite}
+                onPreview={() => setPreview(program)}
+                onShare={() => setShareFor(program._id)}
+                onEdit={() => openDialog('edit', program)}
+                onAdd={() => openDialog('send', program)}
+              />
             ))}
           </ul>
         )}
@@ -234,13 +319,16 @@ export function ExerciseProgramsPanel({
             </Button>
           </div>
         )}
+        {children}
       </Panel>
 
       <SendProgramDialog
         patientId={patientId}
         patientName={patientName}
-        open={sending}
-        onOpenChange={setSending}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        mode={dialog.mode}
+        program={dialog.program}
         onSent={(programId) => setShareFor(programId)}
       />
       <ShareLinkDialog programId={shareFor} patientName={patientName} hasPhone={hasPhone} open={Boolean(shareFor)} onOpenChange={(o) => !o && setShareFor(null)} />

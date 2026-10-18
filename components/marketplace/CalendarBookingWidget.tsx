@@ -1,20 +1,25 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Image from "next/image";
 import { useQuery } from "convex/react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import {
+    ArrowRight,
+    Banknote,
+    Check,
     ChevronLeft,
     ChevronRight,
     Clock,
-    Video,
-    Globe,
     Loader2,
+    MapPin,
+    Video,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface AvailableSlot {
+export interface AvailableSlot {
     start: number;
     end: number;
     duration: number;
@@ -28,47 +33,38 @@ interface CalendarBookingWidgetProps {
     sessionTitle?: string;
     sessionDescription?: string;
     offersOnlineSessions?: boolean;
-    timezone?: string;
-    onSlotSelect?: (slot: AvailableSlot) => void;
+    offersInPersonSessions?: boolean;
+    /** Replaces the compact host header at the top of the left column (e.g. photo + bio). */
+    host?: ReactNode;
+    /** Price rows shown with the session details, e.g. [{ label: "Video call", amount: "₦6,000" }]. */
+    prices?: { label: string; amount: string }[];
+    /** Extra content at the bottom of the left column. */
+    sidebarFooter?: ReactNode;
+    /** Controlled selection. Leave undefined to let the widget manage it. */
+    selectedSlot?: AvailableSlot | null;
+    /** Called with the picked slot, or null when the selection is cleared (another day picked). */
+    onSlotSelect?: (slot: AvailableSlot | null) => void;
+    /** Shows a "Next" button beside the selected time on large screens (cal.com style). */
+    onContinue?: () => void;
+    continueLabel?: string;
+    className?: string;
 }
 
-// Helper to generate calendar days
-function getMonthDays(year: number, month: number) {
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    const startingDay = firstDay.getDay(); // 0 = Sunday
-
-    const days: (number | null)[] = [];
-
-    // Add empty slots for days before the first of the month
-    for (let i = 0; i < startingDay; i++) {
-        days.push(null);
-    }
-
-    // Add all days of the month
-    for (let i = 1; i <= daysInMonth; i++) {
-        days.push(i);
-    }
-
-    return days;
-}
-
-const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
 ];
+
+function dayKey(date: Date): string {
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function monthDays(year: number, month: number): (number | null)[] {
+    const leading = new Date(year, month, 1).getDay();
+    const count = new Date(year, month + 1, 0).getDate();
+    return [...Array<null>(leading).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)];
+}
 
 export default function CalendarBookingWidget({
     physiotherapistId,
@@ -78,407 +74,414 @@ export default function CalendarBookingWidget({
     sessionTitle,
     sessionDescription,
     offersOnlineSessions = true,
-    timezone = "Africa/Lagos",
+    offersInPersonSessions = false,
+    host,
+    prices,
+    sidebarFooter,
+    selectedSlot: controlledSlot,
     onSlotSelect,
+    onContinue,
+    continueLabel = "Next",
+    className,
 }: CalendarBookingWidgetProps) {
+    const reduceMotion = useReducedMotion();
     const today = new Date();
-    const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-    const [currentYear, setCurrentYear] = useState(today.getFullYear());
-    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-    const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
-    const [timeFormat, setTimeFormat] = useState<"12h" | "24h">("12h");
+    const initialDate = controlledSlot ? new Date(controlledSlot.start) : null;
 
-    // Calculate date range for the current view
-    const dateRange = useMemo(() => {
-        const start = new Date(currentYear, currentMonth, 1);
-        const end = new Date(currentYear, currentMonth + 2, 0);
-        return {
-            startDate: start.getTime(),
-            endDate: end.getTime(),
-        };
-    }, [currentYear, currentMonth]);
+    const [currentMonth, setCurrentMonth] = useState((initialDate ?? today).getMonth());
+    const [currentYear, setCurrentYear] = useState((initialDate ?? today).getFullYear());
+    const [selectedDate, setSelectedDate] = useState<Date | null>(initialDate);
+    const [internalSlot, setInternalSlot] = useState<AvailableSlot | null>(controlledSlot ?? null);
+    const [timeFormat, setTimeFormat] = useState<"12h" | "24h">("12h");
+    const autoPicked = useRef(Boolean(initialDate));
+    const slotsRef = useRef<HTMLDivElement>(null);
+
+    const selectedSlot = controlledSlot !== undefined ? controlledSlot : internalSlot;
+
+    // Current month plus the next one, so "next available" can look ahead.
+    const dateRange = useMemo(
+        () => ({
+            startDate: new Date(currentYear, currentMonth, 1).getTime(),
+            endDate: new Date(currentYear, currentMonth + 2, 1).getTime() - 1,
+        }),
+        [currentYear, currentMonth]
+    );
 
     // Only real availability is bookable; undefined while loading.
-    const availableSlots: AvailableSlot[] | undefined = useQuery(api.calendar.availability.getAvailableSlots, {
+    const availableSlots = useQuery(api.calendar.availability.getAvailableSlots, {
         physiotherapistId,
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
         sessionDuration,
-    });
+    }) as AvailableSlot[] | undefined;
 
-    // Generate calendar days
-    const days = useMemo(
-        () => getMonthDays(currentYear, currentMonth),
-        [currentYear, currentMonth]
+    const upcomingSlots = useMemo(() => {
+        if (!availableSlots) return undefined;
+        const now = Date.now();
+        return availableSlots.filter((slot) => slot.start > now).sort((a, b) => a.start - b.start);
+    }, [availableSlots]);
+
+    const daysWithSlots = useMemo(() => {
+        const keys = new Set<string>();
+        for (const slot of upcomingSlots ?? []) keys.add(dayKey(new Date(slot.start)));
+        return keys;
+    }, [upcomingSlots]);
+
+    const days = useMemo(() => monthDays(currentYear, currentMonth), [currentYear, currentMonth]);
+
+    const monthHasSlots = useMemo(
+        () => days.some((day) => day !== null && daysWithSlots.has(dayKey(new Date(currentYear, currentMonth, day)))),
+        [days, daysWithSlots, currentYear, currentMonth]
     );
 
-    // Check if a day has available slots
-    const dayHasSlots = (day: number): boolean => {
-        if (!availableSlots) return false;
-        const date = new Date(currentYear, currentMonth, day);
-        const dayStart = date.setHours(0, 0, 0, 0);
-        const dayEnd = date.setHours(23, 59, 59, 999);
+    const nextAvailableAfterMonth = useMemo(() => {
+        const monthEnd = new Date(currentYear, currentMonth + 1, 1).getTime();
+        return upcomingSlots?.find((slot) => slot.start >= monthEnd) ?? null;
+    }, [upcomingSlots, currentYear, currentMonth]);
 
-        return availableSlots.some(
-            (slot: AvailableSlot) => slot.start >= dayStart && slot.start <= dayEnd
-        );
-    };
-
-    // Get slots for selected date
     const slotsForSelectedDate = useMemo(() => {
-        if (!selectedDate || !availableSlots) return [];
+        if (!selectedDate || !upcomingSlots) return [];
+        const key = dayKey(selectedDate);
+        return upcomingSlots.filter((slot) => dayKey(new Date(slot.start)) === key);
+    }, [selectedDate, upcomingSlots]);
 
-        const dayStart = new Date(selectedDate).setHours(0, 0, 0, 0);
-        const dayEnd = new Date(selectedDate).setHours(23, 59, 59, 999);
+    // Open on the first day with openings so patients see times straight away.
+    useEffect(() => {
+        if (autoPicked.current || !upcomingSlots) return;
+        autoPicked.current = true;
+        const first = upcomingSlots[0];
+        if (!first) return;
+        const date = new Date(first.start);
+        setCurrentMonth(date.getMonth());
+        setCurrentYear(date.getFullYear());
+        setSelectedDate(new Date(date.getFullYear(), date.getMonth(), date.getDate()));
+    }, [upcomingSlots]);
 
-        return availableSlots
-            .filter((slot: AvailableSlot) => slot.start >= dayStart && slot.start <= dayEnd)
-            .sort((a: AvailableSlot, b: AvailableSlot) => a.start - b.start);
-    }, [selectedDate, availableSlots]);
+    const formatTime = (timestamp: number) =>
+        new Date(timestamp).toLocaleTimeString("en-US", {
+            hour: timeFormat === "12h" ? "numeric" : "2-digit",
+            minute: "2-digit",
+            hour12: timeFormat === "12h",
+        });
 
-    // Format time based on 12h/24h preference
-    const formatTime = (timestamp: number): string => {
-        const date = new Date(timestamp);
-        if (timeFormat === "12h") {
-            return date.toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-                hour12: true,
-            });
-        } else {
-            return date.toLocaleTimeString("en-US", {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-            });
-        }
+    const shiftMonth = (delta: number) => {
+        const next = new Date(currentYear, currentMonth + delta, 1);
+        setCurrentMonth(next.getMonth());
+        setCurrentYear(next.getFullYear());
     };
 
-    // Navigate months
-    const goToPreviousMonth = () => {
-        if (currentMonth === 0) {
-            setCurrentMonth(11);
-            setCurrentYear(currentYear - 1);
-        } else {
-            setCurrentMonth(currentMonth - 1);
-        }
-    };
+    const canGoPrevious = currentYear > today.getFullYear() || (currentYear === today.getFullYear() && currentMonth > today.getMonth());
 
-    const goToNextMonth = () => {
-        if (currentMonth === 11) {
-            setCurrentMonth(0);
-            setCurrentYear(currentYear + 1);
-        } else {
-            setCurrentMonth(currentMonth + 1);
-        }
-    };
-
-    // Check if day is in the past
-    const isDayPast = (day: number): boolean => {
-        const date = new Date(currentYear, currentMonth, day);
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        return date < todayStart;
-    };
-
-    // Check if day is today
-    const isToday = (day: number): boolean => {
-        return (
-            day === today.getDate() &&
-            currentMonth === today.getMonth() &&
-            currentYear === today.getFullYear()
-        );
-    };
-
-    // Check if day is selected
-    const isSelected = (day: number): boolean => {
-        if (!selectedDate) return false;
-        return (
-            selectedDate.getDate() === day &&
-            selectedDate.getMonth() === currentMonth &&
-            selectedDate.getFullYear() === currentYear
-        );
-    };
-
-    // Handle slot selection
-    const handleSlotClick = (slot: AvailableSlot) => {
-        setSelectedSlot(slot);
+    const setSlot = (slot: AvailableSlot | null) => {
+        setInternalSlot(slot);
         onSlotSelect?.(slot);
     };
 
-    // Can't go to previous month if it's the current month
-    const canGoPrevious = !(
-        currentMonth === today.getMonth() && currentYear === today.getFullYear()
-    );
-
-    // Get session title based on duration
-    const getSessionTitle = () => {
-        if (sessionTitle) return sessionTitle;
-        if (sessionDuration <= 30) return "Quick Check-in";
-        if (sessionDuration <= 45) return "Follow-up Session";
-        return "Initial Consultation";
+    const pickDate = (date: Date, scroll: boolean) => {
+        setSelectedDate(date);
+        if (selectedSlot) setSlot(null);
+        // On stacked layouts, bring the times into view after picking a day.
+        if (scroll && typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+            window.requestAnimationFrame(() =>
+                slotsRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" })
+            );
+        }
     };
 
-    return (
-        <div className="bg-[#00443e] text-white rounded-xl overflow-hidden shadow-2xl">
-            <div className="flex flex-col lg:flex-row">
-                {/* Left Sidebar - Profile Info */}
-                <div className="w-full lg:w-64 p-6 border-b lg:border-b-0 lg:border-r border-white/10">
-                    {/* Profile */}
-                    <div className="flex items-center gap-3 mb-2">
-                        {physiotherapistImage ? (
-                            <img
-                                src={physiotherapistImage}
-                                alt={physiotherapistName}
-                                className="w-10 h-10 rounded-full object-cover"
-                            />
-                        ) : (
-                            <div className="w-10 h-10 rounded-full bg-[#005b57] flex items-center justify-center text-white font-bold">
-                                {physiotherapistName
-                                    .split(" ")
-                                    .map((n) => n[0])
-                                    .join("")}
-                            </div>
-                        )}
-                    </div>
-                    <span className="text-sm text-white/65">{physiotherapistName}</span>
+    const jumpTo = (slot: AvailableSlot) => {
+        const date = new Date(slot.start);
+        setCurrentMonth(date.getMonth());
+        setCurrentYear(date.getFullYear());
+        pickDate(new Date(date.getFullYear(), date.getMonth(), date.getDate()), true);
+    };
 
-                    {/* Session Info */}
-                    <h2 className="text-xl font-bold mt-4 mb-1">
-                        {getSessionTitle()}
-                    </h2>
-                    {sessionDescription && (
-                        <p className="text-sm text-white/50 mb-4">{sessionDescription}</p>
+    const title =
+        sessionTitle ||
+        (sessionDuration <= 30 ? "Quick Check-in" : sessionDuration <= 45 ? "Follow-up Session" : "Initial Consultation");
+
+    const loading = availableSlots === undefined;
+
+    return (
+        <div
+            className={cn(
+                "overflow-hidden rounded-[28px] bg-white text-rh-night shadow-[0_30px_80px_-30px_rgba(0,0,0,0.55)] ring-1 ring-rh-night/10",
+                "dark:bg-rh-ink-2 dark:text-white dark:ring-white/10",
+                className
+            )}
+        >
+            <div className="flex flex-col lg:flex-row">
+                {/* Left — host and session details */}
+                <aside className="w-full border-b border-rh-night/10 p-5 sm:p-6 lg:w-[300px] lg:shrink-0 lg:border-b-0 lg:border-r dark:border-white/10">
+                    {host ?? (
+                        <div className="flex items-center gap-3">
+                            {physiotherapistImage ? (
+                                <Image
+                                    src={physiotherapistImage}
+                                    alt={physiotherapistName}
+                                    width={40}
+                                    height={40}
+                                    unoptimized
+                                    className="h-10 w-10 rounded-full object-cover ring-1 ring-rh-night/10 dark:ring-white/10"
+                                />
+                            ) : (
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rh-night text-sm font-semibold text-white dark:bg-rh-lime dark:text-rh-night" aria-hidden>
+                                    {physiotherapistName.split(" ").filter(Boolean).slice(0, 2).map((n) => n[0]).join("")}
+                                </div>
+                            )}
+                            <span className="truncate text-sm font-medium text-rh-night/70 dark:text-white/70">{physiotherapistName}</span>
+                        </div>
                     )}
 
-                    <div className="space-y-3 text-sm text-white/65 mt-4">
-                        <div className="flex items-center gap-2">
-                            <Clock className="w-4 h-4" />
-                            <span>{sessionDuration}m</span>
-                        </div>
-
-                        {offersOnlineSessions && (
-                            <div className="flex items-center gap-2">
-                                <Video className="w-4 h-4 text-teal-300" />
-                                <span>Video Call</span>
-                            </div>
+                    <div className={cn(host ? "mt-6 border-t border-rh-night/10 pt-5 dark:border-white/10" : "mt-5")}>
+                        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+                        {sessionDescription && (
+                            <p className="mt-1 text-sm text-rh-night/60 dark:text-white/60">{sessionDescription}</p>
                         )}
 
-                        <div className="flex items-center gap-2">
-                            <Globe className="w-4 h-4" />
-                            <span>{timezone}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Center - Calendar */}
-                <div className="flex-1 p-6 border-b lg:border-b-0 lg:border-r border-white/10">
-                    {/* Month Navigation */}
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className="flex items-center gap-2 text-lg font-medium">
-                            <span>
-                                <span className="text-white/65">{MONTHS[currentMonth]}</span>{" "}
-                                {currentYear}
-                            </span>
-                            {availableSlots === undefined && (
-                                <Loader2 className="w-4 h-4 animate-spin text-teal-300" aria-label="Loading availability" />
+                        <ul className="mt-4 space-y-2.5 text-sm font-medium text-rh-night/80 dark:text-white/80">
+                            <li className="flex items-center gap-2.5">
+                                <Clock className="h-4 w-4 shrink-0 text-rh-night/50 dark:text-white/50" aria-hidden />
+                                {sessionDuration} min
+                            </li>
+                            {offersOnlineSessions && (
+                                <li className="flex items-center gap-2.5">
+                                    <Video className="h-4 w-4 shrink-0 text-rh-night/50 dark:text-white/50" aria-hidden />
+                                    Video call
+                                </li>
                             )}
+                            {offersInPersonSessions && (
+                                <li className="flex items-center gap-2.5">
+                                    <MapPin className="h-4 w-4 shrink-0 text-rh-night/50 dark:text-white/50" aria-hidden />
+                                    In person
+                                </li>
+                            )}
+                        </ul>
+
+                        {prices && prices.length > 0 && (
+                            <div className="mt-4 rounded-2xl bg-rh-canvas/70 p-3.5 ring-1 ring-inset ring-rh-night/[0.06] dark:bg-white/[0.04] dark:ring-white/10">
+                                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-rh-night/55 dark:text-white/50">
+                                    <Banknote className="h-3.5 w-3.5" aria-hidden />
+                                    Session fee
+                                </p>
+                                <ul className="mt-2 space-y-1.5">
+                                    {prices.map((row) => (
+                                        <li key={row.label} className="flex items-baseline justify-between gap-3 text-sm">
+                                            <span className="text-rh-night/70 dark:text-white/65">{row.label}</span>
+                                            <span className="font-semibold tabular-nums">{row.amount}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+
+                    {sidebarFooter}
+                </aside>
+
+                {/* Centre — calendar */}
+                <section className="flex-1 border-b border-rh-night/10 p-5 sm:p-6 lg:border-b-0 lg:border-r dark:border-white/10" aria-label="Choose a date">
+                    <div className="mb-4 flex items-center justify-between">
+                        <h3 className="flex items-center gap-2 text-base font-semibold">
+                            <span>
+                                {MONTHS[currentMonth]} <span className="font-normal text-rh-night/50 dark:text-white/50">{currentYear}</span>
+                            </span>
+                            {loading && <Loader2 className="h-4 w-4 animate-spin text-rh-night/40 dark:text-white/40" aria-label="Loading availability" />}
                         </h3>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
                             <button
-                                onClick={goToPreviousMonth}
+                                type="button"
+                                onClick={() => shiftMonth(-1)}
                                 aria-label="Previous month"
                                 disabled={!canGoPrevious}
-                                className={cn(
-                                    "p-2 rounded-lg transition-colors",
-                                    canGoPrevious
-                                        ? "hover:bg-white/[0.07] text-white/65 hover:text-white"
-                                        : "text-white/25 cursor-not-allowed"
-                                )}
+                                className="flex h-9 w-9 items-center justify-center rounded-full text-rh-night/70 transition-colors hover:bg-rh-night/[0.06] hover:text-rh-night focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
                             >
-                                <ChevronLeft className="w-5 h-5" />
+                                <ChevronLeft className="h-5 w-5" />
                             </button>
                             <button
-                                onClick={goToNextMonth}
+                                type="button"
+                                onClick={() => shiftMonth(1)}
                                 aria-label="Next month"
-                                className="p-2 rounded-lg hover:bg-white/[0.07] text-white/65 hover:text-white transition-colors"
+                                className="flex h-9 w-9 items-center justify-center rounded-full text-rh-night/70 transition-colors hover:bg-rh-night/[0.06] hover:text-rh-night focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
                             >
-                                <ChevronRight className="w-5 h-5" />
+                                <ChevronRight className="h-5 w-5" />
                             </button>
                         </div>
                     </div>
 
-                    {/* Weekday Headers */}
-                    <div className="grid grid-cols-7 mb-2">
+                    <div className="grid grid-cols-7 text-center text-[11px] font-semibold uppercase tracking-wider text-rh-night/45 dark:text-white/45">
                         {WEEKDAYS.map((day) => (
-                            <div
-                                key={day}
-                                className="text-center text-xs text-white/50 font-medium py-2"
-                            >
-                                {day}
-                            </div>
+                            <div key={day} className="py-2">{day}</div>
                         ))}
                     </div>
 
-                    {/* Calendar Grid */}
-                    <div className="grid grid-cols-7 gap-1">
+                    <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
                         {days.map((day, index) => {
-                            if (day === null) {
-                                return <div key={`empty-${index}`} className="aspect-square" />;
-                            }
-
-                            const past = isDayPast(day);
-                            const hasSlots = dayHasSlots(day);
-                            const selected = isSelected(day);
-                            const isTodayDay = isToday(day);
+                            if (day === null) return <div key={`empty-${index}`} className="aspect-square" />;
+                            const date = new Date(currentYear, currentMonth, day);
+                            const available = daysWithSlots.has(dayKey(date));
+                            const selected = selectedDate ? dayKey(selectedDate) === dayKey(date) : false;
+                            const isToday = dayKey(date) === dayKey(today);
+                            const label = date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 
                             return (
                                 <button
                                     key={day}
-                                    onClick={() => {
-                                        if (!past && hasSlots) {
-                                            setSelectedDate(new Date(currentYear, currentMonth, day));
-                                            setSelectedSlot(null);
-                                        }
-                                    }}
-                                    disabled={past || !hasSlots}
+                                    type="button"
+                                    onClick={() => available && pickDate(date, true)}
+                                    disabled={!available}
+                                    aria-pressed={selected}
+                                    aria-label={`${label}${available ? "" : ", no openings"}`}
                                     className={cn(
-                                        "aspect-square rounded-lg flex items-center justify-center text-sm font-medium transition-all relative",
-                                        past && "text-white/25 cursor-not-allowed",
-                                        !past && !hasSlots && "text-white/40 cursor-not-allowed",
-                                        !past &&
-                                        hasSlots &&
-                                        !selected &&
-                                        "bg-white/[0.07] text-white hover:bg-white/[0.14] cursor-pointer",
-                                        selected && "bg-white text-[#002e2c]",
-                                        isTodayDay && !selected && "ring-1 ring-teal-500"
+                                        "relative flex aspect-square items-center justify-center rounded-xl text-sm tabular-nums transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime focus-visible:ring-offset-1",
+                                        !available && "cursor-default text-rh-night/30 dark:text-white/25",
+                                        available && !selected &&
+                                            "bg-rh-night/[0.06] font-semibold text-rh-night hover:bg-rh-night/[0.12] hover:ring-1 hover:ring-rh-night/25 active:scale-95 dark:bg-white/[0.07] dark:text-white dark:hover:bg-white/[0.14] dark:hover:ring-white/25",
+                                        selected && "bg-rh-lime font-bold text-rh-night shadow-[0_8px_20px_-8px_rgba(0,205,15,0.8)]"
                                     )}
                                 >
                                     {day}
-                                    {isTodayDay && !selected && (
-                                        <span className="absolute bottom-1 w-1 h-1 bg-teal-500 rounded-full" />
+                                    {isToday && (
+                                        <span
+                                            className={cn(
+                                                "absolute bottom-1.5 h-1 w-1 rounded-full",
+                                                selected ? "bg-rh-night" : "bg-rh-night/60 dark:bg-rh-lime"
+                                            )}
+                                            aria-hidden
+                                        />
                                     )}
                                 </button>
                             );
                         })}
                     </div>
-                </div>
 
-                {/* Right - Time Slots */}
-                <div className="w-full lg:w-56 p-6">
+                    {!loading && !monthHasSlots && (
+                        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-rh-canvas/70 px-4 py-3 text-sm dark:bg-white/[0.04]">
+                            <span className="text-rh-night/65 dark:text-white/60">No openings in {MONTHS[currentMonth]}.</span>
+                            {nextAvailableAfterMonth ? (
+                                <button
+                                    type="button"
+                                    onClick={() => jumpTo(nextAvailableAfterMonth)}
+                                    className="inline-flex items-center gap-1 rounded-full font-semibold text-rh-night underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-rh-lime"
+                                >
+                                    Next opening{" "}
+                                    {new Date(nextAvailableAfterMonth.start).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+                                    <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => shiftMonth(1)}
+                                    className="inline-flex items-center gap-1 rounded-full font-semibold text-rh-night underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime dark:text-rh-lime"
+                                >
+                                    Check next month <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </section>
+
+                {/* Right — times */}
+                <section ref={slotsRef} className="w-full scroll-mt-4 p-5 sm:p-6 lg:w-[272px] lg:shrink-0" aria-label="Choose a time">
                     {selectedDate ? (
                         <>
-                            {/* Selected Date Header */}
-                            <div className="flex items-center justify-between mb-4">
-                                <h4 className="text-sm font-medium">
-                                    {selectedDate.toLocaleDateString("en-US", {
-                                        weekday: "short",
-                                    })}{" "}
-                                    {selectedDate.getDate()}
+                            <div className="mb-4 flex items-center justify-between gap-2">
+                                <h4 className="text-sm font-semibold">
+                                    {selectedDate.toLocaleDateString("en-GB", { weekday: "short" })}{" "}
+                                    <span className="text-rh-night/55 dark:text-white/55">
+                                        {selectedDate.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                                    </span>
                                 </h4>
-                                <div className="flex items-center gap-1 text-xs">
-                                    <button
-                                        onClick={() => setTimeFormat("12h")}
-                                        className={cn(
-                                            "px-2 py-1 rounded",
-                                            timeFormat === "12h"
-                                                ? "bg-white/[0.14] text-white"
-                                                : "text-white/50 hover:text-white/80"
-                                        )}
-                                    >
-                                        12h
-                                    </button>
-                                    <button
-                                        onClick={() => setTimeFormat("24h")}
-                                        className={cn(
-                                            "px-2 py-1 rounded",
-                                            timeFormat === "24h"
-                                                ? "bg-white/[0.14] text-white"
-                                                : "text-white/50 hover:text-white/80"
-                                        )}
-                                    >
-                                        24h
-                                    </button>
+                                <div className="flex rounded-full bg-rh-night/[0.06] p-0.5 text-xs font-medium dark:bg-white/[0.08]" role="group" aria-label="Time format">
+                                    {(["12h", "24h"] as const).map((format) => (
+                                        <button
+                                            key={format}
+                                            type="button"
+                                            onClick={() => setTimeFormat(format)}
+                                            aria-pressed={timeFormat === format}
+                                            className={cn(
+                                                "rounded-full px-2.5 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime",
+                                                timeFormat === format
+                                                    ? "bg-white text-rh-night shadow-sm dark:bg-white/90"
+                                                    : "text-rh-night/55 hover:text-rh-night dark:text-white/55 dark:hover:text-white"
+                                            )}
+                                        >
+                                            {format}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
 
-                            {/* Time Slots */}
-                            {availableSlots === undefined ? (
-                                <div className="flex items-center justify-center py-8">
-                                    <Loader2 className="w-6 h-6 animate-spin text-teal-300" />
+                            {loading ? (
+                                <div className="flex items-center justify-center py-10">
+                                    <Loader2 className="h-6 w-6 animate-spin text-rh-night/40 dark:text-white/40" />
                                 </div>
                             ) : slotsForSelectedDate.length === 0 ? (
-                                <p className="text-white/50 text-sm text-center py-8">
-                                    No available slots for this date
-                                </p>
+                                <p className="py-10 text-center text-sm text-rh-night/55 dark:text-white/55">No times left on this day.</p>
                             ) : (
-                                <div className="space-y-2 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
-                                    {slotsForSelectedDate.map((slot: AvailableSlot) => {
-                                        const isSlotSelected =
-                                            selectedSlot?.start === slot.start;
-
-                                        return (
-                                            <button
-                                                key={slot.start}
-                                                onClick={() => handleSlotClick(slot)}
-                                                className={cn(
-                                                    "w-full py-3 px-4 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
-                                                    isSlotSelected
-                                                        ? "bg-white text-[#002e2c]"
-                                                        : "bg-white/[0.07] text-white hover:bg-white/[0.14] border border-white/15"
-                                                )}
-                                            >
-                                                <span
-                                                    className={cn(
-                                                        "w-2 h-2 rounded-full",
-                                                        isSlotSelected ? "bg-[#005b57]" : "bg-teal-300"
+                                <AnimatePresence mode="wait" initial={false}>
+                                    <motion.ul
+                                        key={dayKey(selectedDate)}
+                                        initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                                        transition={{ duration: reduceMotion ? 0 : 0.18 }}
+                                        className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:max-h-[420px] lg:grid-cols-1 lg:overflow-y-auto lg:pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-rh-night/20 dark:[&::-webkit-scrollbar-thumb]:bg-white/20"
+                                    >
+                                        {slotsForSelectedDate.map((slot) => {
+                                            const isSelected = selectedSlot?.start === slot.start;
+                                            return (
+                                                <li key={slot.start} className="flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSlot(slot)}
+                                                        aria-pressed={isSelected}
+                                                        className={cn(
+                                                            "flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border text-sm font-semibold tabular-nums transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-lime focus-visible:ring-offset-1 active:scale-[0.97]",
+                                                            isSelected
+                                                                ? "border-rh-night bg-rh-night text-white dark:border-rh-lime dark:bg-rh-lime dark:text-rh-night"
+                                                                : "border-rh-night/15 bg-white text-rh-night hover:border-rh-night hover:shadow-sm dark:border-white/15 dark:bg-transparent dark:text-white dark:hover:border-white/60"
+                                                        )}
+                                                    >
+                                                        {isSelected ? (
+                                                            <Check className="h-4 w-4 text-rh-lime dark:text-rh-night" aria-hidden />
+                                                        ) : (
+                                                            <span className="h-1.5 w-1.5 rounded-full bg-rh-lime" aria-hidden />
+                                                        )}
+                                                        {formatTime(slot.start)}
+                                                    </button>
+                                                    {isSelected && onContinue && (
+                                                        <motion.button
+                                                            type="button"
+                                                            onClick={onContinue}
+                                                            initial={reduceMotion ? false : { opacity: 0, width: 0 }}
+                                                            animate={{ opacity: 1, width: "auto" }}
+                                                            transition={{ duration: reduceMotion ? 0 : 0.2 }}
+                                                            className="hidden min-h-11 shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-xl bg-rh-lime px-4 text-sm font-semibold text-rh-night transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rh-night focus-visible:ring-offset-1 active:scale-[0.97] lg:flex"
+                                                        >
+                                                            {continueLabel}
+                                                            <ArrowRight className="h-4 w-4" aria-hidden />
+                                                        </motion.button>
                                                     )}
-                                                />
-                                                {formatTime(slot.start)}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                                                </li>
+                                            );
+                                        })}
+                                    </motion.ul>
+                                </AnimatePresence>
                             )}
                         </>
                     ) : (
-                        <div className="flex flex-col items-center justify-center py-8 text-center">
-                            <p className="text-white/50 text-sm">
-                                Select a date to view available times
-                            </p>
+                        <div className="flex h-full min-h-[120px] flex-col items-center justify-center text-center">
+                            {loading ? (
+                                <Loader2 className="h-6 w-6 animate-spin text-rh-night/40 dark:text-white/40" aria-label="Loading availability" />
+                            ) : (
+                                <p className="text-sm text-rh-night/55 dark:text-white/55">
+                                    {upcomingSlots && upcomingSlots.length === 0 ? "No openings at the moment." : "Pick a day to see times."}
+                                </p>
+                            )}
                         </div>
                     )}
-                </div>
+                </section>
             </div>
-
-            {/* Footer - Rehabify Branding (like Cal.com) */}
-            <div className="py-4 text-center">
-                <a
-                    href="https://physioaroundme.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-white/65 font-bold font-cal hover:text-white/80 transition-colors"
-                >
-                    physioaroundme.com
-                </a>
-            </div>
-            {/* Custom Scrollbar Styles */}
-            <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: rgba(255, 255, 255, 0.06);
-          border-radius: 2px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.2);
-          border-radius: 2px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.3);
-        }
-      `}</style>
         </div>
     );
 }

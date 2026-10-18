@@ -105,16 +105,21 @@ export const createStreamCall = action({
       throw new Error("Unauthorized")
     }
 
+    const access = await ctx.runQuery(internal.stream_mutations.getCallAccess, { callId: args.callId, clerkId: identity.subject })
+    if (!access.canJoin) {
+      throw new Error("You're not on this call")
+    }
+
     const apiKey = process.env.STREAM_API_KEY
     const apiSecret = process.env.STREAM_SECRET
-    
+
     if (!apiKey || !apiSecret) {
       throw new Error("Stream credentials not configured")
     }
 
     try {
       const client = new StreamClient(apiKey, apiSecret)
-      
+
       // Create call with specified type
       const callType = args.callType || 'default'
       const call = client.video.call(callType, args.callId)
@@ -126,7 +131,7 @@ export const createStreamCall = action({
         // Otherwise treat it as Convex users._id and convert to clerkId via a query
         try {
           const asConvexId = maybeId as unknown as Id<"users">
-          const userDoc = await ctx.runQuery(api.users.getUserById as any, { userId: asConvexId })
+          const userDoc = await ctx.runQuery(internal.users.getUserById, { userId: asConvexId })
           if (userDoc?.clerkId) return userDoc.clerkId as string
         } catch {}
         // Fallback to original if lookup fails
@@ -232,9 +237,14 @@ export const endStreamCall = action({
       throw new Error("Unauthorized")
     }
 
+    const access = await ctx.runQuery(internal.stream_mutations.getCallAccess, { callId: args.callId, clerkId: identity.subject })
+    if (!access.canEnd) {
+      throw new Error("Only the people on this call can end it")
+    }
+
     const apiKey = process.env.STREAM_API_KEY
     const apiSecret = process.env.STREAM_SECRET
-    
+
     if (!apiKey || !apiSecret) {
       throw new Error("Stream credentials not configured")
     }
@@ -265,18 +275,22 @@ export const endStreamCall = action({
 
 
 
-// Ensure the current authenticated user is a member of the chat channel for this call
+// Ensure the current authenticated user is a member of the chat channel for this call.
+// `userId` is ignored (kept so older clients still validate): only the signed-in caller is added.
 export const ensureChatMembership = action({
-  args: { callId: v.string(), userId: v.string() },
+  args: { callId: v.string(), userId: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity) throw new Error('Unauthorized')
+    const access = await ctx.runQuery(internal.stream_mutations.getCallAccess, { callId: args.callId, clerkId: identity.subject })
+    if (!access.exists || !access.canJoin) throw new Error("You're not on this call")
+
     const apiKey = process.env.STREAM_API_KEY
     const apiSecret = process.env.STREAM_SECRET
     if (!apiKey || !apiSecret) throw new Error('Stream credentials not configured')
 
     try {
-      const identity = await ctx.auth.getUserIdentity().catch(() => null)
-      const memberId = identity?.subject || args.userId
-      if (!memberId) throw new Error('Unauthorized')
+      const memberId = identity.subject
 
       const chatServer = StreamChat.getInstance(apiKey, apiSecret)
       const channel = chatServer.channel('messaging', args.callId)
@@ -321,6 +335,11 @@ export const getJoyPatientCallToken = action({
       user_id: userId,
       call_cids: [`default:${join.callId}`],
       exp: Math.floor(join.closesAt / 1000),
+    })
+
+    // Lets the physio see on the Joy handoff that the patient made it to the call (once per booking)
+    await ctx.runMutation(internal.joyHandoff.recordJourneyEvent, {
+      patientId: join.patientId, bookingId: join.bookingId, stage: 'call_joined', eventKey: `call-joined-${join.bookingId}`,
     })
 
     return {

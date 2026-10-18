@@ -99,7 +99,7 @@ export const createMarketplaceBooking = mutation({
         }
 
         // The amount is never taken on trust: it must be a price the booking page can show
-        // for this physio and package (physios without a rate get the ₦6k / ₦10k default).
+        // for this physio and package (physios without a rate get the platform default rate).
         const effectiveServiceAmount = resolveServiceAmountKobo(
             physioProfile,
             { serviceAmountKobo: args.serviceAmount, packageSessions: args.packageSessions, isOnline: args.isOnline },

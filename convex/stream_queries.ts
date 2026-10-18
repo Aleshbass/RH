@@ -2,6 +2,7 @@
 import { v } from "convex/values"
 import { query, internalQuery } from "./_generated/server"
 import type { Doc, Id } from './_generated/dataModel'
+import { findCallByRoomId } from './helpers/callAccess'
 
 // Query to get call metadata
 /**
@@ -43,16 +44,7 @@ export const getCallMetadataInternal = internalQuery({
 })
 
 async function loadCallMetadata(ctx, callId: string) {
-    const args = { callId }
-    const call = await ctx.db
-      .query("videoCalls")
-      .filter(q => 
-        q.or(
-          q.eq(q.field("roomId"), args.callId),
-          q.eq(q.field("streamCallId"), args.callId)
-        )
-      )
-      .first()
+    const call = await findCallByRoomId(ctx, callId)
 
     if (!call) {
       return null

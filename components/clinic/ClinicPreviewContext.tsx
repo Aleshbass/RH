@@ -19,6 +19,8 @@ import { ArrowRight, Lock, Clock } from 'lucide-react'
 export const CLINIC_AREAS = ['appointments', 'patients', 'referrals', 'billing', 'team', 'reports', 'settings'] as const
 export type ClinicArea = (typeof CLINIC_AREAS)[number]
 
+export type ClinicStaffKind = 'owner' | 'clinician' | 'front_desk'
+
 export const CLINIC_AREA_LABELS: Record<ClinicArea, string> = {
   appointments: 'Appointments',
   patients: 'Patients',
@@ -39,6 +41,14 @@ interface ClinicPreviewContextType {
   isOwner: boolean
   /** Signed in as a clinic team member (clinician or front desk) */
   isStaff: boolean
+  /** owner, clinician or front desk; null for preview visitors */
+  staffKind: ClinicStaffKind | null
+  /** A clinician on the team (not the owner): gets a personal home instead of the clinic overview */
+  isClinician: boolean
+  /** Signed-in person's first name, for the greeting */
+  firstName: string | null
+  /** A clinician who also has their own approved Rehabify physio account (can switch to it) */
+  hasOwnPhysioPortal: boolean
   /** Team member whose access was suspended by the owner */
   isSuspended: boolean
   /** The whole clinic was suspended by Rehabify: records stay readable, changes are refused */
@@ -69,6 +79,10 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
   const member = access && access.mode !== 'preview' ? access : null
   const isOwner = member?.mode === 'owner'
   const isStaff = member?.mode === 'staff'
+  const staffKind = (member?.staffKind ?? null) as ClinicStaffKind | null
+  const isClinician = staffKind === 'clinician'
+  const firstName = (member?.firstName as string | null | undefined) ?? currentUser?.firstName?.trim() ?? null
+  const hasOwnPhysioPortal = Boolean(member?.hasOwnPhysioPortal)
 
   const isDeclined = member?.approvalStatus === 'declined'
   // A skip always leaves onboarded=false, so a stale onboardingSkipped flag on an onboarded account is ignored.
@@ -122,6 +136,10 @@ export function ClinicPreviewProvider({ children }: { children: ReactNode }) {
         isDeclined,
         isOwner,
         isStaff,
+        staffKind,
+        isClinician,
+        firstName: firstName || null,
+        hasOwnPhysioPortal,
         isSuspended,
         isClinicSuspended,
         clinicSuspendedReason,

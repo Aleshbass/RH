@@ -1,81 +1,116 @@
 /**
  * Structured Data (JSON-LD) Components for SEO
- * 
- * These components inject schema.org structured data into pages,
- * helping search engines understand your content better and
- * enabling rich results in search (rich snippets, knowledge panels, etc.)
+ *
+ * These inject schema.org structured data so search engines and AI assistants can tell what
+ * Rehabify Health is, what it offers and who the physiotherapists on it are.
+ *
+ * Rules: only mark up what the page visibly shows, and only state facts from lib/seo/config.ts.
  */
 
 import { SITE_CONFIG } from '@/lib/seo/config';
 
-/**
- * Organization Schema - Use on homepage
- * Shows your business info in search results
- */
-export function OrganizationSchema() {
-  const schema = {
-    '@context': 'https://schema.org',
-    '@type': 'MedicalBusiness',
-    name: SITE_CONFIG.organization.name,
-    legalName: SITE_CONFIG.organization.legalName,
-    url: SITE_CONFIG.organization.url,
-    logo: `${SITE_CONFIG.url}${SITE_CONFIG.organization.logo}`,
-    foundingDate: SITE_CONFIG.organization.foundingDate,
-    description: SITE_CONFIG.description,
-    
-    // Contact information
-    contactPoint: {
-      '@type': 'ContactPoint',
-      telephone: SITE_CONFIG.organization.contactPoint.telephone,
-      contactType: SITE_CONFIG.organization.contactPoint.contactType,
-      email: SITE_CONFIG.organization.contactPoint.email,
-      availableLanguage: SITE_CONFIG.organization.contactPoint.availableLanguage,
-    },
-    
-    // Social media profiles
-    sameAs: SITE_CONFIG.organization.sameAs,
-    
-    // Medical specialties
-    medicalSpecialty: SITE_CONFIG.medicalService.medicalSpecialty,
-  };
+type JsonLdData = Record<string, unknown>;
 
+/**
+ * Renders one JSON-LD block. `<` is escaped so text from user content (bios, names) can never
+ * close the script tag.
+ */
+export function JsonLd({ data }: { data: JsonLdData }) {
   return (
     <script
       type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, '\\u003c') }}
     />
   );
 }
 
+export const ORGANIZATION_ID = `${SITE_CONFIG.url}/#organization`;
+export const WEBSITE_ID = `${SITE_CONFIG.url}/#website`;
+
+/** The company as a schema.org MedicalOrganization (no street address is published). */
+export function organizationNode(): JsonLdData {
+  const org = SITE_CONFIG.organization;
+  return {
+    '@type': 'MedicalOrganization',
+    '@id': ORGANIZATION_ID,
+    name: org.name,
+    alternateName: org.alternateNames,
+    url: SITE_CONFIG.url,
+    logo: {
+      '@type': 'ImageObject',
+      url: `${SITE_CONFIG.url}${org.logo}`,
+      width: 512,
+      height: 512,
+    },
+    description: org.description,
+    email: org.supportEmail,
+    telephone: org.supportPhone,
+    areaServed: { '@type': 'Country', name: org.country },
+    medicalSpecialty: ['https://schema.org/Physiotherapy', 'https://schema.org/Musculoskeletal'],
+    knowsAbout: [
+      'Physiotherapy',
+      'Online physiotherapy (telehealth)',
+      'Home physiotherapy visits',
+      'Back and neck pain',
+      'Knee and joint pain',
+      'Sports injury rehabilitation',
+      'Post-surgery rehabilitation',
+      'Stroke rehabilitation',
+      'Arthritis',
+      'Musculoskeletal rehabilitation',
+    ],
+    contactPoint: [
+      {
+        '@type': 'ContactPoint',
+        contactType: 'customer support',
+        telephone: org.supportPhone,
+        email: org.supportEmail,
+        areaServed: 'NG',
+        availableLanguage: ['English'],
+        hoursAvailable: {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+          opens: '08:00',
+          closes: '18:00',
+        },
+      },
+      {
+        '@type': 'ContactPoint',
+        contactType: 'partnerships',
+        email: org.partnersEmail,
+        areaServed: 'NG',
+      },
+    ],
+    ...(org.sameAs.length > 0 && { sameAs: org.sameAs }),
+  };
+}
+
+/** The website. No SearchAction: the find-a-physio search does not read a URL query. */
+export function websiteNode(): JsonLdData {
+  return {
+    '@type': 'WebSite',
+    '@id': WEBSITE_ID,
+    url: SITE_CONFIG.url,
+    name: 'Physio Around Me',
+    alternateName: ['Rehabify Health', 'physioaroundme.com'],
+    description: SITE_CONFIG.description,
+    inLanguage: 'en-NG',
+    publisher: { '@id': ORGANIZATION_ID },
+  };
+}
+
+/**
+ * Organization Schema - Use on homepage
+ */
+export function OrganizationSchema() {
+  return <JsonLd data={{ '@context': 'https://schema.org', ...organizationNode() }} />;
+}
+
 /**
  * WebSite Schema - Use on homepage
- * Enables search box in Google results
  */
 export function WebSiteSchema() {
-  const schema = {
-    '@context': 'https://schema.org',
-    '@type': 'WebSite',
-    name: SITE_CONFIG.name,
-    url: SITE_CONFIG.url,
-    description: SITE_CONFIG.description,
-    
-    // Enables site search in Google results
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: `${SITE_CONFIG.url}/search?q={search_term_string}`,
-      },
-      'query-input': 'required name=search_term_string',
-    },
-  };
-
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
-  );
+  return <JsonLd data={{ '@context': 'https://schema.org', ...websiteNode() }} />;
 }
 
 /**
@@ -105,16 +140,10 @@ export function MedicalWebPageSchema({
     ...(datePublished && { datePublished }),
     ...(dateModified && { dateModified }),
     ...(image && { image }),
-    
-    // Medical content aspects
-    audience: {
-      '@type': 'PeopleAudience',
-      suggestedMinAge: 18,
-    },
-    
-    // Publisher information
+    isPartOf: { '@id': WEBSITE_ID },
     publisher: {
       '@type': 'Organization',
+      '@id': ORGANIZATION_ID,
       name: SITE_CONFIG.organization.name,
       logo: {
         '@type': 'ImageObject',
@@ -123,12 +152,7 @@ export function MedicalWebPageSchema({
     },
   };
 
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
-  );
+  return <JsonLd data={schema} />;
 }
 
 /**
@@ -137,12 +161,10 @@ export function MedicalWebPageSchema({
 export function ServiceSchema({
   name,
   description,
-  provider = SITE_CONFIG.organization.name,
-  serviceType = 'Medical',
+  serviceType = 'Physiotherapy',
 }: {
   name: string;
   description: string;
-  provider?: string;
   serviceType?: string;
 }) {
   const schema = {
@@ -150,36 +172,17 @@ export function ServiceSchema({
     '@type': 'Service',
     name,
     description,
-    provider: {
-      '@type': 'Organization',
-      name: provider,
-    },
     serviceType,
-    areaServed: {
-      '@type': 'Country',
-      name: 'Nigeria', // Adjust based on your coverage
-    },
+    provider: { '@id': ORGANIZATION_ID, '@type': 'MedicalOrganization', name: SITE_CONFIG.organization.name },
+    areaServed: { '@type': 'Country', name: SITE_CONFIG.organization.country },
   };
 
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
-  );
+  return <JsonLd data={schema} />;
 }
 
-/**
- * FAQ Schema - Use on FAQ pages
- * Shows expandable FAQs directly in Google search results
- */
-export function FAQSchema({
-  faqs,
-}: {
-  faqs: Array<{ question: string; answer: string }>;
-}) {
-  const schema = {
-    '@context': 'https://schema.org',
+/** FAQPage node for questions and answers that are shown on the page. */
+export function faqPageNode(faqs: ReadonlyArray<{ question: string; answer: string }>): JsonLdData {
+  return {
     '@type': 'FAQPage',
     mainEntity: faqs.map((faq) => ({
       '@type': 'Question',
@@ -190,13 +193,17 @@ export function FAQSchema({
       },
     })),
   };
+}
 
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
-  );
+/**
+ * FAQ Schema - Use on pages that show these questions and answers
+ */
+export function FAQSchema({
+  faqs,
+}: {
+  faqs: ReadonlyArray<{ question: string; answer: string }>;
+}) {
+  return <JsonLd data={{ '@context': 'https://schema.org', ...faqPageNode(faqs) }} />;
 }
 
 /**
@@ -233,6 +240,7 @@ export function ArticleSchema({
     },
     publisher: {
       '@type': 'Organization',
+      '@id': ORGANIZATION_ID,
       name: SITE_CONFIG.organization.name,
       logo: {
         '@type': 'ImageObject',
@@ -245,25 +253,12 @@ export function ArticleSchema({
     },
   };
 
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
-  );
+  return <JsonLd data={schema} />;
 }
 
-/**
- * Breadcrumb Schema - Use on deep pages
- * Shows breadcrumb trail in search results
- */
-export function BreadcrumbSchema({
-  items,
-}: {
-  items: Array<{ name: string; url: string }>;
-}) {
-  const schema = {
-    '@context': 'https://schema.org',
+/** BreadcrumbList node. */
+export function breadcrumbNode(items: ReadonlyArray<{ name: string; url: string }>): JsonLdData {
+  return {
     '@type': 'BreadcrumbList',
     itemListElement: items.map((item, index) => ({
       '@type': 'ListItem',
@@ -272,13 +267,17 @@ export function BreadcrumbSchema({
       item: item.url,
     })),
   };
+}
 
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
-  );
+/**
+ * Breadcrumb Schema - Use on deep pages
+ */
+export function BreadcrumbSchema({
+  items,
+}: {
+  items: Array<{ name: string; url: string }>;
+}) {
+  return <JsonLd data={{ '@context': 'https://schema.org', ...breadcrumbNode(items) }} />;
 }
 
 /**
@@ -310,17 +309,11 @@ export function VideoSchema({
     ...(contentUrl && { contentUrl }),
   };
 
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
-  );
+  return <JsonLd data={schema} />;
 }
 
 /**
  * HowTo Schema - Use on instructional/tutorial pages
- * Shows step-by-step instructions in search results
  */
 export function HowToSchema({
   name,
@@ -347,10 +340,5 @@ export function HowToSchema({
     })),
   };
 
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-    />
-  );
+  return <JsonLd data={schema} />;
 }

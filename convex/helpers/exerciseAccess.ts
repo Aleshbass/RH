@@ -47,11 +47,13 @@ export async function requireCareTeam(ctx: Ctx, patientId: Id<"users">, opts: { 
   const user = await currentUser(ctx);
   if (!user) throw new ConvexError("Sign in to continue.");
 
+  let careEnded = false;
   if (user.role === "physiotherapist" && (await isApproved(ctx, user._id))) {
     const rel = await findRelationship(ctx, user._id, patientId);
     if (rel && (rel.status === "active" || !opts.write)) {
       return { user, kind: "physio", clinicId: user.clinicId ?? undefined, senderName: displayName(user) };
     }
+    careEnded = Boolean(rel);
   }
 
   const member = await clinicMemberOrNull(ctx);
@@ -61,7 +63,12 @@ export async function requireCareTeam(ctx: Ctx, patientId: Id<"users">, opts: { 
     return { user, kind: "clinic", clinicId: member.clinic._id, senderName: member.clinic.name };
   }
 
-  throw new ConvexError(opts.write ? "This patient isn't in your care." : "You can't see this patient's exercises.");
+  if (!opts.write) throw new ConvexError("You can't see this patient's exercises.");
+  throw new ConvexError(
+    careEnded
+      ? "Your care of this patient has ended. Start a new course of care before changing their exercises."
+      : "This patient isn't in your care."
+  );
 }
 
 /** Like requireCareTeam but returns null instead of throwing (for queries). */
@@ -121,6 +128,7 @@ export function itemClipId(exercise: Doc<"exercises"> | null, side?: "L" | "R") 
 export async function programClipIds(ctx: Ctx, program: Doc<"exercisePrograms">) {
   const ids = new Set<string>();
   for (const item of program.items) {
+    if (!item.exerciseId) continue; // the care team's own exercises and education have no 3D clip
     const exercise = await ctx.db.get(item.exerciseId);
     if (exercise?.animationStatus !== "approved") continue;
     const clip = itemClipId(exercise, item.side);

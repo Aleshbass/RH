@@ -5,9 +5,10 @@ import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import type { AnimationClip } from 'three'
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { Eye, Loader2, Pause, Play, RotateCcw, Rotate3d, Turtle, WifiOff } from 'lucide-react'
+import { Eye, Loader2, Pause, Play, RotateCcw, Rotate3d, Turtle, Volume2, VolumeX, WifiOff } from 'lucide-react'
 import { EXERCISE_CATALOG, findClip, posterUrl } from '@/convex/exerciseLibraryCatalog'
 import type { ViewerGrant } from '@/lib/exercise3d/useViewerGrant'
+import { VoiceGuide } from '@/lib/exercise3d/voice'
 import { cn } from '@/lib/utils'
 import type { ViewName } from './ExerciseStage'
 
@@ -34,6 +35,23 @@ function liteReason(): string | null {
 
 const totalKb = Math.round((EXERCISE_CATALOG.character.bytes + 12_000) / 1024)
 
+// Remembers whether the patient turned the voice guide off (on by default once they tap it).
+const VOICE_PREF = 'rh-exercise-voice'
+function voicePreferenceOff() {
+  try {
+    return localStorage.getItem(VOICE_PREF) === 'off'
+  } catch {
+    return false
+  }
+}
+function saveVoicePreference(on: boolean) {
+  try {
+    localStorage.setItem(VOICE_PREF, on ? 'on' : 'off')
+  } catch {
+    // Private mode: the choice just isn't remembered.
+  }
+}
+
 export type ExerciseViewerProps = {
   clipId: string
   requestGrant: (clipIds: string[]) => Promise<ViewerGrant>
@@ -59,6 +77,40 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
   const [reps, setReps] = useState(0)
   const repsRef = useRef(0)
   const loadId = useRef(0)
+
+  // Voice guide: created per clip, started by a tap, synced to the animation clock.
+  const guideRef = useRef<VoiceGuide | null>(null)
+  const clipSeconds = useRef(0)
+  const [voice, setVoice] = useState<'idle' | 'on' | 'off'>('idle')
+  const audio = clipInfo?.audio ?? null
+
+  useEffect(() => {
+    guideRef.current = audio ? new VoiceGuide(audio) : null
+    setVoice('idle')
+    return () => {
+      guideRef.current?.dispose()
+      guideRef.current = null
+    }
+  }, [audio])
+
+  const toggleVoice = useCallback(async () => {
+    const guide = guideRef.current
+    if (!guide) return
+    if (voice === 'on') {
+      guide.setMuted(true)
+      setVoice('off')
+      saveVoicePreference(false)
+      return
+    }
+    setVoice('on')
+    saveVoicePreference(true)
+    if (guide.started) guide.setMuted(false)
+    else await guide.start({ intro: true })
+  }, [voice])
+
+  const handleFrame = useCallback((progress: number) => {
+    guideRef.current?.tick(progress * clipSeconds.current)
+  }, [])
 
   const load = useCallback(async () => {
     const id = ++loadId.current
@@ -87,6 +139,7 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
       }
       const clip = await clipPromise
       if (id !== loadId.current) return
+      clipSeconds.current = clip.duration
       setAssets({ gltf, clip, watermark: grant.watermark })
       setPhase('ready')
     } catch (err) {
@@ -146,6 +199,7 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
           viewNonce={viewNonce}
           watermark={assets.watermark}
           onRep={handleRep}
+          onFrame={audio ? handleFrame : undefined}
           onContextLost={() => {
             setLite('3D was paused to save memory')
             setPhase('lite')
@@ -199,6 +253,22 @@ export function ExerciseViewer({ clipId, requestGrant, className, autoPlay = tru
             <p className="text-[10px] uppercase tracking-wider opacity-80">reps</p>
           </div>
           <div className="absolute inset-x-0 bottom-3 flex flex-wrap items-center justify-center gap-1.5 px-3">
+            {audio && (
+              <button
+                type="button"
+                onClick={() => void toggleVoice()}
+                aria-pressed={voice === 'on'}
+                title={voice === 'idle' ? 'Hear spoken instructions' : voice === 'on' ? 'Mute the voice guide' : 'Turn the voice guide back on'}
+                className={cn(
+                  chip,
+                  voice === 'on' && 'bg-rh-teal text-white hover:bg-rh-teal-deep dark:bg-rh-aqua dark:text-rh-night',
+                  voice === 'idle' && !voicePreferenceOff() && 'animate-pulse bg-rh-teal text-white hover:bg-rh-teal-deep dark:bg-rh-aqua dark:text-rh-night'
+                )}
+              >
+                {voice === 'on' ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+                {voice === 'idle' ? 'Voice guide' : voice === 'on' ? 'Voice on' : 'Voice off'}
+              </button>
+            )}
             <button type="button" className={chip} onClick={() => setPlaying((p) => !p)} aria-label={playing ? 'Pause' : 'Play'}>
               {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
               {playing ? 'Pause' : 'Play'}

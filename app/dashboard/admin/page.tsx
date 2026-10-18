@@ -169,12 +169,12 @@ export default function AdminHomePage() {
         </StaggerItem>
       </Stagger>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <NeedsAttention badges={badges} unassignedReferrals={stats?.unassignedReferrals} className="lg:col-span-2" />
         <TodayPanel today={stats?.today} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <PlatformStatus health={health} />
         <RecentActivity items={activity?.items} className="lg:col-span-2" />
       </div>
@@ -488,7 +488,7 @@ function QuickLinks({ badges }: { badges: Badges | undefined }) {
   return (
     <section className="space-y-3">
       <h2 className="text-[15px] font-semibold tracking-tight text-rh-night dark:text-white">Jump to</h2>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {sections.map((section) => (
           <QuickLink
             key={section.id}

@@ -237,7 +237,7 @@ export function AdvancedAnalyticsDashboard() {
         </StaggerItem>
       </Stagger>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ChartPanel title="Sign-ups per week" description="New accounts, last 12 weeks" loading={!weekly}>
           <BarChart data={weekly ?? []} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke={ink.grid} />

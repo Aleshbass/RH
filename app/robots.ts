@@ -1,79 +1,31 @@
-import { MetadataRoute } from 'next';
-import { ROBOTS_CONFIG } from '@/lib/seo/config';
+import type { MetadataRoute } from 'next';
+import { AI_AND_SEARCH_CRAWLERS, PRIVATE_PATHS, SITE_CONFIG } from '@/lib/seo/config';
 
 /**
- * Robots.txt configuration for search engine crawlers
- * 
- * This tells search engines:
- * - Which pages to crawl and index
- * - Which pages to avoid (private dashboards, API routes)
- * - Where to find the sitemap
- * 
+ * robots.txt — the only robots source (there is no public/robots.txt; next-sitemap is not run).
+ *
+ * Public pages are open to every crawler, including the search and AI-answer crawlers named in
+ * lib/seo/config.ts (ChatGPT, Claude, Perplexity, Gemini, Copilot/Bing, Apple, Meta...), so they
+ * can read and cite the site. A crawler follows only the most specific group that names it, so
+ * the named group repeats the same private-area rules as `*`.
+ *
  * @see https://nextjs.org/docs/app/api-reference/file-conventions/metadata/robots
  */
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://physioaroundme.com';
-
   return {
     rules: [
       {
         userAgent: '*',
         allow: '/',
-        disallow: [
-          '/api/*',
-          '/dashboard/*',
-          '/admin/*',
-          '/onboarding/*',
-          '/role-selection',
-          '/clinic-invite/*',
-          '/patient-invite/*',
-          '/video-call/*',
-          '/v/*',
-          '/*?*utm_*', // Ignore tracking parameters
-        ],
-      },
-      // Allow AI training bots to read the site for better brand recognition
-      {
-        userAgent: 'GPTBot',
-        allow: '/',
+        disallow: PRIVATE_PATHS,
       },
       {
-        userAgent: 'ChatGPT-User',
-        allow: '/',
-      },
-      {
-        userAgent: 'CCBot',
-        allow: '/',
-      },
-      {
-        userAgent: 'anthropic-ai',
-        allow: '/',
-      },
-      {
-        userAgent: 'Google-Extended',
-        allow: '/',
-      },
-      // Allow specific good bots
-      {
-        userAgent: 'Googlebot',
-        allow: '/',
-        disallow: [
-          '/api/*',
-          '/dashboard/*',
-          '/admin/*',
-        ],
-      },
-      {
-        userAgent: 'Bingbot',
-        allow: '/',
-        disallow: [
-          '/api/*',
-          '/dashboard/*',
-          '/admin/*',
-        ],
+        userAgent: AI_AND_SEARCH_CRAWLERS,
+        allow: ['/', '/llms.txt', '/llms-full.txt'],
+        disallow: PRIVATE_PATHS,
       },
     ],
-    sitemap: `${baseUrl}/sitemap.xml`,
-    host: baseUrl,
+    sitemap: `${SITE_CONFIG.url}/sitemap.xml`,
+    host: SITE_CONFIG.url,
   };
 }

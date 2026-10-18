@@ -55,28 +55,42 @@ export const getOrCreateConversation = mutation({
       throw new Error("Physiotherapists can only chat with patients");
     }
 
-    // Check if conversation already exists
-    const existingConversation = await ctx.db
-      .query("conversations")
-      .filter((q: any) => 
-        q.or(
-          q.and(
-            q.eq(q.field("participant1Id"), currentUser._id),
-            q.eq(q.field("participant2Id"), args.participantId)
-          ),
-          q.and(
-            q.eq(q.field("participant1Id"), args.participantId),
-            q.eq(q.field("participant2Id"), currentUser._id)
-          )
-        )
-      )
-      .unique();
+    // Check if conversation already exists (either participant order)
+    const existingConversation =
+      (await ctx.db
+        .query("conversations")
+        .withIndex("by_participants", (q) => q.eq("participant1Id", currentUser._id).eq("participant2Id", args.participantId))
+        .first()) ??
+      (await ctx.db
+        .query("conversations")
+        .withIndex("by_participants", (q) => q.eq("participant1Id", args.participantId).eq("participant2Id", currentUser._id))
+        .first());
 
     if (existingConversation) {
       return {
         conversationId: existingConversation._id,
         isNew: false,
       };
+    }
+
+    // A new conversation needs a care link: a patient–physio relationship or an appointment
+    if (currentUser.role === "patient" || currentUser.role === "physiotherapist") {
+      const patientId = currentUser.role === "patient" ? currentUser._id : otherUser._id;
+      const physioId = currentUser.role === "patient" ? otherUser._id : currentUser._id;
+      const relationship = await ctx.db
+        .query("patientPhysiotherapistRelationships")
+        .withIndex("by_patient_and_physiotherapist", (q) => q.eq("patientId", patientId).eq("physiotherapistId", physioId))
+        .first();
+      const appointment = relationship
+        ? null
+        : await ctx.db
+            .query("appointments")
+            .withIndex("by_patient_id_and_time", (q) => q.eq("patientId", patientId))
+            .filter((q) => q.eq(q.field("physiotherapistId"), physioId))
+            .first();
+      if (!relationship && !appointment) {
+        throw new Error("You can only message a physiotherapist you're seeing");
+      }
     }
 
     // Create new conversation

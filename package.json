@@ -9,7 +9,6 @@
     "dev:frontend": "next dev",
     "dev:backend": "convex dev",
     "build": "next build",
-    "postbuild": "next-sitemap",
     "postinstall": "fumadocs-mdx",
     "start": "next start",
     "lint": "next lint",

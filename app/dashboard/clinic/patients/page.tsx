@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { Button } from '@/components/ui/button'
@@ -8,21 +9,44 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ChevronRight, Phone, Search, UserPlus, Users } from 'lucide-react'
+import { ChevronRight, Inbox, Phone, Search, UserPlus, Users } from 'lucide-react'
 import { differenceInCalendarDays, format } from 'date-fns'
 import AddPatientModal from '@/components/clinic/patients/AddPatientModal'
 import PatientClinicalRecordDrawer from '@/components/clinic/patients/PatientClinicalRecordDrawer'
+import {
+  ReferralInbox,
+  ReferralProgressBadge,
+  isWaitingReferral,
+  type ClinicReferral,
+} from '@/components/clinic/patients/ReferralInbox'
 import { useClinicPreview } from '@/components/clinic/ClinicPreviewContext'
 import { EmptyState, PageShell, Panel, StatusBadge, primaryButtonClass } from '@/components/clinic/ui'
 import { cn } from '@/lib/utils'
 
-type SourceFilter = 'all' | 'rehabify' | 'clinic'
+type SourceFilter = 'all' | 'referred' | 'clinic'
 
 const FILTERS: { value: SourceFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'rehabify', label: 'Referred by Rehabify' },
+  { value: 'referred', label: 'Referred by Rehabify' },
   { value: 'clinic', label: 'Clinic patients' },
 ]
+
+/** ?filter=referred (old links used "rehabify"), ?filter=clinic, otherwise all */
+function parseFilter(value: string | null): SourceFilter {
+  if (value === 'referred' || value === 'rehabify' || value === 'referrals') return 'referred'
+  if (value === 'clinic') return 'clinic'
+  return 'all'
+}
+
+/** Keeps the address bar in step (shareable, survives refresh) without a navigation. */
+function replaceQuery(changes: Record<string, string | null>) {
+  const url = new URL(window.location.href)
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === null) url.searchParams.delete(key)
+    else url.searchParams.set(key, value)
+  }
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
 
 type CareStatus = 'active' | 'paused' | 'discharged'
 type StatusFilter = CareStatus | 'all'
@@ -44,7 +68,7 @@ const STATUS_NOUN: Record<StatusFilter, { one: string; many: string }> = {
 
 const SOURCE_SUFFIX: Record<SourceFilter, string> = {
   all: '',
-  rehabify: ' referred by Rehabify',
+  referred: ' referred by Rehabify',
   clinic: ' from your clinic',
 }
 
@@ -57,6 +81,8 @@ interface PatientRow {
   imageUrl?: string
   clinician: string
   isReferral: boolean
+  /** Progress of the Rehabify referral this patient came from, when known */
+  referralStatus: string | null
   lastVisit: number | null
   careStatus: CareStatus
 }
@@ -81,22 +107,74 @@ function describeCheckInDue(at: number) {
   return `Check-in due ${format(new Date(at), 'd MMM')}`
 }
 
+// useSearchParams needs a Suspense boundary for the static build
 export default function ClinicPatientsPage() {
-  const { requireFullAccess } = useClinicPreview()
+  return (
+    <Suspense
+      fallback={
+        <PageShell title="Patients">
+          <Skeleton className="h-64 rounded-xl" />
+        </PageShell>
+      }
+    >
+      <ClinicPatients />
+    </Suspense>
+  )
+}
+
+function ClinicPatients() {
+  const { requireFullAccess, canUse } = useClinicPreview()
+  const searchParams = useSearchParams()
+  const urlFilter = parseFilter(searchParams.get('filter'))
+  const urlPatient = searchParams.get('patient')
   const [searchTerm, setSearchTerm] = useState('')
-  const [filter, setFilter] = useState<SourceFilter>('all')
+  const [filter, setFilterState] = useState<SourceFilter>(urlFilter)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
-  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null)
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(urlPatient)
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false)
 
-  const clinicPatients = useQuery(api.clinics.getClinicPatients, {})
-  const followUpQueue = useQuery(api.clinicTools.getClinicFollowUpQueue, {})
+  // Links like ?filter=referred (old Referrals page) and ?patient=<id> (clinician home)
+  useEffect(() => setFilterState(urlFilter), [urlFilter])
+  useEffect(() => {
+    if (urlPatient) setSelectedPatientId(urlPatient)
+  }, [urlPatient])
+
+  const setFilter = (next: SourceFilter) => {
+    setFilterState(next)
+    replaceQuery({ filter: next === 'all' ? null : next })
+  }
+  const closeRecord = () => {
+    setSelectedPatientId(null)
+    if (urlPatient) replaceQuery({ patient: null })
+  }
+
+  // Patients needs the Patients page; the referral inbox needs Referrals (a role can have either)
+  const seesPatients = canUse('patients')
+  const seesReferrals = canUse('referrals')
+
+  const clinicPatients = useQuery(api.clinics.getClinicPatients, seesPatients ? {} : 'skip')
+  const followUpQueue = useQuery(api.clinicTools.getClinicFollowUpQueue, seesPatients ? {} : 'skip')
+  const referralsRaw = useQuery(api.clinicTools.getClinicRehabifyReferrals, seesReferrals ? {} : 'skip') as
+    | ClinicReferral[]
+    | undefined
+
+  // Accepted referrals point at the patient record they became
+  const referralByPatient = useMemo(() => {
+    const map = new Map<string, ClinicReferral>()
+    for (const ref of referralsRaw ?? []) {
+      if (!ref.patientId) continue
+      const current = map.get(String(ref.patientId))
+      if (!current || ref.createdAt > current.createdAt) map.set(String(ref.patientId), ref)
+    }
+    return map
+  }, [referralsRaw])
 
   const rows = useMemo<PatientRow[]>(() => {
     if (!clinicPatients) return []
     const now = Date.now()
     return clinicPatients.map((p: any) => {
       const lastSession: number | undefined = p.stats?.lastSessionDate
+      const referral = referralByPatient.get(String(p._id))
       return {
         _id: String(p._id),
         firstName: p.firstName ?? '',
@@ -107,14 +185,25 @@ export default function ClinicPatientsPage() {
         clinician: p.primaryPhysiotherapist
           ? fullName(p.primaryPhysiotherapist.firstName, p.primaryPhysiotherapist.lastName)
           : '',
-        isReferral: p.source === 'rehabify_referral',
+        isReferral: p.source === 'rehabify_referral' || Boolean(referral),
+        referralStatus: referral?.status ?? null,
         // lastSessionDate can be a future booking, so only past visits count as "last visit"
         lastVisit: lastSession && lastSession <= now ? lastSession : null,
         // Preview sample rows have no careStatus; they are all in care
         careStatus: p.careStatus === 'paused' || p.careStatus === 'discharged' ? p.careStatus : 'active',
       }
     })
-  }, [clinicPatients])
+  }, [clinicPatients, referralByPatient])
+
+  const waitingReferrals = useMemo(() => (referralsRaw ?? []).filter(isWaitingReferral), [referralsRaw])
+  // Earlier referrals with no matching row (e.g. the patient record is gone), so none drop out of sight
+  const unmatchedReferrals = useMemo(() => {
+    const earlier = (referralsRaw ?? []).filter((ref) => !isWaitingReferral(ref))
+    if (!seesPatients) return earlier
+    if (clinicPatients === undefined) return []
+    const ids = new Set(rows.map((r) => r._id))
+    return earlier.filter((ref) => !ref.patientId || !ids.has(String(ref.patientId)))
+  }, [referralsRaw, rows, clinicPatients, seesPatients])
 
   const statusRows = useMemo(
     () => (statusFilter === 'all' ? rows : rows.filter((p) => p.careStatus === statusFilter)),
@@ -124,7 +213,7 @@ export default function ClinicPatientsPage() {
   const filtered = useMemo(() => {
     const term = searchTerm.trim().toLowerCase()
     return statusRows.filter((p) => {
-      if (filter === 'rehabify' && !p.isReferral) return false
+      if (filter === 'referred' && !p.isReferral) return false
       if (filter === 'clinic' && p.isReferral) return false
       if (!term) return true
       return (
@@ -150,14 +239,31 @@ export default function ClinicPatientsPage() {
   const statusNoun = STATUS_NOUN[statusFilter]
   const inCareCount = rows.filter((p) => p.careStatus === 'active').length
   const countLabel = `${statusRows.length} ${statusRows.length === 1 ? statusNoun.one : statusNoun.many}`
-  const description =
-    clinicPatients === undefined
+  const description = !seesPatients
+    ? 'Patients Rehabify has referred to your clinic.'
+    : clinicPatients === undefined
       ? undefined
       : statusFilter === 'active'
         ? `${countLabel} at your clinic`
         : statusFilter === 'all'
           ? `${countLabel} · ${inCareCount} in care`
           : countLabel
+
+  const referralInbox =
+    referralsRaw === undefined ? (
+      <Skeleton className="h-28 rounded-xl" />
+    ) : (
+      <ReferralInbox waiting={waitingReferrals} others={unmatchedReferrals} />
+    )
+
+  // A role with Referrals but not Patients: just the referral inbox
+  if (!seesPatients) {
+    return (
+      <PageShell title="Patients" description={description}>
+        {referralInbox}
+      </PageShell>
+    )
+  }
 
   return (
     <PageShell title="Patients" description={description} actions={addButton}>
@@ -246,6 +352,14 @@ export default function ClinicPatientsPage() {
                   )}
                 >
                   {f.label}
+                  {f.value === 'referred' && waitingReferrals.length > 0 && (
+                    <span
+                      className="ml-1.5 inline-block min-w-5 rounded-full bg-[#005b57] px-1.5 text-center text-[11px] font-medium leading-5 text-white dark:bg-[#2dd4bf] dark:text-neutral-950"
+                      aria-label={`${waitingReferrals.length} new`}
+                    >
+                      {waitingReferrals.length}
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -268,6 +382,29 @@ export default function ClinicPatientsPage() {
         </div>
       </div>
 
+      {/* Rehabify referrals: the inbox under "Referred by Rehabify", a pointer to it elsewhere */}
+      {seesReferrals &&
+        (filter === 'referred' ? (
+          referralInbox
+        ) : waitingReferrals.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setFilter('referred')}
+            className="flex w-full items-center gap-3 rounded-xl border border-amber-300 bg-white px-4 py-3 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-amber-700/60 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800/50"
+          >
+            <Inbox className="h-4 w-4 shrink-0 text-neutral-400" />
+            <span className="min-w-0 flex-1">
+              {waitingReferrals.length} new referral{waitingReferrals.length === 1 ? '' : 's'} from Rehabify waiting for
+              your response
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" aria-hidden />
+          </button>
+        ) : null)}
+
+      {filter === 'referred' && seesReferrals && (
+        <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">Referred patients</h2>
+      )}
+
       <Panel>
         {clinicPatients === undefined ? (
           <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -282,7 +419,7 @@ export default function ClinicPatientsPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          rows.length === 0 ? (
+          rows.length === 0 && filter !== 'referred' ? (
             <EmptyState
               icon={<Users className="h-8 w-8" />}
               title="No patients yet"
@@ -348,6 +485,7 @@ export default function ClinicPatientsPage() {
                         {p.careStatus === 'paused' && <StatusBadge>Paused</StatusBadge>}
                         {p.careStatus === 'discharged' && <StatusBadge>Discharged</StatusBadge>}
                         {p.isReferral && <StatusBadge tone="teal">Referred by Rehabify</StatusBadge>}
+                        {p.referralStatus && <ReferralProgressBadge status={p.referralStatus} />}
                       </div>
                       <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{meta}</p>
                     </div>
@@ -365,7 +503,7 @@ export default function ClinicPatientsPage() {
       <PatientClinicalRecordDrawer
         patientId={selectedPatientId}
         isOpen={!!selectedPatientId}
-        onClose={() => setSelectedPatientId(null)}
+        onClose={closeRecord}
       />
     </PageShell>
   )

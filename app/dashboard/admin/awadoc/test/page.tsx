@@ -156,7 +156,7 @@ function AwadocTestTool() {
             AwaDoc tests will return empty results. Open a physiotherapist profile and turn on &quot;Available on Marketplace&quot;.
           </Callout>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {physios.map((p) => (
               <div key={p.profileId} className={cn(insetClass, 'space-y-2')}>
                 <div className="flex items-center gap-2">

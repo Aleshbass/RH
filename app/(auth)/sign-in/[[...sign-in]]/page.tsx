@@ -1,17 +1,24 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
+import { headers } from "next/headers";
 import CustomSignIn from "@/components/auth/CustomSignIn";
+import { AuthLoading } from "@/components/auth/AuthShell";
 
-export default function SignInPage() {
+/** On partners.* this page is the partner portal's sign-in (the middleware lets /sign-in through there). */
+async function onPartnersHost() {
+  return (await headers()).get("x-subdomain-type") === "partners";
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await onPartnersHost()) ? "Partner sign in" : "Sign in" };
+}
+
+export default async function SignInPage() {
+  const partnersHost = await onPartnersHost();
+  const audience = partnersHost ? "partner" : "default";
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center bg-[#FAF6E7]">
-          <div className="w-8 h-8 border-4 border-[#005b57] border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
-    >
-      <CustomSignIn />
+    <Suspense fallback={<AuthLoading audience={audience} partnersHost={partnersHost} />}>
+      <CustomSignIn audience={audience} partnersHost={partnersHost} />
     </Suspense>
   );
 }
-

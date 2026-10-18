@@ -409,15 +409,23 @@ export const acceptClinicInvitation = mutation({
       }
     });
 
-    // Create approved account status for the user so they can access the dashboard
-    // This bypasses the manual approval process since they were invited by a clinic owner
-    await ctx.db.insert("accountApprovalStatus", {
-      userId: user._id,
-      status: "approved",
-      submittedAt: Date.now(),
-      reviewedAt: Date.now(),
-      comments: "Automatically approved via clinic invitation",
-    });
+    // New clinicians get an approved account status so clinic work (e.g. home programmes) isn't
+    // blocked; they were vetted by the clinic owner who invited them. Someone who already has a
+    // status (their own physio application, approved, pending or declined) keeps it: a second
+    // row breaks every `.unique()` lookup of it and would decide which dashboard they land on.
+    const existingApproval = await ctx.db
+      .query("accountApprovalStatus")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .first();
+    if (!existingApproval) {
+      await ctx.db.insert("accountApprovalStatus", {
+        userId: user._id,
+        status: "approved",
+        submittedAt: Date.now(),
+        reviewedAt: Date.now(),
+        comments: "Automatically approved via clinic invitation",
+      });
+    }
     // Email notification to clinic owner is handled by the action wrapper
     // (acceptStaffInvitationWithNotification). Avoid sending from the base
     // mutation to prevent duplicate emails.

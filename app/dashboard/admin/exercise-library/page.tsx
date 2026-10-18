@@ -138,7 +138,7 @@ function SignOff() {
           {visible.length === 0 ? (
             <EmptyState icon={<ShieldCheck />} title="Nothing here" description="No exercises match this filter." />
           ) : (
-            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {visible.map((item) => {
                 const ex = item.exercise
                 const approved = isApproved(item)
@@ -271,7 +271,7 @@ function Licences() {
         description="For organisations outside physiotherapy: gyms, HMOs, hospitals, corporate wellness. Members get the whole 3D library, watermarked with the organisation's name. Billing comes later."
       >
         <div className="space-y-4 px-5 pb-5 pt-3">
-          <div className="grid gap-3 sm:grid-cols-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
             <div className="sm:col-span-2">
               <Label htmlFor="lic-org">Organisation</Label>
               <Input id="lic-org" className={cn(inputClass, 'mt-1.5')} value={form.orgName} onChange={(e) => setForm({ ...form, orgName: e.target.value })} placeholder="e.g. FitLife Gyms" />

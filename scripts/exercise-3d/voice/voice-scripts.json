@@ -1,0 +1,60 @@
+{
+  "_about": "Voiceover scripts per exercise slug. `intro` plays once when voice guidance is switched on; `cues` play on every rep at `at` seconds into the clip's loop. Cue times follow the phase timings in scripts/exercise-3d/blender/rh_exercises.py (30 fps). {side} becomes 'left' or 'right' for sided exercises. Keep cue phrases short enough to finish before the next cue.",
+  "mini-squat": {
+    "intro": "This is a mini squat. Stand with your feet hip-width apart and your arms out in front for balance. Push your hips back and bend your knees about a quarter of the way down, keeping your chest up and your knees in line with your toes. Hold for a moment, then push through your heels to stand tall. Follow along with me.",
+    "cues": [
+      { "at": 0.05, "text": "Slowly down." },
+      { "at": 1.5, "text": "Hold." },
+      { "at": 2.0, "text": "And up." }
+    ]
+  },
+  "sit-to-stand": {
+    "intro": "This is sit to stand. Sit near the front of a firm chair with your feet flat, slightly behind your knees. Lean forward so your nose comes over your toes, then push through both feet to stand up tall. To sit, reach your hips back and lower yourself slowly, with control. Follow along with me.",
+    "cues": [
+      { "at": 0.5, "text": "Lean forward." },
+      { "at": 1.5, "text": "Stand up tall." },
+      { "at": 3.7, "text": "Hips back." },
+      { "at": 5.1, "text": "Sit down slowly." }
+    ]
+  },
+  "calf-raise": {
+    "intro": "This is a calf raise. Stand with your feet hip-width apart, holding a counter or a wall lightly for balance. Rise up onto the balls of your feet as high as you can, hold for a moment, then lower your heels slowly. Take your time on the way down. Follow along with me.",
+    "cues": [
+      { "at": 0.05, "text": "Rise up." },
+      { "at": 1.0, "text": "Hold." },
+      { "at": 2.0, "text": "Lower slowly." }
+    ]
+  },
+  "seated-knee-extension": {
+    "intro": "This is a seated knee extension for your {side} leg. Sit tall at the back of a chair. Straighten your {side} knee until your leg is out straight, then pull your toes up towards you and hold. Lower your foot slowly back to the floor. Keep your thigh resting on the chair. Follow along with me.",
+    "cues": [
+      { "at": 0.05, "text": "Straighten your knee." },
+      { "at": 1.5, "text": "Toes up, and hold." },
+      { "at": 3.5, "text": "Lower slowly." }
+    ]
+  },
+  "glute-bridge": {
+    "intro": "This is a glute bridge. Lie on your back with your knees bent and your feet flat, hip-width apart. Tighten your stomach, squeeze your buttocks, and lift your hips until your shoulders, hips and knees are in one line. Hold, then lower slowly. Don't arch your lower back. Follow along with me.",
+    "cues": [
+      { "at": 0.5, "text": "Squeeze and lift." },
+      { "at": 2.0, "text": "Hold." },
+      { "at": 4.0, "text": "Lower slowly." }
+    ]
+  },
+  "straight-leg-raise": {
+    "intro": "This is a straight leg raise for your {side} leg. Lie on your back and bend your other knee, keeping that foot flat. Tighten the thigh of your {side} leg and pull your toes up. Lift the straight leg to the height of your bent knee, hold, then lower it slowly. Keep the knee completely straight. Follow along with me.",
+    "cues": [
+      { "at": 0.4, "text": "Lift." },
+      { "at": 1.9, "text": "Hold." },
+      { "at": 3.4, "text": "Lower slowly." }
+    ]
+  },
+  "heel-slides": {
+    "intro": "These are heel slides for your {side} knee. Lie on your back with your legs straight. Slowly slide your {side} heel towards your buttock, bending your knee as far as is comfortable. Then slide it back out until your leg is straight. Keep your heel on the mat the whole time. Follow along with me.",
+    "cues": [
+      { "at": 0.4, "text": "Slide it in." },
+      { "at": 2.4, "text": "Hold." },
+      { "at": 3.0, "text": "And slide out." }
+    ]
+  }
+}

@@ -153,6 +153,7 @@ export default function FrontDeskList({
                   memberName={name}
                   roleId={member.clinicRoleId}
                   roles={roles}
+                  kind="front_desk"
                   className="flex-1 sm:flex-none"
                 />
                 {showMenu && (

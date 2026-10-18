@@ -15,6 +15,7 @@ import {
   SOURCE_LABELS,
   type Workspace,
 } from './shared'
+import { JoyHandoffPanel } from './JoyHandoffPanel'
 
 function PainSparkline({ points }: { points: number[] }) {
   if (points.length < 2) return null
@@ -50,6 +51,9 @@ export function OverviewTab({
 
   return (
     <div className="space-y-5">
+      {/* Only for patients who booked through Joy on WhatsApp */}
+      <JoyHandoffPanel patientId={workspace.patient._id} />
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {/* Current care episode */}
         <Panel

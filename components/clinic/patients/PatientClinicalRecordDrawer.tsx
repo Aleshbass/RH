@@ -371,7 +371,10 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
               />
             </TabsContent>
             <TabsContent value="programme" className="mt-0 space-y-6">
-              {!isSample && (
+              {/* Programmes first; "New programme" and "Send exercises" open the builder */}
+              {isSample ? (
+                <SampleProgrammeNotice />
+              ) : (
                 <ExerciseProgramsPanel
                   patientId={patientId}
                   patientName={patient.firstName || 'this patient'}
@@ -379,7 +382,7 @@ function PatientRecord({ patientId, isSample }: { patientId: Id<'users'>; isSamp
                   canWrite={isActive}
                 />
               )}
-              <ProgrammeTab patientId={patientId} plans={record.treatmentPlans} />
+              <EarlierProgrammes plans={record.treatmentPlans} isSample={isSample} />
             </TabsContent>
             <TabsContent value="documents" className="mt-0">
               <DocumentsTab patientId={patientId} documents={record.documents} />
@@ -892,9 +895,13 @@ function GoalsEditor({ goals, onChange }: { goals: GoalRow[]; onChange: (goals: 
   )
 }
 
-function ProgrammeTab({ patientId, plans }: { patientId: Id<'users'>; plans: TreatmentPlan[] }) {
+/**
+ * Programmes made with the clinic's earlier home programme form (stored as treatment plans).
+ * New programmes are built from the exercise library above; these stay visible to the patient
+ * and can still be edited, paused, resumed or completed here.
+ */
+function EarlierProgrammes({ plans, isSample }: { plans: TreatmentPlan[]; isSample: boolean }) {
   const { requireFullAccess } = useClinicPreview()
-  const assignProgramme = useMutation(api.clinicTools.assignHomeProgramme)
   const updateProgramme = useMutation(api.clinicTools.updateHomeProgramme)
 
   const [editingPlanId, setEditingPlanId] = useState<Id<'treatmentPlans'> | null>(null)
@@ -904,6 +911,8 @@ function ProgrammeTab({ patientId, plans }: { patientId: Id<'users'>; plans: Tre
   const [saving, setSaving] = useState(false)
   const [busyPlanId, setBusyPlanId] = useState<string | null>(null)
   const formRef = useRef<HTMLDivElement>(null)
+
+  if (plans.length === 0) return null
 
   const resetForm = () => {
     setEditingPlanId(null)
@@ -919,6 +928,7 @@ function ProgrammeTab({ patientId, plans }: { patientId: Id<'users'>; plans: Tre
     setRows((prev) => (prev.length > 1 ? prev.filter((row) => row.key !== key) : [newRow()]))
 
   const startEditing = (plan: TreatmentPlan) => {
+    if (!requireFullAccess('Edit home programme')) return
     setEditingPlanId(plan._id)
     setTitle(plan.title)
     const loaded = planExercises(plan).map((ex: any) =>
@@ -932,12 +942,12 @@ function ProgrammeTab({ patientId, plans }: { patientId: Id<'users'>; plans: Tre
     )
     setRows(loaded.length > 0 ? loaded : [newRow()])
     setGoals(planGoals(plan).slice(0, MAX_GOALS).map((text: string) => newGoal(text)))
-    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!requireFullAccess(editingPlanId ? 'Edit home programme' : 'Give home programme')) return
+    if (!editingPlanId || !requireFullAccess('Edit home programme')) return
     const exercises = rows
       .filter((row) => row.name.trim())
       .map((row) => ({
@@ -954,19 +964,9 @@ function ProgrammeTab({ patientId, plans }: { patientId: Id<'users'>; plans: Tre
     const goalList = goals.map((g) => g.text.trim()).filter(Boolean).slice(0, MAX_GOALS)
     setSaving(true)
     try {
-      if (editingPlanId) {
-        // Always sent when editing, so removing every goal clears them
-        await updateProgramme({ planId: editingPlanId, title: title.trim() || undefined, exercises, goals: goalList })
-        toast.success('Home programme updated')
-      } else {
-        await assignProgramme({
-          patientId,
-          title: title.trim() || 'Home exercise programme',
-          exercises,
-          goals: goalList.length > 0 ? goalList : undefined,
-        })
-        toast.success('Home programme saved. The patient can now see it in their app.')
-      }
+      // Goals are always sent when editing, so removing every goal clears them
+      await updateProgramme({ planId: editingPlanId, title: title.trim() || undefined, exercises, goals: goalList })
+      toast.success('Home programme updated')
       resetForm()
     } catch (err) {
       toast.error(friendlyError(err, 'Could not save the programme. Please try again.'))
@@ -992,228 +992,254 @@ function ProgrammeTab({ patientId, plans }: { patientId: Id<'users'>; plans: Tre
   }
 
   return (
-    <div className="space-y-6">
-      <div ref={formRef} className="scroll-mt-4">
-        <FormCard onSubmit={handleSubmit}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <SectionHeading>{editingPlanId ? 'Edit home programme' : 'New home programme'}</SectionHeading>
-            {editingPlanId && (
+    <div className="space-y-3">
+      <div>
+        <SectionHeading>{isSample ? 'Programmes' : 'Earlier programmes'}</SectionHeading>
+        {!isSample && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            Made before programmes used the exercise library. The patient still sees these in their app.
+          </p>
+        )}
+      </div>
+
+      {editingPlanId && (
+        <div ref={formRef} className="scroll-mt-4">
+          <FormCard onSubmit={handleSubmit}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <SectionHeading>Edit programme</SectionHeading>
               <Button type="button" variant="ghost" size="sm" className={subtleButtonClass} onClick={resetForm}>
                 Cancel editing
               </Button>
-            )}
-          </div>
+            </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="programme-title" className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-              Name
-            </Label>
-            <Input
-              id="programme-title"
-              placeholder="e.g. Knee strengthening"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className={cn(fieldClass, 'h-9')}
-            />
-          </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="programme-title" className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                Name
+              </Label>
+              <Input
+                id="programme-title"
+                placeholder="e.g. Knee strengthening"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className={cn(fieldClass, 'h-9')}
+              />
+            </div>
 
-          <GoalsEditor goals={goals} onChange={setGoals} />
+            <GoalsEditor goals={goals} onChange={setGoals} />
 
-          <div className="space-y-3">
-            <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Exercises</p>
-            {rows.map((row, index) => (
-              <div
-                key={row.key}
-                className="space-y-2 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900"
-              >
-                <div className="flex items-center gap-2">
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Exercises</p>
+              {rows.map((row, index) => (
+                <div
+                  key={row.key}
+                  className="space-y-2 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900"
+                >
+                  <div className="flex items-center gap-2">
+                    <Input
+                      aria-label={`Exercise ${index + 1} name`}
+                      placeholder="Exercise name, e.g. Straight leg raise"
+                      value={row.name}
+                      onChange={(e) => updateRow(row.key, { name: e.target.value })}
+                      className={cn(fieldClass, 'h-9 min-w-0 flex-1')}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 text-neutral-500"
+                      onClick={() => removeRow(row.key)}
+                      aria-label={`Remove exercise ${index + 1}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <Input
+                      aria-label="Sets"
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      placeholder="Sets"
+                      value={row.sets}
+                      onChange={(e) => updateRow(row.key, { sets: e.target.value })}
+                      className={cn(fieldClass, 'h-9')}
+                    />
+                    <Input
+                      aria-label="Reps"
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      placeholder="Reps"
+                      value={row.reps}
+                      onChange={(e) => updateRow(row.key, { reps: e.target.value })}
+                      className={cn(fieldClass, 'h-9')}
+                    />
+                    <Input
+                      aria-label="How often"
+                      placeholder="How often, e.g. twice a day"
+                      value={row.frequency}
+                      onChange={(e) => updateRow(row.key, { frequency: e.target.value })}
+                      className={cn(fieldClass, 'col-span-2 h-9 sm:col-span-1')}
+                    />
+                  </div>
                   <Input
-                    aria-label={`Exercise ${index + 1} name`}
-                    placeholder="Exercise name, e.g. Straight leg raise"
-                    value={row.name}
-                    onChange={(e) => updateRow(row.key, { name: e.target.value })}
-                    className={cn(fieldClass, 'h-9 min-w-0 flex-1')}
+                    aria-label="Instructions for the patient"
+                    placeholder="Instructions for the patient (optional)"
+                    value={row.instructions}
+                    onChange={(e) => updateRow(row.key, { instructions: e.target.value })}
+                    className={cn(fieldClass, 'h-9')}
                   />
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={subtleButtonClass}
+                onClick={() => setRows((prev) => [...prev, newRow()])}
+              >
+                <Plus className="mr-1 h-4 w-4" />
+                Add exercise
+              </Button>
+            </div>
+
+            <div className="flex justify-end">
+              <Button type="submit" size="sm" disabled={saving} className={cn(primaryButtonClass, 'h-9 w-full sm:w-auto')}>
+                {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                Save changes
+              </Button>
+            </div>
+          </FormCard>
+        </div>
+      )}
+
+      {plans.map((plan) => {
+        const status = PLAN_STATUS[plan.status] ?? { label: plan.status, tone: 'neutral' as const }
+        const exercises = planExercises(plan)
+        const planGoalList = planGoals(plan)
+        // Only programmes created by this clinic can be changed here
+        const canChange = Boolean(plan.clinicId)
+        const busy = busyPlanId === plan._id
+        return (
+          <ListCard key={plan._id} className="space-y-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="min-w-0 truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                {plan.title}
+              </span>
+              <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+              {editingPlanId === plan._id && <StatusBadge tone="teal">Editing</StatusBadge>}
+            </div>
+            {formatDate(plan.startDate) && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">Started {formatDate(plan.startDate)}</p>
+            )}
+            {planGoalList.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">Goals</p>
+                <ul className="list-disc space-y-0.5 pl-5 text-sm text-neutral-700 marker:text-neutral-400 dark:text-neutral-300 dark:marker:text-neutral-600">
+                  {planGoalList.map((goal: string, i: number) => (
+                    <li key={`${goal}-${i}`} className="break-words">
+                      {goal}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {exercises.length > 0 && (
+              <ul className="space-y-1">
+                {exercises.map((ex: any, i: number) => (
+                  <li key={`${ex.exerciseId}-${i}`} className="flex min-w-0 flex-wrap gap-x-2 text-sm">
+                    <span className="min-w-0 truncate text-neutral-800 dark:text-neutral-200">
+                      {ex.name || ex.notes || 'Exercise'}
+                    </span>
+                    <span className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+                      {ex.sets} × {ex.reps}
+                      {ex.frequency ? ` · ${ex.frequency}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {canChange && plan.status !== 'cancelled' && (
+              <div className="flex flex-wrap gap-2">
+                {plan.status !== 'completed' && (
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 shrink-0 text-neutral-500"
-                    onClick={() => removeRow(row.key)}
-                    aria-label={`Remove exercise ${index + 1}`}
+                    variant="outline"
+                    size="sm"
+                    className={subtleButtonClass}
+                    onClick={() => startEditing(plan)}
+                    disabled={busy}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    Edit
                   </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  <Input
-                    aria-label="Sets"
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    placeholder="Sets"
-                    value={row.sets}
-                    onChange={(e) => updateRow(row.key, { sets: e.target.value })}
-                    className={cn(fieldClass, 'h-9')}
-                  />
-                  <Input
-                    aria-label="Reps"
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    placeholder="Reps"
-                    value={row.reps}
-                    onChange={(e) => updateRow(row.key, { reps: e.target.value })}
-                    className={cn(fieldClass, 'h-9')}
-                  />
-                  <Input
-                    aria-label="How often"
-                    placeholder="How often, e.g. twice a day"
-                    value={row.frequency}
-                    onChange={(e) => updateRow(row.key, { frequency: e.target.value })}
-                    className={cn(fieldClass, 'col-span-2 h-9 sm:col-span-1')}
-                  />
-                </div>
-                <Input
-                  aria-label="Instructions for the patient"
-                  placeholder="Instructions for the patient (optional)"
-                  value={row.instructions}
-                  onChange={(e) => updateRow(row.key, { instructions: e.target.value })}
-                  className={cn(fieldClass, 'h-9')}
-                />
+                )}
+                {plan.status === 'active' && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={subtleButtonClass}
+                    disabled={busy}
+                    onClick={() => changeStatus(plan, 'on_hold', 'Pause home programme')}
+                  >
+                    Pause
+                  </Button>
+                )}
+                {(plan.status === 'on_hold' || plan.status === 'draft') && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={subtleButtonClass}
+                    disabled={busy}
+                    onClick={() => changeStatus(plan, 'active', 'Resume home programme')}
+                  >
+                    Resume
+                  </Button>
+                )}
+                {plan.status !== 'completed' && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={subtleButtonClass}
+                    disabled={busy}
+                    onClick={() => changeStatus(plan, 'completed', 'Complete home programme')}
+                  >
+                    Mark complete
+                  </Button>
+                )}
+                {busy && <Loader2 className="h-4 w-4 animate-spin self-center text-neutral-400" />}
               </div>
-            ))}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className={subtleButtonClass}
-              onClick={() => setRows((prev) => [...prev, newRow()])}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              Add exercise
-            </Button>
-          </div>
-
-          <div className="flex justify-end">
-            <Button type="submit" size="sm" disabled={saving} className={cn(primaryButtonClass, 'h-9 w-full sm:w-auto')}>
-              {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              {editingPlanId ? 'Save changes' : 'Give to patient'}
-            </Button>
-          </div>
-        </FormCard>
-      </div>
-
-      <div className="space-y-3">
-        <SectionHeading>Programmes</SectionHeading>
-        {plans.length === 0 ? (
-          <p className="text-sm text-neutral-500">No home programme yet.</p>
-        ) : (
-          plans.map((plan) => {
-            const status = PLAN_STATUS[plan.status] ?? { label: plan.status, tone: 'neutral' as const }
-            const exercises = planExercises(plan)
-            const planGoalList = planGoals(plan)
-            // Only programmes created by this clinic can be changed here
-            const canChange = Boolean(plan.clinicId)
-            const busy = busyPlanId === plan._id
-            return (
-              <ListCard key={plan._id} className="space-y-3">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="min-w-0 truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                    {plan.title}
-                  </span>
-                  <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-                  {editingPlanId === plan._id && <StatusBadge tone="teal">Editing</StatusBadge>}
-                </div>
-                {formatDate(plan.startDate) && (
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">Started {formatDate(plan.startDate)}</p>
-                )}
-                {planGoalList.length > 0 && (
-                  <div className="space-y-1">
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">Goals</p>
-                    <ul className="list-disc space-y-0.5 pl-5 text-sm text-neutral-700 marker:text-neutral-400 dark:text-neutral-300 dark:marker:text-neutral-600">
-                      {planGoalList.map((goal: string, i: number) => (
-                        <li key={`${goal}-${i}`} className="break-words">
-                          {goal}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {exercises.length > 0 && (
-                  <ul className="space-y-1">
-                    {exercises.map((ex: any, i: number) => (
-                      <li key={`${ex.exerciseId}-${i}`} className="flex min-w-0 flex-wrap gap-x-2 text-sm">
-                        <span className="min-w-0 truncate text-neutral-800 dark:text-neutral-200">
-                          {ex.name || ex.notes || 'Exercise'}
-                        </span>
-                        <span className="text-xs leading-5 text-neutral-500 dark:text-neutral-400">
-                          {ex.sets} × {ex.reps}
-                          {ex.frequency ? ` · ${ex.frequency}` : ''}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {canChange && plan.status !== 'cancelled' && (
-                  <div className="flex flex-wrap gap-2">
-                    {plan.status !== 'completed' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className={subtleButtonClass}
-                        onClick={() => startEditing(plan)}
-                        disabled={busy}
-                      >
-                        Edit
-                      </Button>
-                    )}
-                    {plan.status === 'active' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className={subtleButtonClass}
-                        disabled={busy}
-                        onClick={() => changeStatus(plan, 'on_hold', 'Pause home programme')}
-                      >
-                        Pause
-                      </Button>
-                    )}
-                    {(plan.status === 'on_hold' || plan.status === 'draft') && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className={subtleButtonClass}
-                        disabled={busy}
-                        onClick={() => changeStatus(plan, 'active', 'Resume home programme')}
-                      >
-                        Resume
-                      </Button>
-                    )}
-                    {plan.status !== 'completed' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className={subtleButtonClass}
-                        disabled={busy}
-                        onClick={() => changeStatus(plan, 'completed', 'Complete home programme')}
-                      >
-                        Mark complete
-                      </Button>
-                    )}
-                    {busy && <Loader2 className="h-4 w-4 animate-spin self-center text-neutral-400" />}
-                  </div>
-                )}
-              </ListCard>
-            )
-          })
-        )}
-      </div>
+            )}
+          </ListCard>
+        )
+      })}
     </div>
+  )
+}
+
+/** Sample patients: how the Home programme tab works, without touching the backend. */
+function SampleProgrammeNotice() {
+  const { requireFullAccess } = useClinicPreview()
+  return (
+    <ListCard className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">Home programmes</p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Pick exercises from the 3D library or add your own, add education, set the dose and send it to the patient&apos;s app.
+        </p>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        className={cn(primaryButtonClass, subtleButtonClass)}
+        onClick={() => requireFullAccess('Give home programme')}
+      >
+        <Plus className="mr-1 h-4 w-4" />
+        New programme
+      </Button>
+    </ListCard>
   )
 }
 
