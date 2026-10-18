@@ -181,7 +181,8 @@ def strap_points(foot, at):
 
     grips = []
     for s in ("Left", "Right"):
-        grips.append(head(f"{s}Hand").lerp(head(f"{s}HandMiddle1"), 0.6))
+        # Inside the closed fist: between the knuckle and the curled fingertip joint.
+        grips.append(head(f"{s}HandMiddle1").lerp(head(f"{s}HandMiddle3"), 0.5))
     ankle, ball, knee = head(f"{foot}Foot"), head(f"{foot}ToeBase"), head(f"{foot}Leg")
     along = (ball - ankle).normalized()
     shin = (ankle - knee).normalized()

@@ -114,6 +114,15 @@ def pose_quats(p):
                 add(b, _rot(axis, sign * share))
             continue
         joint, _, side = key.rpartition("_")
+        if joint == "grip" and side in ("L", "R"):
+            # Close the hand: fingers curl towards the palm (about the T-pose's front-back axis), thumb less.
+            s = 1 if side == "L" else -1
+            for finger in ("Index", "Middle", "Ring", "Pinky"):
+                for seg, share in ((1, 0.8), (2, 1.0), (3, 0.7)):
+                    add(f"{side_name(side)}Hand{finger}{seg}", _rot(Y, s * deg * share))
+            for seg in (2, 3):
+                add(f"{side_name(side)}HandThumb{seg}", _rot(Y, s * deg * 0.35))
+            continue
         if joint not in JOINTS or side not in ("L", "R"):
             raise KeyError(f"Unknown joint '{key}'")
         part, axis, sl, sr = JOINTS[joint]
@@ -400,7 +409,7 @@ def animate(name, start, moves, locks=None, step=3, reach=None, rounds=1):
             samples.append((frame + i, blend(prev, pose, curve(i / frames)), opts.get("locks", locks), opts.get("reach", reach)))
         frame += frames
         prev = pose
-    worst, lowest = 0.0, math.inf
+    worst, lowest, by = 0.0, math.inf, {}
     for f, p, seg_locks, seg_reach in samples:
         targets = seg_locks(p) if callable(seg_locks) else seg_locks
         resolved = [(params, t(p) if callable(t) else t) for params, t in seg_reach or []]
@@ -412,15 +421,23 @@ def animate(name, start, moves, locks=None, step=3, reach=None, rounds=1):
         key_pose(f, p)
         if targets:
             worst = max(worst, lock_error(targets))
-        for _, reach_targets in resolved:
-            worst = max(worst, lock_error(reach_targets))
+            by["lock"] = max(by.get("lock", 0.0), lock_error(targets))
+        for params, reach_targets in resolved:
+            err = lock_error(reach_targets)
+            worst = max(worst, err)
+            label = "+".join(sorted(reach_targets))
+            by[label] = max(by.get(label, 0.0), err)
         lowest = min(lowest, body_min_z())
     for fc in _fcurves(act):
         for kp in fc.keyframe_points:
             kp.interpolation = "LINEAR"
     scene = bpy.context.scene
     scene.frame_start, scene.frame_end = 1, frame
-    return act, {"frames": frame, "seconds": round(frame / FPS, 2), "lock_error_mm": round(worst * 1000, 1), "lowest_mm": round(lowest * 1000, 1)}
+    report = {"frames": frame, "seconds": round(frame / FPS, 2), "lock_error_mm": round(worst * 1000, 1), "lowest_mm": round(lowest * 1000, 1)}
+    if worst > 0.005:
+        # Which contacts miss, for authoring (not written to the manifest).
+        report["contacts_mm"] = {k: round(v * 1000, 1) for k, v in by.items() if v > 0.005}
+    return act, report
 
 
 def body_min_z(names=("RH_Body1", "RH_Shoes", "RH_Pants", "RH_Shirt")):

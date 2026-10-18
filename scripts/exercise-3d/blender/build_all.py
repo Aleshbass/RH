@@ -50,7 +50,30 @@ CATALOG = [
     ("cat-camel", "cat_camel", None, "Cat-camel", 0.23, (1.0, -0.25, 0.25)),
     ("bird-dog-left", "bird_dog", "L", "Bird-dog (left arm, right leg)", 0.42, (1.0, -0.6, 0.35)),
     ("bird-dog-right", "bird_dog", "R", "Bird-dog (right arm, left leg)", 0.42, (-1.0, -0.6, 0.35)),
+    # Knee and ankle pack (Oct 2026). Sided clips name the leg being worked or stretched.
+    *[c for s, sx in (("left", 1.0), ("right", -1.0)) for c in (
+        (f"calf-stretch-{s}", "calf_stretch", s[0].upper(), f"Calf stretch at a wall ({s})", 0.3, (sx, 0.3, 0.15)),
+        (f"plantar-fascia-wall-stretch-{s}", "plantar_fascia_wall_stretch", s[0].upper(), f"Plantar fascia wall stretch ({s})", 0.45, (sx, 0.3, 0.12)),
+        (f"quad-stretch-{s}", "quad_stretch", s[0].upper(), f"Standing thigh (quadriceps) stretch ({s})", 0.45, (sx, -0.2, 0.15)),
+        (f"single-leg-balance-{s}", "single_leg_balance", s[0].upper(), f"Single-leg balance ({s} leg)", 0.35, (-sx, -0.3, 0.15)),
+        (f"seated-hamstring-stretch-{s}", "seated_hamstring_stretch", s[0].upper(), f"Seated hamstring stretch ({s})", 0.4, (sx, -0.4, 0.15)),
+        (f"seated-static-quads-{s}", "seated_static_quads", s[0].upper(), f"Static thigh push in sitting ({s})", 0.5, (sx * 0.9, -0.7, 0.15)),
+        (f"calf-towel-stretch-{s}", "calf_towel_stretch", s[0].upper(), f"Calf stretch with a towel ({s})", 0.35, (sx, -0.3, 0.3)),
+        (f"plantar-fascia-towel-stretch-{s}", "plantar_fascia_towel_stretch", s[0].upper(), f"Plantar fascia towel stretch ({s})", 0.35, (sx, -0.3, 0.3)),
+        (f"static-push-down-{s}", "static_push_down", s[0].upper(), f"Static push down with the foot ({s})", 0.4, (sx, -0.3, 0.3)),
+        (f"ankle-circles-{s}", "ankle_circles", s[0].upper(), f"Ankle circles ({s})", 0.2, (sx, -0.6, 0.3)),
+        (f"hamstring-doorway-stretch-{s}", "hamstring_doorway_stretch", s[0].upper(), f"Hamstring stretch in a doorway ({s})", 0.4, (sx, 0.3, 0.35)),
+        (f"eccentric-heel-drop-{s}", "eccentric_heel_drop", s[0].upper(), f"Eccentric heel drop ({s})", 0.55, (sx, 0.25, 0.15)),
+        (f"plantar-fascia-loading-{s}", "plantar_fascia_loading", s[0].upper(), f"Plantar fascia loading ({s})", 0.4, (sx, 0.25, 0.15)),
+        (f"forward-step-up-{s}", "forward_step_up", s[0].upper(), f"Forward step-up ({s} leg)", 0.25, (sx, -0.3, 0.15)),
+        (f"single-leg-decline-squat-{s}", "single_leg_decline_squat", s[0].upper(), f"Single-leg decline squat ({s})", 0.5, (sx, -0.4, 0.15)),
+    )],
+    ("wall-sit", "wall_sit", None, "Wall sit", 0.4, (1.0, -0.4, 0.15)),
+    ("wall-squat", "wall_squat", None, "Wall squat", 0.4, (1.0, -0.4, 0.15)),
+    ("seated-calf-hold", "seated_calf_hold", None, "Seated static calf hold", 0.4, (1.0, -0.5, 0.12)),
+    ("heel-to-toe-walking", "heel_to_toe_walking", None, "Heel-to-toe walking", 0.25, (1.0, -0.4, 0.2)),
 ]
+NEW_IDS = [c[0] for c in CATALOG[20:]]
 
 CHARACTER_OBJECTS = ("RH_Rig", "RH_Body1", "RH_Cap", "RH_Eyelashes", "RH_Mask", "RH_Pants", "RH_Shirt", "RH_Shoes",
                      "RH_Logo_Chest", "RH_Logo_Back")

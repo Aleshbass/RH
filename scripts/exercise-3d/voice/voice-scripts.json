@@ -3,58 +3,566 @@
   "mini-squat": {
     "intro": "This is a mini squat. Stand with your feet hip-width apart and your arms out in front for balance. Push your hips back and bend your knees about a quarter of the way down, keeping your chest up and your knees in line with your toes. Hold for a moment, then push through your heels to stand tall. Follow along with me.",
     "cues": [
-      { "at": 0.05, "text": "Slowly down." },
-      { "at": 1.5, "text": "Hold." },
-      { "at": 2.0, "text": "And up." }
+      {
+        "at": 0.05,
+        "text": "Slowly down."
+      },
+      {
+        "at": 1.5,
+        "text": "Hold."
+      },
+      {
+        "at": 2,
+        "text": "And up."
+      }
     ]
   },
   "sit-to-stand": {
     "intro": "This is sit to stand. Sit near the front of a firm chair with your feet flat, slightly behind your knees. Lean forward so your nose comes over your toes, then push through both feet to stand up tall. To sit, reach your hips back and lower yourself slowly, with control. Follow along with me.",
     "cues": [
-      { "at": 0.5, "text": "Lean forward." },
-      { "at": 1.5, "text": "Stand up tall." },
-      { "at": 3.7, "text": "Hips back." },
-      { "at": 5.1, "text": "Sit down slowly." }
+      {
+        "at": 0.5,
+        "text": "Lean forward."
+      },
+      {
+        "at": 1.5,
+        "text": "Stand up tall."
+      },
+      {
+        "at": 3.7,
+        "text": "Hips back."
+      },
+      {
+        "at": 5.1,
+        "text": "Sit down slowly."
+      }
     ]
   },
   "calf-raise": {
     "intro": "This is a calf raise. Stand with your feet hip-width apart, holding a counter or a wall lightly for balance. Rise up onto the balls of your feet as high as you can, hold for a moment, then lower your heels slowly. Take your time on the way down. Follow along with me.",
     "cues": [
-      { "at": 0.05, "text": "Rise up." },
-      { "at": 1.0, "text": "Hold." },
-      { "at": 2.0, "text": "Lower slowly." }
+      {
+        "at": 0.05,
+        "text": "Rise up."
+      },
+      {
+        "at": 1,
+        "text": "Hold."
+      },
+      {
+        "at": 2,
+        "text": "Lower slowly."
+      }
     ]
   },
   "seated-knee-extension": {
     "intro": "This is a seated knee extension for your {side} leg. Sit tall at the back of a chair. Straighten your {side} knee until your leg is out straight, then pull your toes up towards you and hold. Lower your foot slowly back to the floor. Keep your thigh resting on the chair. Follow along with me.",
     "cues": [
-      { "at": 0.05, "text": "Straighten your knee." },
-      { "at": 1.5, "text": "Toes up, and hold." },
-      { "at": 3.5, "text": "Lower slowly." }
+      {
+        "at": 0.05,
+        "text": "Straighten your knee."
+      },
+      {
+        "at": 1.5,
+        "text": "Toes up, and hold."
+      },
+      {
+        "at": 3.5,
+        "text": "Lower slowly."
+      }
     ]
   },
   "glute-bridge": {
     "intro": "This is a glute bridge. Lie on your back with your knees bent and your feet flat, hip-width apart. Tighten your stomach, squeeze your buttocks, and lift your hips until your shoulders, hips and knees are in one line. Hold, then lower slowly. Don't arch your lower back. Follow along with me.",
     "cues": [
-      { "at": 0.5, "text": "Squeeze and lift." },
-      { "at": 2.0, "text": "Hold." },
-      { "at": 4.0, "text": "Lower slowly." }
+      {
+        "at": 0.5,
+        "text": "Squeeze and lift."
+      },
+      {
+        "at": 2,
+        "text": "Hold."
+      },
+      {
+        "at": 4,
+        "text": "Lower slowly."
+      }
     ]
   },
   "straight-leg-raise": {
     "intro": "This is a straight leg raise for your {side} leg. Lie on your back and bend your other knee, keeping that foot flat. Tighten the thigh of your {side} leg and pull your toes up. Lift the straight leg to the height of your bent knee, hold, then lower it slowly. Keep the knee completely straight. Follow along with me.",
     "cues": [
-      { "at": 0.4, "text": "Lift." },
-      { "at": 1.9, "text": "Hold." },
-      { "at": 3.4, "text": "Lower slowly." }
+      {
+        "at": 0.4,
+        "text": "Lift."
+      },
+      {
+        "at": 1.9,
+        "text": "Hold."
+      },
+      {
+        "at": 3.4,
+        "text": "Lower slowly."
+      }
     ]
   },
   "heel-slides": {
     "intro": "These are heel slides for your {side} knee. Lie on your back with your legs straight. Slowly slide your {side} heel towards your buttock, bending your knee as far as is comfortable. Then slide it back out until your leg is straight. Keep your heel on the mat the whole time. Follow along with me.",
     "cues": [
-      { "at": 0.4, "text": "Slide it in." },
-      { "at": 2.4, "text": "Hold." },
-      { "at": 3.0, "text": "And slide out." }
+      {
+        "at": 0.4,
+        "text": "Slide it in."
+      },
+      {
+        "at": 2.4,
+        "text": "Hold."
+      },
+      {
+        "at": 3,
+        "text": "And slide out."
+      }
+    ]
+  },
+  "calf-stretch": {
+    "intro": "This is a calf stretch at a wall, for your {side} calf. Put your hands on the wall and step your {side} leg back, toes pointing forward and the heel flat on the floor. Keeping the back knee straight, bend your front knee and lean your hips towards the wall until you feel a stretch in the upper calf, and hold. Then ease off, bend the back knee slightly with the heel still down, and feel the stretch lower in the calf. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Lean in, back heel down."
+      },
+      {
+        "at": 2.1,
+        "text": "Hold the stretch."
+      },
+      {
+        "at": 6,
+        "text": "Ease off."
+      },
+      {
+        "at": 7.5,
+        "text": "Now bend the back knee."
+      },
+      {
+        "at": 9.6,
+        "text": "Hold."
+      },
+      {
+        "at": 13.5,
+        "text": "And relax."
+      }
+    ]
+  },
+  "plantar-fascia-wall-stretch": {
+    "intro": "This is a plantar fascia stretch for your {side} foot. Stand facing a wall with your hands on it. Put the toes of your {side} foot up against the wall, with the heel and the ball of the foot on the floor. Keeping your heel down, bend that knee towards the wall until you feel a stretch under your foot, and hold. Then ease back. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.5,
+        "text": "Knee towards the wall."
+      },
+      {
+        "at": 2.6,
+        "text": "Hold the stretch."
+      },
+      {
+        "at": 7.5,
+        "text": "Ease back."
+      }
+    ]
+  },
+  "quad-stretch": {
+    "intro": "This is a standing thigh stretch for your {side} leg. Hold the back of a chair with one hand. Bend your {side} knee and take hold of your ankle behind you. Gently draw your heel towards your buttock, with your knees together and your body upright, until you feel a stretch at the front of the thigh. Hold, then let go and lower your foot slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.4,
+        "text": "Bend your knee, hold your ankle."
+      },
+      {
+        "at": 3,
+        "text": "Heel towards your buttock."
+      },
+      {
+        "at": 4.4,
+        "text": "Hold. Knees together."
+      },
+      {
+        "at": 8.2,
+        "text": "Let go slowly."
+      }
+    ]
+  },
+  "single-leg-balance": {
+    "intro": "This is single-leg balance on your {side} leg. Stand close to a chair or counter, so you can hold on if you need to. Shift your weight onto your {side} leg, lift the other foot off the floor, and balance, standing tall. Small wobbles are normal. Then put your foot down. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Weight onto one leg."
+      },
+      {
+        "at": 1.25,
+        "text": "Lift the other foot."
+      },
+      {
+        "at": 2.5,
+        "text": "Balance. Stand tall."
+      },
+      {
+        "at": 10.8,
+        "text": "And foot down."
+      }
+    ]
+  },
+  "wall-sit": {
+    "intro": "This is a wall sit. Stand with your back against a wall and your feet about a step out in front of you, hip-width apart. Slide down the wall until your knees are bent, as far as is comfortable, keeping your knees over your feet and your back flat on the wall. Hold the position, breathing normally, then slide back up. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Slide down the wall."
+      },
+      {
+        "at": 2,
+        "text": "Hold. Back flat on the wall."
+      },
+      {
+        "at": 9,
+        "text": "Slide back up."
+      }
+    ]
+  },
+  "wall-squat": {
+    "intro": "This is a wall squat. Stand with your back against a wall and your feet about a step out in front of you, hip-width apart. Slide down the wall by bending your knees, as far as you can control, keeping your knees in line with your toes. Then push through your heels to slide back up. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Slide down."
+      },
+      {
+        "at": 2.4,
+        "text": "And up."
+      }
+    ]
+  },
+  "seated-hamstring-stretch": {
+    "intro": "This is a seated hamstring stretch for your {side} leg. Sit near the front of a firm chair and straighten your {side} leg out in front of you, heel on the floor and toes pointing up. Sit tall, then lean forward from your hips, keeping your back straight, until you feel a stretch behind the thigh. Hold, then sit back up. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.5,
+        "text": "Lean forward from your hips."
+      },
+      {
+        "at": 2.6,
+        "text": "Hold. Back straight."
+      },
+      {
+        "at": 7.5,
+        "text": "Sit back up."
+      }
+    ]
+  },
+  "seated-calf-hold": {
+    "intro": "This is a seated calf hold. Sit on a firm chair with your feet flat and your hands on your thighs. Press down through the balls of your feet to lift your heels as high as you can, and hold them up, pressing down on your thighs to add load. Then lower your heels slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.5,
+        "text": "Heels up."
+      },
+      {
+        "at": 1.5,
+        "text": "Hold. Press down on your thighs."
+      },
+      {
+        "at": 7.5,
+        "text": "Lower slowly."
+      }
+    ]
+  },
+  "seated-static-quads": {
+    "intro": "This is a static thigh push for your {side} knee. Sit on a firm chair. Straighten your {side} leg part way, then cross your other ankle in front of it. Push your {side} leg forwards, as if straightening the knee, while the other leg pushes back, so neither one moves. Hold, breathing normally, then relax and lower both feet. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.4,
+        "text": "Straighten part way."
+      },
+      {
+        "at": 2,
+        "text": "Cross your ankles."
+      },
+      {
+        "at": 3.2,
+        "text": "Push forward and hold."
+      },
+      {
+        "at": 10.8,
+        "text": "Relax, feet down."
+      }
+    ]
+  },
+  "calf-towel-stretch": {
+    "intro": "This is a calf stretch with a towel, for your {side} leg. Sit with your legs out straight and loop a towel around the ball of your {side} foot, holding both ends. Keeping your knee straight, pull the towel to draw your toes and foot towards you, until you feel a stretch in your calf. Hold, then ease off. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Pull the towel."
+      },
+      {
+        "at": 1.6,
+        "text": "Hold. Keep your knee straight."
+      },
+      {
+        "at": 6.5,
+        "text": "Ease off."
+      }
+    ]
+  },
+  "plantar-fascia-towel-stretch": {
+    "intro": "This is a plantar fascia towel stretch for your {side} foot. Sit with your legs out straight and loop a towel around the toes of your {side} foot, holding both ends. Pull the towel to bend your toes and foot back towards you, until you feel a stretch under your foot. Hold, then ease off. It helps to do this before your first steps in the morning. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Pull your toes back."
+      },
+      {
+        "at": 1.6,
+        "text": "Hold the stretch."
+      },
+      {
+        "at": 6.5,
+        "text": "Ease off."
+      }
+    ]
+  },
+  "static-push-down": {
+    "intro": "This is a static push down for your {side} ankle. Sit with your legs out straight, with a towel looped around the ball of your {side} foot and held taut. Push your foot down into the towel, as if pressing a pedal, while your hands hold the towel still, so the ankle doesn't move. Hold, then relax. Push only as hard as is comfortable. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Push down."
+      },
+      {
+        "at": 0.9,
+        "text": "Hold it still."
+      },
+      {
+        "at": 7,
+        "text": "And relax."
+      }
+    ]
+  },
+  "ankle-circles": {
+    "intro": "These are ankle circles for your {side} ankle. Sit with your legs out straight and a rolled towel under your lower calf, so your heel is off the floor. Keeping your leg still, slowly draw circles with your foot, moving only at the ankle. Make the circles as big as is comfortable, then change direction. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.6,
+        "text": "Slow circles."
+      },
+      {
+        "at": 7.4,
+        "text": "Now the other way."
+      }
+    ]
+  },
+  "hamstring-doorway-stretch": {
+    "intro": "This is a hamstring stretch in a doorway, for your {side} leg. Lie on your back in a doorway. Rest your {side} leg up the wall beside the door frame, with your other leg lying straight through the doorway. Straighten the raised knee, sliding your heel up the wall, until you feel a stretch behind your thigh. Hold, then bend the knee again. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.4,
+        "text": "Straighten your knee up the wall."
+      },
+      {
+        "at": 2.5,
+        "text": "Hold the stretch."
+      },
+      {
+        "at": 7.4,
+        "text": "Bend the knee."
+      }
+    ]
+  },
+  "eccentric-heel-drop": {
+    "intro": "This is an eccentric heel drop for your {side} leg. Stand on the balls of both feet on a step, with your heels over the edge, holding a wall or rail. Rise up on both feet. Take your other foot off the step, then lower your {side} heel slowly below the step, taking about three seconds, with your knee straight. Put the other foot back, and use both feet to rise up again. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Foot off."
+      },
+      {
+        "at": 0.8,
+        "text": "Lower slowly."
+      },
+      {
+        "at": 3.8,
+        "text": "Both feet. Rise up."
+      }
+    ]
+  },
+  "plantar-fascia-loading": {
+    "intro": "This is plantar fascia loading for your {side} foot. Stand with the toes of your {side} foot on a rolled towel, holding a wall, and lift your other foot off the floor. Rise up onto your toes slowly, over three seconds, hold for two seconds, then lower slowly over three seconds. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.5,
+        "text": "Rise up slowly."
+      },
+      {
+        "at": 3.5,
+        "text": "Hold."
+      },
+      {
+        "at": 5.5,
+        "text": "Lower slowly."
+      }
+    ]
+  },
+  "forward-step-up": {
+    "intro": "This is a forward step-up, leading with your {side} leg. Stand facing a step, with a rail or wall nearby. Step up with your {side} leg, placing your whole foot on the step, then push through that heel to straighten your knee and bring the other foot up. Step down with the other leg first, lowering yourself slowly, then bring your {side} foot down. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Step up."
+      },
+      {
+        "at": 1.1,
+        "text": "Push through your heel."
+      },
+      {
+        "at": 3.7,
+        "text": "Step down, other leg first."
+      }
+    ]
+  },
+  "single-leg-decline-squat": {
+    "intro": "This is a single-leg decline squat on your {side} leg. Stand on your {side} leg on a decline board, toes pointing down the slope, and hold your other leg off the board. Squat down slowly, taking about three seconds, until your knee is bent about sixty degrees, keeping your knee over your toes and your body upright. Then stand back up. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.4,
+        "text": "Squat down slowly."
+      },
+      {
+        "at": 3.8,
+        "text": "And up."
+      }
+    ]
+  },
+  "heel-to-toe-walking": {
+    "intro": "This is heel-to-toe walking. Stand beside a wall or counter you can reach. Walk forwards in a straight line, placing the heel of each foot right in front of the toes of the other. Keep your eyes looking ahead and your arms out for balance. Take about ten steps, then turn and come back. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Heel to toe."
+      },
+      {
+        "at": 1.65,
+        "text": "Heel to toe."
+      }
+    ]
+  },
+  "standing-hip-abduction": {
+    "intro": "This is standing hip abduction for your {side} leg. Stand tall, holding a chair or counter for support, with your toes pointing forward. Lift your {side} leg out to the side a small amount, without leaning your body, hold for a moment, then lower it slowly back to the start. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Leg out to the side."
+      },
+      {
+        "at": 1.35,
+        "text": "Hold."
+      },
+      {
+        "at": 2,
+        "text": "Lower slowly."
+      }
+    ]
+  },
+  "shoulder-flexion": {
+    "intro": "This is shoulder flexion. Stand tall with your arms by your sides and your thumbs pointing forward. Keeping your elbows straight, raise both arms forward and up as high as is comfortable, hold for a moment, then lower them slowly. Don't shrug your shoulders. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Arms up."
+      },
+      {
+        "at": 2,
+        "text": "Hold."
+      },
+      {
+        "at": 3,
+        "text": "Lower slowly."
+      }
+    ]
+  },
+  "chin-tuck": {
+    "intro": "This is a chin tuck. Sit or stand tall, looking straight ahead. Gently glide your head straight back, as if making a double chin, keeping your eyes level. Hold for a few seconds, then relax back to the start. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Chin back."
+      },
+      {
+        "at": 0.9,
+        "text": "Hold."
+      },
+      {
+        "at": 3.2,
+        "text": "And relax."
+      }
+    ]
+  },
+  "wall-push-up": {
+    "intro": "This is a wall push-up. Stand facing a wall, a little more than arm's length away, with your hands on the wall at shoulder height. Keeping your body straight, bend your elbows to bring your chest towards the wall, then push back to the start. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Chest to the wall."
+      },
+      {
+        "at": 1.9,
+        "text": "Push back."
+      }
+    ]
+  },
+  "clamshell": {
+    "intro": "This is a clamshell for your {side} hip. Lie on your side with your knees bent and your feet together, and your head resting on a pillow. Keeping your feet touching and your pelvis still, lift your top knee like a clam opening, hold for a moment, then lower it slowly. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.4,
+        "text": "Open the knee."
+      },
+      {
+        "at": 1.7,
+        "text": "Hold."
+      },
+      {
+        "at": 3.1,
+        "text": "Close slowly."
+      }
+    ]
+  },
+  "cat-camel": {
+    "intro": "This is the cat camel. Get onto your hands and knees, hands under your shoulders and knees under your hips. Slowly round your back up towards the ceiling, tucking your chin and tail. Then let your back gently dip, lifting your head and tail. Move slowly and within comfort. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Round your back up."
+      },
+      {
+        "at": 3.8,
+        "text": "Now let it dip."
+      }
+    ]
+  },
+  "bird-dog": {
+    "intro": "This is the bird dog, reaching with your {side} arm. Get onto your hands and knees and tighten your stomach muscles. Reach your {side} arm forward and the opposite leg back, until both are level with your body. Hold without twisting, then return. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.05,
+        "text": "Reach arm and leg."
+      },
+      {
+        "at": 1.6,
+        "text": "Hold. Back flat."
+      },
+      {
+        "at": 3.4,
+        "text": "And back."
+      }
     ]
   }
 }

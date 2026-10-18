@@ -124,7 +124,7 @@ const ts = `/* eslint-disable */
 // Encrypted assets live in public${catalog.basePath}/; their keys come only from exerciseLibrary.requestViewerGrant.
 
 export type CatalogProp = {
-  type: "chair" | "mat" | "step" | "wall" | "pillow";
+  type: "chair" | "mat" | "step" | "wall" | "pillow" | "wedge" | "roll" | "line" | "strap";
   [key: string]: string | number;
 };
 

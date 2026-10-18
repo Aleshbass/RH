@@ -49,13 +49,15 @@ def mini_squat():
     return R.animate("EX_mini_squat", top, [(bottom, 45), (bottom, 15), (top, 45), (top, 15)], locks=feet)
 
 
-def fit_chair(sit):
-    """Place the chair under a seated pose: seat top at the buttocks, front edge behind the knees."""
+def fit_chair(sit, side="L"):
+    """Place the chair under a seated pose: seat top at the buttocks, front edge behind the knees
+    (measured on the `side` thigh, which should be resting on the seat)."""
     import bpy
     import rh_props as P
 
     R.apply_pose(sit)
-    knee, hip = R.world_point("LeftLeg"), R.world_point("LeftUpLeg")
+    s = "Left" if side == "L" else "Right"
+    knee, hip = R.world_point(f"{s}Leg"), R.world_point(f"{s}UpLeg")
     deps = bpy.context.evaluated_depsgraph_get()
     o = bpy.data.objects["RH_Pants"].evaluated_get(deps)
     me = o.to_mesh()
@@ -448,14 +450,20 @@ def wall_arms(flex, elbow, wrist, dev=0.0, abd=-2.0, sides=("L", "R")):
     return p
 
 
-def palms_on_wall(pose, sides=("L", "R")):
+def palms_on_wall(pose, sides=("L", "R"), face=None):
     """Palm contact points in `pose`, the y of a wall face just in front of them, and the reach
-    that keeps the palms there (shoulder and elbow place the wrist, then the wrist squares the palm)."""
+    that keeps the palms there (shoulder and elbow place the wrist, then the wrist squares the palm).
+    With `face` given, the palms are slid forwards or back onto that wall instead."""
     names = []
     for s in sides:
         names += [f"{SIDE_NAME[s]}Hand"] + [f"{SIDE_NAME[s]}{b}" for b in PALM]
     contact = R.points(names, pose)
-    face = min(contact[f"{SIDE_NAME[s]}HandMiddle1"].y for s in sides) - 0.016
+    knuckles = min(contact[f"{SIDE_NAME[s]}HandMiddle1"].y for s in sides)
+    if face is not None:
+        shift = Vector((0, face + 0.016 - knuckles, 0))
+        contact = {n: v + shift for n, v in contact.items()}
+    else:
+        face = knuckles - 0.016
     reach = []
     for s in sides:
         n = SIDE_NAME[s]
@@ -468,10 +476,824 @@ def settle(p, locks, reach, rounds=2):
     """Solve a key pose once so animation samples near it start from a pose that already fits."""
     for _ in range(rounds):
         if locks:
-            p = R.lock(p, locks)
+            p = R.lock(p, locks(p) if callable(locks) else locks)
         for params, targets in reach:
-            p = R.solve(p, params, targets, iters=25)
+            p = R.solve(p, params, targets(p) if callable(targets) else targets, iters=25)
     return p
+
+
+def mesh_points(names, keep=None, p=None):
+    """World positions of the deformed vertices of these character meshes in pose p (or as posed)."""
+    import bpy
+
+    if p is not None:
+        R.apply_pose(p)
+    deps = bpy.context.evaluated_depsgraph_get()
+    out = []
+    for n in names:
+        o = bpy.data.objects[n].evaluated_get(deps)
+        me = o.to_mesh()
+        mw = o.matrix_world
+        for v in me.vertices:
+            w = mw @ v.co
+            if keep is None or keep(w):
+                out.append(w)
+        o.to_mesh_clear()
+    return out
+
+
+def shoe(side, p=None):
+    """Vertices of one shoe (the shoes are one mesh, split by which side of the body they are on)."""
+    sign = 1 if side == "L" else -1
+    return mesh_points(("RH_Shoes",), lambda w: w.x * sign > 0, p)
+
+
+def bisect(f, lo, hi, iters=22):
+    """x in [lo, hi] where the monotonic f(x) crosses zero."""
+    flo = f(lo)
+    for _ in range(iters):
+        mid = (lo + hi) / 2
+        fm = f(mid)
+        if (fm > 0) == (flo > 0):
+            lo, flo = mid, fm
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def plantar_fascia_wall_stretch(side="L"):
+    """Facing a wall with hands on it. The foot being stretched (side) is in front with its toes bent
+    up against the wall and the heel down; the other foot is a small step back. Bend the front knee
+    towards the wall, heel still down, until a stretch is felt under the foot; hold; ease back. 11 s."""
+    import rh_props as P
+
+    other = OTHER[side]
+    # The front foot is ahead of the hips, so the chest stays clear of the wall the toes touch.
+    front_t = foot_targets(side, (0, -0.20, 0))
+    back_t = foot_targets(other, (0, 0.04, 0))
+    ball = {k: v for k, v in back_t.items() if k.endswith("ToeBase")}
+
+    def pose(knee, shin, tilt, back_ankle=-20):
+        # shin: forward lean of the front shin = ankle dorsiflexion with the foot flat.
+        p = {"root": [("x", tilt)], "hip_flex_L": tilt - shin + knee, "knee_flex_L": knee, "ankle_plantar_L": -shin,
+             "toe_ext_L": 62, "hip_flex_R": -8, "knee_flex_R": 12, "ankle_plantar_R": back_ankle, **wall_arms(30, 50, 80)}
+        return _side(p, side)
+
+    # The back foot is flat at the start; as the body moves forward its heel lifts and only the ball stays down.
+    start = settle(pose(8, -6, 0), front_t, [(leg_params(other), back_t)])
+    face = min(w.y for w in shoe(side, start)) - 0.002          # toe tips touching the wall
+    contact, face, arm_reach = palms_on_wall(start, face=face)
+    reach = [([f"hip_flex_{other}", f"knee_flex_{other}"], ball)] + arm_reach
+    start = settle(start, front_t, reach)
+    stretch = settle(pose(28, 14, -3, back_ankle=22), front_t, reach, rounds=3)
+    P.clear()
+    wall = P.wall(face_y=face)
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_plantar_fascia_wall_stretch_{side}", start, [
+        (start, 15, hold), (stretch, 60), (stretch, 150, hold), (start, 60), (start, 45, hold),
+    ], locks=front_t, reach=reach)
+    report["props"] = [wall]
+    return act, report
+
+
+def chair_support(p, sides, depth=0.42, gap=0.03):
+    """Chair in front of the body, its back towards the body, with the top rail just under the palm(s)
+    of the given hands (gap: palm thickness, or more for hands hovering over it)."""
+    import rh_props as P
+
+    R.apply_pose(p)
+    palms = [R.world_point(f"{SIDE_NAME[s]}Hand").lerp(R.world_point(f"{SIDE_NAME[s]}HandMiddle1"), 0.5) for s in sides]
+    palm = sum(palms, Vector()) / len(palms)
+    back_y = palm.y + 0.015
+    x = palm.x * 0.5 if len(sides) == 1 else palm.x
+    return P.chair(seat_top=palm.z - gap - 0.42, front_y=back_y - depth, x=round(x, 3), depth=depth)
+
+
+def support_arm(side, flex=26, abd=6):
+    """One hand resting on a chair back in front: arm forward and down, palm down."""
+    return {f"arm_{side}": {"flex": flex, "abd": abd}, f"elbow_flex_{side}": 14, f"forearm_pron_{side}": 85, f"wrist_ext_{side}": 42}
+
+
+def quad_stretch(side="L"):
+    """Standing on the other leg with one hand on a chair. Bend the knee of the leg being stretched
+    (side), take hold of that ankle behind you, and ease the heel towards the buttock with the knees
+    together and the body upright; hold; let go and lower the foot. 12 s."""
+    import rh_props as P
+
+    stance = OTHER[side]
+    s, o = SIDE_NAME[side], SIDE_NAME[stance]
+    plant = foot_targets(stance)
+    both = {**foot_targets(side), **plant}
+    # Weight over the standing foot: the hip adducts and the foot everts back to flat.
+    base = {**support_arm("R"), "arm_L": {"flex": 0, "abd": 8}}
+    shift = dict(base, hip_abd_R=-5, ankle_inv_R=-5)
+    bend = dict(shift, hip_flex_L=-2, knee_flex_L=95, ankle_plantar_L=5,
+                arm_L={"flex": -25, "abd": 14}, elbow_flex_L=25, forearm_pron_L=20)
+    # Catching the foot needs a straight arm, a slight lean towards it and a little arch of the back.
+    grip = dict(shift, hip_flex_L=-2, knee_flex_L=134, ankle_plantar_L=30, spine_side=8, spine_flex=-4,
+                arm_L={"flex": -30, "abd": 14}, elbow_flex_L=5, forearm_pron_L=20)
+    stretch = dict(grip, hip_flex_L=-6, knee_flex_L=140, ankle_plantar_L=32)
+    poses = [_side(p, side) for p in (base, shift, bend, grip, stretch)]
+    base, shift, bend, grip, stretch = poses
+
+    def ankle_grip(p):
+        # The fingers hook over the top of the foot, just below the ankle, from the outside.
+        R.apply_pose(p)
+        a = R.world_point(f"{s}Foot").lerp(R.world_point(f"{s}ToeBase"), 0.6)
+        out = Vector((0.035 if side == "L" else -0.035, 0, 0))
+        return {f"{s}HandMiddle3": a + out}
+
+    hand_reach = ([(f"arm_{side}", "flex"), (f"arm_{side}", "abd"), f"elbow_flex_{side}", "spine_flex"], ankle_grip)
+    base = R.lock(base, both)
+    chair = chair_support(base, (stance,))
+    sup = R.points((f"{o}Hand", f"{o}HandMiddle1"), base)
+    sup_reach = ([(f"arm_{stance}", "flex"), (f"arm_{stance}", "abd"), f"elbow_flex_{stance}"], sup)
+    # Until the foot lifts, the leg being stretched keeps its foot on the floor. It lifts and lands
+    # through a hover with the toes up, so the toes never sweep through the floor.
+    foot_down = (leg_params(side, "hip_abd"), foot_targets(side))
+    shift = settle(shift, plant, [foot_down, sup_reach])
+    hover = dict(shift)
+    for k, d in (("hip_flex", 8), ("knee_flex", 22), ("ankle_plantar", -12)):
+        hover[f"{k}_{side}"] = shift.get(f"{k}_{side}", 0.0) + d
+    grip = settle(grip, plant, [hand_reach, sup_reach], rounds=4)
+    stretch = settle(stretch, plant, [hand_reach, sup_reach], rounds=4)
+    free = {"reach": [sup_reach]}
+    held = {"reach": [hand_reach, sup_reach]}
+    planted = {"reach": [foot_down, sup_reach]}
+    act, report = R.animate(f"EX_quad_stretch_{side}", base, [
+        (base, 12, {"step": 6, **planted}), (shift, 24, planted), (hover, 12, free), (bend, 21, free), (grip, 21, free),
+        (stretch, 36, held), (stretch, 120, {**held, "step": 10}), (grip, 30, held), (bend, 18, free),
+        (hover, 18, free), (shift, 12, free), (base, 24, planted), (base, 18, {"step": 6, **planted}),
+    ], locks=plant, reach=[sup_reach], rounds=2)
+    report["props"] = [chair]
+    return act, report
+
+
+def single_leg_balance(side="L"):
+    """Standing on one leg (side) beside a chair, hands hovering over it for safety. Shift the weight
+    over the standing foot, lift the other foot and balance with small natural sway; put it down. 12 s."""
+    lift = OTHER[side]
+    plant = foot_targets(side)
+    both = {**foot_targets("L"), **foot_targets("R")}
+    hands = {"arm_L": {"flex": 34, "abd": 4}, "arm_R": {"flex": 34, "abd": 4}, "elbow_flex_L": 22, "elbow_flex_R": 22,
+             "forearm_pron_L": 85, "forearm_pron_R": 85, "wrist_ext_L": 25, "wrist_ext_R": 25}
+    base = dict(hands)
+    # Weight over the standing foot: the hip adducts and the foot everts back to flat.
+    shift = dict(hands, hip_abd_L=-5, ankle_inv_L=-5)
+    up = dict(shift, hip_flex_R=36, knee_flex_R=62, ankle_plantar_R=-4)
+
+    def sway(deg):
+        # The whole body tips a little over the standing foot (an inverted pendulum), foot flat.
+        return dict(up, root=[("y", deg)], ankle_inv_L=-5 - deg)
+
+    keys = [base, shift, up, sway(1.2), sway(-1.0), sway(0.9), sway(-1.1), up]
+    keys = [_side(k, side) for k in keys]
+    base = R.lock(keys[0], both)
+    chair = chair_support(base, ("L", "R"), gap=0.06)
+    foot_down = (leg_params(lift, "hip_abd"), foot_targets(lift))
+    shift = settle(keys[1], plant, [foot_down])
+    # The foot leaves and returns through a hover with the toes up, so they never sweep the floor.
+    hover = dict(shift)
+    for k, d in (("hip_flex", 10), ("knee_flex", 18), ("ankle_plantar", -12)):
+        hover[f"{k}_{lift}"] = shift.get(f"{k}_{lift}", 0.0) + d
+    up, s1, s2, s3, s4, up2 = keys[2:]
+    slow = {"step": 6}
+    planted = {"reach": [foot_down]}
+    act, report = R.animate(f"EX_single_leg_balance_{side}", base, [
+        (shift, 30, planted), (hover, 12), (up, 21), (s1, 45, slow), (s2, 60, slow), (s3, 60, slow), (s4, 60, slow),
+        (up2, 36, slow), (hover, 21), (shift, 12), (base, 30, planted), (base, 15, {**planted, **slow}),
+    ], locks=plant)
+    report["props"] = [chair]
+    return act, report
+
+
+def seated_base():
+    """Sitting tall on a chair, shins vertical, feet flat; returns (pose, both feet targets)."""
+    feet = R.points(FEET)
+    sit = R.lock(squat_pose(pelvis_tilt=-4, thigh=88, knee=88), feet)
+    targets = {**foot_targets("L", p=sit), **foot_targets("R", p=sit)}
+    return sit, targets
+
+
+def thigh_point(side, frac, lift=0.075, across=0.0):
+    """A point on top of a thigh, `frac` of the way from hip to knee, for resting a hand on."""
+    s = SIDE_NAME[side]
+    hip, knee = R.world_point(f"{s}UpLeg"), R.world_point(f"{s}Leg")
+    return hip.lerp(knee, frac) + Vector((across, 0, lift))
+
+
+def hands_on_thighs(sides_fracs, bone="HandMiddle2"):
+    """Reach that rests each hand (fingers) on a thigh. sides_fracs: {hand: (thigh side, frac, across)}.
+    A frac given as a string is read from the pose (so hands can slide along the thigh)."""
+    reach = []
+    for hand, (thigh, frac, across) in sides_fracs.items():
+        def target(p, hand=hand, thigh=thigh, frac=frac, across=across):
+            R.apply_pose(p)
+            f = p.get(frac, 0.5) if isinstance(frac, str) else frac
+            return {f"{SIDE_NAME[hand]}{bone}": thigh_point(thigh, f, across=across)}
+        reach.append(([(f"arm_{hand}", "flex"), (f"arm_{hand}", "abd"), f"elbow_flex_{hand}"], target))
+    return reach
+
+
+def seated_hamstring_stretch(side="L"):
+    """Sitting on the front of a chair with the leg being stretched (side) straight out, heel on the
+    floor and toes up. Keeping the back straight, lean forward from the hips until a stretch is felt
+    behind the thigh; hold; sit back up. Hands slide down the thigh. 10 s."""
+    other = OTHER[side]
+    sit, feet = seated_base()
+    chair_pose = dict(sit)
+    rest = {"arm_L": {"flex": 30, "abd": 4}, "arm_R": {"flex": 30, "abd": 4}, "elbow_flex_L": 40, "elbow_flex_R": 40,
+            "forearm_pron_L": 80, "forearm_pron_R": 80}
+    start = dict(sit, **rest, label=0.42)
+    start.update({f"knee_flex_{side}": 4, f"ankle_plantar_{side}": -12})
+
+    def heel_gap(h):
+        q = dict(start, **{f"hip_flex_{side}": h})
+        return min(w.z for w in shoe(side, q))
+
+    start[f"hip_flex_{side}"] = bisect(heel_gap, 88, 30)     # straight leg sloping down until the heel touches
+    # The pelvis tips forward about the hip joints, which stay on the seat.
+    hips = R.points(("LeftUpLeg", "RightUpLeg"), start)
+    leg_t = foot_targets(side, p=start)
+    tilt = 26
+    lean = dict(start, root=[("x", -4 + tilt)], spine_flex=2, neck_flex=-0.4 * tilt, head_flex=-0.5 * tilt, label=0.78)
+    reach = [(leg_params(other), {k: v for k, v in feet.items() if k.startswith(SIDE_NAME[other])}),
+             (leg_params(side), leg_t)]
+    # The hand on the stretched side slides down that thigh; the other rests on its own thigh.
+    reach += hands_on_thighs({side: (side, "label", 0.0), other: (other, 0.55, 0.0)})
+    start = settle(start, hips, reach)
+    lean = settle(lean, hips, reach)
+    chair = fit_chair(chair_pose, other)
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_seated_hamstring_stretch_{side}", start, [
+        (start, 15, hold), (lean, 60), (lean, 150, hold), (start, 60), (start, 15, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair]
+    return act, report
+
+
+def seated_calf_hold():
+    """Sitting tall, hands pressing down on the knees, rise onto the balls of both feet and hold the
+    heels up (an isometric calf hold); lower slowly. 10 s."""
+    sit, feet = seated_base()
+    chair = fit_chair(sit)
+    hips = R.points(("Hips",), sit)
+    hands = {"arm_L": {"flex": 40, "abd": 2}, "arm_R": {"flex": 40, "abd": 2}, "elbow_flex_L": 50, "elbow_flex_R": 50,
+             "forearm_pron_L": 85, "forearm_pron_R": 85, "wrist_ext_L": 20, "wrist_ext_R": 20}
+    down = dict(sit, **hands)
+    up = dict(down, **_sym(ankle_plantar=34))
+    tips = R.points(("LeftToeBase", "RightToeBase", "LeftToe_End", "RightToe_End"), sit)
+    reach = []
+    for sd in ("L", "R"):
+        n = SIDE_NAME[sd]
+        reach.append(([f"hip_flex_{sd}", f"knee_flex_{sd}", f"toe_ext_{sd}"], {f"{n}ToeBase": tips[f"{n}ToeBase"], f"{n}Toe_End": tips[f"{n}Toe_End"]}))
+
+    # Hands rest on the lower thighs, pressing down; they ride up as the heels rise.
+    reach += hands_on_thighs({"L": ("L", 0.6, 0.0), "R": ("R", 0.6, 0.0)})
+    down = settle(down, hips, reach)
+    up = settle(up, hips, reach)
+    hold = {"step": 10}
+    act, report = R.animate("EX_seated_calf_hold", down, [
+        (down, 15, hold), (up, 30), (up, 180, hold), (down, 45), (down, 30, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [chair]
+    return act, report
+
+
+def seated_static_quads(side="L"):
+    """Static thigh push in sitting (isometric, patellar tendon level 1). Sitting tall, the sore leg
+    (side) straightens part-way (knee about 60 degrees bent) and the other ankle crosses in front of
+    it. Push the sore leg forwards against the other leg, which pushes back so neither moves; hold. 12 s."""
+    other = OTHER[side]
+    sit, feet = seated_base()
+    chair = fit_chair(sit)
+    hips = R.points(("Hips",), sit)
+    seat_hands = {"arm_L": {"flex": 8, "abd": 6}, "arm_R": {"flex": 8, "abd": 6}, "elbow_flex_L": 12, "elbow_flex_R": 12}
+    base = dict(sit, **seat_hands)
+    s, o = SIDE_NAME[side], SIDE_NAME[other]
+    raised = dict(base, **{f"knee_flex_{side}": 62, f"hip_flex_{side}": base[f"hip_flex_{side}"] + 4, f"ankle_plantar_{side}": 5})
+
+    def blocker(p):
+        # The back of the other ankle rests across the front of the sore leg's shin, just above its ankle.
+        R.apply_pose(p)
+        shin = R.world_point(f"{s}Leg").lerp(R.world_point(f"{s}Foot"), 0.86)
+        return {f"{o}Foot": shin + Vector((0, -0.075, 0.03))}
+
+    cross = settle(dict(raised, **{f"knee_flex_{other}": 55, f"hip_abd_{other}": -12, f"ankle_plantar_{other}": 10}),
+                   hips, [([f"hip_flex_{other}", f"hip_abd_{other}", f"knee_flex_{other}"], blocker)], rounds=3)
+    push = dict(cross, **{f"knee_flex_{side}": 58, f"ankle_plantar_{side}": 0})
+    block = [([f"hip_flex_{other}", f"hip_abd_{other}", f"knee_flex_{other}"], blocker)]
+    push = settle(push, hips, block)
+    lifted = dict(raised, **{f"knee_flex_{other}": 70, f"hip_flex_{other}": base[f"hip_flex_{other}"] + 6})
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_seated_static_quads_{side}", base, [
+        (base, 15, hold), (raised, 30), (lifted, 21), (cross, 24), (push, 24), (push, 210, {**hold, "reach": block}),
+        (cross, 24, {"reach": block}), (lifted, 21), (raised, 21), (base, 30), (base, 15, hold),
+    ], locks=hips, reach=None)
+    report["props"] = [chair]
+    return act, report
+
+
+def long_sit(tilt=-10, ankle=12, **extra):
+    """Sitting on a mat with both legs out straight, trunk slightly reclined, grounded so the heels
+    and buttocks both touch the mat."""
+    base = {"root": [("x", tilt)], "neck_flex": 4, "head_flex": 6, **extra}
+
+    def legs(slope):
+        return dict(base, **_sym(hip_flex=90 + tilt - slope, knee_flex=2, ankle_plantar=ankle))
+
+    def gap(slope):
+        R.apply_pose(legs(slope))
+        hips = R.world_point("Hips")
+        heels = min(w.z for w in mesh_points(("RH_Shoes",)))
+        seat = min(w.z for w in mesh_points(("RH_Pants",), lambda w: abs(w.y - hips.y) < 0.15))
+        return heels - seat
+
+    return R.ground(legs(bisect(gap, -6, 20, iters=12)), MAT_TOP)
+
+
+def towel_arms(flex, elbow, abd=-12):
+    """Both hands in front of the body holding the ends of a towel (fists, thumbs up)."""
+    return {"arm_L": {"flex": flex, "abd": abd}, "arm_R": {"flex": flex, "abd": abd},
+            **_sym(elbow_flex=elbow, forearm_pron=10, wrist_ext=10, grip=75)}
+
+
+def calf_towel_stretch(side="L"):
+    """Sitting with the legs out straight, a towel looped around the ball of one foot (side). Keeping
+    the knee straight, pull the towel to draw the toes and foot towards you until a stretch is felt in
+    the calf; hold; ease off. 9 s."""
+    poses = {
+        "easy": towel_arms(52, 55),
+        "pull": dict(towel_arms(44, 88), ankle_plantar_L=-14),
+    }
+    return _towel_build(f"EX_calf_towel_stretch_{side}", side, "ball", poses,
+                        [("pull", 45, {}), ("pull", 150, {"step": 10}), ("easy", 45, {}), ("easy", 30, {"step": 10})])
+
+
+def plantar_fascia_towel_stretch(side="L"):
+    """Sitting with the legs out straight, a towel around the toes of one foot (side). Pull the towel
+    to bend the toes and foot back towards you until a stretch is felt under the foot; hold. 9 s."""
+    poses = {
+        "easy": towel_arms(52, 55),
+        "pull": dict(towel_arms(44, 86), ankle_plantar_L=-8, toe_ext_L=40),
+    }
+    return _towel_build(f"EX_plantar_fascia_towel_stretch_{side}", side, "toes", poses,
+                        [("pull", 45, {}), ("pull", 150, {"step": 10}), ("easy", 45, {}), ("easy", 30, {"step": 10})])
+
+
+def static_push_down(side="L"):
+    """Static push down (isometric ankle strengthening). Sitting with the legs straight, a towel around
+    the ball of one foot (side) held taut. Push the foot down into the towel as if pressing a pedal while
+    the hands hold it still; hold; relax. 10 s."""
+    poses = {
+        "taut": dict(towel_arms(48, 70), ankle_plantar_L=0),
+        "push": dict(towel_arms(48, 64), ankle_plantar_L=6),
+    }
+    return _towel_build(f"EX_static_push_down_{side}", side, "ball", poses,
+                        [("push", 24, {}), ("push", 186, {"step": 10}), ("taut", 30, {}), ("taut", 60, {"step": 10})])
+
+
+def _towel_build(name, side, at, poses, timing):
+    """Long-sitting towel exercise, authored for the left foot. Every key is grounded the same way
+    (relaxed feet) before its own arm and foot angles are applied, so the body never shifts on the mat."""
+    import rh_props as P
+
+    base = long_sit(**towel_arms(52, 55))    # ground with the hands already up on the towel
+    keys = {k: _side(dict(base, **v), side) for k, v in poses.items()}
+    first = keys[timing[-1][0]]
+    hips = R.points(("LeftUpLeg", "RightUpLeg"), first)
+    P.clear()
+    heel_y = min(w.y for w in mesh_points(("RH_Shoes",), p=first))
+    mat = P.mat(center_y=(hips["LeftUpLeg"].y + heel_y) / 2 + 0.05, length=1.6)
+    strap = P.strap(foot=SIDE_NAME[side], at=at)
+    act, report = R.animate(name, first, [(keys[k], f, o) for k, f, o in timing], locks=hips)
+    report["props"] = [mat, strap]
+    return act, report
+
+
+def ankle_circles(side="L"):
+    """Sitting with the legs out straight and a rolled towel under the lower calf of one leg (side) so
+    the heel is clear of the mat. Draw slow circles with the foot, moving only at the ankle: two
+    circles one way, then two the other way. 14 s."""
+    import math as m
+    import rh_props as P
+
+    s = SIDE_NAME[side]
+    base = long_sit()
+    hips = R.points(("LeftUpLeg", "RightUpLeg"), base)
+    radius = 0.04
+    under_y = None
+
+    def lift_gap(h):
+        # How far the lower calf sits above the top of the towel roll.
+        nonlocal under_y
+        p = dict(base, **{f"hip_flex_{side}": base[f"hip_flex_{side}"] + h})
+        R.apply_pose(R.lock(p, hips))
+        a, k = R.world_point(f"{s}Foot"), R.world_point(f"{s}Leg")
+        at = k.lerp(a, 0.72)
+        under_y = at.y
+        calf = [w for w in mesh_points(("RH_Pants",), lambda w: abs(w.y - at.y) < 0.03 and abs(w.x - at.x) < 0.08)]
+        return min(w.z for w in calf) - (MAT_TOP + 2 * radius)
+
+    lift = bisect(lift_gap, 0, 25, iters=14)
+    rest = R.lock(dict(base, **{f"hip_flex_{side}": base[f"hip_flex_{side}"] + lift}), hips)
+    lift_gap(lift)
+    R.apply_pose(rest)
+    leg_x = R.world_point(f"{s}Foot").x
+    P.clear()
+    heel_y = min(w.y for w in mesh_points(("RH_Shoes",), p=base))
+    mat = P.mat(center_y=(hips["LeftUpLeg"].y + heel_y) / 2 + 0.05, length=1.6)
+    roll = P.roll(x=leg_x, y=under_y, z=MAT_TOP, radius=radius, length=0.2)
+
+    def foot(theta):
+        # Circle in (pointing, turning in) space: up = toes towards you, then in, down, out.
+        p = dict(rest)
+        p[f"ankle_plantar_{side}"] = 8 - 24 * m.cos(theta)
+        p[f"ankle_inv_{side}"] = 3 + 16 * m.sin(theta)
+        return p
+
+    steps = 8
+    moves = [(foot(0), 18)]
+    for direction in (1, -1):
+        for lap in range(2):
+            for i in range(1, steps + 1):
+                moves.append((foot(direction * 2 * m.pi * i / steps), 12, {"ease": False, "step": 2}))
+        moves.append((foot(0), 12, {"step": 6}))
+    moves.append((rest, 18))
+    act, report = R.animate(f"EX_ankle_circles_{side}", rest, moves, locks=hips)
+    report["props"] = [mat, roll]
+    return act, report
+
+
+def hamstring_doorway_stretch(side="L"):
+    """Lying on the back in a doorway: the leg being stretched (side) rests up the wall beside the door
+    frame, the other leg lies straight through the doorway. Straighten the raised knee, sliding the
+    heel up the wall, until a stretch is felt behind the thigh; hold; bend it again. 10 s."""
+    import rh_props as P
+
+    other = OTHER[side]
+    s = SIDE_NAME[side]
+    flat = R.ground(supine(**_leg(other, **STRAIGHT), **_leg(side, hip_flex=72, knee_flex=2, ankle_plantar=10),
+                           arm_L={"flex": -6, "abd": 14}, arm_R={"flex": -6, "abd": 14}), MAT_TOP)
+    hips = R.points(("LeftUpLeg", "RightUpLeg"), flat)
+    straight = flat
+    leg_pts = mesh_points(("RH_Shoes", "RH_Pants"), lambda w: (w.x > 0) == (side == "L") and w.z > 0.25, straight)
+    face = min(w.y for w in leg_pts) - 0.002
+    R.apply_pose(straight)
+    d = R.world_point(f"{s}Foot").y - face             # ankle's distance in front of the wall
+
+    def on_wall(p):
+        R.apply_pose(p)
+        a = R.world_point(f"{s}Foot")
+        return {f"{s}Foot": Vector((a.x, face + d, a.z))}
+
+    reach = [([f"hip_flex_{side}"], on_wall)]
+    bent = settle(dict(straight, **{f"knee_flex_{side}": 32, f"ankle_plantar_{side}": 14}), hips, reach)
+    P.clear()
+    neck = R.points(("Neck",), straight)["Neck"]
+    mat = P.mat(center_y=neck.y - 0.55, length=1.9)
+    sx = 1 if side == "L" else -1
+    wall = P.wall(face_y=face, width=1.0, x=sx * 0.52, height=2.2)
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_hamstring_doorway_stretch_{side}", bent, [
+        (bent, 12, hold), (straight, 60), (straight, 150, hold), (bent, 60), (bent, 18, hold),
+    ], locks=hips, reach=reach)
+    report["props"] = [mat, wall]
+    return act, report
+
+
+def eccentric_heel_drop(side="L"):
+    """Eccentric heel drop, straight knee (Achilles). Standing on the balls of both feet on a step with
+    the heels over the edge, hands on a wall. Rise up on both feet, take the other foot off and lower
+    the sore side's heel slowly below the step (3 s), then put the other foot back to rise again. 8 s."""
+    import rh_props as P
+
+    h = 0.15
+    up = Vector((0, 0, h))
+    neutral = {**foot_targets("L"), **foot_targets("R")}
+    on_step = {b: v + up for b, v in neutral.items()}
+    balls = {b: v for b, v in on_step.items() if b.endswith("ToeBase")}
+    w, o = side, OTHER[side]
+    wn, on = SIDE_NAME[w], SIDE_NAME[o]
+    hold_ball = {f"{wn}ToeBase": balls[f"{wn}ToeBase"]}
+    other_foot = ([f"hip_flex_{o}", f"knee_flex_{o}"], {f"{on}ToeBase": balls[f"{on}ToeBase"]})
+    # As the heel drops the ankle swings ~8 cm behind the ball of the foot and the body follows, so
+    # the elbows start bent and straighten as it moves back.
+    arms = wall_arms(40, 74, 80)
+
+    def k(**angles):
+        return _side(dict(arms, **angles), w)
+
+    # Authored for the left side. Toes stay flat on the step: toe extension follows the foot's angle.
+    up2 = R.lock(k(**_sym(ankle_plantar=30, toe_ext=30)), balls)
+    contact, face, arm_reach = palms_on_wall(up2)
+    lifted = dict(hip_flex_R=22, knee_flex_R=78, ankle_plantar_R=18, hip_abd_L=-4, ankle_inv_L=-4)
+    up1 = settle(k(ankle_plantar_L=30, toe_ext_L=30, **lifted), hold_ball, arm_reach)
+    down1 = settle(k(ankle_plantar_L=-16, toe_ext_L=-16, **lifted), hold_ball, arm_reach)
+    down2 = settle(k(ankle_plantar_L=-16, toe_ext_L=-16, ankle_plantar_R=0, toe_ext_R=0, knee_flex_R=8),
+                   hold_ball, [other_foot] + arm_reach, rounds=3)
+    up2 = settle(up2, hold_ball, [other_foot] + arm_reach)
+    P.clear()
+    back_edge = balls[f"{wn}ToeBase"].y + 0.035          # heels hang over the edge
+    depth = round(min(0.34, back_edge - face - 0.01), 3)
+    step = P.step(h, front_y=back_edge - depth, depth=depth)
+    wall = P.wall(face_y=face)
+    both = {"reach": [other_foot] + arm_reach}
+    act, report = R.animate(f"EX_eccentric_heel_drop_{side}", up2, [
+        (up1, 18), (down1, 90), (down1, 6, {"step": 6}), (down2, 24), (up2, 36, both), (up2, 15, {**both, "step": 5}),
+    ], locks=hold_ball, reach=arm_reach)
+    report["props"] = [step, wall]
+    return act, report
+
+
+def plantar_fascia_loading(side="L"):
+    """High-load plantar fascia strengthening (Rathleff). Standing on the sore foot (side) with a rolled
+    towel under its toes, the other foot off the floor and hands on a wall. Rise up on the toes over
+    3 s, hold 2 s, lower over 3 s. 9.5 s."""
+    import rh_props as P
+
+    w, o = side, OTHER[side]
+    wn = SIDE_NAME[w]
+    toe_up = 38
+    arms = wall_arms(70, 40, 75)
+    down = _side(dict(arms, toe_ext_L=toe_up, hip_flex_R=4, knee_flex_R=72, ankle_plantar_R=20,
+                      hip_abd_L=-4, ankle_inv_L=-4), w)
+    ball = foot_targets(w)
+    ball = {f"{wn}ToeBase": ball[f"{wn}ToeBase"]}
+    down = R.lock(down, ball)
+    contact, face, arm_reach = palms_on_wall(down)
+    rise = 32
+    up = settle(dict(down, **{f"ankle_plantar_{w}": rise, f"toe_ext_{w}": toe_up + rise}), ball, arm_reach)
+    # The towel roll sits under the middle of the raised toes, touching them.
+    R.apply_pose(down)
+    mid = R.world_point(f"{wn}ToeBase").lerp(R.world_point(f"{wn}Toe_End"), 0.55)
+    toes = shoe(w, down)
+    under = min((v.z for v in toes if abs(v.y - mid.y) < 0.012), default=0.02)
+    P.clear()
+    roll = P.roll(x=mid.x, y=mid.y, z=0.0, radius=round(max(under, 0.01) / 2, 4), length=0.16)
+    wall = P.wall(face_y=face)
+    hold = {"step": 6}
+    act, report = R.animate(f"EX_plantar_fascia_loading_{side}", down, [
+        (down, 15, hold), (up, 90), (up, 60, hold), (down, 90), (down, 30, hold),
+    ], locks=ball, reach=arm_reach)
+    report["props"] = [roll, wall]
+    return act, report
+
+
+def forward_step_up(side="L"):
+    """Forward step-up. Facing a step, step up with the leg being strengthened (side), push through
+    that heel to straighten the knee and bring the other foot up; step down with the other leg first,
+    lowering slowly, then bring the first foot down. 7 s."""
+    import rh_props as P
+
+    w, o = side, OTHER[side]
+    wn, on = SIDE_NAME[w], SIDE_NAME[o]
+    h = 0.17
+    floor = {w: foot_targets(w), o: foot_targets(o)}
+    toe_y = min(v.y for v in mesh_points(("RH_Shoes",), p={}))
+    heel_y = max(v.y for v in mesh_points(("RH_Shoes",), p={}))
+    near = toe_y - 0.07                               # near edge of the step, just past the toes
+    dy = (near - 0.03) - heel_y                       # heel lands 3 cm onto the step
+    step_t = {s: {b: v + Vector((0, dy, h)) for b, v in floor[s].items()} for s in (w, o)}
+    ball = {s: {b: v for b, v in floor[s].items() if b.endswith("ToeBase")} for s in (w, o)}
+    lean = lambda t: {"root": [("x", t)], "neck_flex": -0.3 * t, "head_flex": -0.4 * t}
+
+    def k(**angles):
+        return _side(angles, w)
+
+    def on_step(t, hip, knee, **other):
+        # The stepping foot stays flat on the step: ankle = hip - knee - trunk lean.
+        return k(**lean(t), hip_flex_L=hip, knee_flex_L=knee, ankle_plantar_L=hip - knee - t, **other)
+
+    # While the other foot stands on the floor with its leg straight, it stays flat: ankle = -lean.
+    stand = R.lock({}, {**floor["L"], **floor["R"]})
+    lift_w = k(**lean(5), hip_flex_L=68, knee_flex_L=92, ankle_plantar_L=-4, ankle_plantar_R=-5)
+    place_w = settle(k(**lean(10), hip_flex_L=62, knee_flex_L=78, ankle_plantar_L=6, ankle_plantar_R=-10),
+                     floor[o], [(leg_params(w), step_t[w])])
+    # Double support (one foot on the step, one on the floor): the hips are placed between the feet
+    # and both legs are solved, so each foot is exactly on its own surface.
+    hips0 = R.points(("Hips",))["Hips"]
+    w_y, o_y = step_t[w][f"{wn}Foot"].y, floor[o][f"{on}Foot"].y
+
+    def between(frac_to_step, z, pose, other_reach):
+        hip_pt = Vector((hips0.x, o_y + (w_y - o_y) * frac_to_step, z))
+        return settle(pose, {"Hips": hip_pt}, [(leg_params(w), step_t[w]), other_reach], rounds=3)
+
+    push = between(0.62, hips0.z + 0.02, on_step(16, 62, 72, ankle_plantar_R=20, toe_ext_R=20),
+                   ([f"hip_flex_{o}", f"knee_flex_{o}"], ball[o]))
+    rise_w = on_step(8, 24, 22, hip_flex_R=48, knee_flex_R=92, ankle_plantar_R=5)
+    top = settle(k(), step_t[w], [(leg_params(o), step_t[o])])
+    off_o = on_step(4, 12, 20, hip_flex_R=6, knee_flex_R=62, ankle_plantar_R=-8)
+    land_o = between(0.5, hips0.z - 0.06, on_step(8, 48, 62), (leg_params(o), floor[o]))
+    off_w = k(**lean(4), hip_flex_L=50, knee_flex_L=82, ankle_plantar_L=-6, ankle_plantar_R=-4)
+    on_w = {"locks": step_t[w]}
+    on_o = {"locks": floor[o]}
+    act, report = R.animate(f"EX_forward_step_up_{side}", stand, [
+        (lift_w, 18, on_o), (place_w, 15, on_o),
+        (push, 24, {"locks": step_t[w], "reach": [([f"hip_flex_{o}", f"knee_flex_{o}"], ball[o])]}),
+        (rise_w, 21, on_w), (top, 18, on_w), (top, 15, {**on_w, "step": 5}),
+        (off_o, 18, on_w), (land_o, 27, on_w),
+        (off_w, 18, on_o), (stand, 21, on_o), (stand, 18, {"locks": {**floor["L"], **floor["R"]}, "step": 6}),
+    ], locks=floor[o])
+    P.clear()
+    step = P.step(h, front_y=near - 0.42, depth=0.42)
+    report["props"] = [step]
+    return act, report
+
+
+def single_leg_decline_squat(side="L"):
+    """Single-leg squat on a 25-degree decline board (patellar tendon loading). Standing on the sore leg
+    (side) on the board, toes pointing down the slope, the other leg held off the board. Squat slowly
+    to about 60 degrees of knee bend (3 s) keeping the knee over the toes, then stand back up (2 s). 7 s."""
+    import math as m
+    import rh_props as P
+
+    w, o = side, OTHER[side]
+    wn = SIDE_NAME[w]
+    slope = 25
+    arms = {"arm_L": {"flex": 70, "abd": 4}, "arm_R": {"flex": 70, "abd": 4}, **_sym(elbow_flex=12)}
+    shift = dict(hip_abd_L=-4, ankle_inv_L=-4)
+    free = dict(hip_flex_R=34, knee_flex_R=60, ankle_plantar_R=10)
+    top = _side(dict(arms, **shift, **free, ankle_plantar_L=slope), w)
+    # Place the board under the foot, then lower the body until the sole rests on the slope.
+    sole = shoe(w, top)
+    toe_y = min(v.y for v in sole)
+    foot_x = sum(v.x for v in sole) / len(sole)
+    depth = 0.5
+    rise = depth * m.tan(m.radians(slope))
+    front = toe_y - 0.06
+    board = {"frontY": front, "depth": depth, "rise": rise}
+    gap = min(v.z - P.slope_z(board, v.y) for v in sole)
+    top["hips"] = tuple(Vector(top.get("hips", (0, 0, 0))) - Vector((0, 0, gap)))
+    plant = foot_targets(w, p=top)
+
+    def squat(tilt, thigh, knee):
+        hip = thigh + tilt
+        # The free foot stays well clear of the floor as the body lowers.
+        p = dict(arms, **shift, hip_flex_R=52, knee_flex_R=92, ankle_plantar_R=10,
+                 root=[("x", tilt)], hip_flex_L=hip, knee_flex_L=knee, ankle_plantar_L=slope - tilt + hip - knee,
+                 neck_flex=-0.4 * tilt, head_flex=-0.5 * tilt)
+        p["arm_L"] = {"flex": 70 + tilt, "abd": 4}
+        p["arm_R"] = {"flex": 70 + tilt, "abd": 4}
+        return _side(p, w)
+
+    bottom = R.lock(squat(16, 46, 60), plant)
+    P.clear()
+    wedge = P.wedge(front_y=front, depth=depth, rise=rise, width=0.3, x=foot_x)
+    hold = {"step": 5}
+    act, report = R.animate(f"EX_single_leg_decline_squat_{side}", top, [
+        (top, 12, hold), (bottom, 90), (bottom, 12, hold), (top, 60), (top, 36, hold),
+    ], locks=plant)
+    report["props"] = [wedge]
+    return act, report
+
+
+def heel_to_toe_walking():
+    """Heel-to-toe (tandem) walking along a line, arms out for balance: each step puts the heel right
+    in front of the other foot's toes. Two steps per loop (3.2 s); the clip travels forwards, and the
+    viewer keeps the walker centred."""
+    import rh_props as P
+
+    hips0 = R.points(("Hips",))["Hips"]
+    neutral = {s: foot_targets(s) for s in ("L", "R")}
+    y_n = neutral["L"]["LeftFoot"].y
+    sole = shoe("L", {})
+    length = max(v.y for v in sole) - min(v.y for v in sole) + 0.005
+
+    def foot_at(side, ankle_y):
+        n = SIDE_NAME[side]
+        base = neutral[side]
+        off = 0.012 if side == "L" else -0.012           # either side of the line, so heel meets toe
+        shift = Vector((off - base[f"{n}Foot"].x, ankle_y - base[f"{n}Foot"].y, 0))
+        return {b: v + shift for b, v in base.items()}
+
+    arms = {"arm_L": {"flex": 8, "abd": 32}, "arm_R": {"flex": 8, "abd": 32}, **_sym(elbow_flex=18), "neck_flex": 8}
+
+    def flat_feet(p):
+        # A foot whose leg is adducted rolls with it; turning the ankle by the same angle keeps it flat.
+        for s in ("L", "R"):
+            p[f"ankle_inv_{s}"] = p.get(f"hip_abd_{s}", 0.0)
+        return p
+
+    def double(front, front_y, back_y):
+        back = OTHER[front]
+        mid = (front_y + back_y) / 2
+        hip_pt = Vector((0.0, mid + (hips0.y - y_n), hips0.z - 0.02))
+        feet = {front: foot_at(front, front_y), back: foot_at(back, back_y)}
+        p = dict(arms, **{f"hip_flex_{front}": 10, f"hip_flex_{back}": -10, **_sym(hip_abd=-5)})
+        p = settle(p, {"Hips": hip_pt}, [(leg_params(s, "hip_abd"), feet[s]) for s in ("L", "R")], rounds=3)
+        return flat_feet(p), feet
+
+    def heel_off(ds, stance, swing, swing_feet):
+        p = dict(ds)
+        p[f"hip_flex_{stance}"] = ds[f"hip_flex_{stance}"] - 3
+        p[f"ankle_plantar_{stance}"] = ds[f"ankle_plantar_{stance}"] - 3
+        p[f"ankle_plantar_{swing}"] = 18
+        p[f"toe_ext_{swing}"] = 18
+        # Ball of the foot and the toe tips stay on the floor while the heel lifts.
+        n = SIDE_NAME[swing]
+        ball = {b: v for b, v in swing_feet.items() if b.endswith("ToeBase")}
+        ball.update(R.points((f"{n}Toe_End",), ds))
+        return p, ([f"hip_flex_{swing}", f"knee_flex_{swing}", f"hip_abd_{swing}", f"toe_ext_{swing}"], ball)
+
+    def toe_off(ds, off, stance, swing):
+        # The knee bends more than the thigh comes forward, so the foot lifts before the leg swings
+        # forward (swinging the thigh first would sweep the foot down through the floor); the toes stay
+        # bent up as they leave the floor.
+        p = dict(ds)
+        p[f"hip_flex_{stance}"] = off[f"hip_flex_{stance}"]
+        p[f"ankle_plantar_{stance}"] = off[f"ankle_plantar_{stance}"]
+        p.update({f"hip_flex_{swing}": off[f"hip_flex_{swing}"] + 10, f"knee_flex_{swing}": 40, f"ankle_plantar_{swing}": 6,
+                  f"toe_ext_{swing}": off[f"toe_ext_{swing}"]})
+        return p
+
+    def mid_swing(ds, stance, swing):
+        p = dict(ds)
+        p[f"hip_flex_{stance}"] = ds[f"hip_flex_{stance}"] - 14
+        p[f"ankle_plantar_{stance}"] = ds[f"ankle_plantar_{stance}"] - 14
+        p.update({f"hip_flex_{swing}": 22, f"knee_flex_{swing}": 46, f"ankle_plantar_{swing}": -14,
+                  f"hip_abd_{swing}": 4, f"ankle_inv_{swing}": 0, f"toe_ext_{swing}": 0})
+        return p
+
+    def pre_land(ds_next, swing):
+        # Foot hovering just above where it lands, toes up, so it comes down heel first.
+        p = dict(ds_next)
+        for k, d in (("hip_flex", 6), ("knee_flex", 14), ("ankle_plantar", -12)):
+            p[f"{k}_{swing}"] = ds_next[f"{k}_{swing}"] + d
+        return p
+
+    yL0 = y_n - length / 2
+    yR0 = yL0 + length
+    yR1 = yL0 - length
+    yL1 = yR1 - length
+    ds_a, feet_a = double("L", yL0, yR0)
+    ds_b, feet_b = double("R", yR1, yL0)
+    ds_a2, feet_a2 = double("L", yL1, yR1)
+    off_r, ball_r = heel_off(ds_a, "L", "R", feet_a["R"])
+    off_r = settle(off_r, feet_a["L"], [ball_r])
+    off_l, ball_l = heel_off(ds_b, "R", "L", feet_b["L"])
+    off_l = settle(off_l, feet_b["R"], [ball_l])
+    on_l, on_r = {"locks": feet_a["L"]}, {"locks": feet_b["R"]}
+    act, report = R.animate("EX_heel_to_toe_walking", ds_a, [
+        (off_r, 10, {**on_l, "reach": [ball_r]}), (toe_off(ds_a, off_r, "L", "R"), 8, on_l), (mid_swing(ds_a, "L", "R"), 12, on_l),
+        (pre_land(ds_b, "R"), 10, on_l), (ds_b, 8, on_l),
+        (off_l, 10, {**on_r, "reach": [ball_l]}), (toe_off(ds_b, off_l, "R", "L"), 8, on_r), (mid_swing(ds_b, "R", "L"), 12, on_r),
+        (pre_land(ds_a2, "L"), 10, on_r), (ds_a2, 8, on_r),
+    ], step=2)
+    P.clear()
+    report["props"] = [P.line()]
+    report["travel"] = round(2 * length, 3)
+    return act, report
+
+
+def wall_slide(name, bottom_knee, timing):
+    """Back flat against a wall behind, feet forward: slide down by bending the knees, then back up.
+    timing: list of ("down" | "up" | "hold", frames)."""
+    import rh_props as P
+
+    feet = {**foot_targets("L"), **foot_targets("R")}
+    hips0 = R.points(("Hips",))["Hips"]
+    hip_y = hips0.y + 0.40                      # hips 40 cm behind the feet
+    arms = {"arm_L": {"flex": 14, "abd": 10}, "arm_R": {"flex": 14, "abd": 10}, "elbow_flex_L": 10, "elbow_flex_R": 10}
+
+    def at(z):
+        return dict(arms, label=z, **_sym(hip_flex=40, knee_flex=40, ankle_plantar=0))
+
+    def hips_lock(p):
+        return {"Hips": Vector((hips0.x, hip_y, p["label"]))}
+
+    reach = _foot_reach(feet)
+    # Top: knees softly bent; bottom: found by solving for the knee angle asked for.
+    top = settle(at(hips0.z - 0.10), hips_lock, reach, rounds=1)
+
+    def knee_at(z):
+        return settle(at(z), hips_lock, reach, rounds=1)["knee_flex_L"] - bottom_knee
+
+    z_bot = bisect(knee_at, hips0.z - 0.10, hips0.z - 0.55, iters=14)
+    bottom = settle(at(z_bot), hips_lock, reach, rounds=1)
+    R.apply_pose(top)
+    torso = mesh_points(("RH_Shirt", "RH_Pants"), lambda w: w.z > 0.45)
+    face = max(w.y for w in torso) + 0.002
+    P.clear()
+    wall = P.wall(face_y=face, behind=True)
+    moves = []
+    for kind, frames in timing:
+        target = bottom if kind in ("down", "hold") else top
+        moves.append((target, frames, {"step": 10} if kind == "hold" else {}))
+    act, report = R.animate(name, top, moves, locks=hips_lock, reach=reach)
+    report["props"] = [wall]
+    return act, report
+
+
+def wall_sit():
+    """Wall sit (level 3 isometric): slide down the wall until the knees are bent to about 75 degrees,
+    hold, then slide back up. 12 s."""
+    return wall_slide("EX_wall_sit", 75, [("down", 60), ("hold", 210), ("up", 60), ("up", 30)])
+
+
+def wall_squat():
+    """Wall squat: slide down the wall to about 70 degrees of knee bend and straight back up. 5 s per rep."""
+    return wall_slide("EX_wall_squat", 70, [("down", 60), ("hold", 12), ("up", 60), ("up", 18)])
 
 
 def calf_stretch(side="L"):
@@ -527,4 +1349,22 @@ BUILDERS = {
     "cat_camel": cat_camel,
     "bird_dog": bird_dog,
     "calf_stretch": calf_stretch,
+    "plantar_fascia_wall_stretch": plantar_fascia_wall_stretch,
+    "quad_stretch": quad_stretch,
+    "single_leg_balance": single_leg_balance,
+    "wall_sit": wall_sit,
+    "wall_squat": wall_squat,
+    "seated_hamstring_stretch": seated_hamstring_stretch,
+    "seated_calf_hold": seated_calf_hold,
+    "seated_static_quads": seated_static_quads,
+    "calf_towel_stretch": calf_towel_stretch,
+    "plantar_fascia_towel_stretch": plantar_fascia_towel_stretch,
+    "static_push_down": static_push_down,
+    "ankle_circles": ankle_circles,
+    "hamstring_doorway_stretch": hamstring_doorway_stretch,
+    "eccentric_heel_drop": eccentric_heel_drop,
+    "plantar_fascia_loading": plantar_fascia_loading,
+    "forward_step_up": forward_step_up,
+    "single_leg_decline_squat": single_leg_decline_squat,
+    "heel_to_toe_walking": heel_to_toe_walking,
 }
