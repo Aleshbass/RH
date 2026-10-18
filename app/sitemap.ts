@@ -59,7 +59,7 @@ async function bookablePhysioIds(): Promise<string[]> {
       timer = setTimeout(() => resolve(null), CONVEX_TIMEOUT_MS);
     });
     const result = await Promise.race([query, timeout]);
-    return result ? result.results.map((physio) => physio.id) : [];
+    return result ? result.results.map((physio: { id: string }) => physio.id) : [];
   } catch {
     // Convex unreachable or not configured (e.g. local build): static pages only
     return [];

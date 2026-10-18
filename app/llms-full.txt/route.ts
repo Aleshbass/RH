@@ -61,7 +61,7 @@ async function loadLiveData(): Promise<LiveData | null> {
     }
 
     return {
-      physios: search.results.map((p) => ({
+      physios: search.results.map((p: ListedPhysio) => ({
         id: p.id,
         fullName: p.fullName,
         location: p.location,
