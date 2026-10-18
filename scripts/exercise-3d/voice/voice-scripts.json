@@ -564,5 +564,22 @@
         "text": "And back."
       }
     ]
+  },
+  "static-quads": {
+    "intro": "This is static thigh tightening for your {side} knee. Sit with your legs out straight and a small rolled towel under your {side} knee. Tighten the muscle at the front of your thigh to press the back of your knee down into the towel, and pull your toes up towards you. Hold, breathing normally, then relax completely. Follow along with me.",
+    "cues": [
+      {
+        "at": 0.5,
+        "text": "Press your knee down."
+      },
+      {
+        "at": 1.6,
+        "text": "Toes up, and hold."
+      },
+      {
+        "at": 6.5,
+        "text": "And relax."
+      }
+    ]
   }
 }

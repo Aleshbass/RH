@@ -3852,6 +3852,44 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_licence", ["licenceId"]),
 
+  // Rehabify Library resources from the founder's prototype (convex/libraryResourcesSeed.ts):
+  // NHS and hospital pages, videos and Rehabify's own written guides, with their translations.
+  // Items we have built in 3D carry animationSlug, so the library can offer the animation instead.
+  libraryResources: defineTable({
+    key: v.string(), // the prototype's id, e.g. "kn-aaa-oa"
+    kind: v.union(v.literal("link"), v.literal("youtube"), v.literal("guide")),
+    title: v.string(),
+    source: v.string(),
+    url: v.optional(v.string()),
+    youtubeId: v.optional(v.string()),
+    region: v.string(), // knee | ankle | hip | lowback | thoracic | neck | shoulder | elbow | wrist | general
+    condition: v.string(),
+    type: v.union(v.literal("Exercise programme"), v.literal("Stretch"), v.literal("Self-test"), v.literal("Education")),
+    tags: v.array(v.string()),
+    guides: v.array(v.object({
+      lang: v.union(v.literal("en"), v.literal("yo"), v.literal("ig"), v.literal("ha")),
+      steps: v.array(v.string()),
+      stop: v.optional(v.string()),
+      // Translations stay "draft" until a native-speaking clinician reviews them.
+      status: v.union(v.literal("reviewed"), v.literal("draft")),
+    })),
+    animationSlug: v.optional(v.string()),
+    active: v.boolean(),
+    seedVersion: v.string(),
+    updatedAt: v.number(),
+  })
+    .index("by_key", ["key"])
+    .index("by_region", ["region"]),
+
+  // When to stop and seek help, per body region and language (drafts until reviewed).
+  libraryRedFlags: defineTable({
+    region: v.string(),
+    lang: v.union(v.literal("en"), v.literal("yo"), v.literal("ig"), v.literal("ha")),
+    items: v.array(v.string()),
+    status: v.union(v.literal("reviewed"), v.literal("draft")),
+    seedVersion: v.string(),
+  }).index("by_region_lang", ["region", "lang"]),
+
   // Rehabify Learn — MSK Specialist Program. One row per cohort: admins edit the dates,
   // live sessions and prices here, and the live cohort drives /learn, the landing-page
   // section and the top banner. Dates are calendar dates ("2026-11-02", Lagos).

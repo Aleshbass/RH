@@ -67,6 +67,7 @@ CATALOG = [
         (f"plantar-fascia-loading-{s}", "plantar_fascia_loading", s[0].upper(), f"Plantar fascia loading ({s})", 0.4, (sx, 0.25, 0.15)),
         (f"forward-step-up-{s}", "forward_step_up", s[0].upper(), f"Forward step-up ({s} leg)", 0.25, (sx, -0.3, 0.15)),
         (f"single-leg-decline-squat-{s}", "single_leg_decline_squat", s[0].upper(), f"Single-leg decline squat ({s})", 0.5, (sx, -0.4, 0.15)),
+        (f"static-quads-{s}", "static_quads", s[0].upper(), f"Static thigh tightening ({s})", 0.4, (sx, -0.3, 0.25)),
     )],
     ("wall-sit", "wall_sit", None, "Wall sit", 0.4, (1.0, -0.4, 0.15)),
     ("wall-squat", "wall_squat", None, "Wall squat", 0.4, (1.0, -0.4, 0.15)),

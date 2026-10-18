@@ -135,6 +135,8 @@ import type * as joyProviderBootstrap from "../joyProviderBootstrap.js";
 import type * as joyTestProviderSeed from "../joyTestProviderSeed.js";
 import type * as learn from "../learn.js";
 import type * as libraryLicences from "../libraryLicences.js";
+import type * as libraryResources from "../libraryResources.js";
+import type * as libraryResourcesSeed from "../libraryResourcesSeed.js";
 import type * as location from "../location.js";
 import type * as locationTracking from "../locationTracking.js";
 import type * as marketplace_booking from "../marketplace/booking.js";
@@ -341,6 +343,8 @@ declare const fullApi: ApiFromModules<{
   joyTestProviderSeed: typeof joyTestProviderSeed;
   learn: typeof learn;
   libraryLicences: typeof libraryLicences;
+  libraryResources: typeof libraryResources;
+  libraryResourcesSeed: typeof libraryResourcesSeed;
   location: typeof location;
   locationTracking: typeof locationTracking;
   "marketplace/booking": typeof marketplace_booking;

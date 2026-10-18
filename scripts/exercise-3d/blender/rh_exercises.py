@@ -925,6 +925,41 @@ def ankle_circles(side="L"):
     return act, report
 
 
+def static_quads(side="L"):
+    """Static thigh tightening (quads set, patellar tendon level 1). Sitting with the legs out straight
+    and a rolled towel under the knee. Tighten the front of the thigh to press the back of the knee
+    down into the towel, pulling the toes up, so the heel lifts a little; hold; relax. 9 s."""
+    import rh_props as P
+
+    s = SIDE_NAME[side]
+    base = long_sit()
+    hips = R.points(("LeftUpLeg", "RightUpLeg"), base)
+    radius = 0.035
+
+    def rest_for(h):
+        return R.lock(dict(base, **{f"hip_flex_{side}": base[f"hip_flex_{side}"] + h, f"knee_flex_{side}": 16,
+                                    f"ankle_plantar_{side}": 14}), hips)
+
+    def heel_gap(h):
+        return min(w.z for w in shoe(side, rest_for(h))) - MAT_TOP
+
+    rest = rest_for(bisect(heel_gap, 0, 25, iters=14))     # knee resting bent over the towel, heel on the mat
+    R.apply_pose(rest)
+    knee = R.world_point(f"{s}Leg")
+    under = min(w.z for w in mesh_points(("RH_Pants",), lambda w: abs(w.y - knee.y) < 0.03 and abs(w.x - knee.x) < 0.08))
+    press = dict(rest, **{f"knee_flex_{side}": 2, f"ankle_plantar_{side}": -12})
+    P.clear()
+    heel_y = min(w.y for w in mesh_points(("RH_Shoes",), p=base))
+    mat = P.mat(center_y=(hips["LeftUpLeg"].y + heel_y) / 2 + 0.05, length=1.6)
+    roll = P.roll(x=knee.x, y=knee.y, z=MAT_TOP, radius=round(max((under - MAT_TOP) / 2, radius), 4), length=0.2)
+    hold = {"step": 10}
+    act, report = R.animate(f"EX_static_quads_{side}", rest, [
+        (rest, 15, hold), (press, 30), (press, 150, hold), (rest, 36), (rest, 39, hold),
+    ], locks=hips)
+    report["props"] = [mat, roll]
+    return act, report
+
+
 def hamstring_doorway_stretch(side="L"):
     """Lying on the back in a doorway: the leg being stretched (side) rests up the wall beside the door
     frame, the other leg lies straight through the doorway. Straighten the raised knee, sliding the
@@ -1367,4 +1402,5 @@ BUILDERS = {
     "forward_step_up": forward_step_up,
     "single_leg_decline_squat": single_leg_decline_squat,
     "heel_to_toe_walking": heel_to_toe_walking,
+    "static_quads": static_quads,
 }
