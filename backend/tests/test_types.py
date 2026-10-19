@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 
 from sqlalchemy import CheckConstraint, Enum as SAEnum
@@ -77,6 +78,30 @@ def test_value_domains_in_baseline_migration():
     for _table_name, column_name, allowed in _VALUE_DOMAINS:
         for value in allowed:
             assert value in source, f"{column_name} domain missing {value!r} in 0001_baseline"
+
+
+def test_alembic_revision_ids_fit_version_column():
+    """Alembic's default version_num column is VARCHAR(32)."""
+    for path in _MIGRATIONS.glob("*.py"):
+        tree = ast.parse(path.read_text())
+        revision = next(
+            (
+                node.value.value
+                for node in tree.body
+                if (
+                    isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == "revision" for target in node.targets)
+                    or isinstance(node, ast.AnnAssign)
+                    and isinstance(node.target, ast.Name)
+                    and node.target.id == "revision"
+                )
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ),
+            None,
+        )
+        assert revision is not None, f"{path.name} does not declare a revision"
+        assert len(revision) <= 32, f"{path.name} revision {revision!r} exceeds VARCHAR(32)"
 
 
 def _column_has_domain(table, column_name: str, allowed: frozenset[str]) -> bool:

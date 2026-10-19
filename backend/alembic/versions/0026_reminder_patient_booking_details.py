@@ -1,6 +1,6 @@
 """Store RH's patient-facing booking code and stable meeting URL on reminders.
 
-Revision ID: 0026_reminder_patient_booking_details
+Revision ID: 0026_reminder_booking_details
 Revises: 0025_two_reminder_points
 """
 
@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0026_reminder_patient_booking_details"
+revision = "0026_reminder_booking_details"
 down_revision = "0025_two_reminder_points"
 branch_labels = None
 depends_on = None
