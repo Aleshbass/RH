@@ -69,13 +69,17 @@ export default function PayoutSchedulePage() {
             <SettingsSection
                 title="Your payout per service"
                 description={
-                    <span className="inline-flex items-center gap-2">
-                        Schedule version {schedule.version}
-                        {terms?.accepted && <StatusBadge tone="green">Accepted</StatusBadge>}
-                    </span>
+                    schedule.confirmed ? (
+                        <span className="inline-flex items-center gap-2">
+                            Schedule version {schedule.version}
+                            {terms?.accepted && <StatusBadge tone="green">Accepted</StatusBadge>}
+                        </span>
+                    ) : (
+                        'Rehabify is confirming the payout for each service. The amounts appear here once they’re set.'
+                    )
                 }
             >
-                <PayoutScheduleTable services={schedule.services} />
+                <PayoutScheduleTable services={schedule.services} confirmed={schedule.confirmed} />
             </SettingsSection>
 
             <SettingsSection title="How you’re paid">

@@ -317,7 +317,7 @@ export default function ServicesAndCoveragePage() {
                                     </div>
                                     <div className={cn('shrink-0 text-right', !available && 'opacity-60')}>
                                         <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">
-                                            You earn {formatKobo(service.payoutKobo)}
+                                            {schedule?.confirmed === false ? 'Payout being confirmed' : `You earn ${formatKobo(service.payoutKobo)}`}
                                         </p>
                                         <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
                                             Patient pays {service.travelApplies ? 'from ' : ''}

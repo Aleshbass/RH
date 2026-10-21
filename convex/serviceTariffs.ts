@@ -59,6 +59,8 @@ export const getPayoutSchedule = query({
     const { version, tariffs } = await loadTariffs(ctx);
     return {
       version,
+      // Version 0 is the built-in working figures: physios see "being confirmed" until an admin publishes
+      confirmed: version >= 1,
       services: BOOKABLE_SERVICE_IDS.map((id) => {
         const service = REHABIFY_SERVICES.find((s) => s.id === id)!;
         const tariff = tariffs[id];
@@ -241,6 +243,18 @@ export const adminSavePricingSettings = mutation({
     const admin = await ensureUserRole(ctx, ["admin"]);
     if (!Number.isInteger(args.accessCapacity) || args.accessCapacity < 0 || args.accessCapacity > 10_000) {
       throw new ConvexError("Capacity must be a whole number between 0 and 10,000");
+    }
+    // Access opens only on rates an admin has set: a published version with Access prices
+    if (args.accessIntakeOpen) {
+      const { version, tariffs } = await loadTariffs(ctx);
+      const hasAccessRates = BOOKABLE_SERVICE_IDS.some(
+        (id) => tariffs[id].active && tariffs[id].assistedPriceKobo !== undefined && tariffs[id].assistedPayoutKobo !== undefined
+      );
+      if (version < 1 || !hasAccessRates) {
+        throw new ConvexError(
+          "Set the Rehabify Access price and payout for at least one service and publish them first, then turn Access on."
+        );
+      }
     }
     const updatedBy = `${admin.firstName || ""} ${admin.lastName || ""}`.trim() || admin.email || "Admin";
     const values = { ...args, updatedAt: Date.now(), updatedBy };

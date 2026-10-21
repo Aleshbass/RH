@@ -327,7 +327,11 @@ export const adminApprove = mutation({
       throw new ConvexError("All Rehabify Access places are in use. Add the applicant to the waiting list, or raise capacity.");
     }
 
-    const { tariffs } = await loadTariffs(ctx);
+    const { version: tariffVersion, tariffs } = await loadTariffs(ctx);
+    // Arrangements are only made at Access rates an admin has set and published
+    if (tariffVersion < 1) {
+      throw new ConvexError("Rehabify Access isn't active yet. Set and publish the Access rates in Admin › Pricing first.");
+    }
     for (const serviceId of serviceIds) {
       const tariff = tariffs[serviceId];
       if (tariff.assistedPriceKobo === undefined || tariff.assistedPayoutKobo === undefined) {

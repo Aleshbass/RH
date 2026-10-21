@@ -97,7 +97,8 @@ export default function NetworkTermsPage() {
 
     const approved = setup?.approvalStatus === 'approved';
     const saved = status.terms;
-    const accessServices = schedule.services.filter((service) => service.assistedPayoutKobo !== null);
+    // Access opt-in appears once Rehabify has confirmed the Access rates
+    const accessServices = schedule.confirmed ? schedule.services.filter((service) => service.assistedPayoutKobo !== null) : [];
     const scheduleChanged = status.accepted && saved?.tariffVersion !== undefined && saved.tariffVersion !== schedule.version;
 
     const submit = async () => {
@@ -192,7 +193,7 @@ export default function NetworkTermsPage() {
                     </>
                 }
             >
-                <PayoutScheduleTable services={schedule.services} />
+                <PayoutScheduleTable services={schedule.services} confirmed={schedule.confirmed} />
             </SettingsSection>
 
             {accessServices.length > 0 && (

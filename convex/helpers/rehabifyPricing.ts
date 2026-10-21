@@ -21,7 +21,8 @@ export const PRICING_MODEL = "rehabify_2026_10" as const;
 
 export const DEFAULT_PRICING_SETTINGS = {
   accessCapacity: 20,
-  accessIntakeOpen: true,
+  // Off until an admin publishes the Access rates and turns it on (adminSavePricingSettings)
+  accessIntakeOpen: false,
   networkTermsEnforcedAt: undefined as number | undefined,
 };
 

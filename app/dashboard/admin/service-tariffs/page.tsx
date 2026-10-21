@@ -304,10 +304,18 @@ export default function AdminServiceTariffsPage() {
         }
       />
 
-      <Callout tone="warning" title="Payouts are placeholders for now">
-        The physiotherapist payouts are working figures until leadership confirms them. Physiotherapists see their payout
-        schedule, so publish payout changes only once they are agreed.
-      </Callout>
+      {data.version === 0 ? (
+        <Callout tone="warning" title="Payouts and Rehabify Access aren’t active yet">
+          The figures below are working defaults. Until you review them and publish, physiotherapists see “Payout being
+          confirmed” instead of amounts, payout emails aren’t sent, and Rehabify Access can’t be turned on. Set the payouts
+          and Access rates, then use Publish and activate.
+        </Callout>
+      ) : (
+        <Callout tone="info" title={`Version ${data.version} is active`}>
+          Physiotherapists see these payouts, and Rehabify Access uses these Access rates
+          {data.settings.accessIntakeOpen ? ' (taking applications).' : '. Turn on “Taking applications” in Programme settings to open Access.'}
+        </Callout>
+      )}
 
       {newerVersion && (
         <Callout tone="info" title={`Version ${data.version} was published while you were editing`}>
@@ -362,17 +370,26 @@ export default function AdminServiceTariffsPage() {
             {hasErrors && <p className="text-xs text-rose-600 dark:text-rose-300">Fix the highlighted services before publishing.</p>}
             <Button
               onClick={() => setConfirmOpen(true)}
-              disabled={changedCount === 0 || hasErrors}
+              // The first publish activates the figures, even if none were changed
+              disabled={(changedCount === 0 && data.version > 0) || hasErrors}
               className={cn(primaryButtonClass, 'w-full sm:w-auto')}
             >
               <Send className="mr-2 h-4 w-4" />
-              Publish new version
+              {data.version === 0 ? 'Publish and activate' : 'Publish new version'}
             </Button>
           </Panel>
         </div>
 
         <div className="space-y-6">
-          <ProgrammeSettings settings={data.settings} wouldBeDelisted={readiness?.totals.wouldBeDelisted} />
+          <ProgrammeSettings
+            settings={data.settings}
+            wouldBeDelisted={readiness?.totals.wouldBeDelisted}
+            // Access opens only on published Access rates (the server checks this too)
+            accessRatesActive={
+              data.version > 0 &&
+              data.services.some((s) => s.active && s.assistedPriceKobo !== null && s.assistedPayoutKobo !== null)
+            }
+          />
           <NetworkRollout readiness={readiness} />
           <VersionHistory history={data.history} currentVersion={data.version} />
         </div>
@@ -381,9 +398,13 @@ export default function AdminServiceTariffsPage() {
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title={`Publish version ${data.version + 1}?`}
-        description={`${changedCount} service${changedCount === 1 ? '' : 's'} changed. New bookings use these prices and payouts straight away. Existing bookings keep theirs.`}
-        confirmLabel="Publish"
+        title={data.version === 0 ? 'Publish and activate these figures?' : `Publish version ${data.version + 1}?`}
+        description={
+          data.version === 0
+            ? 'Physiotherapists will see these payouts, and Rehabify Access can then be turned on with these Access rates. New bookings use them straight away.'
+            : `${changedCount} service${changedCount === 1 ? '' : 's'} changed. New bookings use these prices and payouts straight away. Existing bookings keep theirs.`
+        }
+        confirmLabel={data.version === 0 ? 'Publish and activate' : 'Publish'}
         onConfirm={publish}
       />
     </AdminPage>
@@ -536,7 +557,15 @@ function MoneyField({
   )
 }
 
-function ProgrammeSettings({ settings, wouldBeDelisted }: { settings: TariffsData['settings']; wouldBeDelisted?: number }) {
+function ProgrammeSettings({
+  settings,
+  wouldBeDelisted,
+  accessRatesActive,
+}: {
+  settings: TariffsData['settings']
+  wouldBeDelisted?: number
+  accessRatesActive: boolean
+}) {
   const saveSettings = useMutation(api.serviceTariffs.adminSavePricingSettings)
   const [capacity, setCapacity] = useState(String(settings.accessCapacity))
   const [intakeOpen, setIntakeOpen] = useState(settings.accessIntakeOpen)
@@ -597,10 +626,18 @@ function ProgrammeSettings({ settings, wouldBeDelisted }: { settings: TariffsDat
         <span className="min-w-0">
           <span className="block text-sm font-medium text-rh-night dark:text-white">Taking applications</span>
           <span className="block text-xs text-neutral-500 dark:text-neutral-400">
-            When off, the Access form tells patients to check back later. Reviews and existing arrangements carry on.
+            {accessRatesActive || intakeOpen
+              ? 'When off, the Access form tells patients to check back later. Reviews and existing arrangements carry on.'
+              : 'Set the Access price and payout for at least one service and publish them first. Then you can turn Access on.'}
           </span>
         </span>
-        <Switch id={`${id}-intake`} checked={intakeOpen} onCheckedChange={setIntakeOpen} className={cn('mt-0.5', switchClass)} />
+        <Switch
+          id={`${id}-intake`}
+          checked={intakeOpen}
+          onCheckedChange={setIntakeOpen}
+          disabled={!accessRatesActive && !intakeOpen}
+          className={cn('mt-0.5', switchClass)}
+        />
       </label>
 
       <div className="space-y-1.5">

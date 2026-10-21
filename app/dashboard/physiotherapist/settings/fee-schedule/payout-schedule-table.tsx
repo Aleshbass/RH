@@ -14,8 +14,15 @@ const cellLabel = 'text-[11px] font-medium uppercase tracking-wide text-neutral-
  * Rehabify services with the patient price and the physio's payout (and the Rehabify Access
  * payout where the service is offered under Access). Rows stack on phones.
  */
-export function PayoutScheduleTable({ services }: { services: PayoutScheduleService[] }) {
-    const showAccess = services.some((service) => service.assistedPayoutKobo !== null);
+export function PayoutScheduleTable({
+    services,
+    confirmed = true,
+}: {
+    services: PayoutScheduleService[];
+    /** False until Rehabify publishes the payouts: amounts show as "Being confirmed" */
+    confirmed?: boolean;
+}) {
+    const showAccess = confirmed && services.some((service) => service.assistedPayoutKobo !== null);
     const columns = showAccess ? 'sm:grid-cols-[minmax(0,1fr)_7rem_7rem_7rem]' : 'sm:grid-cols-[minmax(0,1fr)_7rem_7rem]';
 
     return (
@@ -55,8 +62,10 @@ export function PayoutScheduleTable({ services }: { services: PayoutScheduleServ
                         </div>
                         <div className="sm:text-right">
                             <p className={cellLabel}>You earn</p>
-                            <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">{formatKobo(service.payoutKobo)}</p>
-                            {service.travelApplies && (
+                            <p className="text-sm font-semibold tabular-nums text-rh-night dark:text-white">
+                                {confirmed ? formatKobo(service.payoutKobo) : 'Being confirmed'}
+                            </p>
+                            {confirmed && service.travelApplies && (
                                 <p className="text-[11px] leading-4 text-neutral-500 dark:text-neutral-400">+ your share of travel</p>
                             )}
                         </div>

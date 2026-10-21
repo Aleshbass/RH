@@ -21,7 +21,7 @@ import { isPhysioNetworkEligible } from "../physioSetup";
 import { markProviderMatched, transitionReferral } from "../helpers/partnerEvents";
 import { referralEnv, toPublicStatus } from "../helpers/partnerShared";
 import { verifyPaystackSignature } from "../helpers/paystackSignature";
-import { hasPriorAssessment, quoteBooking, quoteSnapshot } from "../helpers/rehabifyPricing";
+import { hasPriorAssessment, loadTariffs, quoteBooking, quoteSnapshot } from "../helpers/rehabifyPricing";
 import { assertSlotFree, findSlotClash, isLiveHold, WEB_HOLD_MS } from "../helpers/slotHolds";
 import { ensureMarketplaceInvoice, bookingDescription } from "../helpers/marketplaceInvoices";
 import { assertAwardUsable, useAwardSession } from "../helpers/accessAwards";
@@ -969,7 +969,9 @@ export async function completeMarketplaceBookingCore(ctx: any, bookingId: any, o
                 role: "patient"
             });
         }
-        if (physioEmail) {
+        // The payout email waits until an admin has published (confirmed) the payout schedule
+        const payoutsConfirmed = (await loadTariffs(ctx)).version >= 1;
+        if (physioEmail && payoutsConfirmed) {
             // The physio sees their payout, not what the patient paid Rehabify
             await ctx.scheduler.runAfter(0, api["actions/emails/sendPaymentReceiptEmail"].sendPaymentReceiptEmail as any, {
                 ...receiptData,
