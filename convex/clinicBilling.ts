@@ -6,6 +6,7 @@ import { ensureClinicApproved, getOwnerClinic, getOwnerClinicOrPreview, requireC
 import { getAuthenticatedUser } from "./auth";
 import { publicAppUrl } from "./helpers/appUrl";
 import { activePaymentLink, closeInvoicePaymentLinks, PAYMENT_LINK_TTL_MS } from "./helpers/paymentLinks";
+import { currentPaystackMode, usableSubaccount } from "./helpers/paystackMode";
 
 /**
  * Clinic billing: payout account (Paystack subaccount), shareable payment links,
@@ -143,10 +144,12 @@ export const savePayoutAccount = internalMutation({
       .query("clinicPayoutAccounts")
       .withIndex("by_clinic_id", (q) => q.eq("clinicId", args.clinicId))
       .first();
+    // The subaccount was just created with the current key, so it belongs to this Paystack mode
+    const paystackMode = currentPaystackMode();
     if (existing) {
-      await ctx.db.patch(existing._id, { ...args, updatedAt: now });
+      await ctx.db.patch(existing._id, { ...args, paystackMode, updatedAt: now });
     } else {
-      await ctx.db.insert("clinicPayoutAccounts", { ...args, createdAt: now, updatedAt: now });
+      await ctx.db.insert("clinicPayoutAccounts", { ...args, paystackMode, createdAt: now, updatedAt: now });
     }
   },
 });
@@ -243,13 +246,14 @@ export const getInvoiceSettlement = query({
         .query("clinicPayoutAccounts")
         .withIndex("by_clinic_id", (q) => q.eq("clinicId", invoice.clinicId!))
         .first();
-      subaccountCode = payout?.subaccountCode ?? null;
+      // An account from the other Paystack mode can't take a split: Rehabify holds the money instead
+      subaccountCode = usableSubaccount(payout);
     } else if (invoice.physiotherapistId) {
       const account = await ctx.db
         .query("physiotherapistBankAccounts")
         .withIndex("by_physiotherapist_id", (q) => q.eq("physiotherapistId", invoice.physiotherapistId!))
         .first();
-      subaccountCode = account?.isVerified ? account.subaccountCode : null;
+      subaccountCode = account?.isVerified ? usableSubaccount(account) : null;
     }
     return {
       subaccountCode,
@@ -289,7 +293,7 @@ export const getInvoiceForPaymentLink = internalQuery({
       patientEmail: patient?.email || null,
       fallbackEmail: clinic.contactEmail || user.email || null,
       clinicName: clinic.name,
-      subaccountCode: payout?.subaccountCode ?? null,
+      subaccountCode: usableSubaccount(payout),
     };
   },
 });

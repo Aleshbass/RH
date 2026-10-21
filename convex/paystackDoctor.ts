@@ -2,6 +2,7 @@ import { action, internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { currentPaystackMode } from "./helpers/paystackMode";
 
 /**
  * Create a Paystack subaccount for a referring doctor
@@ -134,6 +135,7 @@ export const saveDoctorBankDetails = internalMutation({
                 isVerified: true,
                 updatedAt: Date.now(),
                 paymentProvider: "paystack",
+                paystackMode: currentPaystackMode(),
             });
         } else {
             // Create new record
@@ -149,6 +151,7 @@ export const saveDoctorBankDetails = internalMutation({
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
                 paymentProvider: "paystack",
+                paystackMode: currentPaystackMode(),
             });
         }
     }

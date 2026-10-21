@@ -31,6 +31,7 @@ type BankAccount = {
     accountNumber: string;
     accountName: string;
     isVerified: boolean;
+    needsReconnect?: boolean;
 };
 
 function maskAccount(number: string) {
@@ -207,11 +208,21 @@ export default function PayoutSettingsPage() {
                         <div className="min-w-0">
                             <div className="flex items-center gap-2">
                                 <p className="truncate text-sm font-semibold text-neutral-900 dark:text-white">{account.bankName}</p>
-                                {account.isVerified && <StatusBadge tone="green">Verified</StatusBadge>}
+                                {account.needsReconnect ? (
+                                    <StatusBadge tone="amber">Reconnect needed</StatusBadge>
+                                ) : (
+                                    account.isVerified && <StatusBadge tone="green">Verified</StatusBadge>
+                                )}
                             </div>
                             <p className="mt-0.5 truncate text-sm text-neutral-500 dark:text-neutral-400">
                                 {account.accountName} · <span className="tabular-nums">{maskAccount(account.accountNumber)}</span>
                             </p>
+                            {account.needsReconnect && (
+                                <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                                    Payments have moved to live mode. Use Change account and enter the same details again so
+                                    payments reach this account directly. Until then Rehabify holds your share and pays you.
+                                </p>
+                            )}
                         </div>
                         <div className="flex shrink-0 gap-2">
                             <Button variant="ghost" size="sm" className="text-neutral-500" onClick={() => setConfirmRemove(true)}>

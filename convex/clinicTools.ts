@@ -9,6 +9,7 @@ import { logSecurityEvent } from "./helpers/securityLog";
 import { ensureUserNumbers } from "./helpers/rehabifyIds";
 import { activePaymentLink } from "./helpers/paymentLinks";
 import { isClinicInviteApproval } from "./helpers/clinicApproval";
+import { usableSubaccount } from "./helpers/paystackMode";
 import {
   CLEAR_PROPOSAL,
   appointmentsPathFor,
@@ -2118,7 +2119,9 @@ export const getClinicBillingSummary = query({
       netThisMonthNaira: Math.round(netThisMonthKobo / 100),
       feesThisMonthNaira: Math.round(feesThisMonthKobo / 100),
       processingFeesThisMonthNaira: Math.round(processingThisMonthKobo / 100),
-      payoutAccount: payout
+      // An account from the other Paystack mode (made on test keys before go-live) shows as not
+      // connected, so the owner reconnects it; until then Rehabify holds the clinic's share
+      payoutAccount: payout && usableSubaccount(payout)
         ? { bankName: payout.bankName, accountName: payout.accountName, accountNumberLast4: payout.accountNumber.slice(-4) }
         : null,
       priceList: clinic.priceList ?? [],

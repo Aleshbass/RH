@@ -9,6 +9,7 @@ import { ConvexError, v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { requirePartnerAccess } from "./helpers/partnerAccess";
+import { currentPaystackMode } from "./helpers/paystackMode";
 
 const FALLBACK_BANKS = [
   { name: "Access Bank", code: "044" },
@@ -127,6 +128,7 @@ export const persistVerifiedBankAccount = internalMutation({
         isVerified: true,
         isDefault: true,
         paystackRecipientCode: args.paystackRecipientCode ?? duplicate.paystackRecipientCode,
+        paystackRecipientMode: args.paystackRecipientCode ? currentPaystackMode() : duplicate.paystackRecipientMode,
         updatedAt: now,
       });
       return { accountId: duplicate._id, isUpdate: true };
@@ -140,6 +142,7 @@ export const persistVerifiedBankAccount = internalMutation({
       isVerified: true,
       isDefault: true,
       paystackRecipientCode: args.paystackRecipientCode,
+      paystackRecipientMode: args.paystackRecipientCode ? currentPaystackMode() : undefined,
       addedBy: actor,
       createdAt: now,
       updatedAt: now,

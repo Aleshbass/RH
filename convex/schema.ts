@@ -2562,6 +2562,8 @@ export default defineSchema({
     bankSlug: v.optional(v.string()),
     accountNumber: v.string(),
     accountName: v.string(),
+    // Paystack mode the subaccount was created in (helpers/paystackMode.ts); missing = test
+    paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_clinic_id", ["clinicId"]),
@@ -2579,6 +2581,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     paymentProvider: v.optional(v.literal("paystack")),
+    // Paystack mode the subaccount was created in (helpers/paystackMode.ts); missing = test
+    paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
   })
     .index("by_physiotherapist_id", ["physiotherapistId"])
     .index("by_subaccount_code", ["subaccountCode"]),
@@ -2596,6 +2600,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     paymentProvider: v.optional(v.literal("paystack")),
+    // Paystack mode the subaccount was created in (helpers/paystackMode.ts); missing = test
+    paystackMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
   })
     .index("by_doctor_id", ["doctorId"])
     .index("by_subaccount_code", ["subaccountCode"]),
@@ -3928,6 +3934,8 @@ export default defineSchema({
     isVerified: v.boolean(),                          // Passed Paystack account resolution
     isDefault: v.boolean(),                           // Primary payout account
     paystackRecipientCode: v.optional(v.string()),    // Paystack transfer recipient code for automation
+    // Paystack mode the recipient was created in (helpers/paystackMode.ts); missing = test
+    paystackRecipientMode: v.optional(v.union(v.literal("test"), v.literal("live"))),
     addedBy: v.optional(v.string()),                  // Who added it (partner email or admin)
     createdAt: v.number(),
     updatedAt: v.number(),

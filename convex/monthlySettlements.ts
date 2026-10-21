@@ -18,6 +18,7 @@ import { adminDisplayName, requireAdmin, requirePartnerAccess } from "./helpers/
 import { randomString } from "./helpers/partnerShared";
 import { publicCommissionStatus } from "./helpers/partnerLedger";
 import { verifyPaystackSignature } from "./helpers/paystackSignature";
+import { currentPaystackMode } from "./helpers/paystackMode";
 import { completeMarketplaceBookingCore } from "./marketplace/booking";
 import {
   DEFAULT_REVENUE_SETTINGS,
@@ -455,7 +456,11 @@ export const prepareTransfer = internalMutation({
         accountName: bank.accountName,
         accountNumber: bank.accountNumber,
         bankCode: bank.bankCode,
-        recipientCode: bank.paystackRecipientCode ?? null,
+        // A recipient made with the other Paystack mode (test keys before go-live) is recreated
+        recipientCode:
+          bank.paystackRecipientCode && (bank.paystackRecipientMode ?? "test") === currentPaystackMode()
+            ? bank.paystackRecipientCode
+            : null,
       },
     };
   },
@@ -464,7 +469,11 @@ export const prepareTransfer = internalMutation({
 export const saveRecipientCode = internalMutation({
   args: { bankAccountId: v.id("partnerBankAccounts"), recipientCode: v.string() },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.bankAccountId, { paystackRecipientCode: args.recipientCode, updatedAt: Date.now() });
+    await ctx.db.patch(args.bankAccountId, {
+      paystackRecipientCode: args.recipientCode,
+      paystackRecipientMode: currentPaystackMode(),
+      updatedAt: Date.now(),
+    });
   },
 });
 

@@ -9,6 +9,7 @@ import { internal } from "./_generated/api";
 import { mainAccountChargeKobo, paystackRequest } from "./clinicBilling";
 import { publicAppUrl } from "./helpers/appUrl";
 import { activePaymentLink } from "./helpers/paymentLinks";
+import { usableSubaccount } from "./helpers/paystackMode";
 
 export const getPhysioInvoiceForPaymentLink = internalQuery({
   args: { invoiceId: v.id("invoices") },
@@ -42,7 +43,7 @@ export const getPhysioInvoiceForPaymentLink = internalQuery({
       physioName: [user.firstName, user.lastName].filter(Boolean).join(" ") || "Your physiotherapist",
       physioEmail: user.email ?? null,
       // Only a verified payout account receives the split directly
-      subaccountCode: account?.isVerified ? account.subaccountCode : null,
+      subaccountCode: account?.isVerified ? usableSubaccount(account) : null,
     };
   },
 });

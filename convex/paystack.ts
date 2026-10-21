@@ -2,6 +2,7 @@ import { action, internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { currentPaystackMode, usableSubaccount } from "./helpers/paystackMode";
 
 /**
  * Create a Paystack subaccount for a physiotherapist
@@ -245,6 +246,7 @@ export const savePhysiotherapistBankDetails = internalMutation({
                 isVerified: true,
                 updatedAt: Date.now(),
                 paymentProvider: "paystack",
+                paystackMode: currentPaystackMode(),
             });
         } else {
             // Create new record
@@ -260,6 +262,7 @@ export const savePhysiotherapistBankDetails = internalMutation({
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
                 paymentProvider: "paystack",
+                paystackMode: currentPaystackMode(),
             });
         }
     }
@@ -280,8 +283,10 @@ export const getPhysiotherapistBankDetails = query({
 
         // Only the Paystack subaccount code is needed to split a payment; account
         // numbers and names are never returned from this public query.
-        if (account && account.isVerified && account.subaccountCode) {
-            return { subaccountCode: account.subaccountCode as string };
+        // Only an account from the current Paystack mode (test or live) can take a split
+        const usable = account && account.isVerified ? usableSubaccount(account) : null;
+        if (usable) {
+            return { subaccountCode: usable };
         }
         return null;
     }
@@ -321,6 +326,8 @@ export const getMyBankAccounts = query({
             isVerified: account.isVerified,
             createdAt: account.createdAt,
             paymentProvider: account.paymentProvider || "paystack",
+            // Made with the other Paystack mode (e.g. test keys before go-live): re-add it to receive payouts directly
+            needsReconnect: account.isVerified && usableSubaccount(account) === null,
         }));
     }
 });
